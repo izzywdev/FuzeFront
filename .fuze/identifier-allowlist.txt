@@ -1,0 +1,25 @@
+# identifier-allowlist — gate-identifier exemptions (governance/identifier-standard.md §6)
+#
+# List create operations that are EXEMPT from the server-owned identifier rule
+# because the client legitimately assigns the id — an offline-first surface that
+# cannot round-trip for one, or a sync protocol where the client is a trusted
+# peer rather than an anonymous caller.
+#
+# Prefer annotating the OpenAPI operation with `x-client-assigned-id: allowed`
+# (+ `x-client-assigned-id-reason`) instead; use this file only when you cannot
+# edit the operation object (e.g. a vendored/generated spec).
+#
+# An exemption is not a waiver of the type-confusion defense. An exempted
+# operation MUST still either derive the stored id as
+# `uuidv5(<per-type namespace>, clientRequestId)` or enforce a tenant-scoped
+# `(tenant_id, id)` primary key, so a chosen id cannot collide across types or
+# cross a tenant boundary. See §6.
+#
+# Format:
+#   - one route per line, as `METHOD /path` (matched case-insensitively)
+#   - `#` begins a comment; blank lines are ignored
+#
+# Example (remove — illustrative only):
+#   POST /v1/sync/documents      # offline-first editor; ids are uuidv5-namespaced
+#
+# (Empty by default — no exemptions.)

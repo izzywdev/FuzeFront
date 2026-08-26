@@ -64,7 +64,7 @@ export class PgNamespaceRepository implements NamespaceRepository {
   async findByName(namespace: string): Promise<Namespace | null> {
     const res = await this.pool.query<NamespaceRow>(
       `SELECT id, namespace, display_name, description, owner_app_id, created_at, updated_at
-         FROM config_namespaces
+         FROM config.config_namespaces
         WHERE namespace = $1`,
       [namespace],
     );
@@ -74,7 +74,7 @@ export class PgNamespaceRepository implements NamespaceRepository {
   async findById(id: NamespaceEntityId): Promise<Namespace | null> {
     const res = await this.pool.query<NamespaceRow>(
       `SELECT id, namespace, display_name, description, owner_app_id, created_at, updated_at
-         FROM config_namespaces
+         FROM config.config_namespaces
         WHERE id = $1`,
       [toUuid(id)],
     );
@@ -88,7 +88,7 @@ export class PgNamespaceRepository implements NamespaceRepository {
     // accidentally re-mint or skip minting on.
     const id = toUuid(mintId('namespace'));
     const res = await this.pool.query<NamespaceRow & { inserted: boolean }>(
-      `INSERT INTO config_namespaces (id, namespace, display_name, description, owner_app_id)
+      `INSERT INTO config.config_namespaces (id, namespace, display_name, description, owner_app_id)
             VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (namespace) DO UPDATE
             SET display_name = EXCLUDED.display_name,
@@ -119,7 +119,7 @@ export class PgNamespaceRepository implements NamespaceRepository {
 
     const res = await this.pool.query<NamespaceRow>(
       `SELECT id, namespace, display_name, description, owner_app_id, created_at, updated_at
-         FROM config_namespaces
+         FROM config.config_namespaces
          ${where}
         ORDER BY created_at DESC, id DESC
         LIMIT $${limitParamIdx}`,

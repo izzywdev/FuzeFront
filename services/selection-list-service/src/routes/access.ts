@@ -11,8 +11,10 @@
 //   - PUT  requires 'admin' on SelectionList (list-owner only)
 //   - DELETE requires 'admin' on SelectionList (list-owner only)
 //
-// The selection_list_access table is a READ-MODEL MIRROR of Permit.io state.
-// It is NEVER consulted for authorization decisions — only for:
+// The selection_list_access table is a READ-MODEL MIRROR of the authorization
+// backend's state (FuzeFront's Security API, via @fuzefront/auth's
+// AuthzClient — see middleware/authz.ts). It is NEVER consulted for
+// authorization decisions — only for:
 //   a) returning the grant roster on GET
 //   b) the last-owner guard (count of non-revoked owners before demotion/revoke)
 //
@@ -23,7 +25,7 @@
 
 import { Router, Request, Response } from 'express';
 import { db } from '../db';
-import { requirePermit, countActiveOwners, getPermitClient } from '../middleware/permit';
+import { requireAuthzCheck, countActiveOwners, getAuthzClient, bearer } from '../middleware/authz';
 import { authMiddleware } from '../middleware/auth';
 
 const router = Router();
@@ -62,7 +64,7 @@ function decodeCursor(cursor: string): string {
 router.get(
   '/:listId/access',
   authMiddleware,
-  requirePermit('SelectionList', 'read'),
+  requireAuthzCheck('SelectionList', 'read'),
   async (req: Request, res: Response): Promise<void> => {
     const { listId } = req.params;
 
@@ -123,7 +125,7 @@ router.get(
 router.put(
   '/:listId/access/:userId',
   authMiddleware,
-  requirePermit('SelectionList', 'admin'),
+  requireAuthzCheck('SelectionList', 'admin'),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
     const orgId = req.orgId!;
@@ -136,6 +138,12 @@ router.put(
         code: 'INVALID_ROLE',
         message: `role must be one of: ${[...VALID_ROLES].join(', ')}.`,
       });
+      return;
+    }
+
+    const token = bearer(req);
+    if (!token) {
+      res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Missing bearer token.' });
       return;
     }
 
@@ -161,16 +169,23 @@ router.put(
         }
       }
 
-      // Assign role in Permit.io (source of truth for authz).
-      const permitClient = getPermitClient();
-      await permitClient.api.roleAssignments.assign({
-        user: userId,
-        role,
-        tenant: orgId,
-        resource_instance: `SelectionList:${listId}`,
-      });
+      // Assign role via the Security API (source of truth for authz).
+      // resource is REQUIRED here: it is what scopes this grant to this one
+      // list (resource_instance 'SelectionList:${listId}' on the wire) rather
+      // than tenant-wide. This is a WRITE — grant() throws (never resolves)
+      // on a Security API failure, so a 502/timeout is caught below and
+      // surfaced as 500 WITHOUT ever reaching the mirror upsert.
+      await getAuthzClient().grant(
+        {
+          subject: userId,
+          tenant: orgId,
+          role,
+          resource: { type: 'SelectionList', key: listId },
+        },
+        token,
+      );
 
-      // Upsert the mirror row.
+      // Upsert the mirror row. Only reached if the grant above succeeded.
       await db('selection_list_access')
         .insert({
           list_id: listId,
@@ -206,10 +221,16 @@ router.put(
 router.delete(
   '/:listId/access/:userId',
   authMiddleware,
-  requirePermit('SelectionList', 'admin'),
+  requireAuthzCheck('SelectionList', 'admin'),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
     const orgId = req.orgId!;
+
+    const token = bearer(req);
+    if (!token) {
+      res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Missing bearer token.' });
+      return;
+    }
 
     try {
       // Fetch current grant for last-owner guard and idempotency.
@@ -237,16 +258,24 @@ router.delete(
         }
       }
 
-      // Unassign in Permit.io.
-      const permitClient = getPermitClient();
-      await permitClient.api.roleAssignments.unassign({
-        user: userId,
-        role: existing['role'],
-        tenant: orgId,
-        resource_instance: `SelectionList:${listId}`,
-      });
+      // Revoke via the Security API. resource is REQUIRED here for the same
+      // reason as the PUT handler's grant() call: it scopes the revocation
+      // to this list's instance rather than the tenant-wide role. This is a
+      // WRITE — revoke() throws (never resolves) on a Security API failure,
+      // caught below and surfaced as 500 WITHOUT ever reaching the mirror's
+      // soft-delete, so a failed revoke never leaves the mirror claiming
+      // access was removed when it was not.
+      await getAuthzClient().revoke(
+        {
+          subject: userId,
+          tenant: orgId,
+          role: existing['role'],
+          resource: { type: 'SelectionList', key: listId },
+        },
+        token,
+      );
 
-      // Soft-delete the mirror row.
+      // Soft-delete the mirror row. Only reached if the revoke above succeeded.
       await db('selection_list_access')
         .where({ list_id: listId, user_id: userId })
         .update({ revoked_at: db.fn.now(), updated_at: db.fn.now() });

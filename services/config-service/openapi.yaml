@@ -1,16 +1,47 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Configuration Service API
-  version: 1.0.0
+  version: 1.1.0
   summary: Namespaced, hierarchical key/value configuration with typed key metadata and provenance-carrying resolution.
   description: >-
-    **FROZEN CONTRACT — FFRNT-153 (FF-EPIC-17-S1).** This file is the single
-    source of truth for the `config-service` HTTP surface and for every artefact
-    derived from it: the Node client `@fuzefront/config-client` (this story), the
-    Python client (FFRNT-259), and the served Swagger UI (FFRNT-258). Nothing
-    downstream — backend routes, migrations, the settings UI, acceptance tests,
-    docs — may diverge from it. Changing the API means amending **this file
-    first**, bumping `info.version`, re-linting, and re-issuing **both** clients.
+    **FROZEN CONTRACT — FFRNT-153 (FF-EPIC-17-S1), amended for FF-EPIC-18.**
+    This file is the single source of truth for the `config-service` HTTP
+    surface and for every artefact derived from it: the Node client
+    `@fuzefront/config-client`, the Python client (FFRNT-259), and the served
+    Swagger UI (FFRNT-258). Nothing downstream — backend routes, migrations,
+    the settings UI, acceptance tests, docs — may diverge from it. Changing
+    the API means amending **this file first**, bumping `info.version`,
+    re-linting, and re-issuing **both** clients.
+
+
+    ### Changelog
+
+
+    **1.1.0 (FF-EPIC-18, FFRNT-280 frames `secret-audit` flow — 08-secret-input.html,
+    09-audit-history.html).** Additive, no breaking changes to any 1.0.0 shape.
+
+      - **`POST /v1/config/secrets/reveal`** — reveal-once for an `isSecret`
+        value: a separately authorized, individually audited action, never a
+        field on `EffectiveConfigEntry` or any list/read response.
+      - **`GET /v1/config/history`** — the append-only change trail for one
+        key at one scope (`set`/`unset`/`lock`/`unlock`/`reveal`), cursor
+        paginated like every other list in this file. Secret history is
+        redacted on both sides — `oldValue`/`newValue` are never populated for
+        an `isSecret` key.
+      - **Revert** is deliberately **not** a new endpoint. `ConfigOperation`
+        gained an optional `revertOf` (a `ConfigHistoryEntryId` reference) so
+        a revert is expressed as an ordinary `set`/`unset` through the
+        existing `PUT /v1/config`, and is therefore itself written to
+        history as a new entry — never a rewrite of the one it restores.
+      - **No new `ErrorCode` values.** `SECRET_UNAVAILABLE` (already reserved,
+        previously unused by any operation) now answers reveal with `409`;
+        `RATE_LIMITED` (already reserved, previously unused) now answers
+        reveal with `429`. Both alternatives considered and rejected: reusing
+        `FORBIDDEN` for "temporarily undecryptable" would make it
+        indistinguishable from an authorization denial, which is exactly the
+        confusion the frames call out by name; reusing `NOT_FOUND` would read
+        as "no secret was ever set", inviting an operator to overwrite a
+        working credential.
 
 
     ### What the service is
@@ -92,13 +123,16 @@ info:
     created**, and every create body is `additionalProperties: false`. Scope
     references are polymorphic and therefore always carry their type
     (`scopeType` + `scopeId`) — a bare id is never resolved. An id is never a
-    capability: authorization comes from the token and Permit, never from the
-    caller having known an id.
+    capability: authorization comes from the token and FuzeFront's Security
+    API, never from the caller having known an id.
 
 
     ### Authorization
 
-    Every operation is Permit-gated on the acting principal. Reads are scoped —
+    Every operation is gated by a policy decision from FuzeFront's Security
+    API (the acting principal's own token is forwarded for the decision; the
+    policy engine behind that API is a server-side deployment detail this
+    contract does not name). Reads are scoped —
     a caller reading a scope they have no authority over gets **403** and learns
     nothing about whether that scope exists. Writes additionally distinguish
     *write* authority from *lock* authority: being able to set a value at your
@@ -384,6 +418,20 @@ paths:
         concurrency: if the resolved view moved underneath the caller, the write
         is refused with **409 `VERSION_CONFLICT`** rather than silently
         overwriting a concurrent editor's change.
+
+
+        **Revert is not a separate endpoint.** An operation that replays an
+        earlier value from `GET /v1/config/history` sets that operation's
+        `revertOf` to the id of the history entry being restored. The write
+        is otherwise an ordinary `set` or `unset` — reverting a `set` entry is
+        `{op: 'set', value: <that entry's newValue>, revertOf: <its id>}`;
+        reverting an `unset` entry is `{op: 'unset', revertOf: <its id>}`,
+        which restores inheritance rather than pinning whatever the key
+        happened to resolve to at the time. Either way this call produces a
+        **new** history entry naming what it reverted; nothing already in
+        history is rewritten or removed. A `revertOf` that does not name a
+        history entry for this exact key and scope is rejected as a whole
+        batch with `VALIDATION_ERROR`, same as any other malformed operation.
       tags: [Values]
       requestBody:
         required: true
@@ -425,6 +473,138 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorBody'
+  /v1/config/secrets/reveal:
+    post:
+      operationId: revealSecret
+      summary: Reveal a stored secret value once
+      description: >-
+        Returns the plaintext of an `isSecret` value **exactly once**. This is
+        deliberately not a field on `EffectiveConfigEntry` or any GET: reveal
+        is its own high-privilege action, separately authorized from both the
+        ordinary read grant and the write grant (an operator who may `Replace`
+        a credential does not automatically get to `Reveal` it), and every
+        call — success or not — writes its own `reveal` entry to
+        `GET /v1/config/history` against the caller. Nothing about the
+        response is cached or re-servable; a second look is a second call
+        with its own audit entry.
+
+
+        Refused with **404** if no value is currently stored at this exact
+        scope (`isSet: false` — there is nothing to reveal), and with **409
+        `SECRET_UNAVAILABLE`** if a value is stored but its encryption key is
+        currently unavailable. The two are deliberately distinct: the first
+        invites setting a value, the second must not, because a value **is**
+        stored and consumers may still be using it.
+      tags: [Values]
+      requestBody:
+        required: true
+        description: The secret to reveal, and why.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevealSecretRequest'
+      responses:
+        '200':
+          description: >-
+            The plaintext, returned once. Responses to this operation MUST
+            NOT be cached or stored by any intermediary.
+          headers:
+            Cache-Control:
+              description: Always `no-store` — this response is never cacheable.
+              schema:
+                type: string
+                enum: ['no-store']
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevealSecretResult'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: >-
+            No namespace/key/scope by that description, or no value is
+            currently stored for this key at this exact scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '409':
+          description: >-
+            The key is `isSecret` and a value is stored, but it cannot be
+            decrypted right now (`SECRET_UNAVAILABLE`). The value has **not**
+            been deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '429':
+          description: >-
+            Too many reveal attempts for this credential in the current
+            window (`RATE_LIMITED`). Reveal is deliberately throttled harder
+            than ordinary reads because a successful call discloses a live
+            credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+  /v1/config/history:
+    get:
+      operationId: listConfigHistory
+      summary: List the append-only change trail for one key at one scope
+      description: >-
+        Every `set`, `unset`, `lock`, `unlock` and `reveal` recorded against
+        one key at one exact scope, newest first, cursor paginated per the
+        platform pagination standard. Nothing is ever deleted from this trail
+        and no entry is ever mutated in place — a revert (see
+        `writeConfigValues`) and a reveal (see `revealSecret`) each add a new
+        entry rather than changing an existing one.
+
+
+        For an `isSecret` key every entry's `oldValue`/`newValue` are `null`
+        and `redacted` is `true` — the trail records **that** the value
+        changed or was revealed, never **what** it was or is. There is
+        deliberately no way to recover a past secret value from this
+        endpoint; that is what makes `revealSecret` a distinct, individually
+        audited operation rather than a formality.
+
+
+        An empty page is not an error: it means this key has never been
+        changed at this exact scope, and its value is inherited or default.
+      tags: [Effective configuration]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceQuery'
+        - $ref: '#/components/parameters/ScopeTypeQuery'
+        - $ref: '#/components/parameters/ScopeIdQuery'
+        - $ref: '#/components/parameters/KeyQuery'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of history entries, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedHistoryEntries'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          description: >-
+            The principal has no **audit** grant over the requested scope.
+            Distinct from the write/read grants on the value itself — being
+            able to see or change a setting does not imply being able to see
+            who changed it and why.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     bearerAuth:
@@ -432,8 +612,9 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >-
-        The acting principal's access token. Authorization is decided by Permit
-        against this principal; knowing an id never grants access.
+        The acting principal's access token. Authorization is decided by
+        FuzeFront's Security API against this principal; knowing an id never
+        grants access.
   parameters:
     Cursor:
       name: cursor
@@ -489,6 +670,13 @@ components:
         supplied) when `scopeType` is `platform`, which is a singleton tier.
       schema:
         type: string
+    KeyQuery:
+      name: key
+      in: query
+      required: true
+      description: The key whose change trail to list, within `namespace`.
+      schema:
+        $ref: '#/components/schemas/KeyName'
     IfNoneMatch:
       name: If-None-Match
       in: header
@@ -540,6 +728,15 @@ components:
       description: TypeID of a key definition, prefixed `ckd_`. Opaque past the prefix.
       pattern: '^ckd_[0-9a-hjkmnp-tv-z]{26}$'
       examples: ['ckd_01h455vb4pex5vsknk084sn02q']
+    ConfigHistoryEntryId:
+      type: string
+      description: >-
+        TypeID of one append-only change-history entry, prefixed `cvh_`.
+        Opaque past the prefix. Referenced by `ConfigOperation.revertOf` to
+        express a revert as a replayed `set`/`unset` rather than a rewrite of
+        the entry it restores.
+      pattern: '^cvh_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: ['cvh_01h455vb4pex5vsknk084sn02q']
     NamespaceName:
       type: string
       description: >-
@@ -912,9 +1109,9 @@ components:
           type: boolean
           description: >-
             Whether **this caller** may change it at the scope being read,
-            accounting for the lock, `isReadonly`, `allowedScopes` and Permit. A
-            disabled input is a courtesy; the server refuses the write
-            regardless.
+            accounting for the lock, `isReadonly`, `allowedScopes` and the
+            Security API's authorization decision. A disabled input is a
+            courtesy; the server refuses the write regardless.
         warning:
           type: [string, 'null']
           description: >-
@@ -969,6 +1166,8 @@ components:
             Why the value is being locked, surfaced to the scopes beneath. Only
             meaningful with `lock`.
           maxLength: 500
+        revertOf:
+          $ref: '#/components/schemas/ConfigHistoryEntryId'
     ConfigWriteRequest:
       type: object
       description: >-
@@ -1052,6 +1251,167 @@ components:
             $ref: '#/components/schemas/KeyDefinition'
         pageInfo:
           $ref: '#/components/schemas/PageInfo'
+    ActorType:
+      type: string
+      description: >-
+        What kind of principal performed a change or reveal. Polymorphic —
+        `Actor` always carries this alongside `actorId` — because not every
+        history entry is attributable to a human caller, and treating
+        `actorId` as always a user id would silently mis-resolve a
+        system-initiated one.
+      enum: [user, system]
+    Actor:
+      type: object
+      description: >-
+        Who performed one recorded change or reveal, from the token that
+        authorized it. Never a bare id — always paired with its type.
+      additionalProperties: false
+      required: [actorType]
+      properties:
+        actorType:
+          $ref: '#/components/schemas/ActorType'
+        actorId:
+          type: [string, 'null']
+          description: >-
+            The acting user. Null exactly when `actorType` is `system` (for
+            example a platform-owned key reconciled by an automated process).
+    ConfigHistoryAction:
+      type: string
+      description: >-
+        What a history entry recorded. `reveal` is a read-time action — it
+        never changes the resolved value — included so a compliance reviewer
+        sees every disclosure of a secret alongside every change to it.
+      enum: [set, unset, lock, unlock, reveal]
+    ConfigHistoryEntry:
+      type: object
+      description: >-
+        One append-only row in a key's change trail at one exact scope.
+        Entries are never edited or deleted — a revert or a reveal always
+        adds a new entry rather than touching an existing one.
+      required:
+        - id
+        - namespace
+        - key
+        - scope
+        - action
+        - redacted
+        - actor
+        - occurredAt
+      properties:
+        id:
+          $ref: '#/components/schemas/ConfigHistoryEntryId'
+        namespace:
+          $ref: '#/components/schemas/NamespaceName'
+        key:
+          $ref: '#/components/schemas/KeyName'
+        scope:
+          $ref: '#/components/schemas/Scope'
+        action:
+          $ref: '#/components/schemas/ConfigHistoryAction'
+        oldValue:
+          description: >-
+            The value before this entry, for `set`/`unset`. Always `null`
+            when `redacted` is `true`, when this is the first entry for the
+            key at this scope, or when `action` is `reveal` (a reveal does
+            not change the value).
+        newValue:
+          description: >-
+            The value after this entry, for `set`/`lock`. Always `null` when
+            `redacted` is `true`, `action` is `unset` (there is no override
+            any more), or `action` is `reveal`.
+        redacted:
+          type: boolean
+          description: >-
+            True when the key is `isSecret`. `oldValue`/`newValue` are then
+            always `null` regardless of `action` — the trail records **that**
+            the value changed or was revealed, never **what** it was. An
+            audit log holding secret plaintext would be a secret store with
+            worse access control than the one it is auditing.
+        actor:
+          $ref: '#/components/schemas/Actor'
+        reason:
+          type: [string, 'null']
+          description: >-
+            Why the change or reveal was made, from the triggering request's
+            `reason` (`ConfigWriteRequest.reason` or `RevealSecretRequest.reason`).
+            Null if none was supplied on a `set`/`unset`/`lock`/`unlock`
+            entry; `reveal` entries always carry one, since it is required on
+            `revealSecret`.
+        revertOf:
+          oneOf:
+            - $ref: '#/components/schemas/ConfigHistoryEntryId'
+            - type: 'null'
+          description: >-
+            Present when this entry was written by reverting an earlier one —
+            the id of the entry that was replayed. Null for every entry that
+            was not a revert. The replayed entry is untouched; reverting only
+            ever appends.
+        occurredAt:
+          type: string
+          format: date-time
+          description: When this entry was recorded.
+    PagedHistoryEntries:
+      type: object
+      description: A page of change-history entries, newest first.
+      required: [items, pageInfo]
+      properties:
+        items:
+          type: array
+          description: The history entries in this page.
+          items:
+            $ref: '#/components/schemas/ConfigHistoryEntry'
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
+    RevealSecretRequest:
+      type: object
+      description: >-
+        Identifies the stored secret to reveal and why. Addressed by
+        namespace + scope + key, like every other value operation — carries
+        no id of its own — and rejects unknown properties.
+      additionalProperties: false
+      required: [namespace, scope, key, reason]
+      properties:
+        namespace:
+          $ref: '#/components/schemas/NamespaceName'
+        scope:
+          $ref: '#/components/schemas/Scope'
+        key:
+          $ref: '#/components/schemas/KeyName'
+        reason:
+          type: string
+          description: >-
+            Why the caller needs to see this credential. Required, not
+            optional — unlike `ConfigWriteRequest.reason` — because a reveal
+            is read access to a live secret, not a change a reviewer can
+            reconstruct from a diff. Recorded verbatim on the `reveal` history
+            entry this call creates.
+          minLength: 1
+          maxLength: 500
+    RevealSecretResult:
+      type: object
+      description: >-
+        The plaintext, returned exactly once. The service does not cache or
+        re-serve it — a second look is a new `revealSecret` call with its own
+        authorization and its own `historyEntryId`.
+      required: [namespace, scope, key, value, revealedAt, historyEntryId]
+      properties:
+        namespace:
+          $ref: '#/components/schemas/NamespaceName'
+        scope:
+          $ref: '#/components/schemas/Scope'
+        key:
+          $ref: '#/components/schemas/KeyName'
+        value:
+          type: string
+          description: >-
+            The stored plaintext. Present only in this response — never on
+            `EffectiveConfigEntry` or any list/read endpoint.
+        revealedAt:
+          type: string
+          format: date-time
+          description: When this reveal was authorized and recorded.
+        historyEntryId:
+          $ref: '#/components/schemas/ConfigHistoryEntryId'
     ErrorCode:
       type: string
       description: >-

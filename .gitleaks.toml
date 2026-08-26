@@ -40,6 +40,27 @@ paths = [
   # AppHub Developer phase. Moved to GitHub Secrets in commit 274bd24 and deleted from HEAD.
   # The key has been rotated and is no longer active.
   '''fuzefront_deploy_key''',
+  # chroma-sealed-secret.yaml — a kind: SealedSecret with spec.encryptedData.token. Sealed
+  # Secrets are asymmetrically encrypted with the target cluster's public key and are
+  # DESIGNED to be committed; they cannot be decrypted outside that cluster. Its sibling
+  # bootstrap-sealed-secret.yaml in the same directory is already allowlisted above for
+  # exactly this reason — this closes that gap rather than widening the rule. Five of the
+  # ten full-history findings were this one file, re-sealed across five commits.
+  '''FuzeQuality/deploy/helm/fuzequality/templates/chroma-sealed-secret\.yaml''',
+  # services/selection-list-service/tests/ — TEST_SECRET is a jwt.sign() key used only by
+  # supertest inside this package's unit tests; no production code path reaches it. Same
+  # category as backend/security/tests/ above.
+  #
+  # This one was ALREADY triaged — into .gitleaksignore, as commit-pinned fingerprints —
+  # and that is exactly why it kept coming back. A fingerprint is <commit>:<path>:<rule>:
+  # <line>, so it stops matching the moment the file lands in a new commit. It re-fired
+  # under four different commits (138b2add, acd5e09a, 7db5a406, 5f11dece). A path allowlist
+  # is stable across commits, which is what this finding needed in the first place.
+  '''services/selection-list-service/tests/''',
+  # .gitleaksignore itself. Its fingerprint lines are <commit>:<path>:<rule>:<line>, and
+  # generic-api-key matches the 40-hex commit SHA inside them — the file whose only job is
+  # to record findings gets reported as one. Self-reference, not a credential.
+  '''^\.gitleaksignore$''',
 ]
 regexes = [
   # @fuzefront/auth AuthMode type-union string literals

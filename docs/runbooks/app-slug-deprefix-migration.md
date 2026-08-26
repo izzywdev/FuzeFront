@@ -1,5 +1,30 @@
 # Runbook — de-prefixing an app slug (`fuzeservice` → `service`)
 
+> # ⛔ RETIRED 2026-08-19 — DO NOT RUN THIS PROCEDURE
+>
+> **The policy this runbook implements has been reversed by owner ruling.** The `fuze`
+> prefix now **stays on the slug** and comes off the **display string** (`name`,
+> `menuLabel`) instead. Existing registrations are to be **left exactly as they are** —
+> the de-prefixed slugs already live (`deploy`, `call`, `executive`, `finance`, `keys`,
+> `market`, `picker`) are not to be migrated, and the prefixed ones (`fuzex`, `fuzebi`)
+> are not to be "corrected".
+>
+> Every step below still describes the mechanics accurately, and the losses it warns
+> about — orphaned Permit grants, CASCADE-deleted `app_installations` rows — are exactly
+> why the gate that used to demand this migration was wrong. It is kept as the record of
+> what such a migration costs, should a genuine one ever be needed.
+>
+> **The canonical statement of the current rule** — the owner's own words on why
+> the prefix question was always about the menu label, not the slug — is in the
+> root [`CLAUDE.md`](../../CLAUDE.md) § "`slug`, display name, and the federated
+> serve path are THREE INDEPENDENT questions". The package-level enforcement
+> detail (what the validator actually checks) is in
+> [`packages/onboarding-kit/README.md`](../../packages/onboarding-kit/README.md).
+>
+> **The measured state table below is a snapshot from when this was written. It is
+> history, not a to-do list.**
+
+
 **Audience:** the platform owner. **Not an agent task.** Every step here touches the
 live registry, live Permit policy, or live install records. There is no dry-run mode for
 the Permit half.

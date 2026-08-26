@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import type { Overrides } from './classify.js';
 import type { OpenApiDoc } from './spec.js';
+import { loadDescriptionCacheFile, resolveDescriptions, type ResolvedDescriptions } from './descriptions.js';
 
 export interface GatewayConfig {
   /** Product this pod serves, e.g. "fuzeservice". Used as the MCP server name. */
@@ -20,6 +21,13 @@ export interface GatewayConfig {
   /** Per-product mutation overrides. */
   overrides: Overrides;
   port: number;
+  /**
+   * Build-time LLM-generated tool descriptions, resolved against a
+   * hash of the spec/overrides this pod actually loaded. `mode` tells the
+   * caller (main.ts) whether the cache was usable so a degraded boot is
+   * logged, never silently indistinguishable from a good one.
+   */
+  descriptions: ResolvedDescriptions;
 }
 
 function required(name: string): string {
@@ -30,8 +38,7 @@ function required(name: string): string {
   return v.trim();
 }
 
-export function loadDocument(path: string): OpenApiDoc {
-  const raw = readFileSync(path, 'utf8');
+function parseDocument(path: string, raw: string): OpenApiDoc {
   const doc = (path.endsWith('.json') ? JSON.parse(raw) : parseYaml(raw)) as OpenApiDoc;
   if (!doc || typeof doc !== 'object' || !doc.paths) {
     throw new Error(`${path} does not look like an OpenAPI document (no "paths").`);
@@ -39,14 +46,21 @@ export function loadDocument(path: string): OpenApiDoc {
   return doc;
 }
 
-export function loadOverrides(path: string | undefined): Overrides {
-  if (!path) return {};
-  const raw = readFileSync(path, 'utf8');
+export function loadDocument(path: string): OpenApiDoc {
+  return parseDocument(path, readFileSync(path, 'utf8'));
+}
+
+function parseOverrides(path: string, raw: string): Overrides {
   const parsed = (path.endsWith('.json') ? JSON.parse(raw) : parseYaml(raw)) as
     | { tools?: Overrides }
     | Overrides;
   const tools = (parsed as { tools?: Overrides }).tools ?? (parsed as Overrides);
   return tools ?? {};
+}
+
+export function loadOverrides(path: string | undefined): Overrides {
+  if (!path) return {};
+  return parseOverrides(path, readFileSync(path, 'utf8'));
 }
 
 export function loadConfig(): GatewayConfig {
@@ -62,11 +76,24 @@ export function loadConfig(): GatewayConfig {
     }
   }
 
+  const specPath = required('MCP_OPENAPI_SPEC');
+  const specRaw = readFileSync(specPath, 'utf8');
+  const overridesPath = process.env.MCP_TOOL_OVERRIDES;
+  const overridesRaw = overridesPath ? readFileSync(overridesPath, 'utf8') : '';
+
+  // The cache is OPTIONAL (MCP_DESCRIPTIONS_CACHE unset -> resolveDescriptions
+  // reports fallback-no-cache) and its hash is checked against these SAME raw
+  // bytes, so a cache generated for a different spec/overrides revision is
+  // detected as stale rather than silently applied to the wrong operations.
+  const descriptionCache = loadDescriptionCacheFile(process.env.MCP_DESCRIPTIONS_CACHE);
+  const descriptions = resolveDescriptions(descriptionCache, specRaw, overridesRaw);
+
   return {
     product: required('MCP_PRODUCT'),
     upstreamBaseUrl: required('MCP_UPSTREAM_BASE_URL'),
-    spec: loadDocument(required('MCP_OPENAPI_SPEC')),
-    overrides: loadOverrides(process.env.MCP_TOOL_OVERRIDES),
+    spec: parseDocument(specPath, specRaw),
+    overrides: overridesPath ? parseOverrides(overridesPath, overridesRaw) : {},
     port: Number(process.env.PORT ?? 8081),
+    descriptions,
   };
 }

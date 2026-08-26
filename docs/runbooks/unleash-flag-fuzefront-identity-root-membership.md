@@ -1,5 +1,13 @@
 # Flag — `fuzefront.identity.root-membership` (FF-EPIC-17-S1/S2)
 
+> **SUPERSEDED (rollout strategy only) — 2026-08-17.** The owner decided to
+> take all four FF-EPIC-17 identity flags straight to GA (100%, no segment)
+> rather than the staged `developers`-segment → percentage-ramp plan below.
+> Apply **`docs/runbooks/unleash-enable-ff-epic-17-flags.md`** instead for
+> the actual Unleash steps. This document's flag-record metadata (owner,
+> context contract, consumers, removal criterion) remains authoritative —
+> only the "Rollout strategy — three stages" section is superseded.
+
 **Status of this document: AUTHORED, NOT YET APPLIED.** The live Unleash admin API
 (`unleash.prod.fuzefront.com`, Cloudflare-Access-gated; in-cluster
 `fuzefront-unleash:4242`) is not reachable from this environment — no `kubectl`,

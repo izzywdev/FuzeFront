@@ -12,7 +12,8 @@ import { ROOT_ORG_ID } from './015_seed_root_platform_organization'
  * Runs UNCONDITIONALLY (migrations are never flag-gated — see
  * `fuzefront.identity.root-membership` in `organizationProvisioning.ts` for
  * the flag that gates the PROVISIONING *behavior* this migration backfills
- * for). Two independent, idempotent steps:
+ * for). Two steps, BOTH gated on the same precondition (see the 2026-08-23
+ * amendment below — they are NOT independent):
  *
  *  (a) BACKFILL — every user without an existing `organization_memberships`
  *      row in the root org gets one with `role='member', status='active'`.
@@ -63,6 +64,33 @@ import { ROOT_ORG_ID } from './015_seed_root_platform_organization'
  * exists" regression case for the P1 above); this monolith copy is
  * byte-identical SQL, so the same proof applies.
  *
+ * PRECONDITION on BOTH (a) and (b): the `ROOT_ORG_ID` row must exist. It is a
+ * hard-coded constant, not a lookup, and migration 015 has two paths that
+ * legitimately leave it absent (adopt-a-differently-identified platform org;
+ * defer when no user exists). (a) verifies the row before inserting anything
+ * that references it — an unverified reference is a 23503 that aborts the
+ * migration chain and crash-loops the service on boot, which is exactly what
+ * happened in prod on 2026-08-20 (#750). The pre-existing tests only ever ran
+ * against a database where 015 had succeeded, so this path was never
+ * exercised.
+ *
+ * 2026-08-23 AMENDMENT — (b) is now gated on the SAME precondition as (a).
+ * Between #750/#751 (2026-08-20, commit c472efa6) and this amendment, (b)
+ * ran unconditionally even when (a) skipped — on a database where the root
+ * org does not exist, every `type='personal'` org got reclassified to
+ * `type='organization'` with NO root-org membership to fall back on. That
+ * stranded every affected user: `WorkspaceProvisioningGate.tsx` never finds
+ * a `type='personal'` org and never reaches `ready`, and `ensurePersonalOrg`'s
+ * idempotency check (`{ owner_id, type: 'personal' }`) misses and tries to
+ * create a second personal org, which the `slug` unique constraint then
+ * rejects. See the forward-repair migration
+ * (`025_repair_personal_org_over_reclassification.ts`) for restoring rows
+ * already damaged by the unconditional window — editing this file does NOT
+ * re-run it on a database that already applied migration 022 (knex records
+ * applied migrations by name), so this edit protects only databases that
+ * have not yet run 022; already-affected production rows need the forward
+ * repair migration.
+ *
  * DEPLOY NOTE: `master` is deploy-on-push and this migration runs on deploy —
  * land in a deploy window (`deploy-window` label, FF-EPIC-17-S2 DoD).
  */
@@ -103,15 +131,37 @@ export async function up(knex: Knex): Promise<void> {
     )
   }
 
-  // (b) Reclassify type='personal' -> type='organization'. Nothing deleted.
-  const reclassifyResult = await knex.raw(
-    `UPDATE organizations
-       SET type = 'organization', updated_at = NOW()
-     WHERE type = 'personal'`
-  )
-  console.log(
-    `[022] personal-org reclassify: updated ${reclassifyResult.rowCount ?? 0} row(s)`
-  )
+  // (b) Reclassify type='personal' -> type='organization'.
+  //
+  // GATED ON THE SAME PRECONDITION AS (a) — see #750/#751/prod incident
+  // 2026-08-23. This step used to run unconditionally on the theory that it
+  // was "independent of (a) and of the root org". That was the bug: the
+  // whole point of root-membership backfill is that every user gets a
+  // `organization_memberships` row in the root org to fall back on once
+  // their personal-org classification is gone. Reclassifying `personal` ->
+  // `organization` when (a) could not run (root org absent) strands the
+  // user with NEITHER a `type='personal'` org NOR a root-org membership —
+  // every consumer that keys off `type='personal'` (the frontend
+  // provisioning gate, `ensurePersonalOrg`'s idempotency check) breaks, and
+  // there is nothing to fall back to. Nothing deleted either way — this
+  // only widens the guard, it does not change what (b) does when it runs.
+  if (rootOrg) {
+    const reclassifyResult = await knex.raw(
+      `UPDATE organizations
+         SET type = 'organization', updated_at = NOW()
+       WHERE type = 'personal'`
+    )
+    console.log(
+      `[022] personal-org reclassify: updated ${reclassifyResult.rowCount ?? 0} row(s)`
+    )
+  } else {
+    console.error(
+      `[022] SKIPPING personal-org reclassify: organization ${ROOT_ORG_ID} does not ` +
+        'exist, so reclassifying away type=\'personal\' now would strand every ' +
+        'affected user with neither a personal org nor a root-org membership. ' +
+        'Will retry reclassify on a later boot once the root org exists.'
+    )
+  }
 }
 
 export async function down(_knex: Knex): Promise<void> {

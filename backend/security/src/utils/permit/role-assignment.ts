@@ -29,10 +29,22 @@ export async function assignRoleInPermit(
 }
 
 /**
- * Unassigns a role from a user in an organization (tenant)
+ * Unassigns a role from a user in an organization (tenant).
+ *
+ * `resource_instance` IS accepted (unlike an earlier revision of this
+ * signature, which omitted it): Permit identifies a role assignment by the
+ * full (user, role, tenant, resource_instance) tuple, so an instance-scoped
+ * assignment (ReBAC, e.g. `SelectionList:sl_123`) is a DIFFERENT record from
+ * the tenant-wide one and is not removed by an unassign call that leaves
+ * `resource_instance` off. Dropping it silently no-ops the revocation of a
+ * scoped grant while still returning success — a caller believes access was
+ * revoked when Permit's state is unchanged. See
+ * `PermitAuthorizationProvider.revoke()`, the only caller that has a
+ * `resource` to pass; the organization-role helpers below intentionally
+ * never scope by instance and are unaffected by this being optional.
  */
 export async function unassignRoleInPermit(
-  assignment: Omit<RoleAssignment, 'resource_instance'>
+  assignment: RoleAssignment
 ): Promise<boolean> {
   try {
     await permit.api.roleAssignments.unassign(assignment)

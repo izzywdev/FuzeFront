@@ -145,8 +145,14 @@ jobs:
           }
 
       # ── Backend integration suite against the live cluster ───────────────
+      # `continue-on-error: true` here used to be redundant dead configuration: the
+      # run script already turns a suite failure into `npm run test:integration -w
+      # backend || echo "::warning ..."`, so the step's own exit code was ALWAYS 0
+      # and continue-on-error never had anything to catch. Removed rather than kept
+      # as decoration — gate-vacuous-check (harden-gate.yml) flags exactly this
+      # shape (continue-on-error wrapping a check-tool step) and dead config that
+      # merely LOOKS like an intentional escape hatch is worse than none.
       - name: Run backend integration suite (against cluster Postgres)
-        continue-on-error: true
         env:
           NODE_ENV: test
         run: |

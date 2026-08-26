@@ -5,7 +5,7 @@
  * `PgNamespaceRepository`/`PgKeyDefinitionRepository`/`PgValueRepository`
  * implement) — the SQL layer is covered separately by the repository unit
  * tests (mocked `pg.Pool`), so this suite exercises route wiring: auth,
- * Permit ordering, pagination envelope/clamp, ETag/If-None-Match, hidden-key
+ * authz ordering, pagination envelope/clamp, ETag/If-None-Match, hidden-key
  * omission, and the frozen-contract response shapes.
  */
 
@@ -14,7 +14,7 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { createConfigReadRouter } from '../../src/routes/config-read.routes';
-import { _setPermitClientForTesting, makeNoOpProxy } from '../../src/middleware/permit';
+import { _setAuthzClientForTesting, makeNoOpProxy } from '../../src/middleware/authz';
 import { NamespaceRepository, ListNamespacesArgs, ListNamespacesResult } from '../../src/repositories/namespace.repository';
 import {
   KeyDefinitionRepository,
@@ -195,10 +195,10 @@ function makeApp(deps: {
 }
 
 beforeEach(() => {
-  _setPermitClientForTesting({ check: jest.fn().mockResolvedValue(true) });
+  _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: true }), bulkCheck: jest.fn() });
 });
 afterEach(() => {
-  _setPermitClientForTesting(makeNoOpProxy());
+  _setAuthzClientForTesting(makeNoOpProxy());
 });
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
@@ -268,8 +268,8 @@ describe('GET /v1/namespaces', () => {
     expect(new Set(seen).size).toBe(27);
   });
 
-  it('403s when Permit denies', async () => {
-    _setPermitClientForTesting({ check: jest.fn().mockResolvedValue(false) });
+  it('403s when the Security API denies', async () => {
+    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: false }), bulkCheck: jest.fn() });
     const { app } = makeApp({ namespaces: [makeNamespace()] });
 
     const res = await request(app).get('/v1/namespaces').set('Authorization', `Bearer ${token()}`);
@@ -307,8 +307,8 @@ describe('GET /v1/namespaces/:namespace/keys', () => {
 
   it('403s a non-admin caller passing includeHidden=true, without leaking the hidden keys', async () => {
     // First call ('read') allowed, second ('admin') denied.
-    const check = jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
-    _setPermitClientForTesting({ check });
+    const check = jest.fn().mockResolvedValueOnce({ allow: true }).mockResolvedValueOnce({ allow: false });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() });
     const ns = makeNamespace({ namespace: 'fuzefront.chat' });
     const { app } = makeApp({ namespaces: [ns], definitions: [makeDefinition(ns.id, { isHidden: true })] });
 
@@ -320,7 +320,7 @@ describe('GET /v1/namespaces/:namespace/keys', () => {
   });
 
   it('includes isHidden keys for an admin passing includeHidden=true', async () => {
-    _setPermitClientForTesting({ check: jest.fn().mockResolvedValue(true) });
+    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: true }), bulkCheck: jest.fn() });
     const ns = makeNamespace({ namespace: 'fuzefront.chat' });
     const hidden = makeDefinition(ns.id, { key: 'hidden.key', isHidden: true });
     const { app } = makeApp({ namespaces: [ns], definitions: [hidden] });
@@ -432,7 +432,7 @@ describe('GET /v1/config', () => {
   });
 
   it('403s BEFORE checking namespace existence — leaks nothing about whether the scope exists (S5 AC4)', async () => {
-    _setPermitClientForTesting({ check: jest.fn().mockResolvedValue(false) });
+    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: false }), bulkCheck: jest.fn() });
     const { app } = makeApp({}); // no namespaces at all — would 404 if reached
 
     const res = await request(app)

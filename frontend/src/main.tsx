@@ -13,6 +13,7 @@ import App from './App.tsx'
 // LanguageSelector — depend on. Imported before index.css so the host's own
 // color theme (defined there) still wins where the two overlap.
 import '@fuzefront/design-system/styles.css'
+import '@fuzefront/auth-ui/styles.css'
 import './index.css'
 import { registerServiceWorker } from './registerServiceWorker'
 

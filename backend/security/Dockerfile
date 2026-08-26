@@ -18,43 +18,18 @@ COPY backend/security/package.json ./backend/security/
 # manifest MUST be present so `npm install` links it from the local workspace
 # instead of trying to fetch @izzywdev/fuzefront-identity@1.0.0 from the registry.
 COPY packages/identity/package.json ./packages/identity/
-# @fuzefront/feature-flags (FF-EPIC-17 rootMembershipFlag.ts) is deliberately
-# NOT a declared `dependency` in backend/security/package.json — adding it
-# there previously broke this build (a registry lookup for an unpublished
-# scoped package; the security-service consumer uses a lazy `require()`
-# instead, see utils/rootMembershipFlag.ts). Its manifest still needs to be
-# present here so `npm install`, which resolves every workspace listed in the
-# root package.json regardless of cross-package dependency edges, creates the
-# node_modules/@fuzefront/feature-flags workspace symlink the lazy require
-# resolves at runtime.
+# @fuzefront/feature-flags is a workspace package (packages/feature-flags/).
+# Its manifest MUST be present so `npm install` links it from the local workspace
+# instead of trying to fetch @fuzefront/feature-flags@1.0.0 from the registry
+# (where it is not published — it is GitHub Packages-only).
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 
-# Two-step install — DO NOT collapse back to a single `npm install
-# --no-package-lock`. That was tried (and reverted) while wiring
-# @fuzefront/feature-flags in: a full --no-package-lock re-resolve ignores
-# EVERY pinned version in package-lock.json, not just the one broken entry
-# below, and picked up whatever was newest on the registry at build time —
-# concretely, @openfeature/web-sdk 1.10.0 (locked: 1.9.0) with a changed .d.ts
-# surface (`Client.addHandler`/`OpenFeatureAPI.close` renamed/removed), which
-# broke `packages/feature-flags`'s tsup `dts` build. Two lockfile-respecting
-# steps instead:
-#   1. plain `npm install` — resolves everything (typescript, the OpenFeature
-#      SDKs, etc.) from package-lock.json, i.e. the exact versions already
-#      tested elsewhere (this is how backend/Dockerfile installs the same
-#      packages/feature-flags workspace without incident).
-#   2. `npm install --no-save express-rate-limit@7.2.0` — step 1 alone PRUNES
-#      this backend/security dependency: package-lock.json's only
-#      express-rate-limit entries are pinned under the root and `backend`
-#      workspaces (7.5.1 / 7.2.0 respectively), and `backend/` isn't part of
-#      this image's build context, so the lockfile has no entry that maps to
-#      *this* workspace → npm drops it → the image crashed at boot with
-#      "Cannot find module 'express-rate-limit'". A second, explicitly
-#      versioned, non-lockfile-mutating (--no-save) install adds back just
-#      that one package without re-resolving (and so not perturbing) anything
-#      else. (Proper long-term fix: regenerate package-lock.json so the
-#      security workspace has its own entry.)
-RUN npm install
-RUN npm install --no-save express-rate-limit@7.2.0
+# --no-package-lock: the root package-lock.json is stale — express-rate-limit
+# (a backend/security dependency) is an orphan entry not linked to the security
+# workspace, so a lockfile-honoring `npm install` PRUNES it → the image crashes
+# at boot with "Cannot find module 'express-rate-limit'". Resolving fresh from
+# package.json installs it. (Proper long-term fix: regenerate package-lock.json.)
+RUN npm install --no-package-lock
 
 # Copy source
 COPY shared/ ./shared/
@@ -63,15 +38,12 @@ COPY packages/identity/ ./packages/identity/
 COPY packages/feature-flags/ ./packages/feature-flags/
 COPY backend/security/ ./backend/security/
 
-# Build the shared kafka sub-barrel, then core, then identity, then the flag
-# client, then security-service. @izzywdev/fuzefront-identity must be BUILT
-# here: its package `main` points at dist/, and auth.ts/organizations.ts
+# Build the shared kafka sub-barrel, then core, then identity, then
+# feature-flags, then security-service. @izzywdev/fuzefront-identity must be
+# BUILT here: its package `main` points at dist/, and auth.ts/organizations.ts
 # import mintId/toUuid at the top level, so an unbuilt (empty) package
-# crashloops the container at boot. @fuzefront/feature-flags must be BUILT
-# here for the same reason its `main` points at dist/ — rootMembershipFlag.ts's
-# lazy `require('@fuzefront/feature-flags')` would otherwise resolve to an
-# empty package and every flag read would silently fall through to its
-# in-code default (this is what left #615's flag permanently OFF).
+# crashloops the container at boot. @fuzefront/feature-flags likewise points at
+# dist/ and must be built before security-service compiles against it.
 RUN cd shared && npm run build:kafka
 RUN cd backend/core && npm run build
 RUN cd packages/identity && npm run build
@@ -95,12 +67,6 @@ COPY --from=build --chown=security:nodejs /app/backend/core/package.json ./backe
 # Ship built identity dist + manifest so the node_modules workspace symlink resolves.
 COPY --from=build --chown=security:nodejs /app/packages/identity/dist ./packages/identity/dist
 COPY --from=build --chown=security:nodejs /app/packages/identity/package.json ./packages/identity/package.json
-# Same reason: node_modules/@fuzefront/feature-flags is a symlink to
-# ../../packages/feature-flags — the target must exist at this exact relative
-# path in the production stage or the lazy require() in
-# rootMembershipFlag.ts/feature-flags.ts resolves to nothing.
-COPY --from=build --chown=security:nodejs /app/packages/feature-flags/dist ./packages/feature-flags/dist
-COPY --from=build --chown=security:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
 COPY --from=build --chown=security:nodejs /app/backend/security/dist ./backend/security/dist
 COPY --from=build --chown=security:nodejs /app/backend/security/package.json ./backend/security/package.json
 

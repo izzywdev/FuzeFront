@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/feature-flags",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "OpenFeature-based feature-flags client for FuzeFront, wrapping the Unleash provider with graceful degradation to defaults",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -54,5 +58,9 @@
       "import": "./dist/web.js",
       "require": "./dist/web.cjs"
     }
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

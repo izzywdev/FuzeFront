@@ -171,9 +171,18 @@ export function getPortalIdentityPolicy(row: { identity_policy?: unknown }): Por
   return parseJsonColumnWithDefaults(row.identity_policy, DEFAULT_IDENTITY_POLICY)
 }
 
-/** Generates a server-issued portal id matching `^prt_[A-Za-z0-9]{1,40}$`. */
+/**
+ * Generates a storage-form portal id (bare UUID v4 with dashes).
+ *
+ * Previously returned `prt_<hex32>` (UUID with dashes stripped). That legacy
+ * format is converted to bare UUID by migration 024_portal_typeid_backfill.
+ * New portals minted from this point forward store a bare UUID directly —
+ * consistent with the identifier standard (governance/identifier-standard.md
+ * §2) and with every other entity type. The `prt_` prefix appears only on the
+ * wire via `toWireId` when `fuzefront.identity.prefixed-ids` is ON.
+ */
 export function generatePortalId(): string {
-  return `prt_${uuidv4().replace(/-/g, '')}`
+  return uuidv4()
 }
 
 /**

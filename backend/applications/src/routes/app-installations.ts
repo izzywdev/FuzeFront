@@ -37,6 +37,18 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
+import { assertRefExists } from '@izzywdev/fuzefront-identity'
+import { isRefEnforceEnabled } from '../app-registry/flags'
+import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
+
+// Module-level singleton — KnexRefIndexRepository is stateless (wraps db).
+let _refStore: KnexRefIndexRepository | null = null
+function getRefStore(): KnexRefIndexRepository {
+  if (!_refStore) _refStore = new KnexRefIndexRepository(db)
+  return _refStore
+}
 
 const router = express.Router()
 
@@ -254,18 +266,30 @@ router.get('/installed', installReadRateLimiter, authenticateToken, async (req: 
       )
       .orderBy('apps.name')) as any[]
 
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     res.json(
-      rows.map(row => ({
-        ...toInstallation(row as InstallationRow),
-        app: {
-          id: row.app_id,
-          name: row.app_name,
-          url: row.app_url,
-          iconUrl: row.app_icon_url,
-          isActive: row.app_is_active,
-          scopeLevel: row.app_scope_level ?? 'both',
-        },
-      }))
+      rows.map(row => {
+        const installation = prefixDtoIds(toInstallation(row as InstallationRow), prefixed, {
+          appId: 'app',
+          userId: 'user',
+          organizationId: 'organization',
+          installedBy: 'user',
+        })
+        const app = prefixDtoIds(
+          {
+            id: row.app_id,
+            name: row.app_name,
+            url: row.app_url,
+            iconUrl: row.app_icon_url,
+            isActive: row.app_is_active,
+            scopeLevel: row.app_scope_level ?? 'both',
+          },
+          prefixed,
+          { id: 'app' }
+        )
+        return { ...installation, app }
+      })
     )
   } catch (error) {
     console.error('Error listing installed apps:', error)
@@ -305,10 +329,20 @@ router.get('/:id/installations', installReadRateLimiter, authenticateToken, asyn
       })
       .orderBy('created_at')) as InstallationRow[]
 
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    const outerDto = prefixDtoIds({ appId: app.id }, prefixed, { appId: 'app' })
     res.json({
-      appId: app.id,
+      appId: outerDto.appId,
       scopeLevel: app.scope_level ?? 'both',
-      installations: rows.map(toInstallation),
+      installations: rows.map(row =>
+        prefixDtoIds(toInstallation(row), prefixed, {
+          appId: 'app',
+          userId: 'user',
+          organizationId: 'organization',
+          installedBy: 'user',
+        })
+      ),
     })
   } catch (error) {
     console.error('Error listing app installations:', error)
@@ -332,6 +366,8 @@ router.get('/:id/installations', installReadRateLimiter, authenticateToken, asyn
 router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (req: any, res) => {
   try {
     const userId = req.user.id
+    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const memberOrgIds = await getMemberOrgIds(userId)
     const app = await loadVisibleApp(req.params.id, memberOrgIds)
     if (!app) {
@@ -402,6 +438,23 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
       }
       organizationId = body.organizationId
 
+      // FFRNT P2 — L1 referential-integrity check (identifier-standard §5).
+      // Assert the organizationId is known to the local ref_index projection
+      // before paying the cost of a membership lookup.
+      // OFF (default): warn + continue; ON: hard-fail with 422.
+      const refMode = (await isRefEnforceEnabled({ organizationId, userId }))
+        ? 'enforce'
+        : 'warn'
+      try {
+        await assertRefExists(getRefStore(), 'organization', organizationId, { mode: refMode })
+      } catch {
+        return res.status(422).json({
+          error: 'unprocessable_entity',
+          message: 'Organization not found',
+          code: 'ORG_REF_MISSING',
+        })
+      }
+
       const role = await getMembershipRole(userId, organizationId)
       if (role === null) {
         // Not a member: 404 on the ORG, same non-disclosure rule as the app.
@@ -442,7 +495,12 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
 
     if (existing) {
       return res.status(200).json({
-        installation: toInstallation(existing),
+        installation: prefixDtoIds(toInstallation(existing), prefixed, {
+          appId: 'app',
+          userId: 'user',
+          organizationId: 'organization',
+          installedBy: 'user',
+        }),
         alreadyInstalled: true,
       })
     }
@@ -468,7 +526,12 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
     await syncInstallCount(app.id)
 
     res.status(201).json({
-      installation: toInstallation(inserted),
+      installation: prefixDtoIds(toInstallation(inserted), prefixed, {
+        appId: 'app',
+        userId: 'user',
+        organizationId: 'organization',
+        installedBy: 'user',
+      }),
       alreadyInstalled: false,
     })
   } catch (error: any) {

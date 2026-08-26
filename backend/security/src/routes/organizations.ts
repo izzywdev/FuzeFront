@@ -1,7 +1,9 @@
 import express from 'express'
 import { v4 as uuidv4 } from 'uuid'
-import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
+import { mintId, toUuid, fromUuid } from '@izzywdev/fuzefront-identity'
 import crypto from 'crypto'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
   PermissionMiddleware,
@@ -104,19 +106,6 @@ async function requireOrgAdminOrOwner(userId: string, orgId: string): Promise<bo
     .whereIn('role', ['owner', 'admin'])
     .first()
   return !!membership
-}
-
-// Count an org's active owners. The "an org always keeps at least one owner"
-// invariant guard uses this to refuse removing the LAST owner, so an org can
-// never be left ownerless through the member-management routes.
-async function countActiveOwners(orgId: string): Promise<number> {
-  const row = await db('organization_memberships')
-    .where('organization_id', orgId)
-    .where('status', 'active')
-    .where('role', 'owner')
-    .count('* as count')
-    .first()
-  return parseInt(((row?.count as string) ?? '0'), 10)
 }
 
 // POST /api/organizations - Create a new organization
@@ -261,7 +250,9 @@ router.post('/', authenticateToken, async (req: any, res) => {
       )
     }
 
-    res.status(201).json(organization)
+    const flagCtx = { orgId: organizationId, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    res.status(201).json(prefixDtoIds(organization as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
   } catch (error: any) {
     console.error('Error creating organization:', error)
 
@@ -399,8 +390,13 @@ router.get('/', authenticateToken, async (req: any, res) => {
         (org.owner_id === req.user.id ? 'owner' : null),
     }))
 
+    const flagCtx = { userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    const prefixedOrgs = transformedOrganizations.map(org =>
+      prefixDtoIds(org as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' })
+    )
     res.json({
-      organizations: transformedOrganizations,
+      organizations: prefixedOrgs,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -481,7 +477,9 @@ router.get(
           (organization.owner_id === req.user.id ? 'owner' : null),
       }
 
-      res.json(result)
+      const flagCtx = { orgId: id, userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.json(prefixDtoIds(result as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
     } catch (error: any) {
       console.error('Error fetching organization:', error)
       res.status(500).json({ error: 'Failed to fetch organization' })
@@ -584,7 +582,9 @@ router.put(
         updated_at: updatedOrganization.updated_at,
       }
 
-      res.json(result)
+      const flagCtx = { orgId: id, userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.json(prefixDtoIds(result as any, prefixed, { id: 'organization', owner_id: 'user', parent_id: 'organization' }))
     } catch (error: any) {
       console.error('Error updating organization:', error)
 
@@ -685,7 +685,12 @@ router.get('/:id/invitations', authenticateToken, async (req: any, res) => {
       .whereIn('status', ['pending'])
       .orderBy('created_at', 'desc')
 
-    res.json({ invitations })
+    const flagCtx = { orgId: id, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    const prefixedInvitations = invitations.map((inv: any) =>
+      prefixDtoIds(inv, prefixed, { id: 'invitation', organization_id: 'organization', invited_by: 'user' })
+    )
+    res.json({ invitations: prefixedInvitations })
   } catch (error: any) {
     console.error('Error listing invitations:', error)
     res.status(500).json({ error: 'Failed to list invitations' })
@@ -767,15 +772,11 @@ router.post('/:id/invitations', authenticateToken, async (req: any, res) => {
       console.error('Failed to publish invite email event (non-fatal):', emailErr)
     }
 
+    const flagCtxInv = { orgId: id, userId: req.user?.id }
+    const prefixedInv = await isPrefixedIdsEnabled(flagCtxInv)
+    const invitationDto = { id: invitationId, organizationId: id, email: normalizedEmail, role, expiresAt, status: 'pending' }
     res.status(201).json({
-      invitation: {
-        id: invitationId,
-        organizationId: id,
-        email: normalizedEmail,
-        role,
-        expiresAt,
-        status: 'pending',
-      },
+      invitation: prefixDtoIds(invitationDto, prefixedInv, { id: 'invitation', organizationId: 'organization' }),
     })
   } catch (error: any) {
     console.error('Error creating invitation:', error)
@@ -1038,23 +1039,6 @@ const ORG_ROLE_CATALOG: { key: string; name: string; assignable: boolean }[] = [
  *                           properties:
  *                             key: { type: string }
  *                             name: { type: string }
- *                 platformRoles:
- *                   description: >-
- *                     FF-EPIC-17-S8 — platform-staff roles (currently just
- *                     "Employee") that sit ABOVE the org-assignable roles
- *                     above: never grantable via an org membership row, held
- *                     only via the ReBAC `org-admin`-on-root grant. Present
- *                     only while `fuzefront.identity.employee-console` is ON.
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       key: { type: string }
- *                       name: { type: string }
- *                       description: { type: string }
- *                       rebacRole: { type: string }
- *                       rebacScope: { type: string }
- *                       assignable: { type: boolean }
  *       403:
  *         description: Caller is not an active member of the organization
  */
@@ -1096,17 +1080,7 @@ router.get('/:id/roles', authenticateToken, async (req: any, res) => {
       })),
     }))
 
-    // FF-EPIC-17-S8 — "Employee" (platform staff, ReBAC org-admin-on-root) is
-    // NOT an org-assignable role (see ORG_ROLE_CATALOG above, which this never
-    // joins into), so it is surfaced in a separate `platformRoles` field
-    // rather than mixed into `roles`. Flag-gated: OFF keeps this endpoint's
-    // response byte-identical to before this story.
-    const responseBody: Record<string, unknown> = { roles, resources }
-    if (await isEmployeeConsoleEnabled({ userId: req.user?.id })) {
-      responseBody.platformRoles = [EMPLOYEE_ROLE_CATALOG_ENTRY]
-    }
-
-    res.json(responseBody)
+    res.json({ roles, resources })
   } catch (error: any) {
     console.error('Error listing organization roles:', error)
     res.status(500).json({ error: 'Failed to list organization roles' })
@@ -1253,7 +1227,13 @@ router.get('/:id/members', authenticateToken, async (req: any, res) => {
       invited_at: null,
     }))
 
-    res.json({ members, pagination: { page, pageSize, total } })
+    const flagCtx = { orgId: id, userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    const prefixedMembers = members.map((m: any) => ({
+      ...prefixDtoIds(m, prefixed, { id: 'membership' }),
+      user: prefixDtoIds(m.user, prefixed, { id: 'user' }),
+    }))
+    res.json({ members: prefixedMembers, pagination: { page, pageSize, total } })
   } catch (error: any) {
     console.error('Error listing members:', error)
     res.status(500).json({ error: 'Failed to list members' })
@@ -1439,7 +1419,12 @@ router.get('/:id/directory', authenticateToken, async (req: any, res) => {
 
     const page = Math.floor(offset / limit) + 1
 
-    res.json({ items, page, pageSize: limit, total })
+    const flagCtxDir = { orgId: id, userId: req.user?.id }
+    const prefixedDir = await isPrefixedIdsEnabled(flagCtxDir)
+    const prefixedItems = items.map((item: any) =>
+      prefixDtoIds(item, prefixedDir, { userId: 'user' })
+    )
+    res.json({ items: prefixedItems, page, pageSize: limit, total })
   } catch (error: any) {
     console.error('Error listing organization directory:', error)
     res.status(500).json({ error: 'Failed to list organization directory' })
@@ -1522,15 +1507,11 @@ router.post('/:id/members', authenticateToken, async (req: any, res) => {
       console.error('Failed to publish invite email event (non-fatal):', emailErr)
     }
 
+    const flagCtxMem = { orgId: id, userId: req.user?.id }
+    const prefixedMem = await isPrefixedIdsEnabled(flagCtxMem)
+    const legacyInvDto = { id: invitationId, organizationId: id, email: normalizedEmail, role, expiresAt, status: 'pending' }
     res.status(201).json({
-      invitation: {
-        id: invitationId,
-        organizationId: id,
-        email: normalizedEmail,
-        role,
-        expiresAt,
-        status: 'pending',
-      },
+      invitation: prefixDtoIds(legacyInvDto, prefixedMem, { id: 'invitation', organizationId: 'organization' }),
     })
   } catch (error: any) {
     console.error('Error creating member invitation:', error)
@@ -1590,7 +1571,9 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) =>
       console.error(`Permit role update failed for membership ${memberId} (non-fatal):`, permitErr)
     }
 
-    res.json(updated)
+    const flagCtxRole = { orgId: id, userId: req.user?.id }
+    const prefixedRole = await isPrefixedIdsEnabled(flagCtxRole)
+    res.json(prefixDtoIds(updated, prefixedRole, { id: 'membership', user_id: 'user', organization_id: 'organization' }))
   } catch (error: any) {
     console.error('Error updating member role:', error)
     res.status(500).json({ error: 'Failed to update member role' })
@@ -1618,18 +1601,9 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: any, res)
       return res.status(404).json({ error: 'Member not found' })
     }
 
-    // Never let an org lose its last owner. Removing a non-last owner is fine
-    // (an org may have several owners); removing THE last owner would orphan the
-    // org, so it is refused with 409. Deactivating the org itself is a separate
-    // route that soft-deletes the org WITHOUT deleting membership rows, so this
-    // guard does not stand in the way of "unless the org is deleted".
+    // Protect owner memberships
     if (membership.role === 'owner') {
-      const activeOwners = await countActiveOwners(id)
-      if (activeOwners <= 1) {
-        return res.status(409).json({
-          error: 'Cannot remove the last owner of the organization',
-        })
-      }
+      return res.status(403).json({ error: 'Cannot remove the organization owner' })
     }
 
     await db('organization_memberships')

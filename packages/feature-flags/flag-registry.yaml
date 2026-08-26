@@ -71,7 +71,12 @@ flags:
     description: >
       Master switch for the multi-tenant portals feature (FF-EPIC-09-S4).
       Gates the portal bootstrap surface. Custom domains (see
-      fuzefront.platform.portal-domains) require BOTH flags.
+      fuzefront.platform.portal-domains) require BOTH flags. FF-EPIC-17-S7
+      additionally reuses it to gate the master-admin portal fleet console
+      (`/admin/portals`, `MasterAdminPortalsFlow`,
+      `@fuzefront/security-client` 0.7.0) rather than minting a new flag —
+      the fleet console has nothing to manage while the platform-wide
+      capability itself is off.
     owner: platform team
     removal_criterion: >
       When multi-tenant portals are GA and enabled for 100% of orgs.
@@ -79,7 +84,8 @@ flags:
     gates:
       - Portal shell and PortalLoginFlow boot surface
       - Custom-domain feature (conjunction with portal-domains)
-    web_exposed: false
+      - Master-admin portal fleet console (FF-EPIC-17-S7, UI-side)
+    web_exposed: true
     jira: ~
 
   - key: fuzefront.platform.portal-domains
@@ -230,7 +236,7 @@ flags:
       in selection-list-service/flags.ts.
     gates:
       - selection-list-service Helm deployment (service-side)
-      - "Selection Lists" shell left-sidebar nav entry (UI-side, S9)
+      - '"Selection Lists" shell left-sidebar nav entry (UI-side, S9)'
     web_exposed: true
     jira: FFRNT-201
     sub_tasks:
@@ -304,3 +310,80 @@ flags:
     jira: ~
     epic: FF-EPIC-17
     story: S4
+
+  - key: fuzefront.identity.member-directory
+    type: release
+    default: false
+    description: >
+      Gates the NEW root/portal member-directory surface (FF-EPIC-17-S5):
+      the paginated, server-side-searchable `GET /api/organizations/:id/directory`
+      endpoint (backend, #671) and its `/organizations/:id/directory` UI
+      (frontend, #672, design/frames/member-directory/**). Flag OFF => the
+      endpoint does not exist (404, zero regression — it is new surface, not
+      a modified one) and the directory link/route is hidden.
+    owner: backend-engineer (identity, FF-EPIC-17-S5)
+    removal_criterion: >
+      Delete once the member-directory UI is rolled out to 100% of users and
+      the flag-OFF (disabled) path is no longer exercised in prod; then drop
+      the flag checks in both the route and the frontend.
+    gates:
+      - "GET /api/organizations/:id/directory (backend/security/src/routes/organizations.ts)"
+      - "/organizations/:id/directory MemberDirectoryPage + OrganizationDetailPage link"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S5
+
+  - key: fuzefront.identity.prefixed-ids
+    type: release
+    default: false
+    description: >
+      Gates the TypeID-prefixed wire form on all entity-returning API responses
+      (FFRNT-185 step 4). When ON, response bodies carry prefixed TypeID strings
+      (e.g. `org_01h…`, `usr_01h…`) instead of bare UUIDs. The dual-accept
+      window — `configureIdentity({ legacyUuidTypes })` in each backend's
+      startup — ensures incoming bare UUIDs are still accepted during the client
+      migration period, so flipping this flag is safe for existing clients.
+      In-code default is OFF (fail-safe when Unleash is unreachable); Unleash
+      production strategy is global 100 % flexibleRollout.
+    owner: backend-engineer (identity, FFRNT-185)
+    removal_criterion: >
+      Delete once every entity type in FFRNT-185 has completed its dual-accept
+      window closure (removed from legacyUuidTypes), no call-site in the
+      codebase still references this flag, and the TypeID wire form is the sole
+      accepted format. Remove the flag from Unleash AND all isPrefixedIdsEnabled
+      call-sites in the same PR.
+    gates:
+      - "prefixDtoIds wired into all entity-returning route handlers (backend/src, backend/security/src, backend/applications/src)"
+      - "configureIdentity({ legacyUuidTypes }) set at startup in all three backends"
+    web_exposed: false
+    jira: FFRNT-185
+    epic: ~
+    story: step 4
+
+  - key: fuzefront.identity.employee-console
+    type: release
+    default: false
+    description: >
+      Gates the "Employee" formalization (FF-EPIC-17-S8, #655) and its
+      cross-org staff console (FF-EPIC-17-S9, #673): widening the root
+      org-admin grant trigger to also recognize the EXPLICIT `employee`
+      user-role marker (the legacy implicit `roles ~ admin` trigger is
+      unaffected and always active regardless of this flag), surfacing
+      "Employee" in the role catalog (`GET /api/organizations/:id/roles`),
+      and the `/staff` + `/staff/orgs/:id` cross-org console UI. Flag OFF
+      preserves today's implicit-admin-only behavior with zero regression.
+      Rollout convenience only — never replaces the ReBAC `org-admin`-on-root
+      grant / a `permit.check`.
+    owner: backend-engineer (identity, FF-EPIC-17-S8/S9)
+    removal_criterion: >
+      Delete once the Employee label + explicit-marker trigger + console are
+      100% rolled out and the flag-OFF path is no longer exercised in prod.
+    gates:
+      - "rootOrgAdmin.ts explicit employee-marker grant trigger (backend/src, backend/security/src)"
+      - "GET /api/organizations/:id/roles Employee catalog entry"
+      - "/staff, /staff/orgs/:id EmployeeConsoleFlow UI (SidePanel nav entry)"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S8/S9

@@ -117,4 +117,31 @@ jobs:
     secrets:
       POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
       POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
-      AUTHENTIK_ADMIN_TOKEN: ${{ secrets.AUTHENTIK_ADMIN_TOKEN }}
+      INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
+
+  # Live boundary probe: asserts Authentik's admin/API/application-list surface
+  # is NOT reachable on the public edge. Deliberately SEPARATE from the static
+  # `gate-authentik-public-paths` check in helm-validate.yml — that guard
+  # models Traefik's rendered-manifest routing; this one proves it on the
+  # ACTUAL edge, which is the only thing that would have caught the live
+  # incident this exists to prevent a recurrence of (app.fuzefront.com's
+  # public /applications route, live for an unknown period while every
+  # rendered-manifest check stayed green). No cluster credentials needed —
+  # pure black-box HTTP, same shape as the `health` job above. A failure here
+  # is a live security exposure: it must be LOUD (the job fails outright),
+  # never a silent skip.
+  authentik-security-boundary:
+    name: Authentik public boundary
+    needs: health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Self-test the comparator
+        run: ./deploy/scripts/check-authentik-live-boundary.sh --self-test
+      - name: Probe forbidden Authentik paths on the public edge
+        env:
+          APP_ORIGIN: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
+        run: |
+          auth_origin="https://auth.fuzefront.com"
+          ./deploy/scripts/check-authentik-live-boundary.sh "$APP_ORIGIN" "$auth_origin"

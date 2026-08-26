@@ -106,6 +106,9 @@ authentik:
 #   enabled: true
 
 # config-service (FF-EPIC-17-S7 / FFRNT-159): disabled locally by default.
-# Flip to enabled once config-service-secrets is sealed for the local cluster.
+# Flip to enabled once CONFIG_DB_PASSWORD exists in the local platform Secret —
+# the per-service `config-service-secrets` Secret no longer exists. Locally that
+# means setting the key by hand; sealing is only for clusters that run the
+# sealed-secrets controller.
 # configService:
 #   enabled: true

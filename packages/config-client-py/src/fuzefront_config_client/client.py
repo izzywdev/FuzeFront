@@ -14,7 +14,7 @@ Usage::
     from fuzefront_config_client import ConfigClient, Scope, ScopeType
 
     client = ConfigClient(
-        base_url="http://fuzefront-config-service:3013",
+        base_url="http://fuzefront-config-service:3011",
         token="<your-bearer-token>",
     )
     resolved = client.get_effective_config(
@@ -97,7 +97,7 @@ class ConfigClient:
     Typed client for the FuzeFront config-service.
 
     :param base_url:
-        Base URL of the service, e.g. ``http://fuzefront-config-service:3013``
+        Base URL of the service, e.g. ``http://fuzefront-config-service:3011``
         (Kubernetes Service DNS) or an ingress host. Only ``http``/``https``
         are accepted. Trailing slashes are stripped.
 

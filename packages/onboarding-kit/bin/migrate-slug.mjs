@@ -1,4 +1,29 @@
 #!/usr/bin/env node
+// ===================================================================================
+// RETIRED 2026-08-19 — DO NOT RUN THIS AGAINST THE LIVE REGISTRY.
+//
+// The policy this tool implements has been REVERSED by owner ruling. The `fuze` prefix
+// now STAYS on the slug and comes off the DISPLAY STRING (`name`, `menuLabel`) instead,
+// and existing registrations are to be left exactly as they are — the de-prefixed slugs
+// already live (deploy, call, executive, finance, keys, market, picker) are not to be
+// migrated, and the prefixed ones (fuzex, fuzebi) are not to be corrected.
+//
+// So there is no longer any product this tool should be pointed at. Its DELETE step is
+// precisely the destructive migration the ruling forbids: it orphans the product's
+// Permit grants and CASCADE-deletes its app_installations rows, which is the whole
+// reason the gate that used to demand it was wrong. See validate-registration.mjs.
+//
+// The code and its tests are kept rather than deleted, deliberately. The machinery —
+// verify-then-delete ordering, the status-parity guard, the refusal to trade "duplicate"
+// for "none" — is correct and hard-won, and a genuine slug migration may need it one
+// day. What is retired is the REASON to run it, not the implementation.
+//
+// If you are reading this because you want to change a slug: that is a two-step
+// register-then-delete against a live registry with irreversible side effects, and it
+// needs explicit owner consent for the --installs and --permit-grants flags. It is not
+// a cleanup task.
+// ===================================================================================
+//
 // Correct an app registered under a `Fuze`-prefixed slug: register it under the short
 // slug, verify the replacement is live, then delete the prefixed original.
 //

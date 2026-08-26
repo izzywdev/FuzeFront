@@ -2,6 +2,15 @@
   "name": "Configuration Management Console",
   "description": "Freezes the UX for the configuration console FF-EPIC-17/18 has no UI for: a settings editor that states where every value came from, a key catalog that states what every key is, and the secret + audit surfaces that make changes safe and attributable. Approving these frames approves the visual model AND the build inventory (flows / components / packages), so implementation cannot quietly invent a different architecture. The load-bearing states are contract, not decoration: locked-by-ancestor naming the ancestor from lockedBy, system-hidden keys ABSENT rather than filtered, unset vs pin-the-parent's-value as two distinct operations, VERSION_CONFLICT driving re-read-and-merge instead of blind retry, stale-value-vs-updated-definition, and secret reveal-once.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/config-ui/src/**",
+      "frontend/src/pages/ConfigPage.tsx",
+      "frontend/src/pages/ConfigCatalogPage.tsx",
+      "frontend/src/pages/ConfigAuditHistoryPage.tsx",
+      "frontend/src/pages/ConfigKeyDefinitionPage.tsx"
+    ]
+  },
   "plan": "docs/planning/epics/EPIC-19-configuration-management-ui.md",
   "entry": "index.html",
   "frames": [
@@ -430,5 +439,5 @@
       "CodeField — monospace JSON / duration input"
     ]
   },
-  "stamp": "f478ec63347c131793438651443fd8c45bbcc4debfdb1c8409a68c6fb09b4afb"
+  "stamp": "8a9d7194c7a8bf6ac9e3c4bd48847d4d569d0c46c95dd43d7f7a76f3f7dda7f7"
 }

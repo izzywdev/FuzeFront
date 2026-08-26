@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/shared",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Shared state library for FuzeFront platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -44,5 +48,9 @@
   },
   "peerDependencies": {
     "react": "^19.0.0"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

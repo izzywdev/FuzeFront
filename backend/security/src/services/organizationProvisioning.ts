@@ -2,22 +2,15 @@ import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../config/database'
 import { Organization } from '../types/shared'
-import {
-  createTenantInPermit,
-  deleteTenantFromPermit,
-} from '../utils/permit/tenant-management'
+import { createTenantInPermit } from '../utils/permit/tenant-management'
 import { syncUserToPermit } from '../utils/permit/user-sync'
-import {
-  assignOrganizationRole,
-  unassignOrganizationRole,
-} from '../utils/permit/role-assignment'
-import { deleteResourceInstance } from '../utils/permit/resource-instances'
-import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
-import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import {
   EventPublisher,
   defaultEventPublisher,
 } from './eventPublisher'
+import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { isRootMembershipEnabled } from '../utils/rootMembershipFlag'
 import type { Knex } from 'knex'
 import { logger } from '../lib/logger'
 
@@ -135,31 +128,109 @@ export async function ensurePersonalOrg(
 
   try {
     await db.transaction(async trx => {
-      await trx('organizations').insert({
-        id: orgId,
-        name: 'Personal',
-        slug: baseSlug,
-        parent_id: null,
-        owner_id: userId,
-        type: 'personal',
-        settings: JSON.stringify({}),
-        metadata: JSON.stringify({ personal: true }),
-        is_active: true,
-        provisioning_state: 'pending',
-      })
-      await trx('organization_memberships').insert({
-        id: toUuid(mintId('membership')),
-        user_id: userId,
-        organization_id: orgId,
-        role: 'owner',
-        status: 'active',
-        joined_at: new Date(),
-        permissions: JSON.stringify({}),
-        metadata: JSON.stringify({}),
-      })
+      // ON CONFLICT DO NOTHING on the partial unique index keeps concurrent
+      // races from surfacing a 23505 error. The SELECT below then retrieves
+      // whichever caller actually created the row.
+      await trx('organizations')
+        .insert({
+          id: orgId,
+          name: 'Personal',
+          slug: baseSlug,
+          parent_id: null,
+          owner_id: userId,
+          type: 'personal',
+          settings: JSON.stringify({}),
+          metadata: JSON.stringify({ personal: true }),
+          is_active: true,
+          provisioning_state: 'pending',
+        })
+        .onConflict(trx.raw("(owner_id) WHERE type = 'personal'"))
+        .ignore()
+
+      const actualOrg = await trx('organizations')
+        .where({ owner_id: userId, type: 'personal' })
+        .first()
+
+      if (!actualOrg) {
+        throw new Error(`Personal org still missing for user ${userId} after insert attempt`)
+      }
+
+      await trx('organization_memberships')
+        .insert({
+          id: toUuid(mintId('membership')),
+          user_id: userId,
+          organization_id: actualOrg.id,
+          role: 'owner',
+          status: 'active',
+          joined_at: new Date(),
+          permissions: JSON.stringify({}),
+          metadata: JSON.stringify({}),
+        })
+        .onConflict(['user_id', 'organization_id'])
+        .ignore()
     })
   } catch (error: any) {
-    // Concurrent create lost the race — return whatever personal org now exists.
+    // The `slug` unique constraint (`organizations_slug_unique`) is a
+    // DIFFERENT index than the `onConflict` arbiter above (the partial
+    // `uq_personal_org_per_owner` index, which only fires when the existing
+    // row's type is already 'personal'). Postgres only suppresses a conflict
+    // that matches the arbiter you named, so a 23505 on `slug` still throws
+    // out of the transaction above and lands here.
+    //
+    // Because `baseSlug` is fully deterministic (`personal-${userId}`), a
+    // slug collision here can only be THIS user's own row, already present
+    // under a DIFFERENT `type` — exactly the 2026-08-23 personal-org
+    // over-reclassification incident (migration 015's unconditional
+    // reclassify step; see `017_repair_personal_org_over_reclassification.ts`).
+    // Self-heal it here too, at login time, rather than surfacing a raw
+    // constraint violation and leaving the user's workspace looking "gone":
+    // flip that row back to `type='personal'` and ensure its owner
+    // membership exists, instead of blindly re-selecting by
+    // `type='personal'` (which would keep missing) and rethrowing.
+    if (error?.code === '23505' && String(error?.constraint) === 'organizations_slug_unique') {
+      const bySlug = await db('organizations').where({ slug: baseSlug }).first()
+      if (bySlug && bySlug.owner_id === userId) {
+        if (bySlug.type !== 'personal') {
+          logger.warn(
+            { userId, orgId: bySlug.id, previousType: bySlug.type },
+            'organizationProvisioning: self-healing mis-typed personal org'
+          )
+          await db('organizations')
+            .where({ id: bySlug.id })
+            .update({ type: 'personal', updated_at: db.fn.now() })
+        }
+        await db('organization_memberships')
+          .insert({
+            id: toUuid(mintId('membership')),
+            user_id: userId,
+            organization_id: bySlug.id,
+            role: 'owner',
+            status: 'active',
+            joined_at: new Date(),
+            permissions: JSON.stringify({}),
+            metadata: JSON.stringify({}),
+          })
+          .onConflict(['user_id', 'organization_id'])
+          .ignore()
+        const healed = await db('organizations').where({ id: bySlug.id }).first()
+        return rowToOrganization(healed)
+      }
+      // A slug collision NOT owned by this user should be unreachable (the
+      // slug is derived from userId), but never silently adopt someone
+      // else's organization — surface a clear diagnostic instead of the raw
+      // pg error.
+      logger.error(
+        { userId, baseSlug, conflictingOwnerId: bySlug?.owner_id },
+        'organizationProvisioning: slug collision owned by a different user — refusing to proceed'
+      )
+      throw new Error(
+        `ensurePersonalOrg: slug '${baseSlug}' already used by a different owner ` +
+          `(${bySlug?.owner_id ?? 'unknown'}) — refusing to proceed`
+      )
+    }
+
+    // Concurrent create lost the race (owner_id partial index) — return
+    // whatever personal org now exists.
     const raced = await db('organizations')
       .where({ owner_id: userId, type: 'personal' })
       .first()
@@ -172,63 +243,13 @@ export async function ensurePersonalOrg(
   }
 
   logger.info({ userId, orgId }, 'organizationProvisioning: personal org created')
-  const created = await db('organizations').where({ id: orgId }).first()
-  return rowToOrganization(created)
-}
-
-/**
- * FF-EPIC-17-S1 — flag-ON provisioning path. Idempotently ensures the user is
- * an active `member` of the root "FuzeFront" org (ROOT_ORG_ID) and does NOT
- * create a `type='personal'` org. Reuses `assignOrganizationRole` (same
- * helper `ensurePersonalOrg`'s owner-role step uses) so the Permit tenant
- * role assignment tracks the row — `assignOrganizationRole` never throws
- * (logs + swallows Permit failures), so a Permit outage never blocks
- * signup/login; the next self-heal call (`runInternalProvision` on the
- * following login) retries it.
- *
- * Re-running is a no-op: the DB upsert is guarded by both an existence check
- * and `onConflict(...).ignore()` (belt-and-braces against a concurrent
- * insert of the same (user_id, organization_id) pair racing this check).
- */
-export async function ensureRootMembership(
-  userId: string,
-  overrides?: Partial<ProvisioningDeps>
-): Promise<void> {
-  const { db } = getDeps(overrides)
-
-  const existing = await db('organization_memberships')
-    .where({ user_id: userId, organization_id: ROOT_ORG_ID })
+  // Re-select by (owner_id, type) rather than the minted `orgId` — with
+  // ON CONFLICT ... DO NOTHING above, a concurrent creator may have won the
+  // race and `orgId` may not be the row that actually exists.
+  const created = await db('organizations')
+    .where({ owner_id: userId, type: 'personal' })
     .first()
-
-  if (!existing) {
-    logger.info({ userId }, 'organizationProvisioning: creating root membership')
-    try {
-      await db('organization_memberships')
-        .insert({
-          id: toUuid(mintId('membership')),
-          user_id: userId,
-          organization_id: ROOT_ORG_ID,
-          role: 'member',
-          status: 'active',
-          joined_at: new Date(),
-          permissions: JSON.stringify({}),
-          metadata: JSON.stringify({}),
-        })
-        .onConflict(['user_id', 'organization_id'])
-        .ignore()
-      logger.info({ userId }, 'organizationProvisioning: root membership created')
-    } catch (error: any) {
-      logger.error(
-        { userId, err: error?.message },
-        'organizationProvisioning: root membership insert failed'
-      )
-      throw error
-    }
-  } else {
-    logger.debug({ userId }, 'organizationProvisioning: root membership already exists')
-  }
-
-  await assignOrganizationRole(userId, ROOT_ORG_ID, 'member')
+  return rowToOrganization(created)
 }
 
 async function ensureStepRows(db: Knex, orgId: string): Promise<void> {
@@ -403,74 +424,88 @@ export async function reconcileOrganizationProvisioning(
 }
 
 /**
- * Single-sourced entry point used by login self-heal AND the internal HTTP
- * endpoint (Plan D's provisioning-service). Ensures the user's identity is
- * provisioned, then reconciles every org they own that isn't yet active.
- *
- * FF-EPIC-17-S1 — behavior branches on `fuzefront.identity.root-membership`:
- *   OFF (default) — today's behavior, byte-identical: ensures a personal org
- *     (`type='personal'`) exists and returns its id as `personalOrgId`.
- *   ON — ensures the user is a root-org `member` instead (see
- *     `ensureRootMembership`); no personal org is created, so
- *     `personalOrgId` is `null`.
- * Either way, every org the user OWNS that isn't yet `active` is still
- * reconciled — unaffected by the flag.
+ * Idempotently upserts the user's membership in the root platform org (type=root).
+ * A dedicated root-org membership lets platform APIs enumerate all users without
+ * yielding exactly one row. Used by `runInternalProvision` when the
+ * `fuzefront.identity.root-membership` flag is ON.
  */
-/**
- * Tear down an organization's Permit access when `identity.org.deleted` fires.
- *
- * - `cascade='soft'` (the current org DELETE — `is_active=false`, reversible):
- *   revoke every active member's Permit role so no one retains access while the
- *   org is deactivated, but KEEP the Permit tenant + resource instance so a
- *   later reactivation restores cleanly.
- * - `cascade='hard'`: additionally delete the `Organization` resource instance
- *   and the Permit tenant.
- *
- * Best-effort + idempotent: Permit failures are logged, not thrown, so a retry
- * re-runs the same no-op-safe steps. Safe for an org that was never provisioned.
- */
-export async function deprovisionOrganization(
-  organizationId: string,
-  cascade: 'soft' | 'hard' = 'soft',
-  overrides?: Partial<ProvisioningDeps>
-): Promise<{
-  organizationId: string
-  cascade: 'soft' | 'hard'
-  rolesRevoked: number
-  tenantDeleted: boolean
-}> {
-  const { db } = getDeps(overrides)
-
-  const memberships = await db('organization_memberships')
-    .where({ organization_id: organizationId, status: 'active' })
-    .select('user_id', 'role')
-
-  let rolesRevoked = 0
-  for (const m of memberships) {
-    const ok = await unassignOrganizationRole(
-      m.user_id,
-      organizationId,
-      m.role as 'owner' | 'admin' | 'member' | 'viewer'
+export async function ensureRootMembership(
+  userId: string,
+  deps: { db: Knex }
+): Promise<void> {
+  // Same discipline as migrations 014/015: never insert a reference to a row
+  // you have not verified exists. `ROOT_ORG_ID` is a constant, not a lookup,
+  // and migration 014 has paths that legitimately leave the row absent — in
+  // which case this insert raises 23503 and fails provisioning for the user.
+  // Skipping is equivalent to the feature flag being OFF, which is strictly
+  // better than a failed signup, but it must be loud: it means the root org
+  // is missing, not that this user needed no membership.
+  const rootOrg = await deps.db('organizations').where({ id: ROOT_ORG_ID }).first()
+  if (!rootOrg) {
+    logger.error(
+      { userId, rootOrgId: ROOT_ORG_ID },
+      'ensureRootMembership: root organization does not exist — skipping (see migration 014)'
     )
-    if (ok) rolesRevoked++
+    return
   }
 
-  let tenantDeleted = false
-  if (cascade === 'hard') {
-    // Org resource instance key format is `<resource>:<key>` (see
-    // createOrganizationResourceInstance: resource 'Organization', key = org id).
-    await deleteResourceInstance(`Organization:${organizationId}`)
-    tenantDeleted = await deleteTenantFromPermit(organizationId)
-  }
-
-  logger.info(
-    { organizationId, cascade, rolesRevoked, tenantDeleted },
-    'deprovisionOrganization complete'
-  )
-
-  return { organizationId, cascade, rolesRevoked, tenantDeleted }
+  await deps.db('organization_memberships')
+    .insert({
+      id: toUuid(mintId('membership')),
+      user_id: userId,
+      organization_id: ROOT_ORG_ID,
+      role: 'member',
+      status: 'active',
+      joined_at: new Date(),
+      permissions: JSON.stringify({}),
+      metadata: JSON.stringify({}),
+    })
+    .onConflict(['user_id', 'organization_id'])
+    .ignore()
 }
 
+/**
+ * Deprovision an organization.
+ *
+ * - soft: marks is_active=false (reversible; data retained).
+ * - hard: deletes memberships, provisioning steps, and the org row (irreversible).
+ *
+ * Idempotent: if the org is already gone, returns deprovisioned=true without error.
+ */
+export async function deprovisionOrganization(
+  orgId: string,
+  mode: 'soft' | 'hard',
+  overrides?: Partial<ProvisioningDeps>
+): Promise<{ organizationId: string; mode: string; deprovisioned: boolean }> {
+  const { db } = getDeps(overrides)
+
+  const org = await db('organizations').where({ id: orgId }).first()
+  if (!org) {
+    logger.info({ orgId, mode }, 'organizationProvisioning: deprovision — org not found, already gone')
+    return { organizationId: orgId, mode, deprovisioned: true }
+  }
+
+  if (mode === 'hard') {
+    await db.transaction(async trx => {
+      await trx('organization_memberships').where({ organization_id: orgId }).delete()
+      await trx('organization_provisioning').where({ organization_id: orgId }).delete()
+      await trx('organizations').where({ id: orgId }).delete()
+    })
+  } else {
+    await db('organizations')
+      .where({ id: orgId })
+      .update({ is_active: false, provisioning_state: 'deprovisioned', updated_at: new Date() })
+  }
+
+  logger.info({ orgId, mode }, 'organizationProvisioning: deprovisioned')
+  return { organizationId: orgId, mode, deprovisioned: true }
+}
+
+/**
+ * Single-sourced entry point used by login self-heal AND the internal HTTP
+ * endpoint (Plan D's provisioning-service). Ensures the user's personal org
+ * exists, then reconciles every org they own that isn't yet active.
+ */
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>
@@ -480,14 +515,13 @@ export async function runInternalProvision(
 }> {
   const { db } = getDeps(overrides)
 
-  let personalOrgId: string | null
-  if (await isRootMembershipEnabled({ userId })) {
-    await ensureRootMembership(userId, overrides)
-    personalOrgId = null
-  } else {
-    const personal = await ensurePersonalOrg(userId, overrides)
-    personalOrgId = personal.id
+  const rootMembership = await isRootMembershipEnabled({ userId })
+  if (rootMembership) {
+    await ensureRootMembership(userId, { db })
+    return { personalOrgId: null, reconciled: [] }
   }
+
+  const personal = await ensurePersonalOrg(userId, overrides)
 
   const ownedOrgs = await db('organizations')
     .where({ owner_id: userId })
@@ -499,5 +533,5 @@ export async function runInternalProvision(
     reconciled.push({ orgId: org.id, state })
   }
 
-  return { personalOrgId, reconciled }
+  return { personalOrgId: personal.id, reconciled }
 }

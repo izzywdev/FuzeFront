@@ -2,6 +2,13 @@
   "name": "Auth experience — approval frames",
   "description": "Contract-freeze UX artifacts for FuzeFront's complete, professional sign-up & sign-in: inline email-availability, password strength + confirm-match against the real 12+ policy, Cloudflare Turnstile, the email-verification state machine, and the honest no-enumeration password reset. Approving these frames approves the flows, components, packages and contract deltas in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — one approved flow unblocks that flow's implementation.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/auth-experience-ui/**",
+      "packages/auth-ui/src/**",
+      "frontend/src/pages/LoginPage.tsx"
+    ]
+  },
   "approved": false,
   "approvedBy": null,
   "approvedAt": null,
@@ -89,7 +96,7 @@
       "Alert info/success variants — add if not already present"
     ],
     "packages": [
-      "@fuzefront/auth-experience-ui"
+      "@fuzefront/auth-ui"
     ],
     "externalPackages": [
       "@marsidev/react-turnstile (Cloudflare Turnstile React wrapper; keys owner-gated)"
@@ -230,5 +237,5 @@
       ]
     }
   ],
-  "stamp": "c047375d3b72b97215e0b03818a15d4e63b3f9931e4ba2a8a8ad574777ed7f9f"
+  "stamp": "f37ab8e824256a9946d3c676f2a1e701f06189851b5d66aa621d93e363daeac3"
 }

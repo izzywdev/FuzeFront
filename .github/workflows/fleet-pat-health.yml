@@ -1,0 +1,247 @@
+name: Fleet PAT Health
+
+# Nightly static check: verify GH_RELEASE_PAT is present and valid, then confirm
+# each fleet repo's most recent release.yml run succeeded. Detects a PAT expiry
+# within ~24 hours rather than letting it silently stale out a deployment.
+#
+# Requires repo secret: GH_RELEASE_PAT (the same token the fleet repos use for
+# their values-prod.yaml tag bump — needs `repo` scope on FuzeX, FuzeFinance,
+# FuzeExecutive, and any future fleet repo added to FLEET_REPOS below).
+#
+# When a fleet repo's release.yml includes a "Require the release credential" step
+# (see PR description for the snippet), a failure at that step is surfaced as the
+# explicit root cause in the alert issue rather than a generic "release failed".
+
+on:
+  schedule:
+    - cron: '50 7 * * *'   # 07:50 UTC — 27 min after governance-nightly (07:23)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # file/update the alert issue
+
+concurrency:
+  group: fleet-pat-health
+  cancel-in-progress: false
+
+env:
+  # Space-separated list of owner/repo pairs to check.
+  # Add new fleet repos here when they receive GH_RELEASE_PAT.
+  FLEET_REPOS: "izzywdev/FuzeX izzywdev/FuzeFinance izzywdev/FuzeExecutive"
+  WORKFLOW_FILE: "release.yml"
+  CRED_STEP_NAME: "Require the release credential"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Validate that GH_RELEASE_PAT exists and is not expired.
+      #    continue-on-error: true so the per-repo checks are skipped (not
+      #    run) and the summary step can still distinguish "PAT broken" from
+      #    "fleet repo broken".
+      # -----------------------------------------------------------------------
+      - name: Require the release credential
+        id: pat_check
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::GH_RELEASE_PAT is not set in FuzeFront secrets."
+            echo "  Add it: repo Settings → Secrets and variables → Actions → New repository secret"
+            echo "  Name: GH_RELEASE_PAT  Value: a classic PAT with repo scope"
+            exit 1
+          fi
+          LOGIN=$(GH_TOKEN="$GH_TOKEN" gh api user --jq '.login' 2>&1) || {
+            echo "::error::GH_RELEASE_PAT is invalid or expired (API returned an error)."
+            echo "  Mint a new token and update the secret in FuzeFront + each fleet repo."
+            exit 1
+          }
+          echo "PAT valid — authenticated as: ${LOGIN}"
+
+      # -----------------------------------------------------------------------
+      # 2. Check each fleet repo's last release run.
+      #    Only runs when PAT is valid (avoids misleading "repo failed" errors
+      #    when the real problem is a bad credential).
+      # -----------------------------------------------------------------------
+      - name: Check fleet repos
+        id: fleet_check
+        if: steps.pat_check.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_PAT }}
+        run: |
+          set -uo pipefail
+          FAILED_REPOS=""
+          CRED_FAILURES=""
+          OTHER_FAILURES=""
+
+          for REPO in $FLEET_REPOS; do
+            echo ""
+            echo "==> ${REPO}"
+
+            # Fetch the latest completed run for this repo's release workflow.
+            RUN_JSON=$(gh api \
+              "repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=1&status=completed" \
+              --jq '.workflow_runs[0] | {id: .id, conclusion: .conclusion, created_at: .created_at, html_url: .html_url}' \
+              2>&1) || {
+              echo "::warning::Could not query ${REPO} — PAT may lack repo scope or workflow not found"
+              FAILED_REPOS="${FAILED_REPOS} ${REPO}"
+              OTHER_FAILURES="${OTHER_FAILURES} ${REPO}(query-error)"
+              continue
+            }
+
+            if [ "$RUN_JSON" = "null" ] || [ -z "$RUN_JSON" ]; then
+              echo "::warning::${REPO} — no completed release runs found (workflow may not have run yet)"
+              continue
+            fi
+
+            RUN_ID=$(echo "$RUN_JSON"   | jq -r '.id')
+            CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
+            CREATED=$(echo "$RUN_JSON"   | jq -r '.created_at')
+            RUN_URL=$(echo "$RUN_JSON"   | jq -r '.html_url')
+
+            echo "  Last run: ${RUN_ID} | ${CONCLUSION} | ${CREATED}"
+            echo "  URL: ${RUN_URL}"
+
+            if [ "$CONCLUSION" = "success" ]; then
+              echo "  OK"
+              continue
+            fi
+
+            # Run failed — look for a step-level "Require the release credential" failure
+            # to distinguish a PAT expiry from an unrelated build failure.
+            CRED_STEP_FAILED=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs" \
+              --jq --arg STEP "$CRED_STEP_NAME" \
+              '.jobs[].steps[] | select(.name == $STEP and .conclusion == "failure") | .name' \
+              2>/dev/null | head -1 || echo "")
+
+            FAILED_REPOS="${FAILED_REPOS} ${REPO}"
+            if [ -n "$CRED_STEP_FAILED" ]; then
+              echo "::error::${REPO} failed at '${CRED_STEP_NAME}' — GH_RELEASE_PAT is likely expired in that repo"
+              CRED_FAILURES="${CRED_FAILURES} ${REPO}"
+            else
+              echo "::warning::${REPO} last release FAILED (not at '${CRED_STEP_NAME}') — see ${RUN_URL}"
+              OTHER_FAILURES="${OTHER_FAILURES} ${REPO}(${CONCLUSION})"
+            fi
+          done
+
+          # Write a summary for the report step
+          echo "FAILED_REPOS=${FAILED_REPOS}"   >> "$GITHUB_ENV"
+          echo "CRED_FAILURES=${CRED_FAILURES}" >> "$GITHUB_ENV"
+          echo "OTHER_FAILURES=${OTHER_FAILURES}" >> "$GITHUB_ENV"
+
+          if [ -n "$FAILED_REPOS" ]; then
+            exit 1
+          fi
+
+      # -----------------------------------------------------------------------
+      # 3. Summarise and file/update a GitHub issue on any failure.
+      #    Runs even when prior steps failed (if: always()).
+      #    Exits 1 to make the workflow run red — silent green on a broken
+      #    fleet is the bug we're preventing.
+      # -----------------------------------------------------------------------
+      - name: Report
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT_OUTCOME: ${{ steps.pat_check.outcome }}
+          FLEET_OUTCOME: ${{ steps.fleet_check.outcome }}
+        run: |
+          set -uo pipefail
+
+          # All good — resolve any existing alert issue
+          if [ "$PAT_OUTCOME" = "success" ] && \
+             { [ "$FLEET_OUTCOME" = "success" ] || [ "$FLEET_OUTCOME" = "skipped" ]; }; then
+            echo "Fleet PAT health: OK"
+
+            # Close any open alert issue (fleet is healthy again)
+            OPEN_ISSUE=$(gh issue list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --label fleet-pat-health \
+              --json number --jq '.[0].number // empty')
+            if [ -n "$OPEN_ISSUE" ]; then
+              gh issue close "$OPEN_ISSUE" \
+                --repo "${{ github.repository }}" \
+                --comment "Resolved: fleet PAT health check now passing. Closing."
+              echo "Closed open alert issue #${OPEN_ISSUE}"
+            fi
+            exit 0
+          fi
+
+          # Compose the alert body
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ "$PAT_OUTCOME" != "success" ]; then
+            SECTION_PAT="**GH_RELEASE_PAT in FuzeFront is missing or expired.**
+          Mint a new classic PAT (repo scope) → GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic).
+          Add it to FuzeFront **and** each fleet repo listed below."
+          else
+            SECTION_PAT=""
+          fi
+
+          if [ -n "${CRED_FAILURES:-}" ]; then
+            SECTION_CRED="**Repos whose last release failed at \`Require the release credential\`** (PAT expired or missing in that repo's secrets):
+          \`\`\`
+          ${CRED_FAILURES}
+          \`\`\`
+          Fix: add/update \`GH_RELEASE_PAT\` in each repo's Settings → Secrets and variables → Actions."
+          else
+            SECTION_CRED=""
+          fi
+
+          if [ -n "${OTHER_FAILURES:-}" ]; then
+            SECTION_OTHER="**Repos whose last release failed for an unrelated reason** (check run logs):
+          \`\`\`
+          ${OTHER_FAILURES}
+          \`\`\`"
+          else
+            SECTION_OTHER=""
+          fi
+
+          BODY="## Fleet PAT health alert
+
+          $SECTION_PAT
+          $SECTION_CRED
+          $SECTION_OTHER
+
+          **Fleet repos checked:** \`${FLEET_REPOS}\`
+          **Failing check run:** ${RUN_URL}
+
+          ---
+          *Filed by fleet-pat-health.yml. Will auto-close when the check passes.*"
+
+          TITLE="Fleet PAT health: release credential failure detected"
+          OPEN_ISSUE=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label fleet-pat-health \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$OPEN_ISSUE" ]; then
+            gh issue comment "$OPEN_ISSUE" \
+              --repo "${{ github.repository }}" \
+              --body "**Updated $(date -u +%Y-%m-%dT%H:%MZ):**
+
+          ${BODY}"
+            echo "Updated existing alert issue #${OPEN_ISSUE}"
+          else
+            # Ensure the label exists before creating the issue
+            gh label create fleet-pat-health \
+              --repo "${{ github.repository }}" \
+              --description "Fleet PAT health alerts" \
+              --color "D93F0B" 2>/dev/null || true
+
+            gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --label fleet-pat-health
+            echo "Opened new alert issue"
+          fi
+
+          exit 1  # make the workflow run red so it surfaces in the checks list

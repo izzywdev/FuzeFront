@@ -22,7 +22,10 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
+COPY config-client/package.json ./config-client/
+COPY packages/config-ui/package.json ./packages/config-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -31,11 +34,13 @@ COPY packages/identity-ui/package.json ./packages/identity-ui/
 COPY packages/auth-ui/package.json ./packages/auth-ui/
 COPY packages/account-security-ui/package.json ./packages/account-security-ui/
 COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
+COPY packages/portal-admin-ui/package.json ./packages/portal-admin-ui/
 COPY portal-client/package.json ./portal-client/
 COPY packages/i18n/package.json ./packages/i18n/
 COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
+COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
@@ -55,7 +60,10 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
+COPY config-client/package.json ./config-client/
+COPY packages/config-ui/package.json ./packages/config-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -64,11 +72,13 @@ COPY packages/identity-ui/package.json ./packages/identity-ui/
 COPY packages/auth-ui/package.json ./packages/auth-ui/
 COPY packages/account-security-ui/package.json ./packages/account-security-ui/
 COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
+COPY packages/portal-admin-ui/package.json ./packages/portal-admin-ui/
 COPY portal-client/package.json ./portal-client/
 COPY packages/i18n/package.json ./packages/i18n/
 COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
+COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
@@ -79,13 +89,15 @@ RUN npm ci --workspace=services/chat-service --ignore-scripts
 
 # Copy source
 COPY shared/ ./shared/
+COPY packages/identity/ ./packages/identity/
 COPY services/chat-service/ ./services/chat-service/
 
 # Copy the product docs corpus the chat-doc-indexer Job indexes (RAG source).
 COPY docs/ ./services/chat-service/docs/
 
-# Build shared first, then chat-service
+# Build shared first, then identity (required by ref-index consumer), then chat-service
 RUN cd shared && npm run build
+RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd services/chat-service && npm run build
 
 # ---------- production ----------
@@ -105,6 +117,11 @@ COPY --from=base /app/services/chat-service/node_modules ./services/chat-service
 # was the one that missed it.
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
+# @izzywdev/fuzefront-identity is a `file:` workspace dep; node_modules links it to
+# /app/packages/identity. The base stage ships packages/identity/package.json so the
+# symlink doesn't dangle; here we populate the target with the built dist.
+COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 COPY --from=build /app/services/chat-service/dist ./services/chat-service/dist
 # Product docs corpus for the chat-doc-indexer Job.
 COPY --from=build /app/services/chat-service/docs ./services/chat-service/docs

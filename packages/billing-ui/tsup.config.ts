@@ -16,6 +16,7 @@ export default defineConfig({
     'react-dom',
     'react/jsx-runtime',
     '@fuzefront/billing-client',
+    '@fuzefront/design-system',
     '@stripe/stripe-js',
     '@stripe/react-stripe-js',
   ],

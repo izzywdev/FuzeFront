@@ -8,6 +8,8 @@ import express from 'express'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
 
@@ -44,20 +46,18 @@ router.get('/:token', async (req: any, res) => {
       .where('id', invitation.organization_id)
       .first()
 
-    res.json({
-      invitation: {
-        id: invitation.id,
-        email: maskEmail(invitation.email),
-        role: invitation.role,
-        expires_at: invitation.expires_at,
-        status: invitation.status,
-      },
-      organization: {
-        id: organization?.id,
-        name: organization?.name,
-        slug: organization?.slug,
-      },
-    })
+    const prefixed = await isPrefixedIdsEnabled({})
+    const invDto = prefixDtoIds(
+      { id: invitation.id, email: maskEmail(invitation.email), role: invitation.role, expires_at: invitation.expires_at, status: invitation.status },
+      prefixed,
+      { id: 'invitation' }
+    )
+    const orgDto = prefixDtoIds(
+      { id: organization?.id, name: organization?.name, slug: organization?.slug },
+      prefixed,
+      { id: 'organization' }
+    )
+    res.json({ invitation: invDto, organization: orgDto })
   } catch (error: any) {
     console.error('Error resolving invitation:', error)
     res.status(500).json({ error: 'Failed to resolve invitation' })
@@ -153,11 +153,13 @@ router.post('/:token/accept', async (req: any, res) => {
       )
     }
 
-    res.json({
-      message: 'Invitation accepted successfully',
-      organizationId: invitation.organization_id,
-      role: invitation.role,
-    })
+    const flagCtxAccept = { userId: req.user?.id, orgId: invitation.organization_id }
+    const prefixedAccept = await isPrefixedIdsEnabled(flagCtxAccept)
+    res.json(prefixDtoIds(
+      { message: 'Invitation accepted successfully', organizationId: invitation.organization_id, role: invitation.role },
+      prefixedAccept,
+      { organizationId: 'organization' }
+    ))
   } catch (error: any) {
     console.error('Error accepting invitation:', error)
     res.status(500).json({ error: 'Failed to accept invitation' })

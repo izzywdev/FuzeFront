@@ -159,7 +159,7 @@ export class PgValueRepository implements ValueRepository {
 
     const res = await this.pool.query<ValueRow>(
       `SELECT id, definition_id, scope_type, scope_id, value, is_locked, lock_reason, set_by_user_id, created_at, updated_at
-         FROM config_values
+         FROM config.config_values
         WHERE definition_id = ANY($1::uuid[]) AND (${scopeConds.join(' OR ')})`,
       params,
     );
@@ -182,7 +182,7 @@ export class PgValueRepository implements ValueRepository {
         : `(definition_id, scope_type, scope_id) WHERE scope_type <> 'platform'`;
 
     const res = await this.pool.query<ValueRow>(
-      `INSERT INTO config_values (definition_id, scope_type, scope_id, value, is_locked, lock_reason, set_by_user_id)
+      `INSERT INTO config.config_values (definition_id, scope_type, scope_id, value, is_locked, lock_reason, set_by_user_id)
             VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
        ON CONFLICT ${conflictTarget} DO UPDATE
             SET value = EXCLUDED.value,
@@ -207,7 +207,7 @@ export class PgValueRepository implements ValueRepository {
   async listAllForDefinition(definitionId: KeyDefinitionEntityId): Promise<ConfigValue[]> {
     const res = await this.pool.query<ValueRow>(
       `SELECT id, definition_id, scope_type, scope_id, value, is_locked, lock_reason, set_by_user_id, created_at, updated_at
-         FROM config_values
+         FROM config.config_values
         WHERE definition_id = $1`,
       [toUuid(definitionId)],
     );
@@ -218,12 +218,12 @@ export class PgValueRepository implements ValueRepository {
     const storageScopeId = assertValidScopeAndToStorageId(scope);
     if (scope.scopeType === 'platform') {
       await this.pool.query(
-        `DELETE FROM config_values WHERE definition_id = $1 AND scope_type = 'platform'`,
+        `DELETE FROM config.config_values WHERE definition_id = $1 AND scope_type = 'platform'`,
         [toUuid(definitionId)],
       );
     } else {
       await this.pool.query(
-        `DELETE FROM config_values WHERE definition_id = $1 AND scope_type = $2 AND scope_id = $3`,
+        `DELETE FROM config.config_values WHERE definition_id = $1 AND scope_type = $2 AND scope_id = $3`,
         [toUuid(definitionId), scope.scopeType, storageScopeId],
       );
     }

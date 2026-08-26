@@ -58,6 +58,49 @@ export const FLAG_KEYS = {
    * 100% of admins.
    */
   PORTALS_DIRECTORY: 'fuzefront.platform.portals-directory',
+  /**
+   * FF-EPIC-17 / S4 (#656) — personal-context switcher + my-orgs routes.
+   * Read in the browser via `useFlag()` in App.tsx / UserMenu /
+   * OrganizationDetailPage. Default OFF. Release flag.
+   * Owner: frontend-engineer (identity).
+   * Removal criterion: reconciled switcher GA at 100% of users.
+   */
+  IDENTITY_PERSONAL_CONTEXT: 'fuzefront.identity.personal-context',
+  /**
+   * FF-EPIC-17 / S5 (#671 backend, #672 UI) — root/portal member directory.
+   * Read in the browser via `useFlag()` in OrganizationDetailPage
+   * (`/organizations/:id/directory` route). Default OFF. Release flag.
+   * Owner: backend-engineer (identity).
+   * Removal criterion: 100% rollout; flag-OFF path unexercised.
+   */
+  IDENTITY_MEMBER_DIRECTORY: 'fuzefront.identity.member-directory',
+  /**
+   * FF-EPIC-17 / S8 (#655) + S9 (#673) — Employee cross-org console.
+   * Read in the browser via `useFlag()` in SidePanel / EmployeeConsolePage
+   * (`/staff` routes), gated additionally on `isEmployee`. Default OFF.
+   * Release flag. Owner: backend-engineer (identity).
+   * Removal criterion: 100% rollout; flag-OFF path unexercised.
+   */
+  IDENTITY_EMPLOYEE_CONSOLE: 'fuzefront.identity.employee-console',
+  /**
+   * FF-EPIC-17-S7 (#704 backend, master-admin portal console UI). Master
+   * switch for the multi-tenant portals feature; this UI reuses it to gate
+   * the master-admin portal fleet console (`/admin/portals`,
+   * `MasterAdminPortalsFlow`) per `design/frames/portal-admin-consoles/
+   * manifest.json`'s declared `featureFlag` for the `master-admin-portals`
+   * build flow. Read in the browser via `useFlag()` in
+   * `frontend/src/pages/MasterAdminPortalsPage.tsx`. Default OFF. Release
+   * flag. Owner: platform team.
+   * Removal criterion: when multi-tenant portals are GA and enabled for
+   * 100% of orgs (see `flag-registry.yaml`).
+   *
+   * Was declared `web_exposed: false` in `flag-registry.yaml` (server-only,
+   * gating the portal-shell/PortalLoginFlow boot surface) — adding this
+   * entry is what actually discloses it to `GET /api/flags` for the master-
+   * admin console's `useFlag()` read. Without it the flow's flag check
+   * always falls back to its in-code default (OFF), same class of gap as #697.
+   */
+  MULTI_TENANT_PORTALS: 'fuzefront.platform.multi-tenant-portals',
 } as const;
 
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
@@ -69,4 +112,16 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
     default: false,
   },
   { key: FLAG_KEYS.PORTALS_DIRECTORY, type: 'release', default: false },
+  // FF-EPIC-17 identity UI flags — read in the browser via `useFlag()`. Without
+  // these entries the backend `GET /api/flags` never discloses them, so flipping
+  // them ON in Unleash would move server-side evaluation but leave the UI dark.
+  // (`fuzefront.identity.root-membership` is deliberately NOT here — it is
+  // server-only, read directly by the security service's provisioning path.)
+  { key: FLAG_KEYS.IDENTITY_PERSONAL_CONTEXT, type: 'release', default: false },
+  { key: FLAG_KEYS.IDENTITY_MEMBER_DIRECTORY, type: 'release', default: false },
+  { key: FLAG_KEYS.IDENTITY_EMPLOYEE_CONSOLE, type: 'release', default: false },
+  // FF-EPIC-17-S7 — the master-admin portal fleet console reuses this master
+  // switch (see FLAG_KEYS doc). Registry `web_exposed` flipped false -> true
+  // to match: this entry is what makes GET /api/flags disclose it at all.
+  { key: FLAG_KEYS.MULTI_TENANT_PORTALS, type: 'release', default: false },
 ] as const;

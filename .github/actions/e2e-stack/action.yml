@@ -94,11 +94,40 @@ runs:
         E2E_USER_USERNAME: ${{ inputs.e2e-user-username }}
       run: ./deploy/e2e/create-authentik-user.sh
 
+    # After provisioning, wait for Authentik's OIDC discovery endpoint to actually
+    # serve the fuzefront application config. The admin REST API returning 200
+    # (checked above) is not sufficient — Authentik rebuilds its router after
+    # blueprint application, and the discovery endpoint transiently returns
+    # "authentik starting" / 503 until that rebuild finishes. The backend's
+    # OIDC client init hits exactly this window when restarted too early, falls
+    # back to local-auth-only, and the OIDC plumbing test fails.
+    - name: Wait for Authentik OIDC discovery endpoint to be ready
+      shell: bash
+      run: |
+        echo "Waiting for Authentik OIDC discovery endpoint (up to 150s)..."
+        for i in $(seq 1 30); do
+          STATUS=$(curl -o /dev/null -w "%{http_code}" -s \
+            "http://authentik-server:9000/application/o/fuzefront/.well-known/openid-configuration" \
+            2>/dev/null || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "OIDC discovery ready after $((i * 5))s"
+            break
+          fi
+          echo "Attempt $i: OIDC discovery returned $STATUS, waiting..."
+          if [ "$i" -eq 30 ]; then
+            echo "::error::Authentik OIDC discovery not ready after 150s"
+            docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60
+            exit 1
+          fi
+          sleep 5
+        done
+
     # The backend starts at the same time as Authentik (docker compose up -d)
     # and attempts OIDC discovery on boot. Authentik takes several minutes to
     # run migrations, so the backend's OIDC client init fails with ECONNREFUSED
     # and the backend falls back to local-auth-only. Restarting the backend now
-    # (after Authentik is fully provisioned) lets it re-discover OIDC correctly.
+    # (after Authentik is fully provisioned AND its OIDC discovery is live) lets
+    # it re-discover OIDC correctly.
     - name: Restart backend to re-initialize OIDC against live Authentik
       shell: bash
       run: |

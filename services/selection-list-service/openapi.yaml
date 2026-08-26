@@ -110,10 +110,12 @@ info:
 
     ### Authorization
 
-    Resource `SelectionList` in Permit, with actions `read`, `add_value`,
-    `update_value`, `remove_value`, `translate`, `update`, `delete`,
-    `manage_access`. Grants are ReBAC resource-instance roles on the list
-    instance, mirroring `Organization.roles['org-admin']` in
+    Resource `SelectionList` in FuzeFront's Security API (backend/security's
+    `/api/v1/security/authz/*`, called via `@fuzefront/auth`'s `AuthzClient`
+    — this service embeds no policy-vendor SDK), with actions `read`,
+    `add_value`, `update_value`, `remove_value`, `translate`, `update`,
+    `delete`, `manage_access`. Grants are ReBAC resource-instance roles on the
+    list instance, mirroring `Organization.roles['org-admin']` in
     `backend/src/permit/schema.ts`.
 
     | role | read | add_value | update_value | remove_value | translate | update | delete | manage_access |
@@ -126,9 +128,9 @@ info:
 
     Each operation declares the action it requires in `x-permit-action`.
     **An id is never a capability** — knowing a list id grants nothing; every
-    route re-checks the caller against Permit, and a read the caller is not
-    entitled to returns `404`, not `403`, so the API is not an existence oracle
-    across orgs.
+    route re-checks the caller against the Security API, and a read the caller
+    is not entitled to returns `404`, not `403`, so the API is not an
+    existence oracle across orgs.
   contact:
     name: FuzeFront Platform Team
     url: https://github.com/izzywdev/FuzeFront

@@ -1,0 +1,13 @@
+[
+  { "name": "auto-merge",      "color": "0052cc", "description": "Enable squash auto-merge once CI passes" },
+  { "name": "wip",             "color": "ededed", "description": "Work in progress; exempt from staleness/auto-merge" },
+  { "name": "hold",            "color": "ededed", "description": "On hold; exempt from staleness/auto-merge" },
+  { "name": "blocked",         "color": "b60205", "description": "Blocked on an external dependency; exempt from staleness" },
+  { "name": "argo-autofix",    "color": "b60205", "description": "ArgoCD self-heal / deploy autofix" },
+  { "name": "integration",     "color": "1d76db", "description": "Nightly integration tests" },
+  { "name": "security",        "color": "b60205", "description": "Security finding / hardening" },
+  { "name": "design-review",   "color": "5319e7", "description": "Awaiting product-owner visual design approval" },
+  { "name": "design-approval", "color": "7b6cf6", "description": "Design-frame approval decision (approve/reject a flow)" },
+  { "name": "ds-extraction",   "color": "5319e7", "description": "Candidate UI pattern to extract into the design system" },
+  { "name": "ds-propagation",  "color": "0075ca", "description": "Design system propagation task" }
+]

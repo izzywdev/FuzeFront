@@ -1,4 +1,10 @@
 import { v4 as uuidv4 } from 'uuid'
+import { parseId, configureIdentity, EntityId } from '@izzywdev/fuzefront-identity'
+
+// Allow bare UUIDs as EntityId<T> in tests — production rows are not yet
+// backfilled, so the dual-accept window must be open for test helpers to pass
+// plain UUIDs to the typed service functions without converting them.
+configureIdentity({ legacyUuidTypes: new Set(['user', 'organization']) })
 
 // Avoid importing the real Permit SDK (which requires PERMIT_API_KEY at import
 // time). These tests inject fake Permit clients, so the default client built on
@@ -84,7 +90,7 @@ function deps(permit: any, publish: any): Partial<ProvisioningDeps> {
   return { db, permit, publish }
 }
 
-async function createUser(): Promise<string> {
+async function createUser(): Promise<EntityId<'user'>> {
   const id = uuidv4()
   await db('users').insert({
     id,
@@ -95,10 +101,10 @@ async function createUser(): Promise<string> {
     created_at: new Date(),
     updated_at: new Date(),
   })
-  return id
+  return parseId('user', id)
 }
 
-async function createOrg(ownerId: string, type = 'organization'): Promise<string> {
+async function createOrg(ownerId: string, type = 'organization'): Promise<EntityId<'organization'>> {
   const id = uuidv4()
   await db('organizations').insert({
     id,
@@ -111,7 +117,7 @@ async function createOrg(ownerId: string, type = 'organization'): Promise<string
     is_active: true,
     provisioning_state: 'pending',
   })
-  return id
+  return parseId('organization', id)
 }
 
 // ---- tests -------------------------------------------------------------
@@ -209,6 +215,53 @@ describe('ensurePersonalOrg', () => {
     expect(org1.slug).toContain(userId1)
     expect(org2.slug).toContain(userId2)
   })
+
+  // 2026-08-23 incident — a personal-org row that migration 022's unconditional
+  // reclassify step flipped to type='organization' still occupies this user's
+  // deterministic slug (`personal-${userId}`). Re-running ensurePersonalOrg (the
+  // exact thing that happens on the user's NEXT LOGIN) must self-heal that row
+  // — flip it back to 'personal' — instead of crashing on the uncaught `slug`
+  // unique-constraint violation the old onConflict (owner_id-only) didn't cover.
+  it('self-heals a reclassified personal org on slug conflict instead of throwing (2026-08-23)', async () => {
+    const userId = await createUser()
+    const damagedOrgId = uuidv4()
+    const baseSlug = `personal-${userId}`
+
+    // Simulate the DAMAGED state: type='organization' but still carrying the
+    // metadata stamp only ensurePersonalOrg ever writes, at the exact
+    // deterministic slug ensurePersonalOrg will try to insert.
+    await db('organizations').insert({
+      id: damagedOrgId,
+      name: 'Personal',
+      slug: baseSlug,
+      owner_id: userId,
+      type: 'organization',
+      settings: JSON.stringify({}),
+      metadata: JSON.stringify({ personal: true }),
+      is_active: true,
+      provisioning_state: 'pending',
+    })
+
+    // Must NOT throw — the pre-fix behavior surfaced a raw 23505 here.
+    const healed = await ensurePersonalOrg(userId, { db })
+
+    expect(healed.id).toBe(damagedOrgId)
+    expect(healed.type).toBe('personal')
+
+    const row = await db('organizations').where({ id: damagedOrgId }).first()
+    expect(row.type).toBe('personal')
+
+    // The owner membership exists (self-heal also ensures it).
+    const membership = await db('organization_memberships')
+      .where({ organization_id: damagedOrgId, user_id: userId, role: 'owner' })
+      .first()
+    expect(membership).toBeTruthy()
+
+    // Idempotent: calling it again is a plain no-op via the ordinary `existing` check.
+    const second = await ensurePersonalOrg(userId, { db })
+    expect(second.id).toBe(damagedOrgId)
+    expect(second.type).toBe('personal')
+  })
 })
 
 describe('reconcileOrganizationProvisioning', () => {
@@ -271,7 +324,7 @@ describe('reconcileOrganizationProvisioning', () => {
     const rootExists = await db('organizations').where({ id: ROOT_ORG_ID }).first()
     expect(rootExists).toBeTruthy() // seeded by migration 015
 
-    await reconcileOrganizationProvisioning(ROOT_ORG_ID, deps(permit, publisher))
+    await reconcileOrganizationProvisioning(parseId('organization', ROOT_ORG_ID), deps(permit, publisher))
 
     expect((permit as any).parentLinks).toEqual([])
   })

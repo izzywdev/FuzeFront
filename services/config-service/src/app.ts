@@ -43,6 +43,40 @@ export function createApp(deps?: AppDeps): Application {
     res.json({ status: 'ok', service: 'config-service', configManagementEnabled });
   });
 
+  // Readiness — SEPARATE from `/health` on purpose, and pointed at by the
+  // readinessProbe only.
+  //
+  // `/health` above is deliberately shallow and is what the LIVENESS probe
+  // uses: a database outage must not restart an otherwise-healthy process,
+  // which would turn a recoverable dependency blip into a restart loop.
+  // Readiness is the probe that should fail in that case — it removes the pod
+  // from the Service until the DB answers again, with no restart.
+  //
+  // This exists because the alternative had already bitten: with only an
+  // unconditional `/health` behind BOTH probes, a config-service whose
+  // migrations had failed reported Ready and served 500s from every `/v1/*`
+  // route. A probe that cannot distinguish "up" from "working" is not a probe.
+  app.get('/health/ready', async (_req: Request, res: Response) => {
+    if (!deps?.pool) {
+      // No DB configured (the health-check-only skeleton). Nothing to verify,
+      // and nothing DB-backed is served, so this is legitimately ready.
+      res.json({ status: 'ready', service: 'config-service', database: 'not-configured' });
+      return;
+    }
+    try {
+      await deps.pool.query('SELECT 1');
+      res.json({ status: 'ready', service: 'config-service', database: 'ok' });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[config-service] readiness check failed:', err);
+      res.status(503).json({
+        status: 'not-ready',
+        service: 'config-service',
+        database: 'unreachable',
+      });
+    }
+  });
+
   // Swagger UI + published spec (FFRNT-258 / FF-EPIC-17-S9). Always mounted
   // (the contract is static and needs no DB), authenticated-developer only —
   // see src/routes/docs.routes.ts for the full exposure policy.

@@ -3,13 +3,18 @@
   "slug": "fuzesocial",
   "name": "FuzeSocial",
   "menuLabel": "Social",
-  "description": "Social media automation, scheduling, and cross-platform publishing — Facebook, Instagram, TikTok, YouTube, Reddit, X, and WhatsApp.",
-  "icon": { "kind": "emoji", "value": "📱" },
+  "description": "Social media automation, scheduling, and cross-platform publishing \u2014 Facebook, Instagram, TikTok, YouTube, Reddit, X, and WhatsApp.",
+  "icon": {
+    "kind": "emoji",
+    "value": "\ud83d\udcf1"
+  },
   "mode": "portal",
   "builtin": true,
   "integration": {
-    "type": "iframe",
-    "url": "https://social.prod.fuzefront.com"
+    "type": "module-federation",
+    "remoteEntry": "/apps/fuzesocial/remoteEntry.js",
+    "scope": "fuzesocial",
+    "module": "./App"
   },
   "chrome": {
     "menu": "host",

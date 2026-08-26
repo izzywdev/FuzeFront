@@ -822,6 +822,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/employee/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve the caller's Employee (platform-staff) status
+         * @description Server-authoritative Employee status for the calling user, backed by `resolveEmployeeStatus`. `isEmployee` is derived ONLY from the ReBAC `org-admin` grant on the platform root org (derived down the `parent` org tree) — NEVER from membership rows, so the console stops deriving staff status client-side. `directOrgMemberships` is informational: the caller's DIRECT customer-org membership rows, EXCLUDING the platform root (a pure Employee — zero membership rows — has an empty array). Any authenticated caller may read their OWN status; a non-Employee simply gets `isEmployee: false` — this endpoint REPORTS status, it does not gate on it, so there is deliberately no 403 here. An id is never a capability; the decision is the token + Permit.
+         */
+        get: operations["getEmployeeStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/employee/orgs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the org/portal subtree an Employee can reach (ReBAC-authoritative)
+         * @description Employee-only. Returns the platform root org and its descendants that the calling Employee can reach via the ReBAC `org-admin`-on-root grant (derived down the `parent` org tree) — the ReBAC-authoritative reach, NOT the caller's membership-scoped orgs. Powers the cross-org console's CrossOrgExplorer. Cursor-paginated per the family pagination standard (`limit` + opaque `cursor`, `{ items, page }` envelope). Deliberately a FLAT list of nodes each carrying `parentOrgId`, so the client assembles the tree: an explicit nested tree over an unbounded org set cannot be paginated (you cannot cut a subtree at a page boundary), whereas a flat page-walk to `hasMore: false` reconstructs the tree exactly and mirrors the existing directory listing shape. A non-Employee caller gets `403 FORBIDDEN` rendered in place — never a sign-in redirect (only 401 re-authenticates). An id is never a capability; authorization is the token + Permit, not knowledge of any org id.
+         */
+        get: operations["listEmployeeOrgs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List portals (second-level org children of the platform root)
+         * @description Platform-admin-only. Lists the organizations whose `parentOrgId` is the platform root AND that carry the portal-root attribute — i.e. every portal. A portal is NOT a `portals`-table row: it is an `organizations` row on the unified organizations+parent_id tree with tenant attributes (custom domain / white-label branding / per-portal app catalog / reseller billing) that ordinary sub-orgs lack. The platform root org itself is NEVER listed (it has no `parentOrgId`). Cursor-paginated per the family pagination standard (`limit` + opaque `cursor`, `{ items, page }` envelope). A non-platform-admin caller gets `403 FORBIDDEN` fail-closed, rendered in place — never a sign-in redirect (only 401 re-authenticates), same ReBAC derivation as everywhere else. An id is never a capability; the decision is the token + Permit.
+         */
+        get: operations["listPortals"];
+        put?: never;
+        /**
+         * Create a portal (an org child of the platform root + tenant attributes)
+         * @description Platform-admin-only. Creates an `organizations` row with `parentOrgId` = the platform root and the portal-root + tenant attributes attached, reusing the same resumable provisioning backbone as ordinary org provisioning (NOT a `portals`-table insert). Per the identifier standard the owning service mints the org id — the request body MUST NOT carry an `id`, and `additionalProperties: false` rejects a stray one. The parent is fixed to the platform root by this endpoint, so no client-supplied parent reference is accepted. A duplicate `slug` returns `409` (`code: CONFLICT`). A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation.
+         */
+        post: operations["createPortal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals/{portalOrgId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one portal (the org + its tenant attributes)
+         * @description Platform-admin-only. Returns the portal org and its tenant attributes. `portalOrgId` REFERENCES an existing, server-minted organization (typed id) that is a direct child of the platform root. A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation; an id is never a capability — authorization is the token + Permit, not knowledge of the org id.
+         */
+        get: operations["getPortal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals/{portalOrgId}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend a portal (org-level status flip)
+         * @description Platform-admin-only. Flips the portal org's lifecycle status to `suspended` — an org-level status flip reusing the org status model, not a portal-specific state machine. Idempotent: suspending an already-suspended portal is a no-op 200. The platform root is not a portal and cannot be suspended (`409`, `code: CONFLICT`). A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation.
+         */
+        post: operations["suspendPortal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals/{portalOrgId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a suspended portal (org-level status flip)
+         * @description Platform-admin-only. Flips a `suspended` portal org back to `active` — an org-level status flip. Idempotent: resuming an already-active portal is a no-op 200. A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation.
+         */
+        post: operations["resumePortal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1247,6 +1371,138 @@ export interface components {
             /** @description Total directory members matching `query` (drives the pager). */
             total: number;
         };
+        /** @description One DIRECT customer-org membership the calling user holds. REFERENCES an existing, server-minted organization (typed id) — not a create body and not identity the client supplies. Informational context on the Employee status; the platform root org is excluded from this set. */
+        DirectMembershipRef: {
+            /** @description Server-minted, typed organization id (e.g. `org_…`) the caller is a direct member of. Opaque past the prefix; never a capability. The field name carries the referent type, so no bare id is resolved. */
+            orgId: string;
+            /** @description Display name of the organization (row primary text). */
+            orgName?: string;
+            /**
+             * @description The caller's membership role in this organization.
+             * @enum {string}
+             */
+            role: "owner" | "admin" | "member" | "viewer";
+        };
+        /** @description Server-authoritative Employee (platform-staff) status for the calling user — the shape returned by `resolveEmployeeStatus`. `isEmployee` is the sole authority the console must trust; `directOrgMemberships` is purely informational. */
+        EmployeeStatus: {
+            /** @description True iff the caller holds the ReBAC `org-admin` grant on the platform root org (derived down the `parent` org tree). NEVER inferred from membership rows. An id is never a capability; this is a token + Permit decision. */
+            isEmployee: boolean;
+            /** @description Informational: the caller's DIRECT customer-org membership rows, EXCLUDING the platform root. A pure Employee has an empty array. Bounded per user (not user-controlled unbounded growth), which is why the endpoint is `x-pagination: exempt`. */
+            directOrgMemberships: components["schemas"]["DirectMembershipRef"][];
+        };
+        /** @description One node of the org/portal subtree an Employee can reach via ReBAC. REFERENCES existing, server-minted organizations (typed ids) — not a create body. Flat by design: the client assembles the tree from `parentOrgId`, so a page boundary never splits a subtree. */
+        EmployeeOrgNode: {
+            /** @description Server-minted, typed organization id (e.g. `org_…`) of THIS node. Opaque past the prefix; never a capability. */
+            orgId: string;
+            /** @description Display name of the organization/portal (explorer row text). */
+            name: string;
+            /** @description Typed id of this node's parent organization, or `null` for the platform root node. The client links children to parents by this field to rebuild the tree. The field name carries the referent type, so no bare id is resolved. */
+            parentOrgId: string | null;
+            /**
+             * @description Node classification for the explorer: the platform `root`, a portal-root (`portal`), or a customer `organization`. A hint for rendering; authorization is never derived from it.
+             * @enum {string}
+             */
+            kind: "root" | "portal" | "organization";
+            /** @description Distance from the platform root (root = 0), so the explorer can indent without first assembling the whole tree. */
+            depth: number;
+            /** @description Optional count of direct members of this org, when cheaply available; omitted when counting is expensive. */
+            memberCount?: number;
+        };
+        /** @description Cursor-paginated envelope for the Employee-reachable org subtree. Uses the family cursor `PageInfo` envelope (like `MemberPage`/`TenantPage`): the explorer page-walks to `hasMore: false` to assemble the full tree, so a forward cursor — not random page access — is the right shape. Satisfies gate-pagination (`items` + `page`). */
+        EmployeeOrgPage: {
+            items: components["schemas"]["EmployeeOrgNode"][];
+            page: components["schemas"]["PageInfo"];
+        };
+        /**
+         * @description Org-level lifecycle status for a portal — reuses the org status model, NOT a portal-specific state machine. `provisioning` / `provisioned-pending-invite` are transient states from the resumable provisioning backbone; `active` / `suspended` are the steady lifecycle a platform admin toggles via suspend/resume.
+         * @enum {string}
+         */
+        PortalStatus: "provisioning" | "provisioned-pending-invite" | "active" | "suspended";
+        /**
+         * @description How the portal is billed (tenant attribute, FF-EPIC-15). `free` — no billing; `platform` — billed by FuzeFront directly; `reseller` — the portal bills its own users via Stripe Connect.
+         * @enum {string}
+         */
+        PortalBillingMode: "free" | "platform" | "reseller";
+        /**
+         * @description Per-portal app-catalog tenant attribute (FF-EPIC-12). `inherit` — the portal shows the platform-root catalog; `custom` — the portal curates its own app set.
+         * @enum {string}
+         */
+        PortalAppCatalogMode: "inherit" | "custom";
+        /** @description White-label branding tenant attribute (FF-EPIC-13), applied entirely through design-system token overrides (no raw hex in feature code). Every field has a documented fallback so the UI never shows a broken image or an unbranded flash. */
+        PortalBranding: {
+            /** @description Portal display name (shown in the topbar and login). */
+            name: string;
+            /**
+             * Format: uri
+             * @description Logo image URL, or null → initials/default fallback (never a broken image).
+             */
+            logo?: string | null;
+            /**
+             * Format: uri
+             * @description Favicon URL, or null → default fallback.
+             */
+            favicon?: string | null;
+            /** @description CSS color applied as a scoped design-system token override (`--accent-*`); AA-contrast-validated. Malformed/null → default accent. */
+            accent?: string | null;
+            /** @description Optional custom login copy / strapline. Null → default copy. */
+            tagline?: string | null;
+        };
+        /** @description A portal expressed on the unified org tree: an `organizations` row whose `parentOrgId` is the platform root and that carries the portal-root attribute (`isPortalRoot: true`) + tenant attributes. NOT a `portals`-table row (that model is superseded — see the root `x-supersedes`). `orgId`/`parentOrgId` REFERENCE server-minted organizations (typed ids) — never a create body, never a capability. */
+        Portal: {
+            /** @description Server-minted, typed organization id (e.g. `org_…`) of this portal's backing org. Opaque past the prefix; never a capability. */
+            orgId: string;
+            /** @description Typed id of the parent organization — always the platform root (`00000000-0000-0000-0000-000000000010`) for a portal. The field name carries the referent type, so no bare id is resolved. */
+            parentOrgId: string;
+            /** @description Portal display name. */
+            name: string;
+            /** @description URL-safe unique portal identifier (immutable once provisioned). */
+            slug: string;
+            /**
+             * @description Node classification on the org tree (matches `EmployeeOrgNode.kind`). A portal is always `portal`; a rendering hint, never an authz input.
+             * @enum {string}
+             */
+            kind: "portal";
+            status: components["schemas"]["PortalStatus"];
+            /** @description True — carries the portal-root attribute that distinguishes a portal from an ordinary sub-org. The platform root org is never a portal and is never returned by these endpoints. */
+            isPortalRoot: boolean;
+            /**
+             * Format: email
+             * @description The portal owner's email (from the provisioning invite), or null.
+             */
+            ownerEmail?: string | null;
+            /** @description Verified custom domain bound to this portal (tenant attribute, FF-EPIC-16), or null → the platform-owned default subdomain. */
+            customDomain?: string | null;
+            branding: components["schemas"]["PortalBranding"];
+            billingMode: components["schemas"]["PortalBillingMode"];
+            appCatalogMode: components["schemas"]["PortalAppCatalogMode"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description Payload to provision a new portal (a new org child of the platform root + tenant attributes). No `id` — the owning service mints the org id. No parent reference — the endpoint fixes the parent to the platform root. */
+        PortalCreate: {
+            name: string;
+            /** @description URL-safe unique portal identifier (immutable once provisioned). */
+            slug: string;
+            /**
+             * Format: email
+             * @description The email invited as the portal owner during provisioning.
+             */
+            ownerEmail: string;
+            /** @description Optional custom domain to bind (FF-EPIC-16); null → default subdomain. */
+            customDomain?: string | null;
+            branding?: components["schemas"]["PortalBranding"];
+            /** @default free */
+            billingMode: components["schemas"]["PortalBillingMode"];
+            /** @default inherit */
+            appCatalogMode: components["schemas"]["PortalAppCatalogMode"];
+        };
+        /** @description A page of portals — the `{ items, page }` cursor envelope (family standard). Named alias exported by the generated client; the list response inlines a structurally identical envelope so gate-pagination sees it without resolving $ref. */
+        PortalPage: {
+            items: components["schemas"]["Portal"][];
+            page: components["schemas"]["PageInfo"];
+        };
         /** @description Stable error body. Fail-closed; provider-neutral codes. */
         ErrorBody: {
             error: string;
@@ -1320,6 +1576,8 @@ export interface components {
         TenantId: string;
         /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
         OrganizationId: string;
+        /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+        PortalOrgId: string;
         /** @description 0-based item offset for page navigation (offset = (page - 1) * pageSize). Page-based paging over an unbounded set — deliberately an offset, not a cursor, so the directory is page-navigable and search-first. */
         Offset: number;
         /** @description Server-side search over the directory (name / email). Submitted by the UI search box; the client never fetches all users to filter locally. */
@@ -2576,6 +2834,210 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DirectoryPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getEmployeeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's Employee status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listEmployeeOrgs: {
+        parameters: {
+            query?: {
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of reachable org/portal nodes (flat; assemble the tree via `parentOrgId`). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeOrgPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listPortals: {
+        parameters: {
+            query?: {
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: number;
+                /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
+                cursor?: string;
+                /** @description Optional filter by lifecycle status. Omit for all statuses. */
+                status?: components["schemas"]["PortalStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of portals. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Portal"][];
+                        page: components["schemas"]["PageInfo"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalCreate"];
+            };
+        };
+        responses: {
+            /** @description Portal created (a new org child of the platform root). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description A portal with this slug already exists (`code` = `CONFLICT`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            502: components["responses"]["ProviderError"];
+        };
+    };
+    getPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+                portalOrgId: components["parameters"]["PortalOrgId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The portal org + tenant attributes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    suspendPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+                portalOrgId: components["parameters"]["PortalOrgId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portal suspended. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The transition is refused (e.g. the platform root is not a portal) — `code` = `CONFLICT`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    resumePortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+                portalOrgId: components["parameters"]["PortalOrgId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portal resumed (active). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
                 };
             };
             401: components["responses"]["Unauthorized"];
