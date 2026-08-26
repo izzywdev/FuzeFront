@@ -203,6 +203,34 @@ jobs:
         env:
           TRIVY_TOKEN: ${{ secrets.TRIVY_TOKEN }}
 
+      # GitHub creates ONE check run per SARIF *tool*, aggregating every
+      # configuration that reports under that tool name. Trivy writes
+      # tool.driver.name = "Trivy" into every SARIF it produces, so this
+      # CONTAINER scan and the two filesystem scans (ci.yml:security-scan,
+      # harden-gate.yml:gate-dependency-scan) all landed in one "Trivy" check.
+      #
+      # That is the bug. This job builds two images first and takes ~6 minutes;
+      # the filesystem scans finish in ~25 SECONDS. The check was therefore
+      # finalised long before this configuration reported, and every run
+      # emitted "Warning: 1 configuration present on refs/heads/master was not
+      # found". With no complete baseline to diff against, code scanning
+      # reported PRE-EXISTING findings as "new alerts" — a red check that no
+      # code change could clear, which is exactly the kind of check people
+      # learn to ignore.
+      #
+      # Renaming the tool gives the container scan its own check run, so a
+      # 6-minute job can no longer race 25-second ones. Nothing stops being
+      # scanned and no finding becomes invisible; the findings simply report
+      # under "Trivy Container" instead of "Trivy".
+      - name: Retag SARIF tool name so the container scan gets its own check
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -f trivy-results.sarif ] || { echo "no SARIF produced; nothing to retag"; exit 0; }
+          jq '.runs[].tool.driver.name = "Trivy Container"' trivy-results.sarif > retagged.sarif
+          mv retagged.sarif trivy-results.sarif
+          echo "tool.driver.name is now: $(jq -r '.runs[0].tool.driver.name' trivy-results.sarif)"
+
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         if: always()
