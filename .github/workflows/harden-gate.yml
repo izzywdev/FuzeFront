@@ -508,7 +508,14 @@ jobs:
         # clean tree. `claude-auto-pr.yml` was green for its whole life because
         # every run took its early-exit path; the one time it had real work it
         # failed. Passing is not evidence.
-        run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+        # Dependencies BEFORE the run, not after. Both self-test steps used to
+        # discover the whole suite with no install at all -- the `pip install`
+        # sat in the NEXT step, so anything needing PyYAML or jsonschema failed
+        # on import. That stayed invisible while every test happened to be
+        # stdlib-only, and surfaced the moment one was not.
+        run: |
+          pip install -q pyyaml jsonschema
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
       - name: Identifier gate — contracts, parity, namespace, adoption (enforcing)
         shell: bash
         run: |
@@ -556,7 +563,14 @@ jobs:
         shell: bash
         # Same convention as gate-identifier's self-test step above: asserts the gate
         # FAILS on each known-offender shape, not merely that it passes on a clean tree.
-        run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+        # Dependencies BEFORE the run, not after. Both self-test steps used to
+        # discover the whole suite with no install at all -- the `pip install`
+        # sat in the NEXT step, so anything needing PyYAML or jsonschema failed
+        # on import. That stayed invisible while every test happened to be
+        # stdlib-only, and surfaced the moment one was not.
+        run: |
+          pip install -q pyyaml jsonschema
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
       - name: Vacuous-check gate (enforcing)
         shell: bash
         run: |
