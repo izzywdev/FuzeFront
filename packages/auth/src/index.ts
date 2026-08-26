@@ -45,6 +45,11 @@ export type {
   AuthzErrorCode,
   ResourceRef,
   FetchLike,
+  GrantRequest,
+  Grant,
+  GrantRevokeRequest,
+  GrantPage,
+  GrantListQuery,
 } from './authzTypes';
 
 export { createAuthzClient } from './authzClient';

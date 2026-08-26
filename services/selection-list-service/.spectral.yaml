@@ -1,0 +1,123 @@
+# Spectral ruleset for the selection-list-service OpenAPI contract (FFRNT-187 / S1).
+#
+# Run:  npx @stoplight/spectral-cli lint services/selection-list-service/openapi.yaml \
+#         --ruleset services/selection-list-service/.spectral.yaml
+#
+# `extends: [spectral:oas]` is the built-in alias for the `@stoplight/spectral-oas`
+# ruleset that ships inside the CLI, so linting needs no extra install.
+#
+# NOTE ON `@stoplight/spectral-api-docs-style`
+# -------------------------------------------
+# The S1 brief asked for `@stoplight/spectral-oas` + `@stoplight/spectral-api-docs-style`.
+# **`@stoplight/spectral-api-docs-style` does not exist** — the npm registry returns
+# 404 for it (Stoplight's documentation-quality ruleset is published as
+# `@stoplight/spectral-documentation`). Rather than pin a package that cannot be
+# installed, or add a remote ruleset fetch that CI must reach the network for, the
+# API-docs-style requirements are declared **locally and explicitly** below:
+# every operation carries an operationId, a summary, a description and tags; every
+# parameter and every schema property is documented. Local rules also cost nothing
+# to audit — the contract's doc policy is readable in one file rather than inherited
+# from a transitive dependency.
+extends: [spectral:oas]
+
+rules:
+  # ---------------------------------------------------------------------------
+  # Suppressions — both genuinely spurious, both justified in place.
+  # ---------------------------------------------------------------------------
+
+  # The service is UNLICENSED (private, cluster-internal). There is no licence URL
+  # to point at, and inventing one would be worse than omitting it.
+  license-url: off
+
+  # OAS 3.1 schemas use JSON Schema 2020-12 `examples` ARRAYS. Spectral's 3.0-era
+  # example validator mis-reads those against union types such as
+  # `type: [string, 'null']`, so it is demoted rather than switched off — real
+  # problems still surface as warnings.
+  oas3-valid-schema-example: warn
+
+  # ---------------------------------------------------------------------------
+  # Ratcheted from the defaults — these are ERRORS for this contract, not hints.
+  # A generated/derived client is only as good as the spec's operation metadata.
+  # ---------------------------------------------------------------------------
+  operation-operationId: error
+  operation-operationId-unique: error
+  operation-operationId-valid-in-url: error
+  operation-description: error
+  operation-tags: error
+  operation-tag-defined: error
+  operation-success-response: error
+  oas3-unused-component: error
+  no-eval-in-markdown: error
+  no-script-tags-in-markdown: error
+
+  # ---------------------------------------------------------------------------
+  # API-docs-style rules (local replacement for the non-existent
+  # `@stoplight/spectral-api-docs-style`).
+  # ---------------------------------------------------------------------------
+
+  operation-summary:
+    description: Every operation needs a one-line summary — it is the title of the generated docs entry.
+    message: '{{path}} — operation has no `summary`'
+    severity: error
+    given: $.paths[*][get,put,post,delete,patch,options,head,trace]
+    then:
+      field: summary
+      function: truthy
+
+  parameter-description:
+    description: >-
+      Every parameter must say what it does. A parameter a caller has to guess at
+      is a support ticket, and query parameters are exactly where guessing goes wrong.
+    message: '{{path}} — parameter has no `description`'
+    severity: error
+    given:
+      - $.paths[*].parameters[*]
+      - $.paths[*][get,put,post,delete,patch,options,head,trace].parameters[*]
+      - $.components.parameters[*]
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          anyOf:
+            - required: ['description']
+            - required: ['$ref']
+
+  schema-description:
+    description: Every named component schema must be documented.
+    message: '{{path}} — component schema has no `description`'
+    severity: error
+    given: $.components.schemas[*]
+    then:
+      field: description
+      function: truthy
+
+  schema-property-description:
+    description: >-
+      Every schema property must be documented, either directly or by pointing at a
+      documented named schema. This is the rule that makes the contract readable
+      without the implementation next to it — and the one that keeps the derived
+      client's TSDoc honest.
+    message: '{{path}} — schema property has no `description` and is not a `$ref` to a documented schema'
+    severity: error
+    given:
+      - $.components.schemas..properties[*]
+      - $.paths[*][*].requestBody.content[*].schema..properties[*]
+      - $.paths[*][*].responses[*].content[*].schema..properties[*]
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          type: object
+          anyOf:
+            - required: ['description']
+            - required: ['$ref']
+
+  request-body-description:
+    description: Every request body must explain what it carries.
+    message: '{{path}} — requestBody has no `description`'
+    severity: error
+    given: $.paths[*][put,post,patch].requestBody
+    then:
+      field: description
+      function: truthy

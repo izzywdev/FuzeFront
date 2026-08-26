@@ -360,7 +360,10 @@ spec:
                  (password/enrollment flow driver). Must route to authentik-server,
                  or flow-executor calls hit FuzeFront's /api and fail with
                  PROVIDER_UNAVAILABLE. Does not collide with FuzeFront's /api/v1/*. */ -}}
-          {{- range $p := list "/application" "/if" "/source" "/flows" "/ws" "/-" "/outpost.goauthentik.io" "/api/v3" "/static/dist" "/static/authentik" }}
+          {{- /* Single source of truth, shared with the auth.<zone> Ingress in
+                 authentik.yaml so the two public surfaces cannot drift. Notably
+                 has NO bare "/if" — that is what exposed /if/admin/. */ -}}
+          {{- range $p := (include "fuzefront.authentikPublicPaths" $ | fromYamlArray) }}
           - path: {{ $p }}
             pathType: Prefix
             backend:
@@ -400,10 +403,28 @@ metadata:
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
     app.kubernetes.io/component: authentik-admin
-  {{- with .Values.authentik.adminIngress.annotations }}
   annotations:
+    # NOT OPTIONAL. Authentik derives every URL it advertises — issuer,
+    # authorization_endpoint, token_endpoint, jwks_uri — from the incoming
+    # request, so without X-Forwarded-Proto it builds them as http:// even though
+    # the client arrived over TLS.
+    #
+    # This Ingress was the only one of the three Authentik ingresses missing it.
+    # That went unnoticed while the host served just the admin UI, and broke the
+    # moment FuzeInfra pointed OIDC consumers here: discovery returned
+    #   "issuer": "http://authentik.prod.fuzefront.com/application/o/kafka-ui/"
+    # and every client that validates the iss claim against its configured https
+    # issuer rejected the login. Kafka UI and ArgoCD self-discover and both
+    # failed with a bare /login?error; Grafana uses explicit URLs so it degraded
+    # more quietly.
+    #
+    # Keep this in sync with the other two: templates/ingress.yaml
+    # (fuzefront-authentik-idp) and templates/authentik.yaml (the auth.<zone>
+    # Ingress) both set the same middleware.
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-authentik-forwarded-proto@kubernetescrd
+    {{- with .Values.authentik.adminIngress.annotations }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
 spec:
   ingressClassName: {{ .Values.authentik.adminIngress.className | default .Values.ingress.className }}
   rules:

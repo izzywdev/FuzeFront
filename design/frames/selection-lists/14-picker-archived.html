@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Selection Lists — Picker — archived value</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="content" data-frame="14-picker-archived" style="padding-top: var(--space-12);">
+
+      <h1 class="page-title" style="text-align:center;">Archived value — resolved, not blank</h1>
+      <p class="page-sub" style="text-align:center;">The state that makes archive-by-default worth having.</p>
+
+    <div class="sl-banner sl-banner--info" style="max-width: 560px; margin: 0 auto var(--space-6);" data-note="embeddable">
+      <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+      <div class="sl-banner__body">
+        <p class="sl-banner__title">This is a host page, not the FuzeFront shell</p>
+        <p><code class="sl-code">&lt;SelectionListPicker&gt;</code> is embeddable: it mounts inside a consuming
+          product's own form, beside that product's own fields. It is bound by list
+          <code class="sl-code">key</code>, never by a hard-coded option array.</p>
+      </div>
+    </div>
+
+      <div class="sl-host" data-panel="picker" data-state="archived-selected">
+        <h2 class="sl-host__title">Opportunity · opened March 2024</h2>
+        <p class="sl-host__sub">CRM · an old record being re-opened today</p>
+
+        <div class="sl-field">
+          <label class="sl-field__label" for="h-name2">Account name</label>
+          <input class="sl-input" id="h-name2" value="Adriatic Freight" />
+        </div>
+
+        <div class="sl-field" data-picker="sales-regions">
+          <label class="sl-field__label" for="p-region2">Sales region</label>
+          <div class="sl-combo">
+            <div class="sl-combo__control" role="combobox" aria-expanded="false" id="p-region2" tabindex="0">
+              <!-- stored id resolves to a label + status:"archived" -->
+              <span class="sl-combo__value" data-selected-label data-archived="true" style="color: var(--text-tertiary);">
+                EMEA South
+                <span class="sl-pill sl-pill--archived" data-status="archived">archived</span>
+              </span>
+              <span class="sl-combo__caret" aria-hidden="true">▾</span>
+            </div>
+          </div>
+          <p class="sl-field__hint">This record stored <code class="sl-code">sli_18h455…</code> in 2024.
+            That value has since been archived — so it is <b>greyed and badged</b>, but it still renders its
+            real label. It does <b>not</b> disappear, and the field does not silently become blank.</p>
+        </div>
+
+        <div class="sl-persist" data-persisted>
+          <div class="sl-persist__label">POST /v1/resolve → results["sli_18h455…"]</div>
+          <code>{ "label": "EMEA South", "locale": "en", "is_machine": false, "status": "archived" }</code>
+          <p class="sl-field__hint" style="margin-top: var(--space-2);">Archived items resolve normally. The
+            caller styles them as retired using <code class="sl-code">status</code> — the service does not
+            hide them, because a consumer's stored reference must stay readable forever.</p>
+        </div>
+      </div>
+
+      <div class="sl-banner sl-banner--info" style="max-width: 560px; margin: var(--space-6) auto 0;" data-note="archived-not-offerable">
+        <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+        <div class="sl-banner__body">
+          <p class="sl-banner__title">Readable, but not re-selectable</p>
+          <p>An archived value renders when it is <b>already stored</b>, and is <b>absent from the menu</b> —
+            so nobody can newly pick a retired option, while every existing record keeps its meaning.
+            If the user changes the region, the archived option is gone for good.</p>
+        </div>
+      </div>
+
+      <div class="sl-section" style="margin-top: var(--space-10);">
+        <h2>The menu excludes it</h2>
+        <div class="sl-host" data-panel="picker" data-state="archived-not-offered">
+          <div class="sl-field" style="margin-bottom:0;">
+            <label class="sl-field__label">Sales region</label>
+            <div class="sl-combo">
+              <div class="sl-combo__control sl-combo__control--open">
+                <span class="sl-combo__value" data-archived="true" style="color: var(--text-tertiary);">EMEA South
+                  <span class="sl-pill sl-pill--archived">archived</span></span>
+                <span class="sl-combo__caret" aria-hidden="true">▾</span>
+              </div>
+              <div class="sl-combo__menu" style="position: static; margin-top: var(--space-2);">
+                <div class="sl-combo__list">
+                  <div class="sl-opt" role="option" data-item="sli_11h455vb4pex5vsknk084sn02q"><span>Americas</span></div>
+                  <div class="sl-opt" role="option" data-item="sli_12h455vb4pex5vsknk084sn02q"><span>EMEA</span></div>
+                  <div class="sl-opt" role="option" data-item="sli_13h455vb4pex5vsknk084sn02q"><span>APAC</span></div>
+                  <div class="sl-opt" role="option" data-item="sli_14h455vb4pex5vsknk084sn02q"><span>Japan</span></div>
+                </div>
+              </div>
+            </div>
+            <p class="sl-field__hint">Four active options. <b>EMEA South</b> is not among them — but it is
+              still the current value above.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="sl-section">
+        <h2>Contrast: a PURGED id has no label</h2>
+        <p class="sl-caption">This is what archive prevents, and why delete demands typed confirmation.</p>
+        <div class="sl-host" data-panel="picker" data-state="missing">
+          <div class="sl-field" style="margin-bottom:0;">
+            <label class="sl-field__label">Sales region</label>
+            <div class="sl-combo__control" style="border-color: var(--warning-color);">
+              <span class="sl-combo__value sl-combo__value--ph" data-missing="true">Unknown value</span>
+              <span class="sl-combo__caret" aria-hidden="true">▾</span>
+            </div>
+            <p class="sl-field__err" data-error="missing"><span aria-hidden="true">⚠</span>
+              <span>The stored id came back in <code class="sl-code">missing</code> — the value was
+              <b>purged</b>, so no label exists in any locale. The picker shows <b>Unknown value</b> and keeps
+              the id in the form, so re-saving the record does not silently drop data the user never chose to
+              change.</span></p>
+            <div class="sl-persist" style="margin-top: var(--space-3);">
+              <div class="sl-persist__label">POST /v1/resolve → missing</div>
+              <code>["sli_19h455vb4pex5vsknk084sn02q"]</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sl-section">
+        <h2>Locale resolution — same id, different viewer</h2>
+        <div class="sl-panel"><div class="sl-panel__seam"></div>
+          <table class="sl-table" data-panel="resolve-matrix">
+            <thead><tr>
+              <th scope="col">Viewer locale</th><th scope="col">Rendered label</th>
+              <th scope="col">resolved_locale</th><th scope="col">is_machine</th><th scope="col">status</th>
+            </tr></thead>
+            <tbody>
+              <tr data-locale="en"><td class="name">en</td><td>United States</td><td><span class="sl-key">en</span></td><td>false</td><td><span class="sl-pill sl-pill--active">active</span></td></tr>
+              <tr data-locale="fr"><td class="name">fr</td><td>États-Unis</td><td><span class="sl-key">fr</span></td><td>false</td><td><span class="sl-pill sl-pill--active">active</span></td></tr>
+              <tr data-locale="ar"><td class="name">ar</td><td dir="rtl">الولايات المتحدة</td><td><span class="sl-key">ar</span></td><td><span class="sl-pill sl-pill--machine">M true</span></td><td><span class="sl-pill sl-pill--active">active</span></td></tr>
+              <tr data-locale="ja"><td class="name">ja</td><td>United States</td><td><span class="sl-key">en</span> <span class="sl-field__lock">fallback</span></td><td>false</td><td><span class="sl-pill sl-pill--active">active</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="sl-caption" style="margin-top: var(--space-3);">One stored id, four viewers, four renderings —
+          and never an empty string. A Japanese viewer falls back to the source locale rather than seeing a gap.</p>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='14-picker-archived']</code> · <code>[data-state='archived-selected']</code> · <code>[data-selected-label][data-archived='true']</code> · <code>[data-status='archived']</code> · <code>[data-state='archived-not-offered']</code> · <code>[data-note='archived-not-offerable']</code> · <code>[data-state='missing']</code> · <code>[data-missing='true']</code> · <code>[data-error='missing']</code> · <code>[data-panel='resolve-matrix']</code> · <code>[data-locale='ja']</code> · <code>[data-persisted]</code><br />
+        Contract: <code>POST /v1/resolve</code> → <code>{ results: { [id]: { label, locale, is_machine, status } }, missing: string[] }</code>. Archived resolves; only purged lands in <code>missing</code>.<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="13-picker-multi.html" data-nav="prev">← Picker — multi select</a>
+  <span class="caption"><b>(4c) Picker — archived value</b> · Flow 4 · SelectionListPicker · frame 14 of 14</span>
+  <a class="btn btn-primary" href="index.html" data-nav="next">Back to index →</a>
+</nav>
+</body>
+</html>

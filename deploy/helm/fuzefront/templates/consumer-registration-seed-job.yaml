@@ -40,7 +40,14 @@ spec:
       serviceAccountName: consumer-registration-seed
       containers:
         - name: seed
-          image: bitnami/kubectl:1.29
+          # Kubernetes' own community kubectl image. DO NOT switch this back to
+          # bitnami/kubectl: Broadcom removed the free bitnami/* images from Docker
+          # Hub in Aug 2025 (old tags moved to docker.io/bitnamilegacy/*), so
+          # `bitnami/kubectl:1.29` stopped pulling -- this pod ImagePullBackOff'd and
+          # Secret/fuzefront-registration was never published (FuzeFront#688,
+          # FuzeInfra#552). Default declared in values.yaml; helm-validate asserts the
+          # tag actually resolves in the registry before this can merge.
+          image: {{ .Values.consumerRegistrationSeed.image }}
           command:
             - /bin/sh
             - -c
@@ -50,16 +57,38 @@ spec:
               SECRET_NAME="fuzefront-registration"
               TOKEN_FILE="/run/consumer-secret/CONSUMER_REGISTRATION_SECRET"
               if [ ! -f "$TOKEN_FILE" ] || [ ! -s "$TOKEN_FILE" ]; then
-                echo "CONSUMER_REGISTRATION_SECRET not present in chart secret — skipping seed."
-                echo "Add the key to the prod SealedSecret to enable consumer self-registration."
+{{- if .Values.secret.existingSecret }}
+                # This release reads its credentials from an out-of-band (sealed)
+                # Secret, so CONSUMER_REGISTRATION_SECRET is EXPECTED to be present.
+                # Its absence is a real misconfiguration, not a not-yet-provisioned
+                # state, and exiting 0 here is what let the whole handoff stay broken
+                # while every signal read "succeeded" (FuzeFront#688).
+                echo "FATAL: key CONSUMER_REGISTRATION_SECRET is absent or empty in" >&2
+                echo "Secret/{{ include "fuzefront.secretName" . }} (namespace $NS)." >&2
+                echo "Without it Secret/$SECRET_NAME is never published, FuzeInfra's" >&2
+                echo "publish-sealed-handoff cannot distribute registration tokens, and" >&2
+                echo "no consumer product can self-register with the portal." >&2
+                exit 1
+{{- else }}
+                # No existingSecret => a dev/local install using the chart's own
+                # placeholder Secret. Skipping is legitimate here.
+                echo "CONSUMER_REGISTRATION_SECRET not set — skipping seed (dev install)."
                 exit 0
+{{- end }}
               fi
               TOKEN="$(cat "$TOKEN_FILE")"
               kubectl -n "$NS" create secret generic "$SECRET_NAME" \
                 --from-literal=token="$TOKEN" \
                 --dry-run=client -o yaml \
               | kubectl -n "$NS" apply -f -
-              echo "Secret $SECRET_NAME ensured in namespace $NS."
+              # Assert the POSTCONDITION rather than the exit status of the apply.
+              # `kubectl apply` succeeding is not evidence the key landed; read it
+              # back. Only the LENGTH is examined -- the token is never printed.
+              if [ -z "$(kubectl -n "$NS" get secret "$SECRET_NAME" -o jsonpath='{.data.token}')" ]; then
+                echo "FATAL: $SECRET_NAME exists but its 'token' key is empty." >&2
+                exit 1
+              fi
+              echo "Secret $SECRET_NAME ensured in namespace $NS with a non-empty token."
           volumeMounts:
             - name: consumer-secret
               mountPath: /run/consumer-secret
@@ -68,8 +97,10 @@ spec:
         - name: consumer-secret
           secret:
             secretName: {{ include "fuzefront.secretName" . }}
-            # optional: key may not yet exist in prod SealedSecret; the script
-            # handles absence gracefully (exits 0 with a diagnostic message).
+            # optional: tolerates the Secret itself being absent on a fresh
+            # dev install. It does NOT make a missing key harmless -- when this
+            # release uses an existingSecret the script now exits 1 rather than
+            # 0, because silently skipping is what hid FuzeFront#688 for 8 days.
             optional: true
             items:
               - key: CONSUMER_REGISTRATION_SECRET

@@ -52,6 +52,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/session/password/reset-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a password-reset link/code (unauthenticated)
+         * @description Begins self-service password reset for the supplied email. ALWAYS returns 202 regardless of whether an account exists — the response never reveals account existence (no user enumeration). If an account exists, a reset link/code is dispatched via the family email service.
+         */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/session/password/reset-confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a password reset with a token (unauthenticated)
+         * @description Completes password reset by presenting the single-use `token` from the reset message together with a `newPassword`. Fail-closed on an unknown/expired/consumed token or a password that fails policy.
+         */
+        post: operations["confirmPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set/add a password on a social-only account
+         * @description Adds a password sign-in method to the authenticated account (e.g. an account created via social login that has no password yet). Returns 409 if a password already exists — use the reset flow to change an existing one. Fail-closed on a password that fails policy.
+         */
+        post: operations["setPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the current user's active sessions / devices
+         * @description Returns the authenticated user's active sessions, one per device/agent, with the current session flagged (`current: true`). Bounded per user (a person signs in from a handful of devices), so the full set is returned.
+         */
+        get: operations["listSessions"];
+        put?: never;
+        post?: never;
+        /**
+         * Revoke all other sessions (keep the current one)
+         * @description Revokes every active session for the authenticated user EXCEPT the one making the request. Idempotent. Useful for "sign out everywhere else".
+         */
+        delete: operations["revokeOtherSessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke one session by id
+         * @description Revokes a single active session belonging to the authenticated user. Idempotent — revoking an absent/already-revoked session still returns 204. A user may revoke their current session (equivalent to logout).
+         */
+        delete: operations["revokeSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/social/{provider}/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Begin linking a social provider to the current account
+         * @description Starts a server-brokered handshake to link the named social provider to the authenticated account. Like login, the browser only ever transits the app host and the provider's own consent host. Returns `{ redirectUrl }` for the SPA to navigate to. On completion the provider returns to `GET /v1/security/social/callback`, which links (rather than signs in) when an authenticated link handshake is in progress.
+         */
+        post: operations["linkSocial"];
+        /**
+         * Unlink a social provider from the current account
+         * @description Removes the named social provider from the authenticated account. Fail-closed: returns 409 if unlinking would leave the account with NO remaining sign-in method (no other social connection AND no password) — the account must always retain at least one way to sign in.
+         */
+        delete: operations["unlinkSocial"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/identity/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the current account's sign-in connections
+         * @description Returns the authenticated account's linked social providers and whether it has a password sign-in method. The UI uses this to render link/unlink affordances and to decide whether "set password" is offered. Bounded by the fixed provider catalogue, so the full set is returned.
+         */
+        get: operations["getIdentityConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/social/{provider}/start": {
         parameters: {
             query?: never;
@@ -92,6 +240,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/social/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server-brokered Google callback (302 back to app)
+         * @description SERVER-BROKERED Google sign-in callback. Google redirects the browser here directly (never to an internal identity host). The security service exchanges the authorization code with Google server-to-server, validates the id_token, provisions/links the user in the identity store, mints a single-use opaque code, and 302-redirects back to the app with `?code=<opaque>` (or `?linked=<provider>` for a link handshake). On a provider error or denied consent it redirects to `/?error=authentication_failed`. No token is ever placed in the URL. The exact absolute form of this path (`https://app.fuzefront.com/api/v1/security/social/google/callback`) MUST be registered as an Authorized redirect URI on FuzeFront's Google OAuth client, or Google rejects the handshake.
+         */
+        get: operations["googleBrokerCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/signup": {
         parameters: {
             query?: never;
@@ -124,6 +292,28 @@ export interface paths {
          * @description Neutral capability descriptor for the auth surface. Replaces the legacy vendor-specific `oidcConfigured` boolean. Lets the UI render the right affordances (password form, social buttons) without knowing any provider.
          */
         get: operations["getAuthMethods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/email-available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check whether an email is available to register
+         * @description Public, unauthenticated inline check for the signup form: is this email free to register? Consults the SAME source of truth `signup` uses to reject a duplicate, so the answer cannot disagree with signup. The email is normalized (trimmed + lowercased) before checking and echoed back.
+         *
+         *     This endpoint intentionally reveals whether an address is registered (product requires inline "available / already registered" feedback), so it is per-IP rate-limited (20/min/IP) as the deliberate mitigation for the resulting enumeration exposure. Exceeding the limit returns 429.
+         */
+        get: operations["getEmailAvailable"];
         put?: never;
         post?: never;
         delete?: never;
@@ -612,6 +802,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/organizations/{id}/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the user directory of a root/portal organization
+         * @description Unbounded, server-side-searchable directory of ALL users of a tenant-root organization — the platform root org id OR a portal-root org id ("root" is relative to the portal; `tenantId` semantics resolve server-side from the org tree). Offset-paginated per the family pagination standard; the `query` parameter filters server-side (the client never fetches the full set to filter locally). Access is an org owner/admin (or Employee/ReBAC) capability — a non-privileged caller gets `403 FORBIDDEN` rendered in place, never a sign-in redirect (only 401 re-authenticates). An id is never a capability; authorization comes from the token + Permit, not from knowing the org id.
+         */
+        get: operations["listOrganizationDirectory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/employee/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve the caller's Employee (platform-staff) status
+         * @description Server-authoritative Employee status for the calling user, backed by `resolveEmployeeStatus`. `isEmployee` is derived ONLY from the ReBAC `org-admin` grant on the platform root org (derived down the `parent` org tree) — NEVER from membership rows, so the console stops deriving staff status client-side. `directOrgMemberships` is informational: the caller's DIRECT customer-org membership rows, EXCLUDING the platform root (a pure Employee — zero membership rows — has an empty array). Any authenticated caller may read their OWN status; a non-Employee simply gets `isEmployee: false` — this endpoint REPORTS status, it does not gate on it, so there is deliberately no 403 here. An id is never a capability; the decision is the token + Permit.
+         */
+        get: operations["getEmployeeStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/employee/orgs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the org/portal subtree an Employee can reach (ReBAC-authoritative)
+         * @description Employee-only. Returns the platform root org and its descendants that the calling Employee can reach via the ReBAC `org-admin`-on-root grant (derived down the `parent` org tree) — the ReBAC-authoritative reach, NOT the caller's membership-scoped orgs. Powers the cross-org console's CrossOrgExplorer. Cursor-paginated per the family pagination standard (`limit` + opaque `cursor`, `{ items, page }` envelope). Deliberately a FLAT list of nodes each carrying `parentOrgId`, so the client assembles the tree: an explicit nested tree over an unbounded org set cannot be paginated (you cannot cut a subtree at a page boundary), whereas a flat page-walk to `hasMore: false` reconstructs the tree exactly and mirrors the existing directory listing shape. A non-Employee caller gets `403 FORBIDDEN` rendered in place — never a sign-in redirect (only 401 re-authenticates). An id is never a capability; authorization is the token + Permit, not knowledge of any org id.
+         */
+        get: operations["listEmployeeOrgs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List portals (second-level org children of the platform root)
+         * @description Platform-admin-only. Lists the organizations whose `parentOrgId` is the platform root AND that carry the portal-root attribute — i.e. every portal. A portal is NOT a `portals`-table row: it is an `organizations` row on the unified organizations+parent_id tree with tenant attributes (custom domain / white-label branding / per-portal app catalog / reseller billing) that ordinary sub-orgs lack. The platform root org itself is NEVER listed (it has no `parentOrgId`). Cursor-paginated per the family pagination standard (`limit` + opaque `cursor`, `{ items, page }` envelope). A non-platform-admin caller gets `403 FORBIDDEN` fail-closed, rendered in place — never a sign-in redirect (only 401 re-authenticates), same ReBAC derivation as everywhere else. An id is never a capability; the decision is the token + Permit.
+         */
+        get: operations["listPortals"];
+        put?: never;
+        /**
+         * Create a portal (an org child of the platform root + tenant attributes)
+         * @description Platform-admin-only. Creates an `organizations` row with `parentOrgId` = the platform root and the portal-root + tenant attributes attached, reusing the same resumable provisioning backbone as ordinary org provisioning (NOT a `portals`-table insert). Per the identifier standard the owning service mints the org id — the request body MUST NOT carry an `id`, and `additionalProperties: false` rejects a stray one. The parent is fixed to the platform root by this endpoint, so no client-supplied parent reference is accepted. A duplicate `slug` returns `409` (`code: CONFLICT`). A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation.
+         */
+        post: operations["createPortal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals/{portalOrgId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one portal (the org + its tenant attributes)
+         * @description Platform-admin-only. Returns the portal org and its tenant attributes. `portalOrgId` REFERENCES an existing, server-minted organization (typed id) that is a direct child of the platform root. A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation; an id is never a capability — authorization is the token + Permit, not knowledge of the org id.
+         */
+        get: operations["getPortal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals/{portalOrgId}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend a portal (org-level status flip)
+         * @description Platform-admin-only. Flips the portal org's lifecycle status to `suspended` — an org-level status flip reusing the org status model, not a portal-specific state machine. Idempotent: suspending an already-suspended portal is a no-op 200. The platform root is not a portal and cannot be suspended (`409`, `code: CONFLICT`). A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation.
+         */
+        post: operations["suspendPortal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/portals/{portalOrgId}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a suspended portal (org-level status flip)
+         * @description Platform-admin-only. Flips a `suspended` portal org back to `active` — an org-level status flip. Idempotent: resuming an already-active portal is a no-op 200. A non-platform-admin caller gets `403 FORBIDDEN` fail-closed via the same ReBAC derivation.
+         */
+        post: operations["resumePortal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -671,6 +1005,16 @@ export interface components {
         SessionInfo: {
             identity: components["schemas"]["Identity"];
             user: components["schemas"]["User"];
+        };
+        /** @description Result of the public inline email-availability check. `available` is the negation of "an account already exists"; `email` is the normalized (trimmed + lowercased) address that was actually checked. */
+        EmailAvailability: {
+            /** @description True when no account exists for the email and it is free to register. */
+            available: boolean;
+            /**
+             * Format: email
+             * @description The normalized address that was checked (echoed back).
+             */
+            email: string;
         };
         /** @description Neutral auth capability descriptor. Replaces `oidcConfigured`. Lets the UI render affordances (password form, social buttons, MFA, contact verification) without knowing any provider. */
         AuthMethods: {
@@ -912,7 +1256,7 @@ export interface components {
         VerifyConfirmRequest: {
             token?: string;
             code?: string;
-        };
+        } | unknown | unknown;
         PhoneVerifyConfirmRequest: {
             phone: string;
             code: string;
@@ -921,6 +1265,64 @@ export interface components {
             emailVerified: boolean;
             phoneVerified: boolean;
             phone?: string;
+        };
+        /** @description Self-service password-reset request. Response never reveals account existence. */
+        PasswordResetRequest: {
+            /** Format: email */
+            email: string;
+        };
+        /** @description Complete a password reset with the single-use token from the reset message. */
+        PasswordResetConfirmRequest: {
+            /** @description Single-use, short-lived reset token from the dispatched message. */
+            token: string;
+            /** @description The new password; must satisfy the account password policy. */
+            newPassword: string;
+        };
+        /** @description Outcome of a successful password reset. */
+        PasswordResetResult: {
+            /** @description Always true on success. */
+            reset: boolean;
+        };
+        /** @description Set/add a password on an account that has no password sign-in method yet. */
+        SetPasswordRequest: {
+            /** @description The password to set; must satisfy the account password policy. */
+            newPassword: string;
+        };
+        /** @description One active session for the current user, describing the device/agent it was established from. `current: true` marks the session making the request. */
+        SessionDevice: {
+            /** @description Session id; pass to `DELETE /v1/security/sessions/{id}` to revoke. */
+            id: string;
+            /** @description Best-effort device descriptor (e.g. "iPhone", "Desktop"), or null. */
+            device?: string | null;
+            /** @description Best-effort browser name, or null. */
+            browser?: string | null;
+            /** @description Best-effort OS name, or null. */
+            os?: string | null;
+            /** @description Source IP recorded for the session, or null. */
+            ip?: string | null;
+            /** @description Best-effort coarse geolocation label (e.g. city/country), or null. */
+            geo?: string | null;
+            /** @description Epoch millis of the session's most recent activity. */
+            lastSeenAt?: number;
+            /** @description True for the session making this request. */
+            current: boolean;
+        };
+        /** @description Result of beginning a social-link handshake. The SPA navigates the browser to `redirectUrl` (the same-host authorize path); the browser never sees an internal identity host. */
+        SocialLinkStart: {
+            /** @description Same-origin/consent-host URL to navigate to in order to continue linking. */
+            redirectUrl: string;
+        };
+        /** @description A linked social sign-in connection on the account. */
+        SocialConnection: {
+            provider: components["schemas"]["SocialProvider"];
+            /** @description Epoch millis when the provider was linked. */
+            linkedAt?: number;
+        };
+        /** @description The account's sign-in connections: which social providers are linked and whether a password sign-in method exists. Drives link/unlink and set-password affordances in the UI. */
+        IdentityConnections: {
+            providers: components["schemas"]["SocialConnection"][];
+            /** @description Whether the account has a password sign-in method. */
+            hasPassword: boolean;
         };
         /** @description Cursor-pagination page metadata (family standard). */
         PageInfo: {
@@ -936,6 +1338,169 @@ export interface components {
         };
         MemberPage: {
             items: components["schemas"]["Member"][];
+            page: components["schemas"]["PageInfo"];
+        };
+        /** @description One user in a root/portal directory. `userId` REFERENCES an existing, server-minted user (typed id) — the directory owns no new identity, so this is not a create body. `role` is the user's membership role in THIS root/portal, keyed by the UI to a pill and never hard-coded. */
+        DirectoryMember: {
+            /** @description Server-minted, typed user id (e.g. `usr_…`). Opaque past the prefix; never a capability — authorization is the token + Permit. */
+            userId: string;
+            /** Format: email */
+            email?: string;
+            /** @description The person's display name (frame row primary text). */
+            displayName: string;
+            /**
+             * Format: date-time
+             * @description When the user became a member of this root/portal.
+             */
+            joinedAt?: string;
+            /**
+             * @description The user's membership role in this root/portal. With literal root membership every user is at least `member`. (Employee/ReBAC staff have no membership row and are not directory rows — see CHANGELOG.)
+             * @enum {string}
+             */
+            role: "owner" | "admin" | "member" | "viewer";
+            /** @description True for the calling user's own row (rendered "You"; data-self). */
+            isSelf?: boolean;
+        };
+        /** @description Page-based envelope for the searchable user directory. Deliberately distinct from the cursor `PageInfo` envelope (MemberPage/TenantPage): the directory is search-first and page-navigable, so it echoes the 1-based `page`, the effective `pageSize`, and the true server `total` so the UI can render a page-of-pages pager and disable Prev/Next at the boundaries. Satisfies gate-pagination (`items` + `page`). */
+        DirectoryPage: {
+            items: components["schemas"]["DirectoryMember"][];
+            /** @description 1-based current page number (derived from offset / limit). */
+            page: number;
+            /** @description Effective page size (the server-clamped `limit`). */
+            pageSize: number;
+            /** @description Total directory members matching `query` (drives the pager). */
+            total: number;
+        };
+        /** @description One DIRECT customer-org membership the calling user holds. REFERENCES an existing, server-minted organization (typed id) — not a create body and not identity the client supplies. Informational context on the Employee status; the platform root org is excluded from this set. */
+        DirectMembershipRef: {
+            /** @description Server-minted, typed organization id (e.g. `org_…`) the caller is a direct member of. Opaque past the prefix; never a capability. The field name carries the referent type, so no bare id is resolved. */
+            orgId: string;
+            /** @description Display name of the organization (row primary text). */
+            orgName?: string;
+            /**
+             * @description The caller's membership role in this organization.
+             * @enum {string}
+             */
+            role: "owner" | "admin" | "member" | "viewer";
+        };
+        /** @description Server-authoritative Employee (platform-staff) status for the calling user — the shape returned by `resolveEmployeeStatus`. `isEmployee` is the sole authority the console must trust; `directOrgMemberships` is purely informational. */
+        EmployeeStatus: {
+            /** @description True iff the caller holds the ReBAC `org-admin` grant on the platform root org (derived down the `parent` org tree). NEVER inferred from membership rows. An id is never a capability; this is a token + Permit decision. */
+            isEmployee: boolean;
+            /** @description Informational: the caller's DIRECT customer-org membership rows, EXCLUDING the platform root. A pure Employee has an empty array. Bounded per user (not user-controlled unbounded growth), which is why the endpoint is `x-pagination: exempt`. */
+            directOrgMemberships: components["schemas"]["DirectMembershipRef"][];
+        };
+        /** @description One node of the org/portal subtree an Employee can reach via ReBAC. REFERENCES existing, server-minted organizations (typed ids) — not a create body. Flat by design: the client assembles the tree from `parentOrgId`, so a page boundary never splits a subtree. */
+        EmployeeOrgNode: {
+            /** @description Server-minted, typed organization id (e.g. `org_…`) of THIS node. Opaque past the prefix; never a capability. */
+            orgId: string;
+            /** @description Display name of the organization/portal (explorer row text). */
+            name: string;
+            /** @description Typed id of this node's parent organization, or `null` for the platform root node. The client links children to parents by this field to rebuild the tree. The field name carries the referent type, so no bare id is resolved. */
+            parentOrgId: string | null;
+            /**
+             * @description Node classification for the explorer: the platform `root`, a portal-root (`portal`), or a customer `organization`. A hint for rendering; authorization is never derived from it.
+             * @enum {string}
+             */
+            kind: "root" | "portal" | "organization";
+            /** @description Distance from the platform root (root = 0), so the explorer can indent without first assembling the whole tree. */
+            depth: number;
+            /** @description Optional count of direct members of this org, when cheaply available; omitted when counting is expensive. */
+            memberCount?: number;
+        };
+        /** @description Cursor-paginated envelope for the Employee-reachable org subtree. Uses the family cursor `PageInfo` envelope (like `MemberPage`/`TenantPage`): the explorer page-walks to `hasMore: false` to assemble the full tree, so a forward cursor — not random page access — is the right shape. Satisfies gate-pagination (`items` + `page`). */
+        EmployeeOrgPage: {
+            items: components["schemas"]["EmployeeOrgNode"][];
+            page: components["schemas"]["PageInfo"];
+        };
+        /**
+         * @description Org-level lifecycle status for a portal — reuses the org status model, NOT a portal-specific state machine. `provisioning` / `provisioned-pending-invite` are transient states from the resumable provisioning backbone; `active` / `suspended` are the steady lifecycle a platform admin toggles via suspend/resume.
+         * @enum {string}
+         */
+        PortalStatus: "provisioning" | "provisioned-pending-invite" | "active" | "suspended";
+        /**
+         * @description How the portal is billed (tenant attribute, FF-EPIC-15). `free` — no billing; `platform` — billed by FuzeFront directly; `reseller` — the portal bills its own users via Stripe Connect.
+         * @enum {string}
+         */
+        PortalBillingMode: "free" | "platform" | "reseller";
+        /**
+         * @description Per-portal app-catalog tenant attribute (FF-EPIC-12). `inherit` — the portal shows the platform-root catalog; `custom` — the portal curates its own app set.
+         * @enum {string}
+         */
+        PortalAppCatalogMode: "inherit" | "custom";
+        /** @description White-label branding tenant attribute (FF-EPIC-13), applied entirely through design-system token overrides (no raw hex in feature code). Every field has a documented fallback so the UI never shows a broken image or an unbranded flash. */
+        PortalBranding: {
+            /** @description Portal display name (shown in the topbar and login). */
+            name: string;
+            /**
+             * Format: uri
+             * @description Logo image URL, or null → initials/default fallback (never a broken image).
+             */
+            logo?: string | null;
+            /**
+             * Format: uri
+             * @description Favicon URL, or null → default fallback.
+             */
+            favicon?: string | null;
+            /** @description CSS color applied as a scoped design-system token override (`--accent-*`); AA-contrast-validated. Malformed/null → default accent. */
+            accent?: string | null;
+            /** @description Optional custom login copy / strapline. Null → default copy. */
+            tagline?: string | null;
+        };
+        /** @description A portal expressed on the unified org tree: an `organizations` row whose `parentOrgId` is the platform root and that carries the portal-root attribute (`isPortalRoot: true`) + tenant attributes. NOT a `portals`-table row (that model is superseded — see the root `x-supersedes`). `orgId`/`parentOrgId` REFERENCE server-minted organizations (typed ids) — never a create body, never a capability. */
+        Portal: {
+            /** @description Server-minted, typed organization id (e.g. `org_…`) of this portal's backing org. Opaque past the prefix; never a capability. */
+            orgId: string;
+            /** @description Typed id of the parent organization — always the platform root (`00000000-0000-0000-0000-000000000010`) for a portal. The field name carries the referent type, so no bare id is resolved. */
+            parentOrgId: string;
+            /** @description Portal display name. */
+            name: string;
+            /** @description URL-safe unique portal identifier (immutable once provisioned). */
+            slug: string;
+            /**
+             * @description Node classification on the org tree (matches `EmployeeOrgNode.kind`). A portal is always `portal`; a rendering hint, never an authz input.
+             * @enum {string}
+             */
+            kind: "portal";
+            status: components["schemas"]["PortalStatus"];
+            /** @description True — carries the portal-root attribute that distinguishes a portal from an ordinary sub-org. The platform root org is never a portal and is never returned by these endpoints. */
+            isPortalRoot: boolean;
+            /**
+             * Format: email
+             * @description The portal owner's email (from the provisioning invite), or null.
+             */
+            ownerEmail?: string | null;
+            /** @description Verified custom domain bound to this portal (tenant attribute, FF-EPIC-16), or null → the platform-owned default subdomain. */
+            customDomain?: string | null;
+            branding: components["schemas"]["PortalBranding"];
+            billingMode: components["schemas"]["PortalBillingMode"];
+            appCatalogMode: components["schemas"]["PortalAppCatalogMode"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description Payload to provision a new portal (a new org child of the platform root + tenant attributes). No `id` — the owning service mints the org id. No parent reference — the endpoint fixes the parent to the platform root. */
+        PortalCreate: {
+            name: string;
+            /** @description URL-safe unique portal identifier (immutable once provisioned). */
+            slug: string;
+            /**
+             * Format: email
+             * @description The email invited as the portal owner during provisioning.
+             */
+            ownerEmail: string;
+            /** @description Optional custom domain to bind (FF-EPIC-16); null → default subdomain. */
+            customDomain?: string | null;
+            branding?: components["schemas"]["PortalBranding"];
+            /** @default free */
+            billingMode: components["schemas"]["PortalBillingMode"];
+            /** @default inherit */
+            appCatalogMode: components["schemas"]["PortalAppCatalogMode"];
+        };
+        /** @description A page of portals — the `{ items, page }` cursor envelope (family standard). Named alias exported by the generated client; the list response inlines a structurally identical envelope so gate-pagination sees it without resolving $ref. */
+        PortalPage: {
+            items: components["schemas"]["Portal"][];
             page: components["schemas"]["PageInfo"];
         };
         /** @description Stable error body. Fail-closed; provider-neutral codes. */
@@ -973,6 +1538,35 @@ export interface components {
                 "application/json": components["schemas"]["ErrorBody"];
             };
         };
+        /** @description The caller is authenticated but lacks the org owner/admin (or Employee/ReBAC) capability required for this operation (`code: FORBIDDEN`). Fail-closed and rendered in place with zero data — never a sign-in redirect; only 401 re-authenticates. */
+        Forbidden: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorBody"];
+            };
+        };
+        /** @description The configured identity or authorization provider rejected the operation. */
+        ProviderError: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorBody"];
+            };
+        };
+        /** @description The identity provider is unreachable, too slow, or presented a flow this API cannot drive server-side (`code: PROVIDER_UNAVAILABLE`). This is a SERVICE condition and says nothing about the caller's credentials — clients MUST NOT surface it as an authentication failure. Retryable; `Retry-After` indicates how long to wait. */
+        ServiceUnavailable: {
+            headers: {
+                /** @description Seconds to wait before retrying. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorBody"];
+            };
+        };
     };
     parameters: {
         /** @description Max items per page. Clamped server-side to the maximum. */
@@ -980,6 +1574,14 @@ export interface components {
         /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
         Cursor: string;
         TenantId: string;
+        /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+        OrganizationId: string;
+        /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+        PortalOrgId: string;
+        /** @description 0-based item offset for page navigation (offset = (page - 1) * pageSize). Page-based paging over an unbounded set — deliberately an offset, not a cursor, so the directory is page-navigable and search-first. */
+        Offset: number;
+        /** @description Server-side search over the directory (name / email). Submitted by the UI search box; the client never fetches all users to filter locally. */
+        DirectoryQuery: string;
         FactorId: string;
     };
     requestBodies: never;
@@ -1033,6 +1635,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     deleteSession: {
@@ -1080,6 +1683,243 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted. A reset message was dispatched IF the email maps to an account. Response is identical either way (no enumeration). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    confirmPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Password reset; the account may now sign in with the new password. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+        };
+    };
+    setPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Password set; the account now has a password sign-in method. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityConnections"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description A password sign-in method already exists on this account. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The active sessions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["SessionDevice"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeOtherSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Other sessions revoked; the current session remains valid. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The session id from `GET /v1/security/sessions`. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Session revoked (idempotent). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    linkSocial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Social provider slug. Extensible; `google` is the first supported value. */
+                provider: components["schemas"]["SocialProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Link handshake started; navigate the browser to `redirectUrl`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SocialLinkStart"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description This provider is already linked to the account. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    unlinkSocial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Social provider slug to unlink. */
+                provider: components["schemas"]["SocialProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Provider unlinked; remaining connections returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityConnections"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description Unlinking would leave the account with no sign-in method. Set a password or link another provider first. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getIdentityConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account's sign-in connections. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityConnections"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     startSocialLogin: {
         parameters: {
             query?: {
@@ -1120,7 +1960,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Redirect back to the app with a FuzeFront opaque `?code=`. */
+            /** @description Redirect back to the app with a FuzeFront opaque `?code=` on success, or a neutral `error=authentication_failed` on rejection. */
             302: {
                 headers: {
                     Location?: string;
@@ -1128,7 +1968,32 @@ export interface operations {
                 };
                 content?: never;
             };
-            401: components["responses"]["Unauthorized"];
+        };
+    };
+    googleBrokerCallback: {
+        parameters: {
+            query?: {
+                /** @description Google authorization code (protocol-level; consumed server-side). */
+                code?: string;
+                /** @description Opaque anti-forgery state issued at start. */
+                state?: string;
+                /** @description Present when Google reports an error (e.g. access_denied). */
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect back to the app with an opaque `?code=`, `?linked=`, or `?error=`. */
+            302: {
+                headers: {
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     signup: {
@@ -1163,6 +2028,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     getAuthMethods: {
@@ -1181,6 +2047,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthMethods"];
+                };
+            };
+        };
+    };
+    getEmailAvailable: {
+        parameters: {
+            query: {
+                /** @description The email address to check. Normalized (trim + lowercase) server-side. */
+                email: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailAvailability"];
+                };
+            };
+            /** @description The email is missing or malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Rate limit exceeded (per-IP enumeration guard). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };
@@ -1240,7 +2147,8 @@ export interface operations {
     getPermissions: {
         parameters: {
             query: {
-                subject: string;
+                /** @description Defaults to the authenticated caller when omitted. */
+                subject?: string;
                 tenant: string;
             };
             header?: never;
@@ -1265,7 +2173,8 @@ export interface operations {
     listGrants: {
         parameters: {
             query: {
-                subject: string;
+                /** @description Defaults to the authenticated caller when omitted. */
+                subject?: string;
                 tenant: string;
                 resourceType?: string;
                 resourceKey?: string;
@@ -1317,7 +2226,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     revokeGrant: {
@@ -1394,6 +2303,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            502: components["responses"]["ProviderError"];
         };
     };
     getTenant: {
@@ -1605,7 +2515,6 @@ export interface operations {
                     "application/json": components["schemas"]["TokenIntrospection"];
                 };
             };
-            400: components["responses"]["BadRequest"];
         };
     };
     listMfaFactors: {
@@ -1850,6 +2759,7 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     confirmPhoneVerification: {
@@ -1896,6 +2806,243 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listOrganizationDirectory: {
+        parameters: {
+            query?: {
+                /** @description Server-side search over the directory (name / email). Submitted by the UI search box; the client never fetches all users to filter locally. */
+                query?: components["parameters"]["DirectoryQuery"];
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: components["parameters"]["Limit"];
+                /** @description 0-based item offset for page navigation (offset = (page - 1) * pageSize). Page-based paging over an unbounded set — deliberately an offset, not a cursor, so the directory is page-navigable and search-first. */
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of directory members. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getEmployeeStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller's Employee status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeStatus"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listEmployeeOrgs: {
+        parameters: {
+            query?: {
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of reachable org/portal nodes (flat; assemble the tree via `parentOrgId`). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmployeeOrgPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listPortals: {
+        parameters: {
+            query?: {
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: number;
+                /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
+                cursor?: string;
+                /** @description Optional filter by lifecycle status. Omit for all statuses. */
+                status?: components["schemas"]["PortalStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of portals. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Portal"][];
+                        page: components["schemas"]["PageInfo"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalCreate"];
+            };
+        };
+        responses: {
+            /** @description Portal created (a new org child of the platform root). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description A portal with this slug already exists (`code` = `CONFLICT`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            502: components["responses"]["ProviderError"];
+        };
+    };
+    getPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+                portalOrgId: components["parameters"]["PortalOrgId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The portal org + tenant attributes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    suspendPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+                portalOrgId: components["parameters"]["PortalOrgId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portal suspended. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The transition is refused (e.g. the platform root is not a portal) — `code` = `CONFLICT`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    resumePortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server-minted, typed organization id of a portal — a direct child of the platform root org. The field name carries the referent type, so no bare id is resolved. Opaque past its prefix; never a capability — the decision is the token + Permit, not knowledge of the id. */
+                portalOrgId: components["parameters"]["PortalOrgId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portal resumed (active). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
 }

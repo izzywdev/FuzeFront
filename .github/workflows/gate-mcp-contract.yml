@@ -1,0 +1,86 @@
+name: MCP contract gate
+
+# Does the MCP tool surface this repo SERVES still match the contract it CLAIMS?
+#
+# Three artifacts have to agree, and until now nothing checked any of them:
+#
+#   services/app-registry-service/openapi.yaml            the source of truth
+#   deploy/helm/fuzefront/files/app-registry-openapi.yaml the copy the pod mounts
+#   deploy/helm/fuzefront/files/mcp-tool-descriptions...  the prose agents read
+#
+# The middle one exists because Helm's .Files.Get cannot read outside the chart
+# directory, so it is a hand-maintained copy. `scripts/check-mcp-spec-drift.sh`
+# was written to prove it had not drifted and then wired to NOTHING — its own
+# header says "run it by hand after touching either file, or wire it into CI",
+# and for its whole life nobody did. It is referenced in exactly one place in
+# the repo: a comment inside a Helm template. A check that runs only when
+# somebody remembers is a check that runs after the incident.
+#
+# The third is the same shape: `generate-descriptions.mjs` is a build-time step
+# behind an npm script and no workflow. A PR that moves the spec regenerates
+# nothing, and the gateway then falls back to spec prose for the changed tools
+# while the cache keeps asserting reviewed LLM text for the others.
+#
+# Both checks here are DETERMINISTIC — sha256 and diff. No LLM, no
+# LITELLM_FUZE_KEY, no network. Generation costs tokens and needs a secret;
+# checking must not, or the gate becomes unrunnable on a fork PR and quietly
+# turns into another thing that skips.
+
+on:
+  push:
+    branches: [master]
+    # Listed twice rather than shared via a YAML anchor: GitHub Actions does not
+    # support anchors/aliases in workflow files, and the failure mode is a
+    # workflow that silently never triggers — which is the exact class of defect
+    # this gate exists to catch. Duplication that runs beats elegance that does not.
+    paths:
+      - 'services/app-registry-service/openapi.yaml'
+      - 'deploy/helm/fuzefront/files/app-registry-openapi.yaml'
+      - 'deploy/helm/fuzefront/files/mcp-tools.overrides.yaml'
+      - 'deploy/helm/fuzefront/files/mcp-tool-descriptions.cache.json'
+      - 'packages/mcp-gateway/**'
+      - 'scripts/check-mcp-spec-drift.sh'
+      - '.github/workflows/gate-mcp-contract.yml'
+  pull_request:
+    paths:
+      - 'services/app-registry-service/openapi.yaml'
+      - 'deploy/helm/fuzefront/files/app-registry-openapi.yaml'
+      - 'deploy/helm/fuzefront/files/mcp-tools.overrides.yaml'
+      - 'deploy/helm/fuzefront/files/mcp-tool-descriptions.cache.json'
+      - 'packages/mcp-gateway/**'
+      - 'scripts/check-mcp-spec-drift.sh'
+      - '.github/workflows/gate-mcp-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-mcp-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-mcp-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: '24' }
+
+      - name: Mounted contract matches the source of truth
+        run: ./scripts/check-mcp-spec-drift.sh
+
+      - name: Description cache matches the committed spec
+        run: |
+          # ABSENT is reported, not failed — the cache has never been generated
+          # in this repo, and the gateway's spec-derived fallback is a supported
+          # boot path, so failing here would red the repo for a feature nobody
+          # switched on. STALE is a hard failure: a cache whose hashes no longer
+          # match is a file asserting reviewed prose about a contract that moved.
+          #
+          # Add --require-cache once the post-merge regeneration workflow has
+          # committed a cache; from then on, absent means it was deleted.
+          node packages/mcp-gateway/scripts/check-descriptions-fresh.mjs \
+            --spec services/app-registry-service/openapi.yaml \
+            --overrides deploy/helm/fuzefront/files/mcp-tools.overrides.yaml \
+            --cache deploy/helm/fuzefront/files/mcp-tool-descriptions.cache.json

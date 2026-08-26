@@ -1,14 +1,29 @@
 {
   "name": "@fuzefront/i18n-translate",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Build-time CLI that AI-translates FuzeFront's English locale files into the curated language set via an OpenAI-compatible gateway (LiteLLM). Idempotent, ICU/interpolation-preserving, glossary-aware.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "fuzefront-i18n-translate": "dist/cli.js"
   },
-  "files": ["dist", "README.md"],
-  "keywords": ["fuzefront", "i18n", "translation", "litellm", "icu", "build-time", "cli"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "fuzefront",
+    "i18n",
+    "translation",
+    "litellm",
+    "icu",
+    "build-time",
+    "cli"
+  ],
   "author": "FuzeFront Team <team@fuzefront.dev>",
   "license": "MIT",
   "homepage": "https://fuzefront.dev",
@@ -38,5 +53,9 @@
     "rimraf": "^5.0.1",
     "typescript": "^5.1.6",
     "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

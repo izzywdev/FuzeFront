@@ -93,6 +93,23 @@ jobs:
           cors_header=$(curl -fsS -I -H "Origin: http://localhost:4173" http://localhost:4174/apps/clock/remoteEntry.js 2>&1 | grep -i "access-control-allow-origin" || true)
           echo "CORS header: ${cors_header:-MISSING}"
 
+      - name: Federated chunks actually load (not just the entry file)
+        run: |
+          # Everything above proves remoteEntry.js is reachable and is really JS.
+          # That is necessary and nowhere near sufficient: the four-layer path
+          # contract (manifest remoteEntry / build base+assetsDir / Ingress /
+          # nginx location+alias) can disagree in a way that serves the ENTRY
+          # correctly and 404s every chunk the entry imports. The host then
+          # mounts a blank panel while every check in this pipeline is green.
+          #
+          # Chunk specifiers inside remoteEntry.js resolve relative to
+          # remoteEntry.js's own URL, so following them tests the real serving
+          # layout rather than re-deriving the config we are trying to check.
+          node ../scripts/check-federated-assets.mjs \
+            http://localhost:4174/apps/clock/remoteEntry.js \
+            --origin http://localhost:4173
+        working-directory: clock-app
+
       - name: Seed the clock-app registration
         run: |
           docker compose -f docker-compose.e2e.yml exec -T postgres \
@@ -134,6 +151,14 @@ jobs:
           docker compose -f docker-compose.e2e.yml logs authentik-server | tail -60 || true
           echo "=== clock-app (last 60 lines) ==="
           tail -60 /tmp/clock.log || echo "(no clock-app log)"
+          echo "=== backend/security: authentikPassword DIAGNOSTIC lines only (all time, FuzeFront#557) ==="
+          # The tail -120 dumps above only catch the LAST attempt's tail end
+          # of a verbose retry loop, which drops the per-hop Set-Cookie/CSRF
+          # diagnostics from earlier hops in the same attempt. Grep the full,
+          # untruncated logs for just the diagnostic lines instead.
+          docker compose -f docker-compose.e2e.yml logs backend security 2>/dev/null \
+            | grep -aiE "DIAGNOSTIC|csrf" \
+            | head -400 || true
 
       - name: Upload Playwright report
         if: failure()

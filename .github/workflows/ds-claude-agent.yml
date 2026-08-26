@@ -4,7 +4,9 @@ name: DS Agent Runner
 # GITHUB_TOKEN dispatching workflow_dispatch DOES fire the target workflow,
 # unlike issue/push events. This is the fully-automated, no-PAT path.
 #
-# Requires repo secret: ANTHROPIC_API_KEY.
+# LLM credential: routed through .github/actions/llm-endpoint (LiteLLM in-cluster
+# with automatic fallback to a direct vendor). Requires repo secret LITELLM_FUZE_KEY
+# and/or ANTHROPIC_API_KEY (at least one).
 on:
   workflow_dispatch:
     inputs:
@@ -29,9 +31,22 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Run Claude Code Action
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d # v1
+      - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
+        id: llm
+        uses: ./.github/actions/llm-endpoint
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: ${{ inputs.prompt }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-chain: ${{ vars.FUZE_LLM_FALLBACK_CHAIN || 'anthropic,openai,gemini' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
+          fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Run Claude Code Action
+        uses: ./.github/actions/fuze-code-action
+        with:
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          task-prompt: ${{ inputs.prompt }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

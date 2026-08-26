@@ -38,6 +38,10 @@
       "sourcePath": "components/core/Button.jsx"
     },
     {
+      "name": "ExternalLink",
+      "sourcePath": "components/core/ExternalLink.jsx"
+    },
+    {
       "name": "IconButton",
       "sourcePath": "components/core/IconButton.jsx"
     },
@@ -98,6 +102,10 @@
       "sourcePath": "components/feedback/Toast.jsx"
     },
     {
+      "name": "CodeField",
+      "sourcePath": "components/forms/CodeField.jsx"
+    },
+    {
       "name": "FieldStatus",
       "sourcePath": "components/forms/FieldStatus.jsx"
     },
@@ -112,6 +120,10 @@
     {
       "name": "PasswordChecklist",
       "sourcePath": "components/forms/PasswordChecklist.jsx"
+    },
+    {
+      "name": "SearchField",
+      "sourcePath": "components/forms/SearchField.jsx"
     },
     {
       "name": "Select",
@@ -168,6 +180,10 @@
     {
       "name": "Drawer",
       "sourcePath": "components/mobile/Drawer.jsx"
+    },
+    {
+      "name": "Breadcrumb",
+      "sourcePath": "components/navigation/Breadcrumb.jsx"
     },
     {
       "name": "Pagination",

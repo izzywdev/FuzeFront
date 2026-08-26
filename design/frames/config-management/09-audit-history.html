@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Audit history &amp; revert — Config Management Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="09-audit-history" data-flow="secret-audit">
+  <a class="back" href="index.html">&larr; All config-management frames</a>
+  <div class="eyebrow">Flow 3 · Secrets &amp; audit · Frame (i) · /admin/config/keys/:key/history</div>
+  <h1>Change history — who turned this off</h1>
+  <p class="lead">Append-only. Every <code>set</code>, <code>unset</code>, <code>lock</code> and
+    <code>unlock</code> with its actor, scope, reason and time. Revert is not a delete — it replays an
+    earlier value as a <b>new</b> change, so the revert is itself in the history.</p>
+
+  <div class="scopebar">
+    <span class="nsbadge">notifications.digest.frequency</span>
+    <span class="grow"></span>
+    <span class="mono muted">org Acme Corp · 5 entries</span>
+  </div>
+
+  <!-- Populated -->
+  <div class="panel" data-audit-timeline>
+    <div class="panel-head"><h2>History</h2><span class="mono muted">newest first</span></div>
+    <table class="tbl">
+      <thead><tr><th>When</th><th>Operation</th><th>Value</th><th>Actor &amp; reason</th><th></th></tr></thead>
+      <tbody>
+        <tr data-audit-entry="5" data-audit-op="set">
+          <td class="mono">2026-08-09 14:22</td>
+          <td><span class="flag">set</span></td>
+          <td><span class="diffval diffval--parent">weekly</span> <span class="arrow mono">&rarr;</span> <span class="diffval diffval--here">daily</span></td>
+          <td><b>a.rivera</b><span class="sub">org Acme Corp · "reverting the EU rollout, too slow for support"</span></td>
+          <td class="right"><button class="btn btn-sm" data-action="revert-to">Revert to this</button></td>
+        </tr>
+        <tr data-audit-entry="4" data-audit-op="set" data-audit-revert-of="2">
+          <td class="mono">2026-08-02 09:05</td>
+          <td><span class="flag">set</span> <span class="flag flag--restart">revert of #2</span></td>
+          <td><span class="diffval diffval--parent">hourly</span> <span class="arrow mono">&rarr;</span> <span class="diffval diffval--here">weekly</span></td>
+          <td><b>j.okafor</b><span class="sub">org Acme Corp · "restoring the value from 2026-07-02"</span></td>
+          <td class="right"><button class="btn btn-sm" data-action="revert-to">Revert to this</button></td>
+        </tr>
+        <tr data-audit-entry="3" data-audit-op="lock">
+          <td class="mono">2026-07-28 16:40</td>
+          <td><span class="flag flag--secret">lock</span></td>
+          <td><span class="diffval diffval--here">hourly &#128274;</span></td>
+          <td><b>platform-ops</b><span class="sub">portal Acme Portal · "pinned during the incident window"</span></td>
+          <td class="right"><button class="btn btn-sm" aria-disabled="true" data-action="revert-to">Revert to this</button></td>
+        </tr>
+        <tr data-audit-entry="2" data-audit-op="unset">
+          <td class="mono">2026-07-19 11:12</td>
+          <td><span class="flag">unset</span></td>
+          <td><span class="muted">override removed — resolved from portal Acme Portal (<span class="mono">weekly</span>)</span></td>
+          <td><b>a.rivera</b><span class="sub">org Acme Corp · "tracking the portal default again"</span></td>
+          <td class="right"><button class="btn btn-sm" data-action="revert-to">Revert to this</button></td>
+        </tr>
+        <tr data-audit-entry="1" data-audit-op="set">
+          <td class="mono">2026-07-02 08:31</td>
+          <td><span class="flag">set</span></td>
+          <td><span class="muted">—</span> <span class="arrow mono">&rarr;</span> <span class="diffval diffval--here">weekly</span></td>
+          <td><b>j.okafor</b><span class="sub">org Acme Corp · "aligning with EU digest policy"</span></td>
+          <td class="right"><button class="btn btn-sm" data-action="revert-to">Revert to this</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="banner banner-info" data-note="revert-semantics" style="margin-top: var(--space-6)">
+    <b>Revert appends, it never rewinds.</b>
+    <span>Entry #4 is a <code>set</code> that happens to carry #2's value, labelled as a revert. Nothing was
+      removed from the log to make it. A history that could be shortened by a UI action is not an audit
+      trail — and "Revert to this" on an <code>unset</code> row (#2) replays the <b>unset</b>, restoring
+      inheritance rather than pinning the value it resolved to at the time.</span>
+  </p>
+
+  <!-- Revert confirm -->
+  <div class="state-block" data-state="revert-confirm" style="margin-top: var(--space-10)">
+    <div class="state-label">A · Revert confirmation — states what will actually happen</div>
+    <p class="state-why">The dialog shows the current value, the target value, and that a <b>new</b> entry
+      will be written. It carries a reason field, because an unexplained revert is the change people most
+      want explained later.</p>
+    <div class="panel"><div class="panel-body">
+      <p class="banner banner-warn" data-revert-confirm>
+        <b>Revert <span class="mono">notifications.digest.frequency</span> to <span class="mono">weekly</span>?</b>
+        <span>Current value is <b>daily</b>. This writes a <b>new</b> change setting it back to
+          <b>weekly</b> at <b>org Acme Corp</b> — entry #4 stays in the history, and this revert is added as
+          entry #6. Consumers pick it up on their next read;
+          <code>requiresRestart</code> settings need a restart.</span>
+      </p>
+      <label class="reasonfield" style="display:block; margin-bottom: var(--space-4)">
+        <input class="input" type="text" placeholder="Why are you reverting? (recorded)" data-revert-reason />
+      </label>
+      <div class="rowflex">
+        <button class="btn btn-ghost" data-action="cancel-revert">Cancel</button>
+        <button class="btn btn-accent" data-action="confirm-revert">Revert and record</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Secret redaction -->
+  <div class="state-block" data-state="secret-redacted">
+    <div class="state-label">B · A secret key's history — <em>redacted, both sides</em></div>
+    <p class="state-why">The trail records <b>that</b> it changed, never <b>what</b> it was — an audit log
+      holding secret values is a secret store with worse access control. Neither the old nor the new value
+      appears, and "Revert to this" is <b>absent</b>, not disabled: there is no stored plaintext to revert
+      to. Reveals are themselves audited entries.</p>
+    <div class="panel">
+      <div class="panel-head"><h2><span class="mono">notifications.provider.apiKey</span></h2>
+        <span class="flag flag--secret">secret</span></div>
+      <table class="tbl">
+        <thead><tr><th>When</th><th>Operation</th><th>Value</th><th>Actor &amp; reason</th></tr></thead>
+        <tbody>
+          <tr data-audit-entry="3" data-audit-op="reveal">
+            <td class="mono">2026-08-10 10:04</td>
+            <td><span class="flag flag--hidden">reveal</span></td>
+            <td class="muted" data-redacted>[redacted — value not stored in the audit trail]</td>
+            <td><b>a.rivera</b><span class="sub">portal Acme Portal · "rotating provider credentials"</span></td>
+          </tr>
+          <tr data-audit-entry="2" data-audit-op="set">
+            <td class="mono">2026-07-14 13:50</td>
+            <td><span class="flag">set</span></td>
+            <td class="muted" data-redacted>[redacted] &rarr; [redacted]</td>
+            <td><b>j.okafor</b><span class="sub">portal Acme Portal · "quarterly rotation"</span></td>
+          </tr>
+          <tr data-audit-entry="1" data-audit-op="set">
+            <td class="mono">2026-05-02 09:00</td>
+            <td><span class="flag">set</span></td>
+            <td class="muted" data-redacted>— &rarr; [redacted]</td>
+            <td><b>j.okafor</b><span class="sub">portal Acme Portal · "initial provisioning"</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Empty -->
+  <div class="state-block" data-state="empty-history">
+    <div class="state-label">C · Never changed here</div>
+    <p class="state-why">Not an error and not a gap in the record — the key has simply never been written at
+      this scope. It names where the value <b>does</b> come from, so the reader knows where to look next.</p>
+    <div class="panel"><div class="empty" data-empty="history">
+      <h3>No changes recorded at this scope</h3>
+      <p><span class="mono">notifications.retry.maxAttempts</span> has never been set, unset or locked at
+        <b>org Acme Corp</b>. Its value comes from the definition default (<span class="mono">5</span>).</p>
+      <a class="btn" href="06-key-definition.html" data-action="view-chain">View the resolution chain</a>
+    </div></div>
+  </div>
+
+  <!-- Loading -->
+  <div class="state-block" data-state="loading">
+    <div class="state-label">D · Loading</div>
+    <div class="panel" aria-busy="true" data-loading>
+      <table class="tbl">
+        <thead><tr><th>When</th><th>Operation</th><th>Value</th><th>Actor &amp; reason</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><span class="skel skel--sm" style="width:80%"></span></td><td><span class="skel skel--sm" style="width:35%"></span></td><td><span class="skel" style="width:70%"></span></td><td><span class="skel" style="width:80%"></span></td><td><span class="skel skel--sm" style="width:55%"></span></td></tr>
+          <tr><td><span class="skel skel--sm" style="width:80%"></span></td><td><span class="skel skel--sm" style="width:35%"></span></td><td><span class="skel" style="width:55%"></span></td><td><span class="skel" style="width:65%"></span></td><td><span class="skel skel--sm" style="width:55%"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Error + forbidden -->
+  <div class="state-block" data-state="history-error">
+    <div class="state-label">E · Load failed, and F · not permitted</div>
+    <p class="state-why">Kept apart deliberately: <b>E</b> is retryable and says the record is intact;
+      <b>F</b> is a decision and offers no retry. A compliance reviewer must never read "history
+      unavailable" and wonder whether the trail was lost.</p>
+    <div class="panel"><div class="panel-body">
+      <p class="banner banner-error" data-error-code="LOAD_FAILED">
+        <b>Could not load the change history.</b>
+        <span>The record is intact — this is a read failure, not missing history. No configuration has been changed.</span>
+      </p>
+      <button class="btn btn-accent" data-action="retry">Retry</button>
+    </div></div>
+    <div class="panel"><div class="panel-body">
+      <p class="banner banner-error" data-error-code="FORBIDDEN">
+        <b>You do not have access to this change history.</b>
+        <span><code class="errcode errcode--forbidden">FORBIDDEN</code>
+          Reading configuration history requires an audit grant at <b>org Acme Corp</b>.</span>
+      </p>
+    </div></div>
+  </div>
+
+  <p class="note">
+    <b>Anticipated contract (FF-EPIC-18-S2 / S3).</b> Append-only <code>config_value_history</code> written
+    in the same transaction as the value change, so a change can never exist without its audit row. The
+    read and revert surfaces are <b>not</b> in the frozen <code>services/config-service/openapi.yaml</code>
+    today — these frames commission them, and revert is modelled as a replayed
+    <code>set</code>/<code>unset</code> through <code>PUT /v1/config</code>, never as a delete.<br />
+    <b>Every actor and scope is a typed reference</b> — a history row names <code>scopeType</code> +
+    <code>scopeId</code>, never a bare id (identifier-standard).
+  </p>
+
+  <div class="pager">
+    <a href="08-secret-input.html">&larr; Secret values</a>
+    <a href="index.html">Back to the index &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

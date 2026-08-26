@@ -5,6 +5,34 @@
 > gate described in `CLAUDE.md` (HTML frames are authoritative — see *Corrections*
 > §7 below).
 >
+> **Extraction addendum (2026-08-10), corrected (2026-08-11):** the navigable-frames
+> *lifecycle* machinery — content stamping, per-flow approval, a navigable review
+> site — has been ported into a standalone service, `design-frames-service`, in
+> `izzywdev/FuzeX` (PR [izzywdev/FuzeX#21](https://github.com/izzywdev/FuzeX/pull/21),
+> see that repo's `services/design-frames-service/docs/EXTRACTION.md` for the full
+> port-vs-reimplement breakdown, including the 2026-08-11 correction record).
+> **The frames themselves — the actual HTML/manifest content — are NOT extracted
+> and never will be.** They stay authored and version-controlled here, in every
+> feature's own `design/frames/<feature>/`, exactly like a `.fig` file lives with
+> the project that uses it:
+> - **All `design/frames/<feature>/` directories — the 13 that existed at
+>   extraction time and every one created since — live in this repo, full stop.**
+>   There is no frozen list and no gate blocking new ones; `gate-frames-external`
+>   (which briefly enforced the opposite) has been removed.
+> - **Everything below in this doc — the local pipeline, `stamp-frames.mjs`,
+>   `design-approval.yml`, `pages-frames.yml`, `gate-frames-stamped.yml` — is the
+>   live, current authoring path for every feature, not legacy documentation.**
+> - Once a feature's frames are authored and locally schema-valid, **optionally
+>   sync them into `design-frames-service`** (`scripts/design-frames-client.mjs`,
+>   procedure in `.claude/skills/design-frames-lifecycle/SKILL.md`) to get
+>   per-flow approval/reject tracking and a navigable review site shared with
+>   other products. This is additive — GitHub Pages publishing and the local
+>   approval flow described below still work standalone.
+> - Not done here: no Module-Federation embed of the FuzeX frontend into the
+>   FuzeFront shell (still just an API integration, and optional); no change to
+>   `product-designer`'s scope beyond the optional post-approval sync step (see
+>   its agent definition).
+>
 > **Resolved since drafting** (the plan's open questions, now settled with evidence):
 > - **Repo visibility / Pages** — the repo is **public**, so Pages needs no
 >   Enterprise Cloud. Pages is **enabled** with `build_type=workflow`

@@ -56,8 +56,27 @@ jest.mock('../src/utils/permit/role-assignment', () => ({
   updateOrganizationRole: jest.fn().mockResolvedValue(true),
 }))
 
+// FF-EPIC-17-S8 — the "Employee" platformRoles catalog entry is gated behind
+// this flag. Default the mock to OFF (matches the flag's real default) so
+// every pre-existing test in this file (which never touches the flag) keeps
+// exercising the byte-identical, pre-S8 response shape.
+jest.mock('../src/utils/employeeFlag', () => ({
+  EMPLOYEE_CONSOLE_FLAG: 'fuzefront.identity.employee-console',
+  isEmployeeConsoleEnabled: jest.fn().mockResolvedValue(false),
+}))
+
 import { db } from '../src/config/database'
 import { defaultEventPublisher } from '../src/services/eventPublisher'
+import { isEmployeeConsoleEnabled } from '../src/utils/employeeFlag'
+import { userHasRole } from '../src/utils/permit/role-assignment'
+import * as employeeRoleModule from '../src/services/employeeRole'
+
+const isEmployeeConsoleEnabledMock = isEmployeeConsoleEnabled as jest.Mock
+// FF-EPIC-17-S6 — `userHasRole` is the Permit-backed ReBAC check; unlike
+// `employeeFlag`/`permit/role-assignment`'s other exports, `employeeRole` is
+// deliberately left UNMOCKED here so `resolveEmployeeStatus` can be spied on
+// directly (it's the function that would consult ReBAC-derived authority).
+const userHasRoleMock = userHasRole as jest.Mock
 import organizationsRouter from '../src/routes/organizations'
 
 const dbMock = db as jest.MockedFunction<any>
@@ -265,6 +284,188 @@ describe('Organization Members', () => {
       const res = await request(app).get(`/api/organizations/${ORG_ID}/members`)
       expect(res.status).toBe(403)
     })
+
+    // ─── FF-EPIC-17-S6 — per-org members reconciled with authz-admin, ─────────
+    // above-org principals stay hidden.
+    //
+    // This is a GUARD, not new behavior: FF-EPIC-03-S2's list already reads
+    // `organization_memberships` directly and never consults Permit/ReBAC, so
+    // a parent/root org-admin with ReBAC-derived (not membership-row) access
+    // to this sub-org is *structurally* absent from `rows` — there is nothing
+    // to filter out because they never had a row to begin with. These tests
+    // lock that shape down explicitly so a future "helpfully" convenient join
+    // against a ReBAC/derivation source can't silently reintroduce them.
+    describe('FF-EPIC-17-S6 — above-org ReBAC-derived principals stay hidden', () => {
+      // A parent/root org-admin who has ReBAC-derived access to this sub-org
+      // via Permit but holds NO organization_memberships row here. Never
+      // appears in the fixture rows below on purpose — a derived-only
+      // principal has no membership row by construction, so the query has
+      // nothing to return for them.
+      const DERIVED_ADMIN_USER_ID = 'root-admin-derived-only'
+
+      const directMemberRows = [
+        {
+          id: 'mem-1',
+          role: 'member',
+          status: 'active',
+          joined_at: new Date('2024-01-10').toISOString(),
+          user_id: 'user-1',
+          user_email: 'one@example.com',
+          first_name: 'One',
+          last_name: 'A',
+        },
+        {
+          id: 'mem-2',
+          role: 'member',
+          status: 'active',
+          joined_at: new Date('2024-01-11').toISOString(),
+          user_id: 'user-2',
+          user_email: 'two@example.com',
+          first_name: 'Two',
+          last_name: 'B',
+        },
+        {
+          id: 'mem-3',
+          role: 'admin',
+          status: 'active',
+          joined_at: new Date('2024-01-12').toISOString(),
+          user_id: 'user-3',
+          user_email: 'three@example.com',
+          first_name: 'Three',
+          last_name: 'C',
+        },
+      ]
+
+      // Wires the query chain like `wireMembersQueries` above, but additionally
+      // records EVERY table `db(...)` is invoked with and every table
+      // `.join(...)` is called with across the whole request. AC4's guard is
+      // this recording: if a future refactor starts reading from (or joining)
+      // anything besides `organization_memberships` + `users`, the assertions
+      // below fail loudly instead of silently passing.
+      function wireGuardedMembersQueries(opts: { total: number; rows: any[] }) {
+        const dbTableCalls: string[] = []
+        const joinTableCalls: string[] = []
+
+        const callerChain = makeDbQuery({
+          id: MEMBER_ID,
+          user_id: USER_ID,
+          organization_id: ORG_ID,
+          role: 'owner',
+          status: 'active',
+        })
+
+        const countChain: any = {
+          join: jest.fn(function (this: any, table: string) {
+            joinTableCalls.push(table)
+            return this
+          }),
+          where: jest.fn().mockReturnThis(),
+          whereRaw: jest.fn().mockReturnThis(),
+          count: jest.fn().mockReturnThis(),
+          first: jest.fn().mockResolvedValue({ count: String(opts.total) }),
+        }
+
+        const listChain: any = {
+          select: jest.fn().mockReturnThis(),
+          join: jest.fn(function (this: any, table: string) {
+            joinTableCalls.push(table)
+            return this
+          }),
+          where: jest.fn().mockReturnThis(),
+          whereRaw: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockReturnThis(),
+          offset: jest.fn().mockResolvedValue(opts.rows),
+        }
+
+        let n = 0
+        dbMock.mockImplementation((table: string) => {
+          dbTableCalls.push(table)
+          if (table === 'organization_memberships') {
+            n++
+            if (n === 1) return callerChain
+            if (n === 2) return countChain
+            return listChain
+          }
+          return makeDbQuery(null)
+        })
+
+        return { dbTableCalls, joinTableCalls }
+      }
+
+      beforeEach(() => {
+        // Spy on the real (unmocked) resolveEmployeeStatus so we can assert it
+        // is never consulted by the members LIST — see the module-level
+        // comment on the import above.
+        jest.spyOn(employeeRoleModule, 'resolveEmployeeStatus')
+      })
+
+      // AC1
+      it('returns exactly the 3 direct members; a parent/root ReBAC-derived-only admin never appears', async () => {
+        const { dbTableCalls, joinTableCalls } = wireGuardedMembersQueries({
+          total: 3,
+          rows: directMemberRows,
+        })
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/members`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.members).toHaveLength(3)
+        const returnedUserIds = res.body.members.map((m: any) => m.user.id)
+        expect(returnedUserIds).toEqual(['user-1', 'user-2', 'user-3'])
+        expect(returnedUserIds).not.toContain(DERIVED_ADMIN_USER_ID)
+
+        // AC4 guard: the whole request touches ONLY `organization_memberships`
+        // in Postgres and joins ONLY `users` — never a ReBAC/derivation
+        // source. A future refactor that reads anywhere else fails this.
+        expect(new Set(dbTableCalls)).toEqual(new Set(['organization_memberships']))
+        expect(joinTableCalls).toEqual(['users', 'users'])
+
+        // AC2 is covered by the S9 authz-path tests, not here — this list
+        // endpoint hides-by-omission and structurally never asks Permit
+        // "who else has derived access" in the first place.
+        expect(userHasRoleMock).not.toHaveBeenCalled()
+        expect(employeeRoleModule.resolveEmployeeStatus).not.toHaveBeenCalled()
+      })
+
+      // AC3 — dedup edge: the parent/root admin is ALSO separately invited as
+      // a direct member, so THIS time they legitimately hold one
+      // `organization_memberships` row (the direct-invite row) and must show
+      // up exactly once — never twice, and never as a distinct "derived" row.
+      it('a parent/root admin who is ALSO directly invited appears exactly once, as the direct member', async () => {
+        const rowsWithOverlap = [
+          directMemberRows[0],
+          directMemberRows[1],
+          {
+            id: 'mem-derived-and-direct',
+            role: 'member',
+            status: 'active',
+            joined_at: new Date('2024-01-13').toISOString(),
+            user_id: DERIVED_ADMIN_USER_ID,
+            user_email: 'root-admin@example.com',
+            first_name: 'Root',
+            last_name: 'Admin',
+          },
+        ]
+        const { dbTableCalls } = wireGuardedMembersQueries({ total: 3, rows: rowsWithOverlap })
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/members`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.pagination.total).toBe(3)
+        expect(res.body.members).toHaveLength(3)
+
+        const derivedAdminEntries = res.body.members.filter(
+          (m: any) => m.user.id === DERIVED_ADMIN_USER_ID
+        )
+        expect(derivedAdminEntries).toHaveLength(1)
+        expect(derivedAdminEntries[0].role).toBe('member')
+
+        // Still no ReBAC source consulted — the overlap is resolved purely by
+        // there being exactly one `organization_memberships` row for that user.
+        expect(new Set(dbTableCalls)).toEqual(new Set(['organization_memberships']))
+      })
+    })
   })
 
   // ─── GET /:id/roles ───────────────────────────────────────────────────────
@@ -314,6 +515,54 @@ describe('Organization Members', () => {
       expect(res.body.resources.map((r: any) => r.key)).toEqual(
         expect.arrayContaining(['Organization', 'App', 'UserManagement', 'Docs', 'Chat'])
       )
+
+      // FF-EPIC-17-S8, flag OFF (default): response is byte-identical to
+      // before this story — no `platformRoles` field at all.
+      expect(res.body.platformRoles).toBeUndefined()
+    })
+
+    // FF-EPIC-17-S8 — the "Employee" platform-role entry, gated behind
+    // `fuzefront.identity.employee-console`. Both flag states exercised.
+    describe('FF-EPIC-17-S8 — platformRoles (Employee)', () => {
+      beforeEach(() => {
+        const callerChain = makeDbQuery({
+          id: MEMBER_ID, user_id: USER_ID, organization_id: ORG_ID, role: 'viewer', status: 'active',
+        })
+        dbMock.mockImplementation((table: string) =>
+          table === 'organization_memberships' ? callerChain : makeDbQuery(null)
+        )
+      })
+
+      it('flag OFF (default): omits platformRoles entirely', async () => {
+        isEmployeeConsoleEnabledMock.mockResolvedValueOnce(false)
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
+
+        expect(res.status).toBe(200)
+        expect(res.body.platformRoles).toBeUndefined()
+      })
+
+      it('flag ON: surfaces the Employee entry alongside (not replacing) the org roles', async () => {
+        isEmployeeConsoleEnabledMock.mockResolvedValueOnce(true)
+
+        const res = await request(app).get(`/api/organizations/${ORG_ID}/roles`)
+
+        expect(res.status).toBe(200)
+        // org-assignable roles are untouched
+        expect(res.body.roles.map((r: any) => r.key)).toEqual([
+          'owner', 'admin', 'member', 'viewer',
+        ])
+        // Employee is additive, in its own field, not merged into `roles`
+        expect(res.body.platformRoles).toEqual([
+          expect.objectContaining({
+            key: 'employee',
+            name: 'Employee',
+            rebacRole: 'org-admin',
+            rebacScope: 'root',
+            assignable: false,
+          }),
+        ])
+      })
     })
 
     it('returns 403 when caller is not an active member', async () => {
@@ -516,6 +765,8 @@ describe('Organization Members', () => {
   // ─── DELETE /:id/members/:memberId ────────────────────────────────────────
 
   describe('DELETE /api/organizations/:id/members/:memberId', () => {
+    // Invariant: an org can never lose its last owner via member removal —
+    // a non-last owner may be removed (200), the last owner may not (409).
     it('returns 200 with success message when member is removed', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
@@ -544,20 +795,24 @@ describe('Organization Members', () => {
       expect(res.body.message).toMatch(/Member removed/i)
     })
 
-    it('returns 403 when trying to remove an owner membership', async () => {
+    it('returns 409 when trying to remove the LAST owner', async () => {
       const adminMembershipChain = makeDbQuery({
         id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
       })
       const ownerMembership = {
-        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'other-owner', organization_id: ORG_ID,
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'the-owner', organization_id: ORG_ID,
       }
       const targetChain = makeDbQuery(ownerMembership)
+      // countActiveOwners → 1: this is the only owner, so removal is refused.
+      const ownerCountChain = makeDbQuery({ count: '1' })
 
       let membershipCallCount = 0
       dbMock.mockImplementation((table: string) => {
         if (table === 'organization_memberships') {
           membershipCallCount++
-          return membershipCallCount === 1 ? adminMembershipChain : targetChain
+          if (membershipCallCount === 1) return adminMembershipChain
+          if (membershipCallCount === 2) return targetChain
+          return ownerCountChain
         }
         return makeDbQuery(null)
       })
@@ -565,8 +820,39 @@ describe('Organization Members', () => {
       const res = await request(app)
         .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
 
-      expect(res.status).toBe(403)
-      expect(res.body.error).toMatch(/owner/i)
+      expect(res.status).toBe(409)
+      expect(res.body.error).toMatch(/last owner/i)
+    })
+
+    it('removes a non-last owner when another owner remains → 200', async () => {
+      const adminMembershipChain = makeDbQuery({
+        id: MEMBER_ID, role: 'owner', user_id: USER_ID, organization_id: ORG_ID, status: 'active',
+      })
+      const ownerMembership = {
+        id: TARGET_MEMBER_ID, role: 'owner', user_id: 'other-owner', organization_id: ORG_ID,
+      }
+      const targetChain = makeDbQuery(ownerMembership)
+      // countActiveOwners → 2: a second owner remains, so removal is allowed.
+      const ownerCountChain = makeDbQuery({ count: '2' })
+      const deleteChain = { where: jest.fn().mockReturnThis(), delete: jest.fn().mockResolvedValue(1) }
+
+      let membershipCallCount = 0
+      dbMock.mockImplementation((table: string) => {
+        if (table === 'organization_memberships') {
+          membershipCallCount++
+          if (membershipCallCount === 1) return adminMembershipChain
+          if (membershipCallCount === 2) return targetChain
+          if (membershipCallCount === 3) return ownerCountChain
+          return deleteChain
+        }
+        return makeDbQuery(null)
+      })
+
+      const res = await request(app)
+        .delete(`/api/organizations/${ORG_ID}/members/${TARGET_MEMBER_ID}`)
+
+      expect(res.status).toBe(200)
+      expect(res.body.message).toMatch(/Member removed/i)
     })
 
     it('returns 403 when caller is not admin or owner', async () => {
@@ -671,5 +957,29 @@ describe('Organization user_role projection — GET /:id', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.user_role).toBe('owner')
+  })
+
+  // FF-EPIC-17-S1 — with root membership (flag ON), the caller's literal
+  // `organization_memberships(role='member')` row in the root "FuzeFront" org
+  // resolves through this SAME left-join/projection, unchanged. This is the
+  // regression test the epic's "Change 3 — org list" calls for: no server
+  // code change was needed, root now surfaces MEMBER instead of the GUEST
+  // state (#529) once the membership row exists.
+  it('root org resolves to user_role=member once a root membership row exists (retires the GUEST state)', async () => {
+    const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
+    wireOrgGet({
+      ...baseOrg,
+      id: ROOT_ORG_ID,
+      name: 'FuzeFront',
+      slug: 'fuzefront',
+      type: 'platform',
+      owner_id: 'platform-registrar-id',
+      user_role: 'member',
+    })
+
+    const res = await request(app).get(`/api/organizations/${ROOT_ORG_ID}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.user_role).toBe('member')
   })
 })

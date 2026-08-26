@@ -1,0 +1,60 @@
+name: gate-openapi-conformance
+
+# The OpenAPI spec is the FROZEN CONTRACT, and this gate measures the code
+# against it. It never regenerates the spec from code — a spec derived from its
+# implementation agrees with that implementation by construction and therefore
+# cannot detect that the implementation drifted. That pipeline silently converts
+# a contract into documentation.
+#
+# Nothing else in this repo closes this seam. Type-check, lint, unit tests and
+# `helm template | kubeconform` are each individually happy with a service that
+# implements an endpoint the contract never declared, or that quietly stopped
+# implementing one a consumer generated a client for. gate-route-ownership
+# checks WHICH SERVICE serves a path; this checks WHETHER THE PATH WAS AGREED.
+#
+# Triggers on both sides of the seam. A spec-only trigger would miss a route
+# being added in code; a code-only trigger would miss a path being deleted from
+# the contract. Either alone reproduces the blind spot.
+on:
+  pull_request:
+    paths:
+      - 'services/*/openapi.yaml'
+      - 'services/*/src/**'
+      - 'governance/openapi-conformance-allowlist.txt'
+      - 'scripts/gate_openapi_conformance.py'
+      - 'scripts/__tests__/test_gate_openapi_conformance.py'
+      - '.github/workflows/gate-openapi-conformance.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'services/*/openapi.yaml'
+      - 'services/*/src/**'
+      - 'governance/openapi-conformance-allowlist.txt'
+      - 'scripts/gate_openapi_conformance.py'
+
+permissions:
+  contents: read
+
+jobs:
+  openapi-conformance:
+    name: shipped code matches the frozen contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      # The gate's own tests run FIRST and are weighted toward asserting that it
+      # FAILS on a violation. "It passed on the current tree" is not evidence a
+      # gate works — `sys.exit(0)` passes on the current tree too. If the self
+      # tests are red, the run below proves nothing and must not be trusted.
+      - name: Self-test the gate before trusting it
+        run: python -m unittest discover -s scripts/__tests__ -p 'test_gate_openapi_conformance.py' -v
+
+      - name: Check every service against its contract
+        run: python scripts/gate_openapi_conformance.py --repo .

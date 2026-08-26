@@ -24,6 +24,7 @@ import { MeteringService } from './services/metering.service';
 import { KafkaBillingEmitter } from './kafka/producer';
 import { startUsageConsumer } from './kafka/consumer';
 import { startRefIndexConsumer } from './kafka/ref-index.consumer';
+import { startOrgDeletedConsumer } from './kafka/org-deleted.consumer';
 import { HandlerContext } from './handlers/types';
 
 const FLUSH_INTERVAL_SEC = parseInt(process.env.BILLING_METER_FLUSH_INTERVAL_SEC || '60', 10);
@@ -63,16 +64,10 @@ async function main() {
   const usageRepo = new PgUsageRepository(pool);
   const refIndex = new PgRefIndexRepository(pool);
 
-  // --- Services ---
-  const customers = new CustomerService(stripe, customerRepo);
-  const plans = new PlanService(stripe, planRepo);
-  const subscriptionService = new SubscriptionService(stripe, customers, plans, subscriptionRepo);
-  const metering = new MeteringService(stripe, usageRepo);
-
-  const permitClient = await loadPermitClient(config);
-  const permit = new PermitSyncService(permitClient);
-
   // --- Kafka ---
+  // Constructed before CustomerService below, which needs the emitter to
+  // publish billing.tenant.registered when a new organization Customer is
+  // created (#491).
   const kafka = createKafkaClient({
     clientId: config.kafka.clientId,
     brokers: config.kafka.brokers,
@@ -80,6 +75,15 @@ async function main() {
   const producer = new TypedProducer(kafka);
   await producer.connect();
   const emitter = new KafkaBillingEmitter(producer);
+
+  // --- Services ---
+  const customers = new CustomerService(stripe, customerRepo, emitter);
+  const plans = new PlanService(stripe, planRepo);
+  const subscriptionService = new SubscriptionService(stripe, customers, plans, subscriptionRepo);
+  const metering = new MeteringService(stripe, usageRepo);
+
+  const permitClient = await loadPermitClient(config);
+  const permit = new PermitSyncService(permitClient);
 
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
   // The usage consumer runs in the background; failures dead-letter via producer.
@@ -95,6 +99,18 @@ async function main() {
   const refIndexConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-ref-index`);
   startRefIndexConsumer(refIndexConsumer, refIndex, producer).catch((err) =>
     console.error('[billing-service] ref-index consumer failed to start:', err),
+  );
+
+  // --- identity.org.deleted -> cancel the org's Stripe subscription ---
+  // Its OWN consumer group: TypedConsumer.run binds a single schema per loop,
+  // and this reaction must not share offsets with the usage/ref-index consumers.
+  const orgDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-deleted`);
+  startOrgDeletedConsumer(
+    orgDeletedConsumer,
+    { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
+    producer,
+  ).catch((err) =>
+    console.error('[billing-service] org-deleted consumer failed to start:', err),
   );
 
   // --- Metering flush loop ---
@@ -153,6 +169,7 @@ async function main() {
     try {
       await consumer.disconnect();
       await refIndexConsumer.disconnect();
+      await orgDeletedConsumer.disconnect();
       await producer.disconnect();
       await pool!.end();
     } catch (err) {

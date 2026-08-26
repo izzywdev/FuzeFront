@@ -1,0 +1,148 @@
+name: Publish Python Package to PyPI
+
+# Reusable workflow for publishing Python packages to PyPI.
+# Called by per-package triggers (see below) or dispatched manually.
+#
+# OIDC Trusted Publishing (no API token needed):
+#   PyPI's trusted publisher config must be set up once via the PyPI web UI:
+#   Publisher: izzywdev/FuzeFront -> python-publish.yml -> environment: pypi
+#   This is a human action that cannot be automated.
+#
+# VERIFY STEP IS NON-NEGOTIABLE:
+#   A green publish job is not evidence that anything was published.
+#   The verify step installs the package from PyPI after publishing and imports
+#   it, catching the "published nothing" case (FFRNT-264).
+#
+# REUSABILITY:
+#   This workflow is designed to be reused by any Python package in this repo.
+#   packages/identity-py/ can adopt it unchanged by adding a tag-push trigger
+#   that calls this workflow with package-dir and package-name inputs.
+
+on:
+  workflow_call:
+    inputs:
+      package-dir:
+        description: "Path to the Python package directory (relative to repo root)"
+        required: true
+        type: string
+      package-name:
+        description: "PyPI package name (for install verification after publish)"
+        required: true
+        type: string
+      package-version:
+        description: "Package version to verify after publish (e.g. 1.0.0)"
+        required: false
+        type: string
+        default: ""
+      python-version:
+        description: "Python version to use for build and verify steps"
+        required: false
+        type: string
+        default: "3.12"
+
+  workflow_dispatch:
+    inputs:
+      package-dir:
+        description: "Path to the Python package directory (relative to repo root)"
+        required: true
+        type: string
+      package-name:
+        description: "PyPI package name"
+        required: true
+        type: string
+      package-version:
+        description: "Package version to verify after publish (e.g. 1.0.0). If empty, only checks importability."
+        required: false
+        type: string
+        default: ""
+      python-version:
+        description: "Python version to use for build and verify steps"
+        required: false
+        type: string
+        default: "3.12"
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    # "pypi" environment gates the OIDC token. Configure trusted publishing
+    # in the PyPI web UI before the first publish:
+    #   Repository: izzywdev/FuzeFront
+    #   Workflow:   python-publish.yml
+    #   Environment: pypi
+    environment: pypi
+
+    permissions:
+      # OIDC trusted publishing -- no PYPI_API_TOKEN secret needed.
+      # GitHub's identity (this workflow run) is the credential.
+      id-token: write
+      # Read the repository to check out sources.
+      contents: read
+
+    steps:
+      - name: Checkout
+        # Pinned to an immutable commit SHA (repo hardening standard -- a mutable
+        # tag can be silently repointed by the action owner).
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Set up Python ${{ inputs.python-version }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install build tooling
+        run: pip install build
+
+      - name: Build distribution
+        working-directory: ${{ inputs.package-dir }}
+        run: python -m build
+        # Produces dist/*.whl and dist/*.tar.gz
+
+      - name: Verify dist contents
+        working-directory: ${{ inputs.package-dir }}
+        run: |
+          echo "--- dist directory ---"
+          ls -lh dist/
+          if [ -z "$(ls dist/*.whl 2>/dev/null)" ]; then
+            echo "ERROR: No wheel found in dist/ -- build failed silently."
+            exit 1
+          fi
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f87a3d6ccd7c65fdc2434cdc979  # release/v1
+        with:
+          packages-dir: ${{ inputs.package-dir }}/dist/
+          # OIDC trusted publishing -- no password or token needed.
+          # Requires a trusted publisher record on PyPI for this repo/workflow/env.
+
+      # NON-NEGOTIABLE: verify the package is actually installable from PyPI.
+      # A green publish step is not evidence that anything was published --
+      # this is the lesson of FFRNT-264. We install from PyPI (not from ./dist)
+      # to prove the upload succeeded and the package is importable.
+      - name: Wait for PyPI propagation
+        run: sleep 20
+
+      - name: Verify installation from PyPI
+        # Workflow inputs are untrusted text -- interpolating ${{ inputs.* }} directly
+        # into a run: step is a shell-injection sink (Semgrep run-shell-injection).
+        # Pass them through env: so the shell sees them as environment variables, not
+        # as code.  The run: body only reads $PKG / $VER from the environment.
+        env:
+          PKG: ${{ inputs.package-name }}
+          VER: ${{ inputs.package-version }}
+        run: |
+          set -euo pipefail
+
+          # Install the specific version if provided, otherwise the latest.
+          if [ -n "$VER" ]; then
+            pip install "${PKG}==${VER}"
+          else
+            pip install "${PKG}"
+          fi
+
+          # Derive the importable module name:
+          #   PyPI name: fuzefront-selection-list-client
+          #   Module:    fuzefront_selection_list_client
+          MODULE="$(echo "$PKG" | tr "-" "_")"
+          python -c "import ${MODULE}; print('OK:', ${MODULE}.__name__)"
+          echo "Package ${PKG} installed and imported successfully."

@@ -42,22 +42,22 @@
 
 # Outbox rows: infrastructure records of an event, not entities.
 src backend/core/src/events/outbox.ts:34                    # event_outbox row id
-src backend/src/services/organizationProvisioning.ts:322    # event_outbox row id
-src backend/src/services/portalProvisioning.ts:434          # event_outbox row id
-src backend/security/src/services/organizationProvisioning.ts:229  # event_outbox row id
+src backend/src/services/organizationProvisioning.ts:382    # event_outbox row id
+src backend/src/services/portalProvisioning.ts:591          # event_outbox row id
+src backend/security/src/services/organizationProvisioning.ts:315  # event_outbox row id
 
 # Provisioning workflow step rows: bookkeeping for a saga, not entities.
-src backend/src/services/organizationProvisioning.ts:230    # organization_provisioning step row
-src backend/security/src/services/organizationProvisioning.ts:183  # organization_provisioning step row
-src backend/src/services/portalProvisioning.ts:151          # portal_provisioning step row
+src backend/src/services/organizationProvisioning.ts:290    # organization_provisioning step row
+src backend/security/src/services/organizationProvisioning.ts:269  # organization_provisioning step row
+src backend/src/services/portalProvisioning.ts:250          # portal_provisioning step row
 
 # One-shot credential artifacts. Same family as the token/nonce/verifier targets
 # NON_ENTITY_ID_RE already excludes: they are consumed once, expire, and are
 # never referenced across a service boundary.
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:661   # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1081  # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:884   # mfa_recovery_codes row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:975   # password_resets row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:662   # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1082  # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:885   # mfa_recovery_codes row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:976   # password_resets row
 
 # In-memory only: a Map key for a pending tool confirmation, never persisted and
 # never leaving the process.

@@ -1,5 +1,5 @@
 // Types
-export * from './types'
+export * from './types.js'
 
 // Context
 export { AppProvider, useAppContext } from './context/AppContext'

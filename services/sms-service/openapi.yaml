@@ -1,0 +1,148 @@
+openapi: 3.0.3
+info:
+  title: sms-service
+  version: 1.0.0
+  description: >-
+    Phone-number verification (OTP) over Twilio Verify. Two endpoints: send a
+    code to an E.164 number, and check a code the user typed back.
+
+    This contract was written AFTER the implementation, which is the wrong order
+    and is recorded here rather than hidden: `gate-openapi-conformance` found
+    `POST /sms/send` and `POST /sms/verify` serving traffic with no contract at
+    all. Everything below was read off the handlers and their zod schemas, so it
+    describes what ships today. From here the contract is frozen and the code is
+    measured against it — future endpoints are designed here first.
+
+servers:
+  - url: '{baseUrl}'
+    description: >-
+      Cluster-internal base URL. This service is NOT ingress-exposed: it is
+      called by the FuzeFront backend with a shared secret, never by a browser.
+    variables:
+      baseUrl:
+        default: http://fuzefront-sms-service:3010
+        description: Cluster-internal base URL of the sms-service.
+
+tags:
+  - name: verification
+    description: Twilio Verify OTP send/check.
+
+security:
+  - sharedSecret: []
+
+paths:
+  /sms/send:
+    post:
+      operationId: sendVerificationCode
+      tags: [verification]
+      summary: Send a verification code to a phone number
+      description: >-
+        Starts a Twilio Verify challenge for `to`. Rate-limited per number; the
+        limiter rejects with 429 rather than silently dropping, so a caller can
+        distinguish "too soon" from "sent".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to:
+                  type: string
+                  pattern: '^\+[1-9]\d{6,14}$'
+                  description: Destination number in E.164 form.
+                  example: '+15551234567'
+      responses:
+        '200':
+          description: The provider accepted the send request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Rate limit exceeded for this number.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /sms/verify:
+    post:
+      operationId: checkVerificationCode
+      tags: [verification]
+      summary: Check a verification code
+      description: >-
+        Checks `code` against the outstanding challenge for `to`. A wrong or
+        expired code is `200 { "verified": false }`, NOT a 4xx — the endpoint
+        reports the outcome of a valid request rather than treating a failed
+        check as a malformed one. Callers must branch on `verified`, never on
+        the status code alone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to, code]
+              properties:
+                to:
+                  type: string
+                  pattern: '^\+[1-9]\d{6,14}$'
+                  example: '+15551234567'
+                code:
+                  type: string
+                  pattern: '^\d{4,8}$'
+                  description: The 4–8 digit code the user received.
+                  example: '123456'
+      responses:
+        '200':
+          description: The check completed; `verified` carries the outcome.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [verified]
+                properties:
+                  verified:
+                    type: boolean
+                    description: True only when the provider returned `approved`.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    sharedSecret:
+      type: http
+      scheme: bearer
+      description: >-
+        A single shared secret, compared in constant time. When no secret is
+        configured the service rejects EVERY /sms request with 401 — it fails
+        closed, so a misconfigured deploy cannot become an open SMS relay.
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+  responses:
+    ValidationError:
+      description: The body failed schema validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, malformed, or incorrect shared secret.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

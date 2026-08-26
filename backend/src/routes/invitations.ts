@@ -13,11 +13,13 @@
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
-import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
 import { normalizePortalId } from '../utils/scopeToPortal'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
 
@@ -124,19 +126,20 @@ router.get('/:token', invitationsRateLimiter, async (req, res) => {
 
     const organization = await db('organizations').where('id', invitation.organization_id).first()
 
+    const prefixed = await isPrefixedIdsEnabled()
     res.json({
-      invitation: {
+      invitation: prefixDtoIds({
         id: invitation.id,
         email: maskEmail(invitation.email),
         role: invitation.role,
         expires_at: invitation.expires_at,
         status: invitation.status,
-      },
-      organization: {
+      }, prefixed, { id: 'invitation' }),
+      organization: prefixDtoIds({
         id: organization?.id,
         name: organization?.name,
         slug: organization?.slug,
-      },
+      }, prefixed, { id: 'organization' }),
     })
   } catch (error: any) {
     console.error('Error resolving invitation:', error)
@@ -261,7 +264,7 @@ router.post('/:token/accept', invitationsRateLimiter, async (req: any, res) => {
 
       if (!existingMembership) {
         await trx('organization_memberships').insert({
-          id: uuidv4(),
+          id: toUuid(mintId('membership')),
           user_id: user.id,
           organization_id: invitation.organization_id,
           role: invitation.role,
@@ -308,11 +311,13 @@ router.post('/:token/accept', invitationsRateLimiter, async (req: any, res) => {
       )
     }
 
-    res.json({
+    const flagCtx = { userId: user.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    res.json(prefixDtoIds({
       message: 'Invitation accepted successfully',
       organizationId: invitation.organization_id,
       role: invitation.role,
-    })
+    }, prefixed, { organizationId: 'organization' }))
   } catch (error: any) {
     console.error('Error accepting invitation:', error)
     res.status(500).json({ error: 'Failed to accept invitation' })

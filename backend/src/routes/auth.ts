@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
 import { User } from '../types/shared'
@@ -20,6 +21,8 @@ import { getRequestPortalsEnabled } from '../utils/portalFlag'
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
 import { checkOrganizationPermission } from '../utils/permit/permission-check'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds, toWireId } from '../identity/serializer'
 
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'http://fuzefront.dev.local').replace(/\/$/, '')
 
@@ -477,7 +480,7 @@ router.post('/login', async (req, res) => {
 
     // Create the session id first so it can be embedded in the token; this lets
     // logout invalidate only THIS session rather than all of the user's sessions.
-    const sessionId = uuidv4()
+    const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
     // Generate JWT
@@ -541,10 +544,12 @@ router.post('/login', async (req, res) => {
     // Self-heal provisioning in the background (does not block the response).
     selfHealProvisioningOnLogin(user.id)
 
+    const flagCtx = { userId: user.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     res.json({
       token,
-      user,
-      sessionId,
+      user: prefixDtoIds(user, prefixed, { id: 'user', defaultAppId: 'app' }),
+      sessionId: toWireId('session', sessionId, prefixed),
     })
   } catch (error) {
     console.error(`💥 [${requestId}] Login error:`, {
@@ -595,9 +600,22 @@ router.post('/login', async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
+// Authenticated endpoint — generous cap to allow normal polling while blocking scraping.
+const getUserRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again later.' },
+})
+
 // GET /auth/user - Get current user
-router.get('/user', authenticateToken, async (req, res) => {
-  res.json({ user: req.user })
+router.get('/user', getUserRateLimiter, authenticateToken, async (req: any, res) => {
+  const flagCtx = { userId: req.user?.id }
+  const prefixed = await isPrefixedIdsEnabled(flagCtx)
+  res.json({
+    user: prefixDtoIds(req.user, prefixed, { id: 'user', defaultAppId: 'app', portalId: 'portal', homePortalId: 'portal' }),
+  })
 })
 
 /**
@@ -840,7 +858,7 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
       return res.status(403).json(forbiddenPortalBody(portalBinding))
     }
 
-    const sessionId = uuidv4()
+    const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
     // This IS FuzeFront's identity service — the issuer of platform tokens
     // (same mint as /login and the OIDC callback), not a product self-minting.
@@ -865,8 +883,14 @@ router.post('/oidc/password', passwordLoginRateLimiter, async (req, res) => {
 
     selfHealProvisioningOnLogin(user.id)
 
+    const flagCtx = { userId: user.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     console.log('🎉 Authentik password login successful', { requestId, userId: user.id })
-    return res.json({ token, user, sessionId })
+    return res.json({
+      token,
+      user: prefixDtoIds(user, prefixed, { id: 'user', defaultAppId: 'app' }),
+      sessionId: toWireId('session', sessionId, prefixed),
+    })
   } catch (error) {
     if (error instanceof InvalidCredentialsError) {
       console.log('❌ Authentik rejected credentials', { requestId })
@@ -970,7 +994,7 @@ router.get('/oidc/callback', async (req, res) => {
     }
 
     // Create session id first so it can be embedded in the token
-    const sessionId = uuidv4()
+    const sessionId = toUuid(mintId('session'))
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
 
     // Generate JWT token — include standard OIDC claims (sub, email) alongside
@@ -1025,7 +1049,8 @@ router.post('/token-exchange', async (req, res) => {
     return res.status(401).json({ error: 'invalid or expired code' })
   }
   pendingCodes.delete(code)
-  return res.json({ token: pending.token, sessionId: pending.sessionId })
+  const prefixed = await isPrefixedIdsEnabled()
+  return res.json({ token: pending.token, sessionId: toWireId('session', pending.sessionId, prefixed) })
 })
 
 /**

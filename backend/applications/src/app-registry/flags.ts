@@ -16,6 +16,21 @@
 //       circuit-breaker for emitting Kafka events on the registry write path
 //       (the expensive/risky async fan-out). Flip OFF to stop emitting without a
 //       redeploy. removal criterion: only if Kafka emission is removed.
+//   - fuzefront.apps.portal-catalog (FF-EPIC-12-S5)
+//       type: release | default: OFF
+//       gates BOTH S2's list() portal-catalog filter (the org-less/public-app
+//       leak fix) AND S3's catalog admin API enforcement. OFF ⇒ byte-identical
+//       pre-epic behavior (org-less/public apps stay globally visible, the
+//       admin API 503s as not-yet-enabled). Deliberately the SAME fail-safe
+//       direction as every other release flag here (OFF on an unreachable flag
+//       store) — S2's own filter fails CLOSED on a *resolved-but-malformed*
+//       portal context (see app-registry/portalContext.ts), which is a
+//       different failure mode than "the flag service itself is down" (S5
+//       AC4: an unreachable flag store degrades to this flag's own OFF
+//       default, i.e. the prior stable global-visibility behavior).
+//       owner: backend-engineer (platform). removal criterion: delete this
+//       flag + the pre-epic unscoped branch in list() once the portal catalog
+//       is 100% rolled out and the flag-OFF path is no longer exercised.
 //
 // The in-code default is the fail-safe value (OFF for release, ON for
 // kill-switch) so an Unleash/client outage fails safe. The client is resolved
@@ -39,6 +54,17 @@ export interface FlagClientLike {
 export const FLAGS = {
   V1_REGISTRY_WRITE: 'fuzefront.app-registry.v1-registry-write',
   KAFKA_EVENTS_KILL_SWITCH: 'fuzefront.app-registry.kafka-events-kill-switch',
+  PORTAL_CATALOG: 'fuzefront.apps.portal-catalog',
+  /**
+   * fuzefront.ref-index.enforce-ref-checks
+   * type: release | default: OFF
+   * owner: backend-engineer (app-registry / P2)
+   * When ON: assertRefExists uses mode:'enforce' — foreign-key violations 422.
+   * When OFF: mode:'warn' — logs a warning but allows the request through.
+   * removal criterion: delete once ref_index projection is stable in prod and
+   *   enforcement is the permanent behavior (no traffic with missing refs).
+   */
+  REF_INDEX_ENFORCE: 'fuzefront.ref-index.enforce-ref-checks',
 } as const
 
 let injected: FlagClientLike | null = null
@@ -101,5 +127,37 @@ export async function isKafkaEmitEnabled(ctx?: Partial<FlagContext>): Promise<bo
     return await client.getBooleanValue(FLAGS.KAFKA_EVENTS_KILL_SWITCH, true, buildContext(ctx))
   } catch {
     return true
+  }
+}
+
+/**
+ * FF-EPIC-12-S5 — release flag (default OFF): is the per-portal app catalog
+ * (S2's list() filter + S3's admin API) released for this caller/org? See the
+ * module doc above for the fail-safe-direction rationale.
+ */
+export async function isPortalCatalogEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(FLAGS.PORTAL_CATALOG, false, buildContext(ctx))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * FFRNT P2 — release flag (default OFF): should ref-index checks use
+ * mode:'enforce' (reject with 422) rather than mode:'warn' (log, allow)?
+ *
+ * OFF (default): projection degrades gracefully — unknown orgs log a warning.
+ * ON: strict — any organizationId not in the local ref_index returns 422.
+ */
+export async function isRefEnforceEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(FLAGS.REF_INDEX_ENFORCE, false, buildContext(ctx))
+  } catch {
+    return false
   }
 }

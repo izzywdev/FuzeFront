@@ -83,6 +83,15 @@ domain: Platform
 - **Related:** FF-EPIC-01 (billing UX) shares the same billing-service proxy patterns referenced for
   future `billing_mode` wiring.
 
+> ⚠️ **Reconciliation note (FF-EPIC-17):** the owner has since decided portals are **not** a separate base
+> entity — "a portal = an org whose `parent_id` is the FuzeFront platform root, carrying tenant attributes;
+> no separate portal-service entity." **This supersedes S1's standalone `portals`/`portal_domains` schema
+> and S3's `services/portal-service/openapi.yaml` CRUD contract.** S2 (resumable provisioning pipeline
+> pattern) and S4 (master feature flag) are **reused as-is**, retargeted at org-tree operations instead of
+> a `portals` row. If S1/S3 have already merged before FF-EPIC-17-S7 starts, treat S7 as a migration, not a
+> greenfield design. See `docs/planning/epics/EPIC-17-personal-identity-portal-employee-reconciliation.md`
+> (story FF-EPIC-17-S7) for the reconciled model.
+
 ### 📎 References
 - Architecture anchors: `backend/src/permit/schema.ts`; `backend/src/services/organizationProvisioning.ts`;
   `backend/src/migrations/009_provisioning_backbone.ts`; `backend/src/migrations/004_create_organizations_table.ts`.

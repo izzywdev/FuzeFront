@@ -14,6 +14,8 @@ FROM dependencies AS source
 COPY FuzeQuality ./
 
 FROM source AS verify
+ARG FUZEQUALITY_API_URL=https://fuzequality.prod.fuzefront.com
+ENV VITE_FUZEQUALITY_API_URL=${FUZEQUALITY_API_URL}
 RUN npm run type-check \
  && npm test \
  && npm run build:web

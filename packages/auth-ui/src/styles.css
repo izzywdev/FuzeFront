@@ -75,6 +75,14 @@
   cursor: pointer;
 }
 
+.fzf-auth-panel__google-button:hover:not(:disabled) {
+  background-color: var(--bg-secondary);
+}
+
+.fzf-auth-panel__google-button:active:not(:disabled) {
+  background-color: var(--bg-tertiary, var(--bg-secondary));
+}
+
 .fzf-auth-panel__google-button:disabled {
   cursor: not-allowed;
   opacity: 0.6;

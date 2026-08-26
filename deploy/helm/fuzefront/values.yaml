@@ -75,6 +75,45 @@ database:
       secretName: ""
       secretKey: DB_SUPERUSER_PASSWORD
 
+# Image for the consumer-registration-seed post-upgrade Job
+# (templates/consumer-registration-seed-job.yaml). It needs nothing but a shell and
+# kubectl, so it uses Kubernetes' own community-published image.
+#
+# THE IMAGE MUST CONTAIN A SHELL. The Job runs `command: ["/bin/sh","-c", …]`.
+#
+# DO NOT put a bitnami/* image here. The Job was pinned to `bitnami/kubectl:1.29`,
+# and in Aug 2025 Broadcom removed the free bitnami/* images from Docker Hub (old
+# tags moved to docker.io/bitnamilegacy/*). The tag stopped pulling, the pod
+# ImagePullBackOff'd, and Secret/fuzefront-registration was never published --
+# which broke FuzeInfra's credential handoff for eight days (FuzeFront#688,
+# FuzeInfra#552).
+#
+# DO NOT put a DISTROLESS image here either -- that was the replacement, and it
+# failed differently and more quietly. `registry.k8s.io/kubectl` ships the kubectl
+# binary and NO shell, so on 2026-08-20 every pod died at runc init with
+# `exec: "/bin/sh": stat /bin/sh: no such file or directory`. It never ran one line
+# of the script, so none of its FATAL diagnostics printed and `kubectl logs` was
+# empty. The CI guard added after #688 asserted the tag RESOLVED -- which it did --
+# so CI was green the whole time. Resolving is not the same as being able to run.
+# `deploy/scripts/check-job-interpreters.sh` now executes the interpreter instead.
+#
+# alpine/k8s = kubectl + busybox sh. FuzeInfra already runs this exact image in
+# this cluster (runners/arc/gitops/controller-selfheal.yaml) for the same reason.
+# The tag TRACKS THE K3S SERVER VERSION: the server is v1.36.2+k3s1 and reports
+# minCompatibilityMinor "35", so the previous v1.29.10 pin was seven minors below
+# the server's own stated minimum, well outside the kubectl skew policy.
+# Re-check this tag whenever the cluster is upgraded.
+#
+# Tradeoff, stated rather than buried: this is Docker Hub, which rate-limits
+# anonymous pulls, where registry.k8s.io did not. It is accepted because the image
+# is already resident on the nodes and the tag is not `latest`, so pulls are rare
+# -- and an image that cannot start is worse than one that occasionally throttles.
+#
+# The default is declared HERE, visibly, rather than only as a `| default` at the
+# render site -- per this repo's Helm values-hygiene rule.
+consumerRegistrationSeed:
+  image: "alpine/k8s:1.36.2"
+
 # Secret handling. Either let the chart create a Secret from the values here
 # (DEV ONLY — override!), or point at an existing Secret via `existingSecret`.
 secret:
@@ -121,7 +160,9 @@ secret:
   # Twilio Verify credentials for SMS MFA. Leave empty to run in mock/inert mode.
   # Supply real values via --set or a gitignored values file. NEVER commit real creds.
   twilioAccountSid: ""
-  twilioAuthToken: ""
+  twilioAuthToken: "" # legacy account-token auth; prefer the API key below
+  twilioApiKeySid: "" # preferred: Twilio API Key SID (SK…)
+  twilioApiKeySecret: "" # preferred: Twilio API Key secret
   twilioVerifyServiceSid: ""
   smsAuthSecret: "dev-sms-secret-change-me"
   # Google OAuth2 source creds. Leave empty to disable the Google source
@@ -200,6 +241,19 @@ securityService:
   replicas: 1
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
+  # fuzefront.identity.root-membership (FF-EPIC-17) and future security-service
+  # release/kill-switch flags (utils/feature-flags.ts / rootMembershipFlag.ts).
+  # FuzeFront HOSTS the family Unleash; this points the client at it. Empty
+  # unleashUrl (the default here) means the env block does not render at all
+  # (see templates/security.yaml), so init is skipped and every flag resolves
+  # to its in-code default (OFF) — same degrade pattern as backend/
+  # applicationsService. The CLIENT TOKEN is a SECRET (sealed) — never inline.
+  featureFlags:
+    unleashUrl: ""
+    appName: "security-service"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+    tokenSecretName: ""
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -293,12 +347,105 @@ mcp:
   affinity: {}
   tolerations: []
 
+# FuzeFront's own per-product A2A (agent-to-agent) pod. Runs the EXISTING shared
+# ghcr.io/izzywdev/fuzeagent-a2a image (izzywdev/FuzeAgent CI builds/publishes
+# it; this chart never builds it) configured, via the mounted values.json, to
+# serve exactly one tenant: this repo's `app-shell-platform` role. See
+# docs/a2a/README.md (the investigation that produced this exact shape) and
+# izzywdev/FuzeAgent's docs/a2a/per-product-pod.md (the canonical recipe — do
+# not re-derive it). Deliberately NOT a second A2A server implementation and
+# NOT onboarded onto the shared a2a-shared/fuzeagent server: the owner decision
+# is one pod per product for blast-radius isolation.
+# `a2a:` is serialised VERBATIM into the ConfigMap the server reads
+# (A2A_VALUES_FILE) — see templates/a2a.yaml. It mirrors EXACTLY the frozen
+# contract interface (izzywdev/FuzeAgent's
+# agent-templates/contracts/a2a/v1/schema/values-interface.schema.json),
+# additionalProperties:false at every level: no invented keys here. Pure
+# deployment mechanics (replicas, resources, scheduling, the git-clone
+# sidecar, secret plumbing) deliberately live in the separate `a2aDeploy:`
+# block below instead — a key added under `a2a` that the server doesn't
+# recognize is a validation failure, not a silently-ignored value.
+a2a:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzeagent-a2a
+    # Immutable; never `latest` in prod (values-prod.yaml pins by digest,
+    # encoded as `tag@digest` — see that file's comment). Left empty here
+    # (local/dev default; server disabled) so `helm template` with the base
+    # values alone never renders an unpinned image reference.
+    tag: ""
+    pullPolicy: IfNotPresent
+  service:
+    # MUST be ClusterIP — ingress is Cloudflare-tunnel-only, and `inClusterUrl`
+    # below must resolve to exactly this Service.
+    type: ClusterIP
+    port: 8080
+  protocolVersion: "1.0"
+  # THE ONE VALUE A PER-PRODUCT POD MUST NOT GET WRONG (per-product-pod.md).
+  # Unset would default to the SHARED server's card URL and this pod would be
+  # unreachable through its own card despite passing every probe.
+  inClusterUrl: ""
+  auth:
+    oidcIssuerUrl: ""
+    oidcDiscoveryUrl: ""
+    audience: a2a
+    callerClaim: repo
+  cardSigning:
+    keySecretRef: { name: "", key: "" }
+    keyId: a2a-v1
+  # A per-product pod serves ONE tenant. Exactly one entry, empty by default.
+  tenants: []
+
+# Chart-internal A2A deployment mechanics — devops slice, NOT part of the
+# frozen contract interface (kept out of `a2a:` above so that block stays
+# byte-conformant to the schema the server validates).
+a2aDeploy:
+  replicas: 1
+  # GitOps repo-sync: shallow-clones each enabled tenant's repo at `ref` into
+  # A2A_REPOS_DIR/<tenant> so the server can project a card + provision agent
+  # sessions from THIS repo's own .fuze/manifest.json + agent-templates/roles/.
+  # null = anonymous clone (only correct for a PUBLIC tenant repo).
+  reposGitTokenSecretRef: null
+  providerApiKeySecretRef: null
+  gitImage: alpine/git:latest
+  agentProvider: anthropic
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 # Clock-app — the built-in reference Module-Federation REMOTE (clock-app/), a
 # static nginx image serving remoteEntry.js. Deployed as its own Deployment+
 # Service and exposed SAME-ORIGIN under the app host at /apps/clock/ (see
 # templates/clock-app.yaml + the clock ingress in templates/ingress.yaml).
 # Disabled by default; enabled in values-local + values-prod once the image is
 # built (release matrix — see deploy/PENDING-WORKFLOW-CHANGES.md).
+# Same-origin mounts for federated remotes that run IN THIS RELEASE'S NAMESPACE.
+#
+# templates/ingress.yaml ranges over this to publish /apps/<slug>/* on the app
+# host and proxy it to the named ClusterIP Service, so the browser loads the
+# remote from the page's own origin instead of hairpinning back out through the
+# public edge. Declared here explicitly (rather than left undefined) so the
+# `range` has a visible default a reviewer can see — an absent key renders the
+# same empty output as an intentional empty list, which is exactly how this
+# mechanism sat dead and unnoticed.
+#
+# A k8s Ingress may only target a Service in its OWN namespace, so this list is
+# limited to same-namespace apps. A family app deployed to its own namespace
+# (fuzequality, fuzeagent, …) owns an equivalent Ingress inside its own chart —
+# see FuzeQuality/deploy/helm/fuzequality/templates/ingress.yaml. Traefik
+# watches all namespaces and merges rules per host, so both routes coexist on
+# app.fuzefront.com.
+#
+# Each entry: { slug, serviceName, port, enabled }.
+federatedApps: []
+
 clockApp:
   enabled: false
   image:
@@ -456,6 +603,117 @@ notificationService:
     limits:
       cpu: "1"
       memory: 256Mi
+
+# Selection-List service — owns the SelectionList entity domain (S14,
+# FF-EPIC-17, FFRNT-200). Ships dark by default; flip `enabled` to true in a
+# deploy window once the backend code and SealedSecret are ready.
+# Feature flag: fuzefront.selection-lists.service (added in S15).
+#
+# Port 3008: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
+# 3005=provisioning, 3006=chat/billing, 3009=notification, 3010=payment.
+# NOTE: networkPolicy.port MUST equal port and MUST be declared explicitly —
+# do NOT use | int / | default / | toString in the template. A missing default
+# renders as `port: 0`, which kubeconform accepts (valid integer) but the k8s
+# API server rejects at admission (ports 1-65535), breaking every Argo sync
+# of the whole Application (FuzeInfra#501). The explicit value here is the only
+# safe path.
+selectionListService:
+  enabled: false
+  replicas: 1
+  port: 3008
+  image:
+    repository: fuzefront/selection-list-service
+    tag: local
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  networkPolicy:
+    # Must equal selectionListService.port — declared explicitly, never coerced.
+    port: 3008
+    # Intra-fuzefront traffic is the primary ingress source (other platform
+    # services calling the selection-list API). The Traefik rule below covers
+    # ingress-routed external traffic once the ingress route is wired.
+    ingressControllerNamespace: kube-system
+
+# Config service — namespaced, hierarchical configuration catalog + scope-chain
+# resolution engine (FF-EPIC-17-S7, FFRNT-159). Ships dark by default here —
+# every other optional service in this file (securityService, chatService,
+# billingService, ...) defaults to `enabled: false` in the base/local values
+# too, and this base file has no CONFIG_DB_PASSWORD to point at (local dev
+# clusters don't seal against the prod cert). See the comment on configService
+# in values-prod.yaml for the exact two-step go-live sequence — seal the key,
+# let it sync, THEN flip enabled. The steps cannot be combined, because the
+# bootstrap Job is a pre-upgrade hook and runs before the SealedSecret is
+# applied.
+#
+# Port 3011: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
+# 3005=provisioning, 3006=chat/billing, 3008=selection-list, 3009=notification,
+# 3010=payment. The service Dockerfile bakes ENV PORT=3009 as ITS OWN in-image
+# default (EXPOSE 3009), but the chart always passes PORT explicitly below,
+# overriding that default at runtime — 3011 was chosen here specifically so
+# every port declared in THIS chart stays unique (verified against every
+# `port:` in this file), even though the two never collide in practice (each
+# service is its own Pod/network namespace).
+# NOTE: networkPolicy.port MUST equal port and MUST be declared explicitly —
+# do NOT use | int / | default / | toString in the template. A missing default
+# renders as `port: 0`, which kubeconform accepts (valid integer) but the k8s
+# API server rejects at admission (ports 1-65535), breaking every Argo sync
+# of the whole Application (FuzeInfra#501). The explicit value here is the only
+# safe path.
+configService:
+  enabled: false
+  replicas: 1
+  port: 3011
+  # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
+  # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
+  # billing-service's billing_svc — no separate database is provisioned.
+  dbUser: config_svc
+  # Key in the platform Secret holding config_svc's password. Only the PASSWORD is
+  # sealed; DATABASE_URL is composed in the Deployment from host/port/db/user so
+  # none of those are buried in ciphertext. JWT_SECRET is read from the SAME
+  # Secret's existing key rather than sealed a second time — see the Deployment.
+  dbPasswordKey: CONFIG_DB_PASSWORD
+  dbBootstrap:
+    # Declared explicitly rather than left to default. A `.Values.` lookup that is
+    # undefined renders as nil, and the repo has already shipped one outage from a
+    # missing default being silently absorbed at the render site (FuzeInfra#501).
+    enabled: true
+  image:
+    repository: fuzefront/config-service
+    tag: local
+  # config-service's authorization is routed through FuzeFront's own Security
+  # API (backend/security's /api/v1/security/authz/*, via @fuzefront/auth's
+  # createAuthzClient — see src/middleware/authz.ts) rather than an embedded
+  # Permit.io SDK. Permit is now purely an implementation detail behind
+  # backend/security's AuthorizationProvider seam; config-service knows
+  # nothing about it and carries no PERMIT_API_KEY/PDP URL of its own.
+  # SECURITY_SERVICE_URL is derived in templates/config-service-deployment.yaml
+  # from securityService.port, matching provisioning-service's convention —
+  # no separate key needed here.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  networkPolicy:
+    # Must equal configService.port — declared explicitly, never coerced.
+    port: 3011
+    # Intra-fuzefront traffic is the primary ingress source (other platform
+    # services resolving config). The Traefik rule below covers ingress-routed
+    # external traffic once/if a public route is wired.
+    ingressControllerNamespace: kube-system
 
 # Plan D — thin Kafka→HTTP bridge: consumes identity.user.created, calls
 # security-service POST /internal/provision. No DB, no domain logic.

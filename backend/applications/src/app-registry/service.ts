@@ -13,6 +13,24 @@ import {
   navSectionRank,
 } from './manifest.schema'
 
+// Owner ruling 2026-08-19/2026-08-25: "there should be no app without orgid.
+// at the minimum fuzefront itself the root org is the orgid for our own
+// apps. like google owns docs, sheets, etc." `organization_id` on `apps` is
+// NEVER null post-migration (see backend/applications/src/migrations —
+// backfill + NOT NULL) — a first-party FuzeFront product (registered by a
+// platform-admin service account, or a BUILTIN_MANIFESTS entry) is owned by
+// the platform root org, not left org-less.
+//
+// This is the applications-service's own copy of the SAME fixed id
+// backend/src/migrations/015_seed_root_platform_organization.ts seeds and
+// exports as ROOT_ORG_ID — cross-service TS imports don't resolve (separate
+// deployables), so every service that needs it re-declares the literal
+// (same pattern as backend/applications/tests/portal-catalog.integration.test.ts
+// and backend/security/src/migrations/014_seed_root_platform_organization.ts).
+// Changing this value without a coordinated migration across every service
+// orphans every row already keyed to it.
+export const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
+
 /**
  * Derived side-menu ordering columns for a manifest. `manifest.nav` is the source
  * of truth; these columns exist only so the list query can ORDER BY / keyset-paginate
@@ -76,13 +94,17 @@ function rowToApp(row: any): AppRecord {
  *  - visibility is public|marketplace (everyone), OR
  *  - visibility is organization AND the app's org is one the caller belongs to, OR
  *  - visibility is private AND the app's org is one the caller belongs to (owner org).
- * An org-less (platform-global) app is treated as public for read.
+ * `organization_id` is NOT NULL on `apps` (see ROOT_ORG_ID's doc comment
+ * above) — the `!app.organizationId` branch below is unreachable defensive
+ * code, kept rather than deleted so a future regression on the DB
+ * constraint fails safe (deny) here instead of this predicate silently
+ * assuming a shape the schema no longer allows.
  */
 export function canRead(app: AppRecord, caller: AppCaller): boolean {
   if (caller.isPlatformAdmin) return true
   const visibility = app.manifest.visibility ?? 'private'
   if (visibility === 'public' || visibility === 'marketplace') return true
-  if (!app.organizationId) return true // platform-global → readable
+  if (!app.organizationId) return false // should be unreachable; fail closed, not open
   const inOrg = caller.organizationIds.includes(app.organizationId)
   if (visibility === 'organization' || visibility === 'private') return inOrg
   return false
@@ -157,6 +179,20 @@ export interface ListResult {
   nextCursor: string | null
 }
 
+/**
+ * FF-EPIC-12-S2 — the portal-catalog context `list()`'s caller
+ * (routes/app-registry.ts, via app-registry/portalContext.ts) resolves and
+ * passes in. See portalContext.ts's module doc for how this is derived (the
+ * JWT's `portalId` claim — this service has no other source of portal
+ * context). Optional/undefined behaves EXACTLY like `{ mode: 'off' }` — every
+ * existing caller that never passes this argument sees byte-identical
+ * pre-epic behavior (S5 AC1).
+ */
+export interface PortalCatalogListContext {
+  mode: 'off' | 'root' | 'scoped' | 'denied'
+  portalId: string | null
+}
+
 export class AppRegistryService {
   /**
    * BOLA-safe, paginated list. Visibility filtering is applied IN SQL so a caller
@@ -166,7 +202,11 @@ export class AppRegistryService {
    * created_at/slug as the tiebreak that keeps the ordering total and stable.
    * Only manifest-bearing (registry) rows are returned.
    */
-  async list(params: ListParams, caller: AppCaller): Promise<ListResult> {
+  async list(
+    params: ListParams,
+    caller: AppCaller,
+    portalCtx?: PortalCatalogListContext
+  ): Promise<ListResult> {
     const limit = Math.min(Math.max(params.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT)
 
     let query = db('apps').whereNotNull('slug').whereNotNull('manifest')
@@ -181,21 +221,63 @@ export class AppRegistryService {
       query = query.where('mode', params.mode)
     }
 
-    // BOLA filter in SQL (unless platform admin).
+    // BOLA filter in SQL (unless platform admin). Platform admins bypass this
+    // ENTIRE block — including the FF-EPIC-12-S2 portal-catalog gate below —
+    // same "sees everything" convention `canRead`/`canMutate` already apply.
     if (!caller.isPlatformAdmin) {
       const orgIds = caller.organizationIds
-      query = query.where(builder => {
-        builder
-          .whereIn('visibility', ['public', 'marketplace'])
-          .orWhereNull('organization_id')
-        if (orgIds.length > 0) {
-          builder.orWhere(sub => {
-            sub
-              .whereIn('visibility', ['organization', 'private'])
-              .whereIn('organization_id', orgIds)
+
+      // FF-EPIC-12-S2 AC4 — fail closed. A 'denied' portal context (the flag
+      // is ON and the caller's portal context is missing/malformed) must
+      // NEVER fall back to the unscoped global list — match no rows at all,
+      // rather than only gating the org-less/public branch below.
+      if (portalCtx?.mode === 'denied') {
+        query = query.whereRaw('1 = 0')
+      } else {
+        // 'scoped' (a resolved, non-root tenant portal) ANDs an extra
+        // membership check onto the org-less/public branch ONLY — the
+        // org-owned branch (organization/private visibility, caller's own
+        // orgs) is untouched, since that leak never existed for those. 'off'
+        // and 'root' apply NO extra gate here, preserving the EXACT
+        // pre-epic/root SQL (S5 AC1 / S2 AC3).
+        const applyPortalGate = portalCtx?.mode === 'scoped'
+
+        query = query.where(builder => {
+          // `organization_id IS NULL` was a THIRD branch here (public/marketplace
+          // visibility OR org-less), removed by owner ruling 2026-08-25: "there
+          // should be no app without orgid ... fuzefront itself [is] the orgid
+          // for our own apps" (see ROOT_ORG_ID's doc comment above). It was a
+          // latent hole, not a feature — it made ANY row with no owning org
+          // visible to every caller regardless of `visibility`, and every
+          // first-party FuzeFront product ended up in exactly that state
+          // (registered with no organizationId). `organization_id` is NOT NULL
+          // on this table as of the migration backfilling those rows to
+          // ROOT_ORG_ID (backend/applications/src/migrations), so this branch
+          // is now simply "public/marketplace visibility" — nothing was ever
+          // org-less on purpose, so nothing is lost by requiring an org match
+          // for everything else.
+          builder.where(publicOrMarketplace => {
+            publicOrMarketplace.whereIn('visibility', ['public', 'marketplace'])
+            if (applyPortalGate) {
+              const portalId = portalCtx!.portalId as string
+              publicOrMarketplace.whereExists(function (this: any) {
+                this.select(1)
+                  .from('portal_apps')
+                  .whereRaw('portal_apps.app_id = apps.id')
+                  .andWhere('portal_apps.portal_id', portalId)
+                  .andWhere('portal_apps.enabled', true)
+              })
+            }
           })
-        }
-      })
+          if (orgIds.length > 0) {
+            builder.orWhere(sub => {
+              sub
+                .whereIn('visibility', ['organization', 'private'])
+                .whereIn('organization_id', orgIds)
+            })
+          }
+        })
+      }
     }
 
     // Keyset cursor over the FULL sort key (nav_rank, nav_order, created_at, slug).
@@ -440,7 +522,10 @@ export class AppRegistryService {
         status,
         mode: manifest.mode,
         builtin: true,
-        organization_id: null,
+        // ROOT_ORG_ID, not null (owner ruling — see ROOT_ORG_ID's own doc
+        // comment above): a builtin is a first-party FuzeFront product like
+        // any other, owned by the platform root org rather than org-less.
+        organization_id: ROOT_ORG_ID,
         visibility: (manifest.visibility ?? 'public') as Visibility,
         is_active: status === 'activated',
         heartbeat_token: heartbeatToken,

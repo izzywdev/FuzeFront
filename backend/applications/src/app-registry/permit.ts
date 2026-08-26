@@ -108,3 +108,42 @@ export async function checkAppRegistryPermission(args: {
     return false
   }
 }
+
+/**
+ * FF-EPIC-12-S3 — portal-admin authority check: does `userId` hold `manage`
+ * on the ORGANIZATION a portal 1:1 wraps (`portals.organization_id`)? This is
+ * the SAME derivation `backend/src/utils/scopeToPortal.ts`'s
+ * `defaultIsPlatformAdmin` uses for platform-admin-on-ROOT_ORG_ID (Permit
+ * ReBAC `Organization:manage`) — reused here at portal-scope instead of
+ * root-scope, per the epic's own risk note ("reusing the same derivation as
+ * FF-EPIC-11"). Platform-admin bypass for the ROOT org is handled by the
+ * caller (`caller.isPlatformAdmin`, this service's existing role-based
+ * convention — see app-registry/caller.ts) BEFORE this is ever called; this
+ * check is specifically for "is this user THIS portal's own admin".
+ *
+ * Fail-CLOSED on any error — never falls back to a DB role check on a clean
+ * Permit deny (same discipline as checkAppRegistryPermission above).
+ */
+export async function checkPortalAdminPermission(args: {
+  userId: string
+  organizationId: string
+  context?: Record<string, unknown>
+}): Promise<boolean> {
+  try {
+    const result = await getPermitClient().check(
+      args.userId,
+      'manage',
+      { type: 'Organization', tenant: args.organizationId },
+      args.context
+    )
+    return Boolean(result)
+  } catch (err) {
+    console.error(
+      '[app-registry][permit] portal-admin check failed (deny) user=%s org=%s error=%s',
+      String(args.userId).replace(/[\r\n]+/g, ' '),
+      String(args.organizationId).replace(/[\r\n]+/g, ' '),
+      String(err instanceof Error ? err.message : err).replace(/[\r\n]+/g, ' ')
+    )
+    return false
+  }
+}

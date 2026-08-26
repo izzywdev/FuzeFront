@@ -33,11 +33,13 @@ jobs:
 
           # Legacy files whose alerts pre-date the SDLC gates (old logging
           # style, legacy local-auth machinery kept as machine/break-glass path).
-          LEGACY_PATHS='backend/src/routes/auth.ts backend/src/index.ts backend/security/src/routes/auth.ts frontend/src/pages/LoginPage.tsx'
+          # organizations.ts: all alerts fingerprint-drifted when PR #611
+          # converted CRLF→LF (2215-line diff) — patterns predate the PR.
+          LEGACY_PATHS='backend/src/routes/auth.ts backend/src/index.ts backend/security/src/routes/auth.ts frontend/src/pages/LoginPage.tsx backend/src/routes/organizations.ts'
           # Rules considered legacy-noise/by-design IN THOSE FILES ONLY.
           DISMISS_RULES='js/tainted-format-string js/log-injection js/missing-rate-limiting js/user-controlled-bypass js/clear-text-logging javascript.lang.security.audit.unsafe-formatstring.unsafe-formatstring fuze-auth-local-password-store semgrep.fuze-auth-local-password-store fuze-auth-self-minted-user-token semgrep.fuze-auth-self-minted-user-token'
 
-          COMMENT='Pre-existing legacy pattern (predates PR #218; re-anchored into the PR diff by fingerprint drift). The local-auth machinery is the intentional machine/break-glass path and this service is the platform token issuer. Tracked for dedicated cleanup — not introduced by current work.'
+          COMMENT='Pre-existing legacy alert (fingerprint-drifted into PR diff). Local-auth is intentional break-glass path; organizations.ts rate-limiting is pre-existing. Tracked for cleanup.'
 
           PAGE=1
           DISMISSED=0

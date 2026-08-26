@@ -19,14 +19,19 @@ import {
   initializeDatabaseConnection,
   configureDatabase,
   waitForTable,
+  db,
 } from '@fuzefront/core'
 
 import appsRoutes from './routes/apps'
 import appInstallationsRoutes from './routes/app-installations'
 import appRegistryRoutes from './routes/app-registry'
+import portalCatalogRoutes from './routes/portal-catalog'
 import { ensureBuiltins } from './app-registry/builtins'
 import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
+import { configureIdentity } from '@izzywdev/fuzefront-identity'
+import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
+import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
@@ -54,6 +59,10 @@ app.use('/api/apps', appsRoutes)
 // Frozen versioned app-registry contract surface (services/app-registry-service/
 // openapi.yaml) — mounted ALONGSIDE the legacy /api/apps for back-compat.
 app.use('/api/v1/app-registry', appRegistryRoutes)
+// FF-EPIC-12-S3 — portal app-catalog admin API. Mounted at the SAME prefix so
+// it rides the existing host-backend proxy/route-ownership entry for
+// /api/v1/app-registry with no new wiring (see routes/portal-catalog.ts).
+app.use('/api/v1/app-registry', portalCatalogRoutes)
 
 const health = async (_req: any, res: any) => {
   const uptime = Math.floor((Date.now() - startTime) / 1000)
@@ -77,6 +86,7 @@ function gracefulShutdown(signal: string) {
   console.log(`\n🛑 [applications-service] Received ${signal}. Shutting down...`)
   httpServer.close(() => {
     io.close(async () => {
+      await stopRefIndexProjection().catch(() => undefined)
       await closeDatabase().catch(() => undefined)
       process.exit(0)
     })
@@ -89,12 +99,32 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 /**
  * Boot sequence with cross-service startup ordering: wait for Postgres, ensure
  * the DB exists, then wait for the `organizations` table (owned by security-
- * service) to exist BEFORE running our migrations — migration 002 adds an
- * organization_id FK to organizations. All in-process; no initContainer.
+ * service) AND the `portals` table (owned by the host backend, FF-EPIC-09) to
+ * exist BEFORE running our migrations — migration 002 adds an organization_id
+ * FK to organizations, and migration 007 (FF-EPIC-12-S1) adds a portal_id FK
+ * to portals. All in-process; no initContainer.
  */
 async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront applications-service...')
+
+    // Step 5 (FFRNT-185): configure the dual-accept window so that
+    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
+    // predate the TypeID wire form. Flag `fuzefront.identity.prefixed-ids`
+    // (step 4) controls whether RESPONSES emit TypeID form; these types remain
+    // in legacyUuidTypes until their row backfill is complete.
+    configureIdentity({
+      legacyUuidTypes: new Set([
+        'organization',
+        'membership',
+        'invitation',
+        'session',
+        'mfaFactor',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     const dbOptions = {
       migrationsTableName: 'knex_migrations_apps',
       migrationsDir: path.join(__dirname, 'migrations'),
@@ -106,6 +136,9 @@ async function startServer() {
     await ensureDatabase()
     // Cross-service ordering: organizations must exist before our FK migration.
     await waitForTable('organizations', 60, 2000)
+    // FF-EPIC-12-S1 — portal_apps.portal_id FKs into portals (host backend,
+    // migration 012). Mirrors the organizations wait above exactly.
+    await waitForTable('portals', 60, 2000)
     await runMigrations(dbOptions)
     initializeDatabaseConnection(dbOptions)
     if (process.env.NODE_ENV !== 'production') {
@@ -122,6 +155,11 @@ async function startServer() {
     // consult Unleash. Non-fatal: on failure they keep their in-code fail-safe
     // defaults (release OFF / kill-switch ON).
     await initFeatureFlags('applications-service')
+
+    // Projects identity.org.* events into app_ref_index so assertRefExists can
+    // answer at request time without an RPC. Non-fatal + no-op when KAFKA_BROKERS unset.
+    const refIndexStore = new KnexRefIndexRepository(db)
+    await startRefIndexProjection(refIndexStore)
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {

@@ -3,6 +3,7 @@ key: FF-EPIC-17
 title: Configuration Service Core & Resolution — namespaced hierarchical config with typed key metadata
 label: [fuzefront, platform, config-management, contract-first, permit-gated, feature-flag, paginated, needs-jira-upload]
 github: TBD
+jira: FFRNT-150
 status: ready
 priority: High
 domain: Platform
@@ -45,7 +46,7 @@ domain: Platform
 - **App Developer** — declares a namespace and its key definitions so their app's settings are managed like everyone else's.
 
 ### ✅ Features In Scope
-- [ ] Feature 1: Frozen OpenAPI contract for the config service + generated `@fuzefront/config-client` package.
+- [ ] Feature 1: Frozen OpenAPI contract for the config service + generated `@fuzefront/config-client` (Node) package.
 - [ ] Feature 2: Catalog schema — `config_namespaces` + `config_key_definitions` carrying display name, description, value type, validation schema, default, allowed scopes, and the `is_system` / `is_hidden` / `is_secret` / `is_readonly` / `precedence` flags.
 - [ ] Feature 3: Values schema — `config_values`, sparse per-scope overrides with `is_locked` + `lock_reason`.
 - [ ] Feature 4: Resolution engine — walks `default → platform → portal → org → user`, honours per-key `precedence`, short-circuits at the outermost lock, and returns provenance per key.
@@ -53,6 +54,9 @@ domain: Platform
 - [ ] Feature 6: Write API — set / reset-to-inherited / lock / unlock, bulk transactional, Permit-gated per scope.
 - [ ] Feature 7: Service scaffold, Dockerfile, Helm chart and `release.yml` image-matrix entry.
 - [ ] Feature 8: Feature flag `fuzefront.platform.config-management`, default OFF.
+- [ ] Feature 9: Served **Swagger UI** + the OpenAPI spec published as JSON and YAML, with drift between the committed and served spec failing CI.
+- [ ] Feature 10: **Python client package** for Python microservices, generated from the same frozen contract as the Node client, with cross-client parity enforced in CI.
+- [ ] Feature 11: **Consumer integration guide** — how to declare keys and read/write configuration from Node and Python.
 
 ### 🚫 Out of Scope
 - Secrets, audit history, change events, import/export and presets — all delivered by FF-EPIC-18.
@@ -105,16 +109,19 @@ domain: Platform
 | Cross-scope leak (org A reading org B's values) | N/A | 0 |
 
 ### 📋 Child Stories
-| Story ID | Summary | Status |
-|----------|---------|--------|
-| FF-EPIC-17-S1 | Frozen OpenAPI contract + `@fuzefront/config-client` | Open |
-| FF-EPIC-17-S2 | Catalog schema — namespaces + key definitions | Open |
-| FF-EPIC-17-S3 | Values schema — sparse per-scope overrides + locking | Open |
-| FF-EPIC-17-S4 | Resolution engine with provenance | Open |
-| FF-EPIC-17-S5 | Read API — effective config + paginated catalog listing | Open |
-| FF-EPIC-17-S6 | Write API — set / reset / lock, bulk transactional, Permit-gated | Open |
-| FF-EPIC-17-S7 | Service scaffold, Helm chart, release image matrix | Open |
-| FF-EPIC-17-S8 | Feature flag `fuzefront.platform.config-management` | Open |
+| Story ID | Jira | Summary | Status |
+|----------|------|---------|--------|
+| FF-EPIC-17-S1 | [FFRNT-153](https://fuzefront.atlassian.net/browse/FFRNT-153) | Frozen OpenAPI contract + `@fuzefront/config-client` (Node) | Open |
+| FF-EPIC-17-S2 | [FFRNT-154](https://fuzefront.atlassian.net/browse/FFRNT-154) | Catalog schema — namespaces + key definitions | Open |
+| FF-EPIC-17-S3 | [FFRNT-155](https://fuzefront.atlassian.net/browse/FFRNT-155) | Values schema — sparse per-scope overrides + locking | Open |
+| FF-EPIC-17-S4 | [FFRNT-156](https://fuzefront.atlassian.net/browse/FFRNT-156) | Resolution engine with provenance | Open |
+| FF-EPIC-17-S5 | [FFRNT-157](https://fuzefront.atlassian.net/browse/FFRNT-157) | Read API — effective config + paginated catalog listing | Open |
+| FF-EPIC-17-S6 | [FFRNT-158](https://fuzefront.atlassian.net/browse/FFRNT-158) | Write API — set / reset / lock, bulk transactional, Permit-gated | Open |
+| FF-EPIC-17-S7 | [FFRNT-159](https://fuzefront.atlassian.net/browse/FFRNT-159) | Service scaffold, Helm chart, release image matrix | Open |
+| FF-EPIC-17-S8 | [FFRNT-255](https://fuzefront.atlassian.net/browse/FFRNT-255) | Feature flag `fuzefront.platform.config-management` | Open |
+| FF-EPIC-17-S9 | [FFRNT-258](https://fuzefront.atlassian.net/browse/FFRNT-258) | Serve Swagger UI + publish the OpenAPI spec | Open |
+| FF-EPIC-17-S10 | [FFRNT-259](https://fuzefront.atlassian.net/browse/FFRNT-259) | Python client package for Python microservices | Open |
+| FF-EPIC-17-S11 | [FFRNT-260](https://fuzefront.atlassian.net/browse/FFRNT-260) | Consumer integration guide | Open |
 
 ### 🔗 Dependencies
 - **Blocked By:** FF-EPIC-09 (`portals` table — the portal scope tier FKs against it); FF-EPIC-10 (portal/org context resolution supplies the scope chain for a request).
@@ -135,6 +142,7 @@ domain: Platform
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-153](https://fuzefront.atlassian.net/browse/FFRNT-153) |
 | **Story ID** | FF-EPIC-17-S1 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | High |
@@ -152,6 +160,19 @@ This is the sequential gate for the whole epic, per the repo's contract-first co
 `contract-designer`, not `backend-engineer`, owns the spec, exactly as `product-designer` (not the
 implementer) owns the frames. The contract must express the resolution response including provenance,
 because that shape is what FF-EPIC-19's editor is built against.
+
+**This one frozen spec has three consumers**, all generated from it and none hand-maintained
+alongside it:
+
+| Consumer | Delivered by |
+|---|---|
+| **Node** — `@fuzefront/config-client` | this story |
+| **Python** — client package for Python microservices | FF-EPIC-17-S10 |
+| **Humans** — served Swagger UI + published spec | FF-EPIC-17-S9 |
+
+Usage of all three is documented by FF-EPIC-17-S11. Freeze the spec with all three in mind: a
+contract shaped only around the Node client generates awkwardly for Python and reads poorly in
+Swagger, and by then it is frozen.
 
 #### ✅ Acceptance Criteria
 1. **Given** the contract work is complete **When** `services/config-service/openapi.yaml` is linted **Then** it defines the catalog, effective-config read, and value write/lock endpoints, and passes the repo's OpenAPI lint gate.
@@ -188,6 +209,7 @@ because that shape is what FF-EPIC-19's editor is built against.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-154](https://fuzefront.atlassian.net/browse/FFRNT-154) |
 | **Story ID** | FF-EPIC-17-S2 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | High |
@@ -242,6 +264,7 @@ validate against.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-155](https://fuzefront.atlassian.net/browse/FFRNT-155) |
 | **Story ID** | FF-EPIC-17-S3 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | High |
@@ -295,6 +318,7 @@ the `is_locked` flag that makes a tier's value binding on everything below it.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-156](https://fuzefront.atlassian.net/browse/FFRNT-156) |
 | **Story ID** | FF-EPIC-17-S4 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | High |
@@ -349,6 +373,7 @@ to build the editor.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-157](https://fuzefront.atlassian.net/browse/FFRNT-157) |
 | **Story ID** | FF-EPIC-17-S5 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | High |
@@ -403,6 +428,7 @@ satisfy the repo's `gate-pagination` standard.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-158](https://fuzefront.atlassian.net/browse/FFRNT-158) |
 | **Story ID** | FF-EPIC-17-S6 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | High |
@@ -458,6 +484,7 @@ settings page saves many keys and must not half-apply.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-159](https://fuzefront.atlassian.net/browse/FFRNT-159) |
 | **Story ID** | FF-EPIC-17-S7 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | High |
@@ -513,6 +540,7 @@ else's problem. This story exists so config does not repeat it.
 
 | Field | Value |
 |-------|-------|
+| **Jira** | [FFRNT-255](https://fuzefront.atlassian.net/browse/FFRNT-255) |
 | **Story ID** | FF-EPIC-17-S8 |
 | **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
 | **Priority** | Medium |
@@ -556,4 +584,205 @@ defaults OFF. It gates consumers reading from the service, not the service's own
 - **Risk:** A flag on the boot path becomes permanent if nobody retires it — record the removal criterion in the Unleash description at creation, not later.
 
 #### 📎 References
+- Feature-flags skill: `.claude/skills/feature-flags/`
+
+---
+
+### 📖 Story: The contract is browsable and published, not buried in a YAML file
+
+| Field | Value |
+|-------|-------|
+| **Jira** | [FFRNT-258](https://fuzefront.atlassian.net/browse/FFRNT-258) |
+| **Story ID** | FF-EPIC-17-S9 |
+| **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
+| **Priority** | High |
+| **Sprint** | [TBD — sprint planning] |
+| **Story Points** | 8 (5 BE + 3 QA) |
+| **Tech Layers** | Backend / DevOps |
+
+#### 🧑‍💼 User Story
+> As an **App Developer on any team**, I want **the config service's OpenAPI contract served as
+> browsable Swagger UI and published as a machine-readable spec** so that **I can discover and try
+> the API without cloning the repo or reading YAML**.
+
+#### 📌 Background & Context
+This repo currently holds **six** OpenAPI specs (`services/chat-service`, `services/billing-service`,
+`services/payment-service`, `services/app-registry-service`, `packages/auth`, `packages/security`)
+and **publishes none of them** — `pages-frames.yml` builds only `design/frames/**`. FF-EPIC-02's gap
+analysis recorded that as an open gap for chat. Config is a platform-wide service that every other
+service and both client packages consume, so shipping it API-dark would repeat the same mistake at
+wider blast radius. This story also establishes the pattern the other five specs can follow.
+
+##### Exposure policy — DECIDED
+
+**Docs route: authenticated developer session, not public.** It reuses the normal same-origin
+session; no separate auth path.
+
+**Try-it in production: READ-ONLY** — Swagger UI configured `supportedSubmitMethods: ['get']`, so
+the Execute button does not exist on write operations.
+
+*Why read-only rather than a browser sandbox:* the console sends the **caller's own token** and
+every call is Permit-gated, so try-it cannot escalate privilege — a developer reaches exactly what
+they could reach with `curl`. The real risk is an **accidental** write (fat-fingering a PUT against
+a live org), and disabling write submission removes precisely that, in one config line.
+
+**Write exploration happens off production**, via either a non-prod `servers` entry or a
+**Prism mock** (`@stoplight/prism`) served from the same committed spec — a real sandbox that
+returns generated responses and touches no data.
+
+*Industry reference:* the common pattern is **not** an in-browser sandbox — it is a separate
+environment or test-mode credential (Stripe test mode, Twilio test credentials). Redoc sidesteps it
+by shipping display-only. Scalar (`@scalar/api-reference`) is the modern Swagger UI alternative if
+its client/proxy model fits better. Verify current library behaviour at implementation time rather
+than trusting this summary.
+
+#### ✅ Acceptance Criteria
+1. **Given** the running service **When** an authenticated developer opens the docs route **Then** Swagger UI renders the config-service contract and the raw spec is retrievable at a stable machine-readable URL (JSON **and** YAML).
+2. **Given** the served spec **When** it is compared to `services/config-service/openapi.yaml` **Then** they are identical — the UI is generated from the committed contract, never hand-maintained alongside it.
+3. **Edge case:** **Given** the docs route in production **When** an unauthenticated visitor loads it **Then** they are refused; and for an authenticated developer, **no write operation offers Execute** — asserted by test, not just by config review.
+4. **Error case:** **Given** the spec fails to parse or drifts from the served version **When** CI runs **Then** the build fails rather than shipping a docs page that misdescribes the API — a stale contract is worse than no contract.
+
+#### 🔲 Definition of Done
+- [ ] Code reviewed and approved (min. 1 reviewer)
+- [ ] Swagger UI reachable (authenticated) and rendering the real contract
+- [ ] Spec served as both JSON and YAML at stable URLs
+- [ ] Drift between committed spec and served spec fails CI
+- [ ] **Write operations un-executable in prod, asserted by test**
+- [ ] Sandbox / non-prod target documented for write exploration
+- [ ] Same-origin API base respected — no absolute API host hard-coded
+
+#### 📋 Sub-Tasks
+| Type | Summary | Assignee | Points | Status |
+|------|---------|----------|--------|--------|
+| Backend | Serve Swagger UI + JSON/YAML spec endpoints from the committed contract; auth-gate the route; `supportedSubmitMethods: ['get']` in prod | — | 3 | Open |
+| DevOps | Publish the spec alongside the existing Pages pipeline; stand up the Prism mock (or non-prod server entry) as the write-exploration target | — | 2 | Open |
+| QA | Spec-drift CI check, unauthenticated refusal, **no-Execute-on-writes** assertion | — | 3 | Open |
+
+#### 🔗 Dependencies
+- **Blocked By:** FF-EPIC-17-S1 (the frozen contract), FF-EPIC-17-S7 (something to serve it from).
+- **Blocks:** FF-EPIC-17-S11 (the guide links to it).
+
+#### ⚠️ Risks & Assumptions
+- **Decided:** authenticated-developer access; read-only try-it in prod; writes explored off-prod.
+- **Assumption:** Serving docs from the service itself is preferred over a separate docs site; if the team prefers Pages-only, the drift check (AC4) still applies.
+- **Risk:** `supportedSubmitMethods` is a **UI-side** control — it hides the button, it does not make the server refuse. That is acceptable here *only because Permit already gates every write server-side*; the config must never be mistaken for the boundary.
+- **Risk:** A Prism mock drifts from the real service's behaviour even while matching the spec (it returns examples, not real resolution). Say so in the docs, or developers will trust a sandbox response production would not produce.
+
+#### 📎 References
+- The five other unpublished specs this pattern should later cover.
+
+---
+
+### 📖 Story: Python microservices consume config the same way Node ones do
+
+| Field | Value |
+|-------|-------|
+| **Jira** | [FFRNT-259](https://fuzefront.atlassian.net/browse/FFRNT-259) |
+| **Story ID** | FF-EPIC-17-S10 |
+| **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
+| **Priority** | High |
+| **Sprint** | [TBD — sprint planning] |
+| **Story Points** | 10 (7 BE + 3 QA) |
+| **Tech Layers** | Backend |
+
+#### 🧑‍💼 User Story
+> As a **developer of a Python microservice**, I want **a first-class Python client for the config
+> service** so that **Python services consume configuration the same way Node services do, instead of
+> hand-rolling HTTP calls and re-implementing resolution semantics**.
+
+#### 📌 Background & Context
+`@fuzefront/config-client` (S1) serves Node consumers. Python services have no equivalent, and
+without one they will either hand-roll requests — re-implementing caching, retry and provenance
+handling inconsistently — or skip the service entirely. Both clients are generated from the **same**
+frozen contract so their behaviour cannot diverge.
+
+**Distribution channel — DECIDED:** Python packages publish to **GitHub Packages**, the same
+registry as npm. This is settled, not an open question. `packages/identity-py/` is the in-repo
+precedent to follow.
+
+#### ✅ Acceptance Criteria
+1. **Given** the frozen OpenAPI contract **When** the Python client is generated/built **Then** it is published to **GitHub Packages** and exposes the same operations as the Node client: read effective config, read the catalog, set / reset / lock values.
+2. **Given** a resolved entry **When** the Python client returns it **Then** it carries the same provenance fields as the Node client (`value`, `source`, `locked`, `editable`, `definition`) with typed access — the two clients present one model, not two dialects.
+3. **Edge case:** **Given** the contract changes **When** CI runs **Then** **both** clients are regenerated and a divergence between them fails the build — two clients maintained by hand drift within one release.
+4. **Error case:** **Given** the config service is unreachable at boot **When** a Python consumer starts **Then** the client surfaces a typed error and honours the documented fallback (declared defaults), rather than hanging the service's startup indefinitely.
+
+#### 🔲 Definition of Done
+- [ ] Code reviewed and approved (min. 1 reviewer)
+- [ ] Unit tests written and passing (coverage ≥ 80%)
+- [ ] Package published to **GitHub Packages** and installable by a Python service
+- [ ] Generated from the same contract as the Node client; divergence fails CI
+- [ ] Caching + cache-invalidation parity with the Node client (FF-EPIC-18-S4/S5)
+- [ ] Usage documented (FF-EPIC-17-S11)
+
+#### 📋 Sub-Tasks
+| Type | Summary | Assignee | Points | Status |
+|------|---------|----------|--------|--------|
+| Backend | Generate + package the Python client from the frozen contract; typed provenance model | — | 5 | Open |
+| Backend | Publish pipeline + version pinned to the contract version | — | 2 | Open |
+| QA | Cross-client parity test, unreachable-service fallback, typed-error surface | — | 3 | Open |
+
+#### 🔗 Dependencies
+- **Blocked By:** FF-EPIC-17-S1 (frozen contract + the Node client it must stay in parity with).
+- **Blocks:** FF-EPIC-17-S11.
+- **Related:** FF-EPIC-18-S4 / S5 — cache invalidation and ETag polling must be implemented in **both** clients or Python consumers silently serve stale config.
+
+#### ⚠️ Risks & Assumptions
+- **Assumption:** There is (or will be) at least one Python consumer; if none exists yet, this still ships so the first one does not hand-roll.
+- **Risk:** A private Python package needs a registry story of its own — the repo's publishing convention today is GitHub Packages for npm. Decide the Python distribution channel explicitly rather than assuming parity exists.
+
+#### 📎 References
+- Existing Python packaging precedent in this repo: `packages/identity-py/`
+
+---
+
+### 📖 Story: A developer can adopt config management without reading its source
+
+| Field | Value |
+|-------|-------|
+| **Jira** | [FFRNT-260](https://fuzefront.atlassian.net/browse/FFRNT-260) |
+| **Story ID** | FF-EPIC-17-S11 |
+| **Parent Epic** | FF-EPIC-17 — Configuration Service Core & Resolution |
+| **Priority** | Medium |
+| **Sprint** | [TBD — sprint planning] |
+| **Story Points** | 6 |
+| **Tech Layers** | Docs |
+
+#### 🧑‍💼 User Story
+> As a **developer onboarding a service onto config management**, I want **a guide that shows how to
+> declare keys, read resolved values, and handle inheritance and locking** so that **I can adopt the
+> service correctly without reading its source**.
+
+#### 📌 Background & Context
+A generic config service is only as useful as its adoption. The concepts that most need explaining
+are exactly the ones invisible from an endpoint list: the four-tier scope chain, what `precedence`
+does, why a value can be read-only, and why config is **not** the feature-flag system.
+
+#### ✅ Acceptance Criteria
+1. **Given** the guide **When** a developer reads it **Then** it covers: declaring a namespace and key definitions, reading effective config in **Node and Python**, writing/resetting/locking values, and the meaning of every key-definition flag (`is_system`, `is_hidden`, `is_secret`, `is_readonly`, `precedence`, `requires_restart`).
+2. **Given** the guide **When** it explains resolution **Then** it shows the chain `default → platform → portal → org → user` with a worked example including provenance and a locked ancestor.
+3. **Edge case:** **Given** the guide **When** it covers caching **Then** it explains that consumers must handle `config.changed` events **and** the ETag/version poll — documenting only the event path produces consumers that silently serve stale config when an event is missed.
+4. **Error case:** **Given** a developer looking for feature flags **When** they read the guide **Then** it states plainly that **Unleash owns flags** and this service owns durable typed settings, with the boundary and a pointer to the `feature-flags` skill — undocumented, this service accretes flag-shaped keys.
+
+#### 🔲 Definition of Done
+- [ ] Guide published under `docs/guides/`, following `docs/guides/BUILDING_ON_FUZEFRONT.md`
+- [ ] Node **and** Python examples, both runnable as written
+- [ ] Links to the served Swagger UI (FF-EPIC-17-S9)
+- [ ] Feature-flag boundary stated explicitly
+- [ ] Reviewed by someone who did **not** write the service
+
+#### 📋 Sub-Tasks
+| Type | Summary | Assignee | Points | Status |
+|------|---------|----------|--------|--------|
+| Docs | Consumer integration guide: key declaration, both client languages, resolution + provenance, caching contract, flag boundary | — | 6 | Open |
+
+#### 🔗 Dependencies
+- **Blocked By:** FF-EPIC-17-S1, FF-EPIC-17-S9 (Swagger to link to), FF-EPIC-17-S10 (Python client to document).
+- **Related:** FF-EPIC-18-S4 / S5 — the caching contract this guide must describe.
+
+#### ⚠️ Risks & Assumptions
+- **Assumption:** `docs-maintainer` owns this; it is written from the frozen contract, not from the implementation.
+- **Risk:** A guide written before the clients stabilise goes stale immediately — write it against the frozen contract and verify the examples run before closing.
+
+#### 📎 References
+- Consumer-guide convention: `docs/guides/BUILDING_ON_FUZEFRONT.md`
 - Feature-flags skill: `.claude/skills/feature-flags/`

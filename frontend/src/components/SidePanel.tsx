@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { MenuItem as DSMenuItem } from '@fuzefront/design-system'
 import { useT } from '@fuzefront/i18n'
 import { useCurrentUser, useAppContext } from '../lib/shared'
@@ -6,6 +6,8 @@ import type { MenuItem } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { useActiveApp } from '../platform/useActiveApp'
 import { isMenuSubstituted, iconGlyph, appHref } from '../platform/appManifest'
+import { useFlag } from '../platform/featureFlags'
+import { isEmployeeUser } from '../utils/employee'
 
 interface SidePanelProps {
   isOpen?: boolean
@@ -34,6 +36,20 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   const navigate = useNavigate()
   const { apps } = useRegisteredApps()
   const activeApp = useActiveApp()
+  // Portals Directory (design/frames/portals-directory), default OFF.
+  const portalsDirectoryEnabled = useFlag('fuzefront.platform.portals-directory', false)
+  // Employee cross-org staff console (design/frames/employee-console,
+  // FF-EPIC-17-S9), default OFF — shared flag with S8's backend. Gated on
+  // BOTH the flag and `isEmployee` so a non-Employee never even sees the nav
+  // entry (the route itself also fail-closes via StaffGuard either way).
+  const employeeConsoleEnabled = useFlag('fuzefront.identity.employee-console', false)
+  // Configuration Management Console (design/frames/config-management,
+  // FF-EPIC-19-S3/S4), default OFF.
+  const configConsoleEnabled = useFlag('fuzefront.config.management-console', false)
+  const selectionListsServiceEnabled = useFlag('fuzefront.selection-lists.service', false)
+  const { pathname } = useLocation()
+  const selectionListsActive = pathname.startsWith('/settings/selection-lists')
+  const configActive = pathname.startsWith('/config') || pathname.startsWith('/admin/config')
 
   // App-injected menu items live in the AppContext reducer, where the platform
   // bridge (window.__FUZEFRONT__.menu) writes them at runtime.
@@ -153,6 +169,18 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
       data-open={isOpen}
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
     >
+      {/* SCROLL CONTAINER.
+          Everything above the pinned Help/Status footer scrolls. Without this the
+          panel is a flex column at height:100% in which NOTHING scrolls, so once
+          Apps + Portal + the app menu exceed the viewport the tail is simply
+          clipped — Billing and the footer were off-screen with no way to reach them.
+
+          `minHeight: 0` is not optional and is the part that is easy to drop: a
+          flex child defaults to `min-height: auto`, which means "at least as tall
+          as my content". Under that default the container grows to fit instead of
+          shrinking, and `overflowY: auto` never has an overflow to act on — the
+          scrollbar simply never appears. Both properties or neither. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
       {/* Apps section — activated apps from the registry (manifest-driven). */}
       {apps.length > 0 && (
         <div className="menu-section">
@@ -222,6 +250,17 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           label={t('nav.organizations')}
           onClick={() => handleNavigate('/organizations')}
         />
+        {portalsDirectoryEnabled && (
+          <DSMenuItem
+            icon="🧭"
+            label={t('nav.portalsDirectory', { defaultValue: 'Portals' })}
+            active={
+              typeof window !== 'undefined' &&
+              window.location.pathname.startsWith('/portals')
+            }
+            onClick={() => handleNavigate('/portals')}
+          />
+        )}
         <DSMenuItem
           icon="👤"
           label={t('nav.profile')}
@@ -232,6 +271,41 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           label={t('nav.billing', { defaultValue: 'Billing' })}
           onClick={() => handleNavigate('/billing')}
         />
+        {employeeConsoleEnabled && isEmployeeUser(user?.roles) && (
+          <DSMenuItem
+            icon="⛨"
+            label={t('nav.staffConsole', { defaultValue: 'Staff console' })}
+            active={
+              typeof window !== 'undefined' &&
+              window.location.pathname.startsWith('/staff')
+            }
+            onClick={() => handleNavigate('/staff')}
+          />
+        )}
+        {selectionListsServiceEnabled && (
+          <div
+            data-nav="selection-lists"
+            className={selectionListsActive ? 'active' : ''}
+          >
+            <DSMenuItem
+              icon="📋"
+              label={t('nav.selectionLists', { defaultValue: 'Selection Lists' })}
+              active={selectionListsActive}
+              onClick={() => handleNavigate('/settings/selection-lists')}
+            />
+          </div>
+        )}
+        {/* Configuration nav item — data-nav wrapper for Playwright test hook, matching the Selection Lists convention above. */}
+        {configConsoleEnabled && (
+          <div data-nav="config" className={configActive ? 'active' : ''}>
+            <DSMenuItem
+              icon="🛠️"
+              label={t('nav.configuration', { defaultValue: 'Configuration' })}
+              active={configActive}
+              onClick={() => handleNavigate('/config')}
+            />
+          </div>
+        )}
         {user?.roles.includes('admin') && (
           <DSMenuItem
             icon="⚙️"
@@ -243,7 +317,7 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
 
       {/* App-Specific (runtime bridge) Menu Section — backward compatible. */}
       {appMenuItems.length > 0 && (
-        <div className="menu-section" style={{ flex: 1 }}>
+        <div className="menu-section">
           <div
             className="menu-section-header"
             style={{
@@ -274,6 +348,8 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           ))}
         </div>
       )}
+
+      </div>
 
       {/* Bottom section with Help and Status */}
       <div

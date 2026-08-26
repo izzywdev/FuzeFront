@@ -1,9 +1,14 @@
 # FFRNT-185 — typed-id rollout across the remaining services
 
-Status: **scoped and unblocked, not migrated.** This document is the measured
-inventory and the order of work. The per-site code change is deliberately not in
-the PR that produced this file; the reasons are in "Why this is staged" below,
-and they are the ticket's own reasons.
+Status: **storage-form mint migrated; wire-prefix still pending.** All 28 genuine
+entity mints now route through `toUuid(mintId(<type>))` (Order-of-work steps 1–2),
+the three services declare the `@izzywdev/fuzefront-identity` dependency and ship
+its built `dist` in their production images, and the `--source` backstop is
+ratcheted to **enforcing** (step 6). Still deliberately deferred: taking
+`EntityId<T>` in the repository signatures (step 3) and prefixing the wire form
+behind `fuzefront.identity.prefixed-ids` with its dual-accept window and row
+backfill (steps 4–5). This document remains the measured inventory and the order
+of work; the "Why this is staged" reasons below still govern the deferred steps.
 
 ## What the backlog actually is
 

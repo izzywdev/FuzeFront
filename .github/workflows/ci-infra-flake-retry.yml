@@ -1,0 +1,145 @@
+name: CI infra-flake retry
+
+# Absorbs runner-side action-download outages — and NOTHING else.
+#
+# WHY THIS EXISTS
+# The runner downloads every `uses:` action from codeload.github.com BEFORE any
+# step in a job runs. That phase is entirely internal to the runner: it retries
+# 3 times, then hard-fails the job. No workflow-level knob exists to lengthen
+# the retries, cache the tarballs, or fall back to a mirror.
+#
+# On 2026-08-17 a codeload degradation (429 / 503 / 502) simultaneously failed
+# gate-dependency-scan (setup-trivy), gate-authz + CodeQL (codeql-action),
+# Container Security Scan (setup-buildx-action) and Secret Scanning
+# (trufflehog) on a single PR. Not one was a code defect; every log ended in
+# "Failed to download archive ... after 3 attempts". The pipeline pulls ~240
+# action tarballs across ~60 workflows, so any codeload wobble takes out a
+# broad, arbitrary slice of it at once.
+#
+# Vendoring the actions locally does not solve this: `uses: ./.github/actions/…`
+# requires the repository to already be checked out, and `actions/checkout`
+# (92 call sites here) is itself fetched from codeload. The first fetch can
+# never be made local, so re-running the job is the only lever left.
+#
+# WHY THIS IS NOT "IGNORING A FAILING CHECK"
+# A job is re-run ONLY if ITS OWN log carries the runner's action-download
+# signature. The runner emits that string before any user code executes, so
+# application, build and test code cannot produce it — matching on it cannot
+# mask a genuine failure. Jobs that failed for any other reason are left red,
+# individually, and named in the step summary.
+#
+# Two mechanics this depends on, both learned the hard way in review:
+#   * It inspects PER-JOB logs via the API, NOT `gh run view --log-failed`.
+#     An action-download failure aborts the job during SETUP, before any step
+#     exists, so a step-filtered log view can come back empty for exactly the
+#     failure this exists to catch — which would make the whole mechanism a
+#     silent permanent no-op.
+#   * It re-runs INDIVIDUAL jobs (`gh run rerun --job`), never `--failed`.
+#     `--failed` re-runs every failed job in the run, so one flaked job would
+#     drag genuinely-broken jobs along with it, contradicting the contract
+#     above and burning the retry budget on failures that can never pass.
+#
+# This workflow deliberately uses NO actions of its own (gh + jq are preinstalled
+# on the runner image), so the retry mechanism can never be taken out by the very
+# outage it exists to absorb.
+#
+# To cover another workflow, add its `name:` to the list below.
+
+on:
+  workflow_run:
+    workflows:
+      - CI/CD Pipeline
+      - Harden Gate
+      - Security Scanning
+      - Backend Tests
+      - Billing Service Tests
+      - E2E (sign-in)
+      - OIDC Plumbing E2E
+      - Google OAuth E2E
+      - Custom hostname client tests
+      - Onboarding kit tests
+      - Image reproducibility
+    types: [completed]
+
+permissions:
+  actions: write # read job logs + rerun individual jobs
+  contents: read
+
+jobs:
+  retry-on-infra-flake:
+    name: Re-run action-download flakes
+    # run_attempt < 3 caps this at two automatic retries per run. Each rerun
+    # creates a new attempt which re-triggers this workflow, so the cap is what
+    # terminates the loop — do not remove it.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run only the jobs whose own log shows an action-download flake
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -uo pipefail
+
+          # The runner's action-download signature. `at` is optional because the
+          # wording varies by runner version ("Failed to download action 'URL'",
+          # "Failed to download archive 'URL' after 3 attempts"); the 2026-08-17
+          # logs used the no-"at" spelling for both nouns.
+          SIGNATURE="Failed to download (archive|action)( at)? '"
+
+          summary() { printf '%b\n' "$*" >> "$GITHUB_STEP_SUMMARY"; }
+
+          JOBS="$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs?per_page=100" 2>/dev/null || true)"
+          if [ -z "$JOBS" ]; then
+            echo "Could not list jobs for run $RUN_ID; leaving the failure in place."
+            summary "## CI infra-flake retry\n\nCould not list jobs for **$RUN_NAME** ([#$RUN_ID]($RUN_URL)).\nNo retry issued — a failure is only re-run when it is provably an action-download flake."
+            exit 0
+          fi
+
+          FAILED="$(printf '%s' "$JOBS" | jq -r '.jobs[]? | select(.conclusion == "failure") | "\(.id)\t\(.name)"')"
+          if [ -z "$FAILED" ]; then
+            echo "Run $RUN_ID reports no failed jobs on attempt $RUN_ATTEMPT; nothing to do."
+            exit 0
+          fi
+
+          FLAKED_IDS=""
+          FLAKED_NAMES=""
+          REAL_NAMES=""
+
+          while IFS="$(printf '\t')" read -r JOB_ID JOB_NAME; do
+            [ -n "${JOB_ID:-}" ] || continue
+            # Per-job log: includes the setup phase, where action downloads happen.
+            LOG="$(gh api "repos/$GH_REPO/actions/jobs/$JOB_ID/logs" 2>/dev/null || true)"
+            if printf '%s' "$LOG" | grep -qE "$SIGNATURE"; then
+              FLAKED_IDS="$FLAKED_IDS $JOB_ID"
+              FLAKED_NAMES="$FLAKED_NAMES\n- \`$JOB_NAME\`"
+            else
+              REAL_NAMES="$REAL_NAMES\n- \`$JOB_NAME\`"
+            fi
+          done <<EOF
+          $FAILED
+          EOF
+
+          if [ -z "$FLAKED_IDS" ]; then
+            echo "No failed job in run $RUN_ID carries the action-download signature — leaving them all red."
+            summary "## CI infra-flake retry\n\n**$RUN_NAME** ([#$RUN_ID]($RUN_URL)) failed, but no job shows an action-download error.\nNo retry issued — these are real failures and must be fixed, not re-run:\n$REAL_NAMES"
+            exit 0
+          fi
+
+          summary "## CI infra-flake retry\n\n**$RUN_NAME** ([#$RUN_ID]($RUN_URL)) — attempt $RUN_ATTEMPT (capped at 3).\n\nRe-running, failed while the runner was downloading actions before any job logic ran:\n$FLAKED_NAMES"
+          if [ -n "$REAL_NAMES" ]; then
+            summary "\nLeft red on purpose (not an infrastructure failure):\n$REAL_NAMES"
+          fi
+
+          RC=0
+          for JOB_ID in $FLAKED_IDS; do
+            echo "Re-running job $JOB_ID"
+            gh run rerun "$RUN_ID" --job "$JOB_ID" || RC=1
+          done
+          exit $RC

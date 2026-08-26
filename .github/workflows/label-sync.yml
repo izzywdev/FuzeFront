@@ -1,0 +1,71 @@
+name: Label Sync
+
+# Upsert the FuzeSDLC governance label set from the in-repo manifest (.github/labels.json).
+#
+# WHY: the auto-merge / branch-lifecycle / design-first workflows gate on LABELS (e.g.
+# auto-merge.yml only merges a PR carrying the `auto-merge` label). Labels are a GitHub API
+# resource, not a file, so governance-sync (which reconciles FILES) never provisioned them —
+# they drifted per-repo. This makes the label set a propagated, self-healing artifact:
+# whenever .github/labels.json lands on the default branch, every label is created-or-updated.
+#
+# SELF-CONTAINED BY DESIGN (same rationale as governance-sync): no cross-repo `uses:` — the
+# upsert logic is inlined so a private-hub Actions-access setting can never red the run.
+# Non-destructive: `gh label create --force` upserts; labels absent from the manifest (repo-
+# specific ones) are left untouched. sdlc-bootstrap rewrites `branches: [main]` to the repo's
+# real default branch.
+
+on:
+  push:
+    branches: [master]
+    paths: ['.github/labels.json']
+  workflow_dispatch:
+
+permissions:
+  # BOTH are required, and omitting `contents` is not a smaller grant — it is a
+  # REVOCATION. A `permissions:` block sets GITHUB_TOKEN's scopes to exactly what
+  # it lists; everything unlisted becomes `none`. With `issues: write` alone,
+  # `contents` is none and actions/checkout below cannot read the repository.
+  #
+  # On a PRIVATE repo that surfaces as:
+  #   remote: Repository not found.
+  #   fatal: repository 'https://github.com/<owner>/<repo>/' not found
+  # — a 404, not a permission error, because an unauthorized reader must not be
+  # able to distinguish "exists but forbidden" from "does not exist". So the log
+  # reads as if the repository had been deleted and nothing points at this block.
+  #
+  # That is also why it shipped: checkout of a PUBLIC repo succeeds WITHOUT the
+  # contents scope, so the omission stays invisible until a private repo adopts
+  # the template. Observed on izzywdev/FuzeExecutive (private), where every run
+  # since install had failed this way. Fixed downstream in FuzeExecutive#28.
+  contents: read  # actions/checkout
+  issues: write   # labels are managed under the issues scope
+
+jobs:
+  label-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Upsert labels from .github/labels.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f .github/labels.json ]; then
+            echo "::notice::no .github/labels.json — nothing to sync"; exit 0
+          fi
+          python3 - <<'PY'
+          import json, subprocess
+          labels = json.load(open(".github/labels.json", encoding="utf-8"))
+          ok = err = 0
+          for l in labels:
+              cmd = ["gh", "label", "create", l["name"],
+                     "--color", str(l.get("color", "ededed")).lstrip("#"), "--force"]
+              if l.get("description"):
+                  cmd += ["--description", l["description"]]
+              r = subprocess.run(cmd, capture_output=True, text=True)
+              if r.returncode == 0:
+                  ok += 1; print(f"  + {l['name']}")
+              else:
+                  err += 1; print(f"  ! {l['name']}: {r.stderr.strip()}")
+          print(f"labels synced: {ok} ok, {err} failed")
+          raise SystemExit(1 if err else 0)
+          PY

@@ -60,11 +60,28 @@ def request(method, path, body=None, query=None, beta=MANAGED_AGENTS_BETA):
 
 
 def list_all(path, key="data", beta=MANAGED_AGENTS_BETA):
-    """Fetch every page of a list endpoint (cursor pagination)."""
+    """Fetch every page of a list endpoint.
+
+    Handles both pagination schemes used by this API:
+    - Page: has_more + after_id (e.g. /v1/agents, /v1/sessions)
+    - PageCursor: next_page + page param (e.g. /v1/vaults, /v1/vaults/{id}/credentials)
+
+    Treating every endpoint as Page silently truncates PageCursor endpoints
+    after the first page, causing spurious 409s when callers re-POST existing
+    resources that weren't visible in the incomplete listing.
+    """
     items, query = [], {}
     while True:
         page = request("GET", path, query=query or None, beta=beta)
         items.extend(page.get(key, []))
+        if "next_page" in page:
+            # PageCursor scheme: next_page is null on the last page
+            cursor = page.get("next_page")
+            if not cursor:
+                return items
+            query = {"page": cursor}
+            continue
+        # Page scheme: has_more + last_id/after_id
         if not page.get("has_more"):
             return items
         cursor = page.get("last_id") or page.get("next_cursor")

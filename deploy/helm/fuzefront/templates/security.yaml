@@ -210,6 +210,13 @@ spec:
             # Enrollment flow slug driven server-side by signup() (blueprint: flow-enrollment.yaml).
             - name: AUTHENTIK_ENROLLMENT_FLOW_SLUG
               value: {{ .Values.authentik.oidc.enrollmentFlowSlug | default "fuzefront-enrollment" | quote }}
+            # Authentication (sign-in) flow slug driven server-side by the password
+            # login (authentikPassword.ts). Default is Authentik's built-in flow
+            # (two hops: identify, then password). values-prod points this at the
+            # dedicated `fuzefront-auth` flow (blueprint: flow-authentication.yaml),
+            # whose combined identification+password stage does it in ONE hop.
+            - name: AUTHENTIK_AUTH_FLOW_SLUG
+              value: {{ .Values.authentik.oidc.authFlowSlug | default "default-authentication-flow" | quote }}
             # Empty prefix: PR #256 routes Authentik's NATIVE paths under app.fuzefront.com
             # (no /api/auth/idp prefix). Pin it so the authorize URL stays a bare native path.
             - name: SECURITY_IDP_PROXY_PREFIX
@@ -248,6 +255,27 @@ spec:
             # securityService.googleBrokered to "false" in values and re-syncing.
             - name: SECURITY_GOOGLE_BROKERED
               value: {{ .Values.securityService.googleBrokered | default "false" | quote }}
+            {{- if .Values.securityService.featureFlags.unleashUrl }}
+            # @fuzefront/feature-flags (OpenFeature + Unleash). Gates
+            # fuzefront.identity.root-membership (FF-EPIC-17) via
+            # utils/feature-flags.ts (startup init, non-fatal) +
+            # utils/rootMembershipFlag.ts (lazy read). Mirrors the
+            # backend/applicationsService wiring. Absence of URL/token (base
+            # values.yaml default) → this whole block does not render → init
+            # is skipped → safe in-code default (OFF), never a crash.
+            - name: FLAG_ENV
+              value: {{ ternary "prod" "local" (eq .Values.ingress.className "traefik") | quote }}
+            - name: UNLEASH_URL
+              value: {{ .Values.securityService.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.securityService.featureFlags.appName | quote }}
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.securityService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.securityService.featureFlags.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health

@@ -30,7 +30,21 @@ export interface ToolDescriptor {
   bodyRequired: boolean;
   classification: Classification;
   inputSchema: Record<string, unknown>;
+  /** Raw spec prose, kept alongside the built description for the offline generator to read (never re-parses the doc itself). */
+  specSummary?: string;
+  specDescription?: string;
 }
+
+/**
+ * toolName -> build-time LLM-generated prose (descriptions.ts /
+ * scripts/generate-descriptions.mjs). OPTIONAL and PURELY COSMETIC: it can
+ * only replace the human-readable sentence in a tool's `description`. It is
+ * never consulted by `classify()`, never touches `mutates`/`reversibility`,
+ * and the `${safety}` prefix + method/path + classification reason below are
+ * computed from the untouched mechanical path regardless of whether an entry
+ * is present here.
+ */
+export type GeneratedDescriptions = Record<string, string>;
 
 export interface OpenApiDoc {
   openapi?: string;
@@ -146,7 +160,11 @@ function buildInputSchema(params: ToolParam[], bodySchema?: Record<string, unkno
  * violated, so a bad overrides file stops the pod at boot instead of at the
  * first dangerous call.
  */
-export function buildTools(doc: OpenApiDoc, overrides: Overrides = {}): ToolDescriptor[] {
+export function buildTools(
+  doc: OpenApiDoc,
+  overrides: Overrides = {},
+  generatedDescriptions: GeneratedDescriptions = {}
+): ToolDescriptor[] {
   const tools: ToolDescriptor[] = [];
   const paths = doc.paths ?? {};
   const seenNames = new Set<string>();
@@ -202,11 +220,24 @@ export function buildTools(doc: OpenApiDoc, overrides: Overrides = {}): ToolDesc
         }
       }
 
+      // Classification is computed FIRST, from the method/path/overrides alone
+      // — nothing below this line can reach it or change it. generatedDescriptions
+      // is consulted only for the prose sentence a few lines down.
       const classification = classify(method, path, name, overrides[name]);
 
+      const specSummary = typeof op.summary === 'string' && op.summary ? op.summary : undefined;
+      const specDescription = typeof op.description === 'string' && op.description ? op.description : undefined;
+
+      // Precedence: build-time LLM prose (if the mounted cache has a fresh,
+      // matching entry) > the spec's own summary/description > a mechanical
+      // fallback. Whichever wins, it is ONLY the descriptive sentence — the
+      // safety prefix, method/path and classification reason immediately below
+      // are always the mechanical values, never influenced by this choice.
+      const generated = generatedDescriptions[name];
       const summary =
-        (typeof op.summary === 'string' && op.summary) ||
-        (typeof op.description === 'string' && op.description) ||
+        (typeof generated === 'string' && generated.trim() && generated.trim()) ||
+        specSummary ||
+        specDescription ||
         `${method.toUpperCase()} ${path}`;
 
       // The description carries the safety facts, because the model choosing a
@@ -225,6 +256,8 @@ export function buildTools(doc: OpenApiDoc, overrides: Overrides = {}): ToolDesc
         bodyRequired,
         classification,
         inputSchema: buildInputSchema(params, bodySchema, bodyRequired),
+        specSummary,
+        specDescription,
       });
     }
   }

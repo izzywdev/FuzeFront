@@ -18,6 +18,15 @@ const TONES = {
     background: "var(--accent-soft)",
     border: "1px solid transparent",
   },
+  // Cyan "signal" half of the fuse seam — distinct from `accent` (indigo).
+  // Mirrors Alert's `info` tone (also var(--accent-2)); use for a secondary
+  // classification that should read as related-but-different from the
+  // primary accent (e.g. a "soft" vs "hard" identity-tier badge).
+  info: {
+    color: "var(--accent-2)",
+    background: "color-mix(in srgb, var(--accent-2) 14%, transparent)",
+    border: "1px solid transparent",
+  },
   success: {
     color: "var(--success-color)",
     background: "color-mix(in srgb, var(--success-color) 14%, transparent)",

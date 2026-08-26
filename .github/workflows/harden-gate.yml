@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '24.x' }
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Lint (adaptive, report-only)
         shell: bash
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '24.x' }
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Test (adaptive, report-only)
         shell: bash
@@ -90,9 +90,28 @@ jobs:
           pip install -q semgrep
           semgrep scan --config auto --sarif --output semgrep.sarif || true
           test -f semgrep.sarif || echo '{"version":"2.1.0","runs":[]}' > semgrep.sarif
-      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        continue-on-error: true  # private repos lack code-scanning; report-only must stay green
-        if: always()
+      # Upload is ENFORCED on public repos and SKIPPED BY CONDITION on private ones.
+      #
+      # This step used to carry `continue-on-error: true` with the note "private repos lack
+      # code-scanning; report-only must stay green". The premise was true; the mechanism was
+      # wrong. A blanket continue-on-error swallows EVERY failure, so "this repo has no code
+      # scanning" (expected, benign) and "the SARIF we produced is malformed / the action
+      # rejected it" (a security gate that is publishing nothing) collapsed into the same
+      # green tick — exactly the state described in the gate-dependency-scan note below,
+      # where a broken upload stayed green while the data never landed.
+      #
+      # So the benign case is a CONDITION now, and the step names itself as skipped. On a
+      # public repo the upload must succeed, and a genuine upload failure is a real red.
+      # FuzeFront is public, so here the condition is always true and the effect is simply
+      # that the upload can no longer fail silently.
+      #
+      # The condition is `!...private`, not `... == false`, deliberately: if the payload ever
+      # lacks `repository` the expression is truthy and the step RUNS. An absent field then
+      # fails loudly on a private repo rather than silently skipping on a public one — the
+      # safe direction for a security gate is to run and go red, never to quietly not run.
+      - name: Upload SARIF (skipped on private repos — code scanning unavailable)
+        if: always() && !github.event.repository.private
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -102,10 +121,67 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
+
+      # Runs the gitleaks BINARY, not gitleaks-action. Adopted from the FuzeSDLC canonical
+      # (workflow-templates/harden-gate.yml); 18 of 20 repos already run this form.
+      #
+      # This gate is REQUIRED on master, and it is the only one of FuzeFront's eleven
+      # required contexts whose verdict anyone should act on immediately. The action put
+      # two availability failures in front of that verdict, and both fired:
+      #
+      #   1. Its pull_request path calls GET /repos/:o/:r/pulls/:n/commits to work out what
+      #      to scan, and throws rather than degrading when the call fails. Measured
+      #      repo-wide 2026-08-11..17: 403 "Resource not accessible by integration" while
+      #      the job's own token summary printed "PullRequests: read".
+      #   2. It uploads a SARIF artifact AFTER scanning, and a failed upload fails the job.
+      #      Measured on FuzePlan 2026-08-23T16:15:03Z, on the identical action pin:
+      #
+      #          INF 3 commits scanned.
+      #          INF no leaks found
+      #          Error: Failed to CreateArtifact: Artifact storage quota has been hit.
+      #
+      #      A clean scan, reported as a failed secret gate. That is worse than a vacuous
+      #      check: vacuous passes when it should fail, this FAILS WHEN IT SHOULD PASS, and
+      #      being required it blocks every PR in the repo on an account-level storage quota
+      #      that has nothing to do with secrets. It also trains people to ignore the one
+      #      red that must never be ignored.
+      #
+      # git already knows the commit range and the scan needs no artifact, so neither
+      # dependency buys anything. The scan's own exit code is the verdict, and nothing
+      # runs after it that can overturn it.
       - name: gitleaks (gates new secrets)
-        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          VERSION=8.24.3
+          SHA256=9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          TARBALL=gitleaks_${VERSION}_linux_x64.tar.gz
+
+          # Pinned + checksummed. A security gate that curls an unverified binary is worse
+          # than the problem it is solving; the digest is the upstream one from
+          # gitleaks_${VERSION}_checksums.txt.
+          curl -sSfL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${TARBALL}"
+          echo "${SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xzf "$TARBALL" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$TARBALL" gitleaks
+
+          # On a PR, scan exactly the commits the PR adds. Anywhere else, scan all history:
+          # a wider scan can only find MORE, so the fallback is the safe direction. There is
+          # deliberately no path that scans nothing — "no range, so skip" is how a gate ends
+          # up green while enforcing nothing.
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            echo "::notice title=gate-secret-scan::scanning ${BASE_SHA}..${HEAD_SHA}"
+            gitleaks git --log-opts="${BASE_SHA}..${HEAD_SHA}" --redact --no-banner .
+          else
+            echo "::notice title=gate-secret-scan::no PR range — scanning full history"
+            gitleaks git --redact --no-banner .
+          fi
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
@@ -121,53 +197,53 @@ jobs:
           scan-ref: .
           format: sarif
           output: trivy.sarif
-          severity: CRITICAL,HIGH
+          # ALL severities, deliberately and explicitly. When ci.yml's duplicate
+          # filesystem scan stopped uploading to code scanning (it was the same
+          # scan racing this one under a shared SARIF tool identity), this job
+          # became the only filesystem config reaching the Security tab — and it
+          # was CRITICAL,HIGH only, while ci.yml's had no severity filter at all.
+          # Net effect was that LOW and MEDIUM filesystem findings silently
+          # stopped producing alerts: a real coverage regression that arrived as
+          # a side effect of a de-duplication, which is exactly how coverage gets
+          # lost without anyone deciding to lose it. Listed out rather than
+          # omitted so the intent is visible at the call site; omitting `severity`
+          # defaults to the same set but reads like an oversight.
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: '0'
           ignore-unfixed: true
           trivyignores: '.trivyignore'
-      - name: Detect open PR for SARIF upload ref
-        id: detect-pr
-        if: always()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.ref_name }}
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          if [ "$EVENT" = "pull_request" ]; then
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT" = "workflow_dispatch" ] || [ "$EVENT" = "push" ]; then
-            PR_DATA=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open" \
-              --jq "[.[] | select(.head.ref == \"${BRANCH}\")][0]" 2>/dev/null || echo "")
-            if [ -n "$PR_DATA" ] && [ "$PR_DATA" != "null" ]; then
-              PR_NUM=$(echo "$PR_DATA" | jq -r '.number')
-              MERGE_SHA=$(echo "$PR_DATA" | jq -r '.merge_commit_sha // empty')
-              if [ -n "$MERGE_SHA" ] && [ "$MERGE_SHA" != "null" ]; then
-                echo "upload_ref=refs/pull/${PR_NUM}/merge" >> "$GITHUB_OUTPUT"
-                echo "upload_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-              else
-                echo "upload_ref=refs/pull/${PR_NUM}/head" >> "$GITHUB_OUTPUT"
-                echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-              fi
-            else
-              echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-              echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "upload_ref=$REF" >> "$GITHUB_OUTPUT"
-            echo "upload_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        continue-on-error: true
-        if: always()
+      # Upload with upload-sarif's OWN ref/sha detection — do not hand-roll it.
+      # This previously passed an explicit ref/sha pair computed by a bespoke
+      # "detect open PR" step, which on a pull_request event pinned the analysis
+      # to github.sha (the *merge* commit) while GitHub anchors the PR's code
+      # scanning check at the *head* commit. The mismatched pair meant the
+      # `trivy` configuration never registered against the PR, so every run
+      # reported 'Warning: 1 configuration present on refs/heads/master was not
+      # found ... trivy' and then, with no PR-side baseline to diff against,
+      # fell back to reporting pre-existing findings as "new alerts" — a
+      # permanently red check that no code change could clear. `continue-on-error`
+      # hid the broken upload, so the job stayed green while the data never
+      # landed. Keep this step failing loudly: a dependency scan that silently
+      # does not report is worse than one that is visibly broken.
+      # Same private-repo condition as the other two uploads, for one behaviour only:
+      # on a private repo without code scanning this now skips explicitly instead of
+      # hard-failing. FuzeFront is public, so the condition is true and the "fail loudly"
+      # intent described above is unchanged here.
+      - name: Upload SARIF (skipped on private repos — code scanning unavailable)
+        if: always() && !github.event.repository.private
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           sarif_file: trivy.sarif
           category: trivy
-          ref: ${{ steps.detect-pr.outputs.upload_ref }}
-          sha: ${{ steps.detect-pr.outputs.upload_sha }}
+      # Keep the raw SARIF downloadable so a disputed finding can be diffed
+      # against master's scan without re-running CI.
+      - name: Upload Trivy scan artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-fs-scan-sarif
+          path: trivy.sarif
+          retention-days: 30
 
   gate-authz:
     # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
@@ -184,9 +260,11 @@ jobs:
           [ -f .semgrep/fuze-authz.yml ] && CFG="$CFG --config .semgrep/fuze-authz.yml"
           semgrep scan $CFG --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
           test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
-      - uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        if: always()
-        continue-on-error: true
+      # Enforced on public repos, skipped by condition on private ones — see the
+      # long note on the same step in gate-sast above for why this is not continue-on-error.
+      - name: Upload SARIF (skipped on private repos — code scanning unavailable)
+        if: always() && !github.event.repository.private
+        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
         with:
           sarif_file: authz.sarif
           category: authz
@@ -282,7 +360,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: DS conformance (PR = changed-lines ratchet, enforcing; push = full scan, advisory)
         shell: bash
@@ -295,49 +373,128 @@ jobs:
           fi
 
   gate-code-review:
-    # Automated code review via Claude. REPORT-ONLY: posts inline PR review
-    # comments for correctness bugs found in the diff; never blocks merge. Only runs on PRs.
+    # Automated code review via Claude. REPORT-ONLY: posts a review summary for
+    # correctness bugs found in the diff; never blocks merge. PRs only.
+    #
+    # ROUTED THROUGH LITELLM, NOT A DIRECT PROVIDER KEY. FuzeFront ran this job
+    # for months with `ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}` and
+    # it posted "Credit balance is too low" on every single PR — an automated
+    # reviewer that had never reviewed anything, while looking like a check that
+    # ran. LiteLLM gives cross-provider failover and keeps provider keys out of
+    # every consuming repo: the repo holds only a scoped virtual key.
+    #
+    # THE GATEWAY IS IN-CLUSTER ONLY, AND THAT IS DELIBERATE. The base URL is a
+    # Kubernetes service DNS name, so this job only routes from a self-hosted
+    # runner inside the cluster. Do NOT "fix" that by pointing at the external
+    # https://litellm.prod.fuzefront.com: that host is gated by the *.prod
+    # Cloudflare Access email-OTP app, and Access is one of exactly TWO gates in
+    # front of a service that holds LIVE PROVIDER API KEYS (the other being
+    # LITELLM_MASTER_KEY on every call). LiteLLM serves /chat/completions from
+    # the same port as its UI, so an Access bypass there would publish the full
+    # API surface. Reaching it from a GitHub-hosted runner requires removing a
+    # security gate; use a runner that is already inside the trust boundary.
+    #
+    # SKIPS, NEVER REDS, when it cannot route. A missing key or an unreachable
+    # gateway is an ENVIRONMENTAL condition, not a defect in the PR under
+    # review, and a check that reds for environmental reasons trains reviewers
+    # to ignore it — see the a2a-maintain/mcp-maintain actor-gate failure, where
+    # red meant only "an agent opened this PR".
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # THE ONLY JOB IN THIS FILE ON A SELF-HOSTED RUNNER, deliberately. The
+    # LiteLLM gateway is a Kubernetes service DNS name, so this job cannot route
+    # from a GitHub-hosted runner (see the long comment above for why the
+    # external, Access-gated host is not an acceptable substitute).
+    #
+    # `fuzefront` is the scale set that ACTUALLY EXISTS. Verified live against
+    # `kubectl -n arc-runners get autoscalingrunnersets`: 22 sets, every one
+    # named after its repo, and NO `fuze-runner`. governance/ci-runners.md
+    # mandates the uniform `fuze-runner` name, but that rename has not happened
+    # yet — and a runs-on naming a set that does not exist does not fail, it
+    # QUEUES FOREVER with no error. Change this to `fuze-runner` in the same
+    # change that renames the set, never before.
+    #
+    # NOT declaring `ci.runner` in .fuze/manifest.json, which would re-stamp all
+    # 107 jobs in this repo onto the self-hosted runner. FuzeFront is PUBLIC, so
+    # GitHub-hosted minutes are free and unmetered here — the budget argument in
+    # ci-runners.md is about PRIVATE repos and does not apply. Moving everything
+    # onto a scale set that shares one 4-vCPU node with 21 others would trade
+    # free, fast CI for a saturated queue. Only the job that needs in-cluster
+    # reachability moves.
+    runs-on: fuzefront
     permissions:
       contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with: { fetch-depth: 0 }
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
-        with: { node-version: '24.x' }
-      - name: Install Claude Code CLI
-        run: npm install -g @anthropic-ai/claude-code
-      - name: Run automated code review
+
+      - name: Can this job reach the gateway?
+        id: route
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          KEY: ${{ secrets.LITELLM_FUZE_KEY }}
+          GATEWAY: http://litellm.fuzeinfra.svc.cluster.local:4000
+        run: |
+          set -uo pipefail
+          if [ -z "${KEY:-}" ]; then
+            echo "::notice title=gate-code-review::LITELLM_FUZE_KEY is not set — skipping. Mint one with FuzeInfra scripts/mint-litellm-fuze-key.sh and add it as a repo secret."
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Prove reachability before installing anything. `runs-on` above is
+          # rewritten to the repo's self-hosted runner by the bootstrap stamp
+          # when `ci.runner` is declared; on ubuntu-latest this probe fails
+          # closed and the job skips with a message naming the real reason,
+          # instead of dying later inside the CLI with a DNS error.
+          if ! curl -fsS --max-time 10 -o /dev/null \
+                 "${GATEWAY}/health/liveliness" 2>/dev/null; then
+            echo "::notice title=gate-code-review::LiteLLM gateway ${GATEWAY} is unreachable from this runner — skipping. This job must run on a self-hosted in-cluster runner (declare \`ci.runner\` in .fuze/manifest.json and re-stamp); the external host is Access-gated on purpose and must not be bypassed."
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        if: steps.route.outputs.ok == 'true'
+        with: { node-version: '24.x' }
+
+      - name: Install Claude Code CLI
+        if: steps.route.outputs.ok == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run automated code review
+        if: steps.route.outputs.ok == 'true'
+        env:
+          # Route through LiteLLM for cross-provider failover; no provider key
+          # is held by this repo. Both vars are set: the CLI reads
+          # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY.
+          ANTHROPIC_BASE_URL: http://litellm.fuzeinfra.svc.cluster.local:4000
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.LITELLM_FUZE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.LITELLM_FUZE_KEY }}
+          ANTHROPIC_MODEL: claude-opus-5
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.base_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
+          set -uo pipefail
           git fetch origin "$BASE_REF" --depth=1
-          # Write diff to a temp file first to avoid SIGPIPE (exit 141) when `head` closes early
+          # Diff to a temp file first: piping straight into `head` makes git die
+          # of SIGPIPE (exit 141) when head closes the stream early.
           git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' > /tmp/fulldiff.txt 2>/dev/null || true
           DIFF=$(head -c 80000 /tmp/fulldiff.txt)
           if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
           PROMPT="You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)"$'\n\n'"$DIFF"
-          claude --print --output-format text "$PROMPT" > /tmp/review.txt 2>/tmp/review-err.txt || true
-          cat /tmp/review.txt
-          # Post comment only when claude succeeded and returned real findings (not just "(none)")
-          if [ -s /tmp/review.txt ] && ! grep -q '(none)' /tmp/review.txt && ! grep -q 'error' /tmp/review-err.txt; then
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$(printf '## Automated code review (gate-code-review)\n\n%s\n\n*Report-only — this check never blocks merge.*' "$(cat /tmp/review.txt)")" || true
-          fi
-          exit 0
-
+          REVIEW=$(claude -p "$PROMPT" 2>&1) || {
+            echo "::notice title=gate-code-review::reviewer call failed — reporting nothing rather than a false clean bill: $REVIEW"
+            exit 0
+          }
+          printf '## Automated code review (gate-code-review)\n\n%s\n\n*Report-only — this check never blocks merge.*\n' "$REVIEW" \
+            | gh pr comment "$PR_NUMBER" --body-file -
   gate-pagination:
     # Pagination standard (CLAUDE.baseline.md §4.1). Report-only first pass; ratchet to enforcing
     # per repo once the billing-service contract annotates/allowlists its collection GETs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Pagination gate (report-only)
         shell: bash
@@ -369,7 +526,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Identifier gate — self-tests (the gate must be known to FIRE)
         shell: bash
@@ -377,7 +534,14 @@ jobs:
         # clean tree. `claude-auto-pr.yml` was green for its whole life because
         # every run took its early-exit path; the one time it had real work it
         # failed. Passing is not evidence.
-        run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+        # Dependencies BEFORE the run, not after. Both self-test steps used to
+        # discover the whole suite with no install at all -- the `pip install`
+        # sat in the NEXT step, so anything needing PyYAML or jsonschema failed
+        # on import. That stayed invisible while every test happened to be
+        # stdlib-only, and surfaced the moment one was not.
+        run: |
+          pip install -q pyyaml jsonschema
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
       - name: Identifier gate — contracts, parity, namespace, adoption (enforcing)
         shell: bash
         run: |
@@ -386,9 +550,78 @@ jobs:
           python scripts/gate_identifier.py . --registry-parity
           python scripts/gate_identifier.py . --namespace
           python scripts/gate_identifier.py . --adoption
-      - name: Identifier gate — source backstop (report-only)
+      - name: Identifier gate — source backstop (enforcing)
+        # Ratcheted from report-only to enforcing by FFRNT-185: every genuine
+        # entity mint now routes through mintId()/toUuid() and the residual
+        # infrastructure-row sites are allowlisted, so the count is zero. A new
+        # bare-uuid entity mint (or a drifted allowlist line) now fails CI
+        # rather than being silently reported.
         shell: bash
-        run: python scripts/gate_identifier.py . --source || true
+        run: python scripts/gate_identifier.py . --source
+
+  gate-vacuous-check:
+    # A verification step whose LAST EFFECTIVE COMMAND is a lint/test/type-check/security
+    # tool suffixed `|| true` (or `continue-on-error: true` on a step/job that exists to
+    # gate) can never fail the job — a green rectangle, not a check. Same family as
+    # gate-authz's bare `|| true`, the `[extend]`-less gitleaks config that scanned
+    # nothing, and `safety check --output safety-report.json || true`, which failed on a
+    # USAGE ERROR for its entire life while the suffix hid it.
+    #
+    # THIS DOES NOT FLAG MOST `|| true` — see scripts/gate_vacuous_check.py's docstring.
+    # Diagnostic log dumps in failure handlers, teardown/cleanup, `$( ... || true )`
+    # command substitution, and RECORD-THEN-GATE (an unfiltered report run `|| true`
+    # followed by a LATER bare enforcing run of the same tool in the same job) all stay
+    # green. Blunting that distinction is how this gate gets disabled the first time it
+    # is wrong.
+    #
+    # Two pre-existing, already-documented ramps (gate-pagination above, and
+    # post-prod-e2e.yml's AuthN boundary smoke) are allowlisted in
+    # governance/vacuous-check-policy.json with a reason + owner each — fixing either for
+    # real needs work outside CI-wiring scope (contract-designer's pagination
+    # annotations; the AuthN provider deploy). A MISSING policy file does NOT skip this
+    # gate — see the script's docstring for why.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.12' }
+      - name: Vacuous-check gate — self-tests (the gate must be known to FIRE)
+        shell: bash
+        # Same convention as gate-identifier's self-test step above: asserts the gate
+        # FAILS on each known-offender shape, not merely that it passes on a clean tree.
+        # Dependencies BEFORE the run, not after. Both self-test steps used to
+        # discover the whole suite with no install at all -- the `pip install`
+        # sat in the NEXT step, so anything needing PyYAML or jsonschema failed
+        # on import. That stayed invisible while every test happened to be
+        # stdlib-only, and surfaced the moment one was not.
+        run: |
+          pip install -q pyyaml jsonschema
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+      - name: Vacuous-check gate (enforcing)
+        shell: bash
+        run: |
+          pip install -q pyyaml
+          python scripts/gate_vacuous_check.py .
+
+  gate-toolchain:
+    # ENFORCING (#646): the Node 24 / React 19 toolchain floor (CLAUDE.md
+    # "Toolchain baseline") had no CI job checking it and "survived on review
+    # alone" — a sweep of sibling repos found Dockerfiles on node:18/20-alpine
+    # that nothing had ever caught. The Module-Federation requiredVersion half
+    # is the dangerous one: a host/remote mismatch loads two React copies and
+    # dies on "Invalid hook call" at runtime, in the browser, with nothing
+    # else in CI to catch it — that is exactly the class of defect a static
+    # gate is cheap at and human review is bad at. No `|| true` here: this
+    # repo is fully compliant as of the PR that added this gate, so there is
+    # no backlog to ratchet.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: '24.x' }
+      - name: Toolchain floor gate
+        shell: bash
+        run: node scripts/gate-toolchain.mjs
 
   gate-frontend-build:
     # ENFORCING: the REAL frontend (vite/PWA) build must succeed. The root `gate-build` job is
@@ -414,5 +647,7 @@ jobs:
         run: |
           npm run -w @fuzefront/chat-client build
           npm run -w @fuzefront/chat-ui build
+      - name: Build @fuzeone/selection-lists-ui (frontend bundles its dist)
+        run: npm run -w @fuzeone/selection-lists-ui build
       - name: Build frontend (vite build — MUST pass)
         run: cd frontend && npm run build

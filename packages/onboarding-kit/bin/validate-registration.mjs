@@ -19,12 +19,11 @@
 //      then fails closed for every user, which reads as a bug in the PRODUCT rather
 //      than a gap in its registration.
 //
-//   3. A slug carrying the `Fuze` prefix (`fuzeservice` rather than `service`) is valid
-//      against every schema and registers cleanly. What makes it worth a gate is that
-//      it is UNFIXABLE afterwards: `slug` is immutable and there is no rename, so the
-//      only correction is register-the-new-one-then-delete-the-old, which orphans the
-//      product's Permit grants and CASCADE-deletes its installation rows. A rule whose
-//      violation is free to prevent and expensive to undo belongs at authoring time.
+//   3. A display name carrying the `Fuze` prefix (`FuzeService` rather than `Service`)
+//      is valid against every schema and registers cleanly. It is also the only half of
+//      the naming convention that is FREE to fix: `name` and `menuLabel` are ordinary
+//      mutable fields, re-sent on every manifest refresh. Left alone, every tile in the
+//      launcher opens with the same four letters and the list stops being scannable.
 //
 // All three failures are invisible by construction: they produce no error, no 4xx, and
 // no log line anybody reads. They surface as "this product is mysteriously limited".
@@ -37,7 +36,8 @@
 // Exit code 0 = conformant, 1 = violation.
 
 import { readFileSync, existsSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // The surfaces every portal-destination product must serve. `portal` is how it appears
 // in the shell; `standalone` is the only surface a mobile TWA/APK can wrap, because an
@@ -45,92 +45,92 @@ import { join, resolve } from 'node:path'
 // product that is either invisible in the portal or permanently desktop-only.
 const REQUIRED_SURFACES = ['portal', 'standalone']
 
-// The family naming convention: a Fuze product registers on FuzeFront WITHOUT the
-// `Fuze` prefix — slug `service`, name `Service`. FuzeFront is the platform, so the
-// prefix is already implied by the fact that you are registering here at all;
-// repeating it gives every tile in the launcher the same first four letters and the
-// slug that shows up in `/app/<slug>` URLs, Permit keys and billing product keys
-// carries four characters of pure noise. FuzePicker already registered as `picker`,
-// so the convention existed — it was simply never enforced, and twelve products
-// registered against it.
+// The family naming convention, CORRECTED 2026-08-19 by owner ruling.
 //
-// Matched with an anchor and no length exemption: there is no product for which
-// bare `fuze` is the correct de-prefixed slug, because de-prefixing "FuzeX" yields
-// "x". Case-insensitive is belt-and-braces — the contract's Slug pattern is already
-// lowercase-only, but `name` is free text and `Fuze` is exactly how it is written
-// there.
+// The prefix comes off the DISPLAY STRING, not the slug:
+//
+//   slug: "fuzeservice"      name: "Service"      menuLabel: "Service"
+//
+// The point of the convention was never the URL — it was that a launcher listing
+// fifteen products all beginning "Fuze" is unreadable. That is a property of the
+// rendered label, so that is where the rule belongs. The slug keeps the prefix, where
+// it is doing useful work: `fuzeservice` is unambiguous in a Permit key, a billing
+// product key and a `/app/<slug>` path, in a family where `deploy`, `market` and `call`
+// are all generic enough to collide with something else one day.
+//
+// THIS FILE PREVIOUSLY ENFORCED THE OPPOSITE, and that was wrong in a way worth
+// recording: it rejected a prefixed slug and told the author to migrate. Because `slug`
+// is immutable, "migrate" means register-the-new-one-then-delete-the-old, which orphans
+// the product's Permit grants and CASCADE-deletes its app_installations rows. A gate
+// that pushes people toward a destructive migration is worse than no gate. See
+// validateSlugConvention below for why the slug is now unchecked in BOTH directions.
 const FUZE_PREFIX_RE = /^fuze/i
 
+// The narrow, NAMED carve-out to the display-name rule below. Owner ruling (verbatim):
+// the prefix should come off the display string "unless necessary like for fuzebi, and
+// fuzeX". The test for "necessary" is that the remainder left after stripping `Fuze` does
+// not identify a product on its own — "BI" and "X" are not names, they are letters; "Sales"
+// or "Picker" are. That is a judgment call the owner made for exactly these two products,
+// so it is encoded as an explicit list rather than a length/shape heuristic (e.g. "under
+// three characters") that would silently make the same call for some future product nobody
+// actually decided on. To exempt another product, add it here, by name, deliberately.
+const FUZE_PREFIX_EXEMPT_DISPLAY_NAMES = new Set(['FuzeBI', 'FuzeX'])
+
 /**
- * WHY THIS IS A BUILD-TIME GATE AND NOT A `pattern` ON THE CONTRACT'S `Slug`.
+ * WHY THE SLUG IS NOT CHECKED HERE, IN EITHER DIRECTION.
  *
- * It is tempting to add `(?!fuze)` to `Slug` in
- * services/app-registry-service/openapi.yaml and be done. That would be actively
- * harmful, and the reason is the whole shape of this problem:
+ * The convention says a NEW product should register with the prefix on the slug
+ * (`fuzeservice`) and off the display name (`Service`). Only the second half is
+ * enforced, and the asymmetry is deliberate:
  *
- *   `slug` is IMMUTABLE — `PUT /apps/{slug}` states that `slug`, `builtin` and
- *   `manifestVersion` must match, and there is no rename operation. Correcting a
- *   prefixed registration is therefore a TWO-STEP migration: register the short
- *   slug, then delete the prefixed one (see bin/migrate-slug.mjs).
+ *   `slug` is IMMUTABLE. `PUT /apps/{slug}` states that `slug`, `builtin` and
+ *   `manifestVersion` must match, and there is no rename operation.
  *
- * Both of those steps talk to the registry ABOUT the prefixed slug. A contract-level
- * ban would reject the very requests that repair the damage: `register.sh` re-PUTs
- * the manifest on every pod start, so twelve live products would start failing their
- * manifest refresh, and the migration tool could no longer look up — or in the worst
- * case delete — the row it exists to remove. Banning a value at the API is only safe
- * when no existing row holds it. Twelve do.
+ * So a slug error has no cheap fix — the only "correction" is to register a second app
+ * and delete the first, which orphans the product's Permit grants and CASCADE-deletes
+ * its app_installations rows. Failing a build over a value nobody can safely change
+ * does not prevent the mistake; it just converts a cosmetic inconsistency into pressure
+ * to run a destructive migration.
  *
- * So the registry must keep ACCEPTING `fuzeservice` for exactly as long as the
- * migration is in flight, while no product is allowed to AUTHOR a new one. Those are
- * different questions, they need different enforcement points, and this is the
- * authoring one: it fails in the product's own repo, at build time, where the
- * manifest is written and where somebody can fix it.
+ * And the field is already split across the fleet. Measured on default branches
+ * 2026-08-19: `fuzex` and `fuzebi` carry the prefix; `deploy`, `call`, `executive`,
+ * `finance`, `keys`, `market` and `picker` do not. All are live registrations that must
+ * be left alone. An error in either direction reds a real repo whose only remedy is the
+ * migration above.
+ *
+ * `name` and `menuLabel` are the opposite case in every respect: ordinary mutable
+ * fields, re-sent on every manifest refresh by `register.sh`, fixable with a one-line
+ * edit and no registry surgery. They are also the half the convention was actually
+ * about — the launcher tile a person reads. So that is what this gate enforces.
+ *
+ * The prefixed-slug guidance for genuinely new products lives in the docs, not here.
+ * A rule is only worth a red build when the author can act on it.
  *
  * @param {Record<string, unknown>} manifest
  * @returns {string[]} human-readable violations; empty means conformant
  */
 export function validateSlugConvention(manifest) {
   const errors = []
-  const { slug, name } = manifest
+  const { name, menuLabel } = manifest
 
-  // SHORT-NAME EXEMPTION. The contract's Slug pattern is
-  // ^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$ — a minimum of THREE characters. So for a
-  // product whose de-prefixed slug would be shorter than that, the prefix is not
-  // a style violation, it is load-bearing: `fuzebi` -> `bi` and `fuzex` -> `x`
-  // are both REJECTED by the platform, so there is no conformant slug to move to.
-  //
-  // This is a rule, not an allowlist. Anything that de-prefixes to 3+ characters
-  // is still held to the convention; only the products the schema makes
-  // impossible are exempt, and they are exempt on both `slug` and `name` so the
-  // launcher tile and the URL agree with each other.
-  // The remainder must be NON-EMPTY: bare `fuze` de-prefixes to nothing, which is
-  // not a short product name, it is a missing one. Exempting it would let the
-  // placeholder slug through the very check that exists to catch it.
-  const deprefixed = typeof slug === 'string' ? slug.replace(FUZE_PREFIX_RE, '') : ''
-  if (
-    typeof slug === 'string' &&
-    FUZE_PREFIX_RE.test(slug) &&
-    deprefixed.length > 0 &&
-    deprefixed.length < 3
-  ) {
-    return errors
-  }
+  // Both display fields, because they are rendered in different places — `menuLabel`
+  // in the side menu, `name` in the launcher and app switcher — and fixing one while
+  // leaving the other is the shape the fleet is actually in.
+  for (const [field, value] of [['name', name], ['menuLabel', menuLabel]]) {
+    if (typeof value !== 'string' || !FUZE_PREFIX_RE.test(value)) continue
 
-  if (typeof slug === 'string' && FUZE_PREFIX_RE.test(slug)) {
+    // The named carve-out: FuzeBI/FuzeX keep the prefix on EITHER field because the
+    // remainder left after stripping it ("BI"/"X") does not identify a product on its
+    // own. See the Set's definition above for why this is a fixed list, not a heuristic.
+    if (FUZE_PREFIX_EXEMPT_DISPLAY_NAMES.has(value)) continue
+
+    const stripped = value.replace(FUZE_PREFIX_RE, '')
     errors.push(
-      `slug "${slug}" starts with "fuze" — Fuze products register WITHOUT the prefix ` +
-        `(use "${slug.replace(FUZE_PREFIX_RE, '') || '<product>'}"). The prefix is implied ` +
-        'by registering on FuzeFront at all, and the slug is user-visible in /app/<slug>. ' +
-        'Note this is not fixable after the fact: `slug` is immutable, so a wrong slug ' +
-        'costs a register-then-delete migration, not an edit.'
-    )
-  }
-
-  if (typeof name === 'string' && FUZE_PREFIX_RE.test(name)) {
-    errors.push(
-      `name "${name}" starts with "Fuze" — use "${name.replace(FUZE_PREFIX_RE, '') || '<Product>'}". ` +
-        'The launcher already sits inside FuzeFront; prefixing every tile makes them ' +
-        'indistinguishable at a glance.'
+      `${field} ${JSON.stringify(value)} starts with "Fuze" — use ` +
+        `${JSON.stringify(stripped || '<Product>')}. Every product in the launcher ` +
+        'already sits inside FuzeFront, so prefixing each tile makes the list ' +
+        'unscannable. Unlike `slug`, this is a plain edit: the field is mutable and ' +
+        'register.sh re-sends it on the next pod start.'
     )
   }
 
@@ -238,6 +238,112 @@ export function validatePolicyWiring(dir) {
 }
 
 /**
+ * WHY A *POLICY* GATE IS CHECKING AN ENUM — the one case where "the schema already
+ * covers it" is exactly wrong.
+ *
+ * Everything else in this file guards a rule no schema can express. This one guards a
+ * rule the schema expresses perfectly well — and that is the point: NOTHING IN A
+ * PRODUCT'S REPOSITORY EVER RUNS THAT SCHEMA. The only thing that does is the
+ * platform, at registration time, in the cluster:
+ *
+ *   registerAppRequestSchema.safeParse(req.body)   // routes/app-registry.ts
+ *   navSchema.section = z.enum(NAV_SECTIONS)       // app-registry/manifest.schema.ts
+ *
+ * So an unknown section is not a lint warning. `POST /apps` answers 400, register.sh
+ * treats any non-201/409 as fatal, and the init container CrashLoopBackOffs the
+ * product's own pod — in production, on first deploy, with the failure appearing to
+ * belong to the product rather than to its manifest.
+ *
+ * FuzeFinance shipped `nav.section: "business"` and this validator passed it, because
+ * "business" is a perfectly plausible section name that simply is not in the list.
+ * A one-word typo, free to catch here, expensive to discover in a CrashLoop.
+ *
+ * The enum is READ FROM manifest.schema.json rather than copied into a constant.
+ * scripts/build-schema.mjs generates that file from the frozen openapi.yaml and CI
+ * fails if it is stale, so reading it means this gate can never drift from the
+ * contract — a hardcoded list would silently go wrong the day a section is added.
+ *
+ * @param {Record<string, unknown>} manifest
+ * @returns {string[]} human-readable violations; empty means conformant
+ */
+export function validateNavPlacement(manifest) {
+  const errors = []
+
+  const sections = navSections()
+  if (sections === null) {
+    // Deliberately an ERROR, not a skip. A gate that quietly does nothing when its
+    // reference data is missing is worse than no gate: it reports success while
+    // checking nothing, which is the exact failure class this whole kit exists to end.
+    return [
+      'cannot read NavSection from manifest.schema.json — the kit is installed ' +
+        'incompletely, so nav placement went unchecked rather than passing',
+    ]
+  }
+
+  const nav = manifest.nav
+  if (nav === undefined) {
+    errors.push(
+      'manifest declares no `nav` — the platform defaults it to section "platform", ' +
+        'order 999, so the product sorts LAST in the side menu by accident rather than ' +
+        `by decision. Pick one of: ${sections.join(', ')}`
+    )
+    return errors
+  }
+  if (nav === null || typeof nav !== 'object' || Array.isArray(nav)) {
+    return ['`nav` must be an object']
+  }
+
+  const { section, order } = nav
+
+  if (section === undefined) {
+    errors.push(
+      '`nav.order` is set but `nav.section` is not — order ranks WITHIN a section, so ' +
+        'on its own it does nothing and the product still sorts last, in "platform". ' +
+        `Pick one of: ${sections.join(', ')}`
+    )
+  } else if (typeof section !== 'string' || !sections.includes(section)) {
+    errors.push(
+      `nav.section ${JSON.stringify(section)} is not a NavSection. The platform parses ` +
+        'the manifest with `z.enum(NAV_SECTIONS)`, so `POST /apps` answers 400, ' +
+        'register.sh treats that as fatal, and the pod CrashLoopBackOffs — the product ' +
+        `never registers at all. Valid sections, in menu order: ${sections.join(', ')}`
+    )
+  }
+
+  // Same failure mode, different field: the contract's Nav.order is
+  // `integer, minimum 0, maximum 9999`, and the platform's zod mirror rejects anything
+  // else with the same fatal 400.
+  if (order !== undefined) {
+    if (typeof order !== 'number' || !Number.isInteger(order) || order < 0 || order > 9999) {
+      errors.push(
+        `nav.order ${JSON.stringify(order)} is not an integer in 0..9999 — the platform ` +
+          'rejects the manifest with 400 and the pod CrashLoopBackOffs'
+      )
+    }
+  }
+
+  return errors
+}
+
+/**
+ * The NavSection enum, read from the kit's generated copy of the frozen contract.
+ * Returns null if it cannot be read, so the caller can report that rather than
+ * silently skipping the check.
+ *
+ * @returns {string[] | null}
+ */
+function navSections() {
+  try {
+    const schemaPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'manifest.schema.json')
+    const schema = JSON.parse(readFileSync(schemaPath, 'utf8'))
+    const values = schema?.$defs?.NavSection?.enum
+    return Array.isArray(values) && values.length > 0 ? values : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * @param {string} dir  path to a registration/ directory
  * @returns {string[]}
  */
@@ -258,6 +364,7 @@ export function validateRegistrationDir(dir) {
   return [
     ...validateSlugConvention(manifest),
     ...validateSurfaces(manifest),
+    ...validateNavPlacement(manifest),
     ...validatePolicyWiring(dir),
   ]
 }

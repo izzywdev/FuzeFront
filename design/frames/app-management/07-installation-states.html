@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Installation states — frame (g)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="07-installation-states">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Installations · Frame (g) · route /apps/:appId/installations</div>
+  <h1>Installation states</h1>
+  <p class="lead">The states the installations surface must render: loading, no installations yet, a
+    load failure, read-only for a caller who can't manage scopes, the orphaned-target edge case
+    (target portal removed/suspended → status, not crash), the remove confirmation, and the
+    cross-tenant add denial.</p>
+
+  <!-- g1 loading -->
+  <div class="state-block">
+    <div class="state-label">(g1) Loading</div>
+    <div class="panel" data-panel="installations" data-state="loading" aria-busy="true">
+      <div class="panel-head"><div><h2>Installations</h2><p class="sub">Loading…</p></div></div>
+      <table class="tbl"><tbody>
+        <tr><td><div class="appcell"><div class="skel" style="width: var(--space-8); height: var(--space-8); border-radius: var(--radius-md)"></div><div class="skel" style="width: 50%"></div></div></td><td><div class="skel" style="width: 60%"></div></td><td><div class="skel" style="width: 60%"></div></td><td><div class="skel" style="width: 40%"></div></td><td class="right"><div class="skel" style="width: 40%; margin-left: auto"></div></td></tr>
+      </tbody></table>
+    </div>
+  </div>
+
+  <!-- g2 empty -->
+  <div class="state-block">
+    <div class="state-label">(g2) No installations yet</div>
+    <div class="panel" data-panel="installations" data-state="empty">
+      <div class="panel-head"><div><h2>Installations</h2><p class="sub"><span data-count="installations">0</span> scopes</p></div>
+        <button class="btn btn-accent" data-action="add-installation">+ Add installation</button></div>
+      <div class="empty">
+        <h3>Not installed anywhere yet</h3>
+        <p>This app isn't scoped to any organization, portal or user. Add an installation to make it
+          available to a target you administer.</p>
+        <button class="btn btn-accent" data-action="add-installation">Add the first installation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- g3 error -->
+  <div class="state-block">
+    <div class="state-label">(g3) Couldn't load</div>
+    <div class="panel" data-panel="installations" data-state="error">
+      <div class="empty">
+        <div class="banner banner-error" data-error-code="LOAD_FAILED" style="text-align: left">
+          <span><b>We couldn't load installations</b><p>Something went wrong on our end. Try again.</p></span>
+        </div>
+        <button class="btn" data-action="retry">Try again</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- g4 read-only -->
+  <div class="state-block">
+    <div class="state-label">(g4) Read-only — caller can't manage scopes (fail-closed)</div>
+    <div class="panel" data-panel="installations" data-state="read-only" data-http="403" data-error-code="FORBIDDEN">
+      <div class="banner banner-info" style="text-align: left">
+        <span><b>Read-only installations</b><p>You can see where this app is installed but not add or
+          remove scopes — that needs manage authority on the target, via Permit. No Add or Remove
+          control is rendered.</p></span>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>Target</th><th>Scope level</th><th>Status</th></tr></thead>
+        <tbody><tr data-installation="inst_org_nw">
+          <td><div class="appcell"><div class="appicon" aria-hidden="true">🏢</div><span class="appname">Northwind Inc.</span></div></td>
+          <td><span class="tag">organization</span></td>
+          <td><span class="status status--active"><span class="dot"></span>Active</span></td>
+        </tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- g5 orphaned target -->
+  <div class="state-block">
+    <div class="state-label">(g5) Orphaned target — portal removed/suspended → status, never a crash</div>
+    <div class="panel" data-panel="installations" data-state="orphaned">
+      <table class="tbl">
+        <thead><tr><th>Target</th><th>Scope level</th><th>Status</th><th class="right"></th></tr></thead>
+        <tbody>
+          <tr data-installation="inst_portal_legacy" data-orphaned="true">
+            <td><div class="appcell"><div class="appicon" aria-hidden="true">⚠️</div><div class="stack">
+              <span class="appname muted">Legacy portal</span>
+              <span class="muted mono">prt_legacy · target no longer resolvable</span></div></div></td>
+            <td><span class="tag">portal</span></td>
+            <td><span class="status status--orphaned" data-installation-status="orphaned"><span class="dot"></span>Target removed</span></td>
+            <td class="right"><button class="btn btn-ghost btn-sm" data-action="remove-installation" data-target="inst_portal_legacy">Remove</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="panel-foot"><span class="muted">The install row renders from its own record even when
+        the target can't be resolved — it shows an orphaned status and stays removable. It never
+        throws or blanks the table.</span></div>
+    </div>
+  </div>
+
+  <!-- g6 remove confirm -->
+  <div class="state-block">
+    <div class="state-label">(g6) Confirm remove installation</div>
+    <div class="modal" data-panel="remove-installation" data-state="confirm">
+      <div class="modal-head"><h2>Remove from Sales portal?</h2></div>
+      <div class="modal-body"><p class="danger-note">Northwind CRM will <b>no longer be available</b>
+        to the Sales portal. Members there lose access immediately. You can re-add the installation
+        later.</p></div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+        <button class="btn btn-danger" data-action="confirm-remove-installation" data-target="inst_portal_sales">Remove installation</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- g7 cross-tenant add denied -->
+  <div class="state-block">
+    <div class="state-label">(g7) Add to a target outside your authority — 403, in place</div>
+    <div class="modal" data-panel="add-installation" data-state="forbidden">
+      <div class="modal-head"><h2>Add installation</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-info" data-error-code="FORBIDDEN_TARGET" data-http="403">
+          <span><b>You don't administer that target</b><p>Installations can only be added to
+            organizations/portals you manage. The target is resolved and authorized server-side (Permit)
+            — a target outside your authority is refused <code>403</code>, never silently added.</p></span>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" data-action="cancel">Close</button>
+        <button class="btn btn-accent" data-action="submit-installation" disabled>Add installation</button></div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Contract (anticipated).</b> (g1) in-flight <code>GET …/installations</code>. (g2) empty is a
+    real state — an app installed nowhere. (g3) non-2xx with retry. <b>(g4)</b> read-only is
+    fail-closed: no Add/Remove rendered. <b>(g5) is the edge the epic calls out:</b> an installation
+    whose target portal was removed/suspended renders <code>data-installation-status="orphaned"</code>
+    from its own record and stays removable — it must not crash or blank the list. (g6) remove is
+    <code>DELETE …/installations/{id}</code> behind a confirm. (g7) add authorizes the target via
+    Permit; a target outside the caller's authority is <code>403 FORBIDDEN_TARGET</code>, in place.
+  </p>
+
+  <nav class="pager"><a href="04-installations.html">← Installations</a><a href="index.html">All frames →</a></nav>
+</div>
+</body>
+</html>

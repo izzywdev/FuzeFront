@@ -32,7 +32,7 @@ else
 fi
 
 # ── Resolve the implicit-consent authorization flow via the Django ORM ────────
-# Prefer Authentik 2024.12.3's built-in flow: Authentik itself configures the
+# Prefer Authentik 2026.5.5's built-in flow: Authentik itself configures the
 # ConsentStage correctly (the valid mode is 'permanent', NOT 'never_require').
 echo "Resolving implicit-consent authorization flow via Python ORM..."
 FLOW_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYEOF'
@@ -57,7 +57,13 @@ except Flow.DoesNotExist:
             "name": "FuzeFront Authorization (Implicit Consent)",
             "designation": "authorization",
             "title": "FuzeFront Authorization",
-            "authentication": "none",
+            # An authorization flow only ever runs mid-OAuth-authorize, for a
+            # user who is already authenticated (see FuzeFront#557: "none"
+            # here is suspected of breaking session/CSRF continuity between
+            # the GET that renders ak-stage-consent and the POST confirming
+            # it — Authentik's own built-in flow, which this script prefers
+            # when present, does not use "none" for an authorization flow).
+            "authentication": "require_authenticated",
             "policy_engine_mode": "all",
         },
     )
@@ -106,7 +112,7 @@ fi
 
 # ── Scope mappings via the Django ORM ─────────────────────────────────────────
 # /api/v3/propertymappings/scope/ returns 405 for POST and 404 for GET in this
-# Authentik 2024.12.3 setup — the URL pattern is not registered at the Django
+# Authentik 2026.5.5 setup — the URL pattern is not registered at the Django
 # routing layer. Bypass REST entirely and use the ORM.
 echo "Getting scope mapping PKs via Python ORM..."
 SCOPE_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYEOF'
@@ -139,7 +145,7 @@ if [ -z "$SCOPE_OPENID" ] || [ -z "$SCOPE_EMAIL" ] || [ -z "$SCOPE_PROFILE" ]; t
 fi
 echo "Scope mapping PKs: openid=$SCOPE_OPENID email=$SCOPE_EMAIL profile=$SCOPE_PROFILE"
 
-# ── Invalidation flow (required on the OAuth2 provider in 2024.12.3) ──────────
+# ── Invalidation flow (required on the OAuth2 provider in 2026.5.5) ──────────
 INV_FLOW_RAW=$(curl -s -H "$AUTH" "$BASE/flows/instances/?designation=invalidation")
 INV_FLOW_PK=$(echo "$INV_FLOW_RAW" | jq -r '.results[0].pk // empty' 2>/dev/null || true)
 echo "Invalidation flow lookup: pk=${INV_FLOW_PK:-NOT_FOUND}"
@@ -157,8 +163,28 @@ if [ -z "$INV_FLOW_PK" ] || [ "$INV_FLOW_PK" = "null" ]; then
 fi
 
 # ── OAuth2 provider ───────────────────────────────────────────────────────────
-PROVIDER_RAW=$(curl -s -H "$AUTH" "$BASE/providers/oauth2/?search=FuzeFront")
-PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.results[]? | select(.name=="FuzeFront") | .pk' 2>/dev/null | head -1 || true)
+# Use the Django ORM to look up the provider by client_id — REST search
+# (?search=FuzeFront) is unreliable on a fresh Authentik that just ran its
+# startup blueprints: the ORM sees the row immediately but the REST search
+# index may not be warm yet, returning 0 results for an existing row.
+# client_id is the unique constraint that triggers the 400 on a conflicting
+# POST, so it is also the right lookup key for the existence check.
+echo "Looking up OAuth2 provider by client_id via Python ORM..."
+PROVIDER_ORM_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYEOF'
+import os
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
+import django
+django.setup()
+from authentik.providers.oauth2.models import OAuth2Provider
+
+p = OAuth2Provider.objects.filter(client_id="fuzefront-oidc-client").first()
+if p:
+    print("PROVIDER_PK=" + str(p.pk))
+else:
+    print("PROVIDER_PK=")
+PYEOF
+)
+PROVIDER_PK=$(echo "$PROVIDER_ORM_OUTPUT" | grep "^PROVIDER_PK=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
 if [ -z "$PROVIDER_PK" ] || [ "$PROVIDER_PK" = "null" ]; then
   echo "Creating FuzeFront OAuth2 provider..."
   # redirect_uris use matching_mode:strict — the security service reuses the
@@ -174,25 +200,69 @@ if [ -z "$PROVIDER_PK" ] || [ "$PROVIDER_PK" = "null" ]; then
     -o /tmp/provider_create.json -w "%{http_code}" -d "$PROVIDER_BODY")
   PROVIDER_RAW=$(cat /tmp/provider_create.json)
   echo "Provider create HTTP $PROVIDER_HTTP: $PROVIDER_RAW"
-  [ "$PROVIDER_HTTP" = "201" ] || { echo "::error::failed to create OAuth2 provider (HTTP $PROVIDER_HTTP)"; exit 1; }
-  PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
-  [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::no pk in provider create response"; exit 1; }
-  echo "Created OAuth2 provider pk=$PROVIDER_PK"
+  if [ "$PROVIDER_HTTP" = "201" ]; then
+    PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
+    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::no pk in provider create response"; exit 1; }
+    echo "Created OAuth2 provider pk=$PROVIDER_PK"
+  else
+    # We are not the only writer. Authentik's blueprint worker provisions this
+    # same provider from blueprints/provider-oidc.yaml, and the ORM lookup above
+    # and this POST are not atomic, so a blueprint apply landing in the gap turns
+    # the create into
+    #   400 {"client_id":["OAuth2/OpenID Provider with this Client ID already exists."]}
+    # which is not a failure: the object we wanted now exists.
+    #
+    # The comment above the lookup already anticipated the blueprint racing the
+    # READ (that is why it uses the ORM instead of REST search). This is the same
+    # race on the WRITE, which was left unhandled.
+    #
+    # Re-resolve instead of aborting. This is NOT a blanket suppression and not
+    # `|| true`: any other failure leaves the pk unresolved and still aborts
+    # below, with the HTTP code in the message. The only behaviour that changes
+    # is losing a race we were always able to lose.
+    echo "Create returned HTTP $PROVIDER_HTTP; re-resolving in case the blueprint worker won the race"
+    PROVIDER_RETRY_OUTPUT=$($COMPOSE exec -T authentik-worker python - <<'PYORM'
+import os
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
+import django
+django.setup()
+from authentik.providers.oauth2.models import OAuth2Provider
+
+p = OAuth2Provider.objects.filter(client_id="fuzefront-oidc-client").first()
+print("PROVIDER_PK=" + (str(p.pk) if p else ""))
+PYORM
+)
+    PROVIDER_PK=$(echo "$PROVIDER_RETRY_OUTPUT" | grep "^PROVIDER_PK=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
+    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::failed to create OAuth2 provider (HTTP $PROVIDER_HTTP) and no existing provider resolved for client_id=fuzefront-oidc-client"; exit 1; }
+    echo "Resolved existing OAuth2 provider pk=$PROVIDER_PK"
+  fi
 else
   echo "OAuth2 provider already exists pk=$PROVIDER_PK"
 fi
 
 # ── Application ───────────────────────────────────────────────────────────────
-echo "Creating FuzeFront application..."
-APP_BODY=$(jq -n --argjson provider "$PROVIDER_PK" \
-  '{name:"FuzeFront",slug:"fuzefront",provider:$provider,meta_launch_url:"https://fuzefront.dev.local/",meta_description:"FuzeFront runtime microfrontend platform",policy_engine_mode:"all",open_in_new_tab:false}')
-APP_HTTP=$(curl -s -X POST "$BASE/core/applications/" -H "$AUTH" -H "$CT" \
-  -o /tmp/app_create.json -w "%{http_code}" -d "$APP_BODY")
-APP_RAW=$(cat /tmp/app_create.json)
-echo "Application create HTTP $APP_HTTP: $APP_RAW"
-[ "$APP_HTTP" = "201" ] || { echo "::error::failed to create application (HTTP $APP_HTTP)"; exit 1; }
-APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
-[ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response"; exit 1; }
-echo "Created application slug=$APP_SLUG"
+# Check by slug directly — the initial search (?search=fuzefront) can return
+# 0 results even when the application exists (Authentik search is name-based,
+# not slug-based; a partial match may miss). A 404 means not found; 200 means
+# it already exists and we skip creation.
+APP_SLUG_CHECK_HTTP=$(curl -s -o /tmp/app_slug_check.json -w "%{http_code}" \
+  -H "$AUTH" "$BASE/core/applications/fuzefront/")
+echo "Application slug check HTTP $APP_SLUG_CHECK_HTTP"
+if [ "$APP_SLUG_CHECK_HTTP" = "200" ]; then
+  echo "FuzeFront application already exists (slug=fuzefront) — skipping creation"
+  APP_SLUG="fuzefront"
+else
+  echo "Creating FuzeFront application..."
+  APP_BODY=$(jq -n --argjson provider "$PROVIDER_PK" \
+    '{name:"FuzeFront",slug:"fuzefront",provider:$provider,meta_launch_url:"https://fuzefront.dev.local/",meta_description:"FuzeFront runtime microfrontend platform",policy_engine_mode:"all",open_in_new_tab:false}')
+  APP_HTTP=$(curl -s -X POST "$BASE/core/applications/" -H "$AUTH" -H "$CT" \
+    -o /tmp/app_create.json -w "%{http_code}" -d "$APP_BODY")
+  APP_RAW=$(cat /tmp/app_create.json)
+  echo "Application create HTTP $APP_HTTP: $APP_RAW"
+  [ "$APP_HTTP" = "201" ] || { echo "::error::failed to create application (HTTP $APP_HTTP)"; exit 1; }
+  APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
+  [ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response"; exit 1; }
+  echo "Created application slug=$APP_SLUG"
+fi
 
 wait_for_discovery

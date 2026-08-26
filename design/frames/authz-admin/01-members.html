@@ -71,11 +71,23 @@
     </div>
   </div>
 
+  <p class="note" data-rule="direct-only">
+    <b>Direct memberships only.</b> This list shows this org's <b>direct active memberships</b> — one row
+    per <code>organization_memberships</code> row. Principals whose access comes <b>from above</b> (a
+    parent org, the platform root, or a reseller portal) are <b>ReBAC-derived and have no membership row
+    here</b>, so they do <b>not</b> appear — by omission, satisfying the "access from above is hidden"
+    requirement. Platform staff (Employee) are never listed here; their inherited access is surfaced only
+    in the separate, labelled staff console (<code>design/frames/employee-console</code>). If a future admin
+    surface ever needs to show inherited access, it must be a clearly separated, labelled panel — never
+    merged into this direct-member list.
+  </p>
   <p class="note">
     <b>Contract.</b> Rows come from <code>GET /v1/security/tenants/{tenantId}/members</code>
     (<code>MemberPage</code> — cursor-paginated; "Load more" advances <code>page.cursor</code>).
     Role pills are keyed to <code>GET /v1/security/tenants/{tenantId}/roles</code>
     (<code>Role.key</code> → <code>Role.name</code>). A member with no roles renders no pill, never a blank cell.
+    For the <b>root/portal</b> org — where "members = everyone" — this small-team list is replaced by the
+    paginated, searchable <b>member directory</b> (<code>design/frames/member-directory</code>).
   </p>
 
   <nav class="pager"><a href="index.html">Index</a><a href="02-add-member.html">Next: Add member →</a></nav>

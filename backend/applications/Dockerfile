@@ -27,7 +27,10 @@ COPY backend/security/package.json ./backend/security/
 COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/auth/package.json ./packages/auth/
 COPY billing-client/package.json ./billing-client/
+COPY config-client/package.json ./config-client/
+COPY packages/config-ui/package.json ./packages/config-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -36,15 +39,18 @@ COPY packages/identity-ui/package.json ./packages/identity-ui/
 COPY packages/auth-ui/package.json ./packages/auth-ui/
 COPY packages/account-security-ui/package.json ./packages/account-security-ui/
 COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
+COPY packages/portal-admin-ui/package.json ./packages/portal-admin-ui/
 COPY portal-client/package.json ./portal-client/
 COPY packages/i18n/package.json ./packages/i18n/
 COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
+COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
+COPY services/selection-list-service/package.json ./services/selection-list-service/
 
 RUN npm ci
 
@@ -52,16 +58,20 @@ RUN npm ci
 COPY shared/ ./shared/
 COPY backend/core/ ./backend/core/
 COPY packages/feature-flags/ ./packages/feature-flags/
+COPY packages/identity/ ./packages/identity/
 COPY backend/applications/ ./backend/applications/
 
-# Build the shared kafka sub-barrel, then core, then the flag client, then
-# applications-service. @fuzefront/feature-flags must be BUILT here: its
-# package `main` points at dist/, and without this the workspace symlink
-# resolves to an empty package — which is why the flag client was absent from
-# the running image and every flag silently took its in-code default.
+# Build the shared kafka sub-barrel, then core, then the flag client, then the
+# identity package, then applications-service. @fuzefront/feature-flags and
+# @izzywdev/fuzefront-identity must both be BUILT here: their package `main`
+# points at dist/, and without this the workspace symlink resolves to an empty
+# package. For feature-flags that silently defaulted every flag; for identity
+# apps.ts's top-level `mintId`/`toUuid` import would crashloop the container at
+# boot with "Cannot find module '@izzywdev/fuzefront-identity'".
 RUN cd shared && npm run build:kafka
 RUN cd backend/core && npm run build
 RUN cd packages/feature-flags && npm run build
+RUN cd packages/identity && npm run build
 RUN cd backend/applications && npm run build
 
 # ---------- production ----------
@@ -79,6 +89,10 @@ COPY --from=build --chown=applications:nodejs /app/backend/core/dist ./backend/c
 COPY --from=build --chown=applications:nodejs /app/backend/core/package.json ./backend/core/package.json
 COPY --from=build --chown=applications:nodejs /app/packages/feature-flags/dist ./packages/feature-flags/dist
 COPY --from=build --chown=applications:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
+# @izzywdev/fuzefront-identity is a workspace symlink in node_modules; ship its
+# built dist + manifest so the link resolves at runtime (see the build-stage note).
+COPY --from=build --chown=applications:nodejs /app/packages/identity/dist ./packages/identity/dist
+COPY --from=build --chown=applications:nodejs /app/packages/identity/package.json ./packages/identity/package.json
 COPY --from=build --chown=applications:nodejs /app/backend/applications/dist ./backend/applications/dist
 COPY --from=build --chown=applications:nodejs /app/backend/applications/package.json ./backend/applications/package.json
 

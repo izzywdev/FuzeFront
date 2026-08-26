@@ -269,8 +269,64 @@ export async function loadRegisteredPolicyResult(
   const rejected: { slug: string; reason: string }[] = []
   try {
     /* eslint-disable @typescript-eslint/no-var-requires */
-    const { db } = require('../config/database')
+    const database = require('../config/database')
+    // `db` is `export let db: Knex` — DECLARED at module load, ASSIGNED only by
+    // initializeDatabaseConnection(). The server calls that during boot, but this
+    // module is also the permit-schema-sync CLI entrypoint, which does not. So
+    // `db` was undefined, `db.schema` threw "Cannot read properties of undefined
+    // (reading 'schema')", the catch below classified a TypeError as
+    // `registry_unavailable`, and the Job exited non-zero on every deploy.
+    //
+    // Destructuring BEFORE initializing is what made this invisible: `const { db }`
+    // captures the value at that moment, so calling the initializer afterwards
+    // would still leave the local binding undefined. Read the property AFTER.
+    //
+    // initializeDatabaseConnection() is idempotent (`if (!db)`), so this is a
+    // no-op in the server, where the connection already exists.
+    // Guarded on BOTH sides deliberately. `permit-sync-registry.test.ts` stubs
+    // this module as `{ db }` with no initializer — that mock is the documented
+    // way the registry read is made testable without a DB, so calling the
+    // initializer unconditionally breaks it. And re-initializing when a handle
+    // already exists would be wrong regardless of tests.
+    if (!database.db && typeof database.initializeDatabaseConnection === 'function') {
+      database.initializeDatabaseConnection()
+    }
+    const db = database.db
     /* eslint-enable @typescript-eslint/no-var-requires */
+
+    // The `apps.slug` and `apps.policy` columns are provisioned by the
+    // APPLICATIONS-service migration chain (006_add_app_policy_and_billing,
+    // recorded under knex_migrations_apps) — NOT by this (backend) image, whose
+    // chain only creates the base `apps` table (002_create_apps_table). On a
+    // fresh install or a coordinated upgrade the permit-schema-sync post-upgrade
+    // hook can run before the applications service has landed that migration.
+    //
+    // When the column is genuinely absent, NO product has been able to register
+    // a policy yet, so the correct result is "registry available, zero
+    // registered policies" (available: true) — NOT "registry unavailable". The
+    // distinction matters because the CLI job treats `available: false` as fatal
+    // (exit 1): letting the SELECT throw `column "policy" does not exist` here
+    // turned a benign deploy-ordering window into a crash-looping Job.
+    //
+    // The hard-fail stays reserved for a REAL registry outage: if the DB is
+    // unreachable, `hasTable`/`hasColumn` themselves reject and land in the
+    // catch below → available: false → the job exits non-zero, exactly as
+    // designed. We only downgrade to "empty" when we can POSITIVELY confirm the
+    // storage does not exist, never when we simply failed to read it.
+    const hasApps = await db.schema.hasTable('apps')
+    const hasPolicyStorage =
+      hasApps &&
+      (await db.schema.hasColumn('apps', 'slug')) &&
+      (await db.schema.hasColumn('apps', 'policy'))
+    if (!hasPolicyStorage) {
+      log(
+        'App-registry policy storage not present yet (apps.policy column ' +
+          'unmigrated) — no product has registered a policy; syncing the base + ' +
+          'legacy schema only'
+      )
+      return { available: true, policies: [], rejected, error: null }
+    }
+
     const rows = await db('apps')
       .whereNotNull('slug')
       .whereNotNull('policy')
@@ -320,6 +376,7 @@ export function loadLegacyProductPolicies(): ProductPolicy[] {
   return [
     require('./products/fuzemarket.policy').default,
     require('./products/mendys-datasets.policy').default,
+    require('./products/fuzefinance.policy').default,
   ]
   /* eslint-enable @typescript-eslint/no-var-requires */
 }

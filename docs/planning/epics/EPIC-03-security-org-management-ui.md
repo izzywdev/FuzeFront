@@ -75,6 +75,12 @@ domain: Identity / Security
 ### 🔗 Dependencies
 - **Blocked By:** FF-EPIC-05 (role model — consume, don't duplicate); FF-EPIC-08 (pagination gate).
 - **Related:** identity-ui #65; API-tokens backend; email-service (for invites).
+- **Reconciled by FF-EPIC-17** (personal identity / root membership / portal / Employee): S1/S2 here are
+  confirmed **unaffected** by the root-membership model — FF-EPIC-17-S6 only adds an explicit AC + regression
+  test that S2's members list already hides above-org (parent/root) ReBAC principals by construction (reads
+  `organization_memberships` directly). The distinct **root/portal member directory** ("everyone" once
+  every user is a root member) is new work owned by FF-EPIC-17-S5 — it is a different endpoint/screen, not
+  a duplicate of S2's per-org bounded list. See `docs/planning/epics/EPIC-17-personal-identity-portal-employee-reconciliation.md`.
 
 ### 📎 References
 - GitHub issue: https://github.com/izzywdev/FuzeFront/issues/121

@@ -65,4 +65,12 @@ Guard (executable in `tests/test_cluster_query_guard.py`): a read verb must be p
 - The **`FuzeInfra` Docker network is external** — `docker network create FuzeInfra` (or `infra-up`) must run before dependent app stacks come up, or `docker compose up` errors on the missing network.
 
 ## How to work
+
+**Master-first (mandatory for every consultation):**
+1. `git fetch origin main --no-tags` — run this before answering.
+2. Base all architectural, deploy, and gotcha answers on `origin/main`.
+3. If the current branch diverges from main in a way that affects the answer, note it inline: _"Note: this branch diverges from main on X."_ — answer still comes from main.
+4. Only shift focus to the branch when the user explicitly asks about differences ("what changed on this branch?", "how does this compare to main?").
+5. If fetch fails: note the limitation, fall back to cached `origin/main` refs, proceed.
+
 Read the relevant chart/template/values/source first. Prefer the **Helm + kind** flow locally and **Git→ArgoCD** for prod; treat docker-compose as the legacy/quick-local path. Keep this repo **infra-only** — never add app-specific code. Source every secret from `.env`/k8s Secrets (never hardcode). Gate new services behind an `enabled` flag in `values.yaml` and wire them into all relevant overlays. New admin UIs in prod need a Cloudflare Access app + App Launcher entry (Terraform). Verify by actually exercising it — `docker ps`, `kubectl -n fuzeinfra get pods`, curl through the ingress/tunnel, or `python scripts-tools/run_tests.py` / `pytest tests/`. Finish work as a **merged PR**, not just local commits.

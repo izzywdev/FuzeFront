@@ -1,0 +1,210 @@
+{{- if .Values.a2a.enabled }}
+{{/*
+FuzeFront's OWN per-product A2A pod.
+
+Runs the shared @fuzeagent/a2a runtime image (published by izzywdev/FuzeAgent's
+own CI — this chart never builds it), configured at runtime, via the mounted
+values.json, to serve exactly one tenant: this repo's `app-shell-platform`
+role. See docs/a2a/README.md for the investigation that produced this shape
+and izzywdev/FuzeAgent's docs/a2a/per-product-pod.md for the canonical recipe
+this template transcribes — do not re-derive it.
+
+`.Values.a2a.inClusterUrl` MUST equal what the Service below resolves to
+(scheme + Service DNS + port + /rpc). That is the one cross-check to make on
+every render: a mismatch starts, passes every probe, and serves a perfectly
+valid signed card that names a pod other than this one.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: a2a-fuzefront-values
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a2a
+data:
+  # The values-interface document the server reads at startup via
+  # A2A_VALUES_FILE. Only secret *references* (name/key) may appear here,
+  # never secret values.
+  values.json: |
+    {{ dict "a2a" .Values.a2a | toJson }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: a2a-fuzefront
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a2a
+spec:
+  replicas: {{ .Values.a2aDeploy.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: a2a
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: a2a
+      annotations:
+        # Roll the pod when the values document (tenants/auth/etc.) changes —
+        # the ConfigMap updates in place and nothing restarts the process
+        # otherwise.
+        checksum/values: {{ dict "a2a" .Values.a2a | toJson | sha256sum }}
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.a2aDeploy "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Matches the image's non-root USER 10001 (agent-templates/a2a/Dockerfile
+      # in izzywdev/FuzeAgent).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      {{- if .Values.a2a.tenants }}
+      # Repo checkout: the server's LocalRepoResolver reads each tenant's
+      # projection inputs (.fuze/manifest.json + agent-templates/roles/) from
+      # A2A_REPOS_DIR/<tenant>. Cloned anonymously unless
+      # .Values.a2aDeploy.reposGitTokenSecretRef is set (needed only for a
+      # PRIVATE tenant repo — FuzeFront itself is public, so prod leaves it
+      # unset). GitOps: `ref` is the source of truth, never live-mutated in
+      # /repos.
+      initContainers:
+        - name: repo-sync
+          image: {{ .Values.a2aDeploy.gitImage }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              {{- if .Values.a2aDeploy.reposGitTokenSecretRef }}
+              AUTH="${A2A_REPOS_GIT_TOKEN}@"
+              {{- else }}
+              AUTH=""
+              {{- end }}
+              {{- range .Values.a2a.tenants }}
+              {{- if .enabled }}
+              name="{{ .tenant }}"   # server resolves /repos/<tenant> (case-preserved), NOT the repo slug
+              echo "cloning {{ .repo }}@{{ .ref | default "main" }} -> /repos/${name}"
+              rm -rf "/repos/${name}"
+              git clone --depth 1 --branch "{{ .ref | default "main" }}" \
+                "https://${AUTH}github.com/{{ .repo }}.git" "/repos/${name}"
+              {{- end }}
+              {{- end }}
+          {{- if .Values.a2aDeploy.reposGitTokenSecretRef }}
+          env:
+            - name: A2A_REPOS_GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.a2aDeploy.reposGitTokenSecretRef.name }}
+                  key: {{ .Values.a2aDeploy.reposGitTokenSecretRef.key }}
+          {{- end }}
+          volumeMounts:
+            - name: repos
+              mountPath: /repos
+      {{- end }}
+      containers:
+        - name: a2a
+          image: "{{ .Values.a2a.image.repository }}:{{ .Values.a2a.image.tag }}"
+          imagePullPolicy: {{ .Values.a2a.image.pullPolicy | default .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.a2a.service.port }}
+          env:
+            # Bind all interfaces so the in-cluster Service reaches the pod
+            # (the server defaults to loopback). Everything else (auth,
+            # tenants, protocolVersion, card keyId) the server reads from
+            # A2A_VALUES_FILE — NOT per-var env.
+            - name: HOST
+              value: "0.0.0.0"
+            - name: A2A_VALUES_FILE
+              value: /config/values.json
+            - name: A2A_REPOS_DIR
+              value: /repos
+            - name: AGENT_PROVIDER
+              value: {{ .Values.a2aDeploy.agentProvider | quote }}
+            - name: FUZE_STATE_DIR
+              value: /state
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            {{- with .Values.a2aDeploy.providerApiKeySecretRef }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .name }}
+                  key: {{ .key }}
+            {{- end }}
+          # Tuned for a slow-start server under load: startupProbe gives it
+          # time to clone the tenant repo + boot before liveness/readiness
+          # apply; liveness stays tolerant (5s timeout) so a briefly-slow
+          # /healthz doesn't restart it (this killed the shared deployment on
+          # a 1s default timeout under cluster strain — see a2a-shared).
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: values
+              mountPath: /config
+              readOnly: true
+            - name: repos
+              mountPath: /repos
+            - name: state
+              mountPath: /state
+          resources:
+            {{- toYaml .Values.a2aDeploy.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: values
+          configMap:
+            name: a2a-fuzefront-values
+        - name: repos
+          emptyDir: {}
+        # Writable scratch for FUZE_STATE_DIR — the server persists in-flight
+        # session state here. Ephemeral is fine (in-flight tasks don't survive
+        # a restart).
+        - name: state
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Name is load-bearing: .Values.a2a.inClusterUrl MUST resolve to exactly
+  # this Service (a2a-fuzefront.fuzefront.svc.cluster.local).
+  name: a2a-fuzefront
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: a2a
+spec:
+  # ClusterIP only — ingress is Cloudflare-tunnel-only (no LB/NodePort).
+  type: {{ .Values.a2a.service.type }}
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: a2a
+  ports:
+    - name: http
+      port: {{ .Values.a2a.service.port }}
+      targetPort: http
+{{- end }}

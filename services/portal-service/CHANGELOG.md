@@ -5,6 +5,84 @@ bumps `info.version` here first, then the client (`@fuzefront/portal-client`) is
 regenerated (`openapi-typescript`) and re-linted (Spectral). Any later change
 re-enters through `contract-designer` — never around it.
 
+## 1.4.0 — 2026-08-17 (SUPERSEDED by the org-tree portal model — FF-EPIC-17-S7)
+
+Documentation-only. Marks this contract **superseded**: portal CRUD is
+reconciled onto the unified organizations+parent_id org tree in the Security API
+(`packages/security/openapi.yaml`, tag `portals`, `@fuzefront/security-client`
+≥ 0.7.0). Adds a deprecation banner to `info.description` and a machine-readable
+`x-superseded-by`. No schema or path change — the generated
+`@fuzefront/portal-client` types are unaffected (a description-only edit), so the
+client is **not** regenerated here.
+
+- `GET /api/v1/admin/portals` (portals-directory) is superseded by
+  `GET /api/v1/security/portals`; the backend fan-out replaces it.
+- `@fuzefront/portal-client` should be **retired** once the fan-out moves to
+  `@fuzefront/security-client` (recommendation — not executed here).
+- Tenant-attribute storage (recommended: an `organizations`-keyed extension
+  table) and the `portals.id → organizations.id` FK-retargets
+  (FF-EPIC-11/12/13/15/16) are an owner/orchestrator decision + migration
+  follow-up, tracked in the FF-EPIC-17-S7 contract PR — not done here.
+- The still-live pre-auth surfaces (`GET /api/v1/portal/context`,
+  `GET /api/v1/portal/current`) remain readable here until separately reconciled.
+
+## 1.3.0 — 2026-08-11 (Portals Directory read-vs-no-access refinement, backend slice S5)
+
+Additive only — no existing field/response shape changes when
+`fuzefront.platform.portals-directory` is OFF.
+
+### Added — `Portal.canManage` / `Portal.canOpen` (both OPTIONAL)
+- Only populated by `GET /api/v1/admin/portals` (the master-admin fleet
+  list), same gating as `identityMode`/`launchUrl` (the release flag
+  `fuzefront.platform.portals-directory`, default OFF).
+- `canManage`: whether the caller holds Permit `manage` (not just `read`)
+  authority on the portal's owning organization.
+- `canOpen`: the authority to launch the portal. Intentionally mirrors
+  `canManage` today (no separate Permit `open`/`launch` action exists yet);
+  kept as its own field so a future distinct launch authority is not a
+  breaking change.
+
+### Changed — `Portal.launchUrl` is now optional-per-row (non-breaking)
+- Was `[string, 'null']` (always present, occasionally `null`); now `string`
+  and OMITTED entirely on a row where `canOpen` is `false`. A read-only
+  caller must never receive the launch host for a portal they cannot open.
+  Still gated identically to `identityMode`/`canManage`/`canOpen` — absent
+  altogether when the flag is OFF.
+
+### Changed — `GET /api/v1/admin/portals` authorization (flag ON only)
+- The blanket Permit platform-admin (`requireRole(['admin'])`) gate is
+  replaced by a per-portal `read`-vs-`manage` check on each portal's owning
+  organization when `fuzefront.platform.portals-directory` is ON. A caller
+  with `read` (not `manage`) now gets 200 with read-only rows instead of a
+  hard 403; a caller with `read` authority over NONE of the matching
+  portals still gets 403 `FORBIDDEN` (unchanged no-access banner). A portal
+  the caller cannot `read` is never returned. When the flag is OFF, this
+  route's authorization is byte-identical to 1.2.0 (admin-role gate,
+  non-admin ⇒ 403 regardless of any Permit `read`/`manage` grant).
+
+## 1.2.0 — 2026-08-11 (Portals Directory, backend slice S1)
+
+Additive only — no existing field/response shape changes.
+
+### Added — `IdentityMode` schema
+- `[soft, hard]`. `soft` — shares the root FuzeFront Authentik directory (the
+  default). `hard` — owns a dedicated Authentik instance (its own directory,
+  DB, ingress host, blueprint set; e.g. MendysRobotics).
+
+### Added — `Portal.identityMode` / `Portal.launchUrl` (both OPTIONAL)
+- `identityMode`: the portal's `IdentityMode`.
+- `launchUrl`: `https://<primary domain>`, or the platform-owned default
+  subdomain (`https://<slug>.fuzefront.com`) when the portal has no primary
+  `portal_domains` row yet.
+- Currently populated ONLY by `GET /api/v1/admin/portals` (the master-admin
+  fleet list), gated behind the new release flag
+  `fuzefront.platform.portals-directory` (default OFF — when OFF, both
+  fields are omitted, byte-identical to the pre-1.2.0 response). Every other
+  `Portal`-returning endpoint (`getPortal`, `createPortal`, `updatePortal`,
+  `getCurrentPortal`) does not populate them yet.
+- Backed by `backend/src/migrations/023_portals_identity_mode.ts`
+  (`portals.identity_mode`, default `soft`).
+
 ## 1.1.0 — 2026-07-28
 
 Aligns the domain-status vocabulary with FuzeInfra's shipped Custom Hostname API

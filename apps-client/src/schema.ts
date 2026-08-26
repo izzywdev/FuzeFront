@@ -231,8 +231,15 @@ export interface components {
         Integration: {
             type: components["schemas"]["IntegrationType"];
             /**
-             * Format: uri
-             * @description FULL Module-Federation remote entry URL, e.g. `https://clock.example.com/remoteEntry.js`. Required when `type = module-federation`. This freezes the legacy base-vs-entry ambiguity: the value is the complete entry URL, NOT a base.
+             * Format: uri-reference
+             * @description FULL Module-Federation remote entry — the complete entry, NOT a base (this freezes the legacy base-vs-entry ambiguity). Required when `type = module-federation`.
+             *
+             *     Two accepted shapes:
+             *
+             *     * **Same-origin absolute path** (PREFERRED for apps deployed in the same cluster as the host), e.g. `/apps/fuzequality/assets/remoteEntry.js`. The browser resolves it against the host shell's origin and the host ingress proxies `/apps/<slug>/*` to the app's in-cluster Service, so the asset is served without a second public/CDN round-trip. Host-agnostic: the same manifest works on the prod host, a tenant wildcard host, and localhost.
+             *     * **Absolute `http(s)` URL**, e.g. `https://clock.example.com/remoteEntry.js`, for remotes hosted outside the cluster.
+             *
+             *     Protocol-relative values (`//host/x.js`) are REJECTED: a browser treats them as cross-origin, defeating the purpose of the same-origin shape.
              */
             remoteEntry?: string;
             /** @description MF remote scope/name. Required for module-federation. */
@@ -240,8 +247,8 @@ export interface components {
             /** @description Exposed module path, e.g. `./ClockApp`. Required for module-federation. */
             module?: string;
             /**
-             * Format: uri
-             * @description Navigable URL for `iframe` and `standalone`/`spa` integrations.
+             * Format: uri-reference
+             * @description Navigable URL for `iframe` and `standalone`/`spa` integrations. Accepts the same two shapes as `remoteEntry`: a same-origin absolute path such as `/apps/fuzesocial/` (preferred for in-cluster apps — the host ingress proxies it, so the iframe does not re-enter the public edge) or an absolute `http(s)` URL for externally hosted apps.
              */
             url?: string;
         };

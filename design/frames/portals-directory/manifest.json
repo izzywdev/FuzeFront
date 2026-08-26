@@ -1,0 +1,133 @@
+{
+  "name": "Portals directory — approval frames",
+  "feature": "portals-directory",
+  "description": "Contract-freeze UX artifacts for the Portals Directory: a left-menu directory in the FuzeFront shell where a master-admin sees the portals they can manage and OPENS a chosen portal in a NEW browser tab at that portal's own host URL (launchUrl). Management continues on that host under the existing per-host tenant routing — there is deliberately NO in-app portal switcher and no context switch. Each portal carries an identity tier badge: soft (shares the root Authentik) or hard (its own Authentik instance, e.g. Mendys Robotics). Approving the flow approves its visual + interaction model AND its component/contract build inventory before any UI is written. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks. PortalsDirectory is a shell page in frontend/src — NOT a new npm package. States are contract: loading, empty, error+retry, suspended (no launch), and the fail-closed permission-denied / read-only case (no manage authority => zero launch affordances).",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "frontend/src/pages/PortalsDirectory.tsx",
+      "frontend/src/components/portalsDirectory/**"
+    ]
+  },
+  "entry": "index.html",
+  "plan": "docs/planning/design-first-ui-pipeline.md",
+  "contract": {
+    "openapi": "services/portal-service/openapi.yaml",
+    "client": "@fuzefront/portal-client",
+    "schemas": [
+      "components.schemas.Portal",
+      "components.schemas.PortalPage"
+    ],
+    "endpoints": [
+      "GET /api/v1/admin/portals"
+    ],
+    "component": "frontend/src → PortalsDirectory",
+    "featureFlag": "fuzefront.platform.portals-directory"
+  },
+  "dataSource": {
+    "route": "GET /api/v1/admin/portals",
+    "backend": "backend/src/routes/adminPortals.ts (createAdminPortalRouter / AdminPortalStore.list)",
+    "real": true,
+    "s1Extension": "adminPortals list rows extended to return identity_mode ('soft' | 'hard') and launchUrl (absolute URL of the portal's own host — its primary custom domain, or the root host /p/{slug} path route when it has no custom domain). The client renders these directly: identity_mode -> tier badge, launchUrl -> the 'Open portal' anchor href. The client never composes a host from client-held data.",
+    "scoping": "Rows are Permit-ReBAC-scoped to portals the caller may manage. A caller with no manage authority receives the permission-denied / read-only projection (no launch affordances). tenant/actor is resolved from the session, never accepted from the client."
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "portals-directory",
+        "orchestrator": "PortalsDirectory",
+        "route": "/portals",
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-08-11T12:45:59Z",
+        "contract": {
+          "client": "@fuzefront/portal-client",
+          "status": "real",
+          "openapi": "services/portal-service/openapi.yaml",
+          "endpoints": [
+            "GET /api/v1/admin/portals"
+          ],
+          "component": "frontend/src → PortalsDirectory",
+          "featureFlag": "fuzefront.platform.portals-directory"
+        },
+        "frames": [
+          "01-portals-list",
+          "02-portals-list-states"
+        ]
+      }
+    ],
+    "components": [
+      "PortalsDirectoryShell",
+      "PortalsList",
+      "PortalRow",
+      "PortalCard",
+      "PortalTierBadge",
+      "PortalStatusBadge",
+      "OpenPortalLink",
+      "PermissionDeniedNotice",
+      "PortalsListLoading",
+      "PortalsListEmpty",
+      "PortalsListError"
+    ],
+    "packages": [],
+    "packagesNote": "No new npm package. PortalsDirectory is a shell page under frontend/src, mounted at /portals in the FuzeFront host shell. Data is fetched via the existing @fuzefront/portal-client (adminPortals list).",
+    "dsPrimitivesNeeded": [
+      "StatusPill — semantic lifecycle pill (active/degraded/suspended); reused, not in @fuzefront/design-system today",
+      "Badge — the soft/hard identity-tier badge",
+      "DataList / DataTable — the scannable directory list",
+      "SearchField — filter by name / domain",
+      "ExternalLink — new-tab anchor carrying the ↗ affordance and rel=\"noopener noreferrer\""
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-portals-list",
+      "file": "01-portals-list.html",
+      "label": "(a) Portals",
+      "route": "/portals",
+      "flow": "portals-directory",
+      "summary": "The master-admin's directory of manageable portals. Each row shows name, primary domain, lifecycle status pill, and a soft/hard identity-tier badge, with a searchable/scannable list and an 'Open portal ↗' action that opens the portal's own host URL in a NEW browser tab.",
+      "acceptanceNotes": "Rows render from GET /api/v1/admin/portals (cursor-paginated; 'Load more' advances the cursor). The S1 extension supplies identity_mode -> the tier badge (soft = shares root Authentik; hard = own Authentik instance) and launchUrl -> the launch anchor href. 'Open portal' is a plain <a target=\"_blank\" rel=\"noopener noreferrer\" href={launchUrl}> to the portal's OWN host — never an in-app route, never window.open, never a same-tab navigation that unmounts the shell. launchUrl is server-authoritative (primary custom domain, or root host /p/{slug} path route when none); the client never composes a host. A suspended portal renders no enabled launch affordance. The list is Permit-ReBAC-scoped to portals the caller may manage. Flag fuzefront.platform.portals-directory (default OFF).",
+      "testHooks": [
+        "[data-frame='01-portals-list']",
+        "[data-panel='portals-directory']",
+        "[data-list='portals']",
+        "[data-input='search']",
+        "[data-portal='prt_northwind']",
+        "[data-portal='prt_mendys']",
+        "[data-tier='soft']",
+        "[data-tier='hard']",
+        "[data-portal-status='active']",
+        "[data-portal-status='suspended']",
+        "[data-action='open-portal']",
+        "[data-domain='primary']",
+        "[data-action='load-more']"
+      ]
+    },
+    {
+      "id": "02-portals-list-states",
+      "file": "02-portals-list-states.html",
+      "label": "(b) States",
+      "route": "/portals",
+      "flow": "portals-directory",
+      "summary": "States are contract: loading skeleton, fresh empty (no portals managed yet), list error with retry, the explicit new-tab launch affordance, a suspended row with no launch, and the fail-closed permission-denied / read-only case where a caller without manage authority sees zero launch affordances.",
+      "acceptanceNotes": "d1 aria-busy skeleton while GET /api/v1/admin/portals is in flight. d2 empty is a REAL non-error case (a caller can legitimately manage zero portals). d3 renders [data-action='retry'] and never a sign-in redirect — the session is intact. d4 the launch action is unmistakably external (new tab + hint). d5 a suspended portal exposes no enabled launch affordance. d6 is the fail-closed contract: a caller without manage authority gets a 403 (data-http='403', data-error-code='FORBIDDEN') shown IN PLACE, and NO launch anchor or button is emitted for any row — the launch column is absent, not merely disabled. Only a 401 re-authenticates.",
+      "testHooks": [
+        "[data-frame='02-portals-list-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='launch-hint']",
+        "[data-state='suspended']",
+        "[data-state='forbidden']",
+        "[data-panel='permission-denied']",
+        "[data-http='403']",
+        "[data-error-code='FORBIDDEN']",
+        "[data-readonly='true']",
+        "[data-action-absent='open-portal']"
+      ]
+    }
+  ],
+  "stamp": "0ead155c2a1e8381c2480598eabfad0a11c50a5cb7506b8e06dacabf8a77431d"
+}
