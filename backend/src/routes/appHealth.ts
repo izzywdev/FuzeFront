@@ -87,23 +87,27 @@ async function fetchWithTimeout(url: string, accept: string) {
 }
 
 /**
- * The origin a same-origin `remote_url` resolves against. Configurable because
- * the API pod may not be able to reach its own public hostname from inside the
- * cluster; when it cannot, the probe reports unhealthy with the network error
- * named, rather than quietly reporting healthy the way the old one did.
+ * The origin a same-origin `remote_url` resolves against.
+ *
+ * CONFIGURATION ONLY — deliberately NOT derived from the request. An earlier
+ * revision fell back to `x-forwarded-host` / `x-forwarded-proto` / `Host` when
+ * FEDERATION_PROBE_ORIGIN was unset. Every one of those is caller-controlled:
+ * anyone able to reach the API could set `Host:` and choose which origin this
+ * server probes, making the health of every registered app — and therefore what
+ * the portal displays — an attacker-selected value. A probe whose target the
+ * caller picks is not a health check.
+ *
+ * So an unset FEDERATION_PROBE_ORIGIN returns '' and the caller FAILS CLOSED:
+ * see checkAppHealth, which reports unhealthy naming the missing configuration
+ * rather than guessing an origin or, worse, reporting healthy. That is the same
+ * rule this whole module exists to enforce — not knowing must never render as
+ * "fine".
+ *
+ * `req` is retained for signature stability with the route, and intentionally
+ * unread.
  */
-export function probeOrigin(req: any): string {
-  const configured = (process.env.FEDERATION_PROBE_ORIGIN || '').trim()
-  if (configured) return configured.replace(/\/+$/, '')
-  const fwdProto = String(req?.headers?.['x-forwarded-proto'] || '')
-    .split(',')[0]
-    .trim()
-  const fwdHost = String(req?.headers?.['x-forwarded-host'] || '')
-    .split(',')[0]
-    .trim()
-  const proto = fwdProto || req?.protocol || 'https'
-  const host = fwdHost || req?.headers?.host || ''
-  return `${proto}://${host}`.replace(/\/+$/, '')
+export function probeOrigin(_req?: any): string {
+  return (process.env.FEDERATION_PROBE_ORIGIN || '').trim().replace(/\/+$/, '')
 }
 
 export async function checkAppHealth(
@@ -121,6 +125,24 @@ export async function checkAppHealth(
         httpStatus: null,
         reason:
           'registered as module-federation but has no remote_url — there is nothing for the host to import',
+      }
+    }
+    // Fail closed on a same-origin entry with no configured origin. Guessing one
+    // from request headers is what this deliberately does not do (see
+    // probeOrigin); guessing wrong would report a 404 for a path the app never
+    // claimed, and trusting the header would let the caller choose the target.
+    const entryIsAbsolute = /^https?:\/\//i.test(raw)
+    if (!entryIsAbsolute && !origin) {
+      return {
+        isHealthy: false,
+        httpStatus: null,
+        reason:
+          `remote_url '${raw}' is same-origin, but FEDERATION_PROBE_ORIGIN is not set, ` +
+          `so there is no trustworthy origin to resolve it against. Set it to the ` +
+          `portal's public origin (e.g. https://app.fuzefront.com). It is not derived ` +
+          `from the Host / x-forwarded-host header on purpose: those are ` +
+          `caller-controlled, and trusting them would make every app's reported health ` +
+          `selectable by whoever sends the request.`,
       }
     }
     try {

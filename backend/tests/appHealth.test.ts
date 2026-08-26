@@ -169,19 +169,65 @@ describe('probeOrigin', () => {
     else process.env.FEDERATION_PROBE_ORIGIN = prev
   })
 
-  it('honours x-forwarded-proto/host from the ingress', () => {
+  it('IGNORES caller-controlled headers and returns empty when unconfigured', () => {
+    // The security property under test. probeOrigin used to fall back to
+    // x-forwarded-host / Host, which let whoever sent the request choose the
+    // origin this server probes — and therefore choose the health every app
+    // reports. Asserting the headers are ignored is the only way this stays
+    // true: the previous implementation passed a test that asserted the
+    // opposite, so a "does it work" test would have agreed with the bug.
     const prev = process.env.FEDERATION_PROBE_ORIGIN
     delete process.env.FEDERATION_PROBE_ORIGIN
     expect(
       probeOrigin({
         protocol: 'http',
         headers: {
-          host: 'internal:3001',
-          'x-forwarded-proto': 'https, http',
-          'x-forwarded-host': 'app.fuzefront.com',
+          host: 'attacker.example.test',
+          'x-forwarded-proto': 'https',
+          'x-forwarded-host': 'attacker.example.test',
         },
       })
-    ).toBe('https://app.fuzefront.com')
+    ).toBe('')
     if (prev !== undefined) process.env.FEDERATION_PROBE_ORIGIN = prev
+  })
+
+  it('strips a trailing slash from the configured origin', () => {
+    const prev = process.env.FEDERATION_PROBE_ORIGIN
+    process.env.FEDERATION_PROBE_ORIGIN = 'https://app.fuzefront.com//'
+    expect(probeOrigin({})).toBe('https://app.fuzefront.com')
+    if (prev === undefined) delete process.env.FEDERATION_PROBE_ORIGIN
+    else process.env.FEDERATION_PROBE_ORIGIN = prev
+  })
+})
+
+describe('fail-closed when the origin is unconfigured', () => {
+  it('reports a same-origin remote_url as UNHEALTHY, naming the missing config', async () => {
+    const seen = stubFetch({ status: 200, contentType: 'application/javascript' })
+    const r = await checkAppHealth(mf('/apps/demo/remoteEntry.js'), '')
+    expect(r.isHealthy).toBe(false)
+    expect(r.httpStatus).toBeNull()
+    expect(r.reason).toMatch(/FEDERATION_PROBE_ORIGIN is not set/i)
+    // and it must not have probed anything at all
+    expect(seen).toHaveLength(0)
+  })
+
+  it('still probes an ABSOLUTE remote_url with no configured origin', async () => {
+    // An absolute entry names its own host, so no origin is needed and there is
+    // nothing for a header to influence. Failing closed here would be
+    // over-correction, turning a working check off.
+    const seen = stubFetch({ status: 200, contentType: 'application/javascript' })
+    const r = await checkAppHealth(
+      mf('https://keys.example.test/apps/demo/remoteEntry.js'),
+      ''
+    )
+    expect(r.isHealthy).toBe(true)
+    expect(seen[0]).toBe('https://keys.example.test/apps/demo/remoteEntry.js')
+  })
+
+  it('does not affect non-federated apps, which probe their own absolute url', async () => {
+    const seen = stubFetch({ status: 200 })
+    const r = await checkAppHealth(iframe('https://demo.example.test'), '')
+    expect(r.isHealthy).toBe(true)
+    expect(seen[0]).toBe('https://demo.example.test')
   })
 })
