@@ -1,8 +1,26 @@
 # Root "app of apps": apply this once after bootstrap and Argo manages the rest.
 #   kubectl apply -f deploy/argocd/app-of-apps.yaml
-# NOTE: the `fuzefront` AppProject is owned & provisioned by FuzeInfra (FuzeInfra#99).
-# Do NOT apply a fuzefront AppProject from this repo — re-applying a stale copy would
-# re-widen prod cross-namespace access to fuzeinfra (issue #502).
+# NOTE: the `fuzefront` AppProject now lives in THIS repo, at
+# deploy/argocd/project.yaml — decentralised from FuzeInfra along with the rest
+# of the family. FuzeInfra's copy (argocd/projects/fuzefront.yaml) is pending
+# deletion, tracked in FuzeInfra#625; until that lands both exist and
+# registration is last-write-wins.
+#
+# This header previously said the opposite — "owned & provisioned by FuzeInfra
+# (FuzeInfra#99). Do NOT apply a fuzefront AppProject from this repo" — which
+# now reads as an instruction to refuse to apply, or to delete, the very file
+# that carries the isolation boundary. What FuzeInfra#99 established is the
+# RULE, not the file's location: `fuzeinfra` is never a destination for a
+# consumer project. That rule travels with deploy/argocd/project.yaml and is
+# restated at length in its header. Issue #502 was a stale, WIDER copy being
+# re-applied; the in-repo copy is strictly narrower than FuzeInfra's
+# (clusterResourceWhitelist is Namespace-only instead of `*/*`), so applying it
+# cannot re-widen anything.
+#
+# `project: fuzefront` below — and on every Application under
+# deploy/argocd/applications/ — is what makes that AppProject enforce anything
+# at all. An Application left on `project: default` resolves against the
+# permissive cluster-wide project and never consults the narrow one.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
