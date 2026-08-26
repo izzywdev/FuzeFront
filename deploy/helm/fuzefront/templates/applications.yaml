@@ -109,8 +109,13 @@ spec:
                   optional: true
             {{- end }}
           readinessProbe:
+            # /ready, not /health: readiness must reflect dependency state so a
+            # degraded backend leaves the Service endpoints AND Argo's built-in
+            # Deployment assessment reports Degraded. /health stays 200-always and
+            # backs liveness below — a liveness probe that fails on a downstream
+            # dependency turns a database blip into a restart loop.
             httpGet:
-              path: /health
+              path: /ready
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10

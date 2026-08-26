@@ -6,6 +6,10 @@ import { requireAppPermission } from '../middleware/permissions'
 import { App } from '../types/shared'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+// Health probing lives in its own module so it can be unit-tested without a
+// database — see appHealth.ts for why a 404 is no longer 'healthy'.
+import { checkAppHealth, probeOrigin } from './appHealth'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const router = express.Router()
 
@@ -172,47 +176,52 @@ async function getMemberOrgIds(userId: string): Promise<string[]> {
 
 /**
  * Apply org/visibility scoping to an apps query for the given user.
+ *
+ * MUST agree with the production rule in
+ * backend/applications/src/app-registry/service.ts `list()` (~line 215-270)
+ * — this route is bypassed by the ingress in a real K8s deployment (see the
+ * NOTE above the `/api/apps` mount in ../index.ts: the ingress routes
+ * `/api/apps` to fuzefront-applications, not this service), but it IS what
+ * actually serves `/api/apps` locally (docker-compose has no such ingress
+ * split) and is covered by this file's own integration tests, so it is not
+ * dead code — just not what a real deploy's traffic reaches. Before this fix
+ * the two disagreed, in both directions:
+ *   - production had an `organization_id IS NULL` branch this function
+ *     lacked (org-less rows were visible in production, hidden here) — REMOVED
+ *     from both as of the migration below, per owner ruling 2026-08-25
+ *     ("there should be no app without orgid ... fuzefront itself [is] the
+ *     orgid for our own apps"): `organization_id` is NOT NULL on `apps` now
+ *     (see 026_apps_organization_id_not_null.ts, and its applications-service
+ *     sibling 011_apps_organization_id_not_null.ts, which backfill every
+ *     existing org-less row to the platform root org before either
+ *     constrains the column), so there is no such row left to special-case.
+ *   - this function's org-membership branch didn't check `visibility` at
+ *     all, so any row sharing an organization_id with the caller was shown
+ *     regardless of its declared visibility, where production requires
+ *     visibility IN ('organization','private') on that branch. Fixed here
+ *     to match.
+ *
  * The caller may see an app when ANY of:
- *   - it belongs to an org they're an active member of, OR
- *   - its visibility is 'public' or 'marketplace'.
- * Private/organization apps of orgs they don't belong to are excluded (BOLA).
+ *   - its visibility is 'public'/'marketplace', OR
+ *   - its visibility is 'organization'/'private' AND its organization_id is
+ *     one the caller is an active member of.
+ * An organization/private app of an org the caller does NOT belong to is
+ * excluded either way (BOLA). Does not implement the app-registry's
+ * platform-admin bypass or scoped-portal gate (portal_apps) — this table
+ * predates that multi-tenant portal concept; only the core visibility/org
+ * rule is kept in parity here.
  */
 function scopeAppsQuery(query: any, memberOrgIds: string[]) {
   return query.where(function (this: any) {
     this.whereIn('apps.visibility', ['public', 'marketplace'])
     if (memberOrgIds.length > 0) {
-      this.orWhereIn('apps.organization_id', memberOrgIds)
+      this.orWhere((ownOrg: any) => {
+        ownOrg
+          .whereIn('apps.visibility', ['organization', 'private'])
+          .whereIn('apps.organization_id', memberOrgIds)
+      })
     }
   })
-}
-
-// Health check function for individual apps
-async function checkAppHealth(app: AppRow): Promise<boolean> {
-  try {
-    const healthUrl = `${app.url}` // Check root URL instead of /healthy
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
-
-    const response = await fetch(healthUrl, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: {
-        Accept: 'text/html,application/json',
-      },
-    })
-
-    clearTimeout(timeoutId)
-    // Accept any response (including 404) as long as the server responds
-    return response.status < 500 // Consider 2xx, 3xx, 4xx as healthy, 5xx as unhealthy
-  } catch (error: unknown) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown error'
-    console.log(
-      `Health check failed for ${app.name} (${app.url}):`,
-      errorMessage
-    )
-    return false
-  }
 }
 
 // GET /api/apps/health - Check health of apps the caller is entitled to see
@@ -226,14 +235,24 @@ router.get('/health', authenticateToken, async (req: any, res) => {
       memberOrgIds
     ).orderBy('name')
 
+    // Resolve same-origin remote entries against the origin this request
+    // arrived on, the same way the browser does.
+    const origin = probeOrigin(req)
+
     const healthChecks = await Promise.all(
       apps.map(async (app: AppRow) => {
-        const isHealthy = await checkAppHealth(app)
+        const result = await checkAppHealth(app, origin)
         return {
           id: app.id,
           name: app.name,
           url: app.url,
-          isHealthy,
+          isHealthy: result.isHealthy,
+          // `reason` and `httpStatus` are additive. An unhealthy app used to be
+          // an unexplained false; naming WHY is what makes 404 (no route) vs 503
+          // (route up, backend down) vs 200-with-HTML actionable, and those three
+          // have different owners.
+          httpStatus: result.httpStatus,
+          reason: result.reason,
           lastChecked: new Date().toISOString(),
         }
       })
@@ -295,17 +314,28 @@ router.get('/', authenticateToken, async (req: any, res) => {
       memberOrgIds
     ).orderBy('name')
 
-    // Get health status for all apps
+    // Get health status for all apps.
+    //
+    // NOTE for whoever touches `healthyOnly` next: nothing in frontend/ or sdk/
+    // passes it today (verified), so the portal lists apps regardless of health
+    // and this correctness fix cannot shrink what users see. If a caller ever
+    // does start passing it, be aware that it now means "actually serving a
+    // module" rather than "the server answered with anything at all", and with
+    // production currently at 0 of 16 remotes serving, it would filter the list
+    // to nothing. That would be the check telling the truth, not a regression —
+    // but it should be a deliberate choice, not a surprise.
+    const origin = probeOrigin(req)
     const appsWithHealth = await Promise.all(
       apps.map(async (app: AppRow) => {
-        const isHealthy = await checkAppHealth(app)
+        const health = await checkAppHealth(app, origin)
         return {
           id: app.id,
           name: app.name,
           url: app.url,
           iconUrl: app.icon_url,
           isActive: Boolean(app.is_active),
-          isHealthy: isHealthy,
+          isHealthy: health.isHealthy,
+          healthReason: health.reason,
           integrationType: app.integration_type as
             | 'module-federation'
             | 'iframe'
@@ -788,7 +818,14 @@ router.post(
         scope,
         module,
         description,
-        organization_id: organizationId || null,
+        // organizationId || null WAS the bug this comment used to only
+        // half-describe: a caller whose verified context carries no org
+        // (organizationId undefined) got an explicit NULL row — the exact
+        // org-less state the NOT NULL constraint on this column (see
+        // scopeAppsQuery's doc comment above and
+        // 026_apps_organization_id_not_null.ts) now forbids. Fall back to
+        // the platform root org instead, same as the column's own DEFAULT.
+        organization_id: organizationId || ROOT_ORG_ID,
         visibility: 'private',
       })
 

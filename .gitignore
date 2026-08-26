@@ -105,3 +105,15 @@ _site_test/
 
 # Claude Code personal/session settings (not committed)
 .claude/settings.local.json
+
+# Local dev/test database file. `backend/scripts/init-db.js` (npm run db:init)
+# writes this whenever the run is not pointed at Postgres, so anyone who
+# reproduces a CI failure locally generates one. A database binary must never
+# be committed: it churns on every run and can carry real data.
+backend/database.sqlite
+
+# Jest coverage output. `npm run test:coverage` (backend-tests.yml's "Generate
+# test coverage" step, and anyone reproducing it locally) writes ~6.6M of
+# generated HTML + lcov per workspace. CI ships it to Codecov from the runner;
+# it is never a source artifact. Unanchored so it matches any workspace.
+coverage/

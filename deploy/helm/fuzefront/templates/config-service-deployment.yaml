@@ -33,15 +33,30 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.configService.port | quote }}
-            - name: DATABASE_URL
+            # DB connection follows billing-service exactly (templates/
+            # billing-service.yaml): only the PASSWORD is sealed, and the URL is
+            # composed here. Sealing a whole connection string would bake the
+            # host, port, database and role name into ciphertext that nobody can
+            # read or review, and would force a reseal to change any of them.
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: config-service-secrets
-                  key: DATABASE_URL
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: {{ .Values.configService.dbPasswordKey }}
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.configService.dbUser }}:$(DB_PASSWORD)@{{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.database.name }}"
+            # Read the SHARED platform JWT secret from the Secret that already
+            # holds it, rather than sealing a second copy. This is the
+            # alternative the config-service-secrets template itself named
+            # ("merge this key into fuzefront-secrets ... and mount from that
+            # Secret instead"), and it is the correct one: a value that must be
+            # IDENTICAL in two places should be stored once. Two sealed copies
+            # drift silently the moment either is rotated, and the failure is a
+            # token that verifies in one service and not the other.
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: config-service-secrets
+                  name: {{ include "fuzefront.secretName" . }}
                   key: JWT_SECRET
             - name: SECURITY_SERVICE_URL
               # fuzefront-security is the in-cluster Service name for security-service
@@ -51,8 +66,11 @@ spec:
               # (src/middleware/authz.ts) instead of an embedded Permit.io SDK.
               value: "http://fuzefront-security:{{ .Values.securityService.port }}"
           readinessProbe:
+            # /health/ready pings the DB; /health (liveness, below) does not.
+            # Splitting them means a database outage takes this pod OUT OF THE
+            # SERVICE without restarting an otherwise-healthy process.
             httpGet:
-              path: /health
+              path: /health/ready
               port: {{ .Values.configService.port }}
             initialDelaySeconds: 10
             periodSeconds: 10

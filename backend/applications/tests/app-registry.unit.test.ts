@@ -74,8 +74,15 @@ describe('app-registry BOLA visibility (canRead)', () => {
     expect(canRead(appWith({ visibility: 'private', organizationId: 'org-z' }), platformAdmin)).toBe(true)
   })
 
-  it('platform-global (org-less) apps are readable', () => {
-    expect(canRead(appWith({ visibility: 'private', organizationId: null }), memberOfOrgA)).toBe(true)
+  // Owner ruling 2026-08-25: "there should be no app without orgid ...
+  // fuzefront itself [is] the orgid for our own apps" — `organization_id`
+  // is NOT NULL on `apps` (migration 011_apps_organization_id_not_null.ts),
+  // so this state should be unreachable. It used to be treated as "readable
+  // by anyone" (a first-party app landed here because nothing ever set its
+  // org, not by design); canRead now fails CLOSED for it instead, so a
+  // future regression on the DB constraint denies rather than leaks.
+  it('an org-less app (should be unreachable — see the NOT NULL constraint) is denied, not universally readable', () => {
+    expect(canRead(appWith({ visibility: 'private', organizationId: null }), memberOfOrgA)).toBe(false)
   })
 })
 
@@ -201,5 +208,80 @@ describe('app-registry manifest validation', () => {
     const r = heartbeatRequestSchema.safeParse({})
     expect(r.success).toBe(true)
     if (r.success) expect(r.data.status).toBe('online')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Contract with @fuzefront/onboarding-kit.
+//
+// These two schemas describe the SAME object from opposite ends: the kit's
+// manifest.schema.json is what consumers author against, this Zod schema is
+// what the registry accepts. They drifted, and because this schema is
+// .strict(), the drift was fatal rather than cosmetic -- the kit added a
+// multi-valued `modes` alongside `mode`, its templates emitted both, and every
+// manifest built from them was rejected:
+//
+//   HTTP 400 {"error":"validation_error","fields":[{"path":"manifest",
+//     "message":"Unrecognized key(s) in object: 'modes'"}]}
+//
+// Seen live in fuzefinance: the register init container POSTed, got the 400,
+// and CrashLoopBackOff'd, so the pod never went Ready and the product never
+// reached the portal. Nothing upstream was wrong.
+//
+// Parsing the kit's OWN template through this schema is the check that would
+// have caught it, and is the point of these tests: it fails the moment the two
+// definitions disagree again, instead of waiting for a pod to crash in prod.
+describe('onboarding-kit manifest template', () => {
+  const templatePath = require('path').resolve(
+    __dirname,
+    '../../../packages/onboarding-kit/templates/manifest.json'
+  )
+
+  it('the kit template exists (guards against a silent path change)', () => {
+    // Without this, a moved template turns the test below into a vacuous pass.
+    expect(require('fs').existsSync(templatePath)).toBe(true)
+  })
+
+  it('parses cleanly through the registry schema', () => {
+    const template = JSON.parse(require('fs').readFileSync(templatePath, 'utf8'))
+    const result = appManifestSchema.safeParse(template)
+    if (!result.success) {
+      // Same explicit cast as the validation test above, and for the same reason
+      // documented there: this service compiles with `strict: false`, so tsc will
+      // not discriminate zod's SafeParseSuccess | SafeParseError union on its
+      // `success` literal and rejects `.error` even inside this guard (TS2339).
+      // The runtime guard is what makes it safe; the cast just tells tsc what the
+      // guard already proved.
+      //
+      // Reporting the issues rather than asserting a bare boolean is the point:
+      // a failure here must say WHICH key drifted, or the next person gets
+      // "expected true, received false" and has to rediscover all of this.
+      const issues = (result as z.SafeParseError<unknown>).error.issues
+      throw new Error(
+        'onboarding-kit template no longer validates against the registry schema:\n' +
+          JSON.stringify(issues, null, 2)
+      )
+    }
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts `modes` alongside `mode`, which is what consumers actually send', () => {
+    const result = appManifestSchema.safeParse({
+      ...baseManifest,
+      modes: ['portal', 'standalone'],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('still rejects a genuinely unknown key — .strict() is not weakened', () => {
+    // The fix must not become "accept anything". This is the half that proves
+    // the schema is still closed.
+    const result = appManifestSchema.safeParse({ ...baseManifest, notAThing: true })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects an empty modes array and an invalid mode value', () => {
+    expect(appManifestSchema.safeParse({ ...baseManifest, modes: [] }).success).toBe(false)
+    expect(appManifestSchema.safeParse({ ...baseManifest, modes: ['nope'] }).success).toBe(false)
   })
 })

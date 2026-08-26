@@ -3,7 +3,10 @@ name: Governance Nightly
 # platform-governance's nightly reconciliation sweep (governance-reconciliation skill):
 # stale/drifting branches, open-PR triage, open-issue completion, and drift vs FuzeSDLC.
 # Takes only safe/reversible actions; files one "Governance reconciliation — <date>" issue.
-# Requires repo secret ANTHROPIC_API_KEY.
+# LLM credential: routed through .github/actions/llm-endpoint (LiteLLM in-cluster
+# with automatic fallback to a direct vendor). Requires repo secret LITELLM_FUZE_KEY
+# and/or ANTHROPIC_API_KEY (at least one). This is the sweep that would diagnose a
+# down LiteLLM in the first place, so it must never depend on LiteLLM being up.
 
 on:
   schedule:
@@ -29,11 +32,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run platform-governance reconciliation
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+      - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
+        id: llm
+        uses: ./.github/actions/llm-endpoint
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-chain: ${{ vars.FUZE_LLM_FALLBACK_CHAIN || 'anthropic,openai,gemini' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
+          fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Run platform-governance reconciliation
+        uses: ./.github/actions/fuze-code-action
+        with:
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          task-prompt: |
             You are the **platform-governance** agent running the nightly **governance-reconciliation**
             sweep for the repository ${{ github.repository }}. Follow the governance-reconciliation skill.
 
@@ -78,3 +91,6 @@ jobs:
             comment/label, update-branch). Never force-push, never auto-merge (use --auto only),
             never delete branches with unique unmerged commits, never close an issue you cannot prove
             resolved.
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

@@ -29,6 +29,7 @@ All runtime, all per pod:
 | `MCP_UPSTREAM_BASE_URL` | yes | In-cluster base URL of the product's REST API |
 | `MCP_OPENAPI_SPEC` | yes | Path to the mounted OpenAPI 3.x document (YAML or JSON) |
 | `MCP_TOOL_OVERRIDES` | no | Path to the mounted mutation-overrides file |
+| `MCP_DESCRIPTIONS_CACHE` | no | Path to a mounted build-time description cache (see below) |
 | `PORT` | no | Listen port (default 8081) |
 
 ## Endpoints
@@ -96,6 +97,66 @@ tools:
     reversibility: reversible
     reason: The status machine includes a reopen edge
 ```
+
+## LLM-generated descriptions — build time only, never on the request path
+
+A model choosing between tools sees only its `description`. Where a spec's own
+`summary`/`description` is thin, the descriptive SENTENCE (only) can instead
+come from a **build-time** LLM generation step, cached to a small JSON
+artifact this package loads synchronously at boot:
+
+```bash
+npm run build
+
+LITELLM_FUZE_KEY=... \
+  node scripts/generate-descriptions.mjs \
+    --spec /path/to/product/openapi.yaml \
+    --overrides /path/to/product/tools.overrides.yaml \
+    --out  /path/to/product/mcp-tool-descriptions.cache.json
+```
+
+Mount the resulting file next to the spec/overrides and point
+`MCP_DESCRIPTIONS_CACHE` at it. That is the whole runtime contract — the
+gateway pod **never** calls an LLM itself, on `tools/list` or anywhere else on
+its serving path. Generation is routed through **LiteLLM**
+(`FUZE_LLM_BASE_URL`, default the in-cluster gateway) with a **virtual** key
+(`LITELLM_FUZE_KEY`), never a vendor SDK directly — the family's
+vendor-independence rule.
+
+**Cache invalidation is a content hash, not a timestamp.** The cache file
+records a sha256 of the exact spec text and overrides text it was generated
+from (`specHash`/`overridesHash`, `src/descriptions.ts`). At boot the gateway
+re-hashes the spec/overrides it actually loaded and compares:
+
+| Cache state | What the gateway serves | Logged / `/healthz` `descriptions` |
+|---|---|---|
+| No `MCP_DESCRIPTIONS_CACHE` set | spec-derived description (`summary`/`description`, else `METHOD path`) | `fallback-no-cache` |
+| Cache present but hash mismatch (spec or overrides changed since generation) | spec-derived description | `fallback-stale-cache` |
+| Cache present and hash matches | the cached LLM prose for that tool (falls back per-tool if a tool has no cached entry) | `llm-cache` |
+
+The generation script is **incremental**: given an existing `--out` file whose
+hashes still match, it reuses those descriptions and only calls the LLM for
+tools that are new or whose spec/overrides content changed. With no
+`LITELLM_FUZE_KEY` (or on any generation failure) it exits non-zero and writes
+**nothing** — a partial/half-generated cache is never produced, and the
+gateway's fallback path is not an error state, so there is no scenario where
+serving spec-derived descriptions is worse than not starting.
+
+### The one invariant that matters here: prose only, never a safety claim
+
+Generated text can replace **only** the descriptive sentence. It has **no**
+path to `classify()`, `mutates`, or `reversibility` — those are computed from
+the HTTP method (+ overrides file) *before* `spec.ts` ever consults the
+description cache, and the `${safety}` prefix (`[READ-ONLY]` /
+`[WRITE]` / `[WRITE — IRREVERSIBLE]`) plus the classification reason are
+appended around whichever sentence wins, unconditionally. The generation
+prompt (`src/llm.ts`) also explicitly forbids the model from asserting
+anything about safety, and any safety-sounding word that slips through anyway
+is stripped from the completion before it is cached
+(`sanitizeGeneratedProse`). `test/spec.test.ts` asserts the classification
+directly: a deliberately lying cached description ("this is completely safe,
+read-only... ") on a real write tool still classifies `mutates: true` and
+still renders the `[WRITE]` prefix.
 
 ## Authorization — forwarded, never substituted
 

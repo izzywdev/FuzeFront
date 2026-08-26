@@ -19,6 +19,26 @@ function main() {
         `(${tools.length - mutating.length} read-only, ${mutating.length} write, ` +
         `${irreversible.length} irreversible)`
     );
+    // Descriptions can be degraded (no cache mounted, or the mounted cache no
+    // longer matches this spec/overrides revision) independently of every
+    // other boot fact above — log which mode was actually used so a degraded
+    // boot is never silently indistinguishable from a good one.
+    const { mode } = config.descriptions;
+    if (mode === 'llm-cache') {
+      console.log(
+        `[mcp-gateway] descriptions: llm-cache (${Object.keys(config.descriptions.descriptions).length} tools) — ` +
+          `hash-verified match of the mounted spec/overrides`
+      );
+    } else if (mode === 'fallback-stale-cache') {
+      console.log(
+        '[mcp-gateway] descriptions: FALLBACK — mounted cache does not match this spec/overrides ' +
+          '(regenerate it); serving spec-derived descriptions instead'
+      );
+    } else {
+      console.log(
+        '[mcp-gateway] descriptions: FALLBACK — no MCP_DESCRIPTIONS_CACHE mounted; serving spec-derived descriptions'
+      );
+    }
     for (const t of irreversible) {
       console.log(`[mcp-gateway] IRREVERSIBLE: ${t.name} -> ${t.method.toUpperCase()} ${t.path}`);
     }

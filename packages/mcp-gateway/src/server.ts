@@ -93,8 +93,10 @@ export function createMcpServer(config: GatewayConfig, tools: ToolDescriptor[], 
 
 export function createHttpServer(config: GatewayConfig) {
   // Built once at boot. A classification error here means the process exits
-  // before serving anything, which is the intended failure mode.
-  const tools = buildTools(config.spec, config.overrides);
+  // before serving anything, which is the intended failure mode. The
+  // (optional) description cache only ever supplies prose — see spec.ts /
+  // descriptions.ts for why it has no path to `classify()`.
+  const tools = buildTools(config.spec, config.overrides, config.descriptions.descriptions);
 
   const sessions = new Map<string, Session>();
   // The MCP SDK invokes tool handlers without the originating HTTP request, so
@@ -106,7 +108,17 @@ export function createHttpServer(config: GatewayConfig) {
 
     if (req.method === 'GET' && url.pathname === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', product: config.product, tools: tools.length }));
+      res.end(
+        JSON.stringify({
+          status: 'ok',
+          product: config.product,
+          tools: tools.length,
+          // Honest degrade signal: whether tool prose came from the build-time
+          // LLM cache or the mechanical spec-derived fallback, so a degraded
+          // boot is observable without grepping pod logs.
+          descriptions: config.descriptions.mode,
+        })
+      );
       return;
     }
 

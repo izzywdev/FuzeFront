@@ -128,31 +128,109 @@ export async function ensurePersonalOrg(
 
   try {
     await db.transaction(async trx => {
-      await trx('organizations').insert({
-        id: orgId,
-        name: 'Personal',
-        slug: baseSlug,
-        parent_id: null,
-        owner_id: userId,
-        type: 'personal',
-        settings: JSON.stringify({}),
-        metadata: JSON.stringify({ personal: true }),
-        is_active: true,
-        provisioning_state: 'pending',
-      })
-      await trx('organization_memberships').insert({
-        id: toUuid(mintId('membership')),
-        user_id: userId,
-        organization_id: orgId,
-        role: 'owner',
-        status: 'active',
-        joined_at: new Date(),
-        permissions: JSON.stringify({}),
-        metadata: JSON.stringify({}),
-      })
+      // ON CONFLICT DO NOTHING on the partial unique index keeps concurrent
+      // races from surfacing a 23505 error. The SELECT below then retrieves
+      // whichever caller actually created the row.
+      await trx('organizations')
+        .insert({
+          id: orgId,
+          name: 'Personal',
+          slug: baseSlug,
+          parent_id: null,
+          owner_id: userId,
+          type: 'personal',
+          settings: JSON.stringify({}),
+          metadata: JSON.stringify({ personal: true }),
+          is_active: true,
+          provisioning_state: 'pending',
+        })
+        .onConflict(trx.raw("(owner_id) WHERE type = 'personal'"))
+        .ignore()
+
+      const actualOrg = await trx('organizations')
+        .where({ owner_id: userId, type: 'personal' })
+        .first()
+
+      if (!actualOrg) {
+        throw new Error(`Personal org still missing for user ${userId} after insert attempt`)
+      }
+
+      await trx('organization_memberships')
+        .insert({
+          id: toUuid(mintId('membership')),
+          user_id: userId,
+          organization_id: actualOrg.id,
+          role: 'owner',
+          status: 'active',
+          joined_at: new Date(),
+          permissions: JSON.stringify({}),
+          metadata: JSON.stringify({}),
+        })
+        .onConflict(['user_id', 'organization_id'])
+        .ignore()
     })
   } catch (error: any) {
-    // Concurrent create lost the race — return whatever personal org now exists.
+    // The `slug` unique constraint (`organizations_slug_unique`) is a
+    // DIFFERENT index than the `onConflict` arbiter above (the partial
+    // `uq_personal_org_per_owner` index, which only fires when the existing
+    // row's type is already 'personal'). Postgres only suppresses a conflict
+    // that matches the arbiter you named, so a 23505 on `slug` still throws
+    // out of the transaction above and lands here.
+    //
+    // Because `baseSlug` is fully deterministic (`personal-${userId}`), a
+    // slug collision here can only be THIS user's own row, already present
+    // under a DIFFERENT `type` — exactly the 2026-08-23 personal-org
+    // over-reclassification incident (migration 015's unconditional
+    // reclassify step; see `017_repair_personal_org_over_reclassification.ts`).
+    // Self-heal it here too, at login time, rather than surfacing a raw
+    // constraint violation and leaving the user's workspace looking "gone":
+    // flip that row back to `type='personal'` and ensure its owner
+    // membership exists, instead of blindly re-selecting by
+    // `type='personal'` (which would keep missing) and rethrowing.
+    if (error?.code === '23505' && String(error?.constraint) === 'organizations_slug_unique') {
+      const bySlug = await db('organizations').where({ slug: baseSlug }).first()
+      if (bySlug && bySlug.owner_id === userId) {
+        if (bySlug.type !== 'personal') {
+          logger.warn(
+            { userId, orgId: bySlug.id, previousType: bySlug.type },
+            'organizationProvisioning: self-healing mis-typed personal org'
+          )
+          await db('organizations')
+            .where({ id: bySlug.id })
+            .update({ type: 'personal', updated_at: db.fn.now() })
+        }
+        await db('organization_memberships')
+          .insert({
+            id: toUuid(mintId('membership')),
+            user_id: userId,
+            organization_id: bySlug.id,
+            role: 'owner',
+            status: 'active',
+            joined_at: new Date(),
+            permissions: JSON.stringify({}),
+            metadata: JSON.stringify({}),
+          })
+          .onConflict(['user_id', 'organization_id'])
+          .ignore()
+        const healed = await db('organizations').where({ id: bySlug.id }).first()
+        return rowToOrganization(healed)
+      }
+      // A slug collision NOT owned by this user should be unreachable (the
+      // slug is derived from userId), but never silently adopt someone
+      // else's organization — surface a clear diagnostic instead of the raw
+      // pg error.
+      logger.error(
+        { userId, baseSlug, conflictingOwnerId: bySlug?.owner_id },
+        'organizationProvisioning: slug collision owned by a different user — refusing to proceed'
+      )
+      throw new Error(
+        `ensurePersonalOrg: slug '${baseSlug}' already used by a different owner ` +
+          `(${bySlug?.owner_id ?? 'unknown'}) — refusing to proceed`
+      )
+    }
+
+    // Concurrent create lost the race (owner_id partial index) — return
+    // whatever personal org now exists.
     const raced = await db('organizations')
       .where({ owner_id: userId, type: 'personal' })
       .first()
@@ -165,7 +243,12 @@ export async function ensurePersonalOrg(
   }
 
   logger.info({ userId, orgId }, 'organizationProvisioning: personal org created')
-  const created = await db('organizations').where({ id: orgId }).first()
+  // Re-select by (owner_id, type) rather than the minted `orgId` — with
+  // ON CONFLICT ... DO NOTHING above, a concurrent creator may have won the
+  // race and `orgId` may not be the row that actually exists.
+  const created = await db('organizations')
+    .where({ owner_id: userId, type: 'personal' })
+    .first()
   return rowToOrganization(created)
 }
 

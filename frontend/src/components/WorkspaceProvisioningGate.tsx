@@ -19,17 +19,54 @@ interface WorkspaceProvisioningGateProps {
   children: React.ReactNode
 }
 
-function hasPersonalOrg(orgs: Organization[]): boolean {
-  return orgs.some(o => o.type === 'personal')
+/**
+ * Whether `o` is evidence the caller's workspace has actually been
+ * provisioned — i.e. the caller holds a real membership in it, not merely
+ * that it happens to be visible.
+ *
+ * `GET /organizations` (both `backend/src/routes/organizations.ts` and its
+ * `backend/security/src/routes/organizations.ts` twin) returns every org the
+ * caller is an active member of, PLUS any `type: 'platform'` org — the
+ * latter is visible to *every* authenticated user regardless of membership
+ * (`whereNotNull(organization_memberships.id) OR organizations.type =
+ * 'platform'`). A brand-new, genuinely-unprovisioned user therefore is not
+ * guaranteed an empty `orgs` array — they may still see the platform org —
+ * so "orgs.length > 0" is NOT a safe readiness check on its own.
+ *
+ * The security-service route projects the caller's own membership role as
+ * `user_role` (`null` when the caller merely sees a public platform org —
+ * see the `Organization` type doc in `services/api.ts`), which is the
+ * precise signal to use when present. A backend response that omits the
+ * field entirely falls back to excluding platform orgs, which is exactly
+ * equivalent given the same join condition governs both routes: a
+ * non-platform org is only ever included because the caller has a
+ * membership row.
+ *
+ * Originally this only recognised `type === 'personal'` — a proxy for
+ * "provisioning completed" that breaks the moment an org's `type` column is
+ * wrong for any other reason (e.g. the reclassification defect fixed by
+ * PR #788) even though the user's membership was never touched.
+ */
+function isProvisionedMembership(o: Organization): boolean {
+  if (o.user_role !== undefined) {
+    return o.user_role != null
+  }
+  return o.type !== 'platform'
+}
+
+function hasProvisionedOrg(orgs: Organization[]): boolean {
+  return orgs.some(isProvisionedMembership)
 }
 
 /**
  * WorkspaceProvisioningGate
  *
- * Wraps the authenticated app shell. On mount it checks for the user's
- * personal organization (provisioned asynchronously after first OIDC login
- * by Plan B). If the org is present it renders children immediately;
- * otherwise it polls every ~1.75 s and shows a fuse-seam ProvisioningCard.
+ * Wraps the authenticated app shell. On mount it checks whether the caller's
+ * workspace has been provisioned — at least one organization they actually
+ * belong to (provisioned asynchronously after first OIDC login by Plan B),
+ * not merely one they can see (e.g. the always-visible platform org). If
+ * one is present it renders children immediately; otherwise it polls every
+ * ~1.75 s and shows a fuse-seam ProvisioningCard.
  *
  * Timeout at 30 s → timeout state with a Retry button.
  * Network error    → error state with a Retry button.
@@ -67,17 +104,21 @@ export function WorkspaceProvisioningGate({
 
   const onOrgsLoaded = (orgs: Organization[]) => {
     dispatch({ type: 'SET_ORGANIZATIONS', payload: orgs })
-    const personal = orgs.find(o => o.type === 'personal')
-    if (personal) {
+    // Only orgs the caller actually belongs to are candidates for "active" —
+    // never the always-visible platform org they merely have visibility into.
+    const memberOrgs = orgs.filter(isProvisionedMembership)
+    if (memberOrgs.length > 0) {
+      const personal = memberOrgs.find(o => o.type === 'personal')
       // Prefer the org the user previously selected (persisted across reloads)
       // over blindly forcing the personal org — otherwise every reload reset
       // the active org to personal and billed the wrong org. Only fall back to
-      // personal when there is no valid persisted selection.
+      // personal — or, absent that, any other org the caller belongs to —
+      // when there is no valid persisted selection.
       const persistedId = getPersistedActiveOrganizationId()
       const persisted = persistedId
-        ? orgs.find(o => o.id === persistedId)
+        ? memberOrgs.find(o => o.id === persistedId)
         : null
-      const active = persisted ?? personal
+      const active = persisted ?? personal ?? memberOrgs[0]
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: active.id })
       try {
         sessionStorage.setItem(READY_SESSION_KEY, '1')
@@ -102,7 +143,7 @@ export function WorkspaceProvisioningGate({
 
       try {
         const orgs: Organization[] = await organizationsAPI.getOrganizations()
-        if (hasPersonalOrg(orgs)) {
+        if (hasProvisionedOrg(orgs)) {
           onOrgsLoaded(orgs)
         }
       } catch {
@@ -130,7 +171,7 @@ export function WorkspaceProvisioningGate({
       try {
         const orgs: Organization[] = await organizationsAPI.getOrganizations()
         if (cancelled) return
-        if (hasPersonalOrg(orgs)) {
+        if (hasProvisionedOrg(orgs)) {
           onOrgsLoaded(orgs)
         } else if (!startedReady) {
           startPolling()

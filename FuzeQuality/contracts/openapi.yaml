@@ -1,0 +1,191 @@
+# =============================================================================
+# FuzeQuality — API contract
+# =============================================================================
+# This document describes the operations that are CONTRACT-GOVERNED today, and
+# deliberately no more than that.
+#
+# FuzeQuality serves roughly thirty further routes under /api/v1/* (portfolio,
+# repositories, catalog, coverage, suggestions, test-implementations, admin,
+# webhooks). They are NOT described here yet, and writing them from the outside
+# would be guessing: each carries a Permit resource/action pair, tenant scoping
+# and a fail-closed 401/403 path, and a spec that gets any of those subtly wrong
+# is worse than no spec at all — the MCP gateway turns every path in a contract
+# into a callable tool, and the generated client publishes a method for it. They
+# are added by `contract-designer`, operation by operation, alongside the
+# authorization they actually enforce.
+#
+# The irony is noted: FuzeQuality's own purpose is measuring whether other
+# repositories' OpenAPI contracts are covered. This file is the start of it
+# holding itself to the same standard.
+# =============================================================================
+openapi: 3.0.3
+info:
+  title: FuzeQuality
+  description: >-
+    Evidence graph across repositories, OpenAPI contracts, frontend surfaces,
+    automated tests and Jira requirements. This document currently covers the
+    platform operational surface only — liveness and contract discovery. The
+    product's /api/v1/* routes are implemented but not yet contract-governed.
+  version: 0.1.0
+  license:
+    name: UNLICENSED
+servers:
+  - url: http://localhost:4180
+    description: Local development
+  - url: https://quality.prod.fuzefront.com
+    description: Production (the host deploy/helm/fuzequality/values-prod.yaml pins)
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and contract-availability probe
+      description: >-
+        Unauthenticated. Reports the service, the contract version, and whether
+        the process could load the OpenAPI document shipped in its image — so a
+        build made without its contract is visible on the health check rather
+        than at the moment a consumer first needs the spec.
+
+
+        Distinct from `/health/live` and `/health/ready`, which predate it and
+        are what the chart's kubelet probes use. `/health` is the platform-wide
+        convention every Fuze service answers, and is what the landing page and
+        the same-origin nginx proxy call.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: The service is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /health/live:
+    get:
+      operationId: getHealthLive
+      summary: Kubelet liveness probe
+      description: Pre-existing, unauthenticated. Answers `{"status":"ok"}`.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+
+  /health/ready:
+    get:
+      operationId: getHealthReady
+      summary: Kubelet readiness probe
+      description: Pre-existing, unauthenticated. Answers `{"status":"ready"}`.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: The process is ready to serve.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ready]
+
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiYaml
+      summary: This document, as committed
+      description: >-
+        Unauthenticated by design: the document describes the SHAPE of the API,
+        never any data held in it, and requiring a token to discover the contract
+        would gate the one thing that helps a caller construct a correctly
+        authorized request.
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: The OpenAPI document, verbatim.
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '503':
+          description: >-
+            The endpoint exists but its document is missing from this build.
+            Deliberately 503 and not 404 — a 404 would read as "this service
+            publishes no spec", which is a different and wrong diagnosis.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /openapi.json:
+    get:
+      operationId: getOpenApiJson
+      summary: This document, re-serialised as JSON
+      security: []
+      tags: [operations]
+      responses:
+        '200':
+          description: The same document, parsed and re-serialised as JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '503':
+          description: The endpoint exists but its document is missing from this build.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, service, version, openapi]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: >-
+            `ok` means the process is serving. It is deliberately NOT downgraded
+            by a missing spec — the service is still correct and serving is more
+            useful than crash-looping — the `openapi` field carries that signal.
+        service:
+          type: string
+          example: fuzequality
+        version:
+          type: string
+          description: The contract version this build implements.
+          example: 0.1.0
+        openapi:
+          type: string
+          enum: [available, unavailable]
+          description: >-
+            Whether the OpenAPI document was found and parsed at boot.
+            `unavailable` means /openapi.yaml and /openapi.json answer 503.
+    Problem:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: openapi_unavailable
+        message:
+          type: string
+
+tags:
+  - name: operations
+    description: Platform operational surface — probes and contract discovery.

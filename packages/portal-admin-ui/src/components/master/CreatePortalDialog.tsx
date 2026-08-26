@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { Button, Input, Modal } from '@fuzefront/design-system'
-import type { BillingMode } from '../../types'
+import type { AdminPortalAppCatalogMode, AdminPortalBillingMode, AdminPortalCreate } from '../../types'
 
 export interface CreatePortalDialogProps {
   open: boolean
   submitting?: boolean
-  /** Set when the last submit came back 409 SLUG_TAKEN — rendered inline on the slug field. */
+  /** Set when the last submit came back 409 CONFLICT on slug — rendered inline on the slug field. */
   slugTakenError?: boolean
   onCancel: () => void
-  onSubmit: (input: { name: string; slug: string; ownerEmail: string; billingMode: BillingMode }) => void
+  onSubmit: (input: AdminPortalCreate) => void
 }
 
-const PLAN_OPTIONS: Array<{ value: BillingMode; label: string; description: string }> = [
+const BILLING_OPTIONS: Array<{ value: AdminPortalBillingMode; label: string; description: string }> = [
   { value: 'free', label: 'Free', description: 'No charge. FuzeFront-billed. Reseller billing off.' },
   {
     value: 'platform',
@@ -21,17 +21,30 @@ const PLAN_OPTIONS: Array<{ value: BillingMode; label: string; description: stri
   {
     value: 'reseller',
     label: 'Reseller · Connect',
-    description: "This portal bills its own customers via Stripe Connect. Unlocks the billing console (S4).",
+    description: 'This portal bills its own customers via Stripe Connect. Unlocks the billing console.',
   },
 ]
 
-/** Create-portal form (frame 02-create-portal). Form state is kept LOCAL so a
- * 409 SLUG_TAKEN response never loses what the caller typed (see 04-master-states, d6). */
+const CATALOG_OPTIONS: Array<{ value: AdminPortalAppCatalogMode; label: string; description: string }> = [
+  { value: 'inherit', label: 'Inherit platform catalog', description: 'The portal shows the platform-root app catalog.' },
+  { value: 'custom', label: 'Custom catalog', description: 'The portal curates its own app set.' },
+]
+
+/**
+ * Create-portal form (frame 02-create-portal), migrated onto the REAL
+ * `PortalCreate` body (`@fuzefront/security-client` 0.7.0): `name`, `slug`,
+ * `ownerEmail`, the optional tenant attributes `customDomain` + `branding`,
+ * and `billingMode` / `appCatalogMode`. Form state is kept LOCAL so a 409
+ * `CONFLICT` (duplicate slug) response never loses what the caller typed.
+ */
 export function CreatePortalDialog({ open, submitting, slugTakenError, onCancel, onSubmit }: CreatePortalDialogProps) {
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [ownerEmail, setOwnerEmail] = useState('')
-  const [billingMode, setBillingMode] = useState<BillingMode>('platform')
+  const [customDomain, setCustomDomain] = useState('')
+  const [tagline, setTagline] = useState('')
+  const [billingMode, setBillingMode] = useState<AdminPortalBillingMode>('platform')
+  const [appCatalogMode, setAppCatalogMode] = useState<AdminPortalAppCatalogMode>('inherit')
 
   return (
     <Modal open={open} onClose={onCancel} title="New portal">
@@ -39,7 +52,17 @@ export function CreatePortalDialog({ open, submitting, slugTakenError, onCancel,
         <form
           onSubmit={e => {
             e.preventDefault()
-            onSubmit({ name: name.trim(), slug: slug.trim(), ownerEmail: ownerEmail.trim(), billingMode })
+            const trimmedName = name.trim()
+            const trimmedTagline = tagline.trim()
+            onSubmit({
+              name: trimmedName,
+              slug: slug.trim(),
+              ownerEmail: ownerEmail.trim(),
+              customDomain: customDomain.trim() || undefined,
+              branding: { name: trimmedName, ...(trimmedTagline ? { tagline: trimmedTagline } : {}) },
+              billingMode,
+              appCatalogMode,
+            })
           }}
           style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
         >
@@ -63,7 +86,7 @@ export function CreatePortalDialog({ open, submitting, slugTakenError, onCancel,
             />
             {slugTakenError && (
               <p
-                data-error-code="SLUG_TAKEN"
+                data-error-code="CONFLICT"
                 style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--error-color)' }}
               >
                 That slug is already in use by another portal. Slugs are unique and permanent — pick another.
@@ -82,11 +105,59 @@ export function CreatePortalDialog({ open, submitting, slugTakenError, onCancel,
             placeholder="owner@company.com"
             required
           />
+          <Input
+            label="Custom domain (optional)"
+            data-input="custom-domain"
+            value={customDomain}
+            onChange={e => setCustomDomain(e.target.value)}
+            placeholder="portal.acme.example"
+          />
+          <Input
+            label="Tagline (optional branding)"
+            data-input="branding-tagline"
+            value={tagline}
+            onChange={e => setTagline(e.target.value)}
+            placeholder="Custom login copy shown to this portal's users"
+          />
+          <fieldset style={{ border: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            <legend style={{ padding: 0, marginBottom: 'var(--space-2)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+              App catalog
+            </legend>
+            {CATALOG_OPTIONS.map(opt => (
+              <label
+                key={opt.value}
+                data-catalog-option={opt.value}
+                data-selected={appCatalogMode === opt.value}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 'var(--space-3)',
+                  padding: 'var(--space-3)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: 'pointer',
+                  background: appCatalogMode === opt.value ? 'var(--bg-quaternary)' : 'transparent',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="catalog-mode"
+                  value={opt.value}
+                  checked={appCatalogMode === opt.value}
+                  onChange={() => setAppCatalogMode(opt.value)}
+                />
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 'var(--weight-medium)' }}>{opt.label}</span>
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>{opt.description}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
           <fieldset style={{ border: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
             <legend style={{ padding: 0, marginBottom: 'var(--space-2)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
               Plan &amp; billing mode
             </legend>
-            {PLAN_OPTIONS.map(opt => (
+            {BILLING_OPTIONS.map(opt => (
               <label
                 key={opt.value}
                 data-plan-option={opt.value}

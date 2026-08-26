@@ -1,0 +1,114 @@
+{{/*
+FuzeFront self-registration for FuzeQuality.
+
+WHY THIS IS A SEPARATE, DEFAULT-OFF TEMPLATE AND NOT AN initContainer BOLTED
+ONTO web.yaml.
+
+Every sibling product runs `register.sh` from @fuzefront/onboarding-kit as an
+INIT container on its frontend pod, and defaults it ON, because an app that
+silently skips registration is exactly the failure the mechanism exists to
+prevent. Those charts can afford that default because they are gated off
+(`enabled: false`) and deploy nothing.
+
+FuzeQuality is different: this chart is LIVE. values-prod.yaml pins real image
+tags, enables the ingress on quality.prod.fuzefront.com, and Argo syncs it with
+prune + selfHeal. Adding a required init container to the running frontend
+Deployment would take effect on the next sync — and `register.sh` exits non-zero
+when it cannot read its bearer token, by design, so if the
+`fuzefront-registration` Secret is not already present in the `fuzequality`
+namespace the live frontend CrashLoopBackOffs. Cluster state cannot be inspected
+from this repo, so the safe default is the one that cannot break what is
+running.
+
+Hence: a Job, not an initContainer, and `registration.enabled: false`.
+
+  * A Job registers ONCE per install/upgrade instead of on every pod start.
+    Registration is idempotent (`register.sh` re-PUTs the manifest), so per-pod
+    re-registration buys nothing here, and a Job that fails is a failed Job —
+    it does not hold a serving Deployment hostage.
+  * `helm.sh/hook: post-install,post-upgrade` runs it after the workloads are
+    up, so it registers an origin that already answers.
+  * hook-delete-policy keeps the failed Job around: a registration that failed
+    silently and then deleted its own logs is the exact failure mode being
+    avoided.
+
+TO TURN IT ON — both prerequisites first, or the Job just fails:
+  1. the `fuzefront-registration` Secret (key `token`, an apps:register bearer)
+     sealed into this namespace;
+  2. the `fuzequality-registration` ConfigMap built from ../../registration/,
+     and the `fuzefront-onboarding-kit` ConfigMap holding register.sh.
+See ../../registration/README.md for both one-liners.
+*/}}
+{{- if .Values.registration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzequality-register
+  labels:
+    {{- include "fuzequality.labels" . | nindent 4 }}
+    app.kubernetes.io/component: registration
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.registration.backoffLimit }}
+  # Reaped after a day so a stale Job object does not linger, but not so quickly
+  # that its logs are gone before anyone reads them.
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "fuzequality.labels" . | nindent 8 }}
+        app.kubernetes.io/component: registration
+    spec:
+      restartPolicy: Never
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: fuzefront-register
+          image: {{ .Values.registration.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              set -eu
+              apk add --no-cache curl jq >/dev/null
+              exec /kit/register.sh
+          env:
+            # Cluster-internal service DNS, NOT the public ingress host: this
+            # pod has no reason to leave the cluster, and the public host may
+            # not resolve before the tunnel is ready.
+            - name: FUZEFRONT_API_URL
+              value: {{ .Values.registration.apiUrl | quote }}
+            - name: FUZEFRONT_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.registration.secretName | quote }}
+                  key: token
+                  # NOT optional: a missing secret must fail the Job, not
+                  # silently skip registration and report success.
+            - name: REGISTRATION_DIR
+              value: /registration
+          volumeMounts:
+            - { name: registration, mountPath: /registration, readOnly: true }
+            - { name: fuzefront-kit, mountPath: /kit, readOnly: true }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: registration
+          configMap: { name: {{ .Values.registration.configMapName | quote }} }
+        - name: fuzefront-kit
+          configMap:
+            name: {{ .Values.registration.kitConfigMapName | quote }}
+            # 0555 octal = r-xr-xr-x, written in DECIMAL: defaultMode is an
+            # int32 and octal-looking literals parse inconsistently across YAML
+            # versions, so a bare 0555 can silently yield the wrong mode and
+            # leave register.sh non-executable.
+            defaultMode: 365
+{{- end }}

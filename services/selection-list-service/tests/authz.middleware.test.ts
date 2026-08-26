@@ -1,10 +1,16 @@
-// permit.middleware.test.ts — unit tests for S7 Permit.io middleware.
+// authz.middleware.test.ts — unit tests for S7 authz middleware, now routed
+// through FuzeFront's Security API (@fuzefront/auth's AuthzClient) instead of
+// an embedded Permit.io SDK.
 //
 // Tests both flag OFF and flag ON paths.
-// Uses _setPermitClientForTesting() to inject mocks — never hits a real Permit API.
+// Uses _setAuthzClientForTesting() to inject mocks — never hits a real
+// Security API / network.
 //
-// Flag OFF path  (4 tests): pass-through with no Permit call.
-// Flag ON path   (6 tests): real check, fail-closed on error, grantListOwner, countActiveOwners.
+// Flag OFF path  (4 tests): pass-through with no Security API call.
+// Flag ON  path  (7 tests): real check, fail-closed on error (including the
+//                explicit DECISION_UNAVAILABLE case), grantListOwner
+//                (including its own throw-must-not-write-mirror path),
+//                countActiveOwners.
 
 // ─── Mock DB before any imports ───────────────────────────────────────────────
 jest.mock('../src/db', () => {
@@ -31,18 +37,19 @@ jest.mock('../src/db', () => {
 import express, { Request, Response } from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
+import { AuthzClient, AuthzError } from '@fuzefront/auth';
 import {
-  requirePermit,
-  _setPermitClientForTesting,
+  requireAuthzCheck,
+  _setAuthzClientForTesting,
   makeNoOpProxy,
   grantListOwner,
   countActiveOwners,
-} from '../src/middleware/permit';
+} from '../src/middleware/authz';
 import { db } from '../src/db';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const JWT_SECRET = 'test-secret-s7-permit';
+const JWT_SECRET = 'test-secret-s7-authz';
 process.env.JWT_SECRET = JWT_SECRET;
 
 function makeToken(overrides: Record<string, unknown> = {}): string {
@@ -73,7 +80,7 @@ function buildApp(resource: string, action: string): express.Application {
 
   app.get(
     '/lists/:listId',
-    requirePermit(resource, action),
+    requireAuthzCheck(resource, action),
     (_req: Request, res: Response) => res.status(200).json({ ok: true }),
   );
   return app;
@@ -82,18 +89,18 @@ function buildApp(resource: string, action: string): express.Application {
 // ─── Restore no-op between tests ──────────────────────────────────────────────
 afterEach(() => {
   delete process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'];
-  _setPermitClientForTesting(makeNoOpProxy());
+  _setAuthzClientForTesting(makeNoOpProxy());
 });
 
 // ─── Flag OFF tests ───────────────────────────────────────────────────────────
-describe('requirePermit — flag OFF (default)', () => {
+describe('requireAuthzCheck — flag OFF (default)', () => {
   beforeEach(() => {
     delete process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'];
   });
 
-  it('passes through without calling Permit when flag is OFF', async () => {
-    const mockPermit = { check: jest.fn() };
-    _setPermitClientForTesting(mockPermit);
+  it('passes through without calling the Security API when flag is OFF', async () => {
+    const check = jest.fn();
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const app = buildApp('SelectionList', 'read');
 
     const res = await request(app)
@@ -101,7 +108,7 @@ describe('requirePermit — flag OFF (default)', () => {
       .set('Authorization', `Bearer ${makeToken()}`);
 
     expect(res.status).toBe(200);
-    expect(mockPermit.check).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
   });
 
   it('returns 401 when no token present (flag OFF)', async () => {
@@ -110,9 +117,9 @@ describe('requirePermit — flag OFF (default)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('passes through regardless of what Permit would return when flag is OFF', async () => {
-    const mockPermit = { check: jest.fn().mockResolvedValue(false) }; // would deny
-    _setPermitClientForTesting(mockPermit);
+  it('passes through regardless of what the Security API would return when flag is OFF', async () => {
+    const check = jest.fn().mockResolvedValue({ allow: false }); // would deny
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const app = buildApp('SelectionList', 'admin');
 
     const res = await request(app)
@@ -120,7 +127,7 @@ describe('requirePermit — flag OFF (default)', () => {
       .set('Authorization', `Bearer ${makeToken()}`);
 
     expect(res.status).toBe(200);
-    expect(mockPermit.check).not.toHaveBeenCalled();
+    expect(check).not.toHaveBeenCalled();
   });
 
   it('returns 401 when userId is missing from token (flag OFF)', async () => {
@@ -135,14 +142,14 @@ describe('requirePermit — flag OFF (default)', () => {
 });
 
 // ─── Flag ON tests ────────────────────────────────────────────────────────────
-describe('requirePermit — flag ON', () => {
+describe('requireAuthzCheck — flag ON', () => {
   beforeEach(() => {
     process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'true';
   });
 
-  it('allows access when Permit.check returns true', async () => {
-    const mockPermit = { check: jest.fn().mockResolvedValue(true) };
-    _setPermitClientForTesting(mockPermit);
+  it('allows access when the Security API returns { allow: true }', async () => {
+    const check = jest.fn().mockResolvedValue({ allow: true });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const app = buildApp('SelectionList', 'read');
 
     const res = await request(app)
@@ -150,16 +157,20 @@ describe('requirePermit — flag ON', () => {
       .set('Authorization', `Bearer ${makeToken()}`);
 
     expect(res.status).toBe(200);
-    expect(mockPermit.check).toHaveBeenCalledWith(
-      'usr_tester01',
-      'read',
-      { type: 'SelectionList', tenant: 'org_acme', key: 'sl_abc123' },
+    expect(check).toHaveBeenCalledWith(
+      {
+        subject: 'usr_tester01',
+        tenant: 'org_acme',
+        resource: { type: 'SelectionList', key: 'sl_abc123' },
+        action: 'read',
+      },
+      expect.any(String),
     );
   });
 
-  it('returns 403 when Permit.check returns false', async () => {
-    const mockPermit = { check: jest.fn().mockResolvedValue(false) };
-    _setPermitClientForTesting(mockPermit);
+  it('returns 403 when the Security API returns { allow: false }', async () => {
+    const check = jest.fn().mockResolvedValue({ allow: false });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const app = buildApp('SelectionList', 'admin');
 
     const res = await request(app)
@@ -170,9 +181,9 @@ describe('requirePermit — flag ON', () => {
     expect(res.body.code).toBe('FORBIDDEN');
   });
 
-  it('returns 403 (fail closed) when Permit.check throws', async () => {
-    const mockPermit = { check: jest.fn().mockRejectedValue(new Error('Permit network error')) };
-    _setPermitClientForTesting(mockPermit);
+  it('returns 403 (fail closed) when the Security API check throws a generic error', async () => {
+    const check = jest.fn().mockRejectedValue(new Error('Security API network error'));
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const app = buildApp('SelectionList', 'read');
 
     const res = await request(app)
@@ -183,19 +194,47 @@ describe('requirePermit — flag ON', () => {
     expect(res.body.code).toBe('FORBIDDEN');
   });
 
-  it('calls Permit with correct resource instance key from route param', async () => {
-    const mockPermit = { check: jest.fn().mockResolvedValue(true) };
-    _setPermitClientForTesting(mockPermit);
+  it('returns 403 (fail closed) when the Security API throws AuthzError(DECISION_UNAVAILABLE) — the timeout/unreachable case', async () => {
+    const check = jest
+      .fn()
+      .mockRejectedValue(new AuthzError('DECISION_UNAVAILABLE', 'Security API request failed: timeout; denying.'));
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
+    const app = buildApp('SelectionList', 'read');
+
+    const res = await request(app)
+      .get('/lists/sl_abc123')
+      .set('Authorization', `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('FORBIDDEN');
+  });
+
+  it('calls the Security API with correct resource instance key from route param', async () => {
+    const check = jest.fn().mockResolvedValue({ allow: true });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const app = buildApp('SelectionList', 'write');
 
     await request(app)
       .get('/lists/sl_unique999')
       .set('Authorization', `Bearer ${makeToken()}`);
 
-    const [userId, action, resourceInstance] = mockPermit.check.mock.calls[0];
-    expect(userId).toBe('usr_tester01');
-    expect(action).toBe('write');
-    expect(resourceInstance).toMatchObject({ key: 'sl_unique999', tenant: 'org_acme' });
+    const [checkArg, tokenArg] = check.mock.calls[0];
+    expect(checkArg.subject).toBe('usr_tester01');
+    expect(checkArg.action).toBe('write');
+    expect(checkArg).toMatchObject({ resource: { type: 'SelectionList', key: 'sl_unique999' }, tenant: 'org_acme' });
+    expect(typeof tokenArg).toBe('string');
+  });
+
+  it('forwards the CALLER bearer token to the Security API, not a service-wide credential', async () => {
+    const check = jest.fn().mockResolvedValue({ allow: true });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
+    const app = buildApp('SelectionList', 'read');
+    const token = makeToken({ userId: 'usr_specific_caller' });
+
+    await request(app).get('/lists/sl_abc123').set('Authorization', `Bearer ${token}`);
+
+    const [, tokenArg] = check.mock.calls[0];
+    expect(tokenArg).toBe(token);
   });
 });
 
@@ -213,22 +252,33 @@ describe('grantListOwner', () => {
     mockDb.fn = { now: () => new Date().toISOString() };
   });
 
-  it('calls Permit.api.roleAssignments.assign and then upserts the mirror row', async () => {
-    const assignMock = jest.fn().mockResolvedValue(undefined);
-    const mockPermit = {
-      api: { roleAssignments: { assign: assignMock } },
-    };
-    _setPermitClientForTesting(mockPermit);
+  it('calls AuthzClient.grant() with an INSTANCE-scoped resource, then upserts the mirror row', async () => {
+    const grantMock = jest.fn().mockResolvedValue({
+      id: 'org_acme:usr_newowner:list-owner',
+      subject: 'usr_newowner',
+      tenant: 'org_acme',
+      role: 'list-owner',
+    });
+    _setAuthzClientForTesting({
+      check: jest.fn(),
+      bulkCheck: jest.fn(),
+      grant: grantMock,
+      revoke: jest.fn(),
+      listGrants: jest.fn(),
+    } as unknown as AuthzClient);
 
-    await grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin');
+    await grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin', 'caller-token');
 
-    expect(assignMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user: 'usr_newowner',
-        role: 'list-owner',
+    // The resource MUST reach the wire — omitting it silently widens a
+    // list-scoped grant to tenant-wide (the exact bug this test guards).
+    expect(grantMock).toHaveBeenCalledWith(
+      {
+        subject: 'usr_newowner',
         tenant: 'org_acme',
-        resource_instance: 'SelectionList:sl_mylist',
-      }),
+        role: 'list-owner',
+        resource: { type: 'SelectionList', key: 'sl_mylist' },
+      },
+      'caller-token',
     );
     expect(mockDb.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -240,6 +290,33 @@ describe('grantListOwner', () => {
         revoked_at: null,
       }),
     );
+
+    // Ordering guarantee: the Security API write happened BEFORE the mirror
+    // upsert, asserted via invocationCallOrder so a future reordering
+    // regression fails loudly rather than silently by coincidence.
+    const grantOrder = grantMock.mock.invocationCallOrder[0];
+    const insertOrder = mockDb.insert.mock.invocationCallOrder[0];
+    expect(grantOrder).toBeLessThan(insertOrder);
+  });
+
+  it('does NOT write the mirror row when AuthzClient.grant() throws — the write-ordering fail-closed guarantee', async () => {
+    const grantMock = jest.fn().mockRejectedValue(new AuthzError('PROVIDER_ERROR', 'Security API returned 502'));
+    _setAuthzClientForTesting({
+      check: jest.fn(),
+      bulkCheck: jest.fn(),
+      grant: grantMock,
+      revoke: jest.fn(),
+      listGrants: jest.fn(),
+    } as unknown as AuthzClient);
+
+    await expect(
+      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin', 'caller-token'),
+    ).rejects.toThrow();
+
+    // The mirror upsert must never be reached — a caller retrying/observing
+    // this failure must not find a mirror row claiming a grant that never
+    // actually happened in the authorization backend.
+    expect(mockDb.insert).not.toHaveBeenCalled();
   });
 });
 

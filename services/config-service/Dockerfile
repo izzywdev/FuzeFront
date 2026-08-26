@@ -50,6 +50,11 @@ COPY services/config-service/ ./services/config-service/
 # config-service.
 RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
+# packages/auth has a RUNTIME dependency (jose) that must reach the production
+# image. The install above pulls in devDeps too (tsup/jest/typescript) because
+# the build needs them; prune them here so the node_modules copied below is
+# production-only.
+RUN cd packages/auth && npm prune --omit=dev
 RUN cd services/config-service && npm run build
 # tsc does NOT copy non-TS assets. runMigrations reads
 # dist/migrations/*.sql at startup; without this the pod logs
@@ -87,6 +92,16 @@ COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 # to a symlink with nothing behind it).
 COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
 COPY --from=build /app/packages/auth/dist ./packages/auth/dist
+# ...AND its runtime dependencies. packages/auth requires `jose` at module load
+# (packages/auth/dist/index.js), and NOTHING else puts it in this image:
+# config-service installs from its OWN lockfile, where @fuzefront/auth appears
+# only as a link entry ({"resolved":"../../packages/auth","link":true}) with no
+# `jose` entry at all — so `npm ci` in the base stage creates the symlink and
+# installs no dependency for it. Without this COPY the symlink resolves, dist/
+# is present, and the pod still dies at startup with
+# "Cannot find module 'jose'" — which is exactly what happened in prod the
+# first time config-service was enabled.
+COPY --from=build /app/packages/auth/node_modules ./packages/auth/node_modules
 
 # Remove declaration files from production image
 RUN find ./services/config-service/dist -name "*.d.ts" -type f -delete

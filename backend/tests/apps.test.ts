@@ -567,12 +567,11 @@ describe('Apps Registration Routes', () => {
       for (const appData of retrievalApps) {
         const res = await postApp(appData)
         expect(res.status).toBe(201)
-        // GET /api/apps is now object-level scoped (org membership + visibility,
-        // appsec HIGH-4). Apps created via POST /api/apps have no organization_id
-        // and default to visibility 'private', so they are correctly excluded
-        // from a non-member's listing. To assert the listing/shape behaviour we
-        // mark these fixtures 'public' so the authenticated caller is entitled
-        // to see them.
+        // GET /api/apps is object-level scoped (org membership + visibility,
+        // appsec HIGH-4; see scopeAppsQuery). Mark these fixtures 'public'
+        // regardless of what the org/visibility scoping would otherwise do,
+        // so this suite asserts the listing/shape behaviour independent of
+        // that scoping (which has its own dedicated coverage below).
         await db('apps')
           .where('id', res.body.id)
           .update({ visibility: 'public' })
@@ -617,6 +616,172 @@ describe('Apps Registration Routes', () => {
       const response = await request(app).get('/api/apps').expect(401)
       expect(response.body).toHaveProperty('error')
       expect(response.body.error).toBe('Access denied. No token provided.')
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // portal-registration-gap: scopeAppsQuery must agree with the production
+  // app-registry visibility rule (backend/applications/src/app-registry/
+  // service.ts `list()`), not the pre-fix version of itself, AND
+  // `apps.organization_id` must actually be impossible to leave null.
+  //
+  // Owner ruling 2026-08-25 superseded the original "reconcile the two
+  // org-less branches" framing: an org-less app is not a state to be
+  // handled by either query, it is a state the schema must no longer allow
+  // ("there should be no app without orgid ... fuzefront itself [is] the
+  // orgid for our own apps"). So this suite tests the CONSTRAINT, not a
+  // null-organization_id code path — "it passes on the current data" is not
+  // evidence a NOT NULL migration actually did anything.
+  // ---------------------------------------------------------------------------
+  describe('GET /api/apps - visibility/org scoping parity, and apps.organization_id NOT NULL', () => {
+    const ADMIN_USER_ID = '8dbf6a1b-c0a1-462a-9bf5-934c8c7339c3'
+    let scopedOrgId: string
+    let otherOrgId: string
+    let demoToken: string
+    let ownOrgAppId: string
+    let otherOrgAppId: string
+
+    beforeAll(async () => {
+      // A non-owner, non-member caller for the "does NOT belong to this org"
+      // assertions: the seeded demo user (roles: ['user']).
+      const demoLogin = await request(app).post('/api/auth/login').send({
+        email: 'demo@fuzefront.dev',
+        password: 'demo123',
+      })
+      expect(demoLogin.status).toBe(200)
+      demoToken = demoLogin.body.token
+
+      // An org the admin (authToken) IS an active member of.
+      scopedOrgId = uuidv4()
+      await db('organizations').insert({
+        id: scopedOrgId,
+        name: 'Visibility Parity Org',
+        slug: `visibility-parity-org-${scopedOrgId.slice(0, 8)}`,
+        owner_id: ADMIN_USER_ID,
+        type: 'organization',
+        settings: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+        is_active: true,
+      })
+      await db('organization_memberships').insert({
+        id: uuidv4(),
+        user_id: ADMIN_USER_ID,
+        organization_id: scopedOrgId,
+        role: 'owner',
+        status: 'active',
+        joined_at: new Date(),
+        permissions: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+      })
+
+      // An org NEITHER caller belongs to, for the BOLA-exclusion assertion.
+      // The row must EXIST: `apps.organization_id` carries the FK
+      // `apps_organization_id_foreign`, so referencing an org that was never
+      // inserted aborts this beforeAll and fails every test in the block. What
+      // makes it a "does not belong" org is the absence of an
+      // organization_memberships row below, not the absence of the org itself.
+      otherOrgId = uuidv4()
+      await db('organizations').insert({
+        id: otherOrgId,
+        name: 'Visibility Parity Other Org',
+        slug: `visibility-parity-other-org-${otherOrgId.slice(0, 8)}`,
+        owner_id: ADMIN_USER_ID,
+        type: 'organization',
+        settings: JSON.stringify({}),
+        metadata: JSON.stringify({}),
+        is_active: true,
+      })
+
+      // Case 1: 'organization' visibility, owned by an org the admin belongs to.
+      ownOrgAppId = uuidv4()
+      createdAppNames.add('Parity Own-Org App')
+      await db('apps').insert({
+        id: ownOrgAppId,
+        name: 'Parity Own-Org App',
+        url: 'http://localhost:9301',
+        integration_type: 'iframe',
+        organization_id: scopedOrgId,
+        visibility: 'organization',
+        is_active: true,
+      })
+
+      // Case 2: 'organization' visibility, owned by a DIFFERENT org neither
+      // caller belongs to -- must stay excluded for both (BOLA).
+      otherOrgAppId = uuidv4()
+      createdAppNames.add('Parity Other-Org App')
+      await db('apps').insert({
+        id: otherOrgAppId,
+        name: 'Parity Other-Org App',
+        url: 'http://localhost:9302',
+        integration_type: 'iframe',
+        organization_id: otherOrgId,
+        visibility: 'organization',
+        is_active: true,
+      })
+    })
+
+    afterAll(async () => {
+      await db('organization_memberships')
+        .where('organization_id', scopedOrgId)
+        .del()
+      await db('apps').whereIn('id', [ownOrgAppId, otherOrgAppId]).del()
+      // Both orgs, and only after the apps that reference them are gone —
+      // apps.organization_id has no ON DELETE, so the reverse order fails.
+      await db('organizations').whereIn('id', [scopedOrgId, otherOrgId]).del()
+    })
+
+    it("shows an 'organization'-visibility app to a member of that org", async () => {
+      const response = await request(app)
+        .get('/api/apps')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200)
+      const names = response.body.map((a: any) => a.name)
+      expect(names).toContain('Parity Own-Org App')
+    })
+
+    it("excludes an 'organization'-visibility app of an org the caller does not belong to (BOLA)", async () => {
+      const response = await request(app)
+        .get('/api/apps')
+        .set('Authorization', `Bearer ${demoToken}`)
+        .expect(200)
+      const names = response.body.map((a: any) => a.name)
+      expect(names).not.toContain('Parity Own-Org App')
+      expect(names).not.toContain('Parity Other-Org App')
+    })
+
+    it('rejects an INSERT with organization_id explicitly NULL (026_apps_organization_id_not_null)', async () => {
+      // Not "does the app show up right" — a direct assertion that the
+      // constraint itself is live, so a future change cannot silently drop
+      // it and only be caught by a data audit months later.
+      await expect(
+        db('apps').insert({
+          id: uuidv4(),
+          name: 'Constraint Probe — should never be visible or exist',
+          url: 'http://localhost:9399',
+          integration_type: 'iframe',
+          organization_id: null,
+          visibility: 'private',
+          is_active: false,
+        })
+      ).rejects.toThrow(/organization_id|not-null|null value/i)
+    })
+
+    it('omitting organization_id on INSERT falls back to the column DEFAULT (the platform root org), not NULL', async () => {
+      const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
+      const id = uuidv4()
+      createdAppNames.add('Parity Default-Org App')
+      await db('apps').insert({
+        id,
+        name: 'Parity Default-Org App',
+        url: 'http://localhost:9303',
+        integration_type: 'iframe',
+        // organization_id deliberately omitted.
+        visibility: 'private',
+        is_active: true,
+      })
+      const row = await db('apps').where({ id }).first()
+      expect(row.organization_id).toBe(ROOT_ORG_ID)
+      await db('apps').where({ id }).del()
     })
   })
 

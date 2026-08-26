@@ -21,6 +21,12 @@ const identityUiSrc = fileURLToPath(
 const authUiSrc = fileURLToPath(
   new URL('../packages/auth-ui/src/index.ts', import.meta.url)
 )
+// Stylesheet subpath (@fuzefront/auth-ui/styles.css) must be aliased
+// separately, pointing at the source CSS. Without this Vite appends
+// /styles.css to the index.ts file path → ENOTDIR at build time.
+const authUiStyles = fileURLToPath(
+  new URL('../packages/auth-ui/src/styles.css', import.meta.url)
+)
 const designSystemSrc = fileURLToPath(
   new URL('../design-system/index.js', import.meta.url)
 )
@@ -131,6 +137,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
+      // Subpath alias MUST precede the bare alias — same pattern as chat-ui.
+      '@fuzefront/auth-ui/styles.css': authUiStyles,
       '@fuzefront/auth-ui': authUiSrc,
       '@fuzefront/account-security-ui': accountSecurityUiSrc,
       '@fuzefront/portal-admin-ui': portalAdminUiSrc,

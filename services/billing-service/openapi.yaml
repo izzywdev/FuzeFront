@@ -91,6 +91,39 @@ paths:
           $ref: '#/components/responses/InternalError'
 
   /subscriptions:
+    get:
+      operationId: getCurrentSubscription
+      tags: [subscriptions]
+      summary: Get the calling actor's current subscription
+      description: >-
+        Resolves the actor from the request context to its billing customer and
+        returns that customer's current subscription. Absence is NOT an error:
+        an actor with no billing customer, or a customer with no subscription,
+        returns `200 { "subscription": null }` — the UI renders "no plan" from
+        the null rather than from a 404, so a 404 here would be a behaviour
+        change, not a stricter contract.
+
+        Registered BEFORE `GET /subscriptions/{subscriptionId}` so the parameter
+        route does not shadow this collection route.
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The actor's current subscription, or null if there is none.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subscription]
+                properties:
+                  subscription:
+                    nullable: true
+                    allOf:
+                      - $ref: '#/components/schemas/BillingSubscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/IdentityError'
     post:
       operationId: createSubscription
       tags: [subscriptions]

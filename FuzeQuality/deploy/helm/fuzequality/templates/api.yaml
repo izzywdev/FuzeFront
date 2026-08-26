@@ -31,6 +31,15 @@ spec:
           ports: [{ name: http, containerPort: {{ .Values.backend.port }} }]
           env:
             {{- include "fuzequality.env" . | nindent 12 }}
+            # Where docker/Dockerfile put the contract. The image already sets
+            # this as an ENV; naming it here too means the path is visible in
+            # `helm template` and in `kubectl describe pod`, which is where
+            # someone debugging a 503 from /openapi.yaml will actually look.
+            # The contract is baked into the image, not mounted from a
+            # ConfigMap, so what this deployment serves is the spec it was
+            # built from and cannot drift from the running code.
+            - name: OPENAPI_SPEC_PATH
+              value: /workspace/FuzeQuality/contracts/openapi.yaml
           envFrom: []
           volumeMounts:
             - { name: runtime-tmp, mountPath: /tmp }

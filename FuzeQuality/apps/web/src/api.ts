@@ -8,6 +8,7 @@ import type {
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
 export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string }
 
+
 // The standalone dashboard uses same-origin API calls. When mounted as a
 // FuzeFront federated remote, the browser origin is app.fuzefront.com, so the
 // API origin is injected at build time and remains independent of the host.
