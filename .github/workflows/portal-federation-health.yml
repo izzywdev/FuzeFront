@@ -1,0 +1,165 @@
+name: Portal federation health
+
+# ANSWERS ONE QUESTION AUTOMATICALLY: "is each product's UI actually loading in
+# the FuzeFront portal, yes or no?" Nothing else in this repo asks the running
+# platform that — every other signal is workflow status, not product status.
+# The owner: only 13 of 18 products are listed in the portal, and "you should
+# have a mechanism to figure it out yourself if they are working or not."
+#
+# WHAT THIS DOES (scripts/check-portal-federation-health.mjs has the full
+# design rationale in its header comment; read it before changing behaviour):
+#   1. Enumerates every app GET /api/v1/app-registry/apps actually returns —
+#      never a hardcoded list, so a MISSING app is detectable at all.
+#   2. For each activated module-federation app: fetches its remoteEntry,
+#      rejects an HTML body (even one wearing a JS content-type — the "200
+#      that isn't"), then parses at least one referenced chunk out of the
+#      entry and fetches THAT too. A remoteEntry that loads while its chunks
+#      404 is the signature failure this whole mechanism exists to catch, and
+#      it is invisible to any check that stops at the entry file.
+#   3. Diffs the result against scripts/expected-portal-apps.json (checked in,
+#      sourced from this repo's own builtins.ts + CLAUDE.md's owner-quoted
+#      slug ruling + named docs — see that file's `_meta` for exactly where
+#      each entry came from) and reports any expected app the registry did not
+#      return at all — the 13-of-18 symptom, as a FAIL row, not a shorter
+#      table.
+#   4. Prints a per-app PASS/FAIL/MISSING table to the job summary.
+#
+# RUNNER CHOICE: ubuntu-latest (GitHub-hosted), deliberately.
+#   - .fuze/manifest.json declares NO `ci` block. Per .fuze/repo-manifest.schema.json's
+#     own description of that block: "Omit the block entirely to keep the
+#     template's ubuntu-latest, which is the correct default for a repo with
+#     no scale set" — so ubuntu-latest IS this repo's declared choice, by
+#     omission, not a default nobody considered.
+#   - FuzeFront is `"class": "oss-public"` (.fuze/manifest.json) — a PUBLIC
+#     repo, so the Actions spending limit that refuses ubuntu-latest jobs on
+#     PRIVATE repos does not apply here.
+#   - This workflow makes zero LLM calls, so the "GitHub-hosted runners cannot
+#     reach the internal LiteLLM host" constraint is not in play either way.
+#
+# NO SUPPRESSION. Neither job uses `|| true` or `continue-on-error`. A real
+# failure here must turn the workflow red — that is the entire point of
+# replacing a vacuous check with this one.
+
+on:
+  schedule:
+    # Every 6 hours, off the top of the hour and off another repo's :00 herd.
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Portal origin to probe (remoteEntry URLs resolve against this, matching frontend/src/utils/loadFederatedApp.ts)'
+        required: false
+        default: 'https://app.fuzefront.com'
+  # A PR touching the checker or its roster runs the (secret-free, prod-free)
+  # self-test as ordinary CI, so a regression is caught before merge instead
+  # of at the next scheduled prod run. probe-production stays schedule/
+  # workflow_dispatch-only below — a PR must never spend the prod credentials
+  # or hit the live site.
+  # An ON-DEMAND census that automation can actually trigger. `workflow_dispatch`
+  # above is the human lever; it is NOT reachable from an agent session, where
+  # POST /actions/workflows/{id}/dispatches returns 403 "Resource not accessible
+  # by integration" — as do /approve and /rerun. Without this, the only way to
+  # get a live answer was to wait up to 6h for the cron.
+  #
+  # Deliberately a dedicated throwaway branch prefix and NOT `pull_request`: the
+  # rule that a PR must never spend the prod credentials or hit the live site
+  # still holds. Pushing `ci/probe-prod` is an explicit, auditable act by
+  # whoever wants a census right now; opening a PR is not.
+  #
+  # probe-production needs no change to honour this -- its `if:` is
+  # `github.event_name != 'pull_request'`, so a push already qualifies.
+  push:
+    branches:
+      - 'ci/probe-prod**'
+
+  pull_request:
+    paths:
+      - 'scripts/check-portal-federation-health.mjs'
+      - 'scripts/check-portal-federation-health.selftest.mjs'
+      - 'scripts/expected-portal-apps.json'
+      - 'scripts/check-federated-assets.mjs'
+      - '.github/workflows/portal-federation-health.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portal-federation-health-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Runs FIRST and gates the production probe. Proves check-portal-federation-
+  # health.mjs actually fails on broken input (404 remoteEntry, an HTML body
+  # served with a JS content-type, a missing expected app) using local HTTP
+  # fixtures — no prod egress, no secrets. "Passes against a clean tree" is
+  # not evidence a checker works; "fails against a fixture built to break it"
+  # is. If this job is red, the production job below must not be trusted to
+  # run at all, so it is gated on this one.
+  selftest:
+    name: Self-test (proves failures are real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: "node --test (fixture-driven: healthy baseline + 3 required broken-input proofs + anti-vacuity)"
+        run: node --test scripts/check-portal-federation-health.selftest.mjs
+
+  probe-production:
+    name: Census against production
+    needs: selftest
+    # Never on pull_request: this job spends the POST_PROD_* credentials
+    # against the live site, which a PR (including one from a fork) must
+    # never be able to trigger.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: Run the census against production
+        env:
+          BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
+          # Reused from post-prod-e2e.yml — no new secret. This identity's org
+          # memberships/visibility bound what the census can see; see the
+          # COVERAGE CAVEAT in the script's header and the job summary this
+          # step writes for what that means for a MISSING row.
+          POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
+          POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+          # 10s (the script's default) was not enough for a cold prod sign-in
+          # from a GitHub-hosted runner -- the first two census runs both aborted
+          # there. 30s is not an attempt to paper over a slow API: if the portal
+          # genuinely takes >10s to authenticate that is worth knowing, and the
+          # reachability probe below is what separates "slow" from "down". A
+          # timeout is never scored as healthy either way.
+          PORTAL_HEALTH_TIMEOUT_MS: '30000'
+        run: |
+          set -o pipefail
+          {
+            echo "## Portal federation health — $(date -u +%FT%TZ)"
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Reachability first, and deliberately BEFORE the census. A sign-in
+          # timeout alone cannot tell you whether the host is unreachable from
+          # a GitHub-hosted runner (Cloudflare tunnel down, egress blocked) or
+          # simply slow to authenticate. These two lines settle it, cost a
+          # second, and print into the summary next to the census result.
+          # `|| true` here is NOT suppression of a verdict: curl's exit code is
+          # not the check -- the census below is -- and this line exists purely
+          # to record what the host said before that runs.
+          echo "reachability: $(curl -sS -o /dev/null -w 'HTTP %{http_code} in %{time_total}s' \
+            --max-time 30 "$BASE_URL/" 2>&1 || echo 'no answer')" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          node scripts/check-portal-federation-health.mjs --base-url "$BASE_URL" | tee -a "$GITHUB_STEP_SUMMARY"
+          status=$?
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
