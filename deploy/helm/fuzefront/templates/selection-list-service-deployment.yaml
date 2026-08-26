@@ -45,11 +45,17 @@ spec:
                 secretKeyRef:
                   name: selection-list-secrets
                   key: JWT_SECRET
-            - name: PERMIT_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: selection-list-secrets
-                  key: PERMIT_API_KEY
+            - name: SECURITY_SERVICE_URL
+              # fuzefront-security is the in-cluster Service name for security-service
+              # (port 3002). See templates/security.yaml and
+              # services/provisioning-service.yaml / config-service-deployment.yaml,
+              # which use the same convention. selection-list-service's
+              # authorization is now routed through this Service
+              # (src/middleware/authz.ts) instead of an embedded Permit.io SDK --
+              # PERMIT_API_KEY/permitPdpUrl are gone; this is not a secret, it is
+              # just the internal DNS name of another Service in the same
+              # namespace.
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
           readinessProbe:
             httpGet:
               path: /health

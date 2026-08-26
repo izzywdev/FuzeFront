@@ -89,9 +89,18 @@ COPY services/selection-list-service/package.json ./services/selection-list-serv
 RUN npm ci --workspace=services/selection-list-service --ignore-scripts
 
 # Copy source
+COPY packages/auth/ ./packages/auth/
 COPY services/selection-list-service/ ./services/selection-list-service/
 
-# Build
+# Build @fuzefront/auth first (src/middleware/authz.ts -- authorization
+# routed through FuzeFront's Security API instead of an embedded Permit.io
+# SDK -- imports it at module load; createAuthzClient() is constructed at
+# authz.ts's module scope), then selection-list-service. packages/auth IS a
+# root workspace member, but the --workspace=services/selection-list-service
+# filter above only installs SELECTION-LIST-SERVICE's own devDependencies,
+# not packages/auth's (tsup) -- mirrors services/config-service/Dockerfile's
+# identical treatment of the same package.
+RUN cd packages/auth && npm install --ignore-scripts && npm run build
 RUN cd services/selection-list-service && npm run build
 
 # ---------- production ----------
@@ -104,6 +113,15 @@ RUN apk add --no-cache dumb-init && \
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/services/selection-list-service/node_modules ./services/selection-list-service/node_modules
 COPY --from=build /app/services/selection-list-service/dist ./services/selection-list-service/dist
+# @fuzefront/auth is a workspace dependency, so npm LINKS it --
+# node_modules/@fuzefront/auth is a symlink to /app/packages/auth. The base
+# stage above ships packages/auth/package.json (workspace manifest list) so
+# that link resolves instead of dangling; here we populate its target with
+# the built output (mirrors services/config-service/Dockerfile's identical
+# treatment of the same package -- the "Cannot find module '@fuzefront/auth'"
+# crashloop it documents hitting first for @izzywdev/fuzefront-identity).
+COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
+COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/selection-list-service/openapi.yaml ./services/selection-list-service/openapi.yaml
 
