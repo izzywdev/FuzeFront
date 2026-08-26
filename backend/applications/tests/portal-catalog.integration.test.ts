@@ -115,7 +115,7 @@ async function seedApps(): Promise<void> {
       status: 'activated',
       mode: 'portal',
       builtin: false,
-      organization_id: null,
+      organization_id: ROOT_ORG_ID, // NOT NULL (011_apps_organization_id_not_null.ts) — a public, org-less-in-spirit catalog fixture is now owned by the platform root org like any other first-party app.
       visibility: 'public',
       manifest: JSON.stringify({
         manifestVersion: '1',
@@ -283,7 +283,7 @@ describe('FF-EPIC-12-S1 — PortalAppCatalogService (real Postgres)', () => {
           status: 'activated',
           mode: 'portal',
           builtin: false,
-          organization_id: null,
+          organization_id: ROOT_ORG_ID, // NOT NULL (011_apps_organization_id_not_null.ts) — a public, org-less-in-spirit catalog fixture is now owned by the platform root org like any other first-party app.
           visibility: 'public',
           manifest: JSON.stringify({
             manifestVersion: '1',
@@ -670,7 +670,7 @@ describe('FF-EPIC-12-S3 — portal catalog admin routes', () => {
           status: 'activated',
           mode: 'portal',
           builtin: false,
-          organization_id: null,
+          organization_id: ROOT_ORG_ID, // NOT NULL (011_apps_organization_id_not_null.ts) — a public, org-less-in-spirit catalog fixture is now owned by the platform root org like any other first-party app.
           visibility: 'public',
           manifest: JSON.stringify({
             manifestVersion: '1',

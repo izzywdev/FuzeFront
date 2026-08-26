@@ -24,20 +24,57 @@ dependency** on your app. Your app exposes a federated module; you register its
 import federation from '@originjs/vite-plugin-federation'
 
 export default {
+  // If your app runs in the SAME cluster as the shell, it is served at
+  // https://<shell-host>/apps/<slug>/ — see "Serving the remote" below. `base`
+  // MUST match that prefix or remoteEntry.js loads and every chunk it imports
+  // 404s against the shell's own bundle.
+  base: '/apps/myapp/',
   plugins: [
     federation({
       name: 'myApp',                 // becomes the `scope`
       filename: 'remoteEntry.js',
       exposes: { './App': './src/App.tsx' },  // becomes the `module`
-      shared: ['react', 'react-dom'], // MUST be shared singletons with the host
+      // MUST match the host's shared config EXACTLY — explicit singletons on
+      // the same React major. The bare `['react','react-dom']` shorthand does
+      // NOT set `singleton`, which lets your remote load its own React copy and
+      // die on "Invalid hook call" in the browser, with nothing in CI to catch
+      // it.
+      shared: {
+        react: { singleton: true, requiredVersion: '^19.0.0' },
+        'react-dom': { singleton: true, requiredVersion: '^19.0.0' },
+      },
     }),
   ],
   build: { target: 'esnext' },
 }
 ```
 
-Serve the build with permissive CORS so the shell (a different origin) can fetch
-`remoteEntry.js`.
+### Serving the remote — prefer the shell's own origin
+
+The browser fetches `remoteEntry.js`, so **cluster-internal DNS
+(`*.svc.cluster.local`) is not an option** — the browser cannot resolve it.
+
+If your app runs in the same cluster as the shell, do **not** publish the remote
+on its own public hostname. Give it a same-origin mount instead: an Ingress in
+**your app's own namespace** (an Ingress may only target a Service in its own
+namespace; Traefik watches all namespaces and merges rules per host) that
+publishes `/apps/<slug>/*` on the shell's host and strips the prefix before
+proxying to your ClusterIP Service. See
+`FuzeQuality/deploy/helm/fuzequality/templates/ingress.yaml` for a working
+example.
+
+That buys three things a separate public hostname does not:
+
+* **No second trip through the public edge.** The asset is served in-cluster
+  rather than hairpinning out to the CDN and back.
+* **No Cloudflare Access wall.** Hosts under `*.prod.fuzefront.com` sit behind
+  the admin Zero-Trust app, which answers an asset request with an **HTML login
+  page** — the federation runtime then fails with "Failed to fetch dynamically
+  imported module", which reads like a build problem and is not one.
+* **No CORS.** Same origin as the shell, so no cross-origin headers to maintain.
+
+Only a remote genuinely hosted **outside** the cluster needs its own absolute
+URL — and then it must serve permissive CORS so the shell can fetch it.
 
 ### 1b. Register it with the platform
 
@@ -48,11 +85,18 @@ curl -X POST https://app.fuzefront.com/api/apps/register \
   -d '{
     "name": "My App",
     "integrationType": "module-federation",
-    "remoteUrl": "https://my-app.example.com/assets/remoteEntry.js",
+    "remoteUrl": "/apps/myapp/assets/remoteEntry.js",
     "scope": "myApp",
     "module": "./App"
   }'
 ```
+
+`remoteUrl` accepts either a **same-origin absolute path** (preferred for
+in-cluster apps, as above — the same value works on the prod host, a tenant
+wildcard host, and localhost) or an absolute `http(s)` URL for a remote hosted
+outside the cluster. Protocol-relative values (`//host/…`) and any non-http
+scheme are rejected: a browser resolves them off-origin, which would run someone
+else's module inside the shell's origin.
 
 Fields (`integrationType` is one of `module-federation` | `iframe` |
 `web-component` | `spa`):
@@ -69,6 +113,15 @@ Apps can self-register on boot and send heartbeats; the SDK wraps this. The shel
 loads the remote on demand using `@originjs/vite-plugin-federation`. React /
 React-DOM are shared singletons for performance, so keep your React major in step
 with the host.
+
+> **This `POST /api/apps/register` flow has no `slug` field** — it is a separate,
+> older registration path (`backend/src/routes/apps.ts`) from the manifest-based
+> app registry (`registration/manifest.json` + `@fuzefront/onboarding-kit`) that
+> owns the `slug`/`name`/`menuLabel` naming convention. If your product needs menu
+> placement, an authz policy, or a billing profile, register via the kit instead —
+> see [`docs/mfe-self-registration.md`](../mfe-self-registration.md) — and read the
+> naming rule in the root `CLAUDE.md` § "`slug`, display name, and the federated
+> serve path are THREE INDEPENDENT questions" before choosing your `slug` or `name`.
 
 **The host is on React 19 and Node 24 (Active LTS). These are minimums, not targets:**
 
@@ -196,12 +249,11 @@ so a raw string off `req.body` will not compile against a repository taking
 equivalent and relies on the runtime boundary plus the gate, so Python services need
 **more** review discipline here, not less.
 
-> **Install caveat, honestly stated.** Both packages are now correctly scoped and
-> buildable, but **nothing is published yet**. `packages-publish.yml` is still gated
-> on the repository owner, so the npm package does not reach GitHub Packages until
-> that guard flips; the Python wheel publishes on an `identity-py-v*` tag and is
-> available as a Release asset. Until the npm side lands, follow the standard's rules
-> — the package drops in without an API change.
+> **Both packages are published.** `@izzywdev/fuzefront-identity` is live on GitHub
+> Packages — add the `.npmrc` scoped registry block from §2 above and install
+> normally. The Python wheel (`fuzefront-identity`) publishes on `identity-py-v*`
+> tags and is available as a GitHub Release asset. To install from a Release:
+> `pip install https://github.com/izzywdev/FuzeFront/releases/download/identity-py-v1.0.0/fuzefront_identity-1.0.0-py3-none-any.whl`.
 
 ---
 
@@ -294,3 +346,5 @@ rather than one-off styling.
 - Operational deployment runbook: `docs/deployment/CONTABO_DEPLOYMENT.md`
 - Module Federation deep-dive: `docs/guides/MODULE_FEDERATION_GUIDE.md`
 - Developer guide: `docs/guides/DEVELOPER_GUIDE.md`
+- Consuming durable, typed settings from config-service (not the feature-flag
+  system): `docs/guides/CONFIG_SERVICE_INTEGRATION_GUIDE.md`

@@ -11,6 +11,7 @@ on:
     paths:
       - 'design/frames/**'
       - 'scripts/stamp-frames.mjs'
+      - 'scripts/__tests__/stamp-frames.test.mjs'
       - '.github/workflows/gate-frames-stamped.yml'
 
 permissions:
@@ -31,6 +32,14 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '24.x'
+
+      # Guard the stamping TOOL itself, not just its output. This fails loudly if
+      # scripts/stamp-frames.mjs disappears (MODULE_NOT_FOUND — FFRNT-301) or if a
+      # refactor silently changes the hashing algorithm (the account-security
+      # fixture stamp stops reproducing). Run before the tree check so a broken
+      # tool reports as a broken tool, not as opaque drift on every feature.
+      - name: Self-test the stamp tool (presence + algorithm pin)
+        run: node --test scripts/__tests__/stamp-frames.test.mjs
 
       - name: Verify every feature manifest stamp is current
         run: node scripts/stamp-frames.mjs --check

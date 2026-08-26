@@ -39,6 +39,8 @@ on:
         required: false
       POST_PROD_PASSWORD:
         required: false
+      INTERNAL_PROVISION_SECRET:
+        required: false
 
 permissions:
   contents: read
@@ -73,6 +75,14 @@ jobs:
           # Falls back to the seeded admin creds inside the spec when unset.
           POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
           POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+          # Internal provision secret — required only for the credential-drift self-heal
+          # path in test 7. When POST_PROD_PASSWORD no longer matches the identity account
+          # (e.g. the secret was rotated), the spec calls
+          # POST /api/v1/security/admin/reset-password (tenant-aware, routes through the
+          # security service's accountApi) to reset it, then retries sign-in.
+          # Without this secret the spec fails with a clear diagnostic instead of
+          # silently looping on 401.
+          INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
         run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
 
       # AuthN provider-boundary smoke (contract PR #243). Runs only when

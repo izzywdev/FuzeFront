@@ -53,7 +53,9 @@ export interface paths {
         };
         /**
          * List portals (master-admin fleet view)
-         * @description Returns a cursor-paginated page of portals for the master-admin fleet list. Permit **platform-admin** only — a non-admin caller is denied fail-closed with 403 `FORBIDDEN`. A fresh install returns exactly one portal (the seeded root portal, slug `fuzefront`).
+         * @description Returns a cursor-paginated page of portals for the master-admin fleet list. A fresh install returns exactly one portal (the seeded root portal, slug `fuzefront`).
+         *     When `fuzefront.platform.portals-directory` is OFF, this stays Permit **platform-admin** only — a non-admin caller is denied fail-closed with 403 `FORBIDDEN`, byte-identical to the pre-1.3.0 contract.
+         *     When the flag is ON (backend slice S5), the blanket admin-only gate is replaced by a per-portal Permit `read`/`manage` check on each portal's owning organization (`Organization:read` / `Organization:manage`, including the parent-org `org-admin` derivation for platform/master admins): a caller with `manage` on a portal's org sees it with `canManage: true, canOpen: true` and a `launchUrl`; a caller with only `read` sees it read-only (`canManage: false, canOpen: false`, no `launchUrl`); a portal the caller cannot even `read` is never returned (BOLA-safe filtering, never after-the-fact leakage). A caller with `read` authority over NONE of the portals this query would otherwise return still gets the fail-closed 403 `FORBIDDEN` no-access response — the read-vs-manage refinement only ever WIDENS who sees a 200 relative to the pre-flag blanket gate, never who is denied.
          */
         get: operations["listPortals"];
         put?: never;
@@ -183,6 +185,11 @@ export interface components {
          */
         PortalStatus: "provisioning" | "provisioned-pending-invite" | "active" | "suspended";
         /**
+         * @description Whether the portal shares the root FuzeFront Authentik directory (`soft`, the default for every ordinary portal) or owns a dedicated Authentik instance (`hard` — its own directory, DB, ingress host, and blueprint set; e.g. the MendysRobotics tenant). Currently populated ONLY on `GET /api/v1/admin/portals` (the master-admin fleet list), behind `fuzefront.platform.portals-directory` (default OFF) — absent elsewhere until other portal endpoints adopt it.
+         * @enum {string}
+         */
+        IdentityMode: "soft" | "hard";
+        /**
          * @description How the portal is billed. `free` — no billing; `platform` — billed by FuzeFront directly; `reseller` — the portal bills its own users via Stripe Connect (FF-EPIC-15). Selecting `reseller` at create time unlocks the Connect console.
          * @enum {string}
          */
@@ -194,14 +201,18 @@ export interface components {
         DomainKind: "subdomain" | "path" | "custom";
         /**
          * @description Domain-ownership verification status (custom domains, FF-EPIC-16).
+         *     Sourced from FuzeInfra's `dns_status`, NOT from a FuzeFront-issued TXT token. We deliberately do not generate a `_fuzefront-verify` record and do not poll DNS: Cloudflare issues `_cf-custom-hostname.<domain>` and validates it itself, which is the same proof of DNS control checked by the party that also issues the certificate — and one fewer record for the customer to publish.
+         *     * `pending` — records not yet published or propagated * `verified` — ownership proven and the domain resolves to the platform * `moved` — the domain stopped pointing at us * `blocked` — refused upstream; the hostname is claimed elsewhere * `failed` — validation failed; see `error`
          * @enum {string}
          */
-        VerificationStatus: "pending" | "verified" | "failed";
+        VerificationStatus: "pending" | "verified" | "moved" | "blocked" | "failed";
         /**
-         * @description TLS certificate issuance status for the domain.
+         * @description Certificate lifecycle for the domain, mirroring FuzeInfra's normalized `tls_status` enum verbatim (contract: `services/custom-hostname-api/openapi.yaml`). Those values are already mapped from Cloudflare's rawer vocabulary, and unknown upstream states deliberately map to a pending state rather than to a failure — so a Cloudflare vocabulary change cannot present to a user as an error. Re-mapping them here would only re-introduce the coupling FuzeInfra removed.
+         *     Everything before `active` is a normal in-progress state. `failed` and `expired` are terminal until the customer fixes their DNS; retry is a re-POST.
+         *     `none` is FuzeFront-only: a `subdomain`/`path` domain served by the static wildcard certificate, which needs no per-domain issuance.
          * @enum {string}
          */
-        TlsStatus: "none" | "pending" | "issued" | "failed";
+        TlsStatus: "none" | "pending_validation" | "pending_issuance" | "pending_deployment" | "active" | "expired" | "failed";
         /** @description Public white-label branding, applied entirely through design-system token overrides (no raw hex in feature code). Every field has a documented fallback so the UI never shows a broken image or unbranded flash. */
         PortalBranding: {
             /** @description Portal display name (e.g. "Northwind"). Shown in the topbar and login. */
@@ -234,6 +245,11 @@ export interface components {
             mfaRequired: boolean;
             /** @description Public SSO provider ids offered on this portal (e.g. `google`, `okta`). */
             ssoProviders?: string[];
+            /**
+             * @description FF-EPIC-11-S5 — internal/admin-only opt-in allowing a platform (root-org) administrator to authenticate into this tenant portal for support purposes, bypassing the normal home-portal-based cross-portal login rejection. Every exercise of this path is audit-logged. Default false/absent — a portal must explicitly opt in. Never returned on the PUBLIC, pre-auth `GET /api/v1/portal/context` boot payload (only surfaced on authenticated admin portal-management responses) — despite sharing this schema, that specific projection whitelists only the fields above.
+             * @default false
+             */
+            allowPlatformAdminSupportAccess: boolean;
         };
         /** @description A single SSO button on the login screen. */
         PortalSsoProvider: {
@@ -280,7 +296,10 @@ export interface components {
             identityPolicy: components["schemas"]["PortalIdentityPolicy"];
             authEntry: components["schemas"]["PortalAuthEntry"];
         };
-        /** @description A domain (subdomain / path / custom) bound to a portal, with its verification + TLS status. Add/verify of custom domains is FF-EPIC-16; here domains are read-only. */
+        /**
+         * @description A domain (subdomain / path / custom) bound to a portal, with its verification + TLS status. Add/verify of custom domains is FF-EPIC-16; here domains are read-only.
+         *     For `kind: custom`, every status field is a projection of FuzeInfra's Custom Hostname API response — see `services/custom-hostname-api/`.
+         */
         PortalDomain: {
             id: string;
             portalId: components["schemas"]["PortalId"];
@@ -289,10 +308,39 @@ export interface components {
             kind: components["schemas"]["DomainKind"];
             verificationStatus: components["schemas"]["VerificationStatus"];
             tlsStatus: components["schemas"]["TlsStatus"];
+            /**
+             * @description **The only field to gate on** before advertising this domain to a user. True only when DNS validation passed, the certificate is deployed, AND the in-cluster routing exists. Any one missing means a visitor gets an error, so the three are deliberately collapsed into one boolean rather than left for each caller to re-derive.
+             *     Notably NOT equivalent to `tlsStatus == active`: a certificate can be live while routing is missing, which serves a valid certificate in front of a 404.
+             *     Always true for `subdomain`/`path` domains, which the static wildcard already serves.
+             */
+            active: boolean;
             /** @description Whether this is the portal's primary/canonical domain. */
             isPrimary: boolean;
+            /**
+             * @description DNS records the customer must publish, for `kind: custom` only. Sourced from the upstream `verification.records[]` — FuzeFront does not mint its own verification token.
+             *     A UI must render ALL of these. The ownership record alone is not enough to make the domain work.
+             */
+            verificationRecords?: components["schemas"]["DomainVerificationRecord"][];
+            /** @description The hostname the customer CNAMEs their domain to. Always read from the API rather than hard-coded: the target is a deliberate public contract kept separate from the origin, so the origin can be repointed without asking every customer to change DNS. */
+            cnameTarget?: string | null;
+            /** @description Human-readable reason when a status is failed/blocked. Shown with a retry action. */
+            error?: string | null;
             /** Format: date-time */
             createdAt?: string;
+        };
+        /** @description One DNS record the customer must publish for a custom domain. */
+        DomainVerificationRecord: {
+            /** @enum {string} */
+            method: "txt" | "cname";
+            /** @description The record NAME to create. */
+            record: string;
+            /** @description The record VALUE. */
+            value: string;
+            /**
+             * @description `ownership` proves domain control (`_cf-custom-hostname.<domain>`), `certificate` satisfies ACME DCV (`_acme-challenge.<domain>`), and `routing` points traffic at us (CNAME). Presented in that order — a customer migrating a live domain publishes the TXT records first and cuts the CNAME over last, which is what makes the migration zero-downtime.
+             * @enum {string}
+             */
+            purpose: "ownership" | "certificate" | "routing";
         };
         /** @description The full portal record returned by the master-admin CRUD and `GET /api/v1/portal/current`. Its `status` field is the single source of truth for the fail-closed block that pairs with FF-EPIC-10 resolution. */
         Portal: {
@@ -322,6 +370,17 @@ export interface components {
             domains: components["schemas"]["PortalDomain"][];
             /** @description Convenience: the primary domain string, or null if none yet. */
             primaryDomain?: string | null;
+            /** @description OPTIONAL — only present on `GET /api/v1/admin/portals` (list) responses, and only when `fuzefront.platform.portals-directory` is enabled for the caller. See `IdentityMode` for the field's own description. Absent (not `null`) on every other portal response. Present on EVERY row the caller may see (read-only or manage — see `canManage`/`canOpen` below). */
+            identityMode?: components["schemas"]["IdentityMode"];
+            /** @description OPTIONAL (backend slice S5, read-vs-no-access refinement) — only present on `GET /api/v1/admin/portals` (list) responses when `fuzefront.platform.portals-directory` is enabled. Whether the caller holds Permit `manage` authority (not just `read`) on this portal's owning organization — derived via the existing `Organization` resource's `read`/`manage` actions and the parent-org `org-admin` ReBAC derivation (platform/master admins included). `false` renders the row read-only in the directory UI (no manage/launch affordance). Absent (not present at all) when the flag is OFF. */
+            canManage?: boolean;
+            /** @description OPTIONAL — same gating as `canManage` above. The authority to LAUNCH the portal. There is no separate Permit `open`/`launch` action on `Organization` today, so this intentionally mirrors `canManage` — a caller who can manage a portal can also launch it, and a read-only viewer can neither. If a distinct launch authority is ever introduced this field decouples from `canManage` without a contract break (it is already its own field). Absent when the flag is OFF. */
+            canOpen?: boolean;
+            /**
+             * Format: uri
+             * @description OPTIONAL — present on `GET /api/v1/admin/portals` (list) responses only when `fuzefront.platform.portals-directory` is enabled AND `canOpen` is `true` for this row. Absent (not `null`, not present at all) for a read-only row (`canOpen: false`) — a caller without launch authority must never receive the launch host. `https://<primary domain>` when the portal has a primary `portal_domains` row, else the platform-owned default subdomain (`https://<slug>.fuzefront.com`) `default_domain_create` provisions for every portal.
+             */
+            launchUrl?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

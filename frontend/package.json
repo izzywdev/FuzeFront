@@ -2,6 +2,10 @@
   "name": "@fuzefront/frontend",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "FuzeFront container shell application",
   "type": "module",
   "scripts": {
@@ -23,6 +27,7 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@fuzeone/selection-lists-ui": "file:../packages/selection-lists-ui",
     "@fuzefront/chat-client": "file:../packages/chat-client",
     "@fuzefront/chat-ui": "file:../packages/chat-ui",
     "@originjs/vite-plugin-federation": "^1.4.1",
@@ -73,5 +78,9 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.62.0"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/design-system",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "FuzeFront \"fuse seam\" design system — token-driven React components",
   "type": "module",
   "main": "index.js",
@@ -32,6 +36,7 @@
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.0",
+    "@types/node": "^24.13.3",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@testing-library/react": "^16.3.2",
@@ -51,5 +56,9 @@
     "type": "git",
     "url": "https://github.com/izzywdev/FuzeFront.git",
     "directory": "design-system"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

@@ -31,9 +31,10 @@ real, or set secret.existingSecret to a Secret you manage out-of-band.
 SMS MFA is enabled. In production, your existingSecret (e.g. a SealedSecret) MUST
 contain the following keys:
   - SMS_AUTH_SECRET       — shared Bearer token between Authentik and sms-service
-  - TWILIO_ACCOUNT_SID    — Twilio account SID
-  - TWILIO_AUTH_TOKEN     — Twilio auth token
-  - TWILIO_VERIFY_SERVICE_SID — Twilio Verify service SID
+  - TWILIO_ACCOUNT_SID    — Twilio account SID (AC…)
+  - TWILIO_API_KEY_SID    — Twilio API Key SID (SK…)
+  - TWILIO_API_KEY_SECRET — Twilio API Key secret
+  - TWILIO_VERIFY_SERVICE_SID — Twilio Verify service SID (VA…)
 {{- end }}
 {{- if .Values.provisioningService.enabled }}
 

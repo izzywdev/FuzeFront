@@ -2,6 +2,11 @@
   "name": "White-label tenant portal — shell & login (approval frames)",
   "description": "Contract-freeze UX artifacts for the FuzeFront white-label tenant portal: one shell (topbar + side panel + app grid) and one login, reskinned to the active portal's name/logo/accent from GET /api/v1/portal/context, applied entirely through design-system token overrides (no raw hex). Covers loading (no-flash), error, and the fail-closed cases (suspended portal, unknown-host root fallback, cross-portal login rejection) plus light/dark theming. Approving these frames approves the flows, components, DS primitive, and package in `build`. frontend-test-engineer drives Playwright against the data-frame / data-* hooks. Per-flow approval — approving portal-shell unblocks that flow independently of portal-login.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/portal-branding-ui/src/**"
+    ]
+  },
   "epics": [
     "FF-EPIC-13",
     "FF-EPIC-10"
@@ -197,5 +202,5 @@
       ]
     }
   ],
-  "stamp": "61c774adba7588b343391211b5366bdcefbea6c3565acc8248da86f7abd2dcfe"
+  "stamp": "6f83c8e09d465f01f3eca92aa98767675f05b47cd061a67bce484f748cfe80d0"
 }

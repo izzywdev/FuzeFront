@@ -125,6 +125,24 @@
       name: {{ include "fuzefront.secretName" . }}
       key: KAFKA_UI_CLIENT_SECRET
       optional: true
+# Airflow's UI (Flask-AppBuilder AUTH_OAUTH). The consumer side is
+# fuzeinfra/airflow-oidc, gated behind airflow.oidc.enabled in
+# izzywdev/FuzeInfra's values-contabo.yaml.
+- name: AUTHENTIK_AIRFLOW_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: AIRFLOW_CLIENT_SECRET
+      optional: true
+# LiteLLM's admin console (its "generic" OIDC provider). The consumer side is
+# fuzeinfra/litellm-oidc, gated behind sso.enabled in izzywdev/FuzeInfra's
+# helm/litellm/values-contabo.yaml.
+- name: AUTHENTIK_LITELLM_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "fuzefront.secretName" . }}
+      key: LITELLM_CLIENT_SECRET
+      optional: true
 {{- if .Values.smsService.enabled }}
 # SMS MFA — the stages-sms blueprint reads these env vars at apply time.
 # AUTHENTIK_SMS_SEND_URL / AUTHENTIK_SMS_VERIFY_URL point at the in-cluster
@@ -345,12 +363,21 @@ spec:
     - host: {{ $ak.host | quote }}
       http:
         paths:
-          - path: /
+          {{- /* Was `path: /` — the ENTIRE Authentik, including /if/admin/ and
+                 /api/v3, served publicly on this host. Verified against prod:
+                 /if/admin/, /if/flow/default-authentication-flow/ and
+                 /api/v3/root/config/ all returned 200 to an anonymous client.
+                 Narrowed to the same protocol+login set the app-host proxy uses.
+                 This host cannot simply be deleted: marketplace.mendysrobotics.com
+                 is live and its /api/auth/oidc/login 302s here. */ -}}
+          {{- range $p := (include "fuzefront.authentikPublicPaths" $ | fromYamlArray) }}
+          - path: {{ $p }}
             pathType: Prefix
             backend:
               service:
                 name: authentik-server
                 port:
                   number: 9000
+          {{- end }}
 {{- end }}
 {{- end }}

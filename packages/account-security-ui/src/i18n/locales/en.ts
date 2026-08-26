@@ -74,4 +74,32 @@ export const en: AccountSecurityMessages = {
     remove: 'Remove',
     manage: 'Manage',
   },
+  connections: {
+    page: {
+      title: 'Connected accounts',
+      subtitle: "Link or unlink the ways you sign in. You'll always keep at least one.",
+    },
+    addHeading: 'Add a way to sign in',
+    addHint: 'Optional',
+    addFootnote:
+      "Connecting a provider lets you sign in with it. It never shares your FuzeFront password, and you can disconnect it any time — as long as one sign-in method remains.",
+    continueWith: 'Continue with {provider}',
+    connectButton: 'Connect {provider}',
+  },
+  connect: {
+    redirectingTitle: "You'll continue on {provider}",
+    redirectingText:
+      "We'll take you to {provider} to confirm it's you, then bring you straight back here. Nothing links until you approve.",
+    continueButton: 'Continue with {provider}',
+    cancel: 'Cancel',
+    linkedTitle: '{provider} connected',
+    linkedText: "You can now sign in with {provider}. It's been added to your ways to sign in.",
+    viewConnected: 'View connected accounts',
+    linkFailedTitle: "{provider} wasn't connected",
+    linkFailedText:
+      "The connection was cancelled or didn't complete. Nothing changed — you can try connecting again.",
+    tryAgain: 'Try again',
+    alreadyLinkedTitle: '{provider} is already connected',
+    alreadyLinkedText: 'This provider is already one of your ways to sign in.',
+  },
 }

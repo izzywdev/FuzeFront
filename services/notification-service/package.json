@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/notification-service",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "description": "Notification microservice for FuzeFront — inbox, preferences, SSE delivery",
   "private": true,
   "main": "dist/index.js",
@@ -33,5 +37,9 @@
     "ts-jest": "29.1.1",
     "ts-node": "10.9.2",
     "typescript": "5.1.6"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

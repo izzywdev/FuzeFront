@@ -4,6 +4,9 @@ import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import { requireAppPermission } from '../middleware/permissions'
 import { App } from '../types/shared'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const router = express.Router()
 
@@ -170,24 +173,93 @@ async function getMemberOrgIds(userId: string): Promise<string[]> {
 
 /**
  * Apply org/visibility scoping to an apps query for the given user.
+ *
+ * MUST agree with the production rule in
+ * backend/applications/src/app-registry/service.ts `list()` (~line 215-270)
+ * — this route is bypassed by the ingress in a real K8s deployment (see the
+ * NOTE above the `/api/apps` mount in ../index.ts: the ingress routes
+ * `/api/apps` to fuzefront-applications, not this service), but it IS what
+ * actually serves `/api/apps` locally (docker-compose has no such ingress
+ * split) and is covered by this file's own integration tests, so it is not
+ * dead code — just not what a real deploy's traffic reaches. Before this fix
+ * the two disagreed, in both directions:
+ *   - production had an `organization_id IS NULL` branch this function
+ *     lacked (org-less rows were visible in production, hidden here) — REMOVED
+ *     from both as of the migration below, per owner ruling 2026-08-25
+ *     ("there should be no app without orgid ... fuzefront itself [is] the
+ *     orgid for our own apps"): `organization_id` is NOT NULL on `apps` now
+ *     (see 026_apps_organization_id_not_null.ts, and its applications-service
+ *     sibling 011_apps_organization_id_not_null.ts, which backfill every
+ *     existing org-less row to the platform root org before either
+ *     constrains the column), so there is no such row left to special-case.
+ *   - this function's org-membership branch didn't check `visibility` at
+ *     all, so any row sharing an organization_id with the caller was shown
+ *     regardless of its declared visibility, where production requires
+ *     visibility IN ('organization','private') on that branch. Fixed here
+ *     to match.
+ *
  * The caller may see an app when ANY of:
- *   - it belongs to an org they're an active member of, OR
- *   - its visibility is 'public' or 'marketplace'.
- * Private/organization apps of orgs they don't belong to are excluded (BOLA).
+ *   - its visibility is 'public'/'marketplace', OR
+ *   - its visibility is 'organization'/'private' AND its organization_id is
+ *     one the caller is an active member of.
+ * An organization/private app of an org the caller does NOT belong to is
+ * excluded either way (BOLA). Does not implement the app-registry's
+ * platform-admin bypass or scoped-portal gate (portal_apps) — this table
+ * predates that multi-tenant portal concept; only the core visibility/org
+ * rule is kept in parity here.
  */
 function scopeAppsQuery(query: any, memberOrgIds: string[]) {
   return query.where(function (this: any) {
     this.whereIn('apps.visibility', ['public', 'marketplace'])
     if (memberOrgIds.length > 0) {
-      this.orWhereIn('apps.organization_id', memberOrgIds)
+      this.orWhere((ownOrg: any) => {
+        ownOrg
+          .whereIn('apps.visibility', ['organization', 'private'])
+          .whereIn('apps.organization_id', memberOrgIds)
+      })
     }
   })
 }
 
-// Health check function for individual apps
+// Health check function for individual apps.
+//
+// This previously ended in `return response.status < 500`, with the comment
+// "Consider 2xx, 3xx, 4xx as healthy". That reported an app whose assets 404 as
+// HEALTHY, so the only thing it actually proved was that SOME server answered
+// on that host — which, for every app mounted behind the shell's own ingress,
+// is true even when nothing is deployed behind the route.
+//
+// That is not a missing check, it is a check asserting the opposite of the
+// truth, and it is why federated remotes could serve nothing in production
+// while the portal showed them green. Measured 2026-08-24 by the prod
+// federation probe: of 16 remotes, 12 answered 404, 3 answered 503, and 1
+// answered 200 with the shell's own HTML. Only the three 503s would have been
+// reported unhealthy by the old rule.
+//
+// A 4xx now means unhealthy. For a module-federation app the meaningful signal
+// is stronger still: the remote entry must serve a JAVASCRIPT MODULE. An SPA
+// fallback answering 200 with HTML satisfies any status-code check while the
+// browser gets markup where it expected a module and the panel dies — that is
+// exactly the `fuzequality` case, and a status-only check cannot see it.
+const HEALTH_JS_CONTENT_TYPE = /(javascript|ecmascript)/i
+const HEALTH_HTML_CONTENT_TYPE = /text\/html/i
+
 async function checkAppHealth(app: AppRow): Promise<boolean> {
   try {
-    const healthUrl = `${app.url}` // Check root URL instead of /healthy
+    // A module-federation remote entry may be declared as a same-origin PATH
+    // (`/apps/<slug>/remoteEntry.js`). The browser resolves that against the
+    // page origin; this process has no reliable public origin to resolve it
+    // against, so the entry is only probed when the manifest declares an
+    // absolute URL. The relative case is covered by
+    // scripts/probe-prod-federation.mjs, which runs where a real origin is
+    // known. Deliberately NOT reconstructed from a request header — a spoofable
+    // Host would make the health of every app caller-controlled.
+    const isFederated = app.integration_type === 'module-federation'
+    const entryIsAbsolute =
+      typeof app.remote_url === 'string' && /^https?:\/\//i.test(app.remote_url)
+    const checkEntry = isFederated && entryIsAbsolute
+    const healthUrl = checkEntry ? app.remote_url : app.url
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
 
@@ -195,13 +267,38 @@ async function checkAppHealth(app: AppRow): Promise<boolean> {
       method: 'GET',
       signal: controller.signal,
       headers: {
-        Accept: 'text/html,application/json',
+        Accept: checkEntry
+          ? 'application/javascript,text/javascript'
+          : 'text/html,application/json',
       },
     })
 
     clearTimeout(timeoutId)
-    // Accept any response (including 404) as long as the server responds
-    return response.status < 500 // Consider 2xx, 3xx, 4xx as healthy, 5xx as unhealthy
+
+    // 4xx is NOT healthy. A 404 means the route resolves to nothing.
+    if (!response.ok) {
+      console.log(
+        `Health check failed for ${app.name} (${healthUrl}): HTTP ${response.status}`
+      )
+      return false
+    }
+
+    if (checkEntry) {
+      const contentType = response.headers.get('content-type') || ''
+      if (
+        HEALTH_HTML_CONTENT_TYPE.test(contentType) ||
+        !HEALTH_JS_CONTENT_TYPE.test(contentType)
+      ) {
+        console.log(
+          `Health check failed for ${app.name} (${healthUrl}): remote entry ` +
+            `returned 200 with content-type '${contentType || 'none'}' — an SPA ` +
+            `fallback, not a JavaScript module`
+        )
+        return false
+      }
+    }
+
+    return true
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
@@ -237,7 +334,9 @@ router.get('/health', authenticateToken, async (req: any, res) => {
       })
     )
 
-    res.json(healthChecks)
+    const flagCtx = { userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+    res.json(healthChecks.map((item: any) => prefixDtoIds(item, prefixed, { id: 'app' })))
   } catch (error) {
     console.error('Error checking app health:', error)
     res.status(500).json({ error: 'Failed to check app health' })
@@ -315,17 +414,20 @@ router.get('/', authenticateToken, async (req: any, res) => {
       })
     )
 
+    const flagCtx = { userId: req.user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
+
     // If healthyOnly is requested, filter by health status
     if (healthyOnly === 'true') {
       const healthyApps = appsWithHealth.filter((app: any) => app.isHealthy)
       res.json(
         healthyApps.map((app: any) => {
           const { isHealthy, ...appWithoutHealth } = app
-          return appWithoutHealth
+          return prefixDtoIds(appWithoutHealth, prefixed, { id: 'app' })
         })
       )
     } else {
-      res.json(appsWithHealth)
+      res.json(appsWithHealth.map((app: any) => prefixDtoIds(app, prefixed, { id: 'app' })))
     }
   } catch (error) {
     console.error('Error fetching apps:', error)
@@ -535,7 +637,9 @@ router.post(
         installCount: 0,
       }
 
-      res.status(201).json(newApp)
+      const flagCtx = { userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.status(201).json(prefixDtoIds(newApp, prefixed, { id: 'app' }))
     } catch (error: any) {
       console.error('Error creating app:', error)
 
@@ -779,7 +883,14 @@ router.post(
         scope,
         module,
         description,
-        organization_id: organizationId || null,
+        // organizationId || null WAS the bug this comment used to only
+        // half-describe: a caller whose verified context carries no org
+        // (organizationId undefined) got an explicit NULL row — the exact
+        // org-less state the NOT NULL constraint on this column (see
+        // scopeAppsQuery's doc comment above and
+        // 026_apps_organization_id_not_null.ts) now forbids. Fall back to
+        // the platform root org instead, same as the column's own DEFAULT.
+        organization_id: organizationId || ROOT_ORG_ID,
         visibility: 'private',
       })
 
@@ -811,7 +922,9 @@ router.post(
 
       console.log(`App "${name}" self-registered successfully`)
 
-      res.status(201).json(newApp)
+      const flagCtx = { userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.status(201).json(prefixDtoIds(newApp, prefixed, { id: 'app' }))
     } catch (error: any) {
       console.error('Error in self-registration:', error)
 
@@ -845,7 +958,9 @@ router.post(
               isMarketplaceApproved: false,
               installCount: 0,
             }
-            return res.status(200).json(app)
+            const flagCtx2 = { userId: req.user?.id }
+            const prefixed2 = await isPrefixedIdsEnabled(flagCtx2)
+            return res.status(200).json(prefixDtoIds(app, prefixed2, { id: 'app' }))
           }
         } catch (fetchError) {
           console.error('Error fetching existing app:', fetchError)

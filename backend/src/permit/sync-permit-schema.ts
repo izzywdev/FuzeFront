@@ -269,7 +269,29 @@ export async function loadRegisteredPolicyResult(
   const rejected: { slug: string; reason: string }[] = []
   try {
     /* eslint-disable @typescript-eslint/no-var-requires */
-    const { db } = require('../config/database')
+    const database = require('../config/database')
+    // `db` is `export let db: Knex` — DECLARED at module load, ASSIGNED only by
+    // initializeDatabaseConnection(). The server calls that during boot, but this
+    // module is also the permit-schema-sync CLI entrypoint, which does not. So
+    // `db` was undefined, `db.schema` threw "Cannot read properties of undefined
+    // (reading 'schema')", the catch below classified a TypeError as
+    // `registry_unavailable`, and the Job exited non-zero on every deploy.
+    //
+    // Destructuring BEFORE initializing is what made this invisible: `const { db }`
+    // captures the value at that moment, so calling the initializer afterwards
+    // would still leave the local binding undefined. Read the property AFTER.
+    //
+    // initializeDatabaseConnection() is idempotent (`if (!db)`), so this is a
+    // no-op in the server, where the connection already exists.
+    // Guarded on BOTH sides deliberately. `permit-sync-registry.test.ts` stubs
+    // this module as `{ db }` with no initializer — that mock is the documented
+    // way the registry read is made testable without a DB, so calling the
+    // initializer unconditionally breaks it. And re-initializing when a handle
+    // already exists would be wrong regardless of tests.
+    if (!database.db && typeof database.initializeDatabaseConnection === 'function') {
+      database.initializeDatabaseConnection()
+    }
+    const db = database.db
     /* eslint-enable @typescript-eslint/no-var-requires */
 
     // The `apps.slug` and `apps.policy` columns are provisioned by the
@@ -354,6 +376,7 @@ export function loadLegacyProductPolicies(): ProductPolicy[] {
   return [
     require('./products/fuzemarket.policy').default,
     require('./products/mendys-datasets.policy').default,
+    require('./products/fuzefinance.policy').default,
   ]
   /* eslint-enable @typescript-eslint/no-var-requires */
 }

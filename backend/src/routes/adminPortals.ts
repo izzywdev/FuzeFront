@@ -5,15 +5,32 @@ import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
 import {
   getPortalDomains,
+  getPortalIdentityMode,
+  getPortalLaunchUrl,
   rowToPortal,
   type BillingMode,
+  type IdentityMode,
   type PortalBranding,
   type PortalIdentityPolicy,
   type PortalStatus,
 } from '../repositories/portalRepository'
 import { provisionPortal, SlugTakenError } from '../services/portalProvisioning'
+import { isPortalsDirectoryEnabled } from '../utils/portalsDirectoryFlag'
+import { resolvePortalReadManageCapabilities } from '../utils/portalReadManageCapabilities'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 
 type Middleware = (request: Request, response: Response, next: NextFunction) => unknown
+
+// Portals Directory (backend slice S1) — the fleet-list DTO enriched with
+// `identityMode`. Optional (not part of `rowToPortal`'s base return type) so
+// existing `AdminPortalStore` mocks/consumers that predate this field stay
+// valid without modification; `createAdminPortalStore().list()` below always
+// populates it (cheap — already selected on the row), and the router decides
+// whether to actually emit it on the wire based on the feature flag.
+export type AdminPortalListItem = ReturnType<typeof rowToPortal> & {
+  identityMode?: IdentityMode
+}
 
 export interface AdminPortalStore {
   list(input: {
@@ -21,7 +38,7 @@ export interface AdminPortalStore {
     query?: string
     limit: number
     cursor?: string
-  }): Promise<{ items: ReturnType<typeof rowToPortal>[]; nextCursor: string | null }>
+  }): Promise<{ items: AdminPortalListItem[]; nextCursor: string | null }>
   create(input: {
     actorUserId: string
     name: string
@@ -61,9 +78,22 @@ function validEmail(value: unknown): value is string {
   return at > 0 && at === value.lastIndexOf('@') && value.indexOf('.', at + 2) > at + 1
 }
 
-export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
+// `injectedDatabase` is read live (via `injectedDatabase ?? db`) inside EACH
+// method below, rather than resolved once here as a default parameter value.
+// `db` (config/database.ts) is a module-level `let` that starts undefined
+// and is only assigned once `initializeDatabase()` runs — but this factory's
+// default export (`createAdminPortalRouter()` below) executes at MODULE
+// IMPORT time, which happens before server startup calls
+// `initializeDatabase()`. A `database: Knex = db` default parameter would
+// evaluate `db` — and capture `undefined` — at that too-early moment, and
+// since default-parameter values are copied (not live references), every
+// query in the closure would stay bound to that `undefined` forever,
+// throwing "database is not a function" on every real request. Resolving
+// `db` fresh inside each method sidesteps this entirely.
+export function createAdminPortalStore(injectedDatabase?: Knex): AdminPortalStore {
   return {
     async list(input) {
+      const database = injectedDatabase ?? db
       const query = database('portals').orderBy('id', 'asc').limit(input.limit + 1)
       if (input.status) query.where('status', input.status)
       if (input.query) {
@@ -80,8 +110,11 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       const rows = await query
       const hasMore = rows.length > input.limit
       const pageRows = rows.slice(0, input.limit)
-      const items = await Promise.all(
-        pageRows.map(async row => rowToPortal(row, await getPortalDomains(row.id, database)))
+      const items: AdminPortalListItem[] = await Promise.all(
+        pageRows.map(async row => ({
+          ...rowToPortal(row, await getPortalDomains(row.id, database)),
+          identityMode: getPortalIdentityMode(row),
+        }))
       )
       return {
         items,
@@ -89,6 +122,7 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       }
     },
     async create(input) {
+      const database = injectedDatabase ?? db
       // FF-EPIC-09-S2 — drives the resumable, advisory-locked provisioning
       // pipeline (org -> Permit tenant -> ReBAC instance/parent-link -> portal
       // row -> default subdomain -> owner invite) instead of a single bare
@@ -121,11 +155,13 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
       return result.portal
     },
     async get(portalId) {
+      const database = injectedDatabase ?? db
       const row = await database('portals').where({ id: portalId }).first()
       if (!row) return null
       return rowToPortal(row, await getPortalDomains(portalId, database))
     },
     async update(portalId, patch) {
+      const database = injectedDatabase ?? db
       const existing = await database('portals').where({ id: portalId }).first()
       if (!existing) return null
       if (existing.is_root && patch.status === 'suspended') {
@@ -148,6 +184,18 @@ export function createAdminPortalStore(database: Knex = db): AdminPortalStore {
   }
 }
 
+/** Prefix a portal DTO's `id` and `organizationId`, plus each nested domain's `portalId`. */
+async function prefixPortalDto(dto: any, userId?: string): Promise<any> {
+  const prefixed = await isPrefixedIdsEnabled({ userId })
+  const top = prefixDtoIds(dto, prefixed, { id: 'portal', organizationId: 'organization' })
+  return {
+    ...top,
+    domains: Array.isArray(dto.domains)
+      ? dto.domains.map((d: any) => prefixDtoIds(d, prefixed, { portalId: 'portal' }))
+      : top.domains ?? [],
+  }
+}
+
 export function createAdminPortalRouter(deps: {
   store?: AdminPortalStore
   authenticate?: Middleware
@@ -165,7 +213,7 @@ export function createAdminPortalRouter(deps: {
     message: { error: 'Too many requests. Try again shortly.' },
   })
 
-  router.get('/', adminRateLimiter, authenticate, authorize, async (request, response) => {
+  function parseListQuery(request: Request) {
     const limit = Math.min(100, Math.max(1, Number.parseInt(String(request.query.limit ?? '25'), 10) || 25))
     const status = typeof request.query.status === 'string'
       ? request.query.status as PortalStatus
@@ -174,9 +222,102 @@ export function createAdminPortalRouter(deps: {
       ? request.query.q.slice(0, 200)
       : undefined
     const cursor = typeof request.query.cursor === 'string' ? request.query.cursor : undefined
+    return { limit, status, query, cursor }
+  }
+
+  // Portals Directory (backend slice S1 + S5 read-vs-no-access refinement) —
+  // `GET /` is gated by the SAME release flag (`fuzefront.platform.portals-directory`,
+  // default OFF) at TWO layers now:
+  //   - S1 (response shape): `identityMode`/`launchUrl` only ever appear when
+  //     ON.
+  //   - S5 (authorization): flag OFF keeps the pre-existing blanket
+  //     `requireRole(['admin'])` gate (`authorize` below) — byte-identical to
+  //     pre-S5 behavior, including its 403 body. Flag ON REPLACES that gate
+  //     with a per-portal Permit `read`/`manage` check on each portal's
+  //     owning organization (`resolvePortalReadManageCapabilities`): a
+  //     caller with `read` (not `manage`) now gets 200 with read-only rows
+  //     instead of a hard 403; a caller with `read` over NONE of the
+  //     portals this query would otherwise return still gets the same 403
+  //     no-access response the blanket gate used to produce. A portal the
+  //     caller cannot `read` is NEVER returned (BOLA-safe filtering, not
+  //     after-the-fact leakage) — see `docs/planning` BOLA convention used
+  //     throughout this file's sibling routes.
+  // `authorize` is therefore deliberately NOT in this route's middleware
+  // array — it is invoked manually, only on the flag-OFF branch, so the
+  // flag-ON branch can admit a non-admin caller with real Permit `read`
+  // authority.
+  router.get('/', adminRateLimiter, authenticate, async (request, response) => {
+    const { limit, status, query, cursor } = parseListQuery(request)
+    const directoryEnabled = await isPortalsDirectoryEnabled({
+      userId: request.user?.id,
+    })
+
+    if (!directoryEnabled) {
+      // Flag OFF: byte-identical to pre-S5 behavior — blanket admin-role
+      // gate (synchronous `requireRole`/injected `authorize`), no
+      // capability fields, `identityMode` stripped (the store always
+      // attaches it — see AdminPortalListItem).
+      let authorized = false
+      authorize(request, response, () => {
+        authorized = true
+      })
+      if (!authorized) return // authorize() already sent 401/403
+
+      const result = await store.list({ status, query, limit, cursor })
+      const rawItems = result.items.map(({ identityMode, ...rest }) => rest)
+      const items = await Promise.all(rawItems.map(item => prefixPortalDto(item, request.user?.id)))
+      return response.status(200).json({
+        items,
+        page: { nextCursor: result.nextCursor },
+      })
+    }
+
+    // Flag ON (S5): per-portal read-vs-manage refinement.
+    if (!request.user?.id) {
+      return response.status(401).json({ error: 'Authentication required' })
+    }
+
     const result = await store.list({ status, query, limit, cursor })
-    response.status(200).json({
-      items: result.items,
+    const capabilities = await resolvePortalReadManageCapabilities(
+      request.user.id,
+      result.items.map(item => item.organizationId)
+    )
+    const readableItems = result.items.filter(
+      item => capabilities.get(item.organizationId)?.canRead === true
+    )
+
+    if (result.items.length > 0 && readableItems.length === 0) {
+      // No portal this query would otherwise return is readable by this
+      // caller — the SAME no-access response the blanket
+      // requireRole(['admin']) gate used to produce. Never a leaked
+      // "page exists but every row was filtered" 200.
+      return response.status(403).json({ error: 'Insufficient permissions' })
+    }
+
+    const items = readableItems.map(item => {
+      const capability = capabilities.get(item.organizationId)
+      const canManage = capability?.canManage === true
+      // `canOpen` — authority to LAUNCH the portal. No separate Permit
+      // `open`/`launch` action exists on `Organization` today (see
+      // `permit/schema.ts`), so this intentionally mirrors `canManage`;
+      // kept as its own field so a future distinct launch authority is
+      // additive, not a contract break.
+      const canOpen = canManage
+      const { identityMode, ...rest } = item
+      return {
+        ...rest,
+        identityMode: identityMode ?? 'soft',
+        canManage,
+        canOpen,
+        // Only include `launchUrl` when the caller may actually open the
+        // portal — a read-only viewer must never receive the launch host.
+        ...(canOpen ? { launchUrl: getPortalLaunchUrl(item) } : {}),
+      }
+    })
+
+    const prefixedItems = await Promise.all(items.map((item: any) => prefixPortalDto(item, request.user?.id)))
+    return response.status(200).json({
+      items: prefixedItems,
       page: { nextCursor: result.nextCursor },
     })
   })
@@ -207,7 +348,7 @@ export function createAdminPortalRouter(deps: {
         branding: body.branding,
         identityPolicy: body.identityPolicy,
       })
-      return response.status(201).json(portal)
+      return response.status(201).json(await prefixPortalDto(portal, (request as any).user?.id))
     } catch (error: any) {
       if (error instanceof SlugTakenError || error?.code === '23505') {
         return response.status(409).json({ error: 'SLUG_TAKEN' })
@@ -221,7 +362,7 @@ export function createAdminPortalRouter(deps: {
     if (!portal) {
       return response.status(404).json({ error: 'NOT_FOUND' })
     }
-    return response.status(200).json(portal)
+    return response.status(200).json(await prefixPortalDto(portal, request.user?.id))
   })
 
   router.patch('/:portalId', adminRateLimiter, authenticate, authorize, async (request, response) => {
@@ -249,7 +390,7 @@ export function createAdminPortalRouter(deps: {
         identityPolicy: body.identityPolicy,
       })
       if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
-      return response.status(200).json(updated)
+      return response.status(200).json(await prefixPortalDto(updated, request.user?.id))
     } catch (error: any) {
       if (error?.code === 'ROOT_PORTAL_PROTECTED') {
         return response.status(409).json({ error: 'ROOT_PORTAL_PROTECTED' })
@@ -262,7 +403,7 @@ export function createAdminPortalRouter(deps: {
     try {
       const updated = await store.update(request.params.portalId, { status: 'suspended' })
       if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
-      return response.status(200).json(updated)
+      return response.status(200).json(await prefixPortalDto(updated, request.user?.id))
     } catch (error: any) {
       if (error?.code === 'ROOT_PORTAL_PROTECTED') {
         return response.status(409).json({ error: 'ROOT_PORTAL_PROTECTED' })
@@ -274,7 +415,7 @@ export function createAdminPortalRouter(deps: {
   router.post('/:portalId/resume', adminRateLimiter, authenticate, authorize, async (request, response) => {
     const updated = await store.update(request.params.portalId, { status: 'active' })
     if (!updated) return response.status(404).json({ error: 'NOT_FOUND' })
-    return response.status(200).json(updated)
+    return response.status(200).json(await prefixPortalDto(updated, request.user?.id))
   })
 
   return router

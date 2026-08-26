@@ -12,6 +12,9 @@
  *     `assignOrganizationRole` called so Permit's tenant role tracks it.
  */
 import { v4 as uuidv4 } from 'uuid'
+import { parseId, configureIdentity, EntityId } from '@izzywdev/fuzefront-identity'
+
+configureIdentity({ legacyUuidTypes: new Set(['user', 'organization']) })
 
 import { db, initializeDatabaseConnection } from '../src/config/database'
 import {
@@ -46,7 +49,7 @@ function deps(overrides?: Partial<ProvisioningDeps>): Partial<ProvisioningDeps> 
   }
 }
 
-async function createUser(): Promise<string> {
+async function createUser(): Promise<EntityId<'user'>> {
   const id = uuidv4()
   await db('users').insert({
     id,
@@ -57,7 +60,7 @@ async function createUser(): Promise<string> {
     created_at: new Date(),
     updated_at: new Date(),
   })
-  return id
+  return parseId('user', id)
 }
 
 describe('organizationProvisioning — root membership (FF-EPIC-17-S1, monolith)', () => {

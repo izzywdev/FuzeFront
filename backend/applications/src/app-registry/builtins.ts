@@ -42,7 +42,11 @@ const BUILTIN_MANIFESTS: unknown[] = [
     builtin: true,
     integration: {
       type: 'module-federation',
-      remoteEntry: 'https://fuzeagent.prod.fuzefront.com/remoteEntry.js',
+      // Same-origin path, not an absolute app-host URL: identical value works
+      // on app.fuzefront.com, a tenant wildcard host, and localhost. Existing
+      // rows are re-pointed by migration 009 (upsertBuiltin never touches an
+      // already-registered row, so this seed alone is inert on prod).
+      remoteEntry: '/apps/fuzeagent/remoteEntry.js',
       scope: 'fuzeagentApp',
       module: './FuzeAgentApp',
     },
@@ -64,7 +68,14 @@ const BUILTIN_MANIFESTS: unknown[] = [
     builtin: true,
     integration: {
       type: 'module-federation',
-      remoteEntry: 'https://app.fuzefront.com/apps/clock/assets/remoteEntry.js',
+      // Same-origin path, not an absolute app-host URL: identical value works on
+      // app.fuzefront.com, a tenant wildcard host, and localhost.
+      // NO `assets/` segment: clock-app/vite.config.ts sets `assetsDir: ''`
+      // (flat build output), so remoteEntry.js is served at the root of
+      // `/apps/clock/`, matching clock-app/nginx.conf's `location = /remoteEntry.js`.
+      // Existing rows are re-pointed by migration 010 (upsertBuiltin never
+      // touches an already-registered row, so this seed alone is inert on prod).
+      remoteEntry: '/apps/clock/remoteEntry.js',
       scope: 'clockApp',
       module: './ClockApp',
     },
@@ -74,6 +85,27 @@ const BUILTIN_MANIFESTS: unknown[] = [
     visibility: 'public',
     roles: [],
   },
+  // REMOVED 2026-08-25: the `fuzequality` built-in was a PHANTOM TILE.
+  //
+  // It seeded an activated, menu-visible app pointing at
+  // /apps/fuzequality/assets/remoteEntry.js for a product that DOES NOT EXIST.
+  // There is no `FuzeQuality` repository under any account this platform can
+  // reach — verified against the full repo listing (24 repos across izzywdev,
+  // FuzeOne and fuzeone2026; none is FuzeQuality). Nothing builds that bundle,
+  // nothing serves that path, and no chart mounts it. The tile appeared in
+  // every user's menu and white-screened on click.
+  //
+  // It also outlived its own evidence: migration 010's comment reasons about
+  // "fuzequality/apps/web/vite.config.ts" having no assetsDir override. That
+  // file is not reachable either. The `/assets/` segment in the removed entry
+  // came from that same assumption — 008 applied one path shape to both `clock`
+  // and `fuzequality`, 010 corrected `clock`, and nobody could correct this one
+  // because there was nothing to check it against.
+  //
+  // DO NOT RE-ADD without a repository that builds and serves the bundle. A
+  // built-in is seeded `activated` on every boot, so an entry here is a
+  // user-visible promise; make it only for something that exists. If FuzeQuality
+  // is built later, re-add the entry AND revert migration 011.
 ]
 
 /**

@@ -139,7 +139,7 @@ It enforces four things:
 
 | Rule | Why |
 |---|---|
-| **`slug` and `name` must NOT start with `Fuze`** | Family convention: register as `service` / `Service`, not `fuzeservice` / `FuzeService`. `slug` is **immutable**, so getting it wrong is not a one-line edit — it costs a register-then-delete migration that orphans Permit grants and CASCADE-deletes install rows. See below. |
+| **`name`/`menuLabel` must NOT start with `Fuze`** (`slug` is never checked, in either direction) | Family convention: the prefix comes off the **display string**, not the slug — register as `name: "Service"`, `menuLabel: "Service"` alongside `slug: "fuzeservice"` (prefix kept). See below for why the asymmetry is deliberate and why an earlier version of this rule (and this table row) had it backwards. |
 | Effective modes include `portal` **and** `standalone` | `standalone` is the only surface a mobile TWA/APK can wrap, because an app store needs a URL that stands on its own. |
 | `standalone` implies a non-empty `routing.host` | A standalone surface with no host has no URL to serve or to wrap. |
 | `policy.json` exists, and a vendored `register.sh` actually submits it | A pre-kit script that skips the policy step leaves the product with no roles. |
@@ -151,62 +151,70 @@ incapable of ever shipping a mobile app. Nothing is malformed; a capability simp
 never exists. That is precisely the class of failure a schema cannot catch and this
 gate can.
 
-### The no-`Fuze`-prefix slug convention
+### The naming convention: prefix ON the slug, OFF the display string
 
-Register as `service`, not `fuzeservice`. The prefix is already implied by the fact that
-you are registering on FuzeFront at all, and the slug is user-visible — it appears in
-`/app/<slug>` URLs, in Permit keys (`<slug>_<Resource>`), and in billing product keys.
-FuzePicker already registered as `picker`, so the convention existed; it was simply never
-enforced, and twelve products registered against it.
+> **The canonical statement of this rule lives in the root
+> [`CLAUDE.md`](../../CLAUDE.md) § "`slug`, display name, and the federated serve
+> path are THREE INDEPENDENT questions".** This section documents only what
+> `validate-registration.mjs` in *this package* mechanically enforces; read the
+> root doc for the full reasoning, the owner's ruling, and the fleet-wide state.
+> **CORRECTED 2026-08-19 by owner ruling** — this section previously said the
+> opposite (register as `service`, not `fuzeservice`, and the gate enforced it).
+> That was wrong; the correction is recorded rather than quietly swapped, because
+> the old rule was shipped, cited, and acted on.
 
 ```jsonc
-"slug": "service",   // not "fuzeservice"
-"name": "Service"    // not "FuzeService"
+"slug": "fuzeservice",    // keeps the prefix
+"name": "Service",        // drops it
+"menuLabel": "Service"    // drops it
 ```
 
-**Why this is a build-time gate and not a `pattern` on the contract's `Slug`.** Adding
-`(?!fuze)` to `Slug` in `openapi.yaml` would be actively harmful. Twelve live rows hold
-prefixed slugs, and `slug` is immutable — correcting one means *register the short slug,
-then delete the prefixed one*. Both steps talk to the registry **about** the prefixed
-slug, and `register.sh` re-`PUT`s the manifest on every pod start. A contract-level ban
-would reject the very requests that repair the damage. Banning a value at the API is only
-safe when no existing row holds it. So the registry keeps **accepting** the old value
-while the migration is in flight, and this gate stops anyone **authoring** a new one — in
-their own repo, at build time, where it is a one-character fix.
+**Only the display fields are gated by this package's validator, and the asymmetry
+is the whole point.**
 
-### Already registered with the prefix? `fuzefront-migrate-slug`
+| field | mutable? | gated by `validate-registration.mjs`? |
+|---|---|---|
+| `name`, `menuLabel` | yes — `register.sh` re-`PUT`s them on every pod start | **error** if `Fuze`-prefixed |
+| `slug` | **no** — immutable, no rename operation | not checked, in either direction |
 
-Because `slug` is immutable there is no rename. `register.sh` performs only the first half
-of the correction, so a product that de-prefixes its manifest and redeploys ends up
-registered **twice**, with the prefixed row still activated and still in the launcher.
+A slug error has no cheap fix. The only "correction" is to register a second app and
+delete the first, which orphans the product's Permit grants and CASCADE-deletes its
+`app_installations` rows. Failing a build over a value nobody can safely change does not
+prevent the mistake — it pressures someone into a destructive migration. That is exactly
+what the previous version of this gate did.
 
-```bash
-# DRY RUN by default — reads, plans, prints, changes nothing.
-npx fuzefront-migrate-slug --from fuzeservice --to service \
-  --api https://app.fuzefront.com --token "$TOKEN" \
-  --registration ./registration
-```
+**Known gap: the validator has no FuzeBI/FuzeX carve-out.** The owner's stated
+intent keeps the `Fuze` prefix on a display name only where the remainder is
+meaningless alone — named exceptions **FuzeBI** and **FuzeX** — but
+`validateSlugConvention()` in `bin/validate-registration.mjs` flags *any*
+`Fuze`-prefixed `name`/`menuLabel` unconditionally today, with no exception list.
+Until the validator is updated to encode the carve-out, this is a known
+policy/code gap, not evidence that the exception doesn't apply.
 
-It registers the short slug, re-submits `policy.json` / `billing-profile.json` under it,
-matches the old app's status, **re-reads the registry to verify** the replacement is
-present and correct, and only then deletes the prefixed row. Every failure path aborts
-*before* the delete, so the worst outcome it can produce is a duplicate tile — never an
-unregistered product. It is idempotent and resumes a half-finished run.
+The field is also already split across the fleet, and all of it is live. Measured on
+default branches 2026-08-19:
 
-`--apply` **refuses** to delete without `--permit-grants` and `--installs`, because two
-losses are silent and it cannot repair either (a dry run warns and still prints the plan —
-the flags gate the delete, not the preview):
+| slug carries the prefix | slug does not |
+|---|---|
+| `fuzex`, `fuzebi` | `deploy`, `call`, `executive`, `finance`, `keys`, `market`, `picker` |
 
-- **Permit grants.** Product roles are namespaced by the *registry slug*
-  (`sync-permit-schema.ts` forces `product: row.slug`), so migrating renames every key.
-  Existing assignments keep pointing at `fuzeservice_agent`, the old role is never deleted,
-  nothing errors — affected users just lose the role.
-- **Install rows.** `app_installations.app_id` references `apps.id` `ON DELETE CASCADE`,
-  and installs are not in the frozen contract at all.
+**None of these are to be migrated.** An error in either direction reds a real repo whose
+only remedy is the register-then-delete above. Guidance for a genuinely new product is
+just that — guidance, in this document, not a red build.
 
-**This is an owner tool, not an init-container tool**, and suite parents like FuzeHub are
-deliberately scoped out. Full procedure, the grant-remap and the ordering:
-[`docs/runbooks/app-slug-deprefix-migration.md`](../../docs/runbooks/app-slug-deprefix-migration.md).
+### `fuzefront-migrate-slug` is RETIRED
+
+The tool that performed the prefixed → de-prefixed migration is retired: there is no
+longer a product it should be pointed at, and its `DELETE` step is precisely the
+irreversible operation the ruling forbids.
+
+The code and its 34 tests are kept rather than deleted. The machinery — verify-then-delete
+ordering, the status-parity guard, the refusal to ever trade "duplicate tile" for
+"no registration" — is correct and hard-won, and a genuine slug migration may need it one
+day. What is retired is the *reason* to run it, not the implementation. It carries a
+banner saying so, and its runbook
+([`docs/runbooks/app-slug-deprefix-migration.md`](../../docs/runbooks/app-slug-deprefix-migration.md))
+is marked retired at the top.
 
 **Embed-only products are exempt** from the surface rules. Per the contract an embed
 renders inside a third-party page with neither portal chrome nor FuzeFront navigation,

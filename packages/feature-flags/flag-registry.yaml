@@ -71,7 +71,12 @@ flags:
     description: >
       Master switch for the multi-tenant portals feature (FF-EPIC-09-S4).
       Gates the portal bootstrap surface. Custom domains (see
-      fuzefront.platform.portal-domains) require BOTH flags.
+      fuzefront.platform.portal-domains) require BOTH flags. FF-EPIC-17-S7
+      additionally reuses it to gate the master-admin portal fleet console
+      (`/admin/portals`, `MasterAdminPortalsFlow`,
+      `@fuzefront/security-client` 0.7.0) rather than minting a new flag —
+      the fleet console has nothing to manage while the platform-wide
+      capability itself is off.
     owner: platform team
     removal_criterion: >
       When multi-tenant portals are GA and enabled for 100% of orgs.
@@ -79,7 +84,8 @@ flags:
     gates:
       - Portal shell and PortalLoginFlow boot surface
       - Custom-domain feature (conjunction with portal-domains)
-    web_exposed: false
+      - Master-admin portal fleet console (FF-EPIC-17-S7, UI-side)
+    web_exposed: true
     jira: ~
 
   - key: fuzefront.platform.portal-domains
@@ -100,6 +106,62 @@ flags:
       - Custom-domain attach / status-poll / detach API routes
     web_exposed: false
     jira: FFRNT-91
+
+  - key: fuzefront.platform.portals-directory
+    type: release
+    default: false
+    description: >
+      Gates the master-admin Portals Directory: the `/portals` frontend
+      page + SidePanel "Portals" nav entry, and the `identityMode` /
+      `launchUrl` fields that `GET /api/v1/admin/portals` adds to the
+      portal fleet list (backend S1, #640; frontend S3, #642). OFF =>
+      `GET /api/v1/admin/portals`'s response is byte-identical to the
+      pre-existing shape (neither new field emitted) and the `/portals`
+      page + nav entry are hidden. This flag is rollout convenience only
+      — it gates response shape and UI visibility, not authorization;
+      `GET /api/v1/admin/portals` stays `requireRole(['admin'])`-gated
+      in both flag states.
+    owner: platform team
+    removal_criterion: >
+      Delete once the Portals Directory is GA and enabled for 100% of
+      admins; then drop the flag and the OFF-path field-stripping branch
+      in routes/adminPortals.ts plus the hidden-by-default SidePanel entry.
+    gates:
+      - /portals frontend page (PortalsDirectory)
+      - SidePanel "Portals" nav entry
+      - GET /api/v1/admin/portals identityMode / launchUrl response fields
+    web_exposed: true
+    jira: ~
+
+  - key: fuzefront.platform.config-management
+    type: release
+    default: false
+    description: >
+      Gates CONSUMERS reading their configuration FROM config-service
+      (FF-EPIC-17-S8) — whether a FuzeFront service resolves its settings
+      through GET /v1/config vs. its own pre-existing configuration source.
+      Does NOT gate config-service's own existence: /health always answers
+      and the /v1/* read+write surface (FFRNT-157/158) is never 503'd by
+      this flag. config-service surfaces its own evaluation of this flag
+      as `configManagementEnabled` on GET /health (informational only,
+      never affecting the status code) so a consumer has a single source
+      of truth for the rollout decision without needing direct Unleash
+      access. Each consuming service still evaluates the flag itself
+      (via @fuzefront/feature-flags, with its own org/user context) before
+      deciding whether to call config-service — see FFRNT-260 (consumer
+      integration guide).
+    owner: backend-engineer (platform / config-service)
+    removal_criterion: >
+      Delete once config-service is GA and every consumer reads through
+      it at 100% rollout; then drop the flag and the
+      `configManagementEnabled` field on config-service's GET /health.
+    gates:
+      - config-service GET /health configManagementEnabled field
+      - Consumer services' decision to read settings via @fuzefront/config-client
+    web_exposed: false
+    jira: FFRNT-255
+    epic: FF-EPIC-17
+    story: S8
 
   # ---------------------------------------------------------------------------
   # fuzefront.app-registry.*
@@ -174,7 +236,7 @@ flags:
       in selection-list-service/flags.ts.
     gates:
       - selection-list-service Helm deployment (service-side)
-      - "Selection Lists" shell left-sidebar nav entry (UI-side, S9)
+      - '"Selection Lists" shell left-sidebar nav entry (UI-side, S9)'
     web_exposed: true
     jira: FFRNT-201
     sub_tasks:
@@ -196,3 +258,132 @@ flags:
                   name: developers
           # No org/user targeting at creation — enable per-org via Unleash
           # targeting rules once the service is ready for a given org.
+
+  # ---------------------------------------------------------------------------
+  # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /
+  # portal reconciliation)
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.identity.root-membership
+    type: release
+    default: false
+    description: >
+      Backend slice (FF-EPIC-17-S1/S2): on signup / auth self-heal, upserts a
+      root organization_memberships(role='member') row instead of creating a
+      type='personal' org. Frontend UI (personal-context switcher) reads
+      whatever `user_role` the org list actually returns, so it degrades
+      gracefully while this flag is OFF — root simply keeps resolving its
+      pre-flag role (today: no membership row) until backend S1/S2 ship.
+    owner: platform team (backend-engineer, FF-EPIC-17-S1/S2)
+    removal_criterion: >
+      When every environment has migrated (S2 backfill run + verified
+      idempotent) and 100% of signups take the root-membership path. Drop the
+      type='personal' provisioning branch alongside.
+    gates:
+      - organizationProvisioning.ts root-membership upsert (backend/src, backend/security/src)
+      - auth self-heal hooks (backend/security/src/routes/auth.ts)
+    web_exposed: false
+    jira: ~
+    epic: FF-EPIC-17
+    story: S1
+
+  - key: fuzefront.identity.personal-context
+    type: release
+    default: false
+    description: >
+      Gates the reconciled identity-context-switcher UI (FF-EPIC-17-S4,
+      design/frames/identity-context-switcher/**): the unified
+      ContextSwitcher (Personal + org/sub-org tree, replacing the flat org
+      list in UserMenu.tsx's OrganizationSwitcherSection) and the "My orgs &
+      sub-orgs" view superseding OrganizationPage.tsx's local `<select>`.
+      Flag OFF preserves today's UI exactly (flat org list, local `<select>`
+      + tabs) — zero regression while fuzefront.identity.root-membership is
+      still rolling out server-side.
+    owner: platform team (frontend-engineer, FF-EPIC-17-S4)
+    removal_criterion: >
+      When the reconciled switcher is GA and enabled for 100% of users; then
+      delete OrganizationPage.tsx's `<select>` branch and this flag check.
+    gates:
+      - "@fuzefront/identity-ui ContextSwitcherFlow in UserMenu.tsx (header)"
+      - "/organizations MyOrganizationsFlow (supersedes OrganizationPage.tsx select)"
+      - "/organizations/:id OrganizationDetailPage (root MEMBER badge, never GUEST)"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S4
+
+  - key: fuzefront.identity.member-directory
+    type: release
+    default: false
+    description: >
+      Gates the NEW root/portal member-directory surface (FF-EPIC-17-S5):
+      the paginated, server-side-searchable `GET /api/organizations/:id/directory`
+      endpoint (backend, #671) and its `/organizations/:id/directory` UI
+      (frontend, #672, design/frames/member-directory/**). Flag OFF => the
+      endpoint does not exist (404, zero regression — it is new surface, not
+      a modified one) and the directory link/route is hidden.
+    owner: backend-engineer (identity, FF-EPIC-17-S5)
+    removal_criterion: >
+      Delete once the member-directory UI is rolled out to 100% of users and
+      the flag-OFF (disabled) path is no longer exercised in prod; then drop
+      the flag checks in both the route and the frontend.
+    gates:
+      - "GET /api/organizations/:id/directory (backend/security/src/routes/organizations.ts)"
+      - "/organizations/:id/directory MemberDirectoryPage + OrganizationDetailPage link"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S5
+
+  - key: fuzefront.identity.prefixed-ids
+    type: release
+    default: false
+    description: >
+      Gates the TypeID-prefixed wire form on all entity-returning API responses
+      (FFRNT-185 step 4). When ON, response bodies carry prefixed TypeID strings
+      (e.g. `org_01h…`, `usr_01h…`) instead of bare UUIDs. The dual-accept
+      window — `configureIdentity({ legacyUuidTypes })` in each backend's
+      startup — ensures incoming bare UUIDs are still accepted during the client
+      migration period, so flipping this flag is safe for existing clients.
+      In-code default is OFF (fail-safe when Unleash is unreachable); Unleash
+      production strategy is global 100 % flexibleRollout.
+    owner: backend-engineer (identity, FFRNT-185)
+    removal_criterion: >
+      Delete once every entity type in FFRNT-185 has completed its dual-accept
+      window closure (removed from legacyUuidTypes), no call-site in the
+      codebase still references this flag, and the TypeID wire form is the sole
+      accepted format. Remove the flag from Unleash AND all isPrefixedIdsEnabled
+      call-sites in the same PR.
+    gates:
+      - "prefixDtoIds wired into all entity-returning route handlers (backend/src, backend/security/src, backend/applications/src)"
+      - "configureIdentity({ legacyUuidTypes }) set at startup in all three backends"
+    web_exposed: false
+    jira: FFRNT-185
+    epic: ~
+    story: step 4
+
+  - key: fuzefront.identity.employee-console
+    type: release
+    default: false
+    description: >
+      Gates the "Employee" formalization (FF-EPIC-17-S8, #655) and its
+      cross-org staff console (FF-EPIC-17-S9, #673): widening the root
+      org-admin grant trigger to also recognize the EXPLICIT `employee`
+      user-role marker (the legacy implicit `roles ~ admin` trigger is
+      unaffected and always active regardless of this flag), surfacing
+      "Employee" in the role catalog (`GET /api/organizations/:id/roles`),
+      and the `/staff` + `/staff/orgs/:id` cross-org console UI. Flag OFF
+      preserves today's implicit-admin-only behavior with zero regression.
+      Rollout convenience only — never replaces the ReBAC `org-admin`-on-root
+      grant / a `permit.check`.
+    owner: backend-engineer (identity, FF-EPIC-17-S8/S9)
+    removal_criterion: >
+      Delete once the Employee label + explicit-marker trigger + console are
+      100% rolled out and the flag-OFF path is no longer exercised in prod.
+    gates:
+      - "rootOrgAdmin.ts explicit employee-marker grant trigger (backend/src, backend/security/src)"
+      - "GET /api/organizations/:id/roles Employee catalog entry"
+      - "/staff, /staff/orgs/:id EmployeeConsoleFlow UI (SidePanel nav entry)"
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+    story: S8/S9

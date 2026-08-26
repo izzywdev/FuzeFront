@@ -67,6 +67,13 @@ interface ProducerLike {
  * resolved lazily from @fuzefront/shared so each send is validated against the
  * frozen contract; if a schema is unavailable we send without local validation
  * (the broker still receives the envelope) rather than dropping the event.
+ *
+ * The subpath must be one @fuzefront/shared declares in `exports`. This used to
+ * say `./dist/kafka`, which is NOT exported — so the require below threw
+ * ERR_PACKAGE_PATH_NOT_EXPORTED, the catch swallowed it, and the documented
+ * "if a schema is unavailable" fallback was in fact the ONLY path ever taken in
+ * the production image: every event has been sent unvalidated. The catch is
+ * meant to be a fallback, not a mask.
  */
 export class KafkaAppRegistryEmitter implements AppRegistryEventEmitter {
   private schemas: Record<string, unknown> = {}
@@ -74,7 +81,7 @@ export class KafkaAppRegistryEmitter implements AppRegistryEventEmitter {
   constructor(private readonly producer: ProducerLike) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const shared = require('@fuzefront/shared/dist/kafka')
+      const shared = require('@fuzefront/shared/kafka')
       this.schemas = {
         [TOPIC.APP_REGISTERED]: shared.appRegisteredSchemaV1,
         [TOPIC.APP_ACTIVATED]: shared.appActivatedSchemaV1,
@@ -187,7 +194,7 @@ export function getAppRegistryEmitter(): AppRegistryEventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { Kafka } = require('kafkajs')
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { TypedProducer } = require('@fuzefront/shared/dist/kafka')
+    const { TypedProducer } = require('@fuzefront/shared/kafka')
     const kafka = new Kafka({
       clientId: 'applications-service',
       brokers: brokers.split(',').map((b: string) => b.trim()),

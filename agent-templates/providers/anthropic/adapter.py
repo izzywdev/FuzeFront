@@ -97,8 +97,17 @@ class AnthropicProvider(AgentProvider):
                 continue
             if key in have:
                 continue
-            common.request("POST", f"/v1/vaults/{vid}/credentials",
-                           body={"display_name": cred["display_name"], "auth": auth})
+            try:
+                common.request("POST", f"/v1/vaults/{vid}/credentials",
+                               body={"display_name": cred["display_name"], "auth": auth})
+            except SystemExit as exc:
+                # The Anthropic API omits auth fields from credential list responses, so
+                # the duplicate-check above (have = {mcp_server_url or secret_name}) always
+                # misses existing credentials and re-POSTs them. 409 means the credential
+                # is already registered — treat as idempotent success. Any other HTTP error
+                # still propagates (common.request raises SystemExit with the status code).
+                if "HTTP 409" not in str(exc):
+                    raise
         return {"name": name, "id": vid}
 
     def ensure_memory(self, manifest):

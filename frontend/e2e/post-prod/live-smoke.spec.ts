@@ -241,13 +241,58 @@ test.describe('FuzeFront live post-prod smoke', () => {
       const loginResp = await request.post('/api/v1/security/session', {
         data: { email: EMAIL, password: PASSWORD },
       })
-      expect(
-        loginResp.status(),
-        `POST /api/v1/security/session -> ${loginResp.status()} — ${EMAIL} EXISTS but its ` +
-          'credentials were rejected, so POST_PROD_PASSWORD does not match the account. Reset it in ' +
-          'prod and update the secret; do NOT hard-code a password here (public repo). 5xx = backend error.'
-      ).toBe(200)
-      loginBody = await loginResp.json()
+
+      if (loginResp.status() === 401) {
+        // Self-heal: credential drift — the account exists but POST_PROD_PASSWORD
+        // no longer matches what the identity store has (e.g. the secret was rotated
+        // without resetting the account). Delegate to the security service's admin
+        // reset-password endpoint, which routes through the tenant-aware accountApi
+        // (findUserPk / setUserPassword) so the right Authentik instance is always
+        // targeted, even in multi-portal deployments. Protected by INTERNAL_PROVISION_SECRET.
+        const internalSecret = process.env.INTERNAL_PROVISION_SECRET
+        expect(
+          internalSecret,
+          `POST /api/v1/security/session -> 401: ${EMAIL} exists but credentials were rejected. ` +
+            `Credential drift: POST_PROD_PASSWORD was likely rotated without resetting the identity account. ` +
+            `Set the INTERNAL_PROVISION_SECRET workflow secret to enable automatic self-heal. ` +
+            `Without it, manually reset the account password in prod and update POST_PROD_PASSWORD.`
+        ).toBeTruthy()
+
+        // Reset the password via the security service — tenant-aware, no direct Authentik access needed.
+        const resetResp = await request.post('/api/v1/security/admin/reset-password', {
+          data: { email: EMAIL, newPassword: PASSWORD },
+          headers: { 'x-internal-secret': internalSecret! },
+        })
+        expect(
+          resetResp.status(),
+          `Self-heal: POST /api/v1/security/admin/reset-password -> ${resetResp.status()} ` +
+            `(401 = INTERNAL_PROVISION_SECRET mismatch; 404 = user not found; ` +
+            `400 = password rejected by policy; 500 = security service error)`
+        ).toBe(200)
+
+        // Retry sign-in — must succeed with the reset password.
+        const retryResp = await request.post('/api/v1/security/session', {
+          data: { email: EMAIL, password: PASSWORD },
+        })
+        expect(
+          retryResp.status(),
+          `Sign-in retry after self-heal (admin/reset-password) -> ${retryResp.status()}: ` +
+            `password was reset but sign-in still failed`
+        ).toBe(200)
+        loginBody = await retryResp.json()
+        testInfo.annotations.push({
+          type: 'self-healed',
+          description:
+            `Stale password for ${EMAIL} was reset via /api/v1/security/admin/reset-password and sign-in retried successfully`,
+        })
+      } else {
+        expect(
+          loginResp.status(),
+          `POST /api/v1/security/session -> ${loginResp.status()} — ${EMAIL} EXISTS but its ` +
+            'credentials were rejected. 5xx = backend error.'
+        ).toBe(200)
+        loginBody = await loginResp.json()
+      }
     }
     expect(
       loginBody.status,

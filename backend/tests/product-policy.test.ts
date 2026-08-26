@@ -15,6 +15,8 @@ import {
 } from '../src/permit/product-policy'
 import { fuzemarketPolicy } from '../src/permit/products/fuzemarket.policy'
 import { mendysDatasetsPolicy } from '../src/permit/products/mendys-datasets.policy'
+import { fuzefinancePolicy } from '../src/permit/products/fuzefinance.policy'
+import { loadLegacyProductPolicies } from '../src/permit/sync-permit-schema'
 
 // Same fake control-plane client as permit-schema.test.ts, extended to capture
 // the full payloads (so we can assert ReBAC relations/roles are forwarded).
@@ -293,5 +295,62 @@ describe('MendysRobotics datasets policy', () => {
     expect(ns.roles.map(r => r.key)).toEqual(
       expect.arrayContaining(['mendys-datasets_talent', 'mendys-datasets_buyer', 'mendys-datasets_admin'])
     )
+  })
+})
+
+describe('FuzeFinance policy (#490)', () => {
+  it('is a valid product policy', () => {
+    expect(() => validateProductPolicy(fuzefinancePolicy)).not.toThrow()
+  })
+
+  it('declares Invoice/LedgerEntry/Report/Payout and finance-officer/admin', () => {
+    expect(fuzefinancePolicy.product).toBe('fuzefinance')
+    expect(fuzefinancePolicy.resources.map(r => r.key).sort()).toEqual(
+      ['Invoice', 'LedgerEntry', 'Payout', 'Report']
+    )
+    expect(fuzefinancePolicy.roles.map(r => r.key).sort()).toEqual(
+      ['admin', 'finance-officer']
+    )
+  })
+
+  it('finance-officer manages invoices/ledger/reports but cannot void invoices or approve payouts', () => {
+    const officer = fuzefinancePolicy.roles.find(r => r.key === 'finance-officer')!
+    expect(officer.permissions).toEqual(
+      expect.arrayContaining([
+        'Invoice:create', 'Invoice:read', 'Invoice:update', 'Invoice:send',
+        'LedgerEntry:create', 'LedgerEntry:read', 'LedgerEntry:reconcile',
+        'Report:read', 'Report:export',
+        'Payout:read',
+      ])
+    )
+    expect(officer.permissions).not.toContain('Invoice:void')
+    expect(officer.permissions).not.toContain('Payout:approve')
+  })
+
+  it('admin holds every declared action on every declared resource', () => {
+    const admin = fuzefinancePolicy.roles.find(r => r.key === 'admin')!
+    const allPerms = fuzefinancePolicy.resources.flatMap(r =>
+      Object.keys(r.actions).map(a => `${r.key}:${a}`)
+    )
+    expect(admin.permissions.slice().sort()).toEqual(allPerms.sort())
+  })
+
+  it('namespaces cleanly', () => {
+    const ns = namespaceProductPolicy(fuzefinancePolicy)
+    expect(ns.resources.map(r => r.key)).toEqual(
+      expect.arrayContaining(['fuzefinance_Invoice', 'fuzefinance_LedgerEntry', 'fuzefinance_Report', 'fuzefinance_Payout'])
+    )
+    expect(ns.roles.map(r => r.key)).toEqual(
+      expect.arrayContaining(['fuzefinance_finance-officer', 'fuzefinance_admin'])
+    )
+  })
+
+  it('is registered in loadLegacyProductPolicies()', () => {
+    const products = loadLegacyProductPolicies().map(p => p.product)
+    expect(products).toContain('fuzefinance')
+  })
+
+  it('syncs alongside the other legacy products without a namespace collision', () => {
+    expect(() => buildEnvSchema(...loadLegacyProductPolicies())).not.toThrow()
   })
 })

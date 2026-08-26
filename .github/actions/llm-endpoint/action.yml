@@ -1,0 +1,405 @@
+name: 'Resolve LLM endpoint (LiteLLM + multi-vendor fallback chain)'
+description: >-
+  SINGLE POINT OF CHANGE for every workflow that calls claude-code-action (or
+  the Claude Code CLI directly). Probes the in-cluster LiteLLM gateway with a
+  bounded-timeout readiness check; if it answers, routes through it — the
+  anthropic/openai/gemini mapping lives in LiteLLM's config, not here, so this
+  is the genuinely vendor-agnostic path.
+  .
+  If it does not answer (cluster down, or the caller is a GitHub-hosted
+  runner that can never route to a cluster-internal DNS name — both are the
+  SAME case from here), this action starts a SECOND, runner-local LiteLLM
+  (`docker run`, not a job-level `services:` container — that structurally
+  cannot take a mounted config) configured with every vendor key that is
+  actually present, in the order given by `fallback-chain`. LiteLLM's own
+  `router_settings.fallbacks` then walks that chain — this action does not
+  hand-roll retry/fallback logic, LiteLLM already does it correctly and a
+  second implementation would drift from the first.
+  .
+  Critically, the fallback triggers on LiteLLM's QUOTA / rate-limit / auth
+  error classes (429 insufficient_quota, RateLimitError, AuthenticationError)
+  — not merely on a transport/connection failure. A vendor that is simply out
+  of credit answers with a perfectly successful HTTP connection and a quota
+  error body; a chain that only reacts to connection failure would sit on
+  that exhausted vendor and fail, which is exactly the incident this repo
+  already shipped once.
+  .
+  THE FALLBACK EXISTS ON PURPOSE, NOT AS A CONVENIENCE: recovering the
+  cluster may itself require an agent run (e.g. governance-nightly diagnosing
+  why LiteLLM is down), so the fallback path must not itself depend on the
+  cluster being up. A design where every agent run needs LiteLLM is a design
+  that cannot repair LiteLLM.
+  .
+  Every run emits an `::notice::` naming the mode AND the primed serving
+  vendor — a degraded run must never be silently indistinguishable from a
+  good one. Never prints a key: vendor keys are only ever written to a
+  mode-600 `--env-file` consumed by `docker run`, and any diagnostic log
+  output is passed through a redaction filter that replaces every known
+  secret value with `***` before being echoed. The resolved credential only
+  ever leaves this action as a masked output, consumed the same way
+  `secrets.*` already flows through this repo's workflows (`with:` / `env:`
+  on the very next step).
+
+inputs:
+  litellm-base-url:
+    description: 'In-cluster LiteLLM base URL (Anthropic-shape endpoint).'
+    required: false
+    default: 'http://litellm.fuzeinfra.svc.cluster.local:4000'
+  litellm-key:
+    description: >-
+      LiteLLM virtual key. Callers pass `secrets.LITELLM_FUZE_KEY` — mint one
+      with FuzeInfra `scripts/mint-litellm-fuze-key.sh`.
+    required: false
+    default: ''
+  probe-timeout-seconds:
+    description: >-
+      Bounded timeout for the LiteLLM readiness probe. Kept short deliberately
+      — a hung probe on every job that calls this action would be its own new
+      failure mode, worse than the one this action exists to route around.
+    required: false
+    default: '3'
+  fallback-chain:
+    description: >-
+      Ordered, comma-separated vendor fallback chain: any of
+      anthropic,openai,gemini. Callers pass `vars.FUZE_LLM_FALLBACK_CHAIN`
+      (org/repo variable); defaults to `anthropic,openai,gemini`. Only
+      vendors whose key input is actually non-empty participate — a missing
+      key means that vendor is skipped (logged by name only), not that the
+      run fails. The run fails closed only if NONE of the chain's vendors
+      have a configured key.
+    required: false
+    default: 'anthropic,openai,gemini'
+  fallback-anthropic-key:
+    description: 'Direct Anthropic API key. Callers pass secrets.ANTHROPIC_API_KEY.'
+    required: false
+    default: ''
+  fallback-openai-key:
+    description: 'Direct OpenAI API key. Callers pass secrets.OPENAI_API_KEY.'
+    required: false
+    default: ''
+  fallback-gemini-key:
+    description: 'Direct Gemini API key. Callers pass secrets.GEMINI_API_KEY.'
+    required: false
+    default: ''
+  fallback-anthropic-model:
+    description: 'LiteLLM model id used for the anthropic leg of the runner-local fallback chain.'
+    required: false
+    default: 'anthropic/claude-sonnet-4-5-20250929'
+  fallback-openai-model:
+    description: 'LiteLLM model id used for the openai leg of the runner-local fallback chain.'
+    required: false
+    default: 'openai/gpt-4o'
+  fallback-gemini-model:
+    description: 'LiteLLM model id used for the gemini leg of the runner-local fallback chain.'
+    required: false
+    default: 'gemini/gemini-2.0-flash'
+  local-litellm-image:
+    description: >-
+      Pinned LiteLLM proxy image used for the runner-local fallback instance.
+      Pinned (not `:main-latest`) for reproducibility; bump deliberately.
+    required: false
+    default: 'ghcr.io/berriai/litellm:main-v1.65.4-stable'
+  local-litellm-port:
+    description: 'Host port the runner-local LiteLLM proxy listens on.'
+    required: false
+    default: '4000'
+  local-litellm-startup-timeout-seconds:
+    description: >-
+      Bounded wait for the runner-local LiteLLM container to report
+      /health/readiness after `docker run`. Measured startup cost is real —
+      see the composite action's PR body for the observed number — but must
+      stay bounded so a wedged container fails the job instead of hanging it.
+    required: false
+    default: '45'
+
+outputs:
+  mode:
+    description: 'litellm | fallback-local-litellm'
+    value: ${{ steps.resolve.outputs.mode }}
+  vendor:
+    description: >-
+      litellm (opaque mapping, owned by the in-cluster LiteLLM config) | the
+      primed head-of-chain vendor name (anthropic | openai | gemini) when
+      mode=fallback-local-litellm. LiteLLM may still advance past this vendor
+      per-request on a quota/rate-limit/auth error from IT — this output
+      names what was primed at resolve time, not a guarantee of what serves
+      every single request in the job.
+    value: ${{ steps.resolve.outputs.vendor }}
+  base-url:
+    description: 'ANTHROPIC_BASE_URL to set. Always a valid, non-empty URL.'
+    value: ${{ steps.resolve.outputs.base-url }}
+  auth-token:
+    description: >-
+      Resolved credential, pre-masked. Feed to `anthropic_api_key:` /
+      ANTHROPIC_AUTH_TOKEN on the very next step; never echo it.
+    value: ${{ steps.resolve.outputs.auth-token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Probe LiteLLM readiness, resolve endpoint + credential
+      id: resolve
+      shell: bash
+      env:
+        LITELLM_BASE_URL: ${{ inputs.litellm-base-url }}
+        LITELLM_KEY: ${{ inputs.litellm-key }}
+        PROBE_TIMEOUT: ${{ inputs.probe-timeout-seconds }}
+        FALLBACK_CHAIN: ${{ inputs.fallback-chain }}
+        FALLBACK_ANTHROPIC_KEY: ${{ inputs.fallback-anthropic-key }}
+        FALLBACK_OPENAI_KEY: ${{ inputs.fallback-openai-key }}
+        FALLBACK_GEMINI_KEY: ${{ inputs.fallback-gemini-key }}
+        FALLBACK_ANTHROPIC_MODEL: ${{ inputs.fallback-anthropic-model }}
+        FALLBACK_OPENAI_MODEL: ${{ inputs.fallback-openai-model }}
+        FALLBACK_GEMINI_MODEL: ${{ inputs.fallback-gemini-model }}
+        LOCAL_LITELLM_IMAGE: ${{ inputs.local-litellm-image }}
+        LOCAL_LITELLM_PORT: ${{ inputs.local-litellm-port }}
+        LOCAL_LITELLM_STARTUP_TIMEOUT: ${{ inputs.local-litellm-startup-timeout-seconds }}
+      run: |
+        set -uo pipefail
+
+        # Mask every configured vendor key immediately, before any branch can
+        # possibly echo one — belt-and-braces on top of the redaction filter
+        # used for docker logs below.
+        for k in "$FALLBACK_ANTHROPIC_KEY" "$FALLBACK_OPENAI_KEY" "$FALLBACK_GEMINI_KEY"; do
+          [ -n "$k" ] && echo "::add-mask::$k"
+        done
+
+        reachable=false
+        if [ -n "${LITELLM_BASE_URL:-}" ]; then
+          # A REAL READINESS PATH, NOT A TCP CONNECT. /health/readiness is
+          # LiteLLM's own "can this proxy actually accept traffic" endpoint —
+          # unauthenticated by design (safe low-detail payload), distinct from
+          # /health/liveliness which only proves the process didn't crash.
+          # Bounded timeout: a hung probe on every job that consumes this
+          # action would be a new failure mode, worse than the one routed
+          # around here.
+          if curl -fsS --max-time "${PROBE_TIMEOUT:-3}" -o /dev/null \
+               "${LITELLM_BASE_URL%/}/health/readiness" 2>/dev/null; then
+            reachable=true
+          fi
+        fi
+
+        if [ "$reachable" = true ] && [ -n "${LITELLM_KEY:-}" ]; then
+          echo "::notice title=llm-endpoint::mode=litellm vendor=litellm — routing through in-cluster LiteLLM (${LITELLM_BASE_URL}). Vendor mapping is opaque here by design; it lives in LiteLLM's config, not this workflow."
+          {
+            echo "mode=litellm"
+            echo "vendor=litellm"
+            echo "base-url=${LITELLM_BASE_URL}"
+            echo "auth-token=${LITELLM_KEY}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "$reachable" = false ]; then
+          echo "::notice title=llm-endpoint::LiteLLM unreachable from this runner (probed ${LITELLM_BASE_URL:-<unset>}/health/readiness, ${PROBE_TIMEOUT:-3}s timeout) — starting a runner-local LiteLLM fallback chain. Expected on ubuntu-latest (no route to the cluster-internal DNS name) and this IS the deliberate bootstrap path: recovering the cluster may itself need an agent run, so the fallback must not depend on the cluster being up."
+        else
+          echo "::notice title=llm-endpoint::LiteLLM reachable but no litellm-key provided (LITELLM_FUZE_KEY secret unset) — starting a runner-local LiteLLM fallback chain."
+        fi
+
+        # ---- Build the ordered, key-filtered vendor chain --------------------
+        # "Only vendors whose keys are present participate." A missing key
+        # means skip that vendor, logged by NAME ONLY, never its key — and
+        # never fail the run for it alone.
+        declare -a CHAIN_VENDORS=()
+        declare -a AVAILABLE=()
+        declare -a SKIPPED=()
+        IFS=',' read -ra CHAIN_VENDORS <<< "${FALLBACK_CHAIN:-anthropic,openai,gemini}"
+        for raw in "${CHAIN_VENDORS[@]}"; do
+          v="$(echo "$raw" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          [ -z "$v" ] && continue
+          case "$v" in
+            anthropic) key="$FALLBACK_ANTHROPIC_KEY" ;;
+            openai)    key="$FALLBACK_OPENAI_KEY" ;;
+            gemini)    key="$FALLBACK_GEMINI_KEY" ;;
+            *)
+              echo "::error title=llm-endpoint::Unknown vendor '${v}' in fallback-chain — expected anthropic|openai|gemini."
+              exit 1
+              ;;
+          esac
+          if [ -n "$key" ]; then
+            AVAILABLE+=("$v")
+          else
+            SKIPPED+=("$v")
+          fi
+        done
+
+        echo "::notice title=llm-endpoint::fallback-chain requested=[${FALLBACK_CHAIN}] available=[${AVAILABLE[*]:-none}] skipped-no-key=[${SKIPPED[*]:-none}] (vendor names only — never keys)."
+
+        if [ "${#AVAILABLE[@]}" -eq 0 ]; then
+          echo "::error title=llm-endpoint::fallback-chain=[${FALLBACK_CHAIN}] but NO vendor in it has a configured key (checked: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY secrets) — nothing to fall back to. This is the fail-closed preflight working as intended: set at least one secret, or mint LITELLM_FUZE_KEY and fix in-cluster LiteLLM reachability instead."
+          exit 1
+        fi
+
+        # ---- A single-vendor chain does not need a container --------------
+        # A runner-local LiteLLM whose model_list has ONE entry and whose
+        # router_settings has no `fallbacks:` provides nothing a direct vendor
+        # call does not — it only adds a docker dependency the runner may not
+        # have. Anthropic is the one vendor claude-code-action can be pointed at
+        # directly (it speaks the Anthropic API shape); openai/gemini still need
+        # LiteLLM as the translating shim, so they do not take this path.
+        if [ "${#AVAILABLE[@]}" -eq 1 ] && [ "${AVAILABLE[0]}" = "anthropic" ]; then
+          echo "::notice title=llm-endpoint::mode=fallback-anthropic vendor=anthropic — chain resolved to a single vendor (skipped-no-key=[${SKIPPED[*]:-none}]), so this routes DIRECT to api.anthropic.com instead of starting a runner-local LiteLLM. A one-entry LiteLLM has no fallbacks to walk; the container would be pure overhead and a second thing that can fail."
+          echo "::add-mask::${FALLBACK_ANTHROPIC_KEY}"
+          {
+            echo "mode=fallback-anthropic"
+            echo "vendor=anthropic"
+            echo "base-url=https://api.anthropic.com"
+            echo "auth-token=${FALLBACK_ANTHROPIC_KEY}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # ---- Write vendor keys to a mode-600 env-file, never the command line -
+        WORKDIR="${RUNNER_TEMP:-/tmp}/llm-endpoint-fallback"
+        mkdir -p "$WORKDIR"
+        ENV_FILE="${WORKDIR}/vendor.env"
+        : > "$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+        LOCAL_MASTER_KEY="fuze-local-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+        echo "::add-mask::${LOCAL_MASTER_KEY}"
+        {
+          [ -n "$FALLBACK_ANTHROPIC_KEY" ] && echo "ANTHROPIC_API_KEY=${FALLBACK_ANTHROPIC_KEY}"
+          [ -n "$FALLBACK_OPENAI_KEY" ]    && echo "OPENAI_API_KEY=${FALLBACK_OPENAI_KEY}"
+          [ -n "$FALLBACK_GEMINI_KEY" ]    && echo "GEMINI_API_KEY=${FALLBACK_GEMINI_KEY}"
+          echo "LITELLM_LOCAL_MASTER_KEY=${LOCAL_MASTER_KEY}"
+        } >> "$ENV_FILE"
+
+        # ---- Generate LiteLLM config.yaml -------------------------------------
+        # One model_list entry per AVAILABLE vendor, model_name == vendor name.
+        # router_settings.fallbacks walks AVAILABLE in order, head -> rest.
+        # Trigger classes are explicit: RateLimitError covers 429 AND
+        # insufficient_quota (litellm maps both to RateLimitError), and
+        # AuthenticationError covers an exhausted/revoked key returning
+        # 401/403 — the two classes that matter for "we ran out of credits",
+        # not just "the vendor is unreachable".
+        CONFIG_FILE="${WORKDIR}/config.yaml"
+        {
+          echo "model_list:"
+          for v in "${AVAILABLE[@]}"; do
+            case "$v" in
+              anthropic) model="$FALLBACK_ANTHROPIC_MODEL"; keyref='os.environ/ANTHROPIC_API_KEY' ;;
+              openai)    model="$FALLBACK_OPENAI_MODEL";    keyref='os.environ/OPENAI_API_KEY' ;;
+              gemini)    model="$FALLBACK_GEMINI_MODEL";    keyref='os.environ/GEMINI_API_KEY' ;;
+            esac
+            echo "  - model_name: ${v}"
+            echo "    litellm_params:"
+            echo "      model: ${model}"
+            echo "      api_key: \"${keyref}\""
+          done
+          echo ""
+          echo "router_settings:"
+          echo "  num_retries: 0"
+          echo "  allowed_fails: 0"
+          echo "  retry_policy:"
+          echo "    RateLimitErrorRetries: 0"
+          echo "    AuthenticationErrorRetries: 0"
+          echo "    TimeoutErrorRetries: 0"
+          echo "    ContentPolicyViolationErrorRetries: 0"
+          if [ "${#AVAILABLE[@]}" -gt 1 ]; then
+            head="${AVAILABLE[0]}"
+            rest="${AVAILABLE[*]:1}"
+            rest_yaml="${rest// /\", \"}"
+            echo "  fallbacks:"
+            echo "    - ${head}: [\"${rest_yaml}\"]"
+          fi
+          echo ""
+          echo "general_settings:"
+          echo "  master_key: os.environ/LITELLM_LOCAL_MASTER_KEY"
+        } > "$CONFIG_FILE"
+
+        # ---- Start the runner-local LiteLLM proxy -----------------------------
+        # `docker run`, deliberately not a job-level `services:` container —
+        # `services:` cannot take a mounted config file. `--rm` since the
+        # runner is torn down after the job anyway; no persistence needed.
+        PORT="${LOCAL_LITELLM_PORT:-4000}"
+        t_start=$(date +%s)
+        # Redact any known secret value out of anything we might print below —
+        # belt-and-braces on top of ::add-mask:: and the env-file-not-argv choice.
+        redact() {
+          local out="$1"
+          for s in "$FALLBACK_ANTHROPIC_KEY" "$FALLBACK_OPENAI_KEY" "$FALLBACK_GEMINI_KEY" "$LOCAL_MASTER_KEY"; do
+            [ -n "$s" ] && out="${out//$s/***}"
+          done
+          printf '%s\n' "$out"
+        }
+
+        # `if cmd; then ... else rc=$?; fi`, NOT `cmd; rc=$?`. The runner invokes
+        # `shell: bash` steps with `-e` already on and `set -uo pipefail` above
+        # does not turn it off, so a bare failing `docker run` aborts the step
+        # before rc is ever assigned — the diagnostic below then never prints.
+        # That is exactly what happened in the field: the step died with a bare
+        # "Process completed with exit code 125" and no docker-run.log, leaving
+        # the actual cause invisible. A tested context is the one place errexit
+        # is defined not to apply.
+        if docker run -d --rm \
+          --name fuze-llm-fallback \
+          -p "127.0.0.1:${PORT}:4000" \
+          --env-file "$ENV_FILE" \
+          -v "${CONFIG_FILE}:/app/config.yaml:ro" \
+          "${LOCAL_LITELLM_IMAGE}" \
+          --config /app/config.yaml --port 4000 --host 0.0.0.0 \
+          > "${WORKDIR}/docker-run.log" 2>&1; then
+          run_rc=0
+        else
+          run_rc=$?
+        fi
+
+        # Degrade to the direct-Anthropic leg rather than killing the chain when
+        # the container cannot start (no docker daemon on the runner, image pull
+        # blocked, port already bound). This is a REAL working path — the one
+        # this action used before the multi-vendor chain existed — not a mask:
+        # what is lost is LiteLLM's automatic mid-run advance to the next
+        # vendor, and the warning says so, so a degraded run stays
+        # distinguishable from a good one. If anthropic is not in the chain
+        # there is no Anthropic-shape path at all, and it fails.
+        degrade_to_anthropic() {
+          local why="$1"
+          for v in "${AVAILABLE[@]}"; do
+            if [ "$v" = "anthropic" ]; then
+              echo "::warning title=llm-endpoint::${why} — DEGRADING to mode=fallback-anthropic (direct api.anthropic.com). The chain [${AVAILABLE[*]}] is NOT active for this run: without LiteLLM there is no automatic advance past anthropic on a quota/rate-limit/auth error, so an exhausted anthropic key now fails the run instead of rolling over."
+              echo "::add-mask::${FALLBACK_ANTHROPIC_KEY}"
+              {
+                echo "mode=fallback-anthropic"
+                echo "vendor=anthropic"
+                echo "base-url=https://api.anthropic.com"
+                echo "auth-token=${FALLBACK_ANTHROPIC_KEY}"
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::error title=llm-endpoint::${why} — and anthropic is not in the available chain [${AVAILABLE[*]}], so there is no Anthropic-shape endpoint to degrade to (claude-code-action speaks that shape only; openai/gemini reach it exclusively through LiteLLM). Failing closed."
+          exit 1
+        }
+
+        if [ $run_rc -ne 0 ]; then
+          echo "::error title=llm-endpoint::docker run failed to start the runner-local LiteLLM fallback container (rc=${run_rc}). Log (redacted):"
+          while IFS= read -r line; do redact "$line"; done < "${WORKDIR}/docker-run.log"
+          degrade_to_anthropic "runner-local LiteLLM could not be started (docker rc=${run_rc})"
+        fi
+
+        ready=false
+        for _ in $(seq 1 "${LOCAL_LITELLM_STARTUP_TIMEOUT:-45}"); do
+          if curl -fsS --max-time 2 -o /dev/null "http://127.0.0.1:${PORT}/health/readiness" 2>/dev/null; then
+            ready=true
+            break
+          fi
+          sleep 1
+        done
+        t_end=$(date +%s)
+        elapsed=$((t_end - t_start))
+
+        if [ "$ready" != true ]; then
+          echo "::error title=llm-endpoint::runner-local LiteLLM fallback container did not become ready within ${LOCAL_LITELLM_STARTUP_TIMEOUT:-45}s (waited ${elapsed}s). Container logs (redacted):"
+          docker logs fuze-llm-fallback 2>&1 | while IFS= read -r line; do redact "$line"; done
+          docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
+          degrade_to_anthropic "runner-local LiteLLM did not become ready within ${LOCAL_LITELLM_STARTUP_TIMEOUT:-45}s"
+        fi
+
+        primary_vendor="${AVAILABLE[0]}"
+        echo "::notice title=llm-endpoint::mode=fallback-local-litellm vendor=${primary_vendor} — runner-local LiteLLM (chain=[${AVAILABLE[*]}], skipped-no-key=[${SKIPPED[*]:-none}]) became ready in ${elapsed}s. LiteLLM's own router_settings.fallbacks will auto-advance past ${primary_vendor} on a quota/rate-limit/auth error without another workflow run."
+        {
+          echo "mode=fallback-local-litellm"
+          echo "vendor=${primary_vendor}"
+          echo "base-url=http://127.0.0.1:${PORT}"
+          echo "auth-token=${LOCAL_MASTER_KEY}"
+        } >> "$GITHUB_OUTPUT"

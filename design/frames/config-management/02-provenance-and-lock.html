@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Provenance, lock &amp; unset-vs-pin — Config Management Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="02-provenance-and-lock" data-flow="settings-editor">
+  <a class="back" href="index.html">&larr; All config-management frames</a>
+  <div class="eyebrow">Flow 1 · Settings editor · Frame (b) · /config</div>
+  <h1>Provenance, lock, and <span class="mono">unset</span> vs pin</h1>
+  <p class="lead">The hard part of this UI is not the inputs — it is communicating <b>why</b> a setting has
+    its value and <b>why</b> some settings cannot be changed. Each block below is a distinct
+    <code>EffectiveConfigEntry</code> shape the editor must render differently. Getting these wrong
+    produces a form that lies.</p>
+
+  <!-- A -->
+  <div class="state-block" data-state="set-here">
+    <div class="state-label">A · source = this scope</div>
+    <p class="state-why">An override exists <b>at the scope being edited</b>. This is the only case where
+      "Reset" is meaningful, and it is where the <code>unset</code>-vs-pin distinction bites.</p>
+    <div class="panel"><div class="entry">
+      <div class="entry-key">
+        <span class="name">Digest frequency</span>
+        <span class="keyid">notifications.digest.frequency</span>
+      </div>
+      <div class="entry-val">
+        <select class="select"><option selected>daily</option></select>
+        <span class="prov prov--set" data-provenance="set"><span class="dot"></span>Set here · org Acme Corp</span>
+        <button class="btn btn-sm btn-ghost" aria-expanded="true" data-reset-menu="notifications.digest.frequency">Reset…</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- A2: the unset vs pin menu -->
+  <div class="state-block" data-state="unset-vs-pin">
+    <div class="state-label">A′ · Reset… — two different operations, never one button</div>
+    <p class="state-why">These produce the <b>same value today</b> and <b>diverge tomorrow</b>. Collapsing
+      them into a single "Reset to inherited" control is the most likely design error in this flow, and it
+      is silent: nothing looks wrong until the parent changes and the child does or does not follow.</p>
+    <div class="inheritmenu" data-inherit-menu="notifications.digest.frequency">
+      <button class="opt" data-op="unset">
+        <b>Unset — keep tracking portal Acme Portal</b>
+        <span>Removes this org's override. The key resolves from its parent again, and <b>keeps following
+          the parent forever</b>. If the portal later changes <code>daily</code> → <code>weekly</code>,
+          this org becomes <code>weekly</code> too.</span>
+        <code>{ "key": "notifications.digest.frequency", "op": "unset" }</code>
+      </button>
+      <button class="opt" data-op="pin-parent">
+        <b>Pin the parent's current value (<span class="mono">daily</span>) here</b>
+        <span>Copies <code>daily</code> into this org as its own override. It <b>stops following</b> the
+          parent. If the portal later changes to <code>weekly</code>, this org stays <code>daily</code>.
+          Provenance stays <b>Set here</b>, not Inherited.</span>
+        <code>{ "key": "notifications.digest.frequency", "op": "set", "value": "daily" }</code>
+      </button>
+    </div>
+    <p class="banner banner-info" data-note="unset-vs-pin">
+      <b>Contract note.</b>
+      <span><code>unset</code> "removes this scope's override so the key resolves from its parent again —
+        <b>not the same as setting the parent's current value, which pins a copy</b>"
+        (<code>ConfigOperationType</code>). The frames make that sentence a visible choice.</span>
+    </p>
+  </div>
+
+  <!-- B -->
+  <div class="state-block" data-state="inherited">
+    <div class="state-label">B · source = an ancestor scope, not locked</div>
+    <p class="state-why">Editable here — writing creates an override at this scope. The badge <b>names the
+      ancestor</b>; "Inherited" alone does not tell an admin who to talk to.</p>
+    <div class="panel"><div class="entry">
+      <div class="entry-key">
+        <span class="name">Batch notifications</span>
+        <span class="keyid">notifications.digest.enabled</span>
+      </div>
+      <div class="entry-val">
+        <span class="toggle"><span class="switch" role="switch" aria-checked="true"><span class="knob"></span></span><span class="muted">Enabled</span></span>
+        <span class="prov prov--inherited" data-provenance="inherited"><span class="dot"></span>Inherited from portal Acme Portal</span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- C -->
+  <div class="state-block" data-state="locked-by-ancestor">
+    <div class="state-label">C · locked = true — read-only, and it names the ancestor</div>
+    <p class="state-why">The lock owner comes from <code>lockedBy</code>, and the explanation from
+      <code>lockReason</code>. A generic "you cannot edit this" is a design failure: the contract carries
+      exactly who locked it and why, so the UI must say so rather than send the admin hunting.</p>
+    <div class="panel"><div class="entry entry--locked">
+      <div class="entry-key">
+        <span class="name">SMS channel</span>
+        <span class="keyid">notifications.channel.sms</span>
+      </div>
+      <div class="entry-val">
+        <span class="toggle"><span class="switch" role="switch" aria-checked="false" aria-disabled="true"><span class="knob"></span></span><span class="muted">Disabled</span></span>
+        <span class="prov prov--locked" data-provenance="locked"><span class="dot"></span>Locked by portal Acme Portal</span>
+        <p class="lockline" data-locked-by="portal:Acme Portal">
+          <span>&#128274;</span>
+          <span><b>portal Acme Portal</b> locked this value.
+            <span class="reason">lockReason: "SMS is disabled tenant-wide pending carrier review."</span>
+            <span class="reason">You are editing <b>org Acme Corp</b>, beneath the lock — the server refuses
+              writes here with <code>LOCKED_BY_ANCESTOR</code>.</span></span>
+        </p>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- D -->
+  <div class="state-block" data-state="readonly">
+    <div class="state-label">D · isReadonly = true — displayed, never editable at any tier</div>
+    <p class="state-why">Distinct from a lock: nobody can change it anywhere, so there is no ancestor to
+      name and no "ask your admin" path. Showing this as a lock would misdirect.</p>
+    <div class="panel"><div class="entry">
+      <div class="entry-key">
+        <span class="name">Delivery engine</span>
+        <span class="keyid">notifications.engine.id</span>
+        <div class="flags"><span class="flag flag--readonly">readonly</span><span class="flag flag--system">system</span></div>
+      </div>
+      <div class="entry-val">
+        <input class="input input--mono" type="text" value="fuze-dispatch-v3" readonly data-value-input="notifications.engine.id" />
+        <span class="prov prov--default" data-provenance="default"><span class="dot"></span>Platform-owned · <code>isReadonly: true</code></span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- E -->
+  <div class="state-block" data-state="scope-not-allowed">
+    <div class="state-label">E · this tier is not in allowedScopes</div>
+    <p class="state-why">The key exists and resolves, but may not be <b>set</b> here. No input is offered —
+      an enabled control that only fails on save (<code>SCOPE_NOT_ALLOWED</code>) is the failure mode this
+      state exists to prevent.</p>
+    <div class="panel"><div class="entry">
+      <div class="entry-key">
+        <span class="name">Tenant sender domain</span>
+        <span class="keyid">notifications.sender.domain</span>
+      </div>
+      <div class="entry-val">
+        <input class="input" type="text" value="mail.acme-portal.com" disabled data-value-input="notifications.sender.domain" />
+        <span class="prov prov--inherited" data-provenance="inherited"><span class="dot"></span>Inherited from portal Acme Portal</span>
+        <p class="banner banner-warn" data-error-code="SCOPE_NOT_ALLOWED">
+          <b>Not settable at organization level.</b>
+          <span><code class="errcode errcode--scope">SCOPE_NOT_ALLOWED</code>
+            <code>allowedScopes: platform, portal</code> — set it on the portal instead.</span>
+        </p>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- F -->
+  <div class="state-block" data-state="default">
+    <div class="state-label">F · no override anywhere — the definition default</div>
+    <p class="state-why">Every key resolves to something even with no overrides, because
+      <code>defaultValue</code> is always present. This must not read as "unset/empty" — the value is real
+      and in force.</p>
+    <div class="panel"><div class="entry">
+      <div class="entry-key">
+        <span class="name">Max delivery attempts</span>
+        <span class="keyid">notifications.retry.maxAttempts</span>
+      </div>
+      <div class="entry-val">
+        <input class="input" type="number" value="5" data-value-input="notifications.retry.maxAttempts" />
+        <span class="prov prov--default" data-provenance="default"><span class="dot"></span>Default — never set at any scope</span>
+      </div>
+    </div></div>
+  </div>
+
+  <p class="note">
+    <b>Contract.</b> Every block is one <code>EffectiveConfigEntry</code>:
+    <code>source</code> (a typed <code>Scope</code> — <code>scopeType</code> + <code>scopeId</code>, never a
+    bare id), <code>locked</code>, <code>lockedBy</code>, <code>lockReason</code>, <code>editable</code>,
+    plus <code>definition.isReadonly</code> / <code>definition.allowedScopes</code>. The four
+    reasons a control is disabled — <b>locked</b>, <b>readonly</b>, <b>scope-not-allowed</b>,
+    <b>no Permit grant</b> — are visually distinct, because the user's next action differs in each.
+  </p>
+
+  <div class="pager">
+    <a href="01-settings-editor.html">&larr; Settings editor</a>
+    <a href="03-editor-states.html">Next: loading, empty, error, hidden-absent &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

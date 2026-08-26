@@ -10,12 +10,14 @@ import {
   initializeDatabase,
   checkDatabaseHealth,
   closeDatabase,
+  db,
 } from '@fuzefront/core'
 import path from 'path'
 
 import authRoutes from './routes/auth'
 import securityRoutes from './routes/security'
 import authzRoutes from './routes/authz'
+import portalsRoutes from './routes/portals'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
@@ -25,7 +27,10 @@ import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
 import { startOutboxRelayIfConfigured } from './services/outboxRelay'
 import { initFeatureFlags } from './utils/feature-flags'
+import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import type { OutboxRelayHandle } from '@fuzefront/core'
+import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
+import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
@@ -66,6 +71,9 @@ app.use('/api/v1/security', securityRoutes)
 // Provider-agnostic Security API (AuthZ surface) — /authz/* + /tenants/*,
 // implemented purely against the AuthorizationProvider contract (Permit hidden).
 app.use('/api/v1/security', authzRoutes)
+// Portal CRUD as org-tree operations (FF-EPIC-17-S7) — /portals/*. Behind
+// `fuzefront.platform.multi-tenant-portals` (default OFF); platform-admin-only.
+app.use('/api/v1/security', portalsRoutes)
 // Domain routes (identical paths to the monolith). These remain the working,
 // prod-tested `/api/auth/*` surface; they are the DEPRECATED compatibility
 // layer that the SPA migrates OFF onto `/api/v1/security/*`. Converting them
@@ -104,6 +112,7 @@ function gracefulShutdown(signal: string) {
   console.log(`\n🛑 [security-service] Received ${signal}. Shutting down...`)
   httpServer.close(async () => {
     outboxRelay?.stop()
+    await stopRefIndexProjection().catch(() => undefined)
     await closeDatabase().catch(() => undefined)
     process.exit(0)
   })
@@ -115,6 +124,25 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
+
+    // Step 5 (FFRNT-185): configure the dual-accept window so that
+    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
+    // were written before the TypeID wire form was adopted. The flag
+    // `fuzefront.identity.prefixed-ids` (step 4) controls whether RESPONSES
+    // emit TypeID form; these types stay in legacyUuidTypes until the row
+    // backfill is complete and the window is deliberately closed.
+    configureIdentity({
+      legacyUuidTypes: new Set([
+        'organization',
+        'membership',
+        'invitation',
+        'session',
+        'mfaFactor',
+        'user',
+        'app',
+        'portal',
+      ]),
+    })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
@@ -164,6 +192,11 @@ async function startServer() {
     // so there is no separate kick-off here. Each tenant self-heals
     // independently: one tenant's Authentik being down neither blocks nor
     // resets another's.
+
+    // Projects portal.created and identity lifecycle events into sec_ref_index
+    // so assertRefExists can answer without an RPC to the host backend.
+    const refIndexStore = new KnexRefIndexRepository(db)
+    await startRefIndexProjection(refIndexStore)
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     httpServer.listen(portNumber, () => {

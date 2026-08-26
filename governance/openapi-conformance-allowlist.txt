@@ -1,0 +1,29 @@
+# Endpoints and identifiers deliberately outside the frozen OpenAPI contracts.
+#
+#   METHOD /path      an endpoint that exists on purpose but is not contract surface
+#   middleware NAME   an identifier mounted with `.use()` that is middleware, not a router
+#
+# Every line here is a hole in the gate, so each one carries the reason it is
+# not drift. An entry with no justification should be deleted, not extended.
+
+# --- operational endpoints ---------------------------------------------------
+# Liveness/readiness probes. Consumed by the kubelet, never by a generated
+# client, and mounted OUTSIDE the service's `servers[].url` base on purpose so a
+# probe still answers when the API base moves.
+GET /health
+GET /health/ready
+
+# Swagger UI and the raw spec, self-served for humans. Documenting the endpoint
+# that serves the documentation is circular.
+GET /docs
+GET /docs/openapi.json
+GET /docs/openapi.yaml
+GET /openapi.json
+GET /openapi.yaml
+
+# --- middleware that a static reader cannot distinguish from a router --------
+# `app.use(API_BASE, graphCreate({ aggregate: ... }))` in billing-service and
+# payment-service. Imported from @izzywdev/fuzefront-identity, so the extractor
+# cannot walk into it; it enforces the lid/idMap graph-create rule and mounts no
+# routes of its own.
+middleware graphCreate

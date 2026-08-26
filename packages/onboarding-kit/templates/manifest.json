@@ -16,7 +16,7 @@
   "builtin": false,
   "integration": {
     "type": "module-federation",
-    "remoteEntry": "https://myapp.prod.fuzefront.com/remoteEntry.js",
+    "remoteEntry": "/apps/myapp/assets/remoteEntry.js",
     "scope": "myappApp",
     "module": "./MyApp"
   },

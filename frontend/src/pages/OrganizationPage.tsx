@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCurrentUser } from '../lib/shared'
+import { getActiveAuthToken } from '../lib/accounts'
 import { PermissionGate } from '../components/PermissionGate'
 import { OrganizationSettings } from '../components/OrganizationSettings'
 import { IdentityPage } from '@fuzefront/identity-ui'
@@ -169,18 +170,20 @@ function OrganizationPage() {
     }
   }
 
+  // Role badges are a categorical distinction, so they map to the design
+  // system's categorical chart palette (tokens, not raw hex — gate-ds-conformance).
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'owner':
-        return '#FFD700'
+        return 'var(--color-chart-1)'
       case 'admin':
-        return '#FF6B6B'
+        return 'var(--color-chart-2)'
       case 'member':
-        return '#4ECDC4'
+        return 'var(--color-chart-3)'
       case 'viewer':
-        return '#95A5A6'
+        return 'var(--color-chart-4)'
       default:
-        return '#BDC3C7'
+        return 'var(--color-chart-5)'
     }
   }
 
@@ -514,6 +517,11 @@ function OrganizationPage() {
                 organizationId={currentOrg.id}
                 userRole={currentOrg.user_role ?? 'viewer'}
                 userId={user?.id}
+                // Without getToken the identity client omits the Authorization
+                // header, so every members/roles/invitations call goes out
+                // unauthenticated and 401s (the whole Members tab was broken).
+                // Mirror AccountSecurityPage / FuzeChatWidget.
+                getToken={() => getActiveAuthToken()}
                 onMembersChange={() => loadMembers(currentOrg.id)}
               />
             ))}

@@ -285,7 +285,7 @@ export function requireUserManagementPermission(
         })
       }
 
-      const targetUserId = req.params.userId || req.body.userId
+      const targetUserId = req.params.userId || req.body?.userId
       const hasPermission = await checkUserManagementPermission(
         req.user.id,
         action,

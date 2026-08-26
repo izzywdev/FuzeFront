@@ -24,6 +24,20 @@
 //      noticed, because the install still exits 0. A missing manifest is not a
 //      build error, it is a runtime crash days later.
 //
+// R3 — if a production stage COPYs a local `file:`-linked package's dist/, and
+//      that package declares RUNTIME dependencies, it must COPY that package's
+//      node_modules too. A `file:` dep is installed as a SYMLINK: the consuming
+//      service's lockfile carries only a link entry
+//      ({"resolved":"../../packages/x","link":true}) and NO entry for the
+//      target's own dependencies, so `npm ci` installs none of them. The image
+//      then builds clean, the symlink resolves, dist/ is present — and the pod
+//      dies at module load. config-service shipped exactly this: packages/auth
+//      requires `jose`, nothing copied packages/auth/node_modules, and the very
+//      first prod rollout crash-looped on "Cannot find module 'jose'".
+//      This is the static half of the gap image-reproducibility.yml names in its
+//      own header: "static checks cannot prove an image runs". This particular
+//      failure IS statically visible, so it should never reach a cluster again.
+//
 // Dependency-free. Run from the repo root: `node scripts/check-dockerfile-lockfile.mjs`.
 
 import { readFileSync, existsSync } from 'node:fs'
@@ -127,6 +141,32 @@ for (const file of dockerfiles) {
         `${file} — installs at the root but does not COPY ${missing.length} workspace ` +
           `manifest(s): ${missing.join(', ')}. npm hoists against the full set; with any ` +
           `missing it computes a different tree than the lockfile and drops packages silently.`
+      )
+    }
+  }
+
+  // R3 — a file:-linked package's runtime deps must reach the production image.
+  const distCopies = [...code.matchAll(/COPY\s+--from=\S+\s+\S*packages\/([A-Za-z0-9._-]+)\/dist\b/g)]
+  for (const m of distCopies) {
+    const pkg = m[1]
+    const manifestPath = `${root}/packages/${pkg}/package.json`
+    if (!existsSync(manifestPath)) continue
+    let deps
+    try {
+      deps = JSON.parse(readFileSync(manifestPath, 'utf8')).dependencies || {}
+    } catch {
+      continue
+    }
+    const names = Object.keys(deps)
+    if (!names.length) continue
+    const copiesModules = new RegExp(`COPY\\s+--from=\\S+\\s+\\S*packages/${pkg}/node_modules\\b`).test(code)
+    if (!copiesModules) {
+      violations.push(
+        `${file} — COPYs packages/${pkg}/dist into the production stage but not ` +
+          `packages/${pkg}/node_modules, and packages/${pkg} declares runtime ` +
+          `dependencies (${names.join(', ')}). A file: dep is a symlink; the consuming ` +
+          `lockfile has no entry for these, so npm ci installs none of them. The image ` +
+          `builds clean and the pod dies at module load ("Cannot find module '${names[0]}'").`
       )
     }
   }

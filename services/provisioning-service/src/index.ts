@@ -6,9 +6,27 @@ import {
   FuzeEvent,
   IdentityUserCreatedPayloadV1,
   identityUserCreatedSchemaV1,
+  IdentityOrgCreatedPayloadV1,
+  identityOrgCreatedSchemaV1,
+  IdentityOrgUpdatedPayloadV1,
+  identityOrgUpdatedSchemaV1,
+  IdentityOrgDeletedPayloadV1,
+  identityOrgDeletedSchemaV1,
+  IdentityUserUpdatedPayloadV1,
+  identityUserUpdatedSchemaV1,
+  IdentityUserDeletedPayloadV1,
+  identityUserDeletedSchemaV1,
 } from '@fuzefront/shared/kafka';
 import { loadConfig } from './config';
-import { handleUserCreated } from './handler';
+import {
+  handleUserCreated,
+  handleOrgCreated,
+  handleOrgUpdated,
+  handleOrgDeleted,
+  handleUserUpdated,
+  handleUserDeleted,
+  HandlerDeps,
+} from './handler';
 import { createApp } from './app';
 
 async function main() {
@@ -20,42 +38,114 @@ async function main() {
     brokers: config.kafka.brokers,
   });
 
-  // DLQ producer: forwards poison/schema-invalid messages to identity.user.created.dlq
+  // DLQ producer: forwards poison/schema-invalid/handler-failed messages to <topic>.dlq
   const dlqProducer = new TypedProducer(kafka);
   await dlqProducer.connect();
 
-  const consumer = new TypedConsumer(kafka, config.kafka.groupId);
-  await consumer.connect();
-  await consumer.subscribe(TOPICS.IDENTITY_USER_CREATED);
-  await consumer.run(
-    async (event: FuzeEvent<IdentityUserCreatedPayloadV1>) => {
+  const handlerDeps: HandlerDeps = {
+    securityServiceUrl: config.securityServiceUrl,
+    internalProvisionSecret: config.internalProvisionSecret,
+  };
+
+  // Wrap a handler so a failure dead-letters the event (the offset still commits
+  // and the consumer stays healthy) instead of crashing the loop.
+  function withDlq<T>(
+    topic: string,
+    handler: (event: FuzeEvent<T>) => Promise<void>
+  ): (event: FuzeEvent<T>) => Promise<void> {
+    return async (event: FuzeEvent<T>) => {
       try {
-        await handleUserCreated(event, {
-          securityServiceUrl: config.securityServiceUrl,
-          internalProvisionSecret: config.internalProvisionSecret,
-        });
+        await handler(event);
       } catch (err) {
-        // HTTP-layer failures (4xx or 5xx-exhaustion) must not crash the consumer.
-        // Route the message to the DLQ so the offset is committed and processing continues.
         console.error(
-          `[provisioning-service] Handler failed for correlationId=${event.correlationId}, routing to DLQ: ${String(err)}`
+          `[provisioning-service] Handler failed for ${topic} correlationId=${event.correlationId}, routing to DLQ: ${String(err)}`
         );
-        const dlqTopicName = `${TOPICS.IDENTITY_USER_CREATED}.dlq`;
         await dlqProducer.raw.send({
-          topic: dlqTopicName,
+          topic: `${topic}.dlq`,
           messages: [
             {
               value: JSON.stringify({
                 raw: JSON.stringify(event),
                 reason: String(err),
-                sourceTopic: TOPICS.IDENTITY_USER_CREATED,
+                sourceTopic: topic,
               }),
             },
           ],
         });
       }
-    },
+    };
+  }
+
+  // identity.user.created -> provision the user (personal org + Permit wiring)
+  const userConsumer = new TypedConsumer(kafka, config.kafka.groupId);
+  await userConsumer.connect();
+  await userConsumer.subscribe(TOPICS.IDENTITY_USER_CREATED);
+  await userConsumer.run(
+    withDlq<IdentityUserCreatedPayloadV1>(TOPICS.IDENTITY_USER_CREATED, event =>
+      handleUserCreated(event, handlerDeps)
+    ),
     identityUserCreatedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.org.created -> reconcile the org's Permit wiring (via its owner).
+  // Separate consumer/group: TypedConsumer.run binds a single schema per loop.
+  const orgConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org`);
+  await orgConsumer.connect();
+  await orgConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED);
+  await orgConsumer.run(
+    withDlq<IdentityOrgCreatedPayloadV1>(TOPICS.IDENTITY_ORG_CREATED, event =>
+      handleOrgCreated(event, handlerDeps)
+    ),
+    identityOrgCreatedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.org.updated -> re-reconcile the org's Permit wiring.
+  const orgUpdatedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-updated`);
+  await orgUpdatedConsumer.connect();
+  await orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED);
+  await orgUpdatedConsumer.run(
+    withDlq<IdentityOrgUpdatedPayloadV1>(TOPICS.IDENTITY_ORG_UPDATED, event =>
+      handleOrgUpdated(event, handlerDeps)
+    ),
+    identityOrgUpdatedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.org.deleted -> tear down the org's Permit access (soft/hard).
+  const orgDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-org-deleted`);
+  await orgDeletedConsumer.connect();
+  await orgDeletedConsumer.subscribe(TOPICS.IDENTITY_ORG_DELETED);
+  await orgDeletedConsumer.run(
+    withDlq<IdentityOrgDeletedPayloadV1>(TOPICS.IDENTITY_ORG_DELETED, event =>
+      handleOrgDeleted(event, handlerDeps)
+    ),
+    identityOrgDeletedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.user.updated -> re-sync the user's profile into Permit.
+  const userUpdatedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-updated`);
+  await userUpdatedConsumer.connect();
+  await userUpdatedConsumer.subscribe(TOPICS.IDENTITY_USER_UPDATED);
+  await userUpdatedConsumer.run(
+    withDlq<IdentityUserUpdatedPayloadV1>(TOPICS.IDENTITY_USER_UPDATED, event =>
+      handleUserUpdated(event, handlerDeps)
+    ),
+    identityUserUpdatedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.user.deleted -> tear down the user's Permit principal + sessions.
+  const userDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-deleted`);
+  await userDeletedConsumer.connect();
+  await userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED);
+  await userDeletedConsumer.run(
+    withDlq<IdentityUserDeletedPayloadV1>(TOPICS.IDENTITY_USER_DELETED, event =>
+      handleUserDeleted(event, handlerDeps)
+    ),
+    identityUserDeletedSchemaV1,
     dlqProducer
   );
 
@@ -68,7 +158,12 @@ async function main() {
   // --- Graceful shutdown ---
   const shutdown = async () => {
     console.log('[provisioning-service] Shutting down...');
-    await consumer.disconnect();
+    await userConsumer.disconnect();
+    await orgConsumer.disconnect();
+    await orgUpdatedConsumer.disconnect();
+    await orgDeletedConsumer.disconnect();
+    await userUpdatedConsumer.disconnect();
+    await userDeletedConsumer.disconnect();
     await dlqProducer.disconnect();
     process.exit(0);
   };

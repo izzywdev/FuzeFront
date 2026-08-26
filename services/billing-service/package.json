@@ -1,7 +1,11 @@
 {
   "name": "@fuzefront/billing-service",
   "version": "1.0.0",
-  "description": "Billing microservice for FuzeFront \u2014 Stripe, metering, and subscription management",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "description": "Billing microservice for FuzeFront — Stripe, metering, and subscription management",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -34,5 +38,9 @@
     "ts-node": "10.9.2",
     "typescript": "5.1.6",
     "uuid": "9.0.1"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

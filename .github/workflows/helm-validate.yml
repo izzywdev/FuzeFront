@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - 'deploy/helm/**'
+      - 'deploy/scripts/**'
       - '.github/workflows/helm-validate.yml'
 
 permissions:
@@ -74,6 +75,7 @@ jobs:
             --set smsService.enabled=true \
             --set provisioningService.enabled=true \
             --set permit.enabled=true \
+            --set configService.enabled=true \
             --output-dir rendered
 
           # Strict: reject unknown fields. Skip CRDs cert-manager/sealed-secrets
@@ -95,6 +97,36 @@ jobs:
             -ignore-filename-pattern 'authentik-blueprints' \
             -summary \
             rendered/fuzefront/templates/
+
+      - name: Guard shell-launched containers can run their interpreter (${{ matrix.values }})
+        run: |
+          # REPLACES a narrower guard that asserted the seed Job's tag RESOLVED on
+          # registry.k8s.io. That guard was green on 2026-08-20 while the Job could
+          # not start at all: the image had been moved to `registry.k8s.io/kubectl`,
+          # which is DISTROLESS, and the Job invokes `/bin/sh -c`. Every pod died at
+          # runc init with `exec: "/bin/sh": no such file or directory`, printed
+          # nothing, and blocked the whole registration handoff.
+          #
+          # The old guard asserted the PREVIOUS failure mode (a deleted bitnami tag,
+          # FuzeFront#688) and had an explicit warn-and-skip for any image not on
+          # registry.k8s.io -- so moving the image off that registry would have
+          # silently disarmed it too. Resolving a manifest is not evidence the image
+          # can execute the command the manifest gives it, so this runs the
+          # interpreter. See deploy/scripts/check-job-interpreters.sh for the detail.
+          #
+          # Scope is now every shell-launched container in the rendered chart, not
+          # just the seed Job. First-party ghcr.io/izzywdev/* images are reported and
+          # skipped (pulling them needs auth; their bases are pinned by our
+          # Dockerfiles). The script hard-errors rather than skipping if docker or
+          # PyYAML is missing, and fails if the scan matches nothing.
+          # Self-test FIRST, deliberately, mirroring gate-identifier: assert the
+          # probe still FAILS on a known-distroless image before trusting it to
+          # pass on ours. A gate observed only passing proves nothing -- the guard
+          # this replaces was green for the entire life of the bug it should have
+          # caught.
+          set -euo pipefail
+          ./deploy/scripts/check-job-interpreters.sh --self-test
+          ./deploy/scripts/check-job-interpreters.sh rendered/fuzefront/templates
 
       - name: Guard NetworkPolicy port values (${{ matrix.values }})
         run: |
@@ -121,3 +153,35 @@ jobs:
             done < <(grep -E '^\s*port:\s*' "$f")
           done
           exit $fail
+
+      - name: Guard Authentik public Ingress paths (${{ matrix.values }})
+        run: |
+          # Same class of gap as the NetworkPolicy port guard above: kubeconform
+          # validates SHAPE against the Kubernetes API schema, not the CONTROLLER's
+          # actual matching semantics. Production runs Traefik, whose Kubernetes
+          # Ingress provider implements `pathType: Prefix` as a plain STRING prefix
+          # (its PathPrefix matcher) rather than the spec's element-wise segment
+          # match. That gap let `- /application` (no trailing slash) in
+          # fuzefront.authentikPublicPaths string-prefix-match `/applications`,
+          # routing Authentik's application-list surface to the public internet —
+          # live, unnoticed, for an unknown period. helm lint and kubeconform both
+          # stayed green throughout.
+          #
+          # TWO layers, both from deploy/scripts/authentik-path-policy.sh (the
+          # single source of truth this and the post-deploy live probe share):
+          #   1. denylist  — no routed path may string-prefix-match a forbidden
+          #      Authentik surface under Traefik's matcher.
+          #   2. CLOSED SET — the routed set must equal the approved set EXACTLY.
+          #      A denylist can only object to surfaces someone remembered to
+          #      enumerate, which is precisely why /applications shipped green.
+          #      Any new Authentik path now fails here until it is approved in
+          #      the policy file with a justification.
+          #
+          # Self-test FIRST: prove the probe still fails on the exact regression
+          # (a bare "/application" that matches "/applications") and on an
+          # unapproved extra path, before trusting it to pass on this chart's
+          # actual rendered output. A check only ever observed passing is not
+          # evidence of anything.
+          set -euo pipefail
+          ./deploy/scripts/check-authentik-public-paths.sh --self-test
+          ./deploy/scripts/check-authentik-public-paths.sh rendered/fuzefront/templates

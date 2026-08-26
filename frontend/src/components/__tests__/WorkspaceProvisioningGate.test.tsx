@@ -3,19 +3,77 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { WorkspaceProvisioningGate } from '../WorkspaceProvisioningGate'
-import { AppProvider } from '../../lib/shared'
+import { AppProvider, useAppContext } from '../../lib/shared'
+import * as shared from '../../lib/shared'
 import { LanguageProvider } from '../../contexts/LanguageContext'
 import * as api from '../../services/api'
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── fixtures ─────────────────────────────────────────────────────────────────
+//
+// `GET /organizations` returns every org the caller is an active member of,
+// PLUS any `type: 'platform'` org — the latter is visible to every
+// authenticated user regardless of membership (see
+// `backend/security/src/routes/organizations.ts`'s
+// `whereNotNull(organization_memberships.id) OR organizations.type =
+// 'platform'` join condition). The security-service route also projects the
+// caller's own role as `user_role`, `null` when they merely see the
+// platform org without belonging to it. These fixtures mirror that wire
+// shape exactly — they are not a shortcut around it.
 
-const personalOrg = { id: 'org-1', name: 'My Workspace', type: 'personal' }
-const teamOrg = { id: 'org-2', name: 'ACME Corp', type: 'team' }
+/** A genuine personal-org membership — the historical happy path. */
+const personalOrg = {
+  id: 'org-1',
+  name: 'My Workspace',
+  type: 'personal',
+  user_role: 'owner',
+}
+
+/**
+ * A real membership whose `type` column was wrongly reclassified away from
+ * `'personal'` (the production defect PR #788 repairs at the source) — the
+ * membership itself was never touched. A provisioned user in this state
+ * must still reach the shell.
+ */
+const reclassifiedOrg = {
+  id: 'org-1',
+  name: 'My Workspace',
+  type: 'organization',
+  user_role: 'owner',
+}
+
+/**
+ * The always-visible platform org. Present for every authenticated caller
+ * whether or not their own workspace has been provisioned — `user_role` is
+ * `null` because the caller holds no membership row in it. On its own this
+ * must NOT be read as "provisioned" (that would make the gate
+ * unconditionally ready and defeat its purpose).
+ */
+const platformOrg = {
+  id: 'org-platform',
+  name: 'FuzeFront',
+  type: 'platform',
+  user_role: null,
+}
 
 /** Flush all pending microtasks (resolved Promise callbacks) */
 const flushMicrotasks = () => act(async () => { await Promise.resolve() })
 
-function renderGate(children: React.ReactNode = <div>App content</div>) {
+/** Renders the active organization id next to the gated children, so tests
+ * can assert WHICH org the gate picked as active — not just that some org
+ * unblocked it. */
+function ActiveOrgProbe() {
+  const { state } = useAppContext()
+  return <div data-testid="active-org">{state.activeOrganizationId ?? ''}</div>
+}
+
+function renderGate(
+  children: React.ReactNode = (
+    <>
+      <div>App content</div>
+      <ActiveOrgProbe />
+    </>
+  )
+) {
   return render(
     <LanguageProvider>
       <AppProvider>
@@ -32,6 +90,7 @@ describe('WorkspaceProvisioningGate', () => {
     vi.restoreAllMocks()
     vi.useRealTimers()
     sessionStorage.clear()
+    localStorage.clear()
   })
 
   it('renders children immediately when a personal org is present', async () => {
@@ -45,11 +104,30 @@ describe('WorkspaceProvisioningGate', () => {
       expect(screen.getByText('App content')).toBeInTheDocument()
     })
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-1')
   })
 
-  it('shows the provisioning spinner when no personal org exists yet', async () => {
+  it('reaches the shell for a user whose organizations exist but none is type=personal', async () => {
+    // This is the production defect: a real membership survives with its
+    // `type` column reclassified away from 'personal'. The gate must not
+    // key readiness off `type === 'personal'` any more.
     vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
-      teamOrg,
+      reclassifiedOrg,
+    ])
+
+    renderGate()
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    // The reclassified-but-real membership org is still selected active.
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-1')
+  })
+
+  it('shows the provisioning spinner for a genuinely unprovisioned user (only the visible platform org, no membership)', async () => {
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      platformOrg,
     ])
 
     renderGate()
@@ -65,14 +143,26 @@ describe('WorkspaceProvisioningGate', () => {
     expect(screen.queryByText('App content')).not.toBeInTheDocument()
   })
 
-  it('unblocks when the personal org arrives on a subsequent poll', async () => {
+  it('shows the provisioning spinner for a genuinely unprovisioned user (empty org list)', async () => {
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([])
+
+    renderGate()
+
+    await waitFor(() => {
+      expect(screen.getByText('Creating your workspace…')).toBeInTheDocument()
+    }, { timeout: 3000 })
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.queryByText('App content')).not.toBeInTheDocument()
+  })
+
+  it('unblocks when a real membership arrives on a subsequent poll', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     let callCount = 0
     const getOrgs = vi
       .spyOn(api.organizationsAPI, 'getOrganizations')
       .mockImplementation(async () => {
         callCount++
-        if (callCount <= 2) return [teamOrg]
+        if (callCount <= 2) return [platformOrg]
         return [personalOrg]
       })
 
@@ -100,10 +190,10 @@ describe('WorkspaceProvisioningGate', () => {
     expect(getOrgs).toHaveBeenCalledTimes(3)
   })
 
-  it('transitions to timeout state after 30 s without a personal org', async () => {
+  it('transitions to timeout state after 30 s when provisioning never completes', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
-      teamOrg,
+      platformOrg,
     ])
 
     renderGate()
@@ -171,7 +261,7 @@ describe('WorkspaceProvisioningGate', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const getOrgs = vi
       .spyOn(api.organizationsAPI, 'getOrganizations')
-      .mockResolvedValue([teamOrg])
+      .mockResolvedValue([platformOrg])
 
     const { unmount } = renderGate()
 
@@ -193,5 +283,48 @@ describe('WorkspaceProvisioningGate', () => {
 
     expect(getOrgs.mock.calls.length).toBe(callCountAfterMount)
   })
-})
 
+  it('prefers a persisted active org over the personal org, among real memberships', async () => {
+    const otherMemberOrg = {
+      id: 'org-2',
+      name: 'ACME Corp',
+      type: 'organization',
+      user_role: 'member',
+    }
+    vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue(
+      'org-2'
+    )
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      personalOrg,
+      otherMemberOrg,
+    ])
+
+    renderGate()
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-2')
+  })
+
+  it('falls back to any real membership when none is persisted or personal', async () => {
+    const otherMemberOrg = {
+      id: 'org-2',
+      name: 'ACME Corp',
+      type: 'organization',
+      user_role: 'member',
+    }
+    vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+      platformOrg,
+      otherMemberOrg,
+    ])
+
+    renderGate()
+
+    await waitFor(() => {
+      expect(screen.getByText('App content')).toBeInTheDocument()
+    })
+    // Never the platform org — only a real membership is eligible as active.
+    expect(screen.getByTestId('active-org')).toHaveTextContent('org-2')
+  })
+})

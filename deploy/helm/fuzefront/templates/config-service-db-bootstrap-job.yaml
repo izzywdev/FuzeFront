@@ -1,0 +1,105 @@
+{{- if and .Values.configService.enabled .Values.configService.dbBootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fuzefront-config-db-bootstrap
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-db-bootstrap
+  annotations:
+    # Idempotent, privileged provisioning of the least-privilege config_svc role
+    # and the `config` schema it owns. Mirrors billing-db-bootstrap-job.yaml,
+    # which is the working precedent for a per-service role in the SHARED
+    # database — no separate database is provisioned, only a role + schema.
+    #
+    # Runs BEFORE config-service starts (it self-migrates its schema on boot as
+    # config_svc). Runs as the FuzeInfra Postgres superuser — the only place that
+    # needs CREATEROLE.
+    #
+    # ORDERING NOTE: this is a pre-upgrade hook, so it runs BEFORE the sync wave
+    # that applies the SealedSecret. CONFIG_DB_PASSWORD must therefore already be
+    # present in the Secret from an EARLIER sync — seal it and let that merge
+    # first, then enable the service. Enabling both in one change makes this Job
+    # fail on a missing key, which is a hook failure, which fails the whole sync.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: config-db-bootstrap
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: config-db-bootstrap
+          image: postgres:15
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              export PGPASSWORD="$DB_SUPERUSER_PASSWORD"
+              if [ -z "${CONFIG_DB_PASSWORD:-}" ]; then
+                echo "FATAL: CONFIG_DB_PASSWORD is empty. Seal it into" >&2
+                echo "Secret/{{ include "fuzefront.secretName" . }} (key {{ .Values.configService.dbPasswordKey }})" >&2
+                echo "and let that change sync BEFORE enabling configService." >&2
+                exit 1
+              fi
+              psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d "$DB_NAME" \
+                -v ON_ERROR_STOP=1 -v config_pw="$CONFIG_DB_PASSWORD" <<'SQL'
+              -- psql ':var' interpolation works ONLY in plain SQL, never inside a
+              -- dollar-quoted ($do$...$do$) body. Stash the password in a session
+              -- GUC here (plain SQL → psql substitutes), then read it back inside
+              -- the DO block via current_setting() + format(%L) for safe quoting.
+              SET fuzefront.config_pw TO :'config_pw';
+              DO $do$
+              BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'config_svc') THEN
+                  EXECUTE format('CREATE ROLE config_svc LOGIN PASSWORD %L', current_setting('fuzefront.config_pw'));
+                ELSE
+                  EXECUTE format('ALTER ROLE config_svc WITH LOGIN PASSWORD %L', current_setting('fuzefront.config_pw'));
+                END IF;
+              END
+              $do$;
+              -- pgcrypto is created here by the SUPERUSER. config_svc (NOSUPERUSER,
+              -- non-DB-owner) cannot run CREATE EXTENSION at migration time, so its
+              -- migrations must not try — it would fail "permission denied to
+              -- create extension".
+              CREATE EXTENSION IF NOT EXISTS pgcrypto;
+              -- config_svc OWNS the `config` schema so it can run its own table
+              -- migrations (CREATE TABLE/sequences inside `config`). Idempotent.
+              CREATE SCHEMA IF NOT EXISTS config AUTHORIZATION config_svc;
+              GRANT USAGE ON SCHEMA public TO config_svc;
+              SQL
+              echo "config_svc role + config schema + pgcrypto ensured"
+          env:
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_SUPERUSER
+              value: {{ .Values.database.bootstrap.superuser.username | quote }}
+            - name: DB_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.bootstrap.superuser.secretName | default (include "fuzefront.secretName" .) }}
+                  key: {{ .Values.database.bootstrap.superuser.secretKey | quote }}
+            # config_svc's own password. Same Secret as JWT_SECRET — one sealed
+            # manifest for the platform, not a per-service one holding a single key.
+            - name: CONFIG_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: {{ .Values.configService.dbPasswordKey }}
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+{{- end }}

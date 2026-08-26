@@ -1,6 +1,10 @@
 {
   "name": "@fuzefront/selection-list-service-tests",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
   "private": true,
   "description": "Independent acceptance and contract test suite for the selection-list-service (FFRNT-198, S12)",
   "scripts": {
@@ -22,5 +26,9 @@
   },
   "dependencies": {
     "@fuzeone/selection-list-client": "file:../../selection-list-client"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

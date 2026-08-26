@@ -255,6 +255,27 @@ spec:
             # securityService.googleBrokered to "false" in values and re-syncing.
             - name: SECURITY_GOOGLE_BROKERED
               value: {{ .Values.securityService.googleBrokered | default "false" | quote }}
+            {{- if .Values.securityService.featureFlags.unleashUrl }}
+            # @fuzefront/feature-flags (OpenFeature + Unleash). Gates
+            # fuzefront.identity.root-membership (FF-EPIC-17) via
+            # utils/feature-flags.ts (startup init, non-fatal) +
+            # utils/rootMembershipFlag.ts (lazy read). Mirrors the
+            # backend/applicationsService wiring. Absence of URL/token (base
+            # values.yaml default) → this whole block does not render → init
+            # is skipped → safe in-code default (OFF), never a crash.
+            - name: FLAG_ENV
+              value: {{ ternary "prod" "local" (eq .Values.ingress.className "traefik") | quote }}
+            - name: UNLEASH_URL
+              value: {{ .Values.securityService.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.securityService.featureFlags.appName | quote }}
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.securityService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.securityService.featureFlags.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health

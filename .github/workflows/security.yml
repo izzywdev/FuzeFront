@@ -58,7 +58,21 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, BlueOak-1.0.0
+          # BlueOak-1.0.0 (Blue Oak Council's Model License) is isaacs' preferred
+          # license going forward for the packages he maintains (which, isexe,
+          # node-gyp, tar, glob, mkdirp, ...) — a large slice of the npm
+          # toolchain's own dependency graph. It is a plain-language permissive
+          # license with no copyleft, materially equivalent to MIT/ISC (in some
+          # readings stronger, via an explicit patent grant); the Blue Oak
+          # Council's own comparison rates it compatible with this project's
+          # existing permissive-license set. It first surfaced transitively via
+          # node-gyp@12's `which`/`isexe` (pulled in by bumping sqlite3 5.x -> 6.x
+          # to fix a distutils-era node-gyp build failure, #646) and will keep
+          # recurring as more of the isaacs-maintained toolchain relicenses, so
+          # it belongs on the allow-list rather than pinned around package by
+          # package.
+          #
           # TruffleHog is AGPL-3.0, which allow-licenses above does not permit.
           # It has been in this workflow all along; it only became visible when
           # pinning changed its ref, because Dependency Review evaluates CHANGED
@@ -148,7 +162,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       # backend + frontend images build from the REPO ROOT context (they
       # consume @fuzefront/* workspaces outside their own dir) — mirror

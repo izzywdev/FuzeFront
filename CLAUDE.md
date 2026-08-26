@@ -58,7 +58,8 @@ This repo enables `required_signatures` on `master`, and **`master` is deploy-on
   - commit via the **GitHub API / `gh api`** (server-side commits are Verified), or
   - run the workflow under an **admin / GitHub App identity** whose commits are signed.
 - Human/agent commits are signed via SSH signing (baseline §8 / `governance/hardening-convention.md` §3). Feature-branch commits may be unsigned; the **squash-merge is signed**.
-- Because `master` deploys/publishes on push, **never bot-merge here** — merge in a **deploy window** (`hardening.deployOnPush: true`). Hand-deploying to prod is forbidden; prod is GitOps.
+- Because `master` deploys/publishes on push, **a merge here IS a production deploy.** Hand-deploying to prod is forbidden either way — prod is GitOps, so the deploy happens by merging, never by a human touching the cluster.
+- **Auto-merge is the intended path here; bot-merging is expected.** `auto-merge.yml` arms the merge and its `dispatch-release` job then dispatches `release.yml`. The policy, the reasoning, and where a real block would have to live are in the canonical **`governance/hardening-convention.md` §6** — not restated here, because an overlay that restates canonical policy drifts from it silently (`governance_sync` does not reconcile a consuming repo's `CLAUDE.md`). See FuzeSDLC#139 for the correction that established this.
 
 ## Feature flags — FuzeFront HOSTS the family flag service
 
@@ -113,7 +114,14 @@ If you rotate the signing keystore or change the key alias, all four files must 
 Frames must show loading, empty, error, and the real fail-closed cases (reveal-once token; remove-last-2FA-factor → 409; demote-the-last-admin; `hasPassword: null` → "set a password first"). **Frames that show only the happy path produce UI that only handles the happy path.**
 
 ### Enforcement — the rule, not the etiquette
-`gate-frames-first` fails any PR touching feature UI (`frontend/src/**`, `packages/*-ui/**`) without an approved `design/frames/<feature>/manifest.json` covering it. Governance nobody can skip beats a step someone is supposed to remember — the whole reason this gate exists is that pushing feature UI with no approved frames was *possible*.
+`gate-frames-first` (`.github/workflows/gate-frames-first.yml` → `scripts/check-frames-first.mjs`) fails any PR touching feature UI (`frontend/src/**`, `packages/*-ui/**`) that a `design/frames/<feature>/manifest.json` covers without the covering **flow** being approved. Governance nobody can skip beats a step someone is supposed to remember — the whole reason this gate exists is that pushing feature UI with no approved frames was *possible*.
+
+> **This section described the gate as existing for months while no workflow implemented it** — `grep -rl gate-frames-first .github/workflows/` returned nothing. The un-skippable rule was the only part of the pipeline that could actually be skipped. It is wired now, but read the two mechanics below rather than assuming the one-line summary is the whole contract; the same "a check is green so it must be working" mistake is documented under the branch-lifecycle section.
+
+- **Coverage is declared, never inferred.** `frontend/src/**` and `packages/*-ui/**` carry no feature slug, and slugs do not map to directories (`devices-sessions` and `mfa-management` both build into `packages/account-security-ui`). So a manifest states what it covers — `implementation.paths` at feature level, `build.flows[].implementation.paths` per flow — and the gate matches against that. A path no manifest claims is **uncovered**, not silently fine.
+- **The ramp is real and has an owner.** `governance/frames-first-policy.json` holds the strength. Covered-but-unapproved **always** fails. Uncovered is `mode: "warn"` today because **0 of 18 manifests declare `implementation.paths`**, so failing there would block every UI PR in flight (verified: it would have failed #585 and #591, both of which legitimately shipped). Flip to `fail` once the `ratchet.knownUncovered` worklist is claimed — owner `@izzywdev`. Mirrors the `gate-ds-conformance` changed-lines ratchet.
+
+`gate-frames-schema`, also named above, **still does not exist** — nothing validates a manifest against `design/frames/_template/manifest.schema.json`.
 
 ## UI runtime validation — the console-clean gate
 
@@ -139,6 +147,130 @@ This is not cosmetic. Each worktree is a full checkout (~2k files, plus `node_mo
 - This is the local counterpart to the branch policy below: `governance-nightly` reaps stale *branches* on the remote; the reaper reaps stale *worktrees* on the developer's disk. Neither covers the other.
 
 **This is also why the continuous-push rule matters twice over**: an agent that holds work only on local disk can have its worktree reaped-blocked (skipped, cluttering the box) and, if the box is wiped, lose the work entirely. Push early — the reaper only cleans what is safely on origin.
+
+## `slug`, display name, and the federated serve path are THREE INDEPENDENT questions
+
+**This is the canonical statement of the naming/addressing rule for the whole
+FuzeFront app registry.** Every other doc that touches `slug`, `name`/`menuLabel`
+prefixing, or the federated serve path is a pointer to this section, not a second
+copy of it — see "Where else this is referenced" below. It has been re-litigated
+four times across the fleet, each time by someone reasoning from a document instead
+of from the code or the owner's own words, and each round mutated live manifests.
+
+**Root cause, stated directly by the owner, 2026-08-19:**
+
+> "the intention was that the slug could be whatever like fuzepicker or fuzeagent. I
+> actually liked keeping the fuze prefix to distinguish from other apps. what I was
+> trying to do is that the display name in the menu won't repeat the Fuze prefix to
+> 16 or more products unless necessary like for fuzebi, and fuzeX. that's all"
+
+**The prefix question was always about the menu label. It got misapplied to the
+slug, four times.** That single conflation is the whole root cause of every
+mutation below. The three facts that follow are independent — none of them implies
+another, and no evidence about one is evidence about a different one.
+
+### 1. `slug` — free at creation, immutable thereafter
+
+Prefixed (`fuzepicker`, `fuzeagent`) or unprefixed (`picker`, `plan`) are **both
+fine at registration**. The owner *likes* the prefix for distinguishing apps; there
+is no correct form and no migration path from one to the other.
+
+Once registered, `slug` is **immutable and never edited by any PR, in either
+direction.** `PUT /apps/{slug}` has no rename operation, so a redeploy under a
+changed slug **registers a second app and strands the first** — orphaned Permit
+grants, CASCADE-deleted `app_installations` rows, a ghost tile in the launcher.
+
+Owner ruling 2026-08-19 (also recorded in `packages/onboarding-kit/README.md`
+§"prefix ON the slug, OFF the display string"): the field is *"not checked, in
+either direction"*, and *"None of these are to be migrated"* — naming `deploy`,
+`call`, `executive`, `finance`, `keys`, `market`, `picker` as unprefixed slugs to
+leave alone and `fuzex`, `fuzebi` as prefixed ones not to be "corrected". The
+guidance to prefix applies to a **genuinely new** product only, and is guidance,
+not a gate.
+
+`docs/runbooks/app-slug-deprefix-migration.md` is **RETIRED** — it implements
+exactly the migration this rule forbids. Its tables are a historical snapshot of
+measured state on 2026-08-19, not a worklist; do not act on them.
+
+### 2. Display name / `menuLabel` — drop the `Fuze` prefix, with two named exceptions
+
+Sixteen-plus products all reading "Fuze…" in one menu is noise — the prefix
+carries no information when everything shares it. So `name` and `menuLabel` drop
+it: register `"Sales"` / `"Sales"`, not `"FuzeSales"`, alongside `"slug":
+"fuzesales"` which keeps it.
+
+**Keep the prefix only where the remainder is meaningless or ambiguous on its
+own** — the owner named exactly two: **FuzeBI** and **FuzeX**. "BI" and "X" alone
+do not identify a product. This is guidance for the menu string only; it says
+nothing about the slug, which follows rule 1 above regardless.
+
+This is enforced in code by `validateSlugConvention()` in
+`packages/onboarding-kit/bin/validate-registration.mjs` — but **that check has no
+FuzeBI/FuzeX carve-out today**; it flags any `Fuze`-prefixed `name`/`menuLabel`
+unconditionally, with no exception list. Until the validator is updated, treat the
+FuzeBI/FuzeX exception as owner guidance the automated gate does not yet encode —
+a known code/policy gap, not license to strip the prefix from those two products'
+display strings, and not a reason to add a prefix back to any other product's.
+
+`slug` is never gated by this check in either direction — only `name`/`menuLabel`
+are, and both are ordinary mutable fields `register.sh` re-`PUT`s on every pod
+start, so fixing one is a one-line edit, unlike a slug.
+
+### 3. Serve path — independent of both
+
+**`frontend/src/utils/loadFederatedApp.ts:71` is the entire mechanism:**
+
+```ts
+const resolved = new URL(remoteEntry, origin)
+```
+
+The host resolves `integration.remoteEntry` against its own origin and loads it.
+**The slug is not an input.** No code path anywhere derives a serve path from a
+slug, and none derives a slug from a path. The `/apps/<slug>/…` phrasing in that
+file's doc comment is describing a habit, not a contract — reading it as a
+contract is what started this.
+
+The serve path is free-form, and must agree with itself across four layers. A
+mismatch at any one of them yields the signature failure — `remoteEntry.js`
+returns 200 and every chunk it references 404s, so the panel is blank while the
+healthcheck is green:
+
+| Layer | File |
+|---|---|
+| `integration.remoteEntry` | `registration/manifest.json` **and** its vendored Helm copy (kept byte-identical) |
+| Vite/webpack `base` | the remote's `vite.config.*` (with `assetsDir: ''`) |
+| Ingress `path` | the chart's federated-mount Ingress |
+| nginx `location` / `alias` | the chart's nginx ConfigMap, or the baked `nginx.conf` |
+
+**Convention, to keep one mental model: use `/apps/<the repo's existing slug>/`** —
+whatever that slug already is, prefixed or not. It is derivable, needs no
+judgement, and matches what most repos already assume. It is a naming convention
+for a free variable, **not** evidence about the slug: never edit a slug to make it
+match a path. Fix the path.
+
+### Two things that are NOT evidence of a slug error
+
+- **`routing.path` differing from `slug`** (e.g. slug `plan`, path `/app/fuzeplan`).
+  Independent fields; this is normal and was misread as a contradiction.
+- **`backend/src/routes/appRegistry.ts` deriving a slug from a name.** That is the
+  CI/local-only fallback, gated on `APP_REGISTRY_LOCAL_ADAPTER=1`, default off.
+  Production is `backend/applications/src/app-registry/service.ts`, which stores
+  `slug: row.slug` verbatim. Citing the fallback as the production mechanism has
+  now caused **five** wrong changes.
+
+Also unconsumed, and inconsistent with `builtins.ts`: `services/app-registry-service/seed/*.manifest.json`
+is a documentation fixture (grep finds only comments referencing it). Only the four entries
+in `BUILTIN_MANIFESTS` take their slug from FuzeFront's seed — `fuzesocial`, `fuzeagent`,
+`clock`, `fuzequality`. Every other product self-registers and owns its own slug.
+
+### Where else this is referenced
+
+`packages/onboarding-kit/README.md`, `docs/mfe-self-registration.md`,
+`docs/guides/BUILDING_ON_FUZEFRONT.md`, `docs/planning/app-suites-and-modes.md`,
+and `docs/runbooks/app-slug-deprefix-migration.md` (retired) all point back here
+rather than restating the rule. If you find one of them describing the rule
+differently, this section is correct and the other doc is stale — fix the other
+doc in place.
 
 ## Entity identifiers — the owning service mints them, and references carry their type
 
@@ -172,18 +304,53 @@ Every agent-created branch must reach one of these terminal states — never lef
 
 `governance-nightly` enforces this daily: closes stale draft PRs (no new commits in 7 days) and deletes branchless branches whose commits are fully reachable from master.
 
-**Agent branch → auto-merge path — the agent opens its own PR. CI cannot.**
+**Agent branch → auto-merge path — the agent opens its own PR, and CI can now approve it all the way to prod.**
 
 **Every agent MUST open its own non-draft PR with the `auto-merge` label.** This is not optional and there is no safety net that does it for you. `auto-merge.yml` then calls `gh pr merge --auto --squash --delete-branch`, so the branch self-resolves once all CI gates pass — no human required for routine agent work.
 
-**CI cannot open a PR here, by design.** `can_approve_pull_request_reviews` is `false` on this repo (`gh api repos/izzywdev/FuzeFront/actions/permissions/workflow`), so `gh pr create` from any workflow fails with *"GitHub Actions is not permitted to create or approve pull requests"*. GitHub bundles create-PR and approve-PR into a single toggle, and `master` is deploy-on-push with required reviews — enabling it would hand every workflow a self-approval path to production. An un-bypassable review gate is worth more than auto-PR convenience. If auto-PR is ever genuinely needed, wire a scoped PAT/GitHub App token rather than flipping the toggle.
+**GitHub Actions may now create and approve PRs on this repo.** `can_approve_pull_request_reviews` is `true` (`gh api repos/izzywdev/FuzeFront/actions/permissions/workflow`). Workflows that use `GITHUB_TOKEN` can open PRs via `gh pr create` and supply the required review via `gh pr review --approve`. The safety net is the gate set (`gate-ds-conformance`, `gate-frames-first`, `gate-authz`, `gate-identifier`, and the full CI matrix) — those are the production guard, not the human review step. A bot-authored, bot-approved PR that clears every gate ships to prod. This is deliberate.
 
-`claude-auto-pr.yml` (workflow name: *Stranded-branch detector*) therefore does **not** create PRs — it detects a branch that has commits but no PR and **fails loudly** so the work gets salvaged rather than silently reaped by `governance-nightly` a week later.
+`claude-auto-pr.yml` (workflow name: *Stranded-branch detector*) detects a branch that has commits but no PR and **fails loudly** so the work gets salvaged rather than silently reaped by `governance-nightly` a week later.
 
-> **This section previously claimed all four prefixes auto-PR "the moment they are pushed to".** That was false for the life of the workflow: it can never create a PR, and every green run was the early-exit path (*"PR already open"*) because the agent had already opened one. It ran its create path only when actually needed — and failed. A check that passes when its job is already done by someone else, and fails only when asked to work, is not evidence of anything. Assume nothing here is verified because a check is green; verify the deliverable (baseline: *verify the deliverable, not the "finished" claim*).
+> **Historical note**: until 2026-08-23 `can_approve_pull_request_reviews` was `false` to prevent self-approval. That constraint is lifted; the gate set is now the enforcement layer.
 
 Draft PRs are only legitimate when a session explicitly labels them `wip`, `hold`, or `blocked`.
 
+## FIX is the rule — reporting a defect is not addressing it
+
+**Finding a problem obliges you to fix it, not to describe it.** Pinning a
+regression test, filing an issue, adding a `::warning::`, writing it into a
+table, or telling the user about it are all ways of *recording* a defect. None
+of them is a fix, and a repo full of well-documented known-broken things is the
+state this rule exists to prevent.
+
+This is not a style preference — it is the difference between the two halves of
+every failure this codebase has accumulated. A vacuous gitleaks config, a
+`gate-authz` ending in `|| true`, a `gate-identifier` flag nobody set, an
+`a2a-maintain` that skipped when unkeyed: every one of them was *known*. What
+was missing was not knowledge, it was the fix.
+
+**So: when you find a defect, fix it — however many agents and however many
+branches that takes.** Fan out one agent per repo if the defect is fleet-wide.
+Branch sub-branches off sub-branches, merge them upward, and PR the result to
+master. Scale is not a reason to downgrade a fix into a report.
+
+The narrow, honest exceptions, and they must be *stated* rather than assumed:
+
+- **You genuinely cannot** — the fix needs a credential, a cluster, or an
+  approval this session does not hold. Then produce the exact commands or PR
+  that someone with those rights can apply, and name what is blocked. "I filed
+  an issue" is only acceptable when the issue is addressed to someone who *can*
+  act and the action is named precisely.
+- **The fix is out of the requested scope and would change behaviour the user
+  did not ask about.** Say so in one sentence and offer it; do not silently
+  widen the blast radius of a task.
+- **You are not the owner.** FuzeInfra is never edited from a consuming repo.
+  Delegate via `@claude`, with the concrete change spelled out.
+
+Everything else gets fixed. A finding without a fix or one of those three
+statements attached is unfinished work, not a deliverable.
+
 ## Done
 
-Finish work as a **merged PR**, not local commits — but respect the deploy window above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.
+Finish work as a **merged PR**, not local commits — merging is how this repo deploys, see the hardening section above. Every domain agent reports `SCOPE DONE (verified)` + `OUT OF SCOPE — NOT DONE`; only the orchestrator calls a feature complete.

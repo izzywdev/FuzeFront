@@ -27,6 +27,8 @@ import {
   PortalAppFkViolationError,
 } from '../app-registry/catalog'
 import { getRequestPortalCatalogEnabled } from '../app-registry/portalCatalogFlag'
+import { isPrefixedIdsEnabled } from '../identity/flags'
+import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
 
@@ -111,8 +113,10 @@ router.get('/portals/:portalId/catalog', authenticateToken, async (req: Request,
     const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined
 
     const result = await portalAppCatalogService.list(resolved.portal.id, { limit, cursor })
+    const flagCtx = { orgId: (req as any).user?.organizationId, userId: (req as any).user?.id }
+    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     return res.json({
-      items: result.items,
+      items: result.items.map((item: any) => prefixDtoIds(item, prefixed, { portalId: 'portal', appId: 'app' })),
       page: { nextCursor: result.nextCursor, hasMore: result.hasMore },
     })
   } catch (err) {
@@ -148,7 +152,9 @@ router.post('/portals/:portalId/catalog', authenticateToken, async (req: Request
         pinnedOrder: body.pinnedOrder as number | undefined,
         config: body.config as Record<string, unknown> | undefined,
       })
-      return res.status(200).json(entry)
+      const flagCtx = { orgId: (req as any).user?.organizationId, userId: (req as any).user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      return res.status(200).json(prefixDtoIds(entry as any, prefixed, { portalId: 'portal', appId: 'app' }))
     } catch (err) {
       if (err instanceof PortalAppFkViolationError) {
         return res.status(404).json({ error: 'not_found', field: err.field, message: err.message })
@@ -202,7 +208,9 @@ router.patch(
       if (!updated) {
         return res.status(404).json({ error: 'not_found', message: 'App is not in this portal catalog' })
       }
-      return res.json(updated)
+      const flagCtx = { orgId: (req as any).user?.organizationId, userId: (req as any).user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      return res.json(prefixDtoIds(updated as any, prefixed, { portalId: 'portal', appId: 'app' }))
     } catch (err) {
       console.error('[portal-catalog] update error:', err)
       return res.status(500).json({ error: 'internal_error', message: 'Failed to update portal catalog entry' })
@@ -226,7 +234,9 @@ router.delete(
       }
       // Soft-disable — the row (and its config/order) is retained, so return
       // it rather than 204, letting the caller see the disabled state.
-      return res.status(200).json(updated)
+      const flagCtx = { orgId: (req as any).user?.organizationId, userId: (req as any).user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      return res.status(200).json(prefixDtoIds(updated as any, prefixed, { portalId: 'portal', appId: 'app' }))
     } catch (err) {
       console.error('[portal-catalog] disable error:', err)
       return res.status(500).json({ error: 'internal_error', message: 'Failed to disable app for portal' })

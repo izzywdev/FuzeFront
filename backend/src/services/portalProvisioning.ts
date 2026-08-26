@@ -397,7 +397,7 @@ export async function provisionPortal(
             }
             break
           case 'portal_row_create': {
-            portalId = generatePortalId()
+            portalId = toUuid(mintId('portal'))
             const branding: PortalBranding = {
               ...DEFAULT_BRANDING(input.name),
               ...input.branding,

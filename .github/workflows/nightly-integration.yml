@@ -7,7 +7,9 @@ name: Nightly Integration
 # (NEVER auto-merges). Where no suite / bounded local-up exists yet, the job no-ops GREEN
 # and files ONE idempotent @claude issue to build it (self-propagating adoption).
 #
-# Requires repo secret ANTHROPIC_API_KEY. Reuses the gate-localup mechanism
+# LLM credential (autofix job): routed through .github/actions/llm-endpoint (LiteLLM
+# in-cluster with automatic fallback to a direct vendor). Requires repo secret
+# LITELLM_FUZE_KEY and/or ANTHROPIC_API_KEY (at least one). Reuses the gate-localup mechanism
 # (governance/local-environment.md). Install with a per-repo staggered cron minute.
 
 on:
@@ -51,8 +53,12 @@ jobs:
             echo "ran=false" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=false" >> "$GITHUB_ENV"
             echo "::notice title=nightly-integration::No bounded local-up (consumer-test) and/or integration suite detected — no-op green; filing/keeping the @claude build issue."
           else
-            echo "ran=true" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=true" >> "$GITHUB_ENV"
-            echo "CT=$CT" >> "$GITHUB_ENV"; echo "SUITE=$SUITE" >> "$GITHUB_ENV"
+            echo "ran=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "SUITE_PRESENT=true"
+              echo "CT=$CT"
+              echo "SUITE=$SUITE"
+            } >> "$GITHUB_ENV"
             echo "::notice title=nightly-integration::Detected suite=$SUITE, local-up=$CT"
           fi
 
@@ -60,10 +66,10 @@ jobs:
         if: env.SUITE_PRESENT == 'true'
         shell: bash
         run: |
-          dir=$(dirname "$CT"); envf=""
-          [ -f "$dir/versions.env" ] && envf="--env-file $dir/versions.env"
+          dir=$(dirname "$CT"); envf=()
+          [ -f "$dir/versions.env" ] && envf=(--env-file "$dir/versions.env")
           echo "::group::consumer-test up"
-          docker compose $envf -f "$CT" up -d --wait || { echo "bounded stack failed to come up"; docker compose -f "$CT" logs | tail -120; exit 1; }
+          docker compose "${envf[@]}" -f "$CT" up -d --wait || { echo "bounded stack failed to come up"; docker compose -f "$CT" logs | tail -120; exit 1; }
           echo "::endgroup::"
 
       - name: Run integration/contract suite (mocks only — no real external egress)
@@ -129,11 +135,21 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - name: Auto-fix → DRAFT PR (never auto-merge)
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+      - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
+        id: llm
+        uses: ./.github/actions/llm-endpoint
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-chain: ${{ vars.FUZE_LLM_FALLBACK_CHAIN || 'anthropic,openai,gemini' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
+          fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Auto-fix → DRAFT PR (never auto-merge)
+        uses: ./.github/actions/fuze-code-action
+        with:
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          task-prompt: |
             The **nightly integration suite** for ${{ github.repository }} FAILED
             (run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
             Diagnose from the failed run logs and the integration suite.
@@ -148,4 +164,7 @@ jobs:
             File or UPDATE one idempotent tracking issue (label `integration`) linking the failed run and
             the draft PR with a STATE block. If you cannot reproduce, or the fix needs a human decision,
             post the diagnosis on the issue and stop. Do NOT use plan mode / AskUserQuestion.
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
         # No merge step — draft PR + tracking issue only, per the ADLC (never auto-merge).

@@ -3,6 +3,13 @@
   "feature": "app-management",
   "description": "Contract-freeze UX artifacts for the App Management Console (FF-EPIC-20) — the management surface FuzeFront has never had. Three flows: (1) list every registered app (searchable/filterable/paginated) with lifecycle state, visibility and owning org; (2) open one app to view/edit its settings & attributes and run its lifecycle (activate/suspend), built-ins non-deletable; (3) manage where an app is installed and at what scope (org/portal/user). Distinct from federated-apps (the register→activate add-app flow). Approving a flow approves its visual + interaction model AND its component/package/contract build inventory before any UI is written. Flows 1 & 2 bind to the REAL @fuzefront/app-registry-client; flow 3 (installations/scopes) is anticipated and commissioned by these frames. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
   "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "implementation": {
+    "paths": [
+      "packages/app-management-ui/**",
+      "frontend/src/pages/ApplicationsPage.tsx",
+      "frontend/src/pages/AddApplicationPage.tsx"
+    ]
+  },
   "entry": "index.html",
   "plan": "docs/planning/epics/EPIC-20-app-management-console.md",
   "epics": [
@@ -311,5 +318,5 @@
       ]
     }
   ],
-  "stamp": "c9b67b0ef11515dff6f74a66f179ed46018edf66eb11e8133fec44c81b84bf04"
+  "stamp": "92c4bcf22ff5ccbd1af53ed8ea6e239f7cf55a43da04b01972343b53fab7b32f"
 }

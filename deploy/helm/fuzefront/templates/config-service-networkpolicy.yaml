@@ -1,0 +1,53 @@
+{{- /*
+  Ingress NetworkPolicy for fuzefront-config-service (port 3011).
+
+  WHY THE PORT IS EXPLICIT IN VALUES.YAML, NEVER COERCED HERE
+  -----------------------------------------------------------
+  A `| int` or `| default X` cast silently converts a missing value to 0, which
+  is a valid integer but an invalid Kubernetes NetworkPolicy port (ports must be
+  1-65535). kubeconform passes (shape is correct) while the live API server
+  rejects it at admission time — which is exactly how FuzeInfra#501 blocked every
+  Argo sync of the whole Application for days (values.yaml rewrite dropped the key,
+  `| int` masked it, cluster rejected at sync time). configService.networkPolicy.port
+  is declared EXPLICITLY in values.yaml with the correct integer value; no coercion
+  is needed or tolerated here. If this template complains about the port, fix the
+  default in values.yaml — do not add a cast.
+
+  This policy is additive: FuzeFront ships no default-deny NetworkPolicy, so the
+  config-service pod currently accepts ALL ingress. As soon as ANY NetworkPolicy
+  selector matches a pod, that pod flips to "deny all except what this policy
+  explicitly allows". Enabling this policy lists ALL legitimate sources (Traefik
+  + intra-fuzefront), so legitimate traffic is not silently broken.
+*/}}
+{{- if .Values.configService.enabled }}
+{{- $np := .Values.configService.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fuzefront-config-service-ingress
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-service
+spec:
+  podSelector:
+    matchLabels:
+      app: fuzefront-config-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Traefik (k3s ingress controller) — future ingress route to this service.
+    # kube-system carries the kubernetes.io/metadata.name label (k8s >= 1.21 / k3s).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+    # Intra-fuzefront: any pod in this namespace (backend, security-service, etc.).
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+{{- end }}

@@ -159,6 +159,22 @@ spec:
               value: {{ .Values.authentik.oidc.issuerUrl | quote }}
             - name: AUTHENTIK_REDIRECT_URI
               value: {{ .Values.authentik.oidc.redirectUri | quote }}
+            # Server-side base for Authentik's Admin API (M2M client provisioning,
+            # backend/src/authentik/authentik-admin.ts). Points at the IN-CLUSTER
+            # Service, mirroring security.yaml.
+            #
+            # NOT cosmetic. getAuthentikBaseUrl() falls back to AUTHENTIK_ISSUER_URL
+            # stripped of its /application/o/... suffix — i.e. the PUBLIC host — so
+            # without this the backend called the Admin API by hairpinning out
+            # through Cloudflare and back in. That hairpin was the only remaining
+            # reason a bare /api/v3 had to be publicly routable
+            # (see fuzefront.authentikPublicPaths). Removing this env var re-opens
+            # the whole Authentik Admin API to the internet.
+            #
+            # In-cluster reachability is guaranteed by authentik-networkpolicy.yaml,
+            # whose "intra-fuzefront" rule admits any pod in this namespace on 9000.
+            - name: AUTHENTIK_BASE_URL
+              value: {{ .Values.authentik.oidc.internalUrl | default "http://authentik-server:9000" | quote }}
             # M2M provisioning (backend/src/authentik/provision-m2m-clients.ts)
             # authenticates to the Authentik Admin API with the akadmin bootstrap
             # token — which Authentik issues as a full API token — so we reuse the
