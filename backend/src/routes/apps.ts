@@ -186,10 +186,45 @@ function scopeAppsQuery(query: any, memberOrgIds: string[]) {
   })
 }
 
-// Health check function for individual apps
+// Health check function for individual apps.
+//
+// This previously ended in `return response.status < 500`, with the comment
+// "Consider 2xx, 3xx, 4xx as healthy". That reported an app whose assets 404 as
+// HEALTHY, so the only thing it actually proved was that SOME server answered
+// on that host — which, for every app mounted behind the shell's own ingress,
+// is true even when nothing is deployed behind the route.
+//
+// That is not a missing check, it is a check asserting the opposite of the
+// truth, and it is why federated remotes could serve nothing in production
+// while the portal showed them green. Measured 2026-08-24 by the prod
+// federation probe: of 16 remotes, 12 answered 404, 3 answered 503, and 1
+// answered 200 with the shell's own HTML. Only the three 503s would have been
+// reported unhealthy by the old rule.
+//
+// A 4xx now means unhealthy. For a module-federation app the meaningful signal
+// is stronger still: the remote entry must serve a JAVASCRIPT MODULE. An SPA
+// fallback answering 200 with HTML satisfies any status-code check while the
+// browser gets markup where it expected a module and the panel dies — that is
+// exactly the `fuzequality` case, and a status-only check cannot see it.
+const HEALTH_JS_CONTENT_TYPE = /(javascript|ecmascript)/i
+const HEALTH_HTML_CONTENT_TYPE = /text\/html/i
+
 async function checkAppHealth(app: AppRow): Promise<boolean> {
   try {
-    const healthUrl = `${app.url}` // Check root URL instead of /healthy
+    // A module-federation remote entry may be declared as a same-origin PATH
+    // (`/apps/<slug>/remoteEntry.js`). The browser resolves that against the
+    // page origin; this process has no reliable public origin to resolve it
+    // against, so the entry is only probed when the manifest declares an
+    // absolute URL. The relative case is covered by
+    // scripts/probe-prod-federation.mjs, which runs where a real origin is
+    // known. Deliberately NOT reconstructed from a request header — a spoofable
+    // Host would make the health of every app caller-controlled.
+    const isFederated = app.integration_type === 'module-federation'
+    const entryIsAbsolute =
+      typeof app.remote_url === 'string' && /^https?:\/\//i.test(app.remote_url)
+    const checkEntry = isFederated && entryIsAbsolute
+    const healthUrl = checkEntry ? app.remote_url : app.url
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
 
@@ -197,13 +232,38 @@ async function checkAppHealth(app: AppRow): Promise<boolean> {
       method: 'GET',
       signal: controller.signal,
       headers: {
-        Accept: 'text/html,application/json',
+        Accept: checkEntry
+          ? 'application/javascript,text/javascript'
+          : 'text/html,application/json',
       },
     })
 
     clearTimeout(timeoutId)
-    // Accept any response (including 404) as long as the server responds
-    return response.status < 500 // Consider 2xx, 3xx, 4xx as healthy, 5xx as unhealthy
+
+    // 4xx is NOT healthy. A 404 means the route resolves to nothing.
+    if (!response.ok) {
+      console.log(
+        `Health check failed for ${app.name} (${healthUrl}): HTTP ${response.status}`
+      )
+      return false
+    }
+
+    if (checkEntry) {
+      const contentType = response.headers.get('content-type') || ''
+      if (
+        HEALTH_HTML_CONTENT_TYPE.test(contentType) ||
+        !HEALTH_JS_CONTENT_TYPE.test(contentType)
+      ) {
+        console.log(
+          `Health check failed for ${app.name} (${healthUrl}): remote entry ` +
+            `returned 200 with content-type '${contentType || 'none'}' — an SPA ` +
+            `fallback, not a JavaScript module`
+        )
+        return false
+      }
+    }
+
+    return true
   } catch (error: unknown) {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
