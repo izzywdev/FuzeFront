@@ -336,6 +336,68 @@ describe('POST /session (password login)', () => {
       expect(JSON.stringify(res.body)).not.toContain('bad day')
     })
   }
+
+  // The body is deliberately identical for both errors (above), so the LOG is
+  // the only thing that tells an operator which one happened -- and they call
+  // for opposite responses: a provider outage pages everyone, an undriveable
+  // flow stage affects one account and nothing is down. Before 2026-08-26 this
+  // branch logged nothing at all, and the ambiguity turned a broken monitoring
+  // credential into a reported production outage. These pin the split.
+  describe('server-side diagnosis (the body cannot carry it, so the log must)', () => {
+    const rejectWith = (name: string, message: string) => {
+      const err = new Error(message)
+      err.name = name
+      return fakeProvider({ passwordLogin: jest.fn().mockRejectedValue(err) })
+    }
+
+    it('names the undriveable stage, and says it is NOT an outage', async () => {
+      // @fuzequality api createSession
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        await request(makeApp(rejectWith('UnsupportedFlowStageError', 'ak-stage-authenticator-validate')))
+          .post('/api/v1/security/session')
+          .send({ email: 'x', password: 'y' })
+
+        const logged = warn.mock.calls.map(c => c.join(' ')).join('\n')
+        expect(logged).toContain('ak-stage-authenticator-validate')
+        expect(logged).toContain('NOT an outage')
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('reports a provider outage distinctly, at error level', async () => {
+      // @fuzequality api createSession
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        await request(makeApp(rejectWith('AuthentikUnavailableError', 'connect ETIMEDOUT')))
+          .post('/api/v1/security/session')
+          .send({ email: 'x', password: 'y' })
+
+        const logged = error.mock.calls.map(c => c.join(' ')).join('\n')
+        expect(logged).toContain('platform incident')
+        expect(logged).not.toContain('NOT an outage')
+      } finally {
+        error.mockRestore()
+      }
+    })
+
+    it('strips newlines so a provider message cannot forge log lines', async () => {
+      // @fuzequality api createSession
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        await request(makeApp(rejectWith('UnsupportedFlowStageError', 'ak-stage-x\n[security] FORGED')))
+          .post('/api/v1/security/session')
+          .send({ email: 'x', password: 'y' })
+
+        const logged = warn.mock.calls.map(c => c.join(' ')).join('\n')
+        expect(logged).toContain('FORGED')       // still recorded, not dropped
+        expect(logged).not.toMatch(/\n\[security\] FORGED/)  // but not on its own line
+      } finally {
+        warn.mockRestore()
+      }
+    })
+  })
 })
 
 describe('GET /session (me) — bearer enforcement', () => {
