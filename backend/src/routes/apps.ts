@@ -6,6 +6,7 @@ import { requireAppPermission } from '../middleware/permissions'
 import { App } from '../types/shared'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const router = express.Router()
 
@@ -172,16 +173,50 @@ async function getMemberOrgIds(userId: string): Promise<string[]> {
 
 /**
  * Apply org/visibility scoping to an apps query for the given user.
+ *
+ * MUST agree with the production rule in
+ * backend/applications/src/app-registry/service.ts `list()` (~line 215-270)
+ * — this route is bypassed by the ingress in a real K8s deployment (see the
+ * NOTE above the `/api/apps` mount in ../index.ts: the ingress routes
+ * `/api/apps` to fuzefront-applications, not this service), but it IS what
+ * actually serves `/api/apps` locally (docker-compose has no such ingress
+ * split) and is covered by this file's own integration tests, so it is not
+ * dead code — just not what a real deploy's traffic reaches. Before this fix
+ * the two disagreed, in both directions:
+ *   - production had an `organization_id IS NULL` branch this function
+ *     lacked (org-less rows were visible in production, hidden here) — REMOVED
+ *     from both as of the migration below, per owner ruling 2026-08-25
+ *     ("there should be no app without orgid ... fuzefront itself [is] the
+ *     orgid for our own apps"): `organization_id` is NOT NULL on `apps` now
+ *     (see 026_apps_organization_id_not_null.ts, and its applications-service
+ *     sibling 011_apps_organization_id_not_null.ts, which backfill every
+ *     existing org-less row to the platform root org before either
+ *     constrains the column), so there is no such row left to special-case.
+ *   - this function's org-membership branch didn't check `visibility` at
+ *     all, so any row sharing an organization_id with the caller was shown
+ *     regardless of its declared visibility, where production requires
+ *     visibility IN ('organization','private') on that branch. Fixed here
+ *     to match.
+ *
  * The caller may see an app when ANY of:
- *   - it belongs to an org they're an active member of, OR
- *   - its visibility is 'public' or 'marketplace'.
- * Private/organization apps of orgs they don't belong to are excluded (BOLA).
+ *   - its visibility is 'public'/'marketplace', OR
+ *   - its visibility is 'organization'/'private' AND its organization_id is
+ *     one the caller is an active member of.
+ * An organization/private app of an org the caller does NOT belong to is
+ * excluded either way (BOLA). Does not implement the app-registry's
+ * platform-admin bypass or scoped-portal gate (portal_apps) — this table
+ * predates that multi-tenant portal concept; only the core visibility/org
+ * rule is kept in parity here.
  */
 function scopeAppsQuery(query: any, memberOrgIds: string[]) {
   return query.where(function (this: any) {
     this.whereIn('apps.visibility', ['public', 'marketplace'])
     if (memberOrgIds.length > 0) {
-      this.orWhereIn('apps.organization_id', memberOrgIds)
+      this.orWhere((ownOrg: any) => {
+        ownOrg
+          .whereIn('apps.visibility', ['organization', 'private'])
+          .whereIn('apps.organization_id', memberOrgIds)
+      })
     }
   })
 }
@@ -848,7 +883,14 @@ router.post(
         scope,
         module,
         description,
-        organization_id: organizationId || null,
+        // organizationId || null WAS the bug this comment used to only
+        // half-describe: a caller whose verified context carries no org
+        // (organizationId undefined) got an explicit NULL row — the exact
+        // org-less state the NOT NULL constraint on this column (see
+        // scopeAppsQuery's doc comment above and
+        // 026_apps_organization_id_not_null.ts) now forbids. Fall back to
+        // the platform root org instead, same as the column's own DEFAULT.
+        organization_id: organizationId || ROOT_ORG_ID,
         visibility: 'private',
       })
 
