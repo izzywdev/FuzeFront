@@ -105,3 +105,9 @@ _site_test/
 
 # Claude Code personal/session settings (not committed)
 .claude/settings.local.json
+
+# Local dev/test database file. `backend/scripts/init-db.js` (npm run db:init)
+# writes this whenever the run is not pointed at Postgres, so anyone who
+# reproduces a CI failure locally generates one. A database binary must never
+# be committed: it churns on every run and can carry real data.
+backend/database.sqlite
