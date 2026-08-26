@@ -5,6 +5,12 @@ COPY FuzeQuality/package.json ./
 RUN npm install --ignore-scripts --no-audit --no-fund
 
 FROM dependencies AS source
+# This COPY is what bakes contracts/openapi.yaml INTO the image, alongside the
+# code that implements it. That is the property that matters: the spec a
+# deployment serves must be the spec that deployment was built from. A
+# ConfigMap-mounted copy can drift from the running code; a copy in the image
+# cannot — so /openapi.yaml and /openapi.json can never describe a different
+# build than the one answering them.
 COPY FuzeQuality ./
 
 FROM source AS verify
@@ -16,6 +22,12 @@ RUN npm run type-check \
 
 FROM source AS service
 ENV NODE_ENV=production
+# Explicit rather than relying on path discovery: the service falls back to
+# walking up from its own module and from cwd, which is right for the dev loop
+# but leaves prod depending on where the process happens to be started. Naming
+# the path here means a missing contract is a visible 503 + openapi:"unavailable"
+# on /health, not a silent fallback to some other copy.
+ENV OPENAPI_SPEC_PATH=/workspace/FuzeQuality/contracts/openapi.yaml
 USER node
 CMD ["npm", "run", "start:api"]
 

@@ -4,6 +4,46 @@ FuzeQuality builds an evidence graph across repositories, OpenAPI contracts,
 frontend surfaces, automated tests, Jira requirements, and reviewed AI flow
 suggestions.
 
+## Platform operational surface
+
+Every Fuze service serves the same three operations. FuzeQuality now does too —
+which matters more here than elsewhere, since measuring whether a repository
+publishes and covers its own contract is what this product is *for*.
+
+| Route | Behaviour |
+|---|---|
+| `GET /health` | Unauthenticated. Reports the service, the contract version, and whether this build shipped with its own OpenAPI document. |
+| `GET /openapi.yaml` | [`contracts/openapi.yaml`](contracts/openapi.yaml), verbatim. |
+| `GET /openapi.json` | The same document, re-serialised. |
+
+`/health/live` and `/health/ready` are unchanged — they are what the chart's
+kubelet probes use. `/health` is the platform-wide convention, and is what the
+same-origin nginx proxy and any portal reachability check call.
+
+The contract is **baked into the image** (`docker/Dockerfile` copies the source
+tree, contract included), not mounted from a ConfigMap: the spec a deployment
+serves must be the spec that deployment was built from. A missing spec is
+**visible, not fatal** — the spec routes answer `503` (the endpoint exists; its
+document is missing — a `404` would read as *"this service publishes no spec"*,
+which is a different and wrong diagnosis) and `/health` reports
+`openapi: "unavailable"` while staying `200`, because restarting the pod cannot
+produce the file.
+
+`contracts/openapi.yaml` deliberately describes **only** those routes plus the
+two kubelet probes. The ~30 `/api/v1/*` routes are implemented but not yet
+contract-governed: each carries a Permit resource/action pair, tenant scoping and
+a fail-closed 401/403 path, and a spec that gets any of those subtly wrong is
+worse than no spec — the MCP gateway turns every path in a contract into a
+callable tool. They are added by `contract-designer`, one operation at a time,
+alongside the authorization they actually enforce.
+
+## Portal registration
+
+[`registration/`](registration/README.md) is what makes FuzeQuality appear in the
+FuzeFront portal's applications list. The slug is **`quality`**, not
+`fuzequality` — see that README for why the prefix is not cosmetic and why the
+registration Job in the chart defaults **off**.
+
 ## Product and delivery documentation
 
 - [Long-term product plan](PLANNING.md)

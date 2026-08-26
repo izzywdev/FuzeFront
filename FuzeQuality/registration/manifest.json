@@ -1,21 +1,23 @@
 {
   "manifestVersion": "1",
-  "slug": "fuzequality",
-  "name": "FuzeQuality",
+  "slug": "quality",
+  "name": "Quality",
   "menuLabel": "Quality",
-  "description": "Evidence graph across repositories, OpenAPI contracts, frontend surfaces, automated tests, and Jira requirements.",
+  "description": "Evidence graph across repositories, OpenAPI contracts, frontend surfaces, automated tests and Jira requirements.",
   "icon": { "kind": "emoji", "value": "🧭" },
   "mode": "portal",
+  "modes": ["portal", "standalone"],
   "builtin": false,
   "integration": {
-    "type": "module-federation",
-    "remoteEntry": "/apps/fuzequality/assets/remoteEntry.js",
-    "scope": "fuzequality",
-    "module": "./App"
+    "type": "iframe",
+    "url": "https://quality.prod.fuzefront.com"
   },
   "nav": { "section": "build", "order": 30 },
   "chrome": { "menu": "host", "topbar": "host" },
-  "routing": { "path": "/app/fuzequality" },
+  "routing": {
+    "path": "/app/quality",
+    "host": "quality.prod.fuzefront.com"
+  },
   "visibility": "organization",
   "roles": []
 }
