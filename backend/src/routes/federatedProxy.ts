@@ -44,6 +44,7 @@
 //   - Outbound `Set-Cookie` is dropped. A remote cannot set a cookie on the
 //     portal origin through this proxy.
 import express, { Request, Response } from 'express'
+import rateLimit from 'express-rate-limit'
 import axios, { AxiosError, AxiosRequestConfig } from 'axios'
 
 const router = express.Router()
@@ -66,6 +67,15 @@ const MAX_ASSET_BYTES = parseInt(
 // KEYS, not a naming rule — CLAUDE.md is explicit that a slug's prefix is free
 // and immutable, and nothing here derives, edits or validates a product's slug.
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
+
+// One path segment of an asset URL: unreserved characters plus the few sub-delims
+// that appear in real bundler output, and percent-escapes. Everything else — '/',
+// '\\', ':', '@', '?', '#', control characters — is refused rather than escaped,
+// because those are exactly the bytes that can change which host a URL addresses.
+const SEGMENT_RE = /^(?:[A-Za-z0-9._~!$'()*+,;=-]|%[0-9A-Fa-f]{2})+$/
+// A query string, leading '?' included. Same principle: an explicit set, no
+// control characters, no whitespace.
+const QUERY_RE = /^\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*$/
 
 export interface UpstreamMap {
   [slug: string]: string
@@ -188,8 +198,55 @@ export function splitRequest(
   if (!SLUG_RE.test(slug)) return null
   // Reject traversal and encoded traversal before it can reach the upstream.
   if (rest.some(s => s === '..' || s === '.' || /%2e%2e/i.test(s))) return null
+  // Whitelist, not blacklist: every remaining segment must look like an asset
+  // filename. This is what keeps caller-controlled bytes out of the upstream
+  // URL's authority — a backslash, a colon, a control character or a stray '@'
+  // can all change how a URL parses, so none of them are allowed through.
+  if (!rest.every(s => SEGMENT_RE.test(s))) return null
+  if (query && !QUERY_RE.test(query)) return null
 
   return { slug, subpath: rest.join('/'), query }
+}
+
+/**
+ * Build the upstream URL from an ALLOWLISTED base plus caller-supplied path and
+ * query.
+ *
+ * Deliberately not string concatenation. The path and query are attached through
+ * the WHATWG URL API, which cannot alter the authority, and the result's origin
+ * is then compared byte-for-byte against the base's. Two independent controls
+ * therefore have to fail before a request could leave for a host an operator did
+ * not configure — the allowlist lookup, and this assertion.
+ *
+ * Returns null rather than a best-effort URL if anything does not line up; the
+ * caller refuses the request.
+ */
+export function buildUpstreamUrl(
+  base: string,
+  subpath: string,
+  query: string
+): string | null {
+  let baseUrl: URL
+  try {
+    baseUrl = new URL(base)
+  } catch {
+    return null
+  }
+
+  const target = new URL(baseUrl.href)
+  const basePath = baseUrl.pathname.replace(/\/+$/, '')
+  // Assigning .pathname cannot change protocol, host or port — that is the point
+  // of using the setter instead of building a string.
+  target.pathname = subpath ? `${basePath}/${subpath}` : `${basePath}/`
+  target.search = query
+  target.hash = ''
+
+  // Belt and braces: if anything above somehow moved the origin, refuse.
+  if (target.origin !== baseUrl.origin) return null
+  if (target.protocol !== baseUrl.protocol) return null
+  if (target.host !== baseUrl.host) return null
+
+  return target.href
 }
 
 async function proxy(req: Request, res: Response): Promise<void> {
@@ -222,7 +279,17 @@ async function proxy(req: Request, res: Response): Promise<void> {
     return
   }
 
-  const url = `${base}${parts.subpath ? `/${parts.subpath}` : '/'}${parts.query}`
+  const url = buildUpstreamUrl(base, parts.subpath, parts.query)
+  if (!url) {
+    // Unreachable given the allowlist and the segment whitelist above; if it
+    // ever fires, the request is refused rather than sent somewhere unintended.
+    console.error(
+      `[federated-proxy] refusing ${parts.slug}: request could not be resolved ` +
+        'inside the configured upstream origin.'
+    )
+    res.status(400).json({ error: 'bad_request', detail: 'Malformed asset path.' })
+    return
+  }
 
   const config: AxiosRequestConfig = {
     method: req.method as 'GET' | 'HEAD',
@@ -286,7 +353,22 @@ async function proxy(req: Request, res: Response): Promise<void> {
   }
 }
 
-router.use((req, res) => {
+// Rate limit. This endpoint is unauthenticated by necessity — a `<script src>`
+// carries no credentials — and each request costs an outbound in-cluster fetch,
+// so without a ceiling one client can turn the portal into a load generator
+// pointed at another team's service. The window is deliberately generous:
+// mounting a remote fetches remoteEntry plus every chunk it imports, so a normal
+// page load is a burst of dozens of requests, and a limit tuned for an API would
+// break legitimate use.
+const limiter = rateLimit({
+  windowMs: parseInt(process.env.FEDERATED_PROXY_RATE_WINDOW_MS || '60000', 10),
+  limit: parseInt(process.env.FEDERATED_PROXY_RATE_MAX || '600', 10),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'rate_limited' },
+})
+
+router.use(limiter, (req, res) => {
   void proxy(req, res)
 })
 

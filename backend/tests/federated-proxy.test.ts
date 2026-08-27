@@ -23,6 +23,7 @@ process.env.FEDERATED_PROXY_UPSTREAMS = JSON.stringify({
 import federatedProxyRoutes, {
   parseUpstreams,
   splitRequest,
+  buildUpstreamUrl,
   __federatedProxyConfig,
 } from '../src/routes/federatedProxy'
 
@@ -63,7 +64,10 @@ describe('federated asset proxy', () => {
       expect(res.text).toBe('export default 1')
       expect(mockedAxios.request).toHaveBeenCalledWith(
         expect.objectContaining({
-          url: 'http://fuzefinance.fuzefinance.svc.cluster.local:80/remoteEntry.js',
+          // :80 is normalised away by the URL API — http://h:80 and http://h are
+          // the same URL. The stored allowlist value keeps the operator's :80; only
+          // the derived request URL is normalised.
+          url: 'http://fuzefinance.fuzefinance.svc.cluster.local/remoteEntry.js',
           method: 'GET',
         })
       )
@@ -75,7 +79,7 @@ describe('federated asset proxy', () => {
 
       expect(mockedAxios.request).toHaveBeenCalledWith(
         expect.objectContaining({
-          url: 'http://fuzefinance.fuzefinance.svc.cluster.local:80/assets/chunk-abc123.js?v=2',
+          url: 'http://fuzefinance.fuzefinance.svc.cluster.local/assets/chunk-abc123.js?v=2',
         })
       )
     })
@@ -175,6 +179,66 @@ describe('federated asset proxy', () => {
 
       expect(res.status).toBe(502)
       expect(res.body).toMatchObject({ error: 'remote_unavailable', slug: 'finance' })
+    })
+  })
+
+  describe('upstream URL construction', () => {
+    it('cannot be moved off the allowlisted origin by the request path', () => {
+      const base = 'http://svc.ns.svc.cluster.local'
+      expect(buildUpstreamUrl(base, 'a/b.js', '')).toBe(
+        'http://svc.ns.svc.cluster.local/a/b.js'
+      )
+      // A segment that looks like a host stays a PATH segment.
+      expect(buildUpstreamUrl(base, 'evil.com/x.js', '')).toBe(
+        'http://svc.ns.svc.cluster.local/evil.com/x.js'
+      )
+    })
+
+    it('keeps the operator base path underneath the subpath', () => {
+      expect(buildUpstreamUrl('https://svc.local/base', 'remoteEntry.js', '')).toBe(
+        'https://svc.local/base/remoteEntry.js'
+      )
+    })
+
+    it('carries the query and drops any fragment', () => {
+      expect(buildUpstreamUrl('http://svc.local', 'a.js', '?x=1')).toBe(
+        'http://svc.local/a.js?x=1'
+      )
+    })
+  })
+
+  describe('request charset whitelist', () => {
+    it.each([
+      ['a colon', '/apps/finance/a:b.js'],
+      ['an at-sign', '/apps/finance/a@evil.com'],
+    ])('refuses a segment carrying %s', async (_label, path) => {
+      const res = await request(app).get(path)
+      expect(res.status).toBe(400)
+      expect(mockedAxios.request).not.toHaveBeenCalled()
+    })
+
+    it('refuses a RAW backslash, asserted at the unit level', () => {
+      // Not exercised over HTTP: superagent percent-encodes a literal backslash
+      // before it leaves the client, so a request test would be checking the
+      // client's encoder rather than this guard.
+      expect(splitRequest('/finance/a\\b.js')).toBeNull()
+    })
+
+    it('ALLOWS a percent-escaped byte — it stays escaped and cannot re-point a URL', () => {
+      // %5C is an encoded backslash. Rejecting it would break legitimate asset
+      // names for no security gain: a percent-escape is inert in the path and
+      // can never alter the authority. The literal character is refused above.
+      expect(splitRequest('/finance/a%5Cb.js')).toEqual({
+        slug: 'finance',
+        subpath: 'a%5Cb.js',
+        query: '',
+      })
+    })
+
+    it('allows the characters real bundler output actually uses', () => {
+      expect(splitRequest('/finance/assets/chunk-abc_123.min.js')).not.toBeNull()
+      expect(splitRequest('/finance/assets/a~b!c$d.js')).not.toBeNull()
+      expect(splitRequest('/finance/assets/a%20b.js')).not.toBeNull()
     })
   })
 
