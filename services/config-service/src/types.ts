@@ -21,6 +21,8 @@ import type { EntityId } from '@izzywdev/fuzefront-identity';
 export type NamespaceEntityId = EntityId<'namespace'>;
 /** Branded TypeID of a key definition (`ckd_…`). */
 export type KeyDefinitionEntityId = EntityId<'keyDefinition'>;
+/** Branded TypeID of an append-only change-history entry (`cvh_…`). */
+export type ConfigHistoryEntryId = EntityId<'configHistory'>;
 
 export type ScopeType = 'platform' | 'portal' | 'org' | 'user';
 
@@ -159,4 +161,49 @@ export interface EffectiveConfigEntry {
   editable: boolean;
   warning: string | null;
   definition: KeyDefinition;
+}
+
+/**
+ * What kind of principal performed a change or reveal (openapi.yaml
+ * `ActorType`). Polymorphic — `Actor` always carries this alongside
+ * `actorId`, because not every history entry is attributable to a human
+ * caller (e.g. a platform-owned key reconciled by an automated process).
+ */
+export type ActorType = 'user' | 'system';
+
+/** Who performed one recorded change or reveal (openapi.yaml `Actor`). */
+export interface Actor {
+  actorType: ActorType;
+  /** Null exactly when `actorType` is `system`. */
+  actorId: string | null;
+}
+
+/**
+ * What a history entry recorded (openapi.yaml `ConfigHistoryAction`).
+ * `reveal` is a read-time action — it never changes the resolved value.
+ */
+export type ConfigHistoryAction = 'set' | 'unset' | 'lock' | 'unlock' | 'reveal';
+
+/**
+ * One append-only row in a key's change trail at one exact scope (openapi.yaml
+ * `ConfigHistoryEntry`). Entries are never edited or deleted — a revert or a
+ * reveal always adds a new entry rather than touching an existing one.
+ */
+export interface ConfigHistoryEntry {
+  id: ConfigHistoryEntryId;
+  namespace: string;
+  key: string;
+  scope: Scope;
+  action: ConfigHistoryAction;
+  /** Always `null` when `redacted` is `true`. See openapi.yaml for the per-action rules. */
+  oldValue: unknown;
+  /** Always `null` when `redacted` is `true`. See openapi.yaml for the per-action rules. */
+  newValue: unknown;
+  /** True when the key is `isSecret` — `oldValue`/`newValue` are then always `null`. */
+  redacted: boolean;
+  actor: Actor;
+  reason: string | null;
+  /** The history entry a revert replayed, if this entry was written by one. */
+  revertOf: ConfigHistoryEntryId | null;
+  occurredAt: string;
 }

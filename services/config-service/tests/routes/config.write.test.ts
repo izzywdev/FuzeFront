@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import express from 'express';
 import request from 'supertest';
-import { AuthzError } from '@fuzefront/auth';
+import { AuthzClient, AuthzError } from '@fuzefront/auth';
 import { configureIdentity } from '@izzywdev/fuzefront-identity';
 import { createConfigWriteRouter } from '../../src/routes/config.write';
 import { FakeDb } from '../helpers/fakeDb';
@@ -87,7 +87,7 @@ describe('PUT /v1/config — auth', () => {
   });
 
   it('403s when the Security API denies the write, and writes nothing', async () => {
-    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] });
+    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] } as unknown as AuthzClient);
     const db = new FakeDb();
     seedBase(db);
     const app = buildApp(db);
@@ -108,7 +108,7 @@ describe('PUT /v1/config — auth', () => {
         throw new AuthzError('DECISION_UNAVAILABLE', 'Security API request failed: timeout; denying.');
       },
       bulkCheck: async () => [],
-    });
+    } as unknown as AuthzClient);
     const db = new FakeDb();
     seedBase(db);
     const app = buildApp(db);
@@ -140,6 +140,20 @@ describe('PUT /v1/config — set', () => {
     expect(db.valueRows).toHaveLength(1);
     expect(db.valueRows[0].value).toBe('compact');
     expect(db.valueRows[0].scope_type).toBe('org');
+
+    // FF-EPIC-18 (FFRNT-280): the write also appends a `set` history entry —
+    // GET /v1/config/history is worthless if PUT /v1/config never populates it.
+    expect(db.historyRows).toHaveLength(1);
+    const entry = db.historyRows[0];
+    expect(entry.action).toBe('set');
+    expect(entry.key).toBe('ui.theme.density');
+    expect(entry.namespace).toBe(NAMESPACE);
+    expect(entry.scope_type).toBe('org');
+    expect(entry.old_value).toBeNull(); // first-ever entry for this key at this scope
+    expect(entry.new_value).toBe('compact');
+    expect(entry.redacted).toBe(false);
+    expect(entry.actor_type).toBe('user');
+    expect(entry.actor_id).toBe('u1');
   });
 
   it('rejects a value that fails the key schema, VALIDATION_ERROR, nothing written', async () => {
@@ -199,7 +213,7 @@ describe('PUT /v1/config — set', () => {
     _setAuthzClientForTesting({
       check: async (check: { action: string }) => ({ allow: check.action !== 'write-system' }),
       bulkCheck: async () => [],
-    });
+    } as unknown as AuthzClient);
     const db = new FakeDb();
     seedBase(db);
     const app = buildApp(db);
@@ -297,6 +311,9 @@ describe('PUT /v1/config — lock / unlock', () => {
       });
     expect(lockRes.status).toBe(200);
     expect(db.valueRows.find((r) => r.scope_type === 'portal')?.is_locked).toBe(true);
+    expect(db.historyRows).toHaveLength(1);
+    expect(db.historyRows[0].action).toBe('lock');
+    expect(db.historyRows[0].new_value).toBe('comfortable');
 
     // An org admin BENEATH that portal (same JWT-carried portalId) tries to write.
     const orgAuth = bearer({ userId: 'org-admin', portalId });
@@ -310,6 +327,8 @@ describe('PUT /v1/config — lock / unlock', () => {
     expect(blockedRes.body.lockedBy).toEqual({ scopeType: 'portal', scopeId: portalId });
     // Stored value at org scope is UNCHANGED (never existed) — the write was refused, not half-applied.
     expect(db.valueRows.filter((r) => r.scope_type === 'org')).toHaveLength(0);
+    // Still just the one `lock` entry from above — a refused write appends nothing.
+    expect(db.historyRows).toHaveLength(1);
   });
 
   it('unlock preserves the pinned value but clears is_locked', async () => {
@@ -336,6 +355,15 @@ describe('PUT /v1/config — lock / unlock', () => {
     const row = db.valueRows.find((r) => r.scope_type === 'platform');
     expect(row?.is_locked).toBe(false);
     expect(row?.value).toBe('compact'); // value preserved, unlike unset
+
+    expect(db.historyRows).toHaveLength(2); // the earlier `lock` + this `unlock`
+    const unlockEntry = db.historyRows.find((r) => r.action === 'unlock');
+    expect(unlockEntry).toBeDefined();
+    // unlock does not change the stored value — openapi.yaml describes
+    // oldValue/newValue as populated "for set/unset" and "for set/lock"
+    // respectively, neither of which names unlock.
+    expect(unlockEntry?.old_value).toBeNull();
+    expect(unlockEntry?.new_value).toBeNull();
   });
 
   it('unlocking a scope with nothing set is a 400 VALIDATION_ERROR', async () => {
@@ -373,6 +401,7 @@ describe('PUT /v1/config — atomic batch (S6 AC3)', () => {
 
     expect(res.status).toBe(422);
     expect(db.valueRows).toHaveLength(0); // the otherwise-valid first op was NOT applied either
+    expect(db.historyRows).toHaveLength(0); // atomicity extends to history — no orphan entry either
   });
 
   it('rejects an unknown key with nothing applied', async () => {
@@ -478,5 +507,110 @@ describe('PUT /v1/config — optimistic concurrency (expectedVersion)', () => {
       });
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe('PUT /v1/config — history writes (FF-EPIC-18 / FFRNT-280)', () => {
+  const SECRET_DEF_ID = randomUUID();
+
+  function seedWithSecret(db: FakeDb) {
+    seedBase(db);
+    db.seedKeyDef({
+      id: SECRET_DEF_ID,
+      namespace_id: NAMESPACE_ID,
+      key: 'api.secret',
+      value_type: 'secret',
+      default_value: null,
+      allowed_scopes: ['platform', 'org'],
+      is_secret: true,
+    });
+  }
+
+  it('unset records oldValue = the value that was there, newValue = null', async () => {
+    const db = new FakeDb();
+    seedBase(db);
+    const app = buildApp(db);
+    const auth = bearer({ userId: 'u1' });
+
+    await request(app)
+      .put('/v1/config')
+      .set('Authorization', auth)
+      .send({ namespace: NAMESPACE, scope: ORG_SCOPE, operations: [{ key: 'ui.theme.density', op: 'set', value: 'compact' }] });
+    const unsetRes = await request(app)
+      .put('/v1/config')
+      .set('Authorization', auth)
+      .send({ namespace: NAMESPACE, scope: ORG_SCOPE, operations: [{ key: 'ui.theme.density', op: 'unset' }] });
+
+    expect(unsetRes.status).toBe(200);
+    expect(db.historyRows).toHaveLength(2);
+    const unsetEntry = db.historyRows.find((r) => r.action === 'unset');
+    expect(unsetEntry?.old_value).toBe('compact');
+    expect(unsetEntry?.new_value).toBeNull();
+  });
+
+  it('an isSecret key redacts oldValue/newValue in its history entry — the plaintext never lands in the trail', async () => {
+    const db = new FakeDb();
+    seedWithSecret(db);
+    const app = buildApp(db);
+
+    const res = await request(app)
+      .put('/v1/config')
+      .set('Authorization', bearer({ userId: 'u1' }))
+      .send({
+        namespace: NAMESPACE,
+        scope: ORG_SCOPE,
+        operations: [{ key: 'api.secret', op: 'set', value: 'sk-live-abc123' }],
+      });
+
+    expect(res.status).toBe(200);
+    // The value itself is still stored (this PR does not add encryption at
+    // rest — see secrets.write.ts's module doc), but the AUDIT TRAIL for an
+    // isSecret key must never carry the plaintext.
+    expect(db.valueRows[0].value).toBe('sk-live-abc123');
+    expect(db.historyRows).toHaveLength(1);
+    expect(db.historyRows[0].redacted).toBe(true);
+    expect(db.historyRows[0].old_value).toBeNull();
+    expect(db.historyRows[0].new_value).toBeNull();
+    expect(db.historyRows[0].action).toBe('set');
+  });
+
+  it('a batch of several operations writes one history entry per applied op, in order', async () => {
+    const db = new FakeDb();
+    seedBase(db);
+    const app = buildApp(db);
+
+    const res = await request(app)
+      .put('/v1/config')
+      .set('Authorization', bearer({ userId: 'u1' }))
+      .send({
+        namespace: NAMESPACE,
+        scope: { scopeType: 'platform', scopeId: null },
+        operations: [
+          { key: 'ui.theme.density', op: 'set', value: 'compact' },
+          { key: 'platform.retention-days', op: 'set', value: 14 },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    expect(db.historyRows).toHaveLength(2);
+    expect(db.historyRows.map((r) => r.key)).toEqual(['ui.theme.density', 'platform.retention-days']);
+  });
+
+  it('records the batch reason on every entry it produces', async () => {
+    const db = new FakeDb();
+    seedBase(db);
+    const app = buildApp(db);
+
+    await request(app)
+      .put('/v1/config')
+      .set('Authorization', bearer({ userId: 'u1' }))
+      .send({
+        namespace: NAMESPACE,
+        scope: ORG_SCOPE,
+        reason: 'rolling out the new density default',
+        operations: [{ key: 'ui.theme.density', op: 'set', value: 'compact' }],
+      });
+
+    expect(db.historyRows[0].reason).toBe('rolling out the new density default');
   });
 });

@@ -31,6 +31,7 @@ import {
   PgValueRepository,
   ScopeNotAllowedError,
 } from '../repositories/value.repository';
+import { PgHistoryRepository } from '../repositories/history.repository';
 import { validateValue } from '../validation/schema';
 import { validateWriteRequestShape } from '../validation/requestShapes';
 import { buildWriteChain, findAncestorLock, findRowAtTargetScope } from '../services/scope-chain';
@@ -257,9 +258,23 @@ export function createConfigWriteRouter(pool: Pool): Router {
     try {
       await client.query('BEGIN');
       const txValues = new PgValueRepository(client as unknown as Pool);
+      // Same transaction as the value change it describes — a rolled-back
+      // write must never leave an orphan history entry, which sharing this
+      // client (matching txValues above) gives for free (FF-EPIC-18 /
+      // FFRNT-280, GET /v1/config/history's write side).
+      const txHistory = new PgHistoryRepository(client as unknown as Pool);
+      const actor = { actorType: 'user' as const, actorId: principal.userId };
 
       for (const op of body.operations) {
         const def = byKey.get(op.key)!;
+        // The row at the EXACT target scope BEFORE this op — the `oldValue`
+        // every history entry (except a first-ever `set`) carries. Read from
+        // the batch's pre-write snapshot (`rowsByDefinition`, fetched in step
+        // 5 above), not re-queried mid-transaction: nothing else in this
+        // request can have changed it since.
+        const preRows = rowsByDefinition.get(def.id) ?? [];
+        const before = findRowAtTargetScope(chain, preRows);
+
         switch (op.op) {
           case 'set':
             await txValues.setValue({
@@ -271,11 +286,35 @@ export function createConfigWriteRouter(pool: Pool): Router {
               lockReason: null,
               setByUserId: principal.userId,
             });
+            await txHistory.append({
+              definitionId: def.id,
+              namespace: body.namespace,
+              key: op.key,
+              scope: body.scope,
+              action: 'set',
+              oldValue: before?.value ?? null,
+              newValue: op.value,
+              redacted: def.isSecret,
+              actor,
+              reason: body.reason ?? null,
+            });
             break;
           case 'unset':
             // Deliberately unsetValue(), NOT setValue() with the parent's
             // current value — see module doc.
             await txValues.unsetValue(def.id, body.scope);
+            await txHistory.append({
+              definitionId: def.id,
+              namespace: body.namespace,
+              key: op.key,
+              scope: body.scope,
+              action: 'unset',
+              oldValue: before?.value ?? null,
+              newValue: null,
+              redacted: def.isSecret,
+              actor,
+              reason: body.reason ?? null,
+            });
             break;
           case 'lock':
             await txValues.setValue({
@@ -287,24 +326,48 @@ export function createConfigWriteRouter(pool: Pool): Router {
               lockReason: op.lockReason ?? null,
               setByUserId: principal.userId,
             });
+            await txHistory.append({
+              definitionId: def.id,
+              namespace: body.namespace,
+              key: op.key,
+              scope: body.scope,
+              action: 'lock',
+              oldValue: before?.value ?? null,
+              newValue: op.value,
+              redacted: def.isSecret,
+              actor,
+              reason: body.reason ?? null,
+            });
             break;
           case 'unlock': {
             // Un-pins the lock but PRESERVES whatever value is there — unlock
             // is "stop blocking descendants", not "remove my override" (that
             // is `unset`).
-            const rows = rowsByDefinition.get(def.id) ?? [];
-            const existing = findRowAtTargetScope(chain, rows);
-            if (!existing) {
+            if (!before) {
               throw new NothingToUnlockError(op.key);
             }
             await txValues.setValue({
               definitionId: def.id,
               allowedScopes: def.allowedScopes,
               scope: body.scope,
-              value: existing.value,
+              value: before.value,
               isLocked: false,
               lockReason: null,
               setByUserId: principal.userId,
+            });
+            // No oldValue/newValue: unlock does not change the stored value,
+            // only its lock state — openapi.yaml describes oldValue/newValue
+            // as populated "for set/unset" and "for set/lock" respectively,
+            // neither of which names unlock.
+            await txHistory.append({
+              definitionId: def.id,
+              namespace: body.namespace,
+              key: op.key,
+              scope: body.scope,
+              action: 'unlock',
+              redacted: def.isSecret,
+              actor,
+              reason: body.reason ?? null,
             });
             break;
           }
