@@ -5,11 +5,10 @@ metadata:
   name: fuzequality-kafka-topics-{{ .Release.Revision }}
   labels:
     {{- include "fuzequality.labels" . | nindent 4 }}
-  annotations:
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/sync-wave: "-1"
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 spec:
+  # Topic provisioning must not block the portal ingress or UI rollout.
+  # It remains idempotent and will fail visibly instead of running forever.
+  activeDeadlineSeconds: 180
   backoffLimit: 4
   template:
     metadata: { labels: { app.kubernetes.io/name: fuzequality, app.kubernetes.io/component: kafka-topics } }
