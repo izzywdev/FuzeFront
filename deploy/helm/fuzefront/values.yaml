@@ -262,6 +262,19 @@ securityService:
   googleBrokered: false
   googleRedirectUri: ""
   tenants: []
+  # Social-broker return-origin allowlist (FuzeFront#352) — see
+  # providers/authentik/socialReturnOrigins.ts. List of full origins (scheme +
+  # host, no path/trailing slash) the brokered social sign-in flow may
+  # redirect the browser back to INSTEAD OF FRONTEND_URL, for a consumer
+  # proxying /api/v1/security/* same-origin from its own domain. Rendered as
+  # SECURITY_SOCIAL_RETURN_ORIGINS (comma-joined) below; matched by EXACT Host
+  # header only — no wildcard/subdomain matching. Empty here (the default) =
+  # env var is not set at all, so every existing deployment is unaffected.
+  # This is deliberately NOT `tenants` above: adding an entry here changes
+  # only where the finished broker redirect lands, never which identity
+  # backend serves the request (see the module doc comment for why the two
+  # must stay separate).
+  socialReturnOrigins: []
   nodeSelector: {}
   affinity: {}
   tolerations: []

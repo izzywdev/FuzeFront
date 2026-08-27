@@ -134,7 +134,12 @@ describe('server-brokered Google callback (success)', () => {
     expect(redirectTo).toBe('/dashboard')
 
     // Code exchanged with Google server-to-server (not the IdP OIDC client).
-    expect(googleClient.handleCallback).toHaveBeenCalledWith('goog-auth-code', state, 'gverifier')
+    // 4th arg is the RFC 9207 `iss` echoed by the provider — undefined here
+    // since this call supplies none. Pre-existing 3-arg assertion started
+    // failing once `iss` was threaded through; fixed in passing (FuzeFront#352
+    // touches this file for the return-origin tests below and this was
+    // failing on unmodified master too — out of scope of #352 otherwise).
+    expect(googleClient.handleCallback).toHaveBeenCalledWith('goog-auth-code', state, 'gverifier', undefined)
     // Provisioned/linked in the identity store as system-of-record.
     expect(provisionSocialUser).toHaveBeenCalledWith(
       expect.objectContaining({ email: 'gina@example.com', sub: 'google-sub-123' }),
@@ -168,5 +173,52 @@ describe('server-brokered Google callback (failure paths)', () => {
     await expect(provider.brokerCallback({ code: 'bad', state })).rejects.toThrow(/invalid_grant/)
     expect(provisionSocialUser).not.toHaveBeenCalled()
     expect(db.__tables.sessions.length).toBe(0)
+  })
+})
+
+// ── Return-origin threading (FuzeFront#352) ──────────────────────────────────
+// The allowlist MATCH/REJECT itself is covered by socialReturnOrigins.test.ts;
+// these assert the provider correctly carries an already-resolved return
+// origin from start -> callback (and exposes it via a non-consuming peek for
+// the route's error paths) without touching FRONTEND_URL/appBaseUrl() at all.
+describe('server-brokered Google — return-origin threading', () => {
+  it('carries the caller-supplied returnOrigin from start through to the callback result', async () => {
+    const { provider } = newProvider()
+    const { state } = await provider.startSocialLogin(
+      'google',
+      '/dashboard',
+      'https://marketplace.mendysrobotics.com'
+    )
+    const { returnOrigin, redirectTo } = await provider.brokerCallback({ code: 'goog-auth-code', state })
+    expect(returnOrigin).toBe('https://marketplace.mendysrobotics.com')
+    expect(redirectTo).toBe('/dashboard')
+  })
+
+  it('leaves returnOrigin undefined when the route did not resolve one (unchanged default behaviour)', async () => {
+    const { provider } = newProvider()
+    const { state } = await provider.startSocialLogin('google', '/dashboard')
+    const { returnOrigin } = await provider.brokerCallback({ code: 'goog-auth-code', state })
+    expect(returnOrigin).toBeUndefined()
+  })
+
+  it('peekSocialReturnOrigin reads the pending returnOrigin WITHOUT consuming the state', async () => {
+    const { provider } = newProvider()
+    const { state } = await provider.startSocialLogin(
+      'google',
+      '/dashboard',
+      'https://live.mendysrobotics.com'
+    )
+    expect(provider.peekSocialReturnOrigin(state)).toBe('https://live.mendysrobotics.com')
+    // Still consumable exactly once afterwards — the peek did not delete it.
+    const { returnOrigin } = await provider.brokerCallback({ code: 'goog-auth-code', state })
+    expect(returnOrigin).toBe('https://live.mendysrobotics.com')
+    await expect(provider.brokerCallback({ code: 'goog-auth-code', state })).rejects.toBeInstanceOf(
+      UnauthorizedError
+    )
+  })
+
+  it('peekSocialReturnOrigin returns undefined for an unknown state', async () => {
+    const { provider } = newProvider()
+    expect(provider.peekSocialReturnOrigin('never-issued')).toBeUndefined()
   })
 })

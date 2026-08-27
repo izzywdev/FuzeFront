@@ -111,6 +111,13 @@ export interface SocialCallbackResult {
   linked?: boolean;
   /** For a link handshake, the neutral provider slug that was linked. */
   provider?: string;
+  /**
+   * The allowlisted return origin captured at `/social/:provider/start`
+   * (see `providers/authentik/socialReturnOrigins.ts`), if the starting
+   * request's Host matched one. `undefined` means "no match" — the caller
+   * falls back to `appBaseUrl()`, exactly as before this field existed.
+   */
+  returnOrigin?: string;
 }
 
 export interface M2MClientProvisionInput {
@@ -282,11 +289,29 @@ export interface IdentityProvider {
    */
   passwordLogin(input: PasswordLoginInput, ctx?: SessionContext): Promise<BrokeredSession>;
 
-  /** Begin a social login; returns where to 302 the browser + anti-forgery state. */
-  startSocialLogin(provider: string, redirectTo?: string): Promise<SocialLoginStart>;
+  /**
+   * Begin a social login; returns where to 302 the browser + anti-forgery state.
+   * `returnOrigin`, when provided, is an ALREADY-ALLOWLISTED origin (see
+   * `providers/authentik/socialReturnOrigins.ts`) the finished handshake
+   * should redirect back to instead of the ambient tenant's `appBaseUrl()` —
+   * e.g. a consumer proxying this API same-origin from its own domain
+   * (FuzeFront#352). Omit to keep today's `appBaseUrl()` behaviour.
+   */
+  startSocialLogin(provider: string, redirectTo?: string, returnOrigin?: string): Promise<SocialLoginStart>;
 
   /** Complete the social handshake; returns a single-use opaque code + return path. */
   brokerCallback(input: SocialCallbackInput, ctx?: SessionContext): Promise<SocialCallbackResult>;
+
+  /**
+   * Non-consuming peek at the return origin recorded for a still-pending
+   * `state` (does NOT delete it — `brokerCallback` remains the sole
+   * consumer). Lets a callback route pick the right redirect destination for
+   * an error that occurs before/without calling `brokerCallback` (e.g. the
+   * provider itself reports `error=access_denied`). Optional: providers that
+   * don't support per-request return origins simply omit it, and callers
+   * fall back to `appBaseUrl()`.
+   */
+  peekSocialReturnOrigin?(state: string): string | undefined;
 
   /** Exchange a single-use opaque code for a session. Rejects on unknown/expired code. */
   exchangeCode(code: string): Promise<BrokeredSession>;

@@ -178,6 +178,22 @@ securityService:
   #     # key: AUTHENTIK_MENDYS_GOOGLE_CLIENT_SECRET) here. Unresolved — see
   #     # the PR's open questions.
 
+  # Social-broker return-origin allowlist (FuzeFront#352). MendysRobotics'
+  # marketplace/live SPAs delegate sign-in entirely to this brokered social
+  # flow and proxy /api/v1/security/* SAME-ORIGIN to fuzefront-security (see
+  # the networkPolicy comment above — same mendys-prod integration, FuzeInfra
+  # #339). Without this, the broker's success/error redirect always lands on
+  # FRONTEND_URL (app.fuzefront.com) instead of the origin that started the
+  # flow, so the mendys SPA never receives its `?code=`. EXACT origins only —
+  # see providers/authentik/socialReturnOrigins.ts; this does NOT add either
+  # host to `tenants` above (that would additionally require enumerating every
+  # in-cluster caller's Host header or SECURITY_TENANTS' fail-closed rejection
+  # breaks provisioning-service/config-service/selection-list-service too —
+  # out of scope for this ask, see the module doc comment).
+  socialReturnOrigins:
+    - "https://marketplace.mendysrobotics.com"
+    - "https://live.mendysrobotics.com"
+
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:

@@ -543,6 +543,106 @@ describe('social login boundary', () => {
   })
 })
 
+// ── Social-broker return-origin allowlist (FuzeFront#352) ───────────────────
+// The allowlist MATCH/REJECT logic itself is unit-tested in
+// socialReturnOrigins.test.ts. These prove the ROUTE actually consults it on
+// the real request path — start resolves it from Host and passes it to the
+// provider; the callbacks use whatever the provider hands back (or peeks),
+// never touching appBaseUrl() when a valid returnOrigin is present.
+describe('social login boundary — return-origin allowlist', () => {
+  const ENV_KEY = 'SECURITY_SOCIAL_RETURN_ORIGINS'
+  const savedEnv = process.env[ENV_KEY]
+
+  beforeEach(() => {
+    process.env[ENV_KEY] =
+      'https://marketplace.mendysrobotics.com,https://live.mendysrobotics.com'
+  })
+
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env[ENV_KEY]
+    else process.env[ENV_KEY] = savedEnv
+  })
+
+  it('start resolves an allowlisted Host and passes it to startSocialLogin', async () => {
+    const startSocialLogin = jest
+      .fn()
+      .mockResolvedValue({ redirectUrl: '/api/auth/idp/application/o/authorize/?x=1', state: 'st' })
+    await request(makeApp(fakeProvider({ startSocialLogin })))
+      .get('/api/v1/security/social/google/start')
+      .set('Host', 'marketplace.mendysrobotics.com')
+    expect(startSocialLogin).toHaveBeenCalledWith(
+      'google',
+      '/',
+      'https://marketplace.mendysrobotics.com'
+    )
+  })
+
+  it('REJECTS a non-allowlisted Host — startSocialLogin gets undefined, same as today', async () => {
+    const startSocialLogin = jest
+      .fn()
+      .mockResolvedValue({ redirectUrl: '/api/auth/idp/application/o/authorize/?x=1', state: 'st' })
+    await request(makeApp(fakeProvider({ startSocialLogin })))
+      .get('/api/v1/security/social/google/start')
+      .set('Host', 'evil.example.com')
+    expect(startSocialLogin).toHaveBeenCalledWith('google', '/', undefined)
+  })
+
+  it('google/callback redirects the opaque code to the allowlisted returnOrigin the provider resolved', async () => {
+    const provider = fakeProvider({
+      brokerCallback: jest.fn().mockResolvedValue({
+        code: 'opaque',
+        redirectTo: '/dashboard',
+        returnOrigin: 'https://marketplace.mendysrobotics.com',
+      }),
+    })
+    const res = await request(makeApp(provider))
+      .get('/api/v1/security/social/google/callback?code=google-code&state=st')
+      .set('Host', 'app.fuzefront.com') // callback always lands on FuzeFront's own host
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toBe('https://marketplace.mendysrobotics.com/dashboard?code=opaque')
+  })
+
+  it('legacy /social/callback redirects to the allowlisted returnOrigin the provider resolved', async () => {
+    const provider = fakeProvider({
+      brokerCallback: jest.fn().mockResolvedValue({
+        code: 'opaque',
+        redirectTo: '/dashboard',
+        returnOrigin: 'https://live.mendysrobotics.com',
+      }),
+    })
+    const res = await request(makeApp(provider)).get(
+      '/api/v1/security/social/callback?code=prov&state=st'
+    )
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toBe('https://live.mendysrobotics.com/dashboard?code=opaque')
+  })
+
+  it('google/callback fail-closed error still targets the allowlisted origin via peekSocialReturnOrigin', async () => {
+    const provider = fakeProvider({
+      peekSocialReturnOrigin: jest.fn().mockReturnValue('https://marketplace.mendysrobotics.com'),
+    })
+    const res = await request(makeApp(provider)).get(
+      '/api/v1/security/social/google/callback?error=access_denied&state=st'
+    )
+    expect(res.status).toBe(302)
+    expect(res.headers.location).toBe(
+      'https://marketplace.mendysrobotics.com/?error=authentication_failed'
+    )
+  })
+
+  it('google/callback WITHOUT a peekSocialReturnOrigin implementation falls back to appBaseUrl() unchanged', async () => {
+    // fakeProvider's base object omits peekSocialReturnOrigin entirely —
+    // proves the optional-method fallback (`?.() ?? appBaseUrl()`) degrades
+    // safely for a provider that predates this feature.
+    const res = await request(makeApp(fakeProvider())).get(
+      '/api/v1/security/social/google/callback?error=access_denied&state=st'
+    )
+    expect(res.status).toBe(302)
+    expect(res.headers.location).not.toMatch(/mendysrobotics\.com/)
+    expect(res.headers.location).toContain('error=authentication_failed')
+  })
+})
+
 describe('POST /signup', () => {
   it('returns 201 application/json for a valid application/json signup', async () => {
     // @fuzequality api signup
