@@ -1,0 +1,29 @@
+name: gate-required-check-triggers
+
+# Regression guard for FuzeFront#286: a branch-ruleset REQUIRED status check whose workflow
+# is path-filtered on pull_request: never runs on a PR that misses its paths, so the check
+# run is never created and the PR sits permanently BLOCKED (a required-but-never-reported
+# context is treated as unsatisfied — no red to click, nothing to re-run). Fixed on the one
+# known instance in #794 (workspace-deps-check.yml). This job keeps it fixed: it fails if
+# any workflow named in governance/required-check-triggers.json regains a paths:/
+# paths-ignore: filter on pull_request:.
+#
+# NO paths: FILTER HERE EITHER — this gate would be exactly the bug it exists to catch if
+# it were itself path-filtered. It is dependency-free (no npm install) and scans two small
+# YAML files with a plain node script, so running it unconditionally costs nothing.
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  gate-required-check-triggers:
+    name: gate-required-check-triggers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check required-check workflows run unconditionally on pull_request
+        run: node scripts/check-required-check-triggers.mjs

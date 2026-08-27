@@ -1,0 +1,34 @@
+{
+  "$comment": [
+    "Regression guard for FuzeFront#286: a branch-ruleset REQUIRED status check whose",
+    "producing workflow is path-filtered on `pull_request:` never runs — and never reports —",
+    "on a PR that touches none of its paths. GitHub treats a required-but-never-reported",
+    "context as unsatisfied, so the PR is permanently BLOCKED with no red to look at and",
+    "nothing to re-run. Measured against master 2026-08-27: the ruleset ('Protect Master')",
+    "requires both contexts below, and as of PR #794 (2026-08-23) their workflows carry no",
+    "`paths:`/`paths-ignore:` filter on `pull_request:` — this file plus",
+    "scripts/check-required-check-triggers.mjs is what keeps it that way.",
+    "",
+    "Every entry here names a required-ruleset `context` and the workflow file that produces",
+    "it. scripts/check-required-check-triggers.mjs fails if that workflow's `pull_request:`",
+    "trigger gains a `paths:`/`paths-ignore:` key. Two entries pre-date this file and already",
+    "state the same rule in their own header comments (workspace-deps-check.yml: 'NO `paths:`",
+    "FILTER, and that is load-bearing rather than an oversight'; gate-sealed-keys.yml: 'Runs on",
+    "every PR (no path filter) so it is safe to add to the branch ruleset's required checks').",
+    "This file turns that prose into something CI actually checks.",
+    "",
+    "Adding a NEW required context to the ruleset? Add its workflow here in the same PR — the",
+    "gate is only as complete as this list."
+  ],
+
+  "workflows": [
+    {
+      "context": "In-repo packages resolve from source",
+      "file": ".github/workflows/workspace-deps-check.yml"
+    },
+    {
+      "context": "gate-sealed-keys",
+      "file": ".github/workflows/gate-sealed-keys.yml"
+    }
+  ]
+}
