@@ -281,6 +281,17 @@ jobs:
         # shared, and tsc resolves it through shared/dist.
         run: npm run -w @fuzefront/shared build
 
+      - name: Build @fuzefront/auth (d.ts for chat-service type-check)
+        # agent/securityApiPermitAdapter.ts imports createAuthzClient/AuthzClient
+        # (FuzeFront#254 — wrap Permit behind the FuzeFront Security API instead
+        # of calling the PDP directly). @fuzefront/auth's `types` points at
+        # dist/index.d.ts (not committed; built via tsup), so both the
+        # type-check and the jest run below (ts-jest resolves the same way)
+        # fail with TS2307 "Cannot find module '@fuzefront/auth'" until this
+        # runs — same pattern as the @fuzefront/custom-hostname-client /
+        # @fuzefront/security-client prebuild steps above.
+        run: npm run -w @fuzefront/auth build
+
       - name: Type-check chat-service
         run: npm run -w @fuzefront/chat-service build
 
