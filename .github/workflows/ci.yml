@@ -627,42 +627,49 @@ jobs:
       # medium or low. The alert set never changed; only the baseline diff was
       # broken. Do not re-derive the old explanation from the severity config.
       #
-      # CORRECTION (this is the third pass over this block — read it before
-      # changing anything here). Removing this upload did NOT fix the warning.
-      # It only changed WHICH configuration goes missing: the warning now reads
-      # "1 configuration present on refs/heads/master was not found ...
-      # .github/workflows/ci.yml:security-scan", because master's code-scanning
-      # baseline still holds the analysis this step used to produce, and
-      # nothing re-registers it. That baseline entry cannot be aged out from
-      # here and deleting it needs code-scanning admin scope, so the only fix
-      # available in-repo is to produce the configuration again — which is what
-      # this step does.
+      # FOURTH AND FINAL PASS — the rule is ONE CONFIGURATION PER SARIF TOOL.
+      # Read this whole block before touching the uploads again; it has been
+      # got wrong three times, each time by fixing a symptom.
       #
-      # The actual root cause was never the duplication. It was the ~6-minute
-      # security.yml container scan sharing one SARIF tool identity with these
-      # ~25-second filesystem scans, so the aggregated check finalised before
-      # the slow configuration reported. That is fixed at its source:
-      # security.yml now retags its SARIF to tool "Trivy Container", giving it
-      # a separate check run. The "Trivy" check is left holding only the two
-      # fast filesystem configurations, which finish within seconds of each
-      # other.
+      # What was tried, and why each was not enough:
       #
-      # So this upload is deliberately restored, with NO explicit category, to
-      # reproduce the exact analysis key master's baseline expects
-      # (.github/workflows/ci.yml:security-scan). Do not "deduplicate" it away
-      # again without first confirming that key is gone from the baseline.
-      # ref/sha are deliberately NOT set: upload-sarif's own detection is
-      # correct for both pull_request and push, and hand-rolling it here is
-      # what harden-gate.yml already warns against.
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: 'trivy-results.sarif'
-          # No explicit category — matches master's baseline analysis key so
-          # the PR comparison check finds this as ci.yml:security-scan.
-
+      #   1. Remove this upload to "deduplicate" (#647). Did not fix it — it
+      #      only changed WHICH configuration went missing, from
+      #      harden-gate.yml:trivy to ci.yml:security-scan, because master's
+      #      baseline still held this step's analysis and nothing re-registered
+      #      it.
+      #   2. Split the ~6-minute container scan onto its own tool (#818), on
+      #      the theory that the duration gap caused the race, and restore this
+      #      upload to re-register the missing key. Also not enough: measured on
+      #      #816 immediately after, the check ran 04:27:07 -> 04:27:09 — TWO
+      #      SECONDS — and still reported a missing harden-gate.yml:trivy.
+      #
+      # The invariant those two missed: GitHub finalises a tool's check as soon
+      # as it considers the set complete, without waiting for stragglers. Two
+      # configurations under one tool race whether they are six minutes or two
+      # seconds apart. Proximity is not a fix; being ALONE under a tool name is.
+      #
+      # So each scan now owns a distinct tool, one configuration each:
+      #   Trivy FS         <- harden-gate.yml (the single code-scanning source
+      #                       for the filesystem scan)
+      #   Trivy Container  <- security.yml
+      #
+      # and this job uploads NO SARIF at all. Its scan is a byte-for-byte
+      # duplicate of harden-gate's, so a second code-scanning copy buys nothing
+      # and costs the race. The scan still RUNS and its full, all-severity SARIF
+      # is kept as a build artifact below: nothing stops being scanned and no
+      # finding becomes invisible.
+      #
+      # Leaving the bare "Trivy" tool with no producer is deliberate, not an
+      # oversight. Its baseline on master still lists configurations that no
+      # longer exist, and those entries cannot be removed from here — deleting a
+      # code-scanning analysis needs admin scope, which returns 403 for this
+      # token. A tool with no uploads gets no check run, so the stale entries go
+      # inert rather than staying permanently red.
+      #
+      # If you add a SARIF upload back to this job, give it its OWN tool name.
+      # Do not upload under "Trivy", and do not put two configurations under any
+      # one tool.
       - name: Upload Trivy scan artifact (all severities)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

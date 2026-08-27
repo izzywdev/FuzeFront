@@ -229,6 +229,43 @@ jobs:
       # on a private repo without code scanning this now skips explicitly instead of
       # hard-failing. FuzeFront is public, so the condition is true and the "fail loudly"
       # intent described above is unchanged here.
+      # ONE CONFIGURATION PER SARIF TOOL. This is the invariant that keeps the
+      # check honest, and it has been arrived at the hard way three times.
+      #
+      # GitHub creates one check run per SARIF *tool* and aggregates every
+      # configuration reporting under that name — but it finalises the check as
+      # soon as it considers the set complete, WITHOUT waiting for stragglers.
+      # Trivy stamps tool.driver.name = "Trivy" into every SARIF, so all three
+      # scans in this repo (this one, ci.yml:security-scan, and security.yml's
+      # container scan) landed in one "Trivy" check and raced.
+      #
+      # #818 split the ~6-minute container scan out on the theory that the gap
+      # was the problem. It was not sufficient: measured on #816 afterwards, the
+      # check ran 04:27:07 -> 04:27:09 — TWO SECONDS — and still reported
+      # "1 configuration ... was not found ... harden-gate.yml:trivy". Two
+      # configurations 2s apart race just as reliably as ones 6 minutes apart.
+      # Closeness is not a fix; being alone under a tool name is.
+      #
+      # Hence a distinct tool per scan, each with exactly one configuration:
+      #   Trivy FS         <- here (the single code-scanning source for fs)
+      #   Trivy Container  <- security.yml
+      #   (ci.yml uploads no SARIF at all; it keeps an artifact)
+      #
+      # Nothing produces the bare "Trivy" tool any more, deliberately. Its
+      # baseline on master still lists configurations that no longer exist, and
+      # those entries cannot be removed from here — deleting a code-scanning
+      # analysis needs admin scope, which returns 403 for this token. A tool
+      # with no uploads gets no check run, so those stale entries become inert
+      # instead of permanently red.
+      - name: Retag SARIF tool name (one configuration per tool — see above)
+        if: always() && !github.event.repository.private
+        run: |
+          set -euo pipefail
+          [ -f trivy.sarif ] || { echo "no SARIF produced; nothing to retag"; exit 0; }
+          jq '.runs[].tool.driver.name = "Trivy FS"' trivy.sarif > retagged.sarif
+          mv retagged.sarif trivy.sarif
+          echo "tool.driver.name is now: $(jq -r '.runs[0].tool.driver.name' trivy.sarif)"
+
       - name: Upload SARIF (skipped on private repos — code scanning unavailable)
         if: always() && !github.event.repository.private
         uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
