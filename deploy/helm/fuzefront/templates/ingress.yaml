@@ -95,6 +95,36 @@
         number: {{ .Values.frontend.port }}
 {{- end -}}
 
+{{- /*
+  Identity-only fan-out for a multi-tenant IdP-broker tenant whose OWN product
+  frontend is not FuzeFront's — e.g. the MendysRobotics silo (FuzeFront#434).
+  Deliberately narrower than fuzefront.ingress.fanout above: only the two
+  paths the issue names, `/api/v1/security` and `/api/auth`. NOT
+  `/api/organizations` (that is a FuzeFront-shell shim), and NOT the frontend
+  catch-all `/` — a tenant host on this list has its OWN app served elsewhere;
+  this chart claims nothing on it but the identity surface. And NOT gated on
+  applicationsService/billingService/backend the way the main fanout is —
+  those never belong to another product's host.
+*/}}
+{{- define "fuzefront.ingress.identityFanout" -}}
+{{- if .Values.securityService.enabled }}
+- path: /api/v1/security
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+- path: /api/auth
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-security
+      port:
+        number: {{ .Values.securityService.port }}
+{{- end }}
+{{- end -}}
+
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -178,6 +208,48 @@ spec:
       http:
         paths:
           {{- include "fuzefront.ingress.fanout" . | nindent 10 }}
+{{- end }}
+{{- if .Values.ingress.tenantIdentityHosts }}
+---
+# Identity-only hosts for OTHER products' IdP-broker tenants — FuzeFront#434.
+# A SEPARATE Ingress object for the same reason as the tenant-wildcard above
+# (independent annotations, and this one intentionally carries none of the
+# wildcard's router.priority concern since every host here is an exact host,
+# not a HostRegexp). One rule per declared host, all using the narrow
+# identity-only fan-out (fuzefront.ingress.identityFanout) — this chart claims
+# ONLY /api/v1/security and /api/auth on these hosts, never the frontend
+# catch-all, because the rest of the host belongs to that other product's own
+# app. This object can live in the `fuzefront` namespace pointing at these
+# hosts regardless of which product's ingress otherwise serves them, because a
+# vanilla Ingress backend Service reference is same-namespace-only — routing
+# to fuzefront-security for an identity path is only expressible from HERE.
+#
+# DNS/Cloudflare Tunnel routing the host to this cluster's ingress controller
+# in the first place is a separate, FuzeInfra-owned step (out of this chart's
+# reach) — this object is inert until that exists.
+#
+# NO tls: block, deliberately — same rationale as the wildcard Ingress above
+# (Cloudflare terminates edge TLS; the tunnel delivers plain HTTP).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-tenant-identity-hosts
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tenant-identity-hosts
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    {{- range .Values.ingress.tenantIdentityHosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          {{- include "fuzefront.ingress.identityFanout" $ | nindent 10 }}
+    {{- end }}
 {{- end }}
 {{- if .Values.clockApp.enabled }}
 ---

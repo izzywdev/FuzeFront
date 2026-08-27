@@ -51,6 +51,12 @@ ENTITY_PREFIXES: Mapping[str, str] = MappingProxyType(
         # SPINE_PREFIXES so --namespace accepts them.
         "namespace": "cns",
         "keyDefinition": "ckd",
+        # "configHistory" — FF-EPIC-18 (FFRNT-280), the append-only change
+        # trail ("GET /v1/config/history") and reveal-once secret audit
+        # ("POST /v1/config/secrets/reveal") both write. Bare "cvh_", same
+        # reasoning as "cns_"/"ckd_" above. MUST stay in parity with
+        # packages/identity/src/registry.ts (registry-parity gate).
+        "configHistory": "cvh",
     }
 )
 

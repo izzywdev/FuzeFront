@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { PgNamespaceRepository } from './repositories/namespace.repository';
 import { PgKeyDefinitionRepository } from './repositories/key-definition.repository';
 import { PgValueRepository } from './repositories/value.repository';
+import { PgHistoryRepository } from './repositories/history.repository';
 import { createConfigReadRouter } from './routes/config-read.routes';
 import { createWriteRouter } from './routes/write.router';
 import { createDocsRouter } from './routes/docs.routes';
@@ -88,9 +89,11 @@ export function createApp(deps?: AppDeps): Application {
   // repo is only ever constructed once per story's router, and neither
   // story's router touches the other's routes.
   //   - GET  /v1/namespaces, GET /v1/namespaces/{namespace}/keys[/{key}],
-  //     GET  /v1/config                    -> FFRNT-157 (createConfigReadRouter)
+  //     GET  /v1/config, GET /v1/config/history
+  //                                         -> FFRNT-157 + FFRNT-280 (createConfigReadRouter)
   //   - POST /v1/namespaces, PUT /v1/namespaces/{namespace}/keys,
-  //     PUT  /v1/config                    -> FFRNT-158 (createWriteRouter)
+  //     PUT  /v1/config, POST /v1/config/secrets/reveal
+  //                                         -> FFRNT-158 + FFRNT-280 (createWriteRouter)
   // Route ordering, Permit gating, ETag/If-None-Match, ConfigWriteRequest's
   // batch-transaction semantics, and pagination (gate-pagination, for the
   // list endpoints) are each router's own responsibility per
@@ -99,10 +102,11 @@ export function createApp(deps?: AppDeps): Application {
     const namespaceRepo = new PgNamespaceRepository(deps.pool);
     const keyDefinitionRepo = new PgKeyDefinitionRepository(deps.pool);
     const valueRepo = new PgValueRepository(deps.pool);
-    app.use('/v1', createConfigReadRouter({ namespaceRepo, keyDefinitionRepo, valueRepo })); // FFRNT-157 (GET routes)
+    const historyRepo = new PgHistoryRepository(deps.pool);
+    app.use('/v1', createConfigReadRouter({ namespaceRepo, keyDefinitionRepo, valueRepo, historyRepo })); // FFRNT-157 + FFRNT-280 (GET routes, incl. GET /v1/config/history)
     // Shares deps.pool rather than letting createWriteRouter() open its own —
     // one pool per process, not one per story's router.
-    app.use(createWriteRouter(deps.pool)); // FFRNT-158 (POST/PUT write routes)
+    app.use(createWriteRouter(deps.pool)); // FFRNT-158 + FFRNT-280 (POST/PUT write routes, incl. POST /v1/config/secrets/reveal)
   }
 
   return app;

@@ -1,5 +1,6 @@
 import express from 'express';
 import request from 'supertest';
+import type { AuthzClient } from '@fuzefront/auth';
 import { createNamespacesWriteRouter } from '../../src/routes/namespaces.write';
 import { FakeDb } from '../helpers/fakeDb';
 import { bearer, TEST_JWT_SECRET } from '../helpers/authToken';
@@ -82,7 +83,7 @@ describe('POST /v1/namespaces', () => {
   });
 
   it('403s when the Security API denies namespace registration', async () => {
-    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] });
+    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] } as unknown as AuthzClient);
     const db = new FakeDb();
     const app = buildApp(db);
     const res = await request(app)

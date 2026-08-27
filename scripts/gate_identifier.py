@@ -537,6 +537,7 @@ SPINE_PREFIXES = {
     # as bare prefixes.
     "cns": "FuzeFront",
     "ckd": "FuzeFront",
+    "cvh": "FuzeFront",
 }
 
 TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.M)
