@@ -66,10 +66,29 @@ interface ValueRow {
   updated_at: Date;
 }
 
+interface HistoryRow {
+  id: string;
+  definition_id: string;
+  namespace: string;
+  key: string;
+  scope_type: string;
+  scope_id: string | null;
+  action: string;
+  old_value: unknown;
+  new_value: unknown;
+  redacted: boolean;
+  actor_type: string;
+  actor_id: string | null;
+  reason: string | null;
+  revert_of: string | null;
+  occurred_at: Date;
+}
+
 interface State {
   namespaces: NamespaceRow[];
   keyDefs: KeyDefRow[];
   values: ValueRow[];
+  history: HistoryRow[];
 }
 
 function clone<T>(v: T): T {
@@ -88,7 +107,7 @@ function nextId(prefix: string): string {
 }
 
 export class FakeDb {
-  private state: State = { namespaces: [], keyDefs: [], values: [] };
+  private state: State = { namespaces: [], keyDefs: [], values: [], history: [] };
   private snapshots: State[] = [];
 
   seedNamespace(row: Partial<NamespaceRow> & { id: string; namespace: string }): void {
@@ -147,6 +166,10 @@ export class FakeDb {
   get keyDefRows(): KeyDefRow[] {
     return this.state.keyDefs;
   }
+  /** Rows currently in config_history — for assertions after a route call. */
+  get historyRows(): HistoryRow[] {
+    return this.state.history;
+  }
 
   private query = async (sql: string, params: unknown[] = []): Promise<{ rows: unknown[] }> => {
     const s = sql.trim();
@@ -166,11 +189,11 @@ export class FakeDb {
     }
 
     // ── config_namespaces ────────────────────────────────────────────────
-    if (s.includes('FROM config_namespaces') && s.includes('WHERE namespace = $1')) {
+    if (s.includes('FROM config.config_namespaces') && s.includes('WHERE namespace = $1')) {
       const row = this.state.namespaces.find((n) => n.namespace === params[0]);
       return { rows: row ? [row] : [] };
     }
-    if (s.includes('INSERT INTO config_namespaces')) {
+    if (s.includes('INSERT INTO config.config_namespaces')) {
       const [id, namespace, displayName, description, ownerAppId] = params as [string, string, string, string | null, string | null];
       let row = this.state.namespaces.find((n) => n.namespace === namespace);
       let inserted = false;
@@ -188,11 +211,11 @@ export class FakeDb {
     }
 
     // ── config_key_definitions ───────────────────────────────────────────
-    if (s.startsWith('SELECT') && s.includes('FROM config_key_definitions') && s.includes('WHERE namespace_id = $1') && !s.includes('AND key')) {
+    if (s.startsWith('SELECT') && s.includes('FROM config.config_key_definitions') && s.includes('WHERE namespace_id = $1') && !s.includes('AND key')) {
       const rows = this.state.keyDefs.filter((d) => d.namespace_id === params[0]);
       return { rows };
     }
-    if (s.includes('INSERT INTO config_key_definitions')) {
+    if (s.includes('INSERT INTO config.config_key_definitions')) {
       const [
         id, namespaceId, key, displayName, description, helpUrl, category, sortOrder, tags,
         valueType, schema, enumValues, defaultValue, allowedScopes,
@@ -210,7 +233,7 @@ export class FakeDb {
       this.state.keyDefs.push(row);
       return { rows: [row] };
     }
-    if (s.includes('UPDATE config_key_definitions SET deprecated_at')) {
+    if (s.includes('UPDATE config.config_key_definitions SET deprecated_at')) {
       const ids = params[0] as string[];
       for (const d of this.state.keyDefs) {
         if (ids.includes(d.id) && d.deprecated_at === null) {
@@ -220,7 +243,7 @@ export class FakeDb {
       }
       return { rows: [] };
     }
-    if (s.includes('UPDATE config_key_definitions SET')) {
+    if (s.includes('UPDATE config.config_key_definitions SET')) {
       const [
         id, displayName, description, helpUrl, category, sortOrder, tags,
         valueType, schema, enumValues, defaultValue, allowedScopes,
@@ -252,7 +275,7 @@ export class FakeDb {
     }
 
     // ── config_values ─────────────────────────────────────────────────────
-    if (s.includes('FROM config_values') && s.includes('definition_id = ANY($1::uuid[])')) {
+    if (s.includes('FROM config.config_values') && s.includes('definition_id = ANY($1::uuid[])')) {
       const definitionIds = params[0] as string[];
       const wantsPlatform = s.includes("scope_type = 'platform'");
       const pairs: [string, string][] = [];
@@ -267,11 +290,11 @@ export class FakeDb {
       );
       return { rows };
     }
-    if (s.startsWith('SELECT') && s.includes('FROM config_values') && s.includes('WHERE definition_id = $1') && !s.includes('ANY(')) {
+    if (s.startsWith('SELECT') && s.includes('FROM config.config_values') && s.includes('WHERE definition_id = $1') && !s.includes('ANY(')) {
       const rows = this.state.values.filter((v) => v.definition_id === params[0]);
       return { rows };
     }
-    if (s.includes('INSERT INTO config_values')) {
+    if (s.includes('INSERT INTO config.config_values')) {
       const [definitionId, scopeType, scopeId, valueJson, isLocked, lockReason, setByUserId] = params as any[];
       let row = this.state.values.find(
         (v) =>
@@ -303,7 +326,7 @@ export class FakeDb {
       }
       return { rows: [row] };
     }
-    if (s.includes('DELETE FROM config_values')) {
+    if (s.includes('DELETE FROM config.config_values')) {
       if (s.includes("scope_type = 'platform'")) {
         const [definitionId] = params as [string];
         this.state.values = this.state.values.filter((v) => !(v.definition_id === definitionId && v.scope_type === 'platform'));
@@ -314,6 +337,64 @@ export class FakeDb {
         );
       }
       return { rows: [] };
+    }
+
+    // ── config_history (append-only — INSERT only, never UPDATE/DELETE) ────
+    if (s.includes('INSERT INTO config.config_history')) {
+      const [
+        id, definitionId, namespace, key, scopeType, scopeId, action,
+        oldValueJson, newValueJson, redacted, actorType, actorId, reason, revertOf,
+      ] = params as any[];
+      const row: HistoryRow = {
+        id,
+        definition_id: definitionId,
+        namespace,
+        key,
+        scope_type: scopeType,
+        scope_id: scopeType === 'platform' ? null : scopeId,
+        action,
+        old_value: JSON.parse(oldValueJson),
+        new_value: JSON.parse(newValueJson),
+        redacted,
+        actor_type: actorType,
+        actor_id: actorId,
+        reason,
+        revert_of: revertOf,
+        occurred_at: nextTimestamp(),
+      };
+      this.state.history.push(row);
+      return { rows: [row] };
+    }
+    if (s.startsWith('SELECT') && s.includes('FROM config.config_history')) {
+      // Positional, matching PgHistoryRepository.listPage's own param order
+      // EXACTLY (namespace, key, scopeType, [scopeId], [cursorOccurredAt,
+      // cursorId], limit) — see src/repositories/history.repository.ts.
+      let i = 0;
+      const namespace = params[i++] as string;
+      const key = params[i++] as string;
+      const scopeType = params[i++] as string;
+      const scopeId = scopeType === 'platform' ? null : (params[i++] as string);
+      let cursorOccurredAt: string | undefined;
+      let cursorId: string | undefined;
+      if (s.includes('(occurred_at, id) <')) {
+        cursorOccurredAt = params[i++] as string;
+        cursorId = params[i++] as string;
+      }
+      const limit = params[i++] as number;
+
+      let rows = this.state.history.filter(
+        (h) => h.namespace === namespace && h.key === key && h.scope_type === scopeType && h.scope_id === scopeId,
+      );
+      rows = [...rows].sort(
+        (a, b) => b.occurred_at.getTime() - a.occurred_at.getTime() || (a.id < b.id ? 1 : -1),
+      );
+      if (cursorOccurredAt !== undefined && cursorId !== undefined) {
+        rows = rows.filter((h) => {
+          const t = h.occurred_at.toISOString();
+          return t < cursorOccurredAt! || (t === cursorOccurredAt && h.id < cursorId!);
+        });
+      }
+      return { rows: rows.slice(0, limit) };
     }
 
     throw new Error(`FakeDb: unrecognised query: ${s}`);

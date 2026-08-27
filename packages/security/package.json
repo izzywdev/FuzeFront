@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/security-client",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -45,9 +45,5 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
-  },
-  "engines": {
-    "node": ">=24.0.0",
-    "npm": ">=10.0.0"
   }
 }

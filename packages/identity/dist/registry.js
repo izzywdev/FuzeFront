@@ -43,6 +43,25 @@ exports.ENTITY_PREFIXES = {
     conversation: 'cnv',
     message: 'msg',
     notification: 'ntf',
+    // selection-list-service — product-local types, namespaced front_ per the
+    // namespace gate (gate_identifier.py --namespace). Prefixes are permanent once
+    // shipped: changing one is a wire-breaking change for every stored reference.
+    selectionList: 'front_sl',
+    selectionListItem: 'front_sli',
+    // config-service (FF-EPIC-17) — bare spine prefixes, not front_-namespaced:
+    // config-service is FuzeFront-hosted for the whole family (same tier as the
+    // billing/messaging sets above), and the frozen contract
+    // (services/config-service/openapi.yaml, FFRNT-153) already declares these as
+    // bare `cns_`/`ckd_`. Mirrored in scripts/gate_identifier.py SPINE_PREFIXES so
+    // `--namespace` accepts them.
+    namespace: 'cns',
+    keyDefinition: 'ckd',
+    // `configHistory` — FF-EPIC-18 (FFRNT-280), the append-only change trail
+    // (`GET /v1/config/history`) and reveal-once secret audit
+    // (`POST /v1/config/secrets/reveal`) both write. Bare `cvh_`, per the same
+    // FuzeFront-hosted-for-the-family reasoning as `cns_`/`ckd_` above — already
+    // declared in the frozen contract's "Identifiers" section.
+    configHistory: 'cvh',
 };
 /** Reverse index, built once. Used to name the type in error messages. */
 const TYPE_BY_PREFIX = Object.freeze(Object.fromEntries(Object.entries(exports.ENTITY_PREFIXES).map(([type, prefix]) => [prefix, type])));

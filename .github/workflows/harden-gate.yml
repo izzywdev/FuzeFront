@@ -272,8 +272,13 @@ jobs:
   gate-localup:
     # Bounded local deployability. Stands up FuzeInfra consumer-test (if vendored) + validates the
     # Helm chart; warns (tracked) when no bounded local-up is wired yet. local-env-verifier ratchets
-    # to enforcing per-repo (see local-environment.md).
+    # to enforcing per-repo (see governance/local-environment.md).
     runs-on: ubuntu-latest
+    # Outer deadline on top of the --wait-timeout below: a job with no timeout-minutes
+    # runs to GH-hosted's 360min default, so a hang here would burn CI time for hours
+    # with nothing but a runner-imposed cancellation — same defect class as
+    # FuzeInfra#760 (permit-schema-sync with no deadline).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { submodules: recursive }
@@ -286,7 +291,15 @@ jobs:
           fi
           dir=$(dirname "$CT"); env=""; [ -f "$dir/versions.env" ] && env="--env-file $dir/versions.env"
           echo "::group::consumer-test up"
-          docker compose $env -f "$CT" up -d --wait || { echo "consumer-test infra failed to come up"; docker compose -f "$CT" logs | tail -50; exit 1; }
+          # --wait has no deadline on its own (docker compose up --help: --wait-timeout
+          # is a distinct flag) — pin one explicitly and dump per-service status on
+          # failure so "it hung" and "it errored" are distinguishable at a glance.
+          if ! docker compose $env -f "$CT" up -d --wait --wait-timeout 180; then
+            echo "::error title=gate-localup::consumer-test infra did not reach healthy within 180s (or failed to start)"
+            docker compose -f "$CT" ps
+            docker compose -f "$CT" logs | tail -50
+            exit 1
+          fi
           echo "::endgroup::"
           docker compose -f "$CT" down -v || true
           echo "bounded local-up smoke OK"

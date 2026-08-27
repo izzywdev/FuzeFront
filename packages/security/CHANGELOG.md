@@ -1,5 +1,68 @@
 # Changelog — @fuzefront/security-client
 
+## 0.8.0 — Broker: marketplace / consumer-product sign-in handoff (contract slice, #238, unreleased)
+
+Freezes the OpenAPI contract for **#238** — a consumer product (e.g. the Mendys
+datasets marketplace) sends its user to FuzeFront's themed sign-in UI and gets
+a single-use, server-to-server-redeemable handoff code back, instead of each
+product re-implementing sign-in against the security-service API directly.
+**Contract-first, per the issue's own sequencing: no route handlers, no
+`BrokerClient` storage, and no feature-flag wiring ship in this slice** — see
+"Deferred" below. `info.version` 0.7.0 → 0.8.0. **Additive/minor — no existing
+shape changes.**
+
+### Added
+
+- **`GET /v1/security/broker/clients/{client}`** (`operationId: getBrokerClient`,
+  tag `broker`) — public, unauthenticated lookup of a registered broker
+  client's branding (`BrokerClient` → reuses `PortalBranding`) for the themed
+  sign-in page. 404 on an unknown `client` (fail-closed; the page falls back
+  to default FuzeFront branding rather than inventing a product identity).
+- **`POST /v1/security/broker/handoff`** (`operationId: brokerHandoff`, tag
+  `broker`, `bearerAuth`) — called by the themed sign-in page immediately
+  after the user authenticates via the EXISTING `session`/`social`/`signup`
+  surfaces. Validates `redirectUri` against the `client`'s registered
+  allowlist (exact match only) and mints a single-use opaque code via the
+  SAME store `social/callback` already uses
+  (`backend/security/src/services/brokerCodes.ts`), returning the full
+  `redirectUri?code=` for the SPA to navigate to. No token is ever placed in
+  a URL, fragment, or referrer.
+- **`POST /v1/security/broker/token-exchange`** (`operationId:
+  brokerTokenExchange`, tag `broker`) — server-to-server redemption, called by
+  the PRODUCT'S OWN BACKEND (never the browser), authenticated by
+  `client`+`clientSecret` (a confidential-client credential distinct from
+  #648's platform M2M service-account tokens). Returns `SessionResult`.
+  Fail-closed: unknown client, wrong secret, and unknown/expired/redeemed
+  code all collapse to the same generic 401 — never an oracle.
+- New schemas: `BrokerClient`, `BrokerHandoffRequest`, `BrokerHandoffResult`,
+  `BrokerTokenExchangeRequest`. `BrokerClient.branding` reuses the existing
+  `PortalBranding` schema rather than duplicating it.
+- New `ErrorBody.code` enum value: `REDIRECT_URI_NOT_ALLOWED`.
+- New `broker` tag; new "Broker (marketplace / consumer-product handoff)"
+  section in the top-level `info.description`, documenting this as a
+  deliberate, narrow exception to the "Boundary guarantee" section — the
+  browser is handed back to the product's OWN registered origin, never an
+  arbitrary third party, and never with a bearer token in the URL.
+
+### Deferred (tracked as #238 follow-ups, NOT in this slice)
+
+- `BrokerClient` registration/storage (the `redirectUris` allowlist +
+  `clientSecret` issuance) — no registration endpoint exists yet; provisioning
+  a broker client is an operator/platform-admin action out of scope here.
+- Route handler implementations for all three endpoints above
+  (`backend/security/src/routes/`) and their contract tests
+  (`backend/security/tests/security-api/`).
+- The themed sign-in page's `?client=&redirect_uri=` query-param handling and
+  per-product branding UI — **blocked on the design-first gate**: no approved
+  `design/frames/**` flow exists yet for the broker/branded variant of sign-in
+  (the approved `auth-experience` frames cover only FuzeFront's own
+  first-party `/login` and `/signup`, not a client-branded broker mode).
+  `product-designer` owns authoring those frames next.
+- The `fuzefront.auth.marketplace-broker` feature flag (release, default OFF)
+  — reserved as the intended flag key for the follow-up implementation PR;
+  not added to `packages/feature-flags/flag-registry.yaml` yet since it would
+  gate no code in this contract-only slice.
+
 ## 0.7.0 — Portal CRUD as org-tree operations (FF-EPIC-17-S7, unreleased)
 
 Folds portal management onto the unified organizations+parent_id org tree. A

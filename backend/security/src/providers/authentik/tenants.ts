@@ -47,6 +47,14 @@ export interface AuthentikTenant {
   adminToken: string
   /** Enrollment flow slug inside THIS tenant's Authentik. */
   enrollmentFlowSlug: string
+  /**
+   * Authentication flow slug inside THIS tenant's Authentik, driven by the
+   * server-side flow-executor (authentikPassword.ts). Each tenant's Authentik
+   * instance is free to name its login flow differently, so — like
+   * enrollmentFlowSlug — this must not fall back to a global default that
+   * silently points every tenant at the same slug.
+   */
+  authFlowSlug: string
   /** Origin the browser talks to for this tenant (same-origin API base). */
   appBaseUrl: string
   /** Whether the server-brokered social path is active for this tenant. */
@@ -131,6 +139,7 @@ function legacyTenant(): AuthentikTenant {
       process.env.AUTHENTIK_REDIRECT_URI || 'http://fuzefront.dev.local/api/auth/oidc/callback',
     adminToken: process.env.AUTHENTIK_ADMIN_TOKEN || '',
     enrollmentFlowSlug: process.env.AUTHENTIK_ENROLLMENT_FLOW_SLUG || 'fuzefront-enrollment',
+    authFlowSlug: process.env.AUTHENTIK_AUTH_FLOW_SLUG || 'default-authentication-flow',
     appBaseUrl: appBase,
     googleBrokered: process.env.SECURITY_GOOGLE_BROKERED !== 'false',
     googleClientId: process.env.GOOGLE_CLIENT_ID || undefined,
@@ -204,6 +213,10 @@ function parseTenants(json: string): AuthentikTenant[] {
       redirectUri: requireField(t, 'redirectUri', i),
       adminToken: t.adminToken || tenantSecret(t.id ?? '', 'ADMIN_TOKEN') || '',
       enrollmentFlowSlug: requireField(t, 'enrollmentFlowSlug', i),
+      // Optional, unlike enrollmentFlowSlug: every product ships a bespoke
+      // enrollment flow, but the LOGIN flow commonly stays at Authentik's
+      // own out-of-box slug unless a tenant customises it.
+      authFlowSlug: t.authFlowSlug || 'default-authentication-flow',
       appBaseUrl: requireField(t, 'appBaseUrl', i).replace(/\/$/, ''),
       googleBrokered: t.googleBrokered !== false,
       // Fall back to the platform-wide Google client when the tenant declares

@@ -20,6 +20,15 @@ export default defineConfig({
     federation({
       name: 'fuzequality',
       filename: 'remoteEntry.js',
+      // @originjs/vite-plugin-federation resolves `exposes` paths against
+      // process.cwd(), NOT vite's configured `root` above — unlike every other
+      // path in this file. package.json's `build:web` script therefore `cd`s
+      // into apps/web/ before invoking vite; running `vite build --config
+      // apps/web/vite.config.ts` from the package root (FuzeQuality/, the
+      // Docker WORKDIR) makes the plugin look for FuzeQuality/src/remote.tsx,
+      // which does not exist, and the production build fails with "Could not
+      // resolve entry module './src/remote.tsx'" — the exact failure that
+      // broke every fuzequality-release.yml run from 2026-08-19 onward.
       exposes: { './App': './src/remote.tsx' },
       // MUST match the host's shared config EXACTLY (FuzeFront
       // frontend/vite.config.ts): explicit singletons on ^19.0.0. Without

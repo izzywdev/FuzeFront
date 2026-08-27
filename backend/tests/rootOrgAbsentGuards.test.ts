@@ -1,9 +1,12 @@
 /**
  * Regression for #750 — the root org is a hard-coded CONSTANT, not a lookup,
  * and migration 015 has paths that legitimately leave the row absent. Anything
- * that then INSERTs a reference to it raises 23503, aborts the migration chain
- * and crash-loops the service on boot. That is what happened in prod on
- * 2026-08-20.
+ * that then references it without verifying — an INSERT (23503) or a bare
+ * assertion that throws — aborts the migration chain and crash-loops the
+ * service on boot. That is what happened in prod on 2026-08-20, and again via
+ * migration 026 (merged 2026-08-26), which asserted ROOT_ORG_ID must exist
+ * because "this tree owns 015" — true, but 015 owning the seed doesn't mean
+ * it succeeded in creating that row; it has legitimate branches that don't.
  *
  * The pre-existing migration tests (`rootMembershipBackfillMigration.test.ts`,
  * `backend/security/tests/migrations.rootMembershipBackfill.test.ts`) all run
@@ -13,6 +16,7 @@
  */
 import * as migration015 from '../src/migrations/015_seed_root_platform_organization'
 import * as migration022 from '../src/migrations/022_root_membership_backfill_and_personal_org_reclassify'
+import * as migration026 from '../src/migrations/026_apps_organization_id_not_null'
 
 const { ROOT_ORG_ID } = migration015
 const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
@@ -173,6 +177,79 @@ describe('#750 — nothing inserts a reference to an unverified root organizatio
 
       expect(membershipInserts(raws)).toHaveLength(1)
       expect(raws.filter(r => /UPDATE organizations/i.test(r.sql))).toHaveLength(1)
+    })
+  })
+
+  describe('migration 026 (apps.organization_id NOT NULL) — the #750 recurrence', () => {
+    // Dedicated stub: 026 needs whereNull/count/update on `apps` and
+    // schema.hasColumn, which the shared makeKnex() above does not model.
+    function makeAppsKnex(opts: { rootOrgExists: boolean; orphanApps: number }) {
+      const { rootOrgExists, orphanApps } = opts
+      const raws: Raw[] = []
+      const updates: Array<Record<string, unknown>> = []
+      const knex: any = (table: string) => {
+        const api: any = {
+          where() {
+            return api
+          },
+          whereNull() {
+            return api
+          },
+          async first() {
+            return table === 'organizations' && rootOrgExists ? { id: ROOT_ORG_ID } : undefined
+          },
+          count() {
+            return { async first() { return { n: String(orphanApps) } } }
+          },
+          async update(values: Record<string, unknown>) {
+            updates.push(values)
+            return orphanApps
+          },
+        }
+        return api
+      }
+      knex.raw = async (sql: string, bindings: unknown[] = []) => {
+        raws.push({ sql, bindings })
+        return { rowCount: 0 }
+      }
+      knex.schema = { async hasColumn() { return true } }
+      return { knex, raws, updates }
+    }
+
+    it('does NOT throw when the root org is absent and there is nothing to backfill', async () => {
+      // This is the current prod state: ROOT_ORG_ID has never been created —
+      // 015 adopted a pre-existing platform org under a different id and the
+      // #750 repoint/reparent decision has not been made — and no org-less
+      // apps exist to backfill. The pre-fix code threw unconditionally here
+      // (`organizations.${ROOT_ORG_ID} ... does not exist yet`), which is
+      // never caught (migrations abort the whole chain), so 026 never got
+      // marked applied and re-threw on every single boot — the #750
+      // crashloop, reintroduced one migration later by an assertion that
+      // conflated "015 has run" with "015 created the ROOT_ORG_ID row".
+      const { knex, raws, updates } = makeAppsKnex({ rootOrgExists: false, orphanApps: 0 })
+
+      await expect(migration026.up(knex)).resolves.toBeUndefined()
+
+      expect(updates).toHaveLength(0)
+      expect(raws.some(r => /ALTER TABLE apps/i.test(r.sql))).toBe(false)
+    })
+
+    it('throws a clear, actionable error when the root org is absent AND org-less apps need backfilling', async () => {
+      // The case that genuinely warrants failing loudly: backfilling to a
+      // still-absent ROOT_ORG_ID would violate apps_organization_id_foreign.
+      const { knex } = makeAppsKnex({ rootOrgExists: false, orphanApps: 3 })
+
+      await expect(migration026.up(knex)).rejects.toThrow(/does not exist yet/)
+    })
+
+    it('backfills and sets DEFAULT/NOT NULL once the root org exists', async () => {
+      const { knex, raws, updates } = makeAppsKnex({ rootOrgExists: true, orphanApps: 2 })
+
+      await migration026.up(knex)
+
+      expect(updates).toEqual([{ organization_id: ROOT_ORG_ID }])
+      expect(raws.some(r => /SET DEFAULT/i.test(r.sql))).toBe(true)
+      expect(raws.some(r => /SET NOT NULL/i.test(r.sql))).toBe(true)
     })
   })
 })

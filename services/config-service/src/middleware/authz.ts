@@ -52,9 +52,24 @@ const SECURITY_SERVICE_URL = process.env.SECURITY_SERVICE_URL ?? 'http://fuzefro
 export const isNoOpMode: boolean = process.env.NODE_ENV === 'test';
 
 function makeNoOpProxy(): AuthzClient {
+  // `grant`/`revoke`/`listGrants` are part of `@fuzefront/auth`'s `AuthzClient`
+  // shape but this service never calls them — config-service only ever asks
+  // authorization QUESTIONS (`check`/`bulkCheck`); granting/revoking roles is
+  // backend/security's own concern. Stubbed here only so this no-op test
+  // double keeps satisfying the interface as it grows; a real call would be a
+  // bug in this service, so each throws rather than silently no-opping.
   return {
     check: async (): Promise<AuthzDecision> => ({ allow: true }),
     bulkCheck: async (checks: AuthzCheck[]): Promise<AuthzDecision[]> => checks.map(() => ({ allow: true })),
+    grant: async (): Promise<never> => {
+      throw new Error('makeNoOpProxy: grant() is not used by config-service');
+    },
+    revoke: async (): Promise<never> => {
+      throw new Error('makeNoOpProxy: revoke() is not used by config-service');
+    },
+    listGrants: async (): Promise<never> => {
+      throw new Error('makeNoOpProxy: listGrants() is not used by config-service');
+    },
   };
 }
 

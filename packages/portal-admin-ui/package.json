@@ -37,7 +37,7 @@
   "devDependencies": {
     "@fuzefront/design-system": "1.0.0",
     "@fuzefront/portal-client": "1.0.0",
-    "@fuzefront/security-client": "0.7.0",
+    "@fuzefront/security-client": "0.8.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.0",
@@ -61,9 +61,5 @@
     "type": "git",
     "url": "https://github.com/izzywdev/FuzeFront.git",
     "directory": "packages/portal-admin-ui"
-  },
-  "engines": {
-    "node": ">=24.0.0",
-    "npm": ">=10.0.0"
   }
 }

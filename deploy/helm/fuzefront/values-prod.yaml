@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 2038552c47c2
+    tag: de3f541cc935
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 2038552c47c2
+    tag: de3f541cc935
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -116,6 +116,68 @@ securityService:
   # the existing Traefik + intra-fuzefront paths to fuzefront-security still work.
   networkPolicy:
     enabled: true
+  # ── Second identity tenant: MendysRobotics (FuzeFront#434) ─────────────────
+  # NOT YET ACTIVE. `tenants: []` (inherited from values.yaml) keeps
+  # security-service in legacy single-tenant mode — the FuzeFront tenant's
+  # behaviour is unchanged by this file. This block is the exact, ready-to-use
+  # shape for the day it CAN go live; it is commented out rather than enabled
+  # with placeholder secrets, because a tenant entry with a real clientId but
+  # no real clientSecret/adminToken does not degrade gracefully — the pod
+  # boots, then every Mendys login fails at the Authentik token exchange with
+  # no signal until someone actually tries to sign in.
+  #
+  # Three things block flipping this on, none of which this repo can supply:
+  #   1. FuzeInfra#421's authentik-mendys-server must be live and reachable at
+  #      the in-cluster address below — CONFIRM the real Service name/
+  #      namespace before copying this in; `authentik-mendys-server:9000`
+  #      (bare, no .namespace suffix — mirroring how authentik-server:9000 is
+  #      addressed above) is what the issue names, not yet independently
+  #      verified against a running FuzeInfra manifest from this repo.
+  #   2. An OIDC client + admin API token provisioned INSIDE that instance for
+  #      this platform (mirroring the akadmin bootstrap token FuzeFront's own
+  #      tenant reuses above), then sealed by the owner into the existing
+  #      `fuzefront-secrets` SealedSecret (deploy/contabo/SEAL_PROD_SECRETS.md)
+  #      under the three key names referenced below — `kubeseal` only, never
+  #      plaintext in this file or in git.
+  #   3. mendys-enrollment / mendys-login flow blueprints provisioned in that
+  #      Authentik instance (mirrors flow-enrollment.yaml / flow-authentication.yaml
+  #      for the FuzeFront tenant) — confirm the real slugs match what's below.
+  #
+  # Once all three are true: uncomment, fix any placeholder marked CONFIRM,
+  # and also uncomment the matching `ingress.tenantIdentityHosts` entry below
+  # — the two lists are independent and BOTH are required (see that value's
+  # comment in values.yaml) or logins 400 despite the tenant being declared.
+  #
+  # tenants:
+  #   - id: mendys
+  #     hosts:
+  #       - live.mendysrobotics.com
+  #       - marketplace.mendysrobotics.com
+  #     issuerUrl: https://live.mendysrobotics.com/application/o/mendys-platform/  # CONFIRM
+  #     baseUrl: http://authentik-mendys-server:9000  # CONFIRM in-cluster address
+  #     clientId: mendys-platform-oidc-client  # CONFIRM
+  #     redirectUri: https://live.mendysrobotics.com/api/auth/oidc/callback
+  #     adminTokenKey: AUTHENTIK_MENDYS_ADMIN_TOKEN        # seal into fuzefront-secrets
+  #     clientSecretKey: AUTHENTIK_MENDYS_CLIENT_SECRET    # seal into fuzefront-secrets
+  #     enrollmentFlowSlug: mendys-enrollment  # CONFIRM
+  #     authFlowSlug: mendys-login             # CONFIRM (defaults to
+  #       # default-authentication-flow if omitted — only correct if this
+  #       # instance never got a dedicated combined-stage flow like
+  #       # FuzeFront's fuzefront-auth)
+  #     appBaseUrl: https://live.mendysrobotics.com
+  #     # Per issue #434 scope item 5: this tenant's whole premise is that
+  #     # Authentik is invisible to it, so the server-brokered Google path
+  #     # must be on (never Authentik's /source/oauth/* browser redirect).
+  #     googleBrokered: true
+  #     # Per issue #434 scope item 5 ("a design question"): left UNSET here,
+  #     # which falls back to the platform-wide GOOGLE_CLIENT_ID/SECRET (see
+  #     # tenants.ts). That means a Mendys user's Google consent screen shows
+  #     # FuzeFront's app name/branding — acceptable only if the owner is fine
+  #     # with that; if not, this tenant needs its OWN Google OAuth client,
+  #     # declared as googleClientId + googleClientSecretKey (a third sealed
+  #     # key: AUTHENTIK_MENDYS_GOOGLE_CLIENT_SECRET) here. Unresolved — see
+  #     # the PR's open questions.
+
   # Social-broker return-origin allowlist (FuzeFront#352). MendysRobotics'
   # marketplace/live SPAs delegate sign-in entirely to this brokered social
   # flow and proxy /api/v1/security/* SAME-ORIGIN to fuzefront-security (see
@@ -136,7 +198,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -284,7 +346,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 2038552c47c2
+    tag: de3f541cc935
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -295,7 +357,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -339,7 +401,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -359,7 +421,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -394,7 +456,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -432,7 +494,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
   # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
   affinity:
     nodeAffinity:
@@ -564,6 +626,17 @@ ingress:
   # wildcard CNAME already exists at Cloudflare. Verify plan.fuzefront.com right
   # after the sync. Priority override: ingress.wildcardPriority.
   wildcardHost: ''
+  # Mendys identity hosts (FuzeFront#434) — DISABLED, matching
+  # securityService.tenants above; both must flip together or a request lands
+  # on a routed-but-unclaimed host (400) or a claimed-but-unrouted one (404
+  # from whatever DOES serve the host). Cloudflare Tunnel routing
+  # live./marketplace.mendysrobotics.com to THIS cluster's Traefik is a
+  # separate, FuzeInfra-owned prerequisite this list cannot satisfy on its own.
+  #
+  # tenantIdentityHosts:
+  #   - live.mendysrobotics.com
+  #   - marketplace.mendysrobotics.com
+  tenantIdentityHosts: []
   annotations: {}
   tls:
     enabled: false
@@ -686,7 +759,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -727,7 +800,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 2038552c47c2
+    tag: de3f541cc935
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -757,27 +830,36 @@ selectionListService:
 # here. The image is now built by release.yml (tag below is a real, pinned
 # release SHA, not the placeholder "" this comment used to describe).
 #
-# DISABLED, deliberately — this restores the state this file's own comment said
-# must hold. `enabled: true` was merged ahead of its preconditions and the result
-# was exactly what the comment predicted: two pods stuck in
-# CreateContainerConfigError, the oldest for 12h (see #752). A `hold`/`blocked`
-# label was the only thing preventing it, and a label is not a mechanism.
-#
-# GO-LIVE, in this order — each step must SYNC before the next is merged:
-#   1. Seal config_svc's password. Dispatch `rotate-sealed-secret` with
+# LIVE — the two-step go-live below is COMPLETE, in this order, each step
+# verified SYNCED before the next was merged (history: #752 filed the original
+# CreateContainerConfigError; #756 removed the per-service Secret in favor of
+# the pattern below and set enabled back to false; #759 sealed the password;
+# #766 verified the SealedSecret Synced in-cluster and flipped enabled back to
+# true; #767 fixed a schema-qualification bug that would have made the
+# rollout come up green and non-functional; #768 fixed a separate
+# `Cannot find module 'jose'` crash-loop in the image itself). Do not read the
+# steps below as pending — they are the record of how this got here, kept for
+# ROTATION (re-run step 1's dispatch to rotate the password) and as the
+# precedent selection-list-service's own comment (above) points back to:
+#   1. config_svc's password is sealed. It was produced by dispatching
+#      `rotate-sealed-secret` with
 #        scope    = fuzefront/fuzefront-secrets
 #        key      = CONFIG_DB_PASSWORD
 #        manifest = deploy/contabo/sealed/fuzefront-secrets.yaml
-#      It generates the value in-run, seals it offline against the published
-#      public cert, and opens a ciphertext-only PR. Merge that in a deploy window.
-#   2. Flip `enabled: true` here, in its own PR, in a deploy window.
-#      templates/config-service-db-bootstrap-job.yaml then provisions the
+#      which generates the value in-run, seals it offline against the
+#      published public cert, and opens a ciphertext-only PR.
+#   2. `enabled: true` below reflects that precondition being met.
+#      templates/config-service-db-bootstrap-job.yaml provisions the
 #      config_svc role + `config` schema in the SHARED database, exactly as
 #      billing-db-bootstrap-job.yaml does for billing_svc.
 #
-# Steps 1 and 2 CANNOT be combined. The bootstrap Job is a pre-upgrade hook, so it
-# runs BEFORE the sync wave that would apply the SealedSecret; in one change it
-# would read an absent key, fail, and fail the whole sync with it.
+# Steps 1 and 2 could not be combined in one PR: the bootstrap Job is a
+# pre-upgrade hook, so it runs BEFORE the sync wave that applies the
+# SealedSecret; doing both at once would have the Job read an absent key,
+# fail, and fail the whole sync with it. If this service is ever disabled and
+# needs to go live again (or its password needs rotating), follow the same
+# split: seal/merge first, let it sync, THEN flip `enabled`/re-verify, never
+# in the same change.
 #
 # There is no longer a `config-service-secrets` Secret. Only the PASSWORD is
 # sealed; DATABASE_URL is composed in the Deployment, and JWT_SECRET is read from

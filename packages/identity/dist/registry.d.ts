@@ -16,6 +16,11 @@ export declare const ENTITY_PREFIXES: {
     readonly conversation: "cnv";
     readonly message: "msg";
     readonly notification: "ntf";
+    readonly selectionList: "front_sl";
+    readonly selectionListItem: "front_sli";
+    readonly namespace: "cns";
+    readonly keyDefinition: "ckd";
+    readonly configHistory: "cvh";
 };
 export type EntityType = keyof typeof ENTITY_PREFIXES;
 export type EntityPrefix = (typeof ENTITY_PREFIXES)[EntityType];
