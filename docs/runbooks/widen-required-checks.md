@@ -128,6 +128,51 @@ gh api repos/izzywdev/FuzeFront/rulesets/17974934 --jq '[.rules[].type]'
 
 **Rollback:** `gh api -X PUT repos/izzywdev/FuzeFront/rulesets/17974934 --input /tmp/ruleset-before.json`
 
+### 3a. Extend the regression guard in the same change — it does not extend itself
+
+#828 (issue #286) adds `governance/required-check-triggers.json` and
+`scripts/check-required-check-triggers.mjs`: a gate that fails if a required context's
+workflow ever gains a `paths:` filter on `pull_request:`. It is the thing that stops §2's
+deadlock from being reintroduced — and its own header states the limitation plainly:
+
+> Adding a NEW required context to the ruleset? Add its workflow here in the same PR — the
+> gate is only as complete as this list.
+
+It ships listing **2** workflows. Step 3 takes the required set to **38**. Applied without
+this step, the guard silently covers 2 of 38 and the other 36 can be re-filtered by anyone,
+with nothing to catch it — a green gate measuring almost nothing, which is the exact shape
+of failure `gate-vacuous-check` exists to prevent.
+
+So once #828 has merged, add an entry for every newly-required context. The mapping is
+one workflow per group:
+
+| Workflow | Contexts it produces |
+|---|---|
+| `.github/workflows/harden-gate.yml` | `gate-authz`, `gate-localup`, `gate-version`, `gate-pagination`, `gate-identifier`, `gate-vacuous-check`, `gate-toolchain` (+ the 8 already required) |
+| `.github/workflows/ci.yml` | `Lint & Test (24.x)`, `Identity UI + Security (unit)`, `Build Applications`, `Chat service (unit)`, `Notification service (unit)`, `Applications service (unit + integration)`, `Integration Tests`, `Email Integration (MailHog)`, `Contract Tests (OpenAPI)`, `Security Scan` |
+| `.github/workflows/security.yml` | `CodeQL Analysis (javascript)`, `Dependency Review`, `NPM Security Audit`, `Container Security Scan`, `Secret Scanning`, `Snyk Security Scan` |
+| `.github/workflows/backend-tests.yml` | `Backend tests (Node 24.x)`, `Permit.io integration tests` |
+| `.github/workflows/billing-service-tests.yml` | `Billing service DB integration + acceptance` |
+| `.github/workflows/custom-hostname-client-tests.yml` | `Client tests vs FuzeInfra stub` |
+| `.github/workflows/e2e.yml` | `Playwright sign-in flow` |
+
+Add `gate-openapi-conformance.yml` and `gate-route-ownership.yml` too once #844 and step 4
+land, since unfiltering them is exactly the property this guard protects.
+
+Verify the guard actually covers the set — the two counts must match:
+
+```bash
+node scripts/check-required-check-triggers.mjs
+python3 - <<'PY'
+import json
+listed = {w['context'] for w in json.load(open('governance/required-check-triggers.json'))['workflows']}
+want   = set(json.load(open('governance/required-status-checks.json'))['contexts'])
+missing = want - listed
+print(f"required={len(want)} guarded={len(listed & want)} UNGUARDED={len(missing)}")
+for m in sorted(missing): print("  -", m)
+PY
+```
+
 ## 4. Follow-up — unfilter the path-filtered gates, then require them
 
 For each workflow in the second row of the table above: remove `paths:` from the
