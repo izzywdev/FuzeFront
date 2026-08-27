@@ -61,6 +61,16 @@ RUN apk add --no-cache dumb-init && \
 
 COPY --from=base /app/services/billing-service/node_modules ./services/billing-service/node_modules
 COPY --from=build /app/shared/dist ./shared/dist
+# shared/package.json carries the `exports` map that makes `@fuzefront/shared/kafka`
+# (the supported subpath — see src/index.ts et al.) resolvable at all: with no
+# package.json here, Node has no `exports` to consult and a subpath import beyond
+# the package root simply 404s (MODULE_NOT_FOUND), it does not "fall back" to
+# anything. Omitting this file is NOT a safe shortcut — a prior version of this
+# image omitted it, which happened to make an undeclared deep path
+# (`@fuzefront/shared/dist/kafka`) resolve by accident (no exports map to enforce
+# against). That was the bug fixed here (issue #753); this COPY is what makes the
+# *correct* subpath import work in the image the same way it works locally.
+COPY --from=build /app/shared/package.json ./shared/package.json
 # shared/dist/kafka/* does require('zod') + kafkajs at runtime, resolved by walking
 # UP from the file → it reaches /app/node_modules. The service deps (which include
 # zod + kafkajs) only sat in the sibling services/billing-service/node_modules,

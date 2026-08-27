@@ -5,7 +5,7 @@ import {
   identityOrgDeletedSchemaV1,
   IdentityOrgDeletedPayloadV1,
   FuzeEvent,
-} from '@fuzefront/shared/dist/kafka';
+} from '@fuzefront/shared/kafka';
 import {
   handleOrgDeleted,
   OrgDeletedHandlerDeps,

@@ -3,7 +3,7 @@ import {
   TypedConsumer,
   TypedProducer,
   FuzeEvent,
-} from '@fuzefront/shared/dist/kafka';
+} from '@fuzefront/shared/kafka';
 import {
   applyEventToRefIndex,
   REF_INDEX_TOPICS,
