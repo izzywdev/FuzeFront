@@ -124,6 +124,32 @@ export const permitSchema: PermitSchema = {
         read: action('Read'),
       },
     },
+    // Platform S2S identity foundation (izzywdev/FuzeFront#648). A generic
+    // resource TYPE for machine-to-machine call targets — instances are keyed
+    // per S2S relationship (e.g. "fuzecall_control_plane", "fuzex_frames"),
+    // never as new resource *types*, so onboarding a new S2S consumer never
+    // needs a schema change here. A service account (synced as a Permit user
+    // via utils/permit/machine-roles.ts's syncMachineIdentityToPermit, key
+    // `svc:<client_id>`) is granted `invoke` on a specific instance via the
+    // `s2s-caller` resource-instance role — see grantServiceInvoke /
+    // revokeServiceInvoke in that same file, and
+    // docs/runbooks/s2s-client-credentials.md for the end-to-end recipe.
+    {
+      key: 'ServiceEndpoint',
+      name: 'Service Endpoint',
+      actions: {
+        invoke: action('Invoke'),
+      },
+      roles: {
+        's2s-caller': {
+          name: 'S2S Caller',
+          // Direct assignment only — no `granted_to` derivation. Each S2S
+          // relationship is a deliberate, individually-revocable grant; nothing
+          // should inherit `invoke` on a service endpoint transitively.
+          permissions: ['invoke'],
+        },
+      },
+    },
     {
       key: 'Chat',
       name: 'Chat',
