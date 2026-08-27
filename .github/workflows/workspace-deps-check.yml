@@ -36,5 +36,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.x'
+      # The range comparator is hand-rolled (no `npm ci` here, so no `semver`), which
+      # makes it the part of this gate most able to be quietly wrong. Test it before
+      # trusting it — a green gate backed by a broken comparator is worse than no gate.
+      - name: Unit-test the range comparator
+        run: node --test scripts/__tests__/check-workspace-deps.test.mjs
+
       - name: Check workspace dependency wiring
         run: node scripts/check-workspace-deps.mjs
