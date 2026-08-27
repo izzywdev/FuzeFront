@@ -21,6 +21,7 @@ const AUTHN_TAGS = new Set([
   'session',
   'social',
   'signup',
+  'broker',
   'capabilities',
   'mfa',
   'verify',
@@ -72,13 +73,17 @@ describe('pagination gate — frozen contract', () => {
 
   it('every paginated collection uses the { items, page } envelope', () => {
     const paginated = endpoints.filter((e) => e.paginated)
-    // In the frozen spec these are AuthZ/tenants (Phase 2), not AuthN.
+    // In the frozen spec these are AuthZ/tenants/organizations (Phase 2), not
+    // AuthN. `get /v1/security/employee/orgs` (FF-EPIC-17-S9, #698) was added
+    // to the spec without updating this list — fixed here on discovery
+    // (untouched, this assertion was already failing on master).
     expect(paginated.map((e) => `${e.method} ${e.path}`).sort()).toEqual([
       'get /v1/security/authz/grants',
+      'get /v1/security/employee/orgs',
       'get /v1/security/tenants',
       'get /v1/security/tenants/{tenantId}/members',
     ])
-    const pageSchemas = ['GrantPage', 'TenantPage', 'MemberPage']
+    const pageSchemas = ['GrantPage', 'TenantPage', 'MemberPage', 'EmployeeOrgPage']
     for (const name of pageSchemas) {
       const s = spec.components.schemas[name]
       expect(s.required).toEqual(expect.arrayContaining(['items', 'page']))
