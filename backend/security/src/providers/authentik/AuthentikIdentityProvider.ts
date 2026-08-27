@@ -150,6 +150,12 @@ interface SocialState {
    * externalize for multi-replica — see [[Redis externalization]].
    */
   mode: 'brokered' | 'source'
+  /**
+   * Allowlisted return origin captured at start (FuzeFront#352) — see
+   * `socialReturnOrigins.ts`. `undefined` = use the ambient tenant's
+   * `appBaseUrl()`, exactly as before this field existed.
+   */
+  returnOrigin?: string
 }
 interface MfaChallenge {
   userId: string
@@ -423,7 +429,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   // so no Authentik `/if/*` UI is ever rendered. The legacy Authentik
   // `/source/oauth/*` source-redirect path is kept as a fallback (flag off) until
   // the brokered path is proven.
-  async startSocialLogin(provider: string, redirectTo = '/'): Promise<SocialLoginStart> {
+  async startSocialLogin(provider: string, redirectTo = '/', returnOrigin?: string): Promise<SocialLoginStart> {
     if (provider !== 'google') {
       throw new InvalidInputError(`unsupported social provider: ${provider}`)
     }
@@ -432,9 +438,9 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       throw new InvalidInputError('redirectTo must be a same-origin path')
     }
     if (googleBrokeredEnabled()) {
-      return this.startGoogleBrokered(redirectTo)
+      return this.startGoogleBrokered(redirectTo, returnOrigin)
     }
-    return this.startSocialLoginViaSource(provider, redirectTo)
+    return this.startSocialLoginViaSource(provider, redirectTo, returnOrigin)
   }
 
   /**
@@ -444,7 +450,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
    * verifier is held in the process-local Map (single replica) —
    * TODO(redis): externalize for multi-replica — see [[Redis externalization]].
    */
-  private async startGoogleBrokered(redirectTo: string): Promise<SocialLoginStart> {
+  private async startGoogleBrokered(redirectTo: string, returnOrigin?: string): Promise<SocialLoginStart> {
     if (!this.googleClient.isInitialized()) {
       await this.googleClient.initialize()
     }
@@ -455,6 +461,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       redirectTo,
       expiresAt: this.now() + 10 * 60_000,
       mode: 'brokered',
+      returnOrigin,
     })
     // `url` is the absolute accounts.google.com authorize URL — the ONLY external
     // host the browser is allowed to see besides app.fuzefront.com.
@@ -462,7 +469,11 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   /** Legacy Authentik source-redirect start (fallback; browser transits `/if/*`). */
-  private async startSocialLoginViaSource(provider: string, redirectTo = '/'): Promise<SocialLoginStart> {
+  private async startSocialLoginViaSource(
+    provider: string,
+    redirectTo = '/',
+    returnOrigin?: string
+  ): Promise<SocialLoginStart> {
     if (!this.oidc.isInitialized()) {
       await this.oidc.ensureInitialized()
     }
@@ -498,6 +509,7 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       redirectTo,
       expiresAt: this.now() + 10 * 60_000,
       mode: 'source',
+      returnOrigin,
     })
     // codeVerifier is handed back so the route can persist it in an HttpOnly
     // cookie (`oidc_cv`) for the replica-agnostic OIDC callback.
@@ -563,7 +575,18 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       user: session.user,
       expiresAt: this.now() + CODE_TTL_MS,
     })
-    return { code, redirectTo: st.redirectTo || '/' }
+    return { code, redirectTo: st.redirectTo || '/', returnOrigin: st.returnOrigin }
+  }
+
+  /**
+   * Non-consuming peek at the return origin recorded for a pending `state` —
+   * used by the callback ROUTE to pick a redirect destination for an error
+   * that short-circuits before (or instead of) calling `brokerCallback`
+   * (e.g. the provider's own `error=access_denied`). Does not delete the
+   * entry: `brokerCallback` remains the single place state is consumed.
+   */
+  peekSocialReturnOrigin(state: string): string | undefined {
+    return this.socialStates.get(state)?.returnOrigin
   }
 
   async exchangeCode(code: string): Promise<BrokeredSession> {

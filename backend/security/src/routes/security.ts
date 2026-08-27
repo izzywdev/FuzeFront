@@ -22,6 +22,7 @@ import {
   emailVerificationEnabled,
 } from '../providers/authentik/AuthentikIdentityProvider'
 import { appBaseUrl } from '../providers/authentik/config'
+import { resolveAllowedReturnOrigin } from '../providers/authentik/socialReturnOrigins'
 import { findUserPk, setUserPassword, PasswordPolicyError } from '../providers/authentik/accountApi'
 import type {
   BrokeredSession,
@@ -276,7 +277,15 @@ router.post('/session/password/reset-confirm', async (req: Request, res: Respons
 router.get('/social/:provider/start', async (req: Request, res: Response) => {
   try {
     const redirectTo = typeof req.query.redirectTo === 'string' ? req.query.redirectTo : '/'
-    const { redirectUrl, state, codeVerifier } = await getIdentityProvider().startSocialLogin(req.params.provider, redirectTo)
+    // Exact-match allowlist only (FuzeFront#352) — see socialReturnOrigins.ts.
+    // undefined when the request's Host isn't allowlisted, which keeps the
+    // existing appBaseUrl()-only behaviour for every other caller.
+    const returnOrigin = resolveAllowedReturnOrigin(req)
+    const { redirectUrl, state, codeVerifier } = await getIdentityProvider().startSocialLogin(
+      req.params.provider,
+      redirectTo,
+      returnOrigin
+    )
     // The authorize URL's redirect_uri is the OIDC client's registered callback
     // (`/api/auth/oidc/callback`), so the browser returns THERE after Google
     // consent. That handler is replica-agnostic via the oidc_state + oidc_cv
@@ -297,6 +306,13 @@ router.get('/social/:provider/start', async (req: Request, res: Response) => {
 
 // GET /v1/security/social/callback — broker callback, 302 back to app with ?code=
 router.get('/social/callback', async (req: Request, res: Response) => {
+  // Resolved ONCE, before the exchange, via a non-consuming peek at the
+  // pending state (FuzeFront#352) — so an allowlisted return origin also
+  // applies to the fail-closed error redirect below, not just the success
+  // path. Falls back to the ambient tenant's appBaseUrl() when the state is
+  // unknown/expired or the provider declares no return-origin support.
+  const statePeek = typeof req.query.state === 'string' ? req.query.state : ''
+  const destOrigin = getIdentityProvider().peekSocialReturnOrigin?.(statePeek) ?? appBaseUrl()
   try {
     const code = typeof req.query.code === 'string' ? req.query.code : ''
     const state = typeof req.query.state === 'string' ? req.query.state : ''
@@ -308,16 +324,17 @@ router.get('/social/callback', async (req: Request, res: Response) => {
     // Clear the state cookie; append the FuzeFront opaque code (never a token).
     res.setHeader('Set-Cookie', ['sec_social_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/'])
     const sep = result.redirectTo.includes('?') ? '&' : '?'
+    const origin = result.returnOrigin ?? destOrigin
     // A LINK handshake mints no session, so there is no code to redeem — send
     // the browser back with a neutral confirmation instead.
     const dest = result.linked
-      ? `${appBaseUrl()}${result.redirectTo}${sep}linked=${encodeURIComponent(result.provider ?? '')}`
-      : `${appBaseUrl()}${result.redirectTo}${sep}code=${encodeURIComponent(result.code)}`
+      ? `${origin}${result.redirectTo}${sep}linked=${encodeURIComponent(result.provider ?? '')}`
+      : `${origin}${result.redirectTo}${sep}code=${encodeURIComponent(result.code)}`
     res.redirect(302, dest)
   } catch (err) {
     // Fail-closed: send the browser back to the app with a neutral error.
     res.setHeader('Set-Cookie', ['sec_social_state=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/'])
-    res.redirect(302, `${appBaseUrl()}/?error=authentication_failed`)
+    res.redirect(302, `${destOrigin}/?error=authentication_failed`)
   }
 })
 
@@ -331,10 +348,17 @@ router.get('/social/callback', async (req: Request, res: Response) => {
 // State + PKCE are held server-side in the provider's Map (single replica) — no
 // cookie round-trip needed for this path.
 router.get('/social/google/callback', async (req: Request, res: Response) => {
+  // Resolved ONCE, up front, via a non-consuming peek at the pending state
+  // (FuzeFront#352) — applies the allowlisted return origin to every exit
+  // from this handler, including Google's own error param below and the
+  // fail-closed catch. Falls back to appBaseUrl() when the state is
+  // unknown/expired/absent or the provider declares no return-origin support.
+  const statePeek = typeof req.query.state === 'string' ? req.query.state : ''
+  const destOrigin = getIdentityProvider().peekSocialReturnOrigin?.(statePeek) ?? appBaseUrl()
   // Google can return an explicit error (e.g. the user denied consent). Never
   // leak provider detail to the app — send a neutral error back.
   if (typeof req.query.error === 'string' && req.query.error) {
-    res.redirect(302, `${appBaseUrl()}/?error=authentication_failed`)
+    res.redirect(302, `${destOrigin}/?error=authentication_failed`)
     return
   }
   try {
@@ -346,15 +370,16 @@ router.get('/social/google/callback', async (req: Request, res: Response) => {
     if (!code || !state) throw new InvalidInputError('code and state are required')
     const result = await getIdentityProvider().brokerCallback({ code, state, iss }, sessionContext(req))
     const sep = result.redirectTo.includes('?') ? '&' : '?'
+    const origin = result.returnOrigin ?? destOrigin
     // A LINK handshake mints no session (no code to redeem) — return a neutral
     // confirmation instead.
     const dest = result.linked
-      ? `${appBaseUrl()}${result.redirectTo}${sep}linked=${encodeURIComponent(result.provider ?? '')}`
-      : `${appBaseUrl()}${result.redirectTo}${sep}code=${encodeURIComponent(result.code)}`
+      ? `${origin}${result.redirectTo}${sep}linked=${encodeURIComponent(result.provider ?? '')}`
+      : `${origin}${result.redirectTo}${sep}code=${encodeURIComponent(result.code)}`
     res.redirect(302, dest)
   } catch (err) {
     // Fail-closed: neutral error back to the app. Never surface tokens or vendor.
-    res.redirect(302, `${appBaseUrl()}/?error=authentication_failed`)
+    res.redirect(302, `${destOrigin}/?error=authentication_failed`)
   }
 })
 

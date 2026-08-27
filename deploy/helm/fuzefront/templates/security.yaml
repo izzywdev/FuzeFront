@@ -88,6 +88,17 @@ spec:
                   key: SESSION_SECRET
             - name: FRONTEND_URL
               value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}"
+            {{- if .Values.securityService.socialReturnOrigins }}
+            # Social-broker return-origin allowlist (FuzeFront#352) — see
+            # providers/authentik/socialReturnOrigins.ts. Additive only: this
+            # never changes which identity backend/tenant serves a request
+            # (unlike SECURITY_TENANTS above), only which allowlisted origin
+            # the FINISHED brokered-social-login redirect may target instead
+            # of FRONTEND_URL. Absent/empty (the default) = unchanged
+            # behaviour for every deployment that hasn't set this.
+            - name: SECURITY_SOCIAL_RETURN_ORIGINS
+              value: {{ .Values.securityService.socialReturnOrigins | join "," | quote }}
+            {{- end }}
             - name: PERMIT_API_KEY
               valueFrom:
                 secretKeyRef:
