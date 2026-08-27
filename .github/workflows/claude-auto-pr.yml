@@ -113,11 +113,65 @@ jobs:
           BRANCH: ${{ github.ref_name }}
           BASE: ${{ github.event.repository.default_branch }}
         run: |
-          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$existing" ]; then
-            echo "PR #$existing already open for $BRANCH — the agent did its job. Nothing to do."
-            exit 0
-          fi
+          # ---------------------------------------------------------------------
+          # "Is this branch still work in need of a PR?" — asked in THREE places
+          # below (up front, inside the grace loop, and after it closes), because
+          # the answer can change during the five minutes we wait.
+          #
+          # Until 2026-08-27 the only question asked was "is there an OPEN PR?",
+          # and that is not the same question. Two happy-path endings both look
+          # like "no open PR" and both produced a red X plus a summary telling a
+          # human to salvage work that was already safely merged:
+          #
+          #   1. THE BRANCH IS GONE. auto-merge.yml runs `gh pr merge --auto
+          #      --squash --delete-branch`, so a successful merge deletes the
+          #      branch — and a push-triggered run of THIS workflow can still be
+          #      sitting in its grace window when that happens. Observed live on
+          #      #834: `gh pr create` came back "Head sha can't be blank, Base sha
+          #      can't be blank, No commits between master and
+          #      claude/issue-238-themed-signin-consumer, Head ref must be a
+          #      branch" — four symptoms of one cause, a head ref that no longer
+          #      exists — and the job then waited the full 300s and failed.
+          #
+          #      The pre-existing `git rev-list origin/BASE..origin/BRANCH` guard
+          #      does NOT cover this: it reads remote-tracking refs frozen at
+          #      checkout time, so a branch deleted after checkout still looks
+          #      present and (because the merge was a SQUASH, giving master a new
+          #      commit rather than these commits) still looks ahead of base.
+          #
+          #   2. ITS PR MERGED. Same race, branch retained. `--state open` finds
+          #      nothing and the merged PR goes unseen.
+          #
+          # A closed-but-NOT-merged PR is deliberately not an exit: the branch has
+          # commits, nobody is going to merge them, and that is exactly what this
+          # detector is for.
+          #
+          # This matters more than an ordinary false positive. The whole design
+          # note above ("A detector that cries wolf on the happy path gets
+          # ignored, which is the actual failure mode worth engineering against")
+          # is the reason the 300s grace window exists at all. Failing on a branch
+          # that merged SUCCESSFULLY is the same bug the grace window was added to
+          # fix, arriving from the other end of the PR's life.
+          resolved() {
+            # Branch deleted server-side (404) — merged-and-deleted, or reaped.
+            if ! gh api "repos/${GITHUB_REPOSITORY}/branches/${BRANCH}" >/dev/null 2>&1; then
+              echo "Branch $BRANCH no longer exists on the remote — its PR merged with --delete-branch, or it was reaped. Nothing to strand."
+              return 0
+            fi
+            open_pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+            if [ -n "$open_pr" ]; then
+              echo "PR #$open_pr is open for $BRANCH — the agent did its job. Nothing to do."
+              return 0
+            fi
+            merged_pr=$(gh pr list --head "$BRANCH" --state merged --json number --jq '.[0].number' 2>/dev/null || true)
+            if [ -n "$merged_pr" ]; then
+              echo "PR #$merged_pr for $BRANCH is already MERGED — the work landed. Nothing to strand."
+              return 0
+            fi
+            return 1
+          }
+
+          if resolved; then exit 0; fi
 
           # A branch with no commits ahead of base is not stranded — it is empty.
           if ! git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
@@ -167,9 +221,10 @@ jobs:
           INTERVAL=20
           waited=0
           while [ "$waited" -lt "$GRACE_SECONDS" ]; do
-            existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
-            if [ -n "$existing" ]; then
-              echo "PR #$existing appeared after ${waited}s — the agent did its job. Nothing to do."
+            # Re-ask the FULL question, not just "is a PR open?" — the branch can
+            # be merged and deleted out from under us mid-window (see `resolved`).
+            if resolved; then
+              echo "  (resolved after ${waited}s)"
               exit 0
             fi
             sleep "$INTERVAL"
@@ -177,11 +232,10 @@ jobs:
             echo "No PR for $BRANCH yet (waited ${waited}s of ${GRACE_SECONDS}s) — still within the agent's grace window."
           done
 
-          # Final check after the window closes, so a PR opened during the last
-          # interval is not missed.
-          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
-          if [ -n "$existing" ]; then
-            echo "PR #$existing appeared just as the grace window closed — nothing to do."
+          # Final check after the window closes, so a PR opened — or a merge
+          # completed — during the last interval is not missed.
+          if resolved; then
+            echo "  (resolved just as the grace window closed)"
             exit 0
           fi
 
