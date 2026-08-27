@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { Permit } from 'permitio'
 
 interface PermitConfig {
@@ -5,6 +6,7 @@ interface PermitConfig {
   pdp: string
   debug?: boolean
   syncInterval?: number
+  apiTimeoutMs: number
 }
 
 // Load configuration from environment variables
@@ -13,6 +15,15 @@ const config: PermitConfig = {
   pdp: process.env.PERMIT_PDP_URL || 'http://localhost:7766',
   debug: process.env.PERMIT_DEBUG === 'true',
   syncInterval: parseInt(process.env.PERMIT_SYNC_INTERVAL || '10000'),
+  // The permitio SDK's OWN default (ConfigFactory.defaults()) creates its REST
+  // API axios instance with `axios.create()` and NO timeout — `config.timeout`
+  // only bounds permit.check() calls, never permit.api.resources/roles.*. So a
+  // TCP connection to the Permit cloud API (api.permit.io) that connects but
+  // never responds hangs the calling process FOREVER, with no client-side
+  // signal. This is exactly what stalled `permit-schema-sync` mid-loop in
+  // FuzeFront#760: real work logged, then silence, for 2m+ with no error and
+  // no timeout to trip. Give the REST client an explicit bound.
+  apiTimeoutMs: parseInt(process.env.PERMIT_API_TIMEOUT_MS || '30000'),
 }
 
 // Validate required configuration
@@ -74,6 +85,11 @@ if (isNoOpMode) {
       level: config.debug ? 'debug' : 'error',
     },
     throwOnError: false,
+    // Bounds permit.check() — see apiTimeoutMs comment above.
+    timeout: config.apiTimeoutMs,
+    // Bounds permit.api.resources/roles.* (what sync-permit-schema.js calls).
+    // The SDK's own default axios instance (`axios.create()`) has none.
+    axiosInstance: axios.create({ timeout: config.apiTimeoutMs }),
   })
 }
 

@@ -13,6 +13,18 @@ metadata:
     "helm.sh/hook-weight": "5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
+  # FuzeFront#760: this Job calls the Permit CLOUD API (api.permit.io), an
+  # external dependency outside this cluster. `backoffLimit` bounds RETRIES
+  # after a failed attempt, but does nothing for an attempt that never fails —
+  # it just never returns. Every sibling PostSync hook here finishes in
+  # 9-21s; if this one is still running past a couple of minutes it is
+  # hanging, not doing legitimate work, and a hung PostSync hook blocks every
+  # hook at every LATER weight (consumer-registration-seed-job among them)
+  # forever, with Argo showing "Progressing" and no error to page on.
+  # `activeDeadlineSeconds` converts an indefinite black hole into a bounded,
+  # attributable Job failure. 120s is generous headroom over the ~15s this
+  # job normally takes end-to-end.
+  activeDeadlineSeconds: 120
   backoffLimit: 3
   ttlSecondsAfterFinished: 600
   template:
