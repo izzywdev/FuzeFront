@@ -322,6 +322,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/broker/clients/{client}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve a registered consumer product's public sign-in branding
+         * @description Public, unauthenticated. Lets the themed sign-in page render a registered consumer product's branding (name/logo/accent/tagline) before the user authenticates. Returns ONLY public branding — never `redirectUris` or any credential. Fail-closed on an unknown `client`: 404, so the sign-in page falls back to default FuzeFront branding rather than inventing a product identity.
+         */
+        get: operations["getBrokerClient"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/broker/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mint a one-time handoff code back to a registered product's callback
+         * @description Called by the FuzeFront-hosted themed sign-in page immediately AFTER the user completes password or social authentication in-page (this endpoint does not itself authenticate the user — it requires the session token just established by `POST /v1/security/session` or `POST /v1/security/session/exchange`). Validates `redirectUri` against the `client`'s registered allowlist server-side — fail-closed: anything not an EXACT allowlisted entry is rejected, no prefix/subdomain match. On success mints a single-use, short-lived opaque code (the SAME store `social/callback` uses — one code format, one redemption path, see `backend/security/src/services/ brokerCodes.ts`) and returns the full redirect target with the code appended as a query param. The caller (the SPA) performs the actual browser navigation; the code is single-use and short-lived, and is never logged. The product's BACKEND then redeems it server-to-server via `POST /v1/security/broker/token-exchange` — no bearer token is ever visible to or stored by the browser at the product origin.
+         */
+        post: operations["brokerHandoff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/broker/token-exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Server-to-server redemption of a handoff code for a session
+         * @description Called by the PRODUCT'S BACKEND (never the browser) to redeem the single-use code minted by `POST /v1/security/broker/handoff` for a `SessionResult`. Authenticated by `client` + `clientSecret` in the body — a confidential-client credential issued at broker-client registration, distinct from both the end-user's session and from #648's platform S2S service-account tokens (this is a per-CONSUMER broker credential, not a platform M2M identity). Fail-closed: an unknown `client`, a wrong `clientSecret`, or an unknown/expired/ already-redeemed `code` all return the SAME generic 401 — never distinguishing which check failed, so this endpoint cannot be used as a client-secret or code-guessing oracle. The code is consumed (single-use) on lookup regardless of outcome.
+         */
+        post: operations["brokerTokenExchange"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/authz/check": {
         parameters: {
             query?: never;
@@ -1001,6 +1061,36 @@ export interface components {
             /** @description The single-use opaque code from the social callback redirect. */
             code: string;
         };
+        /** @description Public projection of a registered consumer-product broker client — branding ONLY. Never includes `redirectUris` or `clientSecret`; those are registration-time, server-side data with no public read endpoint in this contract slice. */
+        BrokerClient: {
+            /** @description The broker client key, echoed back. */
+            client: string;
+            branding: components["schemas"]["PortalBranding"];
+        };
+        /** @description Sent by the themed sign-in page immediately after the user authenticates, carrying the SAME `client`/`redirectUri` the product originally sent as `?client=&redirect_uri=` on the sign-in page's own URL — this endpoint re-validates them server-side rather than trusting the query string the SPA read. */
+        BrokerHandoffRequest: {
+            /** @description The broker client key. */
+            client: string;
+            /**
+             * Format: uri
+             * @description Must be an EXACT match against an entry in the client's registered redirect-URI allowlist. No wildcard, prefix, or subdomain matching.
+             */
+            redirectUri: string;
+        };
+        /** @description The validated `redirectUri` with a single-use, short-lived opaque `code` query param appended. The SPA navigates the browser here; no other token is ever attached to this URL. */
+        BrokerHandoffResult: {
+            /** Format: uri */
+            redirectUri: string;
+        };
+        /** @description Server-to-server credential presentation. `clientSecret` MUST NEVER be sent from a browser context — it is a confidential-client secret held only by the product's own backend. */
+        BrokerTokenExchangeRequest: {
+            /** @description The broker client key. */
+            client: string;
+            /** @description The confidential-client secret issued at broker-client registration. */
+            clientSecret: string;
+            /** @description The single-use opaque code from `POST /v1/security/broker/handoff`. */
+            code: string;
+        };
         /** @description Current identity plus hydrated user. */
         SessionInfo: {
             identity: components["schemas"]["Identity"];
@@ -1507,7 +1597,7 @@ export interface components {
         ErrorBody: {
             error: string;
             /** @enum {string} */
-            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "UNKNOWN";
+            code: "NO_TOKEN" | "MALFORMED" | "INVALID_SIGNATURE" | "EXPIRED" | "NOT_ACTIVE" | "INVALID_ISSUER" | "INVALID_AUDIENCE" | "MISSING_CLAIM" | "JWKS_UNAVAILABLE" | "VERIFIER_UNAVAILABLE" | "INVALID_CREDENTIALS" | "INVALID_CODE" | "REDIRECT_URI_NOT_ALLOWED" | "CONFLICT" | "FORBIDDEN" | "NOT_FOUND" | "PROVIDER_UNAVAILABLE" | "UNKNOWN";
         };
     };
     responses: {
@@ -2083,6 +2173,97 @@ export interface operations {
             };
             /** @description Rate limit exceeded (per-IP enumeration guard). */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    getBrokerClient: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The consumer product's registered broker client key (e.g. `mendys-datasets`). Opaque handle, NOT a FuzeFront app-registry `slug` — see the `slug`/serve-path independence rule; a broker client key identifies who is receiving the handoff, not what is federated into the shell. */
+                client: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public branding for the registered client. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrokerClient"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    brokerHandoff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrokerHandoffRequest"];
+            };
+        };
+        responses: {
+            /** @description The product's redirect_uri with a single-use `?code=` appended. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrokerHandoffResult"];
+                };
+            };
+            /** @description Unknown `client`, or `redirectUri` is not an exact match in that client's registered allowlist. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    brokerTokenExchange: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrokerTokenExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Authenticated session, or an MFA-required challenge. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResult"];
+                };
+            };
+            /** @description Invalid client credentials or an unknown/expired/already-redeemed code. Deliberately undifferentiated (see description) — never an oracle. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

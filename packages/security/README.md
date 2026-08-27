@@ -21,6 +21,13 @@ path, schema name, field, config key, or doc. Open-standard protocol terms
 - **AuthN** — `POST/GET/DELETE /session`, `POST /session/exchange`,
   `GET /social/{provider}/start`, `GET /social/callback`, `POST /signup`,
   `GET /methods`.
+- **Broker** (marketplace / consumer-product handoff, #238) —
+  `GET /broker/clients/{client}`, `POST /broker/handoff`,
+  `POST /broker/token-exchange`. A registered consumer product sends its user
+  to FuzeFront's own themed sign-in UI and redeems a single-use,
+  server-to-server code for a session — no token ever transits a URL,
+  fragment, or referrer. Contract-frozen; route handlers + `BrokerClient`
+  registration are a follow-up (see `CHANGELOG.md` 0.8.0 "Deferred").
 - **AuthZ** — `POST /authz/check`, `POST /authz/bulk-check`,
   `GET /authz/permissions`, and tenant/member/role management under `/tenants`.
 - **M2M** — `POST /tokens`, `POST /tokens/introspect`.
