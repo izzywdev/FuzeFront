@@ -53,8 +53,21 @@ Audited every workflow's `on.pull_request` trigger:
 | `harden-gate.yml` (16 `gate-*` jobs), `ci.yml`, `backend-tests.yml`, `billing-service-tests.yml`, `custom-hostname-client-tests.yml`, `e2e.yml`, `security.yml`, `workspace-deps-check.yml`, `gate-sealed-keys.yml` | **unfiltered** — safe to require |
 | `gate-openapi-conformance.yml`, `gate-route-ownership.yml`, `image-reproducibility.yml`, `helm-validate.yml`, `gate-frames-first.yml`, `gate-frames-stamped.yml`, `gate-mcp-contract.yml`, `oidc-plumbing-e2e.yml` | **path-filtered** — requiring these as they stand would deadlock PRs |
 
-`Generate SBOM` is excluded separately: it concludes `skipped` on every PR — a generator,
-not a gate.
+Two checks are excluded for reasons unrelated to path filtering:
+
+- **`Generate SBOM`** concludes `skipped` on every PR — a generator, not a gate.
+- **`gate-code-review`** is `runs-on: fuzefront` — a **self-hosted** runner — with no
+  `timeout-minutes`. Requiring it would let one offline runner block every merge in the
+  repo, permanently and with no red to look at. This is not hypothetical: measured
+  2026-08-27, the job completes in **12–14 seconds** when the runner picks it up, but
+  **17 PRs sat queued for up to an hour** with nothing completing after 09:08Z — including
+  the PR at the front of the merge queue. Requireable only once it has a GitHub-hosted
+  fallback, or a timeout that **fails** rather than hangs.
+
+**A required check must be able to fail.** A check that can only pass or hang is worse than
+no check: the deadlock it produces is indistinguishable from CI still running, so nobody
+knows to go look. `gate-code-review` and every path-filtered gate above fail that test in
+different ways — one hangs waiting for a runner, the others are never created at all.
 
 **This is worth reading twice: several of the most valuable gates are in the second row.**
 `shipped code matches the frozen contract` — the check that would have caught
@@ -102,7 +115,7 @@ PY
 gh api -X PUT repos/izzywdev/FuzeFront/rulesets/17974934 --input /tmp/ruleset-after.json
 ```
 
-Verify — the count must read 39, `strict` must stay `true`, and all four rule types must
+Verify — the count must read 38, `strict` must stay `true`, and all four rule types must
 survive (the PUT replaces the array, so a dropped `pull_request` rule would silently remove
 the approval requirement):
 

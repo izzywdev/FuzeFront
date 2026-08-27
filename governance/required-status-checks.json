@@ -28,7 +28,6 @@
     "Snyk Security Scan",
     "gate-authz",
     "gate-build",
-    "gate-code-review",
     "gate-dependency-scan",
     "gate-ds-conformance",
     "gate-frontend-build",
@@ -54,6 +53,7 @@
     "Feature UI has approved design frames": "path-filtered trigger",
     "gate-mcp-contract": "path-filtered trigger",
     "gate-frames-stamped": "path-filtered trigger",
-    "OIDC plumbing (local user, no Google)": "path-filtered trigger"
+    "OIDC plumbing (local user, no Google)": "path-filtered trigger",
+    "gate-code-review": "runs-on: fuzefront (SELF-HOSTED) with no timeout-minutes \u2014 an offline runner would block every merge in the repo permanently. Measured 2026-08-27: it completes in 12-14s when the runner picks it up, but 17 PRs sat queued for up to an hour with nothing completing after 09:08Z. Requireable only once it has a GitHub-hosted fallback or a timeout that fails rather than hangs."
   }
 }
