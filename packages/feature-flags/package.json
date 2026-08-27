@@ -58,9 +58,5 @@
       "import": "./dist/web.js",
       "require": "./dist/web.cjs"
     }
-  },
-  "engines": {
-    "node": ">=24.0.0",
-    "npm": ">=10.0.0"
   }
 }

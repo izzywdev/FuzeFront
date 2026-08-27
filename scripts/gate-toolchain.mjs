@@ -6,6 +6,14 @@
 //
 // Checks, per CLAUDE.md's table:
 //   - .nvmrc == 24
+//   - no package.json declares the same top-level key twice (#755). JSON.parse
+//     silently keeps the LAST occurrence of a duplicate key, which is exactly
+//     why a duplicated `engines` block was invisible to this gate for months —
+//     it parsed to one well-formed value and every check below passed. Other
+//     parsers take the FIRST occurrence, or reject outright; npm normalises to
+//     one, silently discarding the other. Checked at the raw-text level,
+//     BEFORE any JSON.parse-based check, and for every top-level key, not just
+//     `engines` — any duplicated top-level key is a latent version of this bug.
 //   - engines.node >=24.0.0 / engines.npm >=10.0.0 in every package.json
 //   - @types/node ^24.13.3 in every TypeScript package.json (has a
 //     "typescript" devDependency or any other @types/* dependency)
@@ -71,6 +79,63 @@ function minMajor(range) {
   return majors.length ? Math.min(...majors) : null
 }
 
+// Tokenizes JSON text into an array of meaningful tokens (strings, structural
+// punctuation, and literal/number tokens), dropping whitespace. Not a full
+// JSON parser — it doesn't validate — but sufficient to walk brace/bracket
+// nesting and recover object keys at any depth, including the raw text of
+// duplicate keys that JSON.parse would silently collapse.
+function tokenizeJson(text) {
+  const tokenRe =
+    /"(?:\\.|[^"\\])*"|[{}[\]:,]|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\s+/g
+  const tokens = []
+  let m
+  while ((m = tokenRe.exec(text)) !== null) {
+    if (!/^\s+$/.test(m[0])) tokens.push(m[0])
+  }
+  return tokens
+}
+
+// Finds top-level (root-object) keys declared more than once, at the raw-text
+// level — independent of JSON.parse, which silently keeps only the last
+// occurrence and so can never observe this. Returns [key, count][] for every
+// duplicated key, in first-seen order.
+function findDuplicateTopLevelKeys(text) {
+  const tokens = tokenizeJson(text)
+  const counts = new Map()
+  const order = []
+  const stack = [] // 'obj' | 'arr', one entry per open {/[ currently unclosed
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]
+    if (t === '{') {
+      stack.push('obj')
+      continue
+    }
+    if (t === '[') {
+      stack.push('arr')
+      continue
+    }
+    if (t === '}' || t === ']') {
+      stack.pop()
+      continue
+    }
+    // A string immediately followed by ':' is an object key (the only place
+    // ':' occurs in JSON). Only keys of the ROOT object matter here — depth 1,
+    // and that frame must be an object (an array can't have been what a
+    // top-level string-then-colon is inside, but guard anyway for safety).
+    if (t[0] === '"' && tokens[i + 1] === ':' && stack.length === 1 && stack[0] === 'obj') {
+      let key
+      try {
+        key = JSON.parse(t)
+      } catch {
+        continue
+      }
+      if (!counts.has(key)) order.push(key)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+  }
+  return order.filter((k) => counts.get(k) > 1).map((k) => [k, counts.get(k)])
+}
+
 // ── .nvmrc ───────────────────────────────────────────────────────────────────
 {
   let nvmrc
@@ -88,6 +153,23 @@ function minMajor(range) {
 // ── package.json: engines, @types/node, react/react-dom, @types/react(-dom), peerDependencies ──
 const pkgFiles = trackedFiles('*package.json')
 for (const f of pkgFiles) {
+  // Raw-text duplicate-key check FIRST, independent of JSON.parse — see #755.
+  let rawText
+  try {
+    rawText = readText(f)
+  } catch {
+    rawText = null
+  }
+  if (rawText !== null) {
+    for (const [key, count] of findDuplicateTopLevelKeys(rawText)) {
+      violations.push(
+        `${f}: top-level key "${key}" is declared ${count} times — JSON.parse silently keeps the last ` +
+          `occurrence (other parsers take the first, or reject; npm normalises and discards one), so this is ` +
+          `invisible to every check below it. Collapse to a single "${key}" block.`
+      )
+    }
+  }
+
   const p = readJson(f)
   if (!p) continue
 
