@@ -156,7 +156,7 @@ if [ -z "$INV_FLOW_PK" ] || [ "$INV_FLOW_PK" = "null" ]; then
     -d '{"name":"FuzeFront Invalidation Flow","slug":"fuzefront-invalidation-flow","designation":"invalidation","title":"Signed Out","authentication":"none","policy_engine_mode":"all"}')
   INV_RAW=$(cat /tmp/inv_flow_create.json)
   echo "Invalidation flow create HTTP $INV_HTTP: $INV_RAW"
-  [ "$INV_HTTP" = "201" ] || { echo "::error::failed to create invalidation flow (HTTP $INV_HTTP)"; exit 1; }
+  [ "$INV_HTTP" = "201" ] || { echo "::error::failed to create invalidation flow (HTTP $INV_HTTP): $INV_RAW"; exit 1; }
   INV_FLOW_PK=$(echo "$INV_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
   [ -n "$INV_FLOW_PK" ] && [ "$INV_FLOW_PK" != "null" ] || { echo "::error::no pk in invalidation flow response"; exit 1; }
   echo "Created invalidation flow pk=$INV_FLOW_PK"
@@ -202,7 +202,7 @@ if [ -z "$PROVIDER_PK" ] || [ "$PROVIDER_PK" = "null" ]; then
   echo "Provider create HTTP $PROVIDER_HTTP: $PROVIDER_RAW"
   if [ "$PROVIDER_HTTP" = "201" ]; then
     PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.pk // empty' 2>/dev/null || true)
-    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::no pk in provider create response"; exit 1; }
+    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::no pk in provider create response: $PROVIDER_RAW"; exit 1; }
     echo "Created OAuth2 provider pk=$PROVIDER_PK"
   else
     # We are not the only writer. Authentik's blueprint worker provisions this
@@ -233,7 +233,7 @@ print("PROVIDER_PK=" + (str(p.pk) if p else ""))
 PYORM
 )
     PROVIDER_PK=$(echo "$PROVIDER_RETRY_OUTPUT" | grep "^PROVIDER_PK=" | head -1 | cut -d= -f2 | tr -d '\r\n ')
-    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::failed to create OAuth2 provider (HTTP $PROVIDER_HTTP) and no existing provider resolved for client_id=fuzefront-oidc-client"; exit 1; }
+    [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::failed to create OAuth2 provider (HTTP $PROVIDER_HTTP) and no existing provider resolved for client_id=fuzefront-oidc-client: $PROVIDER_RAW"; exit 1; }
     echo "Resolved existing OAuth2 provider pk=$PROVIDER_PK"
   fi
 else
@@ -259,10 +259,35 @@ else
     -o /tmp/app_create.json -w "%{http_code}" -d "$APP_BODY")
   APP_RAW=$(cat /tmp/app_create.json)
   echo "Application create HTTP $APP_HTTP: $APP_RAW"
-  [ "$APP_HTTP" = "201" ] || { echo "::error::failed to create application (HTTP $APP_HTTP)"; exit 1; }
-  APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
-  [ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response"; exit 1; }
-  echo "Created application slug=$APP_SLUG"
+  if [ "$APP_HTTP" = "201" ]; then
+    APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
+    [ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response: $APP_RAW"; exit 1; }
+    echo "Created application slug=$APP_SLUG"
+  else
+    # Same race as the OAuth2 provider above (see the comment there): we are
+    # not the only writer. Authentik's blueprint worker provisions this same
+    # application from blueprints/provider-oidc.yaml (identifiers.slug:
+    # fuzefront), and the slug-check GET above and this POST are not atomic,
+    # so a blueprint apply landing in that gap turns the create into a 400
+    # (unique slug constraint) — which is not a failure: the object we
+    # wanted now exists. This is FuzeFront#757 — the twin of FuzeFront#765,
+    # which fixed only the provider side and left this one racing.
+    #
+    # Re-resolve by the same direct slug lookup used for the pre-check
+    # (authoritative retrieve-by-slug, not a search index — no warm-up lag)
+    # instead of aborting. NOT a blanket suppression and NOT `|| true`: any
+    # other failure leaves APP_SLUG unresolved and still aborts below, with
+    # the HTTP code and body in the message. The only behaviour that changes
+    # is losing a race we were always able to lose.
+    echo "Create returned HTTP $APP_HTTP; re-resolving in case the blueprint worker won the race"
+    APP_RETRY_HTTP=$(curl -s -o /tmp/app_retry_check.json -w "%{http_code}" \
+      -H "$AUTH" "$BASE/core/applications/fuzefront/")
+    if [ "$APP_RETRY_HTTP" = "200" ]; then
+      APP_SLUG=$(jq -r '.slug // empty' /tmp/app_retry_check.json 2>/dev/null || true)
+    fi
+    [ -n "${APP_SLUG:-}" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::failed to create application (HTTP $APP_HTTP) and no existing application resolved for slug=fuzefront: $APP_RAW"; exit 1; }
+    echo "Resolved existing application slug=$APP_SLUG"
+  fi
 fi
 
 wait_for_discovery
