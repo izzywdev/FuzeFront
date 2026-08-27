@@ -90,9 +90,25 @@ const QUERY_RE = /^\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*$/
  *     second layer.
  */
 export function logSafe(value: unknown): string {
-  return String(value)
-    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
-    .slice(0, 200)
+  // Scanned by code point rather than matched with a character-class regex.
+  // A regex spelling of this trips eslint's `no-control-regex`, and the honest
+  // options there are to suppress the rule or to not need it — this is the
+  // second. A run of control characters collapses to a single space, so a
+  // CR+LF pair cannot become two.
+  let out = ''
+  let lastWasControl = false
+  for (const ch of String(value)) {
+    const code = ch.codePointAt(0) ?? 0
+    const isControl = code < 0x20 || code === 0x7f
+    if (isControl) {
+      if (!lastWasControl) out += ' '
+    } else {
+      out += ch
+    }
+    lastWasControl = isControl
+    if (out.length >= 200) break
+  }
+  return out.slice(0, 200)
 }
 
 export interface UpstreamMap {
