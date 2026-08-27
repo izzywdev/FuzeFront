@@ -7,10 +7,17 @@ name: design-approval
 # This workflow enforces, IN ORDER and FAIL-CLOSED:
 #   1. Authorization — issue author must be the repo owner or a CODEOWNER
 #      (derived from .github/CODEOWNERS, never hand-listed here).
-#   2. Staleness    — recompute the feature's current stamp (scripts/stamp-frames.mjs)
-#      and compare to the issue's stamp. Mismatch (or empty) → do NOT flip.
-#   3. Idempotency  — if the flow is already approved at this stamp → "already recorded".
-#   4. Write        — on approve, flip build.flows[<flow>].approved on master via a
+#   2. Compute       — recompute the feature's current stamp (scripts/stamp-frames.mjs).
+#   3. Idempotency  — if the flow is ALREADY approved → "already recorded", regardless
+#      of whether the issue's own stamp still matches. gate-frames-first gates purely
+#      on `approved`, never on stamp match, so a flow's approval does not go stale
+#      just because later, unrelated manifest edits moved the feature's stamp (e.g. a
+#      separate PR declaring `implementation.paths` coverage). Checked BEFORE
+#      staleness so a stale/truncated/re-labelled issue for an already-approved flow
+#      closes cleanly instead of falsely demanding re-review.
+#   4. Staleness    — (only reached for a flow NOT yet approved) compare the issue's
+#      stamp to the current one. Mismatch (or empty) → do NOT flip.
+#   5. Write        — on approve, flip build.flows[<flow>].approved on master via a
 #      DEPLOY KEY (RELEASE_BUMP_SSH_KEY), the SAME write path release.yml uses.
 #      This is deliberate: the "Protect Master" ruleset has a pull_request rule and
 #      GitHub refuses to add the github-actions app as a bypass actor on a
@@ -33,7 +40,11 @@ name: design-approval
 # adds the `design-approval` label to the already-open issue and the job re-fires,
 # now that the guard passes. Re-firing is safe: the idempotency check (step 3)
 # treats an already-approved-at-this-stamp flow as a no-op, so an issue that opened
-# WITH the label (both events fire) is not double-approved. Every expectation is
+# WITH the label (both events fire) is not double-approved. This also means the
+# label can be safely re-added by hand (remove + re-add) to force a re-fire on a
+# stale open issue whose flow was recorded approved directly (e.g. a manual
+# owner commit when this workflow's own write path was blocked) — step 3 will
+# recognize it and close the issue. Every expectation is
 # DERIVED from a source of truth (stamp from files, flip target from the parsed
 # issue, authorization from CODEOWNERS); nothing is hand-mirrored.
 
@@ -154,7 +165,7 @@ jobs:
               return;
             }
 
-            // ---- 2. Staleness — recompute current stamp from the files. ----
+            // ---- 2. Compute the current stamp from the files. ----
             let computedStamp;
             try {
               const out = execFileSync('node', ['scripts/stamp-frames.mjs', '--feature', feature, '--json'], { encoding: 'utf8' });
@@ -169,6 +180,30 @@ jobs:
               core.setFailed('no computed stamp');
               return;
             }
+
+            // ---- 3. Idempotency — already approved, independent of THIS issue's stamp. ----
+            // gate-frames-first (scripts/check-frames-first.mjs) gates purely on
+            // `flow.approved === true`; it never reads manifest.stamp. So once a flow is
+            // approved it stays unblocked even after later, unrelated manifest edits
+            // legitimately move the feature's stamp (e.g. a separate PR adding
+            // `implementation.paths` coverage — APPROVAL_KEYS in stamp-frames.mjs excludes
+            // only approved/approvedBy/approvedAt from the hash, so any OTHER content change
+            // still moves it). Checking this ahead of staleness means a stale, truncated, or
+            // re-labelled approval-request issue for an ALREADY-approved flow closes cleanly
+            // instead of reporting a misleading "re-review needed" when no further owner
+            // action is actually required. Staleness below still gates any NEW flip.
+            if (flow.approved === true) {
+              const note = manifest.stamp === computedStamp
+                ? `at the current stamp (\`${computedStamp}\`)`
+                : `(recorded at approval time — the feature's stamp has since moved to \`${computedStamp}\` from unrelated manifest edits; gate-frames-first gates on \`approved\`, not stamp match, so this does not require re-approval)`;
+              await comment(`Flow \`${flowId}\` of \`${feature}\` is already recorded as approved ${note}. A double-submit is not a second approval — no action taken.`);
+              if (issue.state === 'open') {
+                await github.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed' });
+              }
+              return;
+            }
+
+            // ---- 4. Staleness — only relevant for a NEW approval flip. ----
             if (!issueStamp) {
               await comment(`This approval carries no \`stamp\`, so staleness cannot be verified against the frames you saw. A maintainer must confirm and re-stamp before this can be recorded. No flip performed (fail-closed).\n\nCurrent computed stamp: \`${computedStamp}\``);
               core.setFailed('empty issue stamp — cannot verify');
@@ -180,15 +215,6 @@ jobs:
               return;
             }
 
-            // ---- 3. Idempotency — already approved at this stamp? ----
-            if (flow.approved === true && manifest.stamp === computedStamp) {
-              await comment(`Flow \`${flowId}\` of \`${feature}\` is already recorded as approved at this stamp (\`${computedStamp}\`). A double-submit is not a second approval — no action taken.`);
-              if (issue.state === 'open') {
-                await github.rest.issues.update({ owner, repo, issue_number: issueNumber, state: 'closed' });
-              }
-              return;
-            }
-
             // ---- Reject → comment onto the record, leave open, do NOT flip. ----
             if (decision !== 'approve') {
               const notes = data.notes ? `\n\n> ${data.notes}` : '';
@@ -196,7 +222,7 @@ jobs:
               return;
             }
 
-            // ---- 4. Write — hand the flip to the deploy-key push step. ----
+            // ---- 5. Write — hand the flip to the deploy-key push step. ----
             // The actual master write CANNOT go through the Contents API here (the
             // "Protect Master" ruleset rejects github-actions commits — see header).
             // We only decide + authorize; the next step performs a race-safe flip
