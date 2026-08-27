@@ -30,7 +30,7 @@
   "peerDependencies": {
     "@fuzefront/design-system": "^1.0.0",
     "@fuzefront/portal-client": "^1.0.0",
-    "@fuzefront/security-client": "^0.7.0",
+    "@fuzefront/security-client": "^0.8.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
