@@ -50,6 +50,22 @@ COPY services/selection-list-service/package.json ./services/selection-list-serv
 # Install only production deps for chat-service
 RUN npm ci --workspace=services/chat-service --omit=dev --ignore-scripts
 
+# Guarantee the per-workspace node_modules directories the production stage COPYs
+# actually exist. npm creates packages/<x>/node_modules ONLY when something could not
+# be hoisted: packages/auth gets one because jose@5 conflicts with the root's jose@4,
+# but packages/feature-flags' @openfeature/* + unleash-client have no such conflict
+# today, so npm hoists them all and creates no directory at all — and `COPY --from=base
+# /app/packages/feature-flags/node_modules` then fails the whole build with
+# "not found" rather than copying nothing.
+#
+# The COPY has to stay unconditional (Docker has no conditional COPY, and
+# scripts/check-dockerfile-lockfile.mjs requires the line precisely so the image does
+# not depend on what one resolution happened to hoist), so make the SOURCE exist
+# instead. An empty directory is the correct outcome when everything hoisted; if a
+# future resolution stops hoisting, the real contents land here and get copied without
+# anyone having to remember why.
+RUN mkdir -p packages/auth/node_modules packages/feature-flags/node_modules
+
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
 WORKDIR /app
