@@ -25,7 +25,18 @@ metadata:
     app.kubernetes.io/component: consumer-registration-seed
   annotations:
     "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "10"
+    # FuzeFront#760: this only writes a Secret from a value already sealed
+    # into THIS release (fuzefront.secretName, a plain non-hook resource that
+    # is applied before ANY post-install/post-upgrade hook runs) — it has no
+    # dependency on Permit, Kafka, or any other PostSync integration. It was
+    # previously weight "10", ordered behind permit-schema-sync (5) purely by
+    # coincidence of both being PostSync. That incidental coupling was the
+    # actual mechanism by which one unrelated integration stalling (Permit)
+    # blocked the portal-registration secret from ever being published: PostSync
+    # hooks complete strictly by ascending weight, so a hang at weight 5 keeps
+    # weight 10 from ever starting. Weight "0" runs it alongside
+    # kafka-topics-job, right after the resources this Job actually needs.
+    "helm.sh/hook-weight": "0"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   ttlSecondsAfterFinished: 600
