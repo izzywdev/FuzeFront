@@ -316,8 +316,16 @@ export function authentikBaseUrl(): string {
   return new URL(tenant.issuerUrl).origin
 }
 
+/**
+ * Authentication flow slug inside THIS tenant's Authentik. Resolved from the
+ * tenant rather than the environment for the same reason as
+ * authentikBaseUrl() above — each tenant's Authentik instance may name its
+ * login flow differently, so a global env default would silently drive every
+ * tenant's flow-executor at whichever slug the process happened to be
+ * configured with.
+ */
 function authFlowSlug(): string {
-  return process.env.AUTHENTIK_AUTH_FLOW_SLUG || 'default-authentication-flow'
+  return currentTenant('authFlowSlug').authFlowSlug
 }
 
 export function redirectUri(): string {
