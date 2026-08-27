@@ -77,6 +77,24 @@ const SEGMENT_RE = /^(?:[A-Za-z0-9._~!$'()*+,;=-]|%[0-9A-Fa-f]{2})+$/
 // control characters, no whitespace.
 const QUERY_RE = /^\?(?:[A-Za-z0-9._~!$&'()*+,;=:@/?-]|%[0-9A-Fa-f]{2})*$/
 
+/**
+ * Make a value safe to appear in a log line.
+ *
+ * Two distinct problems, both real here because slug/method/path all originate
+ * in the request:
+ *   - Log forging: a CR or LF lets a caller write what looks like a second,
+ *     fabricated log entry. Control characters are collapsed to a space.
+ *   - Format-string injection: a '%s' in caller data, if that data is used as
+ *     console's FORMAT argument, silently consumes the next argument. The
+ *     callers below never pass caller data as the format string; this is the
+ *     second layer.
+ */
+export function logSafe(value: unknown): string {
+  return String(value)
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .slice(0, 200)
+}
+
 export interface UpstreamMap {
   [slug: string]: string
 }
@@ -101,8 +119,8 @@ export function parseUpstreams(raw: string | undefined): UpstreamMap {
   } catch (err) {
     console.error(
       '[federated-proxy] FEDERATED_PROXY_UPSTREAMS is not valid JSON — NO remote ' +
-        'will be proxied and every /apps/<slug>/* request will 404. ' +
-        JSON.stringify({ error: (err as Error).message })
+        'will be proxied and every /apps/<slug>/* request will 404. %s',
+      JSON.stringify({ error: logSafe((err as Error).message) })
     )
     return {}
   }
@@ -119,15 +137,17 @@ export function parseUpstreams(raw: string | undefined): UpstreamMap {
   for (const [slug, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (!SLUG_RE.test(slug)) {
       console.error(
-        `[federated-proxy] ignoring upstream key ${JSON.stringify(slug)}: not a ` +
-          'valid slug shape — that remote will 404.'
+        '[federated-proxy] ignoring upstream key: not a valid slug shape — that ' +
+          'remote will 404. %s',
+        JSON.stringify({ key: logSafe(slug) })
       )
       continue
     }
     if (typeof value !== 'string' || !value.trim()) {
       console.error(
-        `[federated-proxy] ignoring upstream for "${slug}": value is not a ` +
-          'non-empty string — that remote will 404.'
+        '[federated-proxy] ignoring upstream: value is not a non-empty string — ' +
+          'that remote will 404. %s',
+        JSON.stringify({ slug: logSafe(slug) })
       )
       continue
     }
@@ -136,15 +156,17 @@ export function parseUpstreams(raw: string | undefined): UpstreamMap {
       url = new URL(value)
     } catch {
       console.error(
-        `[federated-proxy] ignoring upstream for "${slug}": ${JSON.stringify(value)} ` +
-          'is not an absolute URL — that remote will 404.'
+        '[federated-proxy] ignoring upstream: not an absolute URL — that remote ' +
+          'will 404. %s',
+        JSON.stringify({ slug: logSafe(slug), value: logSafe(value) })
       )
       continue
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
       console.error(
-        `[federated-proxy] ignoring upstream for "${slug}": protocol ` +
-          `${url.protocol} is not http/https — that remote will 404.`
+        '[federated-proxy] ignoring upstream: protocol is not http/https — that ' +
+          'remote will 404. %s',
+        JSON.stringify({ slug: logSafe(slug), protocol: logSafe(url.protocol) })
       )
       continue
     }
@@ -171,8 +193,9 @@ if (Object.keys(UPSTREAMS).length === 0) {
   )
 } else {
   console.log(
-    `[federated-proxy] proxying ${Object.keys(UPSTREAMS).length} remote(s): ` +
-      Object.keys(UPSTREAMS).sort().join(', ')
+    '[federated-proxy] proxying %d remote(s): %s',
+    Object.keys(UPSTREAMS).length,
+    Object.keys(UPSTREAMS).sort().map(logSafe).join(', ')
   )
 }
 
@@ -284,8 +307,9 @@ async function proxy(req: Request, res: Response): Promise<void> {
     // Unreachable given the allowlist and the segment whitelist above; if it
     // ever fires, the request is refused rather than sent somewhere unintended.
     console.error(
-      `[federated-proxy] refusing ${parts.slug}: request could not be resolved ` +
-        'inside the configured upstream origin.'
+      '[federated-proxy] refusing request: could not be resolved inside the ' +
+        'configured upstream origin. %s',
+      JSON.stringify({ slug: logSafe(parts.slug) })
     )
     res.status(400).json({ error: 'bad_request', detail: 'Malformed asset path.' })
     return
@@ -341,9 +365,16 @@ async function proxy(req: Request, res: Response): Promise<void> {
     res.status(upstream.status).send(Buffer.from(upstream.data))
   } catch (err) {
     const ax = err as AxiosError
+    // Constant format string; every caller-derived value goes through logSafe
+    // and is passed as an ARGUMENT, never as the format.
     console.error(
-      `[federated-proxy] upstream error for ${parts.slug} (${req.method} ${url}):`,
-      ax.code || ax.message
+      '[federated-proxy] upstream error: %s',
+      JSON.stringify({
+        slug: logSafe(parts.slug),
+        method: logSafe(req.method),
+        url: logSafe(url),
+        code: logSafe(ax.code || ax.message),
+      })
     )
     res.status(502).json({
       error: 'remote_unavailable',

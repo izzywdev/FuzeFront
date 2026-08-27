@@ -24,6 +24,7 @@ import federatedProxyRoutes, {
   parseUpstreams,
   splitRequest,
   buildUpstreamUrl,
+  logSafe,
   __federatedProxyConfig,
 } from '../src/routes/federatedProxy'
 
@@ -239,6 +240,42 @@ describe('federated asset proxy', () => {
       expect(splitRequest('/finance/assets/chunk-abc_123.min.js')).not.toBeNull()
       expect(splitRequest('/finance/assets/a~b!c$d.js')).not.toBeNull()
       expect(splitRequest('/finance/assets/a%20b.js')).not.toBeNull()
+    })
+  })
+
+  describe('logging cannot be forged or used as a format string', () => {
+    it('logSafe collapses the control characters that would forge a log line', () => {
+      expect(logSafe('a\nb')).toBe('a b')
+      expect(logSafe('a\r\n[federated-proxy] FORGED')).toBe(
+        'a [federated-proxy] FORGED'
+      )
+      expect(logSafe('a\u0000b')).toBe('a b')
+    })
+
+    it('logSafe bounds the length so one value cannot flood the log', () => {
+      expect(logSafe('x'.repeat(5000)).length).toBe(200)
+    })
+
+    it('passes caller-derived values as ARGUMENTS, never as the format string', async () => {
+      const spy = jest.spyOn(console, 'error').mockImplementation(() => undefined)
+      mockedAxios.request.mockRejectedValueOnce(
+        Object.assign(new Error('boom'), { code: 'ECONNREFUSED' })
+      )
+
+      await request(app).get('/apps/finance/remoteEntry.js')
+
+      const [format, ...args] = spy.mock.calls[0]
+      // The format is a fixed literal: no slug, no method, no URL in it. If a
+      // caller-controlled '%s' ever reached this position it would consume the
+      // next argument and rewrite the line.
+      expect(format).toBe('[federated-proxy] upstream error: %s')
+      expect(format).not.toContain('finance')
+      expect(args).toHaveLength(1)
+      expect(JSON.parse(args[0] as string)).toMatchObject({
+        slug: 'finance',
+        method: 'GET',
+      })
+      spy.mockRestore()
     })
   })
 
