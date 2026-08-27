@@ -78,7 +78,9 @@ async function getJwks(issuer: string): Promise<CachedJwks['keys'] | null> {
     jwksCache.set(issuer, { keys, fetchedAt: Date.now() })
     return keys
   } catch (error) {
-    console.error(`[jwks-verify] Failed to fetch JWKS from ${jwksUrlFor(issuer)}:`, error)
+    // Constant format string; interpolated values go as separate args so a '%s'
+    // inside one cannot consume `error` as a format substitution and swallow it.
+    console.error('[jwks-verify] Failed to fetch JWKS from', jwksUrlFor(issuer), error)
     // Serve a stale cache entry rather than fail outright, if one exists — a
     // transient IdP blip should not invalidate every in-flight verification.
     return cached?.keys ?? null

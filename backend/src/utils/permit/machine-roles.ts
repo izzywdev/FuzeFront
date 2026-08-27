@@ -80,7 +80,7 @@ export async function syncMachineIdentityToPermit(
     console.log(`[machine-roles] Synced service account to Permit: ${permitKey}`)
     return true
   } catch (error) {
-    console.error(`[machine-roles] Error syncing service account ${permitKey} to Permit:`, error)
+    console.error('[machine-roles] Error syncing service account to Permit:', permitKey, error)
     return false
   }
 }
@@ -257,7 +257,8 @@ export async function grantServiceInvoke(
   } catch (error: any) {
     if (error?.response?.status !== 409 && error?.status !== 409) {
       console.error(
-        `[machine-roles] Error creating ServiceEndpoint instance "${endpointKey}":`,
+        '[machine-roles] Error creating ServiceEndpoint instance:',
+        endpointKey,
         error
       )
       return false
@@ -284,7 +285,9 @@ export async function grantServiceInvoke(
       return true
     }
     console.error(
-      `[machine-roles] Error granting ServiceEndpoint:${endpointKey} invoke to ${permitKey}:`,
+      '[machine-roles] Error granting ServiceEndpoint invoke:',
+      endpointKey,
+      permitKey,
       error
     )
     return false
@@ -316,7 +319,9 @@ export async function revokeServiceInvoke(
     return true
   } catch (error) {
     console.error(
-      `[machine-roles] Error revoking ServiceEndpoint:${endpointKey} invoke from ${permitKey}:`,
+      '[machine-roles] Error revoking ServiceEndpoint invoke:',
+      endpointKey,
+      permitKey,
       error
     )
     return false
