@@ -122,6 +122,21 @@ COPY --from=build /app/services/selection-list-service/dist ./services/selection
 # crashloop it documents hitting first for @izzywdev/fuzefront-identity).
 COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
 COPY --from=build /app/packages/auth/dist ./packages/auth/dist
+# ...AND packages/auth's own runtime dependencies, which nothing else puts in
+# this image. `jose` is required at module load by packages/auth/dist/index.js,
+# and it is NOT hoisted to /app/node_modules: the root lockfile pins
+# node_modules/jose to 4.15.9 for other consumers, so @fuzefront/auth's ^5.10.0
+# can only live at packages/auth/node_modules/jose. The COPYs above ship the
+# manifest and dist but not that directory, so the symlink resolves, dist/ is
+# present, and the pod still dies at startup with "Cannot find module 'jose'" —
+# the same crashloop services/config-service/Dockerfile documents hitting in
+# prod the first time it was enabled. See FFRNT-254.
+#
+# Copied from `base`, not `build`: base installs with --omit=dev, so this
+# directory contains jose and nothing else. The build stage runs a full
+# `npm install` inside packages/auth to get tsup, and copying from there would
+# drag tsup/typescript/jest into the production image.
+COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/selection-list-service/openapi.yaml ./services/selection-list-service/openapi.yaml
 
