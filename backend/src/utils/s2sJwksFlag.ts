@@ -25,11 +25,19 @@
  * package degrades to the in-code default (OFF) rather than crashing at import time.
  */
 
-// Self-import so `isS2SJwksAuthEnabled`'s callers observe overrides applied via
-// `jest.spyOn(s2sJwksFlagModule, 'isS2SJwksAuthEnabled')` even when called from
-// inside this same module (see utils/portalFlag.ts for the identical rationale).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import * as self from './s2sJwksFlag'
+// NOTE: no self-import here, deliberately — unlike utils/portalFlag.ts.
+//
+// portalFlag.ts self-imports because it CALLS its own exported flag helper from
+// inside the module (`return self.isMultiTenantPortalsEnabled({})`), and a bare
+// intra-module call would bind the original function, not a
+// `jest.spyOn(module, ...)` replacement. That rationale needs an actual
+// intra-module call site to be worth anything.
+//
+// This module has none: `isS2SJwksAuthEnabled` is defined here and only ever
+// called from other modules (services/jwks-verify.ts and the tests), which
+// observe spies normally. A self-import here would be an inert binding — which
+// is exactly what CodeQL flagged (rule: unused import) before this comment
+// replaced it.
 
 export const S2S_JWKS_AUTH_FLAG = 'fuzefront.platform.s2s-jwks-auth'
 
