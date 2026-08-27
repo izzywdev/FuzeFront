@@ -259,10 +259,36 @@ else
     -o /tmp/app_create.json -w "%{http_code}" -d "$APP_BODY")
   APP_RAW=$(cat /tmp/app_create.json)
   echo "Application create HTTP $APP_HTTP: $APP_RAW"
-  [ "$APP_HTTP" = "201" ] || { echo "::error::failed to create application (HTTP $APP_HTTP)"; exit 1; }
-  APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
-  [ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response"; exit 1; }
-  echo "Created application slug=$APP_SLUG"
+  if [ "$APP_HTTP" = "201" ]; then
+    APP_SLUG=$(echo "$APP_RAW" | jq -r '.slug // empty' 2>/dev/null || true)
+    [ -n "$APP_SLUG" ] && [ "$APP_SLUG" != "null" ] || { echo "::error::no slug in application create response"; exit 1; }
+    echo "Created application slug=$APP_SLUG"
+  else
+    # Same race as the OAuth2 provider above (#765): Authentik's blueprint worker
+    # provisions this SAME application (slug=fuzefront) from
+    # blueprints/provider-oidc.yaml's own `authentik_core.application` entry,
+    # concurrently with this script. The slug-check GET above and this POST are
+    # not atomic, so a blueprint apply landing in the gap turns the create into
+    #   400 {"slug":["Application with this slug already exists."], ...}
+    # which is not a failure: the object we wanted now exists.
+    #
+    # #623 made the READ side of this block race-safe (exact slug GET instead of
+    # fuzzy name search) but left the WRITE side unhandled — the same gap #765
+    # closed for the provider create just above. Re-resolve instead of aborting,
+    # for the same reason: any other failure leaves APP_SLUG unresolved and still
+    # aborts below, with the HTTP code in the message.
+    echo "Create returned HTTP $APP_HTTP; re-resolving in case the blueprint worker won the race"
+    APP_RECHECK_HTTP=$(curl -s -o /tmp/app_recheck.json -w "%{http_code}" \
+      -H "$AUTH" "$BASE/core/applications/fuzefront/")
+    if [ "$APP_RECHECK_HTTP" = "200" ]; then
+      APP_SLUG=$(jq -r '.slug // empty' /tmp/app_recheck.json 2>/dev/null || true)
+    fi
+    [ -n "${APP_SLUG:-}" ] && [ "$APP_SLUG" != "null" ] || {
+      echo "::error::failed to create application (HTTP $APP_HTTP) and no existing application resolved for slug=fuzefront (recheck HTTP $APP_RECHECK_HTTP)"
+      exit 1
+    }
+    echo "Resolved existing application slug=$APP_SLUG"
+  fi
 fi
 
 wait_for_discovery
