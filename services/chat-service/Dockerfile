@@ -50,6 +50,22 @@ COPY services/selection-list-service/package.json ./services/selection-list-serv
 # Install only production deps for chat-service
 RUN npm ci --workspace=services/chat-service --omit=dev --ignore-scripts
 
+# Guarantee the per-workspace node_modules directories the production stage COPYs
+# actually exist. npm creates packages/<x>/node_modules ONLY when something could not
+# be hoisted: packages/auth gets one because jose@5 conflicts with the root's jose@4,
+# but packages/feature-flags' @openfeature/* + unleash-client have no such conflict
+# today, so npm hoists them all and creates no directory at all — and `COPY --from=base
+# /app/packages/feature-flags/node_modules` then fails the whole build with
+# "not found" rather than copying nothing.
+#
+# The COPY has to stay unconditional (Docker has no conditional COPY, and
+# scripts/check-dockerfile-lockfile.mjs requires the line precisely so the image does
+# not depend on what one resolution happened to hoist), so make the SOURCE exist
+# instead. An empty directory is the correct outcome when everything hoisted; if a
+# future resolution stops hoisting, the real contents land here and get copied without
+# anyone having to remember why.
+RUN mkdir -p packages/auth/node_modules packages/feature-flags/node_modules
+
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
 WORKDIR /app
@@ -90,14 +106,26 @@ RUN npm ci --workspace=services/chat-service --ignore-scripts
 # Copy source
 COPY shared/ ./shared/
 COPY packages/identity/ ./packages/identity/
+# @fuzefront/auth (agent/securityApiPermitAdapter.ts's createAuthzClient,
+# FuzeFront#254) and @fuzefront/feature-flags (agent/authzFlag.ts's lazy
+# require) are file:/workspace deps chat-service now imports — both must be
+# built here or `npm run build` below fails with TS2307 "Cannot find module"
+# (there is no dist/ for either yet at this point in the stage).
+COPY packages/auth/ ./packages/auth/
+COPY packages/feature-flags/ ./packages/feature-flags/
 COPY services/chat-service/ ./services/chat-service/
 
 # Copy the product docs corpus the chat-doc-indexer Job indexes (RAG source).
 COPY docs/ ./services/chat-service/docs/
 
-# Build shared first, then identity (required by ref-index consumer), then chat-service
+# Build shared first, then identity (required by ref-index consumer), then
+# auth + feature-flags (agent/securityApiPermitAdapter.ts and agent/authzFlag.ts
+# import them at module load — mirrors services/selection-list-service/Dockerfile's
+# identical treatment of @fuzefront/auth), then chat-service.
 RUN cd shared && npm run build
 RUN cd packages/identity && npm install --ignore-scripts && npm run build
+RUN cd packages/auth && npm install --ignore-scripts && npm run build
+RUN cd packages/feature-flags && npm install --ignore-scripts && npm run build
 RUN cd services/chat-service && npm run build
 
 # ---------- production ----------
@@ -122,6 +150,39 @@ COPY --from=build /app/shared/dist ./shared/dist
 # symlink doesn't dangle; here we populate the target with the built dist.
 COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
 COPY --from=build /app/packages/identity/dist ./packages/identity/dist
+# @fuzefront/auth is a `file:` workspace dep (agent/securityApiPermitAdapter.ts's
+# createAuthzClient, FuzeFront#254) — node_modules/@fuzefront/auth is a symlink
+# to /app/packages/auth. package.json + dist populate the symlink target
+# (mirrors services/config-service/Dockerfile and
+# services/selection-list-service/Dockerfile's identical treatment).
+COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
+COPY --from=build /app/packages/auth/dist ./packages/auth/dist
+# ...AND its runtime dependency `jose`, which is NOT hoisted to /app/node_modules:
+# @fuzefront/auth needs jose@^5.10.0 but the root lockfile pins node_modules/jose
+# to 4.15.9 for other consumers, so jose@5 lives ONLY at
+# packages/auth/node_modules/jose. Without this the symlink resolves, dist/ is
+# present, and the pod still dies at startup with "Cannot find module 'jose'" —
+# the exact crashloop services/config-service/Dockerfile and
+# services/selection-list-service/Dockerfile both document hitting first (FFRNT-254).
+# Copied from `base`, not `build`: base installed with --omit=dev, so this
+# directory holds jose and nothing else — copying from `build` would drag
+# tsup/typescript/jest into the production image.
+COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/feature-flags (agent/authzFlag.ts's lazy `require`, gating
+# fuzefront.authz.chat-agent-security-api) is the same kind of `file:`-linked
+# symlink target — package.json + dist populate it, same as @fuzefront/auth
+# above.
+COPY --from=build /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
+COPY --from=build /app/packages/feature-flags/dist ./packages/feature-flags/dist
+# ...AND its runtime dependencies (@openfeature/server-sdk, @openfeature/web-sdk,
+# unleash-client). Same reasoning as jose above: this consumer's lockfile
+# carries only a link entry for a `file:` dep, never the target's own
+# dependencies, so `npm ci` cannot be trusted to hoist them into
+# /app/node_modules on every build — scripts/check-dockerfile-lockfile.mjs
+# (FFRNT-254) enforces this unconditionally, regardless of what any one
+# resolution happens to hoist. Copied from `base` (--omit=dev), not `build`,
+# for the same reason as packages/auth/node_modules above.
+COPY --from=base /app/packages/feature-flags/node_modules ./packages/feature-flags/node_modules
 COPY --from=build /app/services/chat-service/dist ./services/chat-service/dist
 # Product docs corpus for the chat-doc-indexer Job.
 COPY --from=build /app/services/chat-service/docs ./services/chat-service/docs

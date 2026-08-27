@@ -36,6 +36,14 @@ spec:
               value: {{ .Values.chatService.backendUrl | quote }}
             - name: PERMIT_PDP_URL
               value: {{ .Values.chatService.permitPdpUrl | quote }}
+            - name: SECURITY_SERVICE_URL
+              # fuzefront-security is the in-cluster Service name for security-service
+              # (port 3002). Same convention as config-service-deployment.yaml /
+              # provisioning-service.yaml. Used by agent/securityApiPermitAdapter.ts
+              # when fuzefront.authz.chat-agent-security-api (FuzeFront#254) is ON —
+              # the direct PERMIT_PDP_URL path above stays live as the flag-OFF
+              # default until the wrapped path is proven.
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
             - name: KAFKA_BROKERS
               value: {{ .Values.chatService.kafka.brokers | quote }}
             {{- if .Values.fuzeinfra.redis.host }}
@@ -84,6 +92,27 @@ spec:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: LITELLM_MASTER_KEY
+            {{- end }}
+            {{- if .Values.chatService.featureFlags.unleashUrl }}
+            # @fuzefront/feature-flags (OpenFeature + Unleash). Gates
+            # fuzefront.authz.chat-agent-security-api (FuzeFront#254) via
+            # utils/feature-flags.ts (startup init, non-fatal) +
+            # agent/authzFlag.ts (lazy read). Mirrors security.yaml's wiring.
+            # Absent URL/token (base values.yaml default) -> this whole block
+            # does not render -> init is skipped -> safe in-code default
+            # (OFF), never a crash.
+            - name: FLAG_ENV
+              value: {{ ternary "prod" "local" (eq .Values.ingress.className "traefik") | quote }}
+            - name: UNLEASH_URL
+              value: {{ .Values.chatService.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.chatService.featureFlags.appName | quote }}
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.chatService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.chatService.featureFlags.tokenSecretKey | quote }}
+                  optional: true
             {{- end }}
           readinessProbe:
             httpGet:

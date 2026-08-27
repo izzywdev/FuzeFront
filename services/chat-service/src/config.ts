@@ -11,6 +11,15 @@ export interface Config {
   chromaUrl: string;
   backendUrl: string;
   permitPdpUrl: string;
+  /**
+   * FuzeFront Security API base URL (backend/security). Used by
+   * `agent/securityApiPermitAdapter.ts` when the
+   * `fuzefront.authz.chat-agent-security-api` flag is ON (FuzeFront#254) —
+   * chat-service asks THIS for authorization decisions instead of the Permit
+   * PDP directly. Same in-cluster Service DNS convention `config-service` and
+   * `provisioning-service` already use for the same purpose.
+   */
+  securityServiceUrl: string;
 
   // Kafka
   kafka: {
@@ -59,6 +68,7 @@ export function loadConfig(): Config {
     chromaUrl: process.env.CHROMA_URL || 'http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000',
     backendUrl: process.env.BACKEND_URL || 'http://fuzefront-backend:3001',
     permitPdpUrl: process.env.PERMIT_PDP_URL || 'http://fuzefront-permit-pdp:7000',
+    securityServiceUrl: process.env.SECURITY_SERVICE_URL || 'http://fuzefront-security:3002',
 
     kafka: { brokers },
 

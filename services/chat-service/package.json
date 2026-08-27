@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/chat-service",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -18,6 +18,8 @@
     "index:docs": "node dist/rag/index-docs.js"
   },
   "dependencies": {
+    "@fuzefront/auth": "file:../../packages/auth",
+    "@fuzefront/feature-flags": "1.0.0",
     "@fuzefront/shared": "file:../../shared",
     "@izzywdev/fuzefront-identity": "file:../../packages/identity",
     "express": "4.19.2",

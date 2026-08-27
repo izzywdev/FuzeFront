@@ -16,9 +16,16 @@ import { BillingEmitter } from './billing/emitter';
 import { createKafkaClient, TypedProducer } from '@fuzefront/shared';
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer';
 import { KnexRefIndexRepository } from './repositories/ref-index.repository';
+import { initFeatureFlags } from './utils/feature-flags';
 
 async function main() {
   const config = loadConfig();
+
+  // Best-effort — see utils/feature-flags.ts. Gates
+  // fuzefront.authz.chat-agent-security-api (FuzeFront#254) among future
+  // chat-service flags; absent Unleash config, every flag keeps its in-code
+  // default (OFF for a release flag).
+  await initFeatureFlags('chat-service');
 
   // Run all migrations (including the new 003_ref_index migration) at startup.
   // Best-effort: migration failure is logged but does not abort the service.
