@@ -33,6 +33,7 @@ const ENV_KEYS = [
   'AUTHENTIK_REDIRECT_URI',
   'AUTHENTIK_ADMIN_TOKEN',
   'AUTHENTIK_ENROLLMENT_FLOW_SLUG',
+  'AUTHENTIK_AUTH_FLOW_SLUG',
   'SECURITY_GOOGLE_BROKERED',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
@@ -83,6 +84,7 @@ const TWO_TENANTS = JSON.stringify([
     redirectUri: 'https://live.mendysrobotics.com/api/auth/oidc/callback',
     adminToken: 'mendys-admin',
     enrollmentFlowSlug: 'mendys-enrollment',
+    authFlowSlug: 'mendys-login',
     appBaseUrl: 'https://live.mendysrobotics.com',
     googleBrokered: true,
   },
@@ -112,7 +114,14 @@ describe('legacy (single-tenant) mode', () => {
     expect(t.adminToken).toBe('admin-token')
     // Unset -> the same defaults the old process.env reads used.
     expect(t.enrollmentFlowSlug).toBe('fuzefront-enrollment')
+    expect(t.authFlowSlug).toBe('default-authentication-flow')
     expect(t.googleBrokered).toBe(true)
+  })
+
+  it('honours AUTHENTIK_AUTH_FLOW_SLUG exactly as the old bare env read did', () => {
+    process.env.AUTHENTIK_AUTH_FLOW_SLUG = 'custom-login-flow'
+    resetTenantRegistryForTests()
+    expect(allTenants()[0].authFlowSlug).toBe('custom-login-flow')
   })
 
   it('honours SECURITY_GOOGLE_BROKERED=false exactly as before', () => {
@@ -186,6 +195,15 @@ describe('multi-tenant mode', () => {
     expect(me.issuerUrl).not.toBe(ff.issuerUrl)
     expect(me.clientId).not.toBe(ff.clientId)
     expect(me.enrollmentFlowSlug).not.toBe(ff.enrollmentFlowSlug)
+  })
+
+  it('resolves authFlowSlug per tenant: declared value honoured, omitted falls back to the Authentik default', () => {
+    const ff = resolveTenantByHost('app.fuzefront.com')!
+    const me = resolveTenantByHost('live.mendysrobotics.com')!
+    // fuzefront's fixture entry omits authFlowSlug entirely.
+    expect(ff.authFlowSlug).toBe('default-authentication-flow')
+    // mendys declares its own, and it must win — never share fuzefront's slug.
+    expect(me.authFlowSlug).toBe('mendys-login')
   })
 
   it('throws rather than guessing when read outside a tenant context', () => {
