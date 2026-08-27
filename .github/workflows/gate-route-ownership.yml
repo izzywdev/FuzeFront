@@ -12,18 +12,30 @@ name: gate-route-ownership
 # tests and `helm template | kubeconform` are each individually happy. The defect
 # lives in the SEAM between the chart and the code.
 #
-# Triggers on BOTH sides of that seam. A chart-only trigger would miss a router
-# moving between services; a code-only trigger would miss an ingress rule being
-# re-pointed. Either alone reproduces the original blind spot.
+# NO `paths:` FILTER on pull_request, and that is load-bearing rather than an
+# oversight — the same rule workspace-deps-check.yml and gate-sealed-keys.yml
+# already state: filter INSIDE a job, never on the trigger, for anything the
+# ruleset requires.
+#
+# A path-filtered workflow does not run at all on a PR that touches none of its
+# paths, so the check run is never CREATED — and a required context that is never
+# created leaves the PR permanently at "Expected — waiting for status to be
+# reported", with no red to look at and nothing to re-run (measured on four
+# sampled PRs, 2026-08-23). A check that cannot be required is a check that
+# cannot stop a merge, and master here is deploy-on-push. See
+# docs/runbooks/widen-required-checks.md.
+#
+# Nothing is filtered inside the job either: `check-route-ownership.mjs` renders
+# the chart and measures a WHOLE-REPO invariant — every contract route against
+# the service the ingress actually routes it to — not a diff. It is a node script
+# over a `helm template`, so running it unconditionally costs seconds.
+#
+# The trigger did have one thing right, kept here in spirit: the seam has two
+# sides. A chart-only trigger would miss a router moving between services; a
+# code-only trigger would miss an ingress rule being re-pointed. Running
+# unconditionally covers both by construction.
 on:
   pull_request:
-    paths:
-      - 'deploy/helm/fuzefront/**'
-      - 'deploy/route-ownership.json'
-      - 'backend/**'
-      - 'scripts/check-route-ownership.mjs'
-      - 'scripts/__tests__/check-route-ownership.test.mjs'
-      - '.github/workflows/gate-route-ownership.yml'
   push:
     branches: [master]
     paths:
