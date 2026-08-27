@@ -4,6 +4,10 @@
     "module": "commonjs",
     "outDir": "./dist",
     "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@fuzefront/shared/kafka": ["../../shared/dist/kafka/index.d.ts"]
+    },
     "strict": false,
     "noImplicitAny": false,
     "declaration": true,

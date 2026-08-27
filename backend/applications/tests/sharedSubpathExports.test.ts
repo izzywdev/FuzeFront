@@ -23,16 +23,15 @@ const REPO_ROOT = path.resolve(__dirname, '../../..')
 const SHARED_PKG = path.join(REPO_ROOT, 'shared', 'package.json')
 
 /**
- * billing-service still imports `@fuzefront/shared/dist/kafka`. It does not
- * crash only because its runtime image copies `shared/dist` WITHOUT
- * `shared/package.json` (see services/billing-service/Dockerfile), so there is
- * no `exports` map in the image to enforce — it works by accident, and adding
- * that one COPY line would break it exactly as applications-service broke.
- * Recorded here as a known exception rather than silently excluded; migrating
- * it needs its tsconfig `paths` and jest moduleNameMapper updated too, which
- * is deliberately not bundled into an incident fix for a different service.
+ * billing-service used to import `@fuzefront/shared/dist/kafka` and only
+ * avoided crashing because its runtime image copied `shared/dist` WITHOUT
+ * `shared/package.json`, so there was no `exports` map in the image to
+ * enforce — it worked by accident. Fixed in #753: the imports now name the
+ * supported `@fuzefront/shared/kafka` subpath, with tsconfig `paths`, jest
+ * `moduleNameMapper`, and the Dockerfile's `shared/package.json` COPY updated
+ * to match. No exception left to record here.
  */
-const KNOWN_UNMIGRATED = ['services/billing-service/']
+const KNOWN_UNMIGRATED: string[] = []
 
 // Matches only real import syntax — `from '...'` / `require('...')` — not any
 // quoted occurrence. An earlier version matched backtick-delimited text too and

@@ -12,8 +12,10 @@ module.exports = {
   // Pointing to shared/src/index.ts would pull in AppContext.tsx (JSX), which ts-jest
   // cannot compile without --jsx. Since billing-service only ever imports from the kafka
   // sub-tree of shared, the narrower mapping is intentional — not a partial-import trap.
+  // The mapper key names the SUPPORTED subpath (@fuzefront/shared/kafka, matching the
+  // package's declared `exports`), not the dist/ internal it used to point at.
   moduleNameMapper: {
-    '^@fuzefront/shared/dist/kafka$': '<rootDir>/../../shared/src/kafka/index.ts',
+    '^@fuzefront/shared/kafka$': '<rootDir>/../../shared/src/kafka/index.ts',
     '^@izzywdev/fuzefront-identity$': '<rootDir>/../../packages/identity/src/index.ts',
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
   },

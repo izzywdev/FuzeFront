@@ -3,7 +3,7 @@ import {
   FuzeEvent,
   TOPICS,
   IdentityOrgDeletedPayloadV1,
-} from '@fuzefront/shared/dist/kafka';
+} from '@fuzefront/shared/kafka';
 import { BillingCustomer, BillingSubscription } from '../../src/types';
 
 const ORG_ID = '33333333-3333-3333-3333-333333333333';

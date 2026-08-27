@@ -9,7 +9,7 @@ import {
   BillingTenantRegisteredPayloadV1,
   billingPaymentMethodUpdatedSchemaV1,
   BillingPaymentMethodUpdatedPayloadV1,
-} from '@fuzefront/shared/dist/kafka';
+} from '@fuzefront/shared/kafka';
 import { randomUUID } from 'crypto';
 
 /**

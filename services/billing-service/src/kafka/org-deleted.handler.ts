@@ -1,7 +1,7 @@
 import {
   FuzeEvent,
   IdentityOrgDeletedPayloadV1,
-} from '@fuzefront/shared/dist/kafka';
+} from '@fuzefront/shared/kafka';
 import { CustomerRepository } from '../repositories/customer.repository';
 import { SubscriptionRepository } from '../repositories/subscription.repository';
 import { SubscriptionService } from '../services/subscription.service';
