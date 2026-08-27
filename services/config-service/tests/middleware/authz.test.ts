@@ -45,7 +45,7 @@ describe('requireConfigPermission', () => {
     _setAuthzClientForTesting({
       check: jest.fn().mockResolvedValue({ allow: true }),
       bulkCheck: jest.fn(),
-    } as AuthzClient);
+    } as unknown as AuthzClient);
     const middleware = requireConfigPermission('ConfigScope', 'read');
     const req = makeReq({ identity: { userId: 'usr_1', tenantId: null, roles: [], authMode: 'legacy-hs256' } } as any);
     const res = makeRes();
@@ -59,7 +59,7 @@ describe('requireConfigPermission', () => {
 
   it('403s (does not call next) when the Security API denies', async () => {
     const check = jest.fn().mockResolvedValue({ allow: false });
-    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as AuthzClient);
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const middleware = requireConfigPermission('ConfigScope', 'read');
     const req = makeReq({
       identity: { userId: 'usr_1', tenantId: 'org_1', roles: [], authMode: 'legacy-hs256' },
@@ -91,7 +91,7 @@ describe('requireConfigPermission', () => {
           new AuthzError('DECISION_UNAVAILABLE', 'Security API request failed: timeout; denying.'),
         ),
       bulkCheck: jest.fn(),
-    } as AuthzClient);
+    } as unknown as AuthzClient);
     const middleware = requireConfigPermission('ConfigScope', 'read');
     const req = makeReq({ identity: { userId: 'usr_1', tenantId: null, roles: [], authMode: 'legacy-hs256' } } as any);
     const res = makeRes();
@@ -105,7 +105,7 @@ describe('requireConfigPermission', () => {
 
   it('derives the resource-instance key via resourceKeyOf when supplied', async () => {
     const check = jest.fn().mockResolvedValue({ allow: true });
-    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as AuthzClient);
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const middleware = requireConfigPermission('ConfigCatalog', 'read', (req) => (req.params as any).namespace);
     const req = makeReq({
       identity: { userId: 'usr_1', tenantId: null, roles: [], authMode: 'legacy-hs256' },
@@ -130,7 +130,7 @@ describe('requireConfigPermission', () => {
 
   it('falls back to the "platform" tenant when the identity has no tenantId', async () => {
     const check = jest.fn().mockResolvedValue({ allow: true });
-    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as AuthzClient);
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const middleware = requireConfigPermission('ConfigScope', 'read');
     const req = makeReq({ identity: { userId: 'usr_1', tenantId: null, roles: [], authMode: 'legacy-hs256' } } as any);
     const res = makeRes();

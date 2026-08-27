@@ -1,14 +1,17 @@
 /**
- * The GET half of the config-service HTTP surface (FFRNT-157 / FF-EPIC-17-S5):
+ * The GET half of the config-service HTTP surface (FFRNT-157 / FF-EPIC-17-S5,
+ * plus `listConfigHistory` from FF-EPIC-18 / FFRNT-280):
  *
  *   GET /v1/namespaces
  *   GET /v1/namespaces/{namespace}/keys
  *   GET /v1/namespaces/{namespace}/keys/{key}
  *   GET /v1/config
+ *   GET /v1/config/history
  *
- * Mutations (PUT /v1/config, POST/PUT /v1/namespaces*) are FFRNT-158's router,
- * mounted separately at the same `app.use('/v1', ...)` extension point in
- * src/app.ts — this module owns nothing but the four routes above, per
+ * Mutations (PUT /v1/config, POST/PUT /v1/namespaces*, and the reveal-once
+ * POST /v1/config/secrets/reveal) live in FFRNT-158's write router, mounted
+ * separately at the same `app.use('/v1', ...)`-adjacent extension point in
+ * src/app.ts — this module owns every GET route on the surface, per
  * services/config-service/openapi.yaml, the frozen contract.
  */
 
@@ -17,16 +20,18 @@ import { createHash } from 'crypto';
 import { NamespaceRepository } from '../repositories/namespace.repository';
 import { KeyDefinitionRepository } from '../repositories/key-definition.repository';
 import { ValueRepository } from '../repositories/value.repository';
+import { HistoryRepository } from '../repositories/history.repository';
 import { resolveEffectiveConfig } from '../resolver/resolve';
 import { requireAuth } from '../middleware/auth';
 import { CONFIG_CATALOG_RESOURCE, CONFIG_SCOPE_RESOURCE, checkAuthorization, requireConfigPermission } from '../middleware/authz';
 import { parseLimit } from '../pagination';
-import { EffectiveConfigEntry, KeyDefinition, Scope, ScopeType } from '../types';
+import { ConfigHistoryEntry, EffectiveConfigEntry, KeyDefinition, Scope, ScopeType } from '../types';
 
 export interface ConfigReadRouterDeps {
   namespaceRepo: NamespaceRepository;
   keyDefinitionRepo: KeyDefinitionRepository;
   valueRepo: ValueRepository;
+  historyRepo: HistoryRepository;
 }
 
 const VALID_SCOPE_TYPES: ScopeType[] = ['platform', 'portal', 'org', 'user'];
@@ -105,15 +110,38 @@ function buildScopeChain(target: Scope): Scope[] {
   return [platform, target];
 }
 
-/** Best-effort authz tenant for a scope: an org scope IS its own tenant; other tiers fall back to the caller's own org context, or a fixed 'platform' tenant when none is known. */
-function deriveTenant(scope: Scope, req: Request): string {
+/**
+ * Best-effort authz tenant for a scope: an org scope IS its own tenant; other
+ * tiers fall back to the caller's own org context, or a fixed 'platform'
+ * tenant when none is known. Exported so the reveal-once write route
+ * (src/routes/secrets.write.ts) derives a tenant the SAME way for its own
+ * `ConfigScope` check — one rule, not two that could silently drift apart.
+ */
+export function deriveTenant(scope: Scope, req: Request): string {
   if (scope.scopeType === 'org' && scope.scopeId) return scope.scopeId;
   return req.orgId ?? 'platform';
 }
 
+function serializeHistoryEntry(entry: ConfigHistoryEntry): Record<string, unknown> {
+  return {
+    id: entry.id,
+    namespace: entry.namespace,
+    key: entry.key,
+    scope: entry.scope,
+    action: entry.action,
+    oldValue: entry.oldValue,
+    newValue: entry.newValue,
+    redacted: entry.redacted,
+    actor: entry.actor,
+    reason: entry.reason,
+    revertOf: entry.revertOf,
+    occurredAt: entry.occurredAt,
+  };
+}
+
 export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
   const router = Router();
-  const { namespaceRepo, keyDefinitionRepo, valueRepo } = deps;
+  const { namespaceRepo, keyDefinitionRepo, valueRepo, historyRepo } = deps;
 
   // ── GET /v1/namespaces ──────────────────────────────────────────────────
   router.get(
@@ -302,6 +330,121 @@ export function createConfigReadRouter(deps: ConfigReadRouterDeps): Router {
       // eslint-disable-next-line no-console
       console.error('[GET /v1/config] error', err);
       res.status(500).json(errorBody('VALIDATION_ERROR', 'Failed to resolve configuration.'));
+    }
+  });
+
+  // ── GET /v1/config/history ───────────────────────────────────────────────
+  // openapi.yaml `listConfigHistory`: the append-only change trail for ONE
+  // key at ONE exact scope. Sibling of GET /v1/config above — same
+  // namespace/scopeType/scopeId validation, but additionally requires `key`
+  // and gates on a distinct 'audit' action (openapi.yaml Forbidden: "no
+  // **audit** grant... distinct from the write/read grants on the value
+  // itself"), never on the 'read'/'admin' actions the rest of this router
+  // uses.
+  router.get('/config/history', requireAuth, async (req: Request, res: Response) => {
+    const namespaceName = typeof req.query.namespace === 'string' ? req.query.namespace : undefined;
+    const scopeTypeRaw = typeof req.query.scopeType === 'string' ? req.query.scopeType : undefined;
+    const scopeIdRaw = typeof req.query.scopeId === 'string' ? req.query.scopeId : undefined;
+    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+
+    if (!namespaceName) {
+      res.status(400).json(
+        errorBody('VALIDATION_ERROR', 'namespace is required.', {
+          details: [{ key: null, field: 'namespace', message: 'namespace is required.', allowedValues: null }],
+        }),
+      );
+      return;
+    }
+    if (!scopeTypeRaw || !VALID_SCOPE_TYPES.includes(scopeTypeRaw as ScopeType)) {
+      res.status(400).json(
+        errorBody('VALIDATION_ERROR', 'scopeType must be one of platform, portal, org, user.', {
+          details: [
+            {
+              key: null,
+              field: 'scopeType',
+              message: 'scopeType must be one of platform, portal, org, user.',
+              allowedValues: VALID_SCOPE_TYPES,
+            },
+          ],
+        }),
+      );
+      return;
+    }
+    const scopeType = scopeTypeRaw as ScopeType;
+    if (scopeType === 'platform' && scopeIdRaw) {
+      res.status(400).json(
+        errorBody('VALIDATION_ERROR', 'scopeId must be omitted when scopeType is platform.', {
+          details: [{ key: null, field: 'scopeId', message: 'must be omitted for platform', allowedValues: null }],
+        }),
+      );
+      return;
+    }
+    if (scopeType !== 'platform' && !scopeIdRaw) {
+      res.status(400).json(
+        errorBody('VALIDATION_ERROR', 'scopeId is required unless scopeType is platform.', {
+          details: [{ key: null, field: 'scopeId', message: 'scopeId is required', allowedValues: null }],
+        }),
+      );
+      return;
+    }
+    if (!key) {
+      res.status(400).json(
+        errorBody('VALIDATION_ERROR', 'key is required.', {
+          details: [{ key: null, field: 'key', message: 'key is required.', allowedValues: null }],
+        }),
+      );
+      return;
+    }
+
+    const targetScope: Scope = { scopeType, scopeId: scopeType === 'platform' ? null : (scopeIdRaw as string) };
+
+    // Authz BEFORE any existence check, same discipline as GET /v1/config
+    // above — a caller with no audit authority learns nothing about whether
+    // the namespace/key/scope exists. 'audit' is a DISTINCT action from
+    // 'read' (openapi.yaml: seeing/changing a setting does not imply seeing
+    // who changed it and why).
+    const allowed = await checkAuthorization(
+      req,
+      CONFIG_SCOPE_RESOURCE,
+      'audit',
+      `${namespaceName}:${scopeType}:${scopeIdRaw ?? 'platform'}`,
+      deriveTenant(targetScope, req),
+    );
+    if (!allowed) {
+      res.status(403).json(
+        errorBody('FORBIDDEN', 'No audit grant over the requested scope.'),
+      );
+      return;
+    }
+
+    const namespace = await namespaceRepo.findByName(namespaceName);
+    if (!namespace) {
+      res.status(404).json(errorBody('NOT_FOUND', `No such namespace '${namespaceName}'.`));
+      return;
+    }
+
+    const definition = await keyDefinitionRepo.findByKey(namespace.id, key);
+    // Hidden keys are 404 — same masking rule as getKeyDefinition/GET
+    // /v1/config above: this endpoint never confirms the existence of a key
+    // the caller may not otherwise see.
+    if (!definition || definition.isHidden) {
+      res.status(404).json(errorBody('NOT_FOUND', `No such key '${key}' in namespace '${namespaceName}'.`));
+      return;
+    }
+
+    const limit = parseLimit(req.query.limit);
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+
+    try {
+      const page = await historyRepo.listPage({ namespace: namespaceName, key, scope: targetScope, limit, cursor });
+      res.status(200).json({
+        items: page.items.map(serializeHistoryEntry),
+        pageInfo: page.pageInfo,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[GET /v1/config/history] error', err);
+      res.status(500).json(errorBody('VALIDATION_ERROR', 'Failed to list history.'));
     }
   });
 
