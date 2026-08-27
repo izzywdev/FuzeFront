@@ -1,21 +1,35 @@
 /**
  * oidc-plumbing.e2e.spec.ts
  *
- * Real end-to-end integration test for the OIDC authentication flow.
- * Uses a LOCAL Authentik user — no Google OAuth credentials required.
+ * Real end-to-end integration test for the OIDC authentication flow, against
+ * FuzeFront's PROVIDER-AGNOSTIC Security API auth UI (contract PR #243) — not
+ * the earlier "redirect the browser straight to Authentik" model. Uses a LOCAL
+ * Authentik user — no Google OAuth credentials required.
  *
- * All components are real and exercised end-to-end:
- *   FuzeFront frontend (localhost:4173)
- *     → backend GET /api/auth/oidc/login  (PKCE code_challenge, state cookie)
- *     → Authentik authorization endpoint  (real HTTP redirect)
- *     → Playwright fills Authentik native login UI (local user, no bot-detection risk)
- *     → Authentik issues authorization code (implicit-consent — no manual consent step)
- *     → backend GET /api/auth/oidc/callback  (real PKCE verifier check)
- *     → backend POST Authentik /application/o/token/  (real token exchange)
- *     → Authentik returns signed ID token (real JWT)
- *     → backend validates ID token, creates session, redirects frontend with exchange code
- *     → frontend POST /api/auth/token-exchange  (real single-use code)
- *     → JWT stored in localStorage → navigate to /dashboard
+ * The boundary this suite exists to enforce: the browser never navigates to,
+ * or requests anything from, the Authentik host directly. Every path is
+ * either brokered server-side or same-origin:
+ *
+ *   Native email/password form (no redirect, covered by 2b + 3b):
+ *     FuzeFront frontend (localhost:4173)
+ *       → POST /api/v1/security/session  (browser, same-origin)
+ *       → backend drives Authentik's flow-executor with the credentials
+ *       → backend POST Authentik /application/o/token/  (real token exchange,
+ *         server-to-server — the browser is never party to it)
+ *       → platform JWT returned directly in the response body
+ *       → JWT stored via the account vault → navigate to /dashboard
+ *
+ *   "Sign in with Google" button (server-brokered redirect, covered by 3):
+ *     → GET /api/v1/security/social/google/start  (browser, same-origin)
+ *       → server 302s the browser onward — either straight to
+ *         accounts.google.com (brokered mode) or to Authentik's Google SOURCE
+ *         under nginx's same-host IdP-proxy prefix (source mode); the browser
+ *         is not sent to the internal Authentik host in either mode.
+ *     This e2e stack runs in no-Google mode, so only the same-origin start
+ *     request is asserted here — see the test for why.
+ *
+ * `guardBoundary()` below turns that invariant into an assertion: any request,
+ * navigation, or popup that reaches the Authentik host directly fails the test.
  *
  * Required env (all have defaults that match docker-compose.e2e.yml):
  *   AUTHENTIK_URL       — base URL of Authentik (default: http://authentik-server:9000)
@@ -45,6 +59,28 @@ const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:3001'
 const SECURITY_URL = process.env.SECURITY_URL ?? FRONTEND_URL
 const E2E_USER_EMAIL = process.env.E2E_USER_EMAIL ?? 'e2e@test.local'
 const E2E_USER_PASSWORD = process.env.E2E_USER_PASSWORD ?? 'E2eP@ssw0rd123'
+
+// The boundary: no page load, in-page navigation, subresource request, or popup
+// may ever target the IdP host directly. `authn-boundary-smoke.spec.ts` (the
+// post-prod suite) asserts the same invariant against `auth.fuzefront.com`; this
+// is its pre-prod counterpart against the e2e stack's internal Authentik host.
+// This is the "inverse assertion" issue #287 asked for in place of the removed,
+// backwards `waitForURL(AUTHENTIK_URL/**)` — reaching the IdP host from the
+// browser is now the FAILURE mode, not the thing being driven toward.
+const FORBIDDEN_IDP_HOST = new URL(AUTHENTIK_URL).host
+
+function guardBoundary(page: import('@playwright/test').Page): string[] {
+  const violations: string[] = []
+  const check = (kind: string, url: string) => {
+    if (url.toLowerCase().includes(FORBIDDEN_IDP_HOST.toLowerCase())) violations.push(`${kind} -> ${url}`)
+  }
+  page.on('request', req => check(`request(${req.resourceType()})`, req.url()))
+  page.on('framenavigated', f => {
+    if (f === page.mainFrame()) check('navigation', f.url())
+  })
+  page.on('popup', p => check('popup', p.url()))
+  return violations
+}
 
 test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   // Each test starts with a clean browser context (no shared cookies/storage)
@@ -164,10 +200,11 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
   // to end by the API-level test "password sign-in against Authentik (no
   // redirect) returns a platform JWT" above; here we assert the button is wired
   // to the correct server-brokered entry point.
-  test('Google sign-in button initiates the server-brokered social login', async ({
+  test('Google sign-in button initiates the server-brokered social login, never exposing the IdP host', async ({
     page,
   }) => {
     test.setTimeout(60_000)
+    const violations = guardBoundary(page)
 
     await page.goto(FRONTEND_URL)
     await expect(page).toHaveTitle(/FuzeFront|Sign in/i, { timeout: 15_000 })
@@ -185,6 +222,15 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     await googleButton.click()
     const req = await socialStart
     expect(req.url()).toContain('/api/v1/security/social/google/start')
+
+    // Give the server's onward redirect a beat to resolve, then assert the
+    // browser never landed on — or requested anything from — the IdP host
+    // directly. The server brokers the hand-off same-origin/behind-nginx.
+    await page.waitForTimeout(1_000)
+    expect(
+      violations,
+      `PROVIDER BOUNDARY BREACH — browser reached ${FORBIDDEN_IDP_HOST}: ${violations.join(', ')}`
+    ).toEqual([])
   })
 
   // ── 3b. Native credentials form drives the Authentik-backed login ──────
@@ -192,6 +238,7 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     page,
   }) => {
     test.setTimeout(120_000)
+    const violations = guardBoundary(page)
 
     await page.goto(FRONTEND_URL)
     const emailField = page.locator('input[type="email"]')
@@ -215,7 +262,14 @@ test.describe('OIDC plumbing — full stack (local Authentik user)', () => {
     ).toBe(200)
 
     // The page never navigated to Authentik — the whole exchange was server-side.
+    // Asserted two ways: the browser settles on the app's own /dashboard route
+    // (not an Authentik URL), AND — the boundary regression check — nothing the
+    // page requested or navigated to over the whole flow touched the IdP host.
     await page.waitForURL(`${FRONTEND_URL}/dashboard`, { timeout: 30_000 })
+    expect(
+      violations,
+      `PROVIDER BOUNDARY BREACH — browser reached ${FORBIDDEN_IDP_HOST}: ${violations.join(', ')}`
+    ).toEqual([])
     const authToken = await page.evaluate(readActiveAuthToken)
     expect(authToken).toBeTruthy()
     expect(authToken!.split('.').length).toBe(3)
