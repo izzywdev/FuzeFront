@@ -12,7 +12,7 @@
     "dev:api": "tsx watch apps/api/src/index.ts",
     "dev:web": "vite --config apps/web/vite.config.ts",
     "build": "npm run type-check && npm run build:web",
-    "build:web": "vite build --config apps/web/vite.config.ts",
+    "build:web": "cd apps/web && vite build",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "start:api": "tsx apps/api/src/index.ts",
