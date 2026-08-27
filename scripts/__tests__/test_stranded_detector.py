@@ -22,6 +22,7 @@ workflow, which is the same "green but not measuring anything" trap as above.
 Run with:  python3 -m unittest scripts/__tests__/test_stranded_detector.py
 """
 
+import json
 import re
 import subprocess
 import tempfile
@@ -61,35 +62,49 @@ def extract_resolved() -> str:
 RESOLVED = extract_resolved()
 
 
-def run_resolved(branch_exists: bool, open_pr: str = "", merged_pr: str = "") -> tuple:
-    """Run resolved() against a stubbed `gh`. Returns (exit_code, stdout)."""
+def run_resolved(branch_exists: bool = True, open_pr: str = "", merged_pr: str = "",
+                 branch_err: str = "", pr_lookup_fails: bool = False) -> tuple:
+    """Run resolved() against a stubbed `gh`. Returns (exit_code, stdout+stderr).
+
+    Exit codes: 0 = resolved · 1 = genuinely stranded · 2 = inconclusive.
+    """
     with tempfile.TemporaryDirectory() as d:
         bindir = Path(d) / "bin"
         bindir.mkdir()
-        # Stub `gh` covering exactly the two call shapes resolved() makes:
-        #   gh api repos/<repo>/branches/<branch>   -> 0 if the branch exists, 1 if 404
-        #   gh pr list --head <b> --state <s> ...   -> the PR number, or empty
+        prs = []
+        if open_pr:
+            prs.append({"number": int(open_pr), "state": "open", "merged_at": None})
+        if merged_pr:
+            prs.append({"number": int(merged_pr), "state": "closed",
+                        "merged_at": "2026-08-27T00:00:00Z"})
+        # Stub `gh` covering the two REST shapes resolved() makes:
+        #   gh api repos/<repo>/branches/<branch>  -> 0, or 1 with an error on stderr
+        #   gh api repos/<repo>/pulls?head=...     -> the PR array, or a failure
         (bindir / "gh").write_text(
             "#!/bin/bash\n"
-            'if [ "$1" = "api" ]; then\n'
-            f'  exit {0 if branch_exists else 1}\n'
-            "fi\n"
-            'if [ "$1" = "pr" ] && [ "$2" = "list" ]; then\n'
-            "  state=\"\"\n"
-            '  while [ $# -gt 0 ]; do [ "$1" = "--state" ] && state="$2"; shift; done\n'
-            f'  [ "$state" = "open" ] && printf "%s" "{open_pr}"\n'
-            f'  [ "$state" = "merged" ] && printf "%s" "{merged_pr}"\n'
-            "  exit 0\n"
-            "fi\n"
+            'arg="$*"\n'
+            'case "$arg" in\n'
+            "  *branches*)\n"
+            + (f'    echo "{branch_err}" >&2; exit 1\n' if not branch_exists else "    echo '{}'; exit 0\n")
+            + "    ;;\n"
+            "  *pulls*)\n"
+            + ("    echo 'GraphQL: API rate limit already exceeded' >&2; exit 1\n"
+               if pr_lookup_fails else
+               f"    cat <<'JSON'\n{json.dumps(prs)}\nJSON\n    exit 0\n")
+            + "    ;;\n"
+            "esac\n"
             "exit 0\n"
         )
         (bindir / "gh").chmod(0o755)
         script = (
             "#!/bin/bash\n"
+            "set -e\n"                      # the workflow step runs under `bash -e`
             "GITHUB_REPOSITORY=izzywdev/FuzeFront\n"
+            "OWNER=izzywdev\n"
             "BRANCH=claude/some-branch\n"
             f"{RESOLVED}\n"
-            "resolved\n"
+            "verdict=0; resolved || verdict=$?\n"
+            "exit $verdict\n"
         )
         p = subprocess.run(
             ["bash", "-c", script],
@@ -97,7 +112,7 @@ def run_resolved(branch_exists: bool, open_pr: str = "", merged_pr: str = "") ->
             text=True,
             env={"PATH": f"{bindir}:/usr/bin:/bin"},
         )
-        return p.returncode, p.stdout
+        return p.returncode, p.stdout + p.stderr
 
 
 class ResolvedTests(unittest.TestCase):
@@ -108,7 +123,7 @@ class ResolvedTests(unittest.TestCase):
         300s grace window and then reported a successfully-merged branch as
         stranded work needing manual salvage.
         """
-        code, out = run_resolved(branch_exists=False)
+        code, out = run_resolved(branch_exists=False, branch_err="HTTP 404: Not Found")
         self.assertEqual(code, 0, "a deleted branch must be treated as resolved")
         self.assertIn("no longer exists", out)
 
@@ -141,6 +156,87 @@ class ResolvedTests(unittest.TestCase):
         """
         code, _ = run_resolved(branch_exists=True, open_pr="", merged_pr="")
         self.assertEqual(code, 1)
+
+
+
+class InconclusiveTests(unittest.TestCase):
+    """Verdict 2 — a lookup FAILED, so we do not know. Never verdict 1.
+
+    The #843 regression, and the worst of the three false positives because it is
+    silent and load-triggered: `gh pr list` is a GraphQL call, it was rate-limited
+    on all 15 polls, and `2>/dev/null || true` made the error indistinguishable
+    from "no PR exists". The detector then reported a branch as stranded whose PR
+    was open the entire time:
+
+        No PR for claude/required-checks-and-merge-queue yet (waited 300s of 300s)
+        GraphQL: API rate limit already exceeded for user ID 99821070.
+        ### WARNING Stranded agent branch: `claude/required-checks-and-merge-queue`
+
+    It fires precisely when many agents are pushing at once — exactly when this
+    detector is meant to be useful.
+    """
+
+    def test_rate_limited_pr_lookup_is_inconclusive_not_stranded(self):
+        code, out = run_resolved(branch_exists=True, pr_lookup_fails=True)
+        self.assertEqual(code, 2, "a failed PR lookup must be INCONCLUSIVE, never stranded")
+        self.assertNotEqual(code, 1)
+        self.assertIn("PR lookup", out)
+
+    def test_non_404_branch_error_is_inconclusive_not_deleted(self):
+        """A 500 or a rate limit is not evidence the branch was deleted.
+
+        Only an explicit 404 means gone; anything else means we could not tell,
+        and guessing "deleted" would silently pass a genuinely stranded branch.
+        """
+        code, out = run_resolved(branch_exists=False, branch_err="HTTP 500: Internal Server Error")
+        self.assertEqual(code, 2)
+        self.assertIn("branch lookup", out)
+
+    def test_404_is_still_read_as_deleted(self):
+        """The inconclusive path must not swallow the real deleted-branch case."""
+        code, _ = run_resolved(branch_exists=False, branch_err="HTTP 404: Not Found")
+        self.assertEqual(code, 0)
+
+
+class ShellSafetyTests(unittest.TestCase):
+    def test_resolved_does_not_abort_under_set_e(self):
+        """The workflow step runs as `bash -e`.
+
+        A function returning non-zero as a bare statement exits the script there,
+        so every call site must use `resolved || verdict=$?`. If the harness
+        (which sets -e) can observe verdicts 1 and 2 at all, the idiom holds.
+        """
+        self.assertEqual(run_resolved(branch_exists=True)[0], 1)
+        self.assertEqual(run_resolved(branch_exists=True, pr_lookup_fails=True)[0], 2)
+
+
+class CallSiteTests(unittest.TestCase):
+    def test_every_call_site_uses_the_set_e_safe_idiom(self):
+        """Guard the idiom in the workflow itself, not just in the harness."""
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf8"))
+        run = next(s["run"] for s in doc["jobs"]["open-pr"]["steps"]
+                   if s.get("name", "").startswith("Detect"))
+        # `resolved` used as a COMMAND: at the start of a statement, i.e. after
+        # line-start or `;`. Not the definition, not a mention inside an echo.
+        invocations = [
+            ln.strip() for ln in run.split("\n")
+            if not ln.lstrip().startswith("#")
+            and "resolved()" not in ln
+            and re.search(r"(^|;)\s*resolved\b", ln)
+        ]
+        self.assertTrue(invocations, "no resolved() call sites found")
+        for c in invocations:
+            self.assertIn("|| verdict=$?", c,
+                          f"call site must not abort under set -e: {c!r}")
+
+    def test_no_graphql_pr_lookups_remain(self):
+        """`gh pr list` is GraphQL — the call that ran out of budget on #843."""
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf8"))
+        run = next(s["run"] for s in doc["jobs"]["open-pr"]["steps"]
+                   if s.get("name", "").startswith("Detect"))
+        live = [ln for ln in run.split("\n")
+                if "gh pr list" in ln and not ln.lstrip().startswith("#")]
+        self.assertEqual(live, [], f"GraphQL PR lookups still present: {live}")
 
 
 if __name__ == "__main__":

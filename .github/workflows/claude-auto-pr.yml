@@ -142,6 +142,21 @@ jobs:
           #   2. ITS PR MERGED. Same race, branch retained. `--state open` finds
           #      nothing and the merged PR goes unseen.
           #
+          #   3. THE LOOKUP ITSELF FAILED. `gh pr list` is a GraphQL call, and the
+          #      old code ran it as `... 2>/dev/null || true`, so an API error and
+          #      "no PR exists" produced the identical empty string. Observed live
+          #      on #843, whose PR was open the entire time:
+          #
+          #        No PR for claude/required-checks-and-merge-queue yet (waited 300s of 300s)
+          #        GraphQL: API rate limit already exceeded for user ID 99821070.
+          #        ### ⚠️ Stranded agent branch: `claude/required-checks-and-merge-queue`
+          #
+          #      All 15 polls were rate-limited and every one was read as "no PR".
+          #      This is the worst of the three: it is silent, it is triggered by
+          #      LOAD — many agents pushing at once, which is exactly when this
+          #      detector is supposed to be useful — and it produces a confident
+          #      wrong answer telling a human to salvage work that is fine.
+          #
           # A closed-but-NOT-merged PR is deliberately not an exit: the branch has
           # commits, nobody is going to merge them, and that is exactly what this
           # detector is for.
@@ -152,18 +167,42 @@ jobs:
           # is the reason the 300s grace window exists at all. Failing on a branch
           # that merged SUCCESSFULLY is the same bug the grace window was added to
           # fix, arriving from the other end of the PR's life.
+          #
+          # Every lookup below is REST (`gh api`), never `gh pr list`. Two reasons,
+          # and both are load-bearing: REST has a far larger budget than GraphQL's
+          # point system, which is what ran out above; and `gh api` exit status
+          # distinguishes a real answer from a failed call, which `gh pr list
+          # --json ... --jq` collapsed into an empty string. One REST call now
+          # returns open AND merged PRs together, halving the request count too.
+          #
+          # Returns: 0 = resolved (nothing to strand) · 1 = genuinely stranded
+          #          2 = INCONCLUSIVE (a lookup failed; we do not know)
+          OWNER="${GITHUB_REPOSITORY%%/*}"
           resolved() {
-            # Branch deleted server-side (404) — merged-and-deleted, or reaped.
-            if ! gh api "repos/${GITHUB_REPOSITORY}/branches/${BRANCH}" >/dev/null 2>&1; then
-              echo "Branch $BRANCH no longer exists on the remote — its PR merged with --delete-branch, or it was reaped. Nothing to strand."
-              return 0
+            # Does the branch still exist? A 404 means merged-and-deleted or
+            # reaped. Any OTHER error means we could not tell — never guess.
+            if ! gh api "repos/${GITHUB_REPOSITORY}/branches/${BRANCH}" >/dev/null 2>/tmp/branch-err; then
+              if grep -qiE 'not found|HTTP 404' /tmp/branch-err; then
+                echo "Branch $BRANCH no longer exists on the remote — its PR merged with --delete-branch, or it was reaped. Nothing to strand."
+                return 0
+              fi
+              echo "::warning::branch lookup for $BRANCH failed (not a 404): $(head -c 200 /tmp/branch-err)"
+              return 2
             fi
-            open_pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+
+            # One REST call for every PR on this head, any state.
+            if ! gh api "repos/${GITHUB_REPOSITORY}/pulls?head=${OWNER}:${BRANCH}&state=all&per_page=100" \
+                 > /tmp/pr-lookup.json 2>/tmp/pr-lookup-err; then
+              echo "::warning::PR lookup for $BRANCH failed: $(head -c 200 /tmp/pr-lookup-err)"
+              return 2
+            fi
+
+            open_pr=$(jq -r 'map(select(.state=="open"))|.[0].number // empty' /tmp/pr-lookup.json 2>/dev/null || true)
             if [ -n "$open_pr" ]; then
               echo "PR #$open_pr is open for $BRANCH — the agent did its job. Nothing to do."
               return 0
             fi
-            merged_pr=$(gh pr list --head "$BRANCH" --state merged --json number --jq '.[0].number' 2>/dev/null || true)
+            merged_pr=$(jq -r 'map(select(.merged_at != null))|.[0].number // empty' /tmp/pr-lookup.json 2>/dev/null || true)
             if [ -n "$merged_pr" ]; then
               echo "PR #$merged_pr for $BRANCH is already MERGED — the work landed. Nothing to strand."
               return 0
@@ -171,7 +210,8 @@ jobs:
             return 1
           }
 
-          if resolved; then exit 0; fi
+          verdict=0; resolved || verdict=$?
+          if [ "$verdict" -eq 0 ]; then exit 0; fi
 
           # A branch with no commits ahead of base is not stranded — it is empty.
           if ! git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
@@ -181,7 +221,7 @@ jobs:
 
           # Commits exist with no PR. Create it.
           if gh pr create --base "$BASE" --head "$BRANCH" --fill --label "auto-merge" 2>/tmp/pr-err; then
-            num=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+            num=$(gh api "repos/${GITHUB_REPOSITORY}/pulls?head=${OWNER}:${BRANCH}&state=open" --jq '.[0].number // empty' 2>/dev/null || true)
             if [ "$PR_TOKEN_IS_PAT" = "true" ]; then
               echo "Opened PR #${num:-?} for $BRANCH using GH_RELEASE_PAT — CI will trigger normally."
               exit 0
@@ -223,19 +263,52 @@ jobs:
           while [ "$waited" -lt "$GRACE_SECONDS" ]; do
             # Re-ask the FULL question, not just "is a PR open?" — the branch can
             # be merged and deleted out from under us mid-window (see `resolved`).
-            if resolved; then
+            verdict=0; resolved || verdict=$?
+            if [ "$verdict" -eq 0 ]; then
               echo "  (resolved after ${waited}s)"
               exit 0
             fi
             sleep "$INTERVAL"
             waited=$((waited + INTERVAL))
-            echo "No PR for $BRANCH yet (waited ${waited}s of ${GRACE_SECONDS}s) — still within the agent's grace window."
+            if [ "$verdict" -eq 2 ]; then
+              echo "Lookup for $BRANCH was inconclusive (waited ${waited}s of ${GRACE_SECONDS}s) — retrying."
+            else
+              echo "No PR for $BRANCH yet (waited ${waited}s of ${GRACE_SECONDS}s) — still within the agent's grace window."
+            fi
           done
 
           # Final check after the window closes, so a PR opened — or a merge
           # completed — during the last interval is not missed.
-          if resolved; then
+          verdict=0; resolved || verdict=$?
+          if [ "$verdict" -eq 0 ]; then
             echo "  (resolved just as the grace window closed)"
+            exit 0
+          fi
+
+          # INCONCLUSIVE, not stranded. Every lookup in the window failed, so we
+          # do not know whether a PR exists — and "I could not check" must never
+          # print as "this branch is abandoned, go salvage it". That is the #843
+          # failure, where a rate-limited lookup produced a confident wrong answer
+          # about a branch whose PR was open the whole time.
+          #
+          # Warn rather than fail, deliberately: a false "stranded" sends someone
+          # to salvage work that is fine and teaches them to ignore this check,
+          # which is the failure mode this whole file is engineered against. A
+          # missed stranded branch is caught by governance-nightly within a day.
+          # This is a NAMED, LOGGED condition on a specific API failure — not a
+          # blanket pass — and it cannot hide a real stranded branch silently,
+          # because the warning says exactly which lookup failed.
+          if [ "$verdict" -eq 2 ]; then
+            {
+              echo "### ⚠️ Could not determine whether \`$BRANCH\` has a PR"
+              echo ""
+              echo "Every lookup in the ${GRACE_SECONDS}s window failed (see the warnings above —"
+              echo "typically \`API rate limit already exceeded\` when many agents push at once)."
+              echo "This is NOT a finding about the branch: it may well have an open PR."
+              echo ""
+              echo "\`governance-nightly\` re-checks branches daily and is the backstop here."
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Stranded-branch check for $BRANCH was inconclusive — the GitHub API lookups failed. Not reporting it as stranded."
             exit 0
           fi
 
