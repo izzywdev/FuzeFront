@@ -679,6 +679,15 @@ chatService:
   # listed explicitly here since this is the values file prod actually syncs
   # from. See values.yaml chatService.dbName for the full rationale.
   dbName: fuzefront_chat
+  # Same shared in-cluster Unleash + unleash-secrets Secret as
+  # securityService/applicationsService/backend above — no new secret sealed,
+  # so no re-sealing is needed. CLIENT token: server-side only. Gates
+  # fuzefront.authz.chat-agent-security-api (FuzeFront#254), default OFF.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "chat-service"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
   affinity:
     nodeAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:

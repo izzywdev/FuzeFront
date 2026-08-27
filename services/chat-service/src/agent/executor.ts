@@ -18,7 +18,7 @@
 
 import type { AgentTool } from './tools/types';
 import type { MutatingToolContext } from './tools/mutating';
-import type { PermitClient } from './permit';
+import type { AuthzCheckable } from './authzGateway';
 import type { AuditRepository } from '../db/repositories/audit';
 
 export interface PendingExecution {
@@ -41,7 +41,15 @@ export interface ExecutionResult {
 export interface ToolExecutorDeps {
   /** Resolve a tool by name (only mutating tools are executable here). */
   getTool(name: string): AgentTool<any, any> | undefined;
-  permit: Pick<PermitClient, 'check'>;
+  /**
+   * Answers the live permission check (step 1 below). Pass an
+   * `agent/authzGateway.ts` `AuthzGateway` in production — it fail-closedly
+   * selects between the direct-PDP and Security-API-wrapped implementations
+   * per the `fuzefront.authz.chat-agent-security-api` flag (FuzeFront#254).
+   * A bare `PermitClient` (or any `{ check }` mock) satisfies this
+   * structurally too, which is what the unit tests below use.
+   */
+  permit: AuthzCheckable;
   audit: Pick<AuditRepository, 'record'>;
 }
 
@@ -61,13 +69,17 @@ export class ToolExecutor {
       return { success: false, summary: `Cannot execute "${pending.toolName}".` };
     }
 
-    // 1. Live Permit check — fail-closed.
+    // 1. Live authorization check — fail-closed. `token` is forwarded so the
+    // Security-API-wrapped path (when the flag is ON) can authenticate the
+    // decision request as the real caller, not a service identity; the
+    // direct-PDP path ignores it (the PDP has no concept of a bearer token).
     const allowed = await this.deps.permit.check({
       user: pending.userId,
       action: tool.permit.action,
       resource: tool.permit.resource,
       tenant: pending.orgId,
       attributes: { args: pending.args },
+      token: pending.token,
     });
 
     if (!allowed) {

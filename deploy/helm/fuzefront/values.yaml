@@ -553,7 +553,19 @@ chatService:
   backendUrl: "http://fuzefront-backend:3001"
   # Permit PDP for authorization checks. When permit.enabled=true the in-cluster PDP runs
   # at fuzefront-permit-pdp:7000; otherwise falls back to the offline stub port.
+  # This is the FLAG-OFF (default) path for fuzefront.authz.chat-agent-security-api
+  # (FuzeFront#254) — see featureFlags below and securityService.port for the
+  # wrapped alternative (SECURITY_SERVICE_URL, templates/chat-service.yaml).
   permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  # @fuzefront/feature-flags (OpenFeature + Unleash) client — gates
+  # fuzefront.authz.chat-agent-security-api (FuzeFront#254) via
+  # utils/feature-flags.ts (startup init) / agent/authzFlag.ts (lazy read).
+  # Same shape + empty-default degrade pattern as securityService.featureFlags.
+  featureFlags:
+    unleashUrl: ""
+    appName: "chat-service"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+    tokenSecretName: ""
   kafka:
     brokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
   dbName: "chat"

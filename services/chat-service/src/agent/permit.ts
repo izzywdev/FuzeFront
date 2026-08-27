@@ -6,6 +6,16 @@
 //
 // Fail-closed: any error (PDP down, non-2xx, network) returns `false` (deny) so
 // a broken PDP can never authorize an action.
+//
+// DEPRECATION NOTE (FuzeFront#254 — wrap Permit behind the FuzeFront Security
+// API): this direct-PDP path is the exact "consumer product calls Permit
+// directly" leak #254 targets. It is kept ALIVE and UNCHANGED here as the
+// fallback — `agent/authzGateway.ts` selects between this class and the
+// wrapped `agent/securityApiPermitAdapter.ts` behind the
+// `fuzefront.authz.chat-agent-security-api` flag (default OFF). Once the
+// wrapped path is proven in production, flip the flag to ON, then delete this
+// class + `PERMIT_PDP_URL`/`config.permitPdpUrl` entirely. Do not add new
+// call sites against this class — use `agent/authzGateway.ts` instead.
 
 export interface PermitConfig {
   /** PDP base URL, e.g. http://fuzefront-permit-pdp:7000 */
@@ -22,6 +32,14 @@ export interface PermitCheck {
   /** Tenant key (orgId). */
   tenant: string;
   attributes?: Record<string, unknown>;
+  /**
+   * Caller's bearer token (JWT). Ignored by `PermitClient` (the PDP has no
+   * concept of it) — carried here only so a single `PermitCheck` value can be
+   * handed to EITHER implementation via `agent/authzGateway.ts`. Required by
+   * `SecurityApiPermitAdapter` to authenticate the decision request as the
+   * real principal (see `PendingExecution.token` in `executor.ts`).
+   */
+  token?: string;
 }
 
 export class PermitClient {

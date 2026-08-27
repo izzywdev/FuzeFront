@@ -31,6 +31,36 @@
 
 flags:
   # ---------------------------------------------------------------------------
+  # fuzefront.authz.*
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.authz.chat-agent-security-api
+    type: release
+    default: false
+    description: >
+      FuzeFront#254 — wrap Permit behind the FuzeFront Security API; consumer
+      products must not call the PDP/Permit cloud directly. Selects, in
+      chat-service's agent-tool permission check
+      (agent/authzGateway.ts), between the direct Permit PDP REST call
+      (agent/permit.ts, today's behavior, OFF) and the same decision asked of
+      FuzeFront's own Security API via @fuzefront/auth's createAuthzClient
+      (agent/securityApiPermitAdapter.ts, ON) — the same wrapper
+      config-service's middleware/authz.ts already uses in production. Both
+      branches evaluate the identical Permit-backed policy and are
+      fail-closed; this flag selects the TRANSPORT, never the decision.
+      Rollout convenience only — never a substitute for the Permit check
+      itself.
+    owner: backend-engineer
+    removal_criterion: >
+      Delete once the wrapped path is enabled for 100% of environments and
+      the direct-PDP path (agent/permit.ts's PermitClient, PERMIT_PDP_URL /
+      config.permitPdpUrl) is no longer exercised in prod. Remove the flag
+      from Unleash AND the `direct` branch of AuthzGateway in the same PR.
+    gates:
+      - "chat-service agent-tool permission check (agent/executor.ts -> agent/authzGateway.ts)"
+    web_exposed: false
+    jira: ~
+
+  # ---------------------------------------------------------------------------
   # fuzefront.account-security.*
   # ---------------------------------------------------------------------------
   - key: fuzefront.account-security.hub
