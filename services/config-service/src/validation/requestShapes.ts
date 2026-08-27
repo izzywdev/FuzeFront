@@ -168,3 +168,26 @@ const validateKeyDefinitionManifest: ValidateFunction = ajv.compile(KEY_DEFINITI
 export function validateKeyDefinitionManifestShape(body: unknown): ShapeValidationResult {
   return run(validateKeyDefinitionManifest, body);
 }
+
+// ── RevealSecretRequest (POST /v1/config/secrets/reveal) — FF-EPIC-18 (FFRNT-280) ──
+
+const REVEAL_SECRET_REQUEST_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['namespace', 'scope', 'key', 'reason'],
+  properties: {
+    namespace: { type: 'string', minLength: 1, maxLength: 200 },
+    scope: SCOPE_SCHEMA,
+    key: { type: 'string', minLength: 1, maxLength: 200 },
+    // Required, not optional — unlike ConfigWriteRequest.reason — a reveal is
+    // read access to a live secret, not a change a reviewer can reconstruct
+    // from a diff (openapi.yaml RevealSecretRequest.reason).
+    reason: { type: 'string', minLength: 1, maxLength: 500 },
+  },
+};
+
+const validateRevealSecretRequest: ValidateFunction = ajv.compile(REVEAL_SECRET_REQUEST_SCHEMA);
+
+export function validateRevealSecretRequestShape(body: unknown): ShapeValidationResult {
+  return run(validateRevealSecretRequest, body);
+}

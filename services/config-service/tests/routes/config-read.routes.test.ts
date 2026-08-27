@@ -12,6 +12,7 @@
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
+import type { AuthzClient } from '@fuzefront/auth';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { createConfigReadRouter } from '../../src/routes/config-read.routes';
 import { _setAuthzClientForTesting, makeNoOpProxy } from '../../src/middleware/authz';
@@ -22,7 +23,8 @@ import {
   ListKeyDefinitionsResult,
 } from '../../src/repositories/key-definition.repository';
 import { ValueRepository, SetValueInput } from '../../src/repositories/value.repository';
-import { ConfigValue, KeyDefinition, Namespace, NamespaceEntityId, Scope } from '../../src/types';
+import { HistoryRepository, ListHistoryArgs, ListHistoryResult } from '../../src/repositories/history.repository';
+import { ConfigHistoryEntry, ConfigValue, KeyDefinition, Namespace, NamespaceEntityId, Scope } from '../../src/types';
 import { decodeCursor, encodeCursor } from '../../src/pagination';
 
 const JWT_SECRET = 'test-secret-ffrnt-157-routes';
@@ -133,6 +135,40 @@ class FakeValueRepository implements ValueRepository {
   }
 }
 
+class FakeHistoryRepository implements HistoryRepository {
+  constructor(public entries: ConfigHistoryEntry[] = []) {}
+
+  async append(): Promise<ConfigHistoryEntry> {
+    throw new Error('not implemented — write surface owns appending history');
+  }
+  async listPage(args: ListHistoryArgs): Promise<ListHistoryResult> {
+    const matching = this.entries
+      .filter(
+        (e) =>
+          e.namespace === args.namespace &&
+          e.key === args.key &&
+          e.scope.scopeType === args.scope.scopeType &&
+          e.scope.scopeId === args.scope.scopeId,
+      )
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || (b.id > a.id ? 1 : -1));
+
+    let startIndex = 0;
+    if (args.cursor) {
+      const c = decodeCursor<{ occurredAt: string; id: string }>(args.cursor);
+      if (c) {
+        startIndex = matching.findIndex((e) => e.occurredAt === c.occurredAt && e.id === c.id) + 1;
+      }
+    }
+
+    const window = matching.slice(startIndex, startIndex + args.limit + 1);
+    const hasNextPage = window.length > args.limit;
+    const items = hasNextPage ? window.slice(0, args.limit) : window;
+    const last = items[items.length - 1];
+    const nextCursor = hasNextPage && last ? encodeCursor({ occurredAt: last.occurredAt, id: last.id }) : null;
+    return { items, pageInfo: { hasNextPage, nextCursor } };
+  }
+}
+
 // ─── Fixture builders ───────────────────────────────────────────────────────
 
 let seq = 0;
@@ -180,22 +216,43 @@ function makeDefinition(namespaceId: string, overrides: Partial<KeyDefinition> =
   };
 }
 
+function makeHistoryEntry(overrides: Partial<ConfigHistoryEntry> = {}): ConfigHistoryEntry {
+  seq += 1;
+  return {
+    id: mintId('configHistory'),
+    namespace: 'fuzefront.chat',
+    key: 'ui.theme.density',
+    scope: { scopeType: 'org', scopeId: 'org_1' },
+    action: 'set',
+    oldValue: null,
+    newValue: 'compact',
+    redacted: false,
+    actor: { actorType: 'user', actorId: 'usr_1' },
+    reason: null,
+    revertOf: null,
+    occurredAt: new Date(2026, 0, 1, 0, 0, seq).toISOString(),
+    ...overrides,
+  };
+}
+
 function makeApp(deps: {
   namespaces?: Namespace[];
   definitions?: KeyDefinition[];
   values?: ConfigValue[];
+  history?: ConfigHistoryEntry[];
 }) {
   const namespaceRepo = new FakeNamespaceRepository(deps.namespaces ?? []);
   const keyDefinitionRepo = new FakeKeyDefinitionRepository(deps.definitions ?? []);
   const valueRepo = new FakeValueRepository(deps.values ?? []);
+  const historyRepo = new FakeHistoryRepository(deps.history ?? []);
   const app = express();
   app.use(express.json());
-  app.use('/v1', createConfigReadRouter({ namespaceRepo, keyDefinitionRepo, valueRepo }));
-  return { app, namespaceRepo, keyDefinitionRepo, valueRepo };
+  app.use('/v1', createConfigReadRouter({ namespaceRepo, keyDefinitionRepo, valueRepo, historyRepo }));
+  return { app, namespaceRepo, keyDefinitionRepo, valueRepo, historyRepo };
 }
 
 beforeEach(() => {
-  _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: true }), bulkCheck: jest.fn() });
+  _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: true }), bulkCheck: jest.fn() } as unknown as AuthzClient);
 });
 afterEach(() => {
   _setAuthzClientForTesting(makeNoOpProxy());
@@ -269,7 +326,7 @@ describe('GET /v1/namespaces', () => {
   });
 
   it('403s when the Security API denies', async () => {
-    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: false }), bulkCheck: jest.fn() });
+    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: false }), bulkCheck: jest.fn() } as unknown as AuthzClient);
     const { app } = makeApp({ namespaces: [makeNamespace()] });
 
     const res = await request(app).get('/v1/namespaces').set('Authorization', `Bearer ${token()}`);
@@ -308,7 +365,7 @@ describe('GET /v1/namespaces/:namespace/keys', () => {
   it('403s a non-admin caller passing includeHidden=true, without leaking the hidden keys', async () => {
     // First call ('read') allowed, second ('admin') denied.
     const check = jest.fn().mockResolvedValueOnce({ allow: true }).mockResolvedValueOnce({ allow: false });
-    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
     const ns = makeNamespace({ namespace: 'fuzefront.chat' });
     const { app } = makeApp({ namespaces: [ns], definitions: [makeDefinition(ns.id, { isHidden: true })] });
 
@@ -320,7 +377,7 @@ describe('GET /v1/namespaces/:namespace/keys', () => {
   });
 
   it('includes isHidden keys for an admin passing includeHidden=true', async () => {
-    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: true }), bulkCheck: jest.fn() });
+    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: true }), bulkCheck: jest.fn() } as unknown as AuthzClient);
     const ns = makeNamespace({ namespace: 'fuzefront.chat' });
     const hidden = makeDefinition(ns.id, { key: 'hidden.key', isHidden: true });
     const { app } = makeApp({ namespaces: [ns], definitions: [hidden] });
@@ -432,7 +489,7 @@ describe('GET /v1/config', () => {
   });
 
   it('403s BEFORE checking namespace existence — leaks nothing about whether the scope exists (S5 AC4)', async () => {
-    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: false }), bulkCheck: jest.fn() });
+    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: false }), bulkCheck: jest.fn() } as unknown as AuthzClient);
     const { app } = makeApp({}); // no namespaces at all — would 404 if reached
 
     const res = await request(app)
@@ -545,5 +602,202 @@ describe('GET /v1/config', () => {
       .set('If-None-Match', 'garbage-not-a-real-etag');
 
     expect(res.status).toBe(200);
+  });
+});
+
+// ─── GET /v1/config/history (FF-EPIC-18 / FFRNT-280) ───────────────────────
+
+describe('GET /v1/config/history', () => {
+  it('401s with no credential', async () => {
+    const { app } = makeApp({});
+    const res = await request(app).get(
+      '/v1/config/history?namespace=fuzefront.chat&scopeType=platform&key=k',
+    );
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('400s when key is missing (the one param this endpoint requires beyond GET /v1/config)', async () => {
+    const { app } = makeApp({});
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=platform')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('400s when namespace is missing', async () => {
+    const { app } = makeApp({});
+    const res = await request(app)
+      .get('/v1/config/history?scopeType=platform&key=k')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('400s on an invalid scopeType', async () => {
+    const { app } = makeApp({});
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=galaxy&key=k')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('400s when scopeId is missing for a non-platform tier', async () => {
+    const { app } = makeApp({});
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=org&key=k')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("403s on a denied 'audit' grant BEFORE checking namespace existence — leaks nothing about whether the scope exists", async () => {
+    _setAuthzClientForTesting({ check: jest.fn().mockResolvedValue({ allow: false }), bulkCheck: jest.fn() } as unknown as AuthzClient);
+    const { app } = makeApp({}); // no namespaces at all — would 404 if reached
+
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.does-not-exist&scopeType=org&scopeId=org_1&key=k')
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('FORBIDDEN');
+  });
+
+  it("checks the 'audit' action, distinct from 'read'", async () => {
+    const check = jest.fn().mockResolvedValue({ allow: true });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
+    const ns = makeNamespace({ namespace: 'fuzefront.chat' });
+    const def = makeDefinition(ns.id, { key: 'k' });
+    const { app } = makeApp({ namespaces: [ns], definitions: [def] });
+
+    await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=platform&key=k')
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(check).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'audit', resource: { type: 'ConfigScope', key: 'fuzefront.chat:platform:platform' } }),
+      expect.any(String),
+    );
+  });
+
+  it('404s when the namespace does not exist (and the caller IS authorized)', async () => {
+    const { app } = makeApp({});
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.nope&scopeType=platform&key=k')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('404s when the key does not exist in that namespace', async () => {
+    const ns = makeNamespace({ namespace: 'fuzefront.chat' });
+    const { app } = makeApp({ namespaces: [ns] });
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=platform&key=no.such.key')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('404s a hidden key — same masking as getKeyDefinition/GET /v1/config, never confirms existence', async () => {
+    const ns = makeNamespace({ namespace: 'fuzefront.chat' });
+    const hidden = makeDefinition(ns.id, { key: 'hidden.key', isHidden: true });
+    const { app } = makeApp({ namespaces: [ns], definitions: [hidden] });
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=platform&key=hidden.key')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns entries newest-first, scoped to the exact (namespace, key, scope) requested', async () => {
+    const ns = makeNamespace({ namespace: 'fuzefront.chat' });
+    const def = makeDefinition(ns.id, { key: 'ui.theme.density' });
+    const scope: Scope = { scopeType: 'org', scopeId: 'org_1' };
+    const older = makeHistoryEntry({ namespace: 'fuzefront.chat', key: 'ui.theme.density', scope, occurredAt: '2026-01-01T00:00:00.000Z', newValue: 'comfortable' });
+    const newer = makeHistoryEntry({ namespace: 'fuzefront.chat', key: 'ui.theme.density', scope, occurredAt: '2026-01-02T00:00:00.000Z', newValue: 'compact' });
+    // A different key at the same scope, and the same key at a different
+    // scope — neither should leak into this key+scope's trail.
+    const otherKey = makeHistoryEntry({ namespace: 'fuzefront.chat', key: 'other.key', scope });
+    const otherScope = makeHistoryEntry({ namespace: 'fuzefront.chat', key: 'ui.theme.density', scope: { scopeType: 'org', scopeId: 'org_2' } });
+    const { app } = makeApp({
+      namespaces: [ns],
+      definitions: [def],
+      history: [older, newer, otherKey, otherScope],
+    });
+
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=org&scopeId=org_1&key=ui.theme.density')
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((e: any) => e.newValue)).toEqual(['compact', 'comfortable']);
+    expect(res.body.pageInfo).toEqual(expect.objectContaining({ hasNextPage: false }));
+  });
+
+  it('an empty page is not an error — the key has never changed at this exact scope', async () => {
+    const ns = makeNamespace({ namespace: 'fuzefront.chat' });
+    const def = makeDefinition(ns.id, { key: 'k' });
+    const { app } = makeApp({ namespaces: [ns], definitions: [def] });
+
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=platform&key=k')
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.items).toEqual([]);
+  });
+
+  it('redacts oldValue/newValue for an isSecret key, but still reports the action/actor/reason', async () => {
+    const ns = makeNamespace({ namespace: 'fuzefront.chat' });
+    const secretDef = makeDefinition(ns.id, { key: 'api.token', isSecret: true, valueType: 'secret' });
+    const scope: Scope = { scopeType: 'org', scopeId: 'org_1' };
+    const entry = makeHistoryEntry({
+      namespace: 'fuzefront.chat',
+      key: 'api.token',
+      scope,
+      action: 'reveal',
+      redacted: true,
+      oldValue: null,
+      newValue: null,
+      reason: 'rotating the credential',
+    });
+    const { app } = makeApp({ namespaces: [ns], definitions: [secretDef], history: [entry] });
+
+    const res = await request(app)
+      .get('/v1/config/history?namespace=fuzefront.chat&scopeType=org&scopeId=org_1&key=api.token')
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].redacted).toBe(true);
+    expect(res.body.items[0].oldValue).toBeNull();
+    expect(res.body.items[0].newValue).toBeNull();
+    expect(res.body.items[0].action).toBe('reveal');
+    expect(res.body.items[0].reason).toBe('rotating the credential');
+  });
+
+  it('walks the full set via nextCursor with no gaps or duplicates', async () => {
+    const ns = makeNamespace({ namespace: 'fuzefront.chat' });
+    const def = makeDefinition(ns.id, { key: 'k' });
+    const scope: Scope = { scopeType: 'platform', scopeId: null };
+    const entries = Array.from({ length: 12 }, (_, i) =>
+      makeHistoryEntry({ namespace: 'fuzefront.chat', key: 'k', scope, occurredAt: new Date(2026, 0, 1 + i).toISOString() }),
+    );
+    const { app } = makeApp({ namespaces: [ns], definitions: [def], history: entries });
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 20; i++) {
+      const qs = cursor
+        ? `&limit=5&cursor=${encodeURIComponent(cursor)}`
+        : '&limit=5';
+      const res = await request(app)
+        .get(`/v1/config/history?namespace=fuzefront.chat&scopeType=platform&key=k${qs}`)
+        .set('Authorization', `Bearer ${token()}`);
+      expect(res.status).toBe(200);
+      seen.push(...res.body.items.map((e: any) => e.id));
+      if (!res.body.pageInfo.hasNextPage) break;
+      cursor = res.body.pageInfo.nextCursor;
+    }
+
+    expect(seen).toHaveLength(12);
+    expect(new Set(seen).size).toBe(12);
   });
 });

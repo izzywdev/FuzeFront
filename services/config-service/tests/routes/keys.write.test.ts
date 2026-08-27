@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import express from 'express';
 import request from 'supertest';
+import type { AuthzClient } from '@fuzefront/auth';
 import { configureIdentity } from '@izzywdev/fuzefront-identity';
 import { createKeyDefinitionsWriteRouter } from '../../src/routes/keys.write';
 import { FakeDb } from '../helpers/fakeDb';
@@ -155,7 +156,7 @@ describe('PUT /v1/namespaces/{namespace}/keys', () => {
   });
 
   it('403s when the Security API denies key registration for this namespace', async () => {
-    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] });
+    _setAuthzClientForTesting({ check: async () => ({ allow: false }), bulkCheck: async () => [] } as unknown as AuthzClient);
     const db = new FakeDb();
     seedNamespace(db);
     const app = buildApp(db);

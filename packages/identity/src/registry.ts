@@ -51,6 +51,12 @@ export const ENTITY_PREFIXES = {
   // `--namespace` accepts them.
   namespace: 'cns',
   keyDefinition: 'ckd',
+  // `configHistory` — FF-EPIC-18 (FFRNT-280), the append-only change trail
+  // (`GET /v1/config/history`) and reveal-once secret audit
+  // (`POST /v1/config/secrets/reveal`) both write. Bare `cvh_`, per the same
+  // FuzeFront-hosted-for-the-family reasoning as `cns_`/`ckd_` above — already
+  // declared in the frozen contract's "Identifiers" section.
+  configHistory: 'cvh',
 } as const
 
 export type EntityType = keyof typeof ENTITY_PREFIXES
