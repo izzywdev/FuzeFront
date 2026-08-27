@@ -216,6 +216,114 @@ export async function provisionMachineIdentity(
 }
 
 // ---------------------------------------------------------------------------
+// S2S ServiceEndpoint grants (izzywdev/FuzeFront#648)
+// ---------------------------------------------------------------------------
+//
+// Wires a service account (an Authentik client_credentials client_id, see
+// authentik/provision-s2s-clients.ts) to the `invoke` permission on a specific
+// `ServiceEndpoint` resource instance (schema.ts), so
+// `permit.check('svc:<client_id>', 'invoke', { type: 'ServiceEndpoint', key: <endpointKey>, tenant })`
+// passes. `endpointKey` is a free-form, per-relationship identifier the caller
+// picks (e.g. "fuzecall_control_plane") — it does not need to be declared
+// anywhere in advance; `grantServiceInvoke` creates the resource INSTANCE (not
+// a new resource TYPE — that's `ServiceEndpoint`, already in the base schema)
+// on first grant.
+
+/** Default tenant for platform-internal S2S grants (not a customer org). */
+export const PLATFORM_TENANT = 'default'
+
+/**
+ * Grants a service account's `invoke` permission on a named ServiceEndpoint
+ * instance. Idempotent — a 409 from either the resource-instance create or the
+ * role-assignment call (both mean "already exists") is treated as success.
+ *
+ * Does NOT sync the service account as a Permit user first — call
+ * `syncMachineIdentityToPermit` (or `provisionMachineIdentity`) beforehand so
+ * the subject exists. Falls back to false on error (never throws).
+ */
+export async function grantServiceInvoke(
+  clientId: string,
+  endpointKey: string,
+  tenant: string = PLATFORM_TENANT
+): Promise<boolean> {
+  const permitKey = toPermitKey(clientId)
+
+  try {
+    await permit.api.resourceInstances.create({
+      key: endpointKey,
+      resource: 'ServiceEndpoint',
+      tenant,
+    })
+  } catch (error: any) {
+    if (error?.response?.status !== 409 && error?.status !== 409) {
+      console.error(
+        `[machine-roles] Error creating ServiceEndpoint instance "${endpointKey}":`,
+        error
+      )
+      return false
+    }
+    // 409 — instance already exists, proceed to the role assignment.
+  }
+
+  try {
+    await permit.api.roleAssignments.assign({
+      user: permitKey,
+      role: 's2s-caller',
+      resource_instance: `ServiceEndpoint:${endpointKey}`,
+      tenant,
+    })
+    console.log(
+      `[machine-roles] Granted invoke on ServiceEndpoint:${endpointKey} to ${permitKey} (tenant: ${tenant})`
+    )
+    return true
+  } catch (error: any) {
+    if (error?.response?.status === 409 || error?.status === 409) {
+      console.log(
+        `[machine-roles] ServiceEndpoint:${endpointKey} invoke grant already exists for ${permitKey}`
+      )
+      return true
+    }
+    console.error(
+      `[machine-roles] Error granting ServiceEndpoint:${endpointKey} invoke to ${permitKey}:`,
+      error
+    )
+    return false
+  }
+}
+
+/**
+ * Revokes a previously granted `invoke` permission on a ServiceEndpoint
+ * instance. Call this when decommissioning an S2S relationship or rotating a
+ * service account's identity. Falls back to false on error (never throws).
+ */
+export async function revokeServiceInvoke(
+  clientId: string,
+  endpointKey: string,
+  tenant: string = PLATFORM_TENANT
+): Promise<boolean> {
+  const permitKey = toPermitKey(clientId)
+
+  try {
+    await permit.api.roleAssignments.unassign({
+      user: permitKey,
+      role: 's2s-caller',
+      resource_instance: `ServiceEndpoint:${endpointKey}`,
+      tenant,
+    })
+    console.log(
+      `[machine-roles] Revoked invoke on ServiceEndpoint:${endpointKey} from ${permitKey} (tenant: ${tenant})`
+    )
+    return true
+  } catch (error) {
+    console.error(
+      `[machine-roles] Error revoking ServiceEndpoint:${endpointKey} invoke from ${permitKey}:`,
+      error
+    )
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 

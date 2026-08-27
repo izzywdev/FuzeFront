@@ -34,7 +34,7 @@ function makeFakeClient(existing: { resources: string[]; roles: string[] }) {
 describe('permit schema IaC', () => {
   it('defines exactly the resources and roles the code references', () => {
     expect(permitSchema.resources.map(r => r.key).sort()).toEqual(
-      ['App', 'Chat', 'Docs', 'Organization', 'UserManagement']
+      ['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement']
     )
     expect(permitSchema.roles.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
 
@@ -55,6 +55,26 @@ describe('permit schema IaC', () => {
 
     const chat = permitSchema.resources.find(r => r.key === 'Chat')!
     expect(Object.keys(chat.actions).sort()).toEqual(['manage', 'stream'])
+
+    const serviceEndpoint = permitSchema.resources.find(r => r.key === 'ServiceEndpoint')!
+    expect(Object.keys(serviceEndpoint.actions).sort()).toEqual(['invoke'])
+  })
+
+  it('ServiceEndpoint declares a direct (non-derived) s2s-caller instance role scoped to invoke only', () => {
+    const serviceEndpoint = permitSchema.resources.find(r => r.key === 'ServiceEndpoint')!
+    const role = serviceEndpoint.roles?.['s2s-caller']
+    expect(role).toBeDefined()
+    expect(role!.permissions).toEqual(['invoke'])
+    // No `granted_to` — unlike Organization's org-admin, this role is never
+    // derived from a role held elsewhere; every grant is a deliberate,
+    // individually-revocable assignment (see machine-roles.ts grantServiceInvoke).
+    expect(role!.granted_to).toBeUndefined()
+
+    // Not part of any top-level tenant role — a human's admin/editor/viewer role
+    // must never imply ServiceEndpoint:invoke.
+    for (const tenantRole of permitSchema.roles) {
+      expect(tenantRole.permissions).not.toContain('ServiceEndpoint:invoke')
+    }
   })
 
   it('admin role can manage organizations and user management', () => {
@@ -95,7 +115,7 @@ describe('permit schema IaC', () => {
   it('creates resources and roles when none exist (idempotent: create path)', async () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client)
-    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
+    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
     expect(calls.roleCreate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
     expect(calls.resourceUpdate).toHaveLength(0)
     expect(calls.roleUpdate).toHaveLength(0)
@@ -103,13 +123,13 @@ describe('permit schema IaC', () => {
 
   it('updates resources and roles when they already exist (idempotent: update path)', async () => {
     const { client, calls } = makeFakeClient({
-      resources: ['App', 'Chat', 'Docs', 'Organization', 'UserManagement'],
+      resources: ['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'],
       roles: ['admin', 'editor', 'viewer'],
     })
     await syncPermitSchema(client)
     expect(calls.resourceCreate).toHaveLength(0)
     expect(calls.roleCreate).toHaveLength(0)
-    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'UserManagement'])
+    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
     expect(calls.roleUpdate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
   })
 })
