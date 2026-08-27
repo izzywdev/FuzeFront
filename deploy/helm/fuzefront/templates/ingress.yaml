@@ -84,6 +84,34 @@
       port:
         number: {{ .Values.backend.port }}
 {{- end }}
+{{- if .Values.federatedProxy.enabled }}
+# Federated remotes: /apps/<slug>/* -> the thin backend's same-origin asset
+# proxy (backend/src/routes/federatedProxy.ts), which forwards to each remote's
+# in-cluster Service.
+#
+# This MUST sit above the `/` catch-all. Without it these paths fall through to
+# the frontend, whose SPA fallback answers any unmatched path with 200 +
+# index.html -- so remoteEntry.js resolves, returns 200, and is HTML. The
+# browser refuses it as a module and the panel is blank behind a green
+# healthcheck. That is the exact failure the portal census reports.
+#
+# Why the backend and not an Ingress per remote: an Ingress may only name a
+# Service in its OWN namespace, and the family products each deploy to their
+# own. `.Values.federatedApps` below builds those per-remote Ingresses and is
+# therefore limited to same-namespace apps -- which is why it has been `[]`
+# everywhere. A reverse proxy has no namespace restriction.
+#
+# The dedicated clock-app Ingress further down keeps working: both nginx
+# longest-prefix-match and Traefik rule-length priority rank `/apps/clock`
+# above `/apps`.
+- path: /apps
+  pathType: Prefix
+  backend:
+    service:
+      name: fuzefront-backend
+      port:
+        number: {{ .Values.backend.port }}
+{{- end }}
 # Frontend catch-all. The frontend nginx also fans /api and /socket.io
 # to the per-service backends for in-pod / port-forward scenarios.
 - path: /

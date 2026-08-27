@@ -16,6 +16,7 @@ import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
 import appRegistryRoutes from './routes/appRegistry'
 import appRegistryProxyRoutes from './routes/app-registry'
+import federatedProxyRoutes from './routes/federatedProxy'
 import flagsRoutes from './routes/flags'
 import portalRoutes from './routes/portal'
 import adminPortalRoutes from './routes/adminPortals'
@@ -343,6 +344,14 @@ app.use('/api/v1/app-registry', appRegistryRoutes)
 // federated app (e.g. the built-in Clock) can mount. Forwards the platform JWT
 // verbatim; the applications-service does its own authn/authz.
 app.use('/api/v1/app-registry', appRegistryProxyRoutes)
+// Same-origin federated asset proxy: /apps/<slug>/* -> the remote's in-cluster
+// Service. Without this the path falls through the ingress `/` rule to the
+// frontend, whose SPA fallback answers with 200 + index.html — a remoteEntry
+// that is HTML, which is precisely what the portal census reports. Operator
+// allowlist only (FEDERATED_PROXY_UPSTREAMS); see routes/federatedProxy.ts for
+// why it is not derived from the registry.
+app.use('/apps', federatedProxyRoutes)
+
 // Internal, secret-guarded provisioning endpoint (NOT exposed via public ingress).
 app.use('/internal', internalRoutes)
 

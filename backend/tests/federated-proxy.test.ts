@@ -1,0 +1,259 @@
+// Unit tests for the same-origin federated asset proxy
+// (backend/src/routes/federatedProxy.ts).
+//
+// Pure unit tests: the upstream HTTP client is mocked, so this runs with no
+// database and no live remote. What matters here is the wiring and the
+// security-relevant decisions the proxy makes on its own — that it serves only
+// an operator-configured allowlist, never forwards the portal session upstream,
+// never lets a remote set a cookie on the portal origin, and never launders a
+// remote's HTML 404 into a working-looking module.
+
+jest.mock('axios')
+import axios from 'axios'
+const mockedAxios = axios as jest.Mocked<typeof axios>
+
+import request from 'supertest'
+import express from 'express'
+
+process.env.FEDERATED_PROXY_UPSTREAMS = JSON.stringify({
+  finance: 'http://fuzefinance.fuzefinance.svc.cluster.local:80',
+  market: 'https://fuzemarket.fuzemarket.svc.cluster.local:8080/base',
+})
+
+import federatedProxyRoutes, {
+  parseUpstreams,
+  splitRequest,
+  __federatedProxyConfig,
+} from '../src/routes/federatedProxy'
+
+function buildApp(): express.Application {
+  const app = express()
+  app.use(express.json())
+  app.use('/apps', federatedProxyRoutes)
+  return app
+}
+
+function upstreamReplies(
+  body: string,
+  headers: Record<string, string> = { 'content-type': 'application/javascript' },
+  status = 200
+) {
+  mockedAxios.request.mockResolvedValueOnce({
+    status,
+    headers,
+    data: Buffer.from(body),
+  } as any)
+}
+
+describe('federated asset proxy', () => {
+  let app: express.Application
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    app = buildApp()
+  })
+
+  describe('routing', () => {
+    it('proxies a remoteEntry to the configured upstream and relays the JS content-type', async () => {
+      upstreamReplies('export default 1')
+      const res = await request(app).get('/apps/finance/remoteEntry.js')
+
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toContain('application/javascript')
+      expect(res.text).toBe('export default 1')
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'http://fuzefinance.fuzefinance.svc.cluster.local:80/remoteEntry.js',
+          method: 'GET',
+        })
+      )
+    })
+
+    it('preserves nested chunk paths and the query string', async () => {
+      upstreamReplies('chunk')
+      await request(app).get('/apps/finance/assets/chunk-abc123.js?v=2')
+
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'http://fuzefinance.fuzefinance.svc.cluster.local:80/assets/chunk-abc123.js?v=2',
+        })
+      )
+    })
+
+    it("keeps a base path the operator wrote into the upstream URL", async () => {
+      upstreamReplies('chunk')
+      await request(app).get('/apps/market/remoteEntry.js')
+
+      expect(mockedAxios.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://fuzemarket.fuzemarket.svc.cluster.local:8080/base/remoteEntry.js',
+        })
+      )
+    })
+
+    it('404s an unconfigured slug without contacting anything', async () => {
+      const res = await request(app).get('/apps/fuzeagent/remoteEntry.js')
+
+      expect(res.status).toBe(404)
+      expect(res.body.error).toBe('remote_not_configured')
+      expect(mockedAxios.request).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('the failure this proxy exists to end', () => {
+    // The census signature: remoteEntry returns 200 but is HTML, because an SPA
+    // fallback answered a 404 with index.html. The proxy must relay a remote's
+    // real status and real content-type, never improve on them.
+    it("relays a remote's own 404 rather than turning it into a 200", async () => {
+      upstreamReplies('<!doctype html>', { 'content-type': 'text/html' }, 404)
+      const res = await request(app).get('/apps/finance/remoteEntry.js')
+
+      expect(res.status).toBe(404)
+      expect(res.headers['content-type']).toContain('text/html')
+    })
+
+    it('does not relay content-encoding, which would mislabel the decompressed body', async () => {
+      upstreamReplies('plain', {
+        'content-type': 'application/javascript',
+        'content-encoding': 'gzip',
+      })
+      const res = await request(app).get('/apps/finance/remoteEntry.js')
+
+      expect(res.headers['content-encoding']).toBeUndefined()
+      expect(res.text).toBe('plain')
+    })
+  })
+
+  describe('trust model', () => {
+    it('never forwards the portal session upstream', async () => {
+      upstreamReplies('js')
+      await request(app)
+        .get('/apps/finance/remoteEntry.js')
+        .set('Authorization', 'Bearer super-secret')
+        .set('Cookie', 'session=super-secret')
+
+      const sent = mockedAxios.request.mock.calls[0][0] as any
+      const headerNames = Object.keys(sent.headers || {}).map(h => h.toLowerCase())
+      expect(headerNames).not.toContain('authorization')
+      expect(headerNames).not.toContain('cookie')
+      expect(JSON.stringify(sent.headers)).not.toContain('super-secret')
+    })
+
+    it('does not let a remote set a cookie on the portal origin', async () => {
+      upstreamReplies('js', {
+        'content-type': 'application/javascript',
+        'set-cookie': 'evil=1; Path=/; HttpOnly',
+      })
+      const res = await request(app).get('/apps/finance/remoteEntry.js')
+
+      expect(res.headers['set-cookie']).toBeUndefined()
+    })
+
+    it('refuses non-GET/HEAD methods', async () => {
+      const res = await request(app).post('/apps/finance/remoteEntry.js').send({})
+
+      expect(res.status).toBe(405)
+      expect(res.headers['allow']).toBe('GET, HEAD')
+      expect(mockedAxios.request).not.toHaveBeenCalled()
+    })
+
+    it('does not follow redirects, so an upstream cannot bounce the proxy elsewhere', () => {
+      upstreamReplies('js')
+      return request(app)
+        .get('/apps/finance/remoteEntry.js')
+        .then(() => {
+          const sent = mockedAxios.request.mock.calls[0][0] as any
+          expect(sent.maxRedirects).toBe(0)
+        })
+    })
+
+    it('answers 502, not 500, when the remote is unreachable', async () => {
+      mockedAxios.request.mockRejectedValueOnce(
+        Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+      )
+      const res = await request(app).get('/apps/finance/remoteEntry.js')
+
+      expect(res.status).toBe(502)
+      expect(res.body).toMatchObject({ error: 'remote_unavailable', slug: 'finance' })
+    })
+  })
+
+  describe('splitRequest', () => {
+    it('rejects traversal so nothing can climb above the upstream base', () => {
+      expect(splitRequest('/finance/../../etc/passwd')).toBeNull()
+      expect(splitRequest('/finance/%2e%2e/secret')).toBeNull()
+    })
+
+    it('rejects a slug that is not slug-shaped', () => {
+      expect(splitRequest('/Finance/remoteEntry.js')).toBeNull()
+      expect(splitRequest('/../remoteEntry.js')).toBeNull()
+    })
+
+    it('parses slug, subpath and query', () => {
+      expect(splitRequest('/finance/assets/a.js?v=1')).toEqual({
+        slug: 'finance',
+        subpath: 'assets/a.js',
+        query: '?v=1',
+      })
+    })
+  })
+
+  describe('parseUpstreams', () => {
+    // A dropped entry must never be able to pass for a working one, so each of
+    // these logs at error level; the assertion here is only that it is dropped.
+    beforeEach(() => {
+      jest.spyOn(console, 'error').mockImplementation(() => undefined)
+    })
+    afterEach(() => {
+      ;(console.error as jest.Mock).mockRestore()
+    })
+
+    it('returns an empty map for absent or blank config', () => {
+      expect(parseUpstreams(undefined)).toEqual({})
+      expect(parseUpstreams('   ')).toEqual({})
+    })
+
+    it('drops the whole map on malformed JSON rather than throwing', () => {
+      expect(parseUpstreams('{not json')).toEqual({})
+      expect(console.error).toHaveBeenCalled()
+    })
+
+    it('rejects a JSON array or scalar — the contract is an object', () => {
+      expect(parseUpstreams('["a"]')).toEqual({})
+      expect(parseUpstreams('"a"')).toEqual({})
+    })
+
+    it('drops entries that are not absolute http/https URLs', () => {
+      expect(
+        parseUpstreams(
+          JSON.stringify({
+            good: 'http://svc.ns.svc.cluster.local',
+            relative: '/apps/thing',
+            scheme: 'file:///etc/passwd',
+            empty: '',
+            notString: 5,
+          })
+        )
+      ).toEqual({ good: 'http://svc.ns.svc.cluster.local' })
+    })
+
+    it('drops keys that are not slug-shaped', () => {
+      expect(
+        parseUpstreams(JSON.stringify({ 'Bad Slug': 'http://x.local' }))
+      ).toEqual({})
+    })
+
+    it('strips a trailing slash so joining never doubles it', () => {
+      expect(parseUpstreams(JSON.stringify({ a: 'http://x.local/base/' }))).toEqual(
+        { a: 'http://x.local/base' }
+      )
+    })
+  })
+
+  it('exposes the parsed allowlist for introspection', () => {
+    expect(Object.keys(__federatedProxyConfig.UPSTREAMS).sort()).toEqual([
+      'finance',
+      'market',
+    ])
+  })
+})
