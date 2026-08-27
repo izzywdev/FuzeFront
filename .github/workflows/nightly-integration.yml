@@ -31,6 +31,12 @@ concurrency:
 jobs:
   integration:
     runs-on: ubuntu-latest
+    # Outer bound on the whole job, so a hung bounded local-up (or a suite that never
+    # returns) fails loudly inside ~25min instead of silently eating the GH-hosted
+    # runner's 360min default job timeout with no diagnostic. Same defect class as
+    # FuzeInfra#760 (permit-schema-sync hangs with no deadline) — see the
+    # --wait-timeout on the compose step below for the inner bound.
+    timeout-minutes: 25
     outputs:
       ran: ${{ steps.detect.outputs.ran }}
     steps:
@@ -69,7 +75,18 @@ jobs:
           dir=$(dirname "$CT"); envf=()
           [ -f "$dir/versions.env" ] && envf=(--env-file "$dir/versions.env")
           echo "::group::consumer-test up"
-          docker compose "${envf[@]}" -f "$CT" up -d --wait || { echo "bounded stack failed to come up"; docker compose -f "$CT" logs | tail -120; exit 1; }
+          # --wait ALONE has no deadline (confirmed against `docker compose up --help`:
+          # --wait-timeout is a separate flag) — without it a service stuck in
+          # starting/unhealthy blocks here until the job's timeout-minutes kills the
+          # whole job with no service-level diagnostic. --wait-timeout gives a real,
+          # named deadline; `ps` on failure shows exactly which service never went
+          # healthy, so the failure message points at the cause instead of just "failed".
+          if ! docker compose "${envf[@]}" -f "$CT" up -d --wait --wait-timeout 180; then
+            echo "::error title=nightly-integration::bounded local-up did not reach healthy within 180s (or failed to start) — dumping container status + logs"
+            docker compose -f "$CT" ps
+            docker compose -f "$CT" logs | tail -120
+            exit 1
+          fi
           echo "::endgroup::"
 
       - name: Run integration/contract suite (mocks only — no real external egress)
@@ -131,6 +148,10 @@ jobs:
           needs.integration.outputs.ran == 'true' &&
           !startsWith(github.ref_name, 'nightly-autofix-') }}
     runs-on: ubuntu-latest
+    # Bounds the LLM diagnosis + fix-PR round trip — same rationale as the integration
+    # job above, applied to the autofix path so a stuck endpoint/tool call can't run
+    # past a real deadline either.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
