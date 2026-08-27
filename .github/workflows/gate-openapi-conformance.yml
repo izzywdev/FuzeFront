@@ -12,18 +12,33 @@ name: gate-openapi-conformance
 # implementing one a consumer generated a client for. gate-route-ownership
 # checks WHICH SERVICE serves a path; this checks WHETHER THE PATH WAS AGREED.
 #
-# Triggers on both sides of the seam. A spec-only trigger would miss a route
-# being added in code; a code-only trigger would miss a path being deleted from
-# the contract. Either alone reproduces the blind spot.
+# NO `paths:` FILTER on pull_request, and that is load-bearing rather than an
+# oversight — the same rule workspace-deps-check.yml and gate-sealed-keys.yml
+# already state: filter INSIDE a job, never on the trigger, for anything the
+# ruleset requires.
+#
+# A path-filtered workflow does not run at all on a PR that touches none of its
+# paths, so the check run is never CREATED — and a required context that is never
+# created leaves the PR permanently at "Expected — waiting for status to be
+# reported", with no red to look at and nothing to re-run. That deadlock was
+# measured on four sampled PRs on 2026-08-23. It is therefore impossible to
+# REQUIRE a path-filtered check, and this one was not required, which is how
+# config-service shipped `GET /v1/config/history` and
+# `POST /v1/config/secrets/reveal` declared-but-unimplemented: any client
+# generated from that contract 404s. See docs/runbooks/widen-required-checks.md.
+#
+# Nothing is filtered inside the job either, because there is nothing to filter:
+# `gate_openapi_conformance.py --repo .` measures a WHOLE-REPO invariant — every
+# service against its own contract — not a diff. The old filter was a runner-time
+# optimisation on a job that is a pip install and a Python script. It bought
+# seconds and cost enforceability.
+#
+# The trigger did have one thing right, kept here in spirit: the seam has two
+# sides. A spec-only trigger would miss a route added in code; a code-only
+# trigger would miss a path deleted from the contract. Running unconditionally
+# covers both by construction.
 on:
   pull_request:
-    paths:
-      - 'services/*/openapi.yaml'
-      - 'services/*/src/**'
-      - 'governance/openapi-conformance-allowlist.txt'
-      - 'scripts/gate_openapi_conformance.py'
-      - 'scripts/__tests__/test_gate_openapi_conformance.py'
-      - '.github/workflows/gate-openapi-conformance.yml'
   push:
     branches: [master]
     paths:
