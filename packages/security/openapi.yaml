@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.7.0
+  version: 0.8.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -35,6 +35,25 @@ info:
     and (briefly, for the chosen social provider) the provider's own consent
     host (e.g. `accounts.google.com`). No FuzeFront-internal identity host is
     ever visible to the browser or named in this contract.
+
+
+    ## Broker (marketplace / consumer-product handoff)
+
+    The `broker` tag is a DELIBERATE, narrower exception to the boundary
+    guarantee above: a registered consumer product (e.g. the Mendys datasets
+    marketplace, #238) sends its user to FuzeFront's OWN themed sign-in UI,
+    and after authentication the browser is handed back to that product's own
+    origin — never to any other, unregistered third party. The handoff never
+    puts a bearer token in a URL, fragment, or referrer: only a single-use,
+    short-lived opaque code (`POST /v1/security/broker/handoff`), redeemed by
+    the product's BACKEND server-to-server (`POST
+    /v1/security/broker/token-exchange`), exactly mirroring the existing
+    `social/callback` → `session/exchange` code shape. The redirect-URI
+    allowlist enforcement, and the `BrokerClient` registration surface itself,
+    are contract-frozen here but implemented as a follow-up (#238) — see the
+    `broker` tag description. This is a SEPARATE allowlist from the social
+    broker's own `redirectTo` return-origin allowlist (#352), which governs
+    FuzeFront's first-party social handshake, not this third-party handoff.
 
 
     ## Fail-closed
@@ -71,6 +90,23 @@ tags:
     description: Server-brokered social login. The browser never sees an internal identity host.
   - name: signup
     description: Server-brokered account creation.
+  - name: broker
+    description: >-
+      Consumer-product sign-in handoff (marketplace token handoff, #238). A
+      registered consumer product ("broker client") sends its user to
+      FuzeFront's themed sign-in UI with `?client=&redirect_uri=`; after the
+      user authenticates via the EXISTING `session`/`social`/`signup`
+      surfaces, the product's backend redeems a single-use opaque code for a
+      session — server-to-server, never a token in a URL, fragment, or
+      referrer. Distinct from `social` (the social-provider handshake itself)
+      and from `session.exchange` (FuzeFront's own first-party SPA session
+      bootstrap): this tag is the THIRD-PARTY handoff surface, with its own
+      redirect-URI allowlist per client, separate from #352's social-broker
+      return-origin allowlist. `BrokerClient` registration (redirect-URI
+      allowlist + `clientSecret` issuance) is contract-frozen here
+      (`BrokerClient`, `BrokerTokenExchangeRequest`) but has no registration
+      ENDPOINT in this slice — provisioning a broker client is an
+      operator/platform-admin action tracked as a #238 follow-up.
   - name: capabilities
     description: Neutral capability descriptor for the auth surface.
   - name: authz
@@ -707,6 +743,133 @@ paths:
                 $ref: '#/components/schemas/ErrorBody'
       x-pagination: exempt
       x-pagination-reason: Singleton boolean availability check.
+  # ─────────────────────── AuthN: broker (consumer-product handoff) ─────────
+  /v1/security/broker/clients/{client}:
+    get:
+      tags: [broker]
+      summary: Resolve a registered consumer product's public sign-in branding
+      operationId: getBrokerClient
+      description: >-
+        Public, unauthenticated. Lets the themed sign-in page render a
+        registered consumer product's branding (name/logo/accent/tagline)
+        before the user authenticates. Returns ONLY public branding — never
+        `redirectUris` or any credential. Fail-closed on an unknown `client`:
+        404, so the sign-in page falls back to default FuzeFront branding
+        rather than inventing a product identity.
+      parameters:
+        - name: client
+          in: path
+          required: true
+          description: >-
+            The consumer product's registered broker client key (e.g.
+            `mendys-datasets`). Opaque handle, NOT a FuzeFront app-registry
+            `slug` — see the `slug`/serve-path independence rule; a broker
+            client key identifies who is receiving the handoff, not what is
+            federated into the shell.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public branding for the registered client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrokerClient'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton lookup by client key.
+  /v1/security/broker/handoff:
+    post:
+      tags: [broker]
+      summary: Mint a one-time handoff code back to a registered product's callback
+      operationId: brokerHandoff
+      security:
+        - bearerAuth: []
+      description: >-
+        Called by the FuzeFront-hosted themed sign-in page immediately AFTER
+        the user completes password or social authentication in-page (this
+        endpoint does not itself authenticate the user — it requires the
+        session token just established by `POST /v1/security/session` or
+        `POST /v1/security/session/exchange`). Validates `redirectUri` against
+        the `client`'s registered allowlist server-side — fail-closed:
+        anything not an EXACT allowlisted entry is rejected, no
+        prefix/subdomain match. On success mints a single-use, short-lived
+        opaque code (the SAME store `social/callback` uses — one code format,
+        one redemption path, see `backend/security/src/services/
+        brokerCodes.ts`) and returns the full redirect target with the code
+        appended as a query param. The caller (the SPA) performs the actual
+        browser navigation; the code is single-use and short-lived, and is
+        never logged. The product's BACKEND then redeems it server-to-server
+        via `POST /v1/security/broker/token-exchange` — no bearer token is
+        ever visible to or stored by the browser at the product origin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrokerHandoffRequest'
+      responses:
+        '200':
+          description: The product's redirect_uri with a single-use `?code=` appended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrokerHandoffResult'
+        '400':
+          description: >-
+            Unknown `client`, or `redirectUri` is not an exact match in that
+            client's registered allowlist.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      x-pagination: exempt
+      x-pagination-reason: Singleton handoff-code-mint action.
+  /v1/security/broker/token-exchange:
+    post:
+      tags: [broker]
+      summary: Server-to-server redemption of a handoff code for a session
+      operationId: brokerTokenExchange
+      description: >-
+        Called by the PRODUCT'S BACKEND (never the browser) to redeem the
+        single-use code minted by `POST /v1/security/broker/handoff` for a
+        `SessionResult`. Authenticated by `client` + `clientSecret` in the
+        body — a confidential-client credential issued at broker-client
+        registration, distinct from both the end-user's session and from
+        #648's platform S2S service-account tokens (this is a per-CONSUMER
+        broker credential, not a platform M2M identity). Fail-closed: an
+        unknown `client`, a wrong `clientSecret`, or an unknown/expired/
+        already-redeemed `code` all return the SAME generic 401 — never
+        distinguishing which check failed, so this endpoint cannot be used as
+        a client-secret or code-guessing oracle. The code is consumed
+        (single-use) on lookup regardless of outcome.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrokerTokenExchangeRequest'
+      responses:
+        '200':
+          description: Authenticated session, or an MFA-required challenge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResult'
+        '401':
+          description: >-
+            Invalid client credentials or an unknown/expired/already-redeemed
+            code. Deliberately undifferentiated (see description) — never an
+            oracle.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+      x-pagination: exempt
+      x-pagination-reason: Singleton code-exchange action.
   # ─────────────────────────────── AuthZ: checks ────────────────────────────
   /v1/security/authz/check:
     post:
@@ -2066,6 +2229,73 @@ components:
           type: string
           description: The single-use opaque code from the social callback redirect.
       required: [code]
+    # ── Broker (marketplace / consumer-product handoff, #238) ──
+    BrokerClient:
+      type: object
+      additionalProperties: false
+      description: >-
+        Public projection of a registered consumer-product broker client —
+        branding ONLY. Never includes `redirectUris` or `clientSecret`; those
+        are registration-time, server-side data with no public read endpoint
+        in this contract slice.
+      required: [client, branding]
+      properties:
+        client:
+          type: string
+          description: The broker client key, echoed back.
+        branding:
+          $ref: '#/components/schemas/PortalBranding'
+    BrokerHandoffRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Sent by the themed sign-in page immediately after the user
+        authenticates, carrying the SAME `client`/`redirectUri` the product
+        originally sent as `?client=&redirect_uri=` on the sign-in page's own
+        URL — this endpoint re-validates them server-side rather than
+        trusting the query string the SPA read.
+      required: [client, redirectUri]
+      properties:
+        client:
+          type: string
+          description: The broker client key.
+        redirectUri:
+          type: string
+          format: uri
+          description: >-
+            Must be an EXACT match against an entry in the client's
+            registered redirect-URI allowlist. No wildcard, prefix, or
+            subdomain matching.
+    BrokerHandoffResult:
+      type: object
+      additionalProperties: false
+      description: >-
+        The validated `redirectUri` with a single-use, short-lived opaque
+        `code` query param appended. The SPA navigates the browser here; no
+        other token is ever attached to this URL.
+      required: [redirectUri]
+      properties:
+        redirectUri:
+          type: string
+          format: uri
+    BrokerTokenExchangeRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Server-to-server credential presentation. `clientSecret` MUST NEVER be
+        sent from a browser context — it is a confidential-client secret held
+        only by the product's own backend.
+      required: [client, clientSecret, code]
+      properties:
+        client:
+          type: string
+          description: The broker client key.
+        clientSecret:
+          type: string
+          description: The confidential-client secret issued at broker-client registration.
+        code:
+          type: string
+          description: The single-use opaque code from `POST /v1/security/broker/handoff`.
     SessionInfo:
       type: object
       description: Current identity plus hydrated user.
@@ -3089,6 +3319,7 @@ components:
             - VERIFIER_UNAVAILABLE
             - INVALID_CREDENTIALS
             - INVALID_CODE
+            - REDIRECT_URI_NOT_ALLOWED
             - CONFLICT
             - FORBIDDEN
             - NOT_FOUND

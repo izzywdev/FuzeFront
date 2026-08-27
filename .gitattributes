@@ -41,6 +41,14 @@ package.json    text eol=lf
 **/package.json text eol=lf
 lerna.json      text eol=lf
 
+# package-lock.json needs its own rule: the globs above match package.json
+# only, never package-lock.json. npm rewrites a lockfile wholesale on every
+# resolution, so a CRLF-stored lockfile regenerated on Linux comes back as LF
+# and turns a handful of changed entries into a whole-file diff — which both
+# hides the real change from review and trips gate-line-endings.
+package-lock.json    text eol=lf
+**/package-lock.json text eol=lf
+
 # Same pre-existing-CRLF-before-gate-line-endings-existed story as CLAUDE.md
 # above: these files were already stored as CRLF and tripped the gate the
 # first time a PR touched them. Pin them to LF so it doesn't recur.
@@ -48,3 +56,5 @@ backend/security/src/services/authentikPassword.ts text eol=lf
 backend/security/tests/authentik-password-login.test.ts text eol=lf
 backend/src/routes/organizations.ts text eol=lf
 backend/security/src/routes/security.ts text eol=lf
+backend/security/src/providers/authentik/tenants.ts text eol=lf
+backend/security/tests/tenant-registry.test.ts text eol=lf

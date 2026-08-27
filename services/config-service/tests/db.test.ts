@@ -25,7 +25,12 @@ function withoutComments(sql: string): string {
 describe('migrations directory', () => {
   it('is ordered and every file is idempotent (no bare CREATE TABLE/INDEX without IF NOT EXISTS)', () => {
     const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
-    expect(files.sort()).toEqual(['001_config_namespaces.sql', '002_config_key_definitions.sql', '003_config_values.sql']);
+    expect(files.sort()).toEqual([
+      '001_config_namespaces.sql',
+      '002_config_key_definitions.sql',
+      '003_config_values.sql',
+      '004_config_history.sql',
+    ]);
 
     for (const file of files) {
       const code = withoutComments(readMigration(file));
@@ -44,7 +49,7 @@ describe('migrations directory', () => {
   // the schema, exactly as billing-service does (billing.customers).
   it('schema-qualifies every table reference (config.<table>) — never bare', () => {
     const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
-    const tables = ['config_namespaces', 'config_key_definitions', 'config_values'];
+    const tables = ['config_namespaces', 'config_key_definitions', 'config_values', 'config_history'];
     for (const file of files) {
       const code = withoutComments(readMigration(file));
       for (const table of tables) {
@@ -176,5 +181,75 @@ describe('003_config_values.sql — S3 AC1 shape', () => {
     // Postgres treats NULL <> NULL for uniqueness. Two partial indexes fix that.
     expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_platform\s*\n\s*ON config\.config_values \(definition_id\)\s*\n\s*WHERE scope_type = 'platform'/);
     expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS config_values_unique_scoped\s*\n\s*ON config\.config_values \(definition_id, scope_type, scope_id\)\s*\n\s*WHERE scope_type <> 'platform'/);
+  });
+});
+
+describe('004_config_history.sql — FF-EPIC-18 (FFRNT-280) shape', () => {
+  const sql = readMigration('004_config_history.sql');
+
+  it('creates config_history idempotently', () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS config\.config_history/i);
+  });
+
+  it('has every column the frozen contract\'s ConfigHistoryEntry needs', () => {
+    const required = [
+      'namespace',
+      'key',
+      'scope_type',
+      'scope_id',
+      'action',
+      'old_value',
+      'new_value',
+      'redacted',
+      'actor_type',
+      'actor_id',
+      'reason',
+      'revert_of',
+      'occurred_at',
+    ];
+    for (const column of required) {
+      expect(sql).toMatch(new RegExp(`\\b${column}\\b`));
+    }
+  });
+
+  it('has no id DEFAULT (ids are app-minted via mintId, never gen_random_uuid())', () => {
+    const table = sql.slice(sql.indexOf('CREATE TABLE'), sql.indexOf(');'));
+    expect(table).not.toMatch(/gen_random_uuid/i);
+  });
+
+  it('constrains action to the ConfigHistoryAction enum, including reveal', () => {
+    for (const a of ['set', 'unset', 'lock', 'unlock', 'reveal']) {
+      expect(sql).toMatch(new RegExp(`'${a}'`));
+    }
+  });
+
+  it('constrains actor_type to user/system', () => {
+    expect(sql).toMatch(/'user'/);
+    expect(sql).toMatch(/'system'/);
+  });
+
+  it('references config_key_definitions(id) — intra-service FK', () => {
+    expect(sql).toMatch(/REFERENCES config\.config_key_definitions\(id\) ON DELETE CASCADE/);
+  });
+
+  it('has NO real FK on scope_id (polymorphic, cross-table — same reasoning as config_values)', () => {
+    const scopeIdLine = sql.split('\n').find((l) => /^\s*scope_id\s+UUID/.test(l));
+    expect(scopeIdLine).toBeDefined();
+    expect(scopeIdLine).not.toMatch(/REFERENCES/);
+  });
+
+  it('CHECKs scope_id is null iff scope_type is platform', () => {
+    expect(sql).toMatch(/scope_type = 'platform' AND scope_id IS NULL/);
+    expect(sql).toMatch(/scope_type <> 'platform' AND scope_id IS NOT NULL/);
+  });
+
+  it('is self-referential on revert_of (a past entry a revert replayed)', () => {
+    expect(sql).toMatch(/revert_of\s+UUID\s+REFERENCES config\.config_history\(id\)/);
+  });
+
+  it('indexes the listConfigHistory hot path: (namespace, key, scope_type, scope_id, occurred_at DESC, id DESC)', () => {
+    expect(sql).toMatch(
+      /ON config\.config_history \(namespace, key, scope_type, scope_id, occurred_at DESC, id DESC\)/,
+    );
   });
 });

@@ -922,6 +922,17 @@ ingress:
   # Extra annotations (e.g. cert-manager.io/cluster-issuer for prod TLS).
   annotations: {}
   wildcardHost: ""
+  # Additional, entirely separate-domain hosts that need ONLY the identity
+  # surface (/api/v1/security, /api/auth) routed to fuzefront-security — a
+  # multi-tenant IdP-broker tenant whose own product frontend is served
+  # elsewhere (a different app's own ingress), e.g. the MendysRobotics silo.
+  # Empty by default: no behaviour change, and the Ingress object this
+  # renders (templates/ingress.yaml) does not render at all when empty. Each
+  # host here MUST also appear in a securityService.tenants[].hosts entry
+  # (see values-prod.yaml comment there) or the request is rejected — the
+  # ingress path and the tenant registry are two independent lists that must
+  # agree, same as every other layer in FuzeFront#434's serve-path table.
+  tenantIdentityHosts: []
   tls:
     enabled: false
     # Defaults to "<host>-tls" when empty.
