@@ -9,10 +9,15 @@ export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
 export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string }
 
 
-// The standalone dashboard uses same-origin API calls. When mounted as a
-// FuzeFront federated remote, the browser origin is app.fuzefront.com, so the
-// API origin is injected at build time and remains independent of the host.
-const API_BASE = (import.meta.env.VITE_FUZEQUALITY_API_URL ?? '').replace(/\/$/, '')
+// Standalone access stays same-origin. A federated remote is rendered at
+// app.fuzefront.com/app/fuzequality, where its companion ingress mount proxies
+// /apps/fuzequality/api straight to this application's frontend and backend.
+// Keeping this request same-origin preserves the portal session and avoids the
+// Cloudflare Access/CORS boundary around the standalone admin host.
+const portalApiBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/app/fuzequality')
+  ? '/apps/fuzequality'
+  : ''
+const API_BASE = (portalApiBase || import.meta.env.VITE_FUZEQUALITY_API_URL || '').replace(/\/$/, '')
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
