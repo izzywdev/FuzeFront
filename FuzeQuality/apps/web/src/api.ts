@@ -23,6 +23,13 @@ const REQUEST_TIMEOUT_MS = 15_000
 type TokenProvider = () => string | null | undefined
 let platformToken: TokenProvider | undefined
 
+function portalToken(): string | null | undefined {
+  const context = (window as Window & {
+    __FRONTFUSE_CONTEXT__?: { getAccessToken?: TokenProvider }
+  }).__FRONTFUSE_CONTEXT__
+  return context?.getAccessToken?.()
+}
+
 /**
  * Receives the portal account-vault token from the Module Federation host.
  * A remote must never read the host's storage directly: the host remains the
@@ -39,7 +46,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
-    const token = platformToken?.()
+    const token = platformToken?.() ?? portalToken()
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
       signal: controller.signal,
