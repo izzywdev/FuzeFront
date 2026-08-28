@@ -16,7 +16,8 @@
       "@fuzequality/contracts": ["packages/contracts/src/index.ts"],
       "@fuzequality/core": ["packages/core/src/index.ts"],
       "@fuzequality/github-app": ["packages/github-app/src/index.ts"],
-      "@fuzequality/scanner": ["packages/scanner/src/index.ts"]
+      "@fuzequality/scanner": ["packages/scanner/src/index.ts"],
+      "@fuzefront/security-client": ["../packages/security/src/index.ts"]
     }
   },
   "include": ["apps", "packages", "scripts", "vitest.config.ts"]

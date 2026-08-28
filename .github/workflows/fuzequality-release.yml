@@ -51,6 +51,8 @@ jobs:
             ghcr.io/izzywdev/fuzequality-backend:latest
           cache-from: type=gha,scope=fuzequality-backend
           cache-to: type=gha,mode=max,scope=fuzequality-backend
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push FuzeQuality frontend
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
@@ -64,6 +66,8 @@ jobs:
             ghcr.io/izzywdev/fuzequality-frontend:latest
           cache-from: type=gha,scope=fuzequality-frontend
           cache-to: type=gha,mode=max,scope=fuzequality-frontend
+          secrets: |
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
       - name: Bump FuzeQuality production image tags
         env:

@@ -4,6 +4,7 @@ import type {
   Portfolio,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
+import type { Identity, SecurityErrorCode } from '@fuzefront/security-client'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
 export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string }
@@ -18,14 +19,49 @@ const portalApiBase = typeof window !== 'undefined' && window.location.pathname.
   ? '/apps/fuzequality'
   : ''
 const API_BASE = (portalApiBase || import.meta.env.VITE_FUZEQUALITY_API_URL || '').replace(/\/$/, '')
+const REQUEST_TIMEOUT_MS = 15_000
+type TokenProvider = () => string | null | undefined
+let platformToken: TokenProvider | undefined
+
+/**
+ * Receives the portal account-vault token from the Module Federation host.
+ * A remote must never read the host's storage directly: the host remains the
+ * sole owner of multi-account session selection and token refresh.
+ */
+export function configurePlatformSecurity(getToken?: TokenProvider) {
+  platformToken = getToken
+}
+
+export type PlatformSession = Pick<Identity, 'userId' | 'tenantId' | 'roles'>
+type SecurityFailure = { error?: string; code?: SecurityErrorCode }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { 'content-type': 'application/json', ...init?.headers },
-  })
-  if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? `Request failed: ${response.status}`)
-  return response.json() as Promise<T>
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const token = platformToken?.()
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => null) as SecurityFailure | null
+      throw new Error(error?.error ?? `Request failed: ${response.status}`)
+    }
+    return response.json() as Promise<T>
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`Catalog API timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds`)
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 export const api = {

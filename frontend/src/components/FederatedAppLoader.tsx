@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense } from 'react'
 import type { App } from '@fuzefront/app-registry-client'
 import { useCurrentUser } from '../lib/shared'
+import { getActiveAuthToken } from '../lib/accounts'
 import { useAppRegistry } from '../platform/appRegistry'
 import { usePortalContext } from '@fuzefront/portal-branding-ui'
 import {
@@ -63,7 +64,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   // before.
   const { status: portalStatus, context: portal } = usePortalContext()
   const [FederatedComponent, setFederatedComponent] =
-    useState<React.ComponentType | null>(null)
+    useState<React.ComponentType<{ getToken?: () => string | null }> | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryKey, setRetryKey] = useState(0)
@@ -241,7 +242,7 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
   return (
     <FederatedAppErrorBoundary appName={app?.manifest.name} onRetry={handleRetry}>
       <Suspense fallback={<LoadingSpinner />}>
-        <FederatedComponent />
+        <FederatedComponent getToken={getActiveAuthToken} />
       </Suspense>
     </FederatedAppErrorBoundary>
   )
