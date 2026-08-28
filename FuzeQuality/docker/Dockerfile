@@ -1,8 +1,14 @@
+# syntax=docker/dockerfile:1.7
 FROM node:24-alpine AS dependencies
 RUN apk add --no-cache git
 WORKDIR /workspace/FuzeQuality
-COPY FuzeQuality/package.json ./
-RUN npm install --ignore-scripts --no-audit --no-fund
+COPY FuzeQuality/package.json FuzeQuality/.npmrc ./
+# @fuzefront/security-client is a private published contract package. BuildKit
+# mounts its read-only registry token only for installation; it is never copied
+# into an image layer.
+RUN --mount=type=secret,id=GITHUB_TOKEN \
+    export GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN)" && \
+    npm install --ignore-scripts --no-audit --no-fund
 
 FROM dependencies AS source
 # This COPY is what bakes contracts/openapi.yaml INTO the image, alongside the
@@ -14,7 +20,10 @@ FROM dependencies AS source
 COPY FuzeQuality ./
 
 FROM source AS verify
-ARG FUZEQUALITY_API_URL=https://fuzequality.prod.fuzefront.com
+# A supplied value is used for a standalone deployment. The federated remote
+# selects its same-origin /apps/fuzequality proxy at runtime instead, so it
+# never crosses the Cloudflare Access boundary for its API calls.
+ARG FUZEQUALITY_API_URL=
 ENV VITE_FUZEQUALITY_API_URL=${FUZEQUALITY_API_URL}
 RUN npm run type-check \
  && npm test \

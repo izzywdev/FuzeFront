@@ -43,7 +43,7 @@ import type {
   TestExpectation,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import { api, type OrganizationMember, type OrganizationRole } from './api'
+import { api, configurePlatformSecurity, type OrganizationMember, type OrganizationRole } from './api'
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 
@@ -579,12 +579,15 @@ function OrganizationAdministration({ organizations }: { organizations: Organiza
 
 function PageHeading({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail: string; action?: React.ReactNode }) { return <header className="page-header compact"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="lede">{detail}</p></div>{action}</header> }
 
-export function App() {
+export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const [view, setView] = useState<View>('overview')
   const [data, setData] = useState<Portfolio | null>(null)
   const [error, setError] = useState<string>()
   const [organizations, setOrganizations] = useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
+  // The portal owns the active account vault. A federated remote receives its
+  // bearer-token resolver from the host rather than reading portal storage.
+  useEffect(() => configurePlatformSecurity(getToken), [getToken])
   async function reload() {
     setLoading(true)
     try {
