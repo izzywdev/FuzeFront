@@ -101,7 +101,16 @@ async function loadRemoteModule(
   scope: string,
   module: string
 ): Promise<LoadedModule> {
-  const remoteEntry = resolveRemoteEntry(remoteEntryInput)
+  const resolvedEntry = resolveRemoteEntry(remoteEntryInput)
+  const entryUrl = new URL(resolvedEntry)
+  // Vite emits content-hashed chunks but keeps remoteEntry.js stable. A CDN can
+  // otherwise serve a previous entry that points to chunks removed by the next
+  // deployment. Cache-bust only same-origin entries; external providers retain
+  // control of their own cache policy.
+  if (entryUrl.origin === window.location.origin) {
+    entryUrl.searchParams.set('__mf', String(Date.now()))
+  }
+  const remoteEntry = entryUrl.toString()
   const cacheKey = `${remoteEntry}:${scope}:${module}`
 
   // Return cached module if available
