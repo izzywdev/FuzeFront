@@ -88,6 +88,11 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
         apps,
         activeApp: app,
         isPlatformMode: true,
+        // Federated applications receive a resolver, never the token value.
+        // This keeps account selection and refresh owned by the portal while
+        // also surviving federation wrappers that do not preserve function
+        // component props.
+        getAccessToken: getActiveAuthToken,
       }
     }
   }, [user, app, apps, portalStatus, portal])
