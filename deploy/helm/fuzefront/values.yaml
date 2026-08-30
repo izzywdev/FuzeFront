@@ -420,6 +420,10 @@ a2aDeploy:
   # null = anonymous clone (only correct for a PUBLIC tenant repo).
   reposGitTokenSecretRef: null
   providerApiKeySecretRef: null
+  # Optional Anthropic-compatible gateway endpoint. Production points this at
+  # FuzeInfra LiteLLM so the pod uses the existing FuzeFront gateway credential
+  # instead of requiring a second raw provider key in this namespace.
+  providerBaseUrl: ""
   gitImage: alpine/git:latest
   agentProvider: anthropic
   resources:
