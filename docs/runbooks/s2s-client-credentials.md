@@ -74,6 +74,61 @@ grant instead of joining the shared-token pool.
    revoked token still verifies until it naturally expires). See
    `src/utils/s2sJwksFlag.ts` for why this is flag-gated.
 
+5. **A service OUTSIDE FuzeFront asks the authorization decision over HTTP.**
+   Step 2 above created the `ServiceEndpoint:invoke` grant in Permit, but until
+   now nothing exposed "may caller X invoke endpoint Y?" as a reachable HTTP
+   route — the check lived only as internal TypeScript
+   (`checkMachinePermission` in `backend/src/utils/permit/machine-roles.ts`).
+   It is now live at `POST /api/v1/security/authz/check` (the same
+   provider-agnostic, contract-frozen route documented in
+   `docs/consumers/onboarding-authn-authz.md`), authenticated with the SAME
+   machine token from step 3 — no separate credential:
+
+   ```sh
+   curl -X POST https://app.fuzefront.com/api/v1/security/authz/check \
+     -H "Authorization: Bearer $ACCESS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "tenant": "default",
+           "resource": { "type": "ServiceEndpoint", "key": "fuzecall_control_plane" },
+           "action": "invoke"
+         }'
+   # => { "allow": true }
+   ```
+
+   `subject` may be omitted — it then defaults to the CALLER's own identity
+   (`svc:<your client_id>`), i.e. "am I allowed to invoke this endpoint",
+   which is the common case. `tenant` is required by the contract; platform
+   S2S grants use the fixed tenant `"default"` (`PLATFORM_TENANT` in
+   `machine-roles.ts`) unless a specific customer tenant is intended.
+   Fail-closed: an unreachable/erroring PDP resolves to `{ "allow": false }`,
+   never a 500 and never an allow.
+
+   **Grant/revoke over the same API are more tightly gated than check.** Any
+   authenticated caller (human or machine) may `check` — it can only ever
+   answer a question, never change what's true. `POST`/`DELETE
+   /api/v1/security/authz/grants` mutate the authorization graph, so a
+   MACHINE caller must additionally hold the `authz:admin` scope (a normal
+   Authentik scope, granted the same way as any other — see
+   `registerS2SClient(service, scopes)` in step 1) or the request is rejected
+   with `403 FORBIDDEN`. In practice this means: provision the small number of
+   trusted platform-operator service accounts that are allowed to grant/revoke
+   S2S invoke permissions with `authz:admin` in their `scopes` list; every
+   other S2S client only ever needs to `check`.
+
+   ```ts
+   // grantServiceInvoke / revokeServiceInvoke (machine-roles.ts) remain the
+   // in-process way to grant from WITHIN the security-service or backend.
+   // An external operator without in-cluster access instead calls:
+   //   POST /api/v1/security/authz/grants
+   //     { "subject": "svc:fuzecall-backend", "tenant": "default",
+   //       "role": "s2s-caller",
+   //       "resource": { "type": "ServiceEndpoint", "key": "fuzecall_control_plane" } }
+   //   DELETE /api/v1/security/authz/grants
+   //     { "subject": "svc:fuzecall-backend", "tenant": "default", "role": "s2s-caller" }
+   // authenticated as a machine identity holding the authz:admin scope.
+   ```
+
 ## JWKS endpoint + token TTL
 
 - **JWKS document**: `<issuer>/jwks/`, where `<issuer>` is the Authentik

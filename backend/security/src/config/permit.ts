@@ -5,6 +5,7 @@ interface PermitConfig {
   pdp: string
   debug?: boolean
   syncInterval?: number
+  apiTimeoutMs: number
 }
 
 // Load configuration from environment variables
@@ -13,6 +14,21 @@ const config: PermitConfig = {
   pdp: process.env.PERMIT_PDP_URL || 'http://localhost:7766',
   debug: process.env.PERMIT_DEBUG === 'true',
   syncInterval: parseInt(process.env.PERMIT_SYNC_INTERVAL || '10000'),
+  // FINDING (izzywdev/FuzeFront authz-live-s2s): this config previously had NO
+  // bound on `permit.check()` at all — unlike `backend/src/config/permit.ts`,
+  // which was fixed for exactly this in FuzeFront#760 ("permit-schema-sync"
+  // hanging forever on a connect-but-never-respond PDP). A `/authz/check` call
+  // against an unreachable-but-not-connection-refused PDP would otherwise hang
+  // the request indefinitely rather than resolving to an explicit deny within
+  // a bounded time — not an "allow", but not the fast, observable "deny" this
+  // service's fail-closed contract requires either. `timeout` bounds
+  // `permit.check()`/`permit.bulkCheck()` specifically (per the permitio SDK);
+  // it does NOT bound `permit.api.*` (resourceInstances/roleAssignments) calls
+  // used by grant/revoke — that would need a custom `axiosInstance`, which
+  // requires adding `axios` as a dependency of this package (deliberately
+  // avoided elsewhere here, see `services/machine-identity.ts`'s header) and
+  // is left out of this fix's scope.
+  apiTimeoutMs: parseInt(process.env.PERMIT_API_TIMEOUT_MS || '30000'),
 }
 
 // Validate required configuration
@@ -66,6 +82,8 @@ if (isNoOpMode) {
       level: config.debug ? 'debug' : 'error',
     },
     throwOnError: false,
+    // Bounds permit.check()/permit.bulkCheck() — see apiTimeoutMs comment above.
+    timeout: config.apiTimeoutMs,
   })
 }
 
