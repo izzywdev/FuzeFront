@@ -13,8 +13,13 @@ claim maps to which permission subject?) that is this package's caller's
 decision, not this library's. Instead, both middleware modules
 (`middleware/fastapi.py`, `middleware/flask.py`) accept an optional
 `authorize` hook of type `AuthorizationHook` and call it with the verified
-`MachineIdentity` after authentication succeeds. Raise `AuthorizationError`
-to deny (mapped to HTTP 403); return normally to allow.
+`MachineIdentity` after authentication succeeds. Two ways to deny, mirroring
+the TypeScript sibling's `MachineAuthorizeHook`
+(`packages/service-auth/src/middleware.ts`, which returns
+`Promise<boolean> | boolean`): raise `AuthorizationError` (or let any other
+exception propagate -- an authz hook that throws is ALWAYS treated as a
+denial, never a pass), or return exactly `False`. Returning `None`, `True`,
+or anything else allows the request through.
 
 Example (once `/authz/*` is live -- illustrative, not implemented here):
 
@@ -33,10 +38,11 @@ Example (once `/authz/*` is live -- illustrative, not implemented here):
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
 from .verifier import MachineIdentity
 
-# Raise `fuzefront_service_auth.AuthorizationError` to deny; return `None`
-# (or anything) to allow. Never called before verification succeeds.
-AuthorizationHook = Callable[[MachineIdentity], None]
+# Raise `fuzefront_service_auth.AuthorizationError` (or anything -- a thrown
+# hook is always a denial) to deny, or return `False` to deny. Return `None`
+# or `True` to allow. Never called before verification succeeds.
+AuthorizationHook = Callable[[MachineIdentity], Optional[bool]]

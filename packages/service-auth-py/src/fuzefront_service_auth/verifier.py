@@ -28,22 +28,29 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ._cache import DEFAULT_MAX_SIZE, DEFAULT_MAX_TTL_SECONDS, PositiveCache
 from ._http import HttpPost, default_http_post
-from .exceptions import TokenVerificationError
+from .exceptions import ServiceAuthError, TokenVerificationError
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
 class MachineIdentity:
-    """A verified machine caller, projected from `TokenIntrospection`."""
+    """A verified machine caller, projected from `TokenIntrospection`.
+
+    Mirrors the TypeScript sibling's `MachineIdentity`
+    (`packages/service-auth/src/types.ts`): `scopes` is always a list (never
+    `None`), even though the wire `scope` is a single space-delimited
+    string or absent.
+    """
 
     subject: str
-    scope: Optional[str] = None
     tenant_id: Optional[str] = None
+    scope: Optional[str] = None
+    scopes: List[str] = field(default_factory=list)
     expires_at: Optional[int] = None
     raw: Dict[str, Any] = field(default_factory=dict)
 
@@ -76,7 +83,11 @@ class MachineTokenVerifier:
         clock=time.time,
     ) -> None:
         if not base_url:
-            raise ValueError("base_url is required")
+            raise ServiceAuthError(
+                "MachineTokenVerifier requires a base_url pointing at the FuzeFront Security API",
+                code="MISCONFIGURED",
+                status=500,
+            )
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._http_post = http_post or default_http_post
@@ -93,7 +104,7 @@ class MachineTokenVerifier:
         returns a value for a token that is not affirmatively active.
         """
         if not token or not isinstance(token, str):
-            raise TokenVerificationError("no bearer token presented")
+            raise TokenVerificationError("no bearer token presented", code="NO_TOKEN")
 
         now = self._clock()
         cached = self._cache.get(token, now)
@@ -124,33 +135,41 @@ class MachineTokenVerifier:
             data = json.loads(body)
         except (TypeError, ValueError) as error:
             raise TokenVerificationError(
-                f"malformed introspection response body (failing closed): {error}"
+                f"malformed introspection response body (failing closed): {error}",
+                code="MALFORMED_RESPONSE",
             ) from error
 
         if not isinstance(data, dict):
-            raise TokenVerificationError("introspection response was not a JSON object (failing closed)")
+            raise TokenVerificationError(
+                "introspection response was not a JSON object (failing closed)",
+                code="MALFORMED_RESPONSE",
+            )
 
         active = data.get("active")
         if not isinstance(active, bool):
             raise TokenVerificationError(
-                "introspection response missing boolean 'active' (failing closed)"
+                "introspection response missing boolean 'active' (failing closed)",
+                code="MALFORMED_RESPONSE",
             )
 
         # THE branch this package exists for: HTTP 200 tells us nothing.
         # Only `active is True` authenticates the caller.
         if active is not True:
-            raise TokenVerificationError("token is not active")
+            raise TokenVerificationError("token is not active", code="TOKEN_INACTIVE")
 
         subject = data.get("subject")
         if not isinstance(subject, str) or not subject:
             raise TokenVerificationError(
-                "introspection response marked active but is missing 'subject' (failing closed)"
+                "introspection response marked active but is missing 'subject' (failing closed)",
+                code="MALFORMED_RESPONSE",
             )
 
+        scope = data.get("scope")
         identity = MachineIdentity(
             subject=subject,
-            scope=data.get("scope"),
             tenant_id=data.get("tenantId"),
+            scope=scope,
+            scopes=scope.split() if isinstance(scope, str) and scope else [],
             expires_at=data.get("expiresAt"),
             raw=data,
         )

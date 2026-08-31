@@ -49,6 +49,7 @@ def test_verify_active_token_returns_identity():
 
     assert identity.subject == "svc-b"
     assert identity.scope == "orders:read"
+    assert identity.scopes == ["orders:read"]
     call = http_post.calls[0]
     assert call["url"] == "http://security-service:3000/api/v1/security/tokens/introspect"
     assert call["payload"] == {"token": "some-token"}
@@ -186,3 +187,14 @@ def test_a_failed_verification_is_never_cached():
     identity = verifier.verify_machine_token("token-x")
     assert identity.subject == "svc-b"
     assert len(http_post.calls) == 2
+
+
+def test_errors_carry_stable_code_and_status_for_cross_language_parity():
+    http_post = make_http_post([(200, json.dumps({"active": False}))])
+    verifier = MachineTokenVerifier(base_url="http://security-service:3000", http_post=http_post)
+
+    with pytest.raises(TokenVerificationError) as excinfo:
+        verifier.verify_machine_token("revoked-token")
+
+    assert excinfo.value.code == "TOKEN_INACTIVE"
+    assert excinfo.value.status == 401

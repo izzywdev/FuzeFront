@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ._http import HttpPost, default_http_post
-from .exceptions import TokenRequestError
+from .exceptions import ServiceAuthError, TokenRequestError
 
 # Refresh this many seconds before actual expiry, so a token is never handed
 # to a caller with (effectively) zero life left on it -- a request that reads
@@ -85,10 +85,12 @@ class ServiceAuthClient:
         http_post: Optional[HttpPost] = None,
         clock=time.time,
     ) -> None:
-        if not base_url:
-            raise ValueError("base_url is required")
-        if not client_id or not client_secret:
-            raise ValueError("client_id and client_secret are required")
+        if not base_url or not client_id or not client_secret:
+            raise ServiceAuthError(
+                "ServiceAuthClient requires base_url, client_id, and client_secret",
+                code="MISCONFIGURED",
+                status=500,
+            )
         self._base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
@@ -131,6 +133,12 @@ class ServiceAuthClient:
             if not pending.event.wait(self._timeout + 5.0):
                 raise TokenRequestError("timed out waiting for a concurrent token refresh")
             if pending.error is not None:
+                if isinstance(pending.error, ServiceAuthError):
+                    raise TokenRequestError(
+                        f"concurrent token refresh failed: {pending.error}",
+                        code=pending.error.code,
+                        status=pending.error.status,
+                    ) from pending.error
                 raise TokenRequestError(
                     f"concurrent token refresh failed: {pending.error}"
                 ) from pending.error
@@ -155,6 +163,16 @@ class ServiceAuthClient:
         pending.event.set()
         return token
 
+    def invalidate(self) -> None:
+        """Drop the cached token, forcing the next `get_token()` to fetch a fresh one.
+
+        Useful when a caller independently learns its token was rejected
+        downstream (e.g. a 401 from another service) and wants to force a
+        refresh rather than waiting out the normal refresh margin.
+        """
+        with self._state_lock:
+            self._cached = None
+
     def _fetch_token(self) -> CachedToken:
         payload = {"clientId": self._client_id, "clientSecret": self._client_secret}
         if self._scope:
@@ -166,25 +184,38 @@ class ServiceAuthClient:
                 f"{self._base_url}/api/v1/security/tokens", payload, self._timeout
             )
         except Exception as error:  # noqa: BLE001 - normalize every transport failure
-            raise TokenRequestError(f"failed to reach the token endpoint: {error}") from error
+            raise TokenRequestError(
+                f"failed to reach the token endpoint: {error}", status=502
+            ) from error
 
         if status != 200:
-            raise TokenRequestError(f"token endpoint returned HTTP {status}: {body!r}")
+            raise TokenRequestError(
+                f"token endpoint returned HTTP {status}: {body!r}",
+                status=status if status in (400, 401) else 502,
+            )
 
         try:
             data = json.loads(body)
         except (TypeError, ValueError) as error:
-            raise TokenRequestError(f"malformed token response body: {error}") from error
+            raise TokenRequestError(
+                f"malformed token response body: {error}", code="MALFORMED_RESPONSE", status=502
+            ) from error
 
         if not isinstance(data, dict):
-            raise TokenRequestError("token response body was not a JSON object")
+            raise TokenRequestError(
+                "token response body was not a JSON object", code="MALFORMED_RESPONSE", status=502
+            )
 
         access_token = data.get("accessToken")
         expires_in = data.get("expiresIn")
         if not isinstance(access_token, str) or not access_token:
-            raise TokenRequestError("token response missing 'accessToken'")
+            raise TokenRequestError(
+                "token response missing 'accessToken'", code="MALFORMED_RESPONSE", status=502
+            )
         if not isinstance(expires_in, (int, float)):
-            raise TokenRequestError("token response missing numeric 'expiresIn'")
+            raise TokenRequestError(
+                "token response missing numeric 'expiresIn'", code="MALFORMED_RESPONSE", status=502
+            )
 
         return CachedToken(
             access_token=access_token,

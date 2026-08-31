@@ -17,10 +17,18 @@ except ImportError as error:  # pragma: no cover - exercised only when extra is 
     ) from error
 
 from ..authz import AuthorizationHook
-from ..exceptions import AuthorizationError, TokenVerificationError
+from ..exceptions import AuthorizationError, ServiceAuthError
 from ..verifier import MachineTokenVerifier
 
 _BEARER_PREFIX = "Bearer "
+
+
+def _deny_response(error: ServiceAuthError):
+    """Build the Flask response for a `ServiceAuthError`, matching the
+    `{error, code}` JSON body shape of the TypeScript sibling's
+    `MachineAuthErrorBody` (`packages/service-auth/src/middleware.ts`).
+    """
+    return jsonify({"error": str(error), "code": error.code}), error.status
 
 
 def require_machine_identity(
@@ -48,21 +56,27 @@ def require_machine_identity(
         def wrapper(*args, **kwargs):
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith(_BEARER_PREFIX):
-                return jsonify({"error": "missing bearer token"}), 401
+                return _deny_response(ServiceAuthError("no bearer token presented", code="NO_TOKEN", status=401))
             token = auth_header[len(_BEARER_PREFIX):].strip()
             if not token:
-                return jsonify({"error": "missing bearer token"}), 401
+                return _deny_response(ServiceAuthError("no bearer token presented", code="NO_TOKEN", status=401))
 
             try:
                 identity = verifier.verify_machine_token(token)
-            except TokenVerificationError:
-                return jsonify({"error": "invalid or inactive token"}), 401
+            except ServiceAuthError as error:
+                return _deny_response(error)
 
             if authorize is not None:
                 try:
-                    authorize(identity)
+                    allowed = authorize(identity)
                 except AuthorizationError as error:
-                    return jsonify({"error": str(error)}), 403
+                    return _deny_response(error)
+                except Exception as error:  # noqa: BLE001 - a throwing hook is always a denial
+                    return _deny_response(
+                        AuthorizationError(f"authorization decision unavailable; denying: {error}")
+                    )
+                if allowed is False:
+                    return _deny_response(AuthorizationError("not permitted"))
 
             g.machine_identity = identity
             return view_function(*args, **kwargs)

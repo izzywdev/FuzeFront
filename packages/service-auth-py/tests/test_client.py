@@ -251,3 +251,43 @@ def test_concurrent_refresh_failure_is_shared_by_followers():
 
     assert len(errors) == 5
     assert all(isinstance(e, TokenRequestError) for e in errors)
+
+
+def test_invalidate_forces_a_fresh_fetch_on_next_call():
+    http_post = make_http_post(
+        [
+            (200, token_body(access_token="tok-1", expires_in=3600)),
+            (200, token_body(access_token="tok-2", expires_in=3600)),
+        ]
+    )
+    client = ServiceAuthClient(
+        base_url="http://security-service:3000",
+        client_id="svc-a",
+        client_secret="s3cr3t",
+        http_post=http_post,
+    )
+
+    assert client.get_token().access_token == "tok-1"
+    client.invalidate()
+    assert client.get_token().access_token == "tok-2"
+    assert len(http_post.calls) == 2
+
+
+def test_errors_carry_stable_code_and_status_for_cross_language_parity():
+    """`code`/`status` mirror the TypeScript sibling's `ServiceAuthErrorCode`
+    vocabulary (`packages/service-auth/src/types.ts`), so both languages'
+    resource servers emit the same `{error, code}` shape.
+    """
+    http_post = make_http_post([(401, json.dumps({"error": "invalid client", "code": "INVALID_CREDENTIALS"}))])
+    client = ServiceAuthClient(
+        base_url="http://security-service:3000",
+        client_id="svc-a",
+        client_secret="wrong",
+        http_post=http_post,
+    )
+
+    with pytest.raises(TokenRequestError) as excinfo:
+        client.get_token()
+
+    assert excinfo.value.code == "TOKEN_REQUEST_FAILED"
+    assert excinfo.value.status == 401

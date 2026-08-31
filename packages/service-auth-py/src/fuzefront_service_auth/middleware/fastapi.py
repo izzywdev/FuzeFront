@@ -17,10 +17,18 @@ except ImportError as error:  # pragma: no cover - exercised only when extra is 
     ) from error
 
 from ..authz import AuthorizationHook
-from ..exceptions import AuthorizationError, TokenVerificationError
+from ..exceptions import AuthorizationError, ServiceAuthError
 from ..verifier import MachineIdentity, MachineTokenVerifier
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def _deny(error: ServiceAuthError) -> "HTTPException":
+    """Build the HTTPException for a `ServiceAuthError`, matching the
+    `{error, code}` JSON body shape of the TypeScript sibling's
+    `MachineAuthErrorBody` (`packages/service-auth/src/middleware.ts`).
+    """
+    return HTTPException(status_code=error.status, detail={"error": str(error), "code": error.code})
 
 
 def machine_identity_dependency(
@@ -48,18 +56,24 @@ def machine_identity_dependency(
         credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
     ) -> MachineIdentity:
         if credentials is None or not credentials.credentials:
-            raise HTTPException(status_code=401, detail="missing bearer token")
+            raise _deny(ServiceAuthError("no bearer token presented", code="NO_TOKEN", status=401))
 
         try:
             identity = verifier.verify_machine_token(credentials.credentials)
-        except TokenVerificationError:
-            raise HTTPException(status_code=401, detail="invalid or inactive token")
+        except ServiceAuthError as error:
+            raise _deny(error)
 
         if authorize is not None:
             try:
-                authorize(identity)
+                allowed = authorize(identity)
             except AuthorizationError as error:
-                raise HTTPException(status_code=403, detail=str(error))
+                raise _deny(error)
+            except Exception as error:  # noqa: BLE001 - an authz hook that throws is a denial, never a pass
+                raise _deny(
+                    AuthorizationError(f"authorization decision unavailable; denying: {error}")
+                ) from error
+            if allowed is False:
+                raise _deny(AuthorizationError("not permitted"))
 
         request.state.machine_identity = identity
         return identity

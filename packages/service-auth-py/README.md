@@ -63,7 +63,17 @@ response = requests.get(
 `POST /api/v1/security/tokens` again shortly before the cached token expires
 (a configurable safety margin, default 30s). Concurrent callers that land
 during a refresh share the SAME in-flight HTTP request ("single-flight")
-instead of each hammering the identity provider.
+instead of each hammering the identity provider. Call `client.invalidate()`
+to force the next `get_token()` to fetch a fresh token immediately (e.g.
+after an unexpected 401 from a downstream call).
+
+Every exception raised by this package is a `ServiceAuthError` (or a
+subclass) carrying a stable `.code` and a suggested `.status`, using the
+SAME code vocabulary as the TypeScript sibling's `ServiceAuthErrorCode`
+(`MISCONFIGURED`, `TOKEN_REQUEST_FAILED`, `MALFORMED_RESPONSE`, `NO_TOKEN`,
+`INTROSPECTION_UNAVAILABLE`, `TOKEN_INACTIVE`, `FORBIDDEN`, `UNKNOWN`) — the
+FastAPI/Flask middleware below emits the same `{"error", "code"}` JSON body
+shape the Express middleware does.
 
 ## Callee side: verify a token + framework middleware
 
