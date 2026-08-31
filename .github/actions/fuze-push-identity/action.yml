@@ -1,0 +1,153 @@
+name: 'Fuze push identity (App -> PAT -> GITHUB_TOKEN)'
+description: >-
+  Resolve a git push / API identity whose writes TRIGGER further workflow runs,
+  and say plainly which rung was used.
+
+  WHY THIS EXISTS. A push authenticated with the default GITHUB_TOKEN triggers no
+  workflow. That is a deliberate GitHub loop-guard, not a quirk to opt out of.
+  Every release pipeline in this fleet hits it in the same place: the version-bump
+  commit lands, carries ZERO check runs, branch protection waits forever for checks
+  that will never appear, and prod stays pinned to the previous image while the
+  release reports green. Observed live on FuzeSocial#81 -- the reconciled head had
+  no check runs while the PREVIOUS commit's green checks stayed visible on the PR,
+  which is strictly worse than a visibly untested head.
+
+  Twelve repos each solved this by hand with a classic PAT (GH_RELEASE_PAT). That
+  works and is the wrong tier: `repo` scope grants full read/write on every repo
+  the owning USER can reach, the commits are attributed to a person who did not
+  make them, one shared value covers ~12 repos, and expiry is a trap either way --
+  set it and the fleet's releases break on a forgotten date (exactly the failure
+  the FUZE_SECRETS_PROVISIONER_TOKEN -> App migration was done to escape, #677),
+  omit it and it is a permanent bearer credential.
+
+  An installation token from the org-wide `fuze-agent` App is the right tier:
+  scoped to declared permissions on the installed repos only, short-lived (~1h) so
+  there is nothing to rotate and nothing to forget, attributable to the App rather
+  than a person -- and it triggers workflows, because the loop-guard is specific to
+  GITHUB_TOKEN. Same problem solved, a fraction of the privilege.
+
+  BONUS WORTH KNOWING: commits made through the CONTENTS API with an App token are
+  server-side signed by GitHub, which satisfies a `required_signatures` ruleset
+  natively. A local `git push` with a PAT does not sign -- which is why some repos
+  carry ruleset bypass actors they would not otherwise need. If your job can write
+  via the Contents API instead of `git push`, prefer it.
+
+  WHY IT LIVES IN .github/actions AND NOT workflow-templates. governance-sync
+  reconciles `.github/actions/**` into every repo on every PR, but is DETECT-ONLY
+  for `.github/workflows/**` (GITHUB_TOKEN cannot push workflow files). There is
+  also no canonical release.yml -- every repo hand-writes its own. So the logic
+  ships here and propagates itself; each repo's release.yml only needs the one-line
+  `uses:`. That is the whole reason this is an action rather than a template.
+
+inputs:
+  app-id:
+    description: 'secrets.FUZE_AGENT_APP_ID. Leave empty to skip the App rung.'
+    required: false
+    default: ''
+  private-key:
+    description: 'secrets.FUZE_AGENT_APP_PRIVATE_KEY (PEM). Leave empty to skip the App rung.'
+    required: false
+    default: ''
+  fallback-pat:
+    description: >-
+      secrets.GH_RELEASE_PAT. The DEPRECATED rung, kept so a repo without the App
+      secrets degrades instead of breaking. Once the App is wired fleet-wide this
+      input should be dropped and the secret retired.
+    required: false
+    default: ''
+  configure-git:
+    description: >-
+      Configure the local git client to push with the resolved identity. Uses an
+      http.extraheader, never a token-in-URL remote: git echoes a remote URL on
+      several error paths and never echoes a header, and several of these repos
+      are public.
+    required: false
+    default: 'true'
+  require-ci-triggering:
+    description: >-
+      Fail the step if neither the App nor the PAT resolved, i.e. if the only
+      identity left is GITHUB_TOKEN and any push would be silent. Set true in a
+      release pipeline where an untriggered head is a broken release; leave false
+      where a silent push is merely suboptimal.
+    required: false
+    default: 'false'
+
+outputs:
+  token:
+    description: 'The resolved token, pre-masked. Feed straight to the next step; never echo it.'
+    value: ${{ steps.resolve.outputs.token }}
+  identity:
+    description: 'FUZE_AGENT_APP | GH_RELEASE_PAT | GITHUB_TOKEN'
+    value: ${{ steps.resolve.outputs.identity }}
+  triggers-ci:
+    description: '"true" when a push with this identity will start workflow runs, else "false".'
+    value: ${{ steps.resolve.outputs.triggers-ci }}
+
+runs:
+  using: composite
+  steps:
+    # Gated on the inputs being present rather than wrapped in continue-on-error:
+    # composite-action steps do not reliably honour continue-on-error, and a
+    # CONFIGURED App that cannot mint is a real fault worth failing on. An
+    # UNCONFIGURED App simply skips this step and falls through to the next rung.
+    - name: Mint fuze-agent App installation token
+      id: app
+      if: inputs.app-id != '' && inputs.private-key != ''
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.private-key }}
+
+    - name: Resolve push identity
+      id: resolve
+      shell: bash
+      env:
+        APP_TOKEN: ${{ steps.app.outputs.token }}
+        PAT: ${{ inputs.fallback-pat }}
+        GH_DEFAULT: ${{ github.token }}
+        CONFIGURE_GIT: ${{ inputs.configure-git }}
+        REQUIRE_CI: ${{ inputs.require-ci-triggering }}
+      run: |
+        set -euo pipefail
+
+        if [ -n "${APP_TOKEN:-}" ]; then
+          TOKEN="$APP_TOKEN"; IDENTITY="FUZE_AGENT_APP"; TRIGGERS="true"
+        elif [ -n "${PAT:-}" ]; then
+          TOKEN="$PAT"; IDENTITY="GH_RELEASE_PAT"; TRIGGERS="true"
+          echo "::warning::Pushing as GH_RELEASE_PAT. This is the deprecated rung: a classic PAT carries \`repo\` scope on every repository its owner can reach, attributes automated commits to a person, and is one shared value across the fleet. Set FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY to use the scoped, short-lived App identity instead."
+        else
+          TOKEN="$GH_DEFAULT"; IDENTITY="GITHUB_TOKEN"; TRIGGERS="false"
+        fi
+
+        # Mask before anything else can print it. create-github-app-token already
+        # masks its own output; the PAT arrives as an input and has not been.
+        echo "::add-mask::$TOKEN"
+
+        if [ "$TRIGGERS" != "true" ]; then
+          MSG="No CI-triggering identity available. A push made with the default GITHUB_TOKEN starts NO workflow runs, so the resulting head will carry zero checks and branch protection can never be satisfied on it."
+          if [ "$REQUIRE_CI" = "true" ]; then
+            echo "::error::${MSG} This job declared require-ci-triggering, so it stops here rather than producing a head nothing will ever check."
+            exit 1
+          fi
+          echo "::warning::${MSG}"
+        fi
+
+        {
+          echo "token=$TOKEN"
+          echo "identity=$IDENTITY"
+          echo "triggers-ci=$TRIGGERS"
+        } >> "$GITHUB_OUTPUT"
+
+        if [ "$CONFIGURE_GIT" = "true" ]; then
+          AUTH_B64=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic ${AUTH_B64}"
+          unset AUTH_B64
+          # Attribute the commit to whoever we actually authenticated as, so `git log`
+          # and the audit trail agree with the token that made the push.
+          if [ "$IDENTITY" = "FUZE_AGENT_APP" ]; then
+            git config --local user.name  "fuze-agent[bot]"
+            git config --local user.email "fuze-agent[bot]@users.noreply.github.com"
+          fi
+        fi
+
+        echo "Push identity: ${IDENTITY} (triggers CI: ${TRIGGERS})"

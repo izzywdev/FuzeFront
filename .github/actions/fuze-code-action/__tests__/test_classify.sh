@@ -115,9 +115,24 @@ echo
 # claude-code-action refuses to run when the PR modifies the workflow file that
 # invokes it, exits 0, and reports no conclusion. Falling through would run the
 # very task that guard exists to prevent; failing would report a break that did
-# not happen. Both are wrong, so this is its own verdict.
-expect_outcome 3 "empty conclusion + step succeeded = declined"        "" "success"
-expect_outcome 3 "declined even with scary log text present"           "" "success" "credit balance is too low"
+# not happen. Both are wrong, so this is its own verdict — BUT ONLY when the log
+# carries no provider-error signature (see the availability cases just below).
+expect_outcome 3 "empty conclusion + step succeeded + no log = declined"   "" "success"
+expect_outcome 3 "empty conclusion + step succeeded + benign log = declined" "" "success" "some ordinary progress output, nothing wrong here"
+expect_outcome 3 "workflow-guard skip message is a real decline"           "" "success" "Skipping action due to workflow validation: the workflow file must have identical content to the version on the default branch"
+
+# The other half of that distinction, added after a live incident: an exit-0 step
+# with no conclusion whose LOG carries a provider-availability signature is a
+# SWALLOWED failure wearing a decline's clothes, and must fall over (and name the
+# error), not be masked as "the chain did no work". This is the exact shape the
+# 403 "key not allowed to access model" from the re-scoped LiteLLM key produced.
+expect_outcome 1 "empty+success but log shows swallowed credit exhaustion = availability" "" "success" "Error: Your credit balance is too low to access the API"
+expect_outcome 1 "empty+success but log shows the model-access 403 = availability"        "" "success" '{"error":"authentication_failed","api_error_status":403,"result":"Failed to authenticate. API Error: 403 key not allowed to access model. Tried to access claude-opus-4-8"}'
+
+# The new availability signatures are recognised on the ordinary failure path too.
+expect 1 "authentication_failed field"    "failure" '{"error":"authentication_failed"}'
+expect 1 "key not allowed to access model" "failure" "403 key not allowed to access model"
+expect 1 "api_error_status 403"           "failure" '{"api_error_status": 403}'
 
 # The distinction is load-bearing: ONLY a succeeded step declines. Anything else
 # with an empty conclusion is still could-not-start, and still falls through.

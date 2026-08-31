@@ -40,20 +40,53 @@ if [ "$CONCLUSION" = "success" ]; then
   exit 0
 fi
 
-# No conclusion reported, but the STEP ITSELF SUCCEEDED. The action ran to
-# completion and chose to do nothing — it did not fail. The case that forced this
-# distinction: claude-code-action refuses to run when the pull request modifies the
-# workflow file that invokes it ("Skipping action due to workflow validation: the
-# workflow file must ... have identical content to the version on the default
-# branch"), exits 0, and emits no conclusion. Every workflow-migration PR trips it.
+# Known AVAILABILITY-class signatures only: credit/quota exhaustion, auth failure,
+# rate limiting, model-access denial, and network/5xx-class transport failure.
+# Deliberately narrow and literal — broadening this list is the one change that
+# turns a wrongful failover (masking a real defect) into the default outcome, which
+# costs more than an unnecessary re-run ever does. Hoisted above the "declined"
+# branch below because that branch now consults it too (see there).
 #
-# Falling through there is pointless — the other vendors would run the same task
-# the guard exists to prevent — and failing is a lie: nothing is broken. So this is
-# its own verdict. It is deliberately keyed on the runner's own report that the
-# step SUCCEEDED, so a rung that genuinely could not start (outcome=failure, or no
-# outcome at all) still classifies as availability and still falls through.
+# The `authentication_failed` / `key not allowed to access model` / `api_error_status: 40x`
+# signatures were added after a live incident: the in-cluster LiteLLM key was
+# re-scoped and rejected the model claude-code-action requested with a 403 "key not
+# allowed to access model". claude-code-action swallowed that 403 into a silent
+# exit-0-with-no-conclusion, which classify.sh used to read as a benign "declined"
+# — hiding a real, actionable auth failure behind "the chain did no work". These
+# patterns make that shape fall over (and name the error) instead.
+AVAILABILITY_PATTERNS='credit balance is too low|insufficient_quota|insufficient quota|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|authentication_failed|key not allowed to access model|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|connection reset|"status":[[:space:]]*5[0-9][0-9]|"status":[[:space:]]*40[13]|"code":[[:space:]]*5[0-9][0-9]|"api_error_status":[[:space:]]*40[13]|"status_code":[[:space:]]*40[13]|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
+
+# No conclusion reported, but the STEP ITSELF SUCCEEDED. Two very different things
+# produce this identical shape, and telling them apart is the whole point:
+#
+#   (a) claude-code-action's workflow-self-modification guard: it refuses to run
+#       when the PR modifies the workflow file that invokes it ("Skipping action
+#       due to workflow validation ... identical content to the version on the
+#       default branch"), exits 0, and emits no conclusion. Nothing ran, nothing
+#       is broken — a genuine DECLINE. Every workflow-migration PR trips it.
+#   (b) claude-code-action CALLED the provider, the provider failed (e.g. a 403
+#       model-access / auth error), and the action swallowed that error into a
+#       silent exit-0-with-no-conclusion. This is NOT benign — it is an
+#       availability failure wearing a decline's clothes.
+#
+# So before declaring a decline, look at the execution log: if it carries an
+# availability signature, it is case (b) — classify it as availability so the chain
+# falls over to the next vendor AND the specific error is named in the job log,
+# rather than being buried under "the chain did no work". Only with no such
+# signature is it the real case (a) decline (exit 3: do not fall through, do not
+# fail). Still keyed on the runner's own report that the step SUCCEEDED, so a rung
+# that genuinely could not start (outcome=failure, or none) falls through below.
 if [ -z "$CONCLUSION" ] && [ "$OUTCOME" = "success" ]; then
-  echo "declined: the rung ran, reported no conclusion, and its step succeeded — it did no work and did not fail"
+  DECLINE_LOG=""
+  if [ -n "$LOG_FILE" ] && [ -f "$LOG_FILE" ]; then
+    DECLINE_LOG="$(cat "$LOG_FILE" 2>/dev/null || true)"
+  fi
+  if [ -n "$DECLINE_LOG" ] && grep -Eqi "$AVAILABILITY_PATTERNS" <<<"$DECLINE_LOG"; then
+    MATCH="$(grep -Eoi "$AVAILABILITY_PATTERNS" <<<"$DECLINE_LOG" | head -1)"
+    echo "availability: the step exited 0 with no conclusion, but its execution log carries a provider-availability signature ('${MATCH}') — a swallowed provider error (e.g. an auth/model-access 403), not a real decline. Falling over so the error is surfaced, not masked."
+    exit 1
+  fi
+  echo "declined: the rung ran, reported no conclusion, and its step succeeded — it did no work and did not fail (e.g. claude-code-action's workflow-self-modification guard on a workflow-migration PR)"
   exit 3
 fi
 
@@ -78,13 +111,10 @@ if [ -z "$LOG_TEXT" ]; then
   exit 2
 fi
 
-# Known AVAILABILITY-class signatures only: credit/quota exhaustion, auth failure,
-# rate limiting, and network/5xx-class transport failure. Deliberately narrow and
-# literal — broadening this list is the one change that turns a wrongful failover
-# (masking a real defect) into the default outcome, which costs more than an
-# unnecessary re-run ever does.
-AVAILABILITY_PATTERNS='credit balance is too low|insufficient_quota|insufficient quota|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|connection reset|"status":[[:space:]]*5[0-9][0-9]|"code":[[:space:]]*5[0-9][0-9]|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
-
+# AVAILABILITY_PATTERNS is defined once, hoisted above the "declined" branch — the
+# same narrow, literal signature list is the classifier's single source of truth for
+# what "availability" means, whether the failure arrived as an explicit
+# conclusion=failure (here) or as a swallowed exit-0-with-no-conclusion (above).
 if grep -Eqi "$AVAILABILITY_PATTERNS" <<<"$LOG_TEXT"; then
   MATCH="$(grep -Eoi "$AVAILABILITY_PATTERNS" <<<"$LOG_TEXT" | head -1)"
   echo "availability: matched pattern '${MATCH}'"
