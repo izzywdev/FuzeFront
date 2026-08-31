@@ -111,6 +111,31 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
   // ── Grants (write-side) ──
 
   async grant(req: GrantRequest): Promise<Grant> {
+    // A resource-SCOPED (ReBAC) grant needs the resource INSTANCE to exist in
+    // Permit before a role can be assigned against it — the resource TYPE
+    // (e.g. `ServiceEndpoint`) is provisioned once via the schema sync, but
+    // each individual instance (e.g. one ServiceEndpoint per S2S relationship)
+    // is created lazily, on first grant. This mirrors the exact idempotent
+    // pattern `grantServiceInvoke` already uses in
+    // `backend/src/utils/permit/machine-roles.ts` (create, tolerate a 409 as
+    // "already exists", then assign) — without it, the FIRST grant for any new
+    // resource instance would fail outright, which would have made the
+    // ServiceEndpoint:invoke S2S flow (izzywdev/FuzeFront#648) unusable through
+    // this generic endpoint despite the contract already supporting it.
+    if (req.resource?.key) {
+      try {
+        await permit.api.resourceInstances.create({
+          key: req.resource.key,
+          resource: req.resource.type,
+          tenant: req.tenant,
+        })
+      } catch (error: any) {
+        const status = error?.response?.status ?? error?.status
+        if (status !== 409) throw error // real failure — surfaced as 502 PROVIDER_ERROR by the route
+        // 409 — instance already exists, proceed to the role assignment.
+      }
+    }
+
     const ok = await assignRoleInPermit({
       user: req.subject,
       role: req.role,
