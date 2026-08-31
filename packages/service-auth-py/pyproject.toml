@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzefront-service-auth"
+version = "1.0.0"
+description = "Python service-to-service auth client + verifier + framework middleware for the FuzeFront Security API (M2M token issuance/introspection)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+# Core client/verifier are deliberately dependency-free (stdlib urllib only) so
+# this installs into any Python microservice regardless of web framework.
+dependencies = []
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100", "starlette>=0.27"]
+flask = ["flask>=2.3"]
+dev = [
+    "pytest>=8.0",
+    "fastapi>=0.100",
+    "httpx>=0.24",
+    "flask>=2.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["fuzefront_service_auth*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
