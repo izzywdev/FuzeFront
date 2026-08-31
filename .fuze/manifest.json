@@ -3,6 +3,15 @@
   "class": "oss-public",
   "tier": "product",
   "expert": "fuzefront-expert",
+  "expertMonitors": [
+    "backend/src/",
+    "frontend/src/",
+    "design-system/",
+    "sdk/",
+    "deploy/helm/fuzefront/",
+    "services/app-registry-service/",
+    ".github/workflows/"
+  ],
   "baselineRef": "v1",
   "agents": [
     "contract-designer",
