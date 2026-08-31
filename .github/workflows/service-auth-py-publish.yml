@@ -1,0 +1,123 @@
+name: Publish fuzefront-service-auth (Python)
+
+# Builds the wheel + sdist for packages/service-auth-py and attaches them to
+# a GitHub Release, so Python microservices in other family repos can install
+# a PINNED artifact rather than tracking a branch.
+#
+# Mirrors identity-py-publish.yml / config-client-py-publish.yml exactly (see
+# either file's comment for the "why a Release asset and not a registry"
+# rationale): GitHub Packages has no PyPI-compatible registry, and this is a
+# private/proprietary family package so public PyPI is out. A Release asset
+# is the one private-by-default artifact store the family already
+# authenticates against (the same GITHUB_TOKEN that serves npm.pkg.github.com).
+#
+# Consumers install either:
+#   pip install https://github.com/izzywdev/FuzeFront/releases/download/service-auth-py-vX.Y.Z/fuzefront_service_auth-X.Y.Z-py3-none-any.whl
+#   pip install "git+https://github.com/izzywdev/FuzeFront.git@service-auth-py-vX.Y.Z#subdirectory=packages/service-auth-py"
+# The first is preferred -- it is a pinned immutable artifact and needs no git.
+
+on:
+  push:
+    tags: ['service-auth-py-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (must match pyproject.toml)'
+        required: true
+
+permissions:
+  contents: write # create the Release + upload assets
+
+concurrency:
+  group: service-auth-py-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - uses: actions/setup-python@v7
+        with: { python-version: '3.12' }
+
+      - name: Verify the tag matches pyproject version
+        # A tag that disagrees with pyproject produces a wheel whose filename
+        # and metadata contradict the release it is attached to -- the kind
+        # of mismatch that is only discovered by a consumer, months later.
+        #
+        # `inputs.version` and `github.*` reach the shell through env, NEVER
+        # through ${{ }} interpolation in `run:`. A dispatch input is
+        # arbitrary attacker-supplied text; interpolated directly it is a
+        # command-injection sink, and this job holds `contents: write` and
+        # publishes an artifact consumers install -- the worst possible place
+        # to have one.
+        #
+        # Also emits `version` (the bare X.Y.Z, no 'service-auth-py-v'
+        # prefix) as a step output, so the Release body below can build the
+        # correct wheel filename -- the wheel is
+        # `fuzefront_service_auth-X.Y.Z-py3-none-any.whl`, NOT
+        # `...-service-auth-py-vX.Y.Z-...`.
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd packages/service-auth-py
+          PY_VER=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG_VER="$INPUT_VERSION"
+          else
+            TAG_VER="${REF_NAME#service-auth-py-v}"
+          fi
+          echo "pyproject=$PY_VER  tag=$TAG_VER"
+          [ "$PY_VER" = "$TAG_VER" ] || { echo "::error::pyproject version $PY_VER != tag $TAG_VER"; exit 1; }
+          echo "version=$PY_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Test before publishing
+        # The core client/verifier are dependency-free, so most of the suite
+        # needs no services; the middleware tests install fastapi/flask via
+        # the dev extra. There is no excuse for shipping this untested --
+        # this package's entire reason to exist is a fail-closed guarantee.
+        run: |
+          cd packages/service-auth-py
+          pip install -q -e '.[dev]'
+          pytest -q
+
+      - name: Build wheel + sdist
+        run: |
+          cd packages/service-auth-py
+          pip install -q build
+          python -m build
+
+      - name: Verify dist contents
+        # A green build step is not evidence that anything was produced --
+        # confirm the wheel actually exists before attaching it to a Release.
+        run: |
+          cd packages/service-auth-py
+          ls -lh dist/
+          if [ -z "$(ls dist/*.whl 2>/dev/null)" ]; then
+            echo "::error::No wheel found in dist/ -- build failed silently."
+            exit 1
+          fi
+
+      - name: Attach to the Release
+        uses: softprops/action-gh-release@62c96d0c4e8a889135c1f3a25910db8dbe0e85f7  # v2
+        with:
+          files: packages/service-auth-py/dist/*
+          tag_name: ${{ github.ref_name }}
+          name: fuzefront-service-auth ${{ github.ref_name }}
+          body: |
+            Python service-to-service (M2M) auth client + verifier + FastAPI/
+            Flask middleware for the FuzeFront Security API.
+
+            Contract: `packages/security/openapi.yaml` (`tokens` tag)
+            TypeScript peer: `packages/service-auth`
+
+            ```bash
+            pip install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fuzefront_service_auth-${{ steps.version.outputs.version }}-py3-none-any.whl
+            ```
+          fail_on_unmatched_files: true
