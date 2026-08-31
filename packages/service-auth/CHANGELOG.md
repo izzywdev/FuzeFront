@@ -8,6 +8,22 @@ contract-stability guarantee consumers may assert on).
 
 ### Changed
 
+- The optional `express` peer range is now `^4.22.2 || ^5.0.0`, was `^4.22.2`.
+
+  Express 5 consumers could not install this package AT ALL. Reproduced against
+  FuzeX's design-frames backend tier (`express@^5.2.1`):
+
+  ```
+  npm error Could not resolve dependency:
+  npm error peer express@"^4.22.2" from @izzywdev/fuzefront-service-auth@0.1.0
+  ```
+
+  `peerDependenciesMeta.express.optional: true` does not help here — optional
+  suppresses auto-INSTALL, but npm still enforces the range against an express
+  the consumer already has, so the install hard-fails. The middleware only uses
+  Express's `Request`/`Response`/`NextFunction` types and calls `next()`; nothing
+  in it is 4.x-specific.
+
 - The dependency on `@fuzefront/security-client` is now the range `^0.8.0`
   instead of the exact pin `0.8.0`. No runtime behaviour changes — the
   dependency is types-only (the compiled `dist/index.js` contains no
