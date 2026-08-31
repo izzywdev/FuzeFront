@@ -12,6 +12,8 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: FUZEQUALITY_API_TOKEN } }
 - name: KAFKA_BROKERS
   value: {{ .Values.config.kafkaBrokers | quote }}
+- name: FUZEFRONT_SECURITY_URL
+  value: {{ .Values.config.fuzefrontSecurityUrl | quote }}
 - name: LITELLM_URL
   value: {{ .Values.config.litellmUrl | quote }}
 - name: FUZEQUALITY_LLM_MODEL

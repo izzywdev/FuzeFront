@@ -234,6 +234,10 @@ securityService:
     # mendys-prod's datasets-service authenticates against this Service
     # in-cluster (session verify + authz check/grants). Issue: FuzeFront#493.
     mendysProdNamespace: mendys-prod
+    # FuzeQuality verifies a portal bearer token and asks this service for
+    # authorization decisions. Keeping this namespace explicit prevents a
+    # quality-worker pod from gaining access merely by sharing an app label.
+    fuzeQualityNamespace: fuzequality
   image:
     repository: fuzefront/security-service
     tag: local
@@ -420,6 +424,10 @@ a2aDeploy:
   # null = anonymous clone (only correct for a PUBLIC tenant repo).
   reposGitTokenSecretRef: null
   providerApiKeySecretRef: null
+  # Optional Anthropic-compatible gateway endpoint. Production points this at
+  # FuzeInfra LiteLLM so the pod uses the existing FuzeFront gateway credential
+  # instead of requiring a second raw provider key in this namespace.
+  providerBaseUrl: ""
   gitImage: alpine/git:latest
   agentProvider: anthropic
   resources:

@@ -122,13 +122,14 @@ a2a:
       enabled: true
       entryRole: app-shell-platform
       external: false
-      provider: { name: anthropic, apiKeySecretRef: { name: a2a-provider-anthropic, key: api-key } }
+      provider: { name: anthropic, apiKeySecretRef: { name: fuzefront-secrets, key: LITELLM_MASTER_KEY } }
 ```
 
-Secrets (`a2a-provider-anthropic`, `a2a-card-signing`, `ghcr-pull`, and
-`a2a-repos-git` since FuzeFront is private) must be sealed **for the
-`fuzefront` namespace** — the shared server's SealedSecrets are scoped to
-`fuzeagent` and are not reusable. See per-product-pod.md §3 for the full list.
+The pod sends Anthropic-format requests through FuzeInfra's in-cluster LiteLLM
+gateway (`ANTHROPIC_BASE_URL`) and reads the existing FuzeFront
+`LITELLM_MASTER_KEY` from `fuzefront-secrets`; it does not duplicate a raw
+provider key. The independent `a2a-card-signing` key must still be sealed **for
+the `fuzefront` namespace**. See per-product-pod.md §3 for the full list.
 
 ### 3. `FUZEFRONT_MCP_URL` provisioning — operator step
 

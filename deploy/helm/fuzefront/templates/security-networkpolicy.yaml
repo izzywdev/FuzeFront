@@ -71,4 +71,15 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $np.port | default 3002 | int }}
+    # FuzeQuality's API and workers validate a caller session and request
+    # authorization decisions through the platform security boundary. This is
+    # intentionally namespace-scoped; FuzeQuality is not part of the broader
+    # intra-fuzefront allowance above.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.fuzeQualityNamespace | default "fuzequality" | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port | default 3002 | int }}
 {{- end }}
