@@ -4,6 +4,28 @@ All notable changes to this package are documented here. Versioned
 independently; bump on every interface change (SemVer — the major is the
 contract-stability guarantee consumers may assert on).
 
+## 0.1.1 — Dedupe `@fuzefront/security-client`
+
+### Changed
+
+- The dependency on `@fuzefront/security-client` is now the range `^0.8.0`
+  instead of the exact pin `0.8.0`. No runtime behaviour changes — the
+  dependency is types-only (the compiled `dist/index.js` contains no
+  `require` of it), so this is purely an install-graph fix.
+
+  Why it mattered: `security-client` is already a direct dependency of six
+  other packages in the family (`auth-ui`, `identity-ui`, `portal-admin-ui`,
+  `account-security-ui`, `packages/security`, FuzeQuality), all of which
+  declare it as `^0.8.0`. An exact pin here cannot dedupe against a caret
+  range that resolves to any other 0.8.x, so a consumer depending on BOTH
+  this package and `security-client` got two copies installed side by side —
+  two sets of types, and cross-package type errors that read as unrelated to
+  their cause. That is the same class of failure PR #841 addressed ("three
+  peer ranges excluded the security-client version we ship").
+
+  The caret form also MATCHES the family's existing convention rather than
+  introducing a new one: every other consumer already declares `^0.8.0`.
+
 ## 0.1.0 — Initial release
 
 First runtime implementation of S2S (machine-to-machine) auth for the
