@@ -28,10 +28,23 @@
 // overlap with any per-package publisher still in place.
 //
 // Usage:
-//   node scripts/publish-packages.mjs --dry-run   # resolve + report, publish nothing
-//   node scripts/publish-packages.mjs             # publish
+//   node scripts/publish-packages.mjs --dry-run          # resolve + report, publish nothing
+//   node scripts/publish-packages.mjs                    # publish every publishable package
+//   node scripts/publish-packages.mjs --only <pkgName>   # publish (or dry-run) just one package
+//   node scripts/publish-packages.mjs --list-json        # print `["@fuzefront/x", ...]` and exit
 //
 // Requires NODE_AUTH_TOKEN for a real publish.
+//
+// --only / --list-json exist for packages-publish.yml's per-package matrix:
+// one broken package's `lerna run build` used to abort the single shared job
+// before it ever reached the publish step, so a green, tested, merged package
+// like @fuzefront/service-auth could not ship because an unrelated service
+// failed to compile. `--list-json` gives the workflow its matrix (one leg per
+// publishable package); `--only` scopes that leg's build and publish to just
+// that package + its own dependency closure, so an unrelated package's failure
+// can no longer block it. `versionByName` is still computed from every
+// publishable package regardless of `--only` — a local dependency's version is
+// needed for the rewrite even when that dependency isn't the leg's target.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -45,6 +58,13 @@ const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies']
 const LOCAL_PROTOCOL = /^(file:|link:|workspace:|portal:)/
 
 const dryRun = process.argv.includes('--dry-run')
+const listJson = process.argv.includes('--list-json')
+const onlyIdx = process.argv.indexOf('--only')
+const only = onlyIdx === -1 ? null : process.argv[onlyIdx + 1]
+if (onlyIdx !== -1 && !only) {
+  console.error('--only requires a package name argument')
+  process.exit(1)
+}
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
@@ -69,6 +89,23 @@ function publishable() {
     .filter((dir) => existsSync(`${root}/${dir}/package.json`))
     .map((dir) => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
     .filter(({ pkg }) => !pkg.private && pkg.name)
+}
+
+/**
+ * Narrow the full publishable set down to `--only <name>`. Exported so the
+ * test can assert the filter without touching the filesystem or npm.
+ *
+ * Throws rather than silently publishing everything if the name is wrong —
+ * a typo'd `--only` in the matrix must fail loudly, not fall back to
+ * publishing every package from what was meant to be one isolated leg.
+ */
+export function filterTargets(targets, only) {
+  if (!only) return targets
+  const matched = targets.filter(({ pkg }) => pkg.name === only)
+  if (matched.length === 0) {
+    throw new Error(`--only ${only}: no publishable workspace has that name`)
+  }
+  return matched
 }
 
 /**
@@ -130,8 +167,21 @@ main()
 }
 
 function main() {
-const targets = publishable()
-const versionByName = Object.fromEntries(targets.map(({ pkg }) => [pkg.name, pkg.version]))
+const allTargets = publishable()
+
+if (listJson) {
+  // One name per publishable package, for packages-publish.yml's matrix.
+  // Deliberately independent of --dry-run/--only: the matrix needs the full
+  // list to build its legs, not a filtered view of one.
+  console.log(JSON.stringify(allTargets.map(({ pkg }) => pkg.name)))
+  return
+}
+
+// versionByName always comes from the FULL set, even under --only: a local
+// dependency's version is needed for the rewrite whether or not that
+// dependency is this leg's publish target (it may already be published).
+const versionByName = Object.fromEntries(allTargets.map(({ pkg }) => [pkg.name, pkg.version]))
+const targets = filterTargets(allTargets, only)
 
 console.log(`publish-packages: ${targets.length} publishable package(s)${dryRun ? ' (dry run)' : ''}\n`)
 

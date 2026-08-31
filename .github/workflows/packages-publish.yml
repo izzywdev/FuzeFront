@@ -26,13 +26,11 @@ name: Publish packages (GitHub Packages, private)
 # last part is what the per-package publishers this replaces got wrong.
 #
 # Publishing is idempotent — a version already in the registry is skipped, not
-# overwritten — so a re-run after a partial failure is safe. The first live run
-# exercised exactly that: 13 published, 5 skipped, 0 failed, the 5 being versions
-# the interim per-package publishers had already shipped.
+# overwritten — so a re-run after a partial failure is safe.
 #
 # Those interim publishers (chat/auth-ui/design-system/security) are now DELETED.
 # Their own headers said to remove them once this workflow worked; it does, and
-# it is a strict superset — all 5 of their packages are among the 18 here.
+# it is a strict superset — all 5 of their packages are among the ones here.
 #
 # VERSIONS ARE BUMPED IN THE PR, NOT HERE. The old design had lerna compute
 # conventional-commit bumps and push the version commit + tags back to master.
@@ -42,6 +40,62 @@ name: Publish packages (GitHub Packages, private)
 # in the PR also keeps the version visible in review, which `gate-version`
 # already checks. A package publishes when its version changes; if it does not
 # change, this run skips it and says so.
+#
+# ---------------------------------------------------------------------------
+# ONE JOB PER PACKAGE, NOT ONE JOB FOR THE MONOREPO — THIS IS THE PART THAT
+# ACTUALLY MATTERS.
+#
+# The previous shape of this workflow ran a single `npx lerna run build` across
+# every lerna-managed package — publishable libraries AND private, never-
+# published apps (services/chat-service, services/email-service, backend, …) —
+# before publishing anything. `lerna run` bails on the first failing package by
+# default, so one broken PRIVATE app blocked every publishable package's
+# release. That is exactly what happened: @fuzefront/service-auth was merged,
+# 30/30 tests green, and could not publish because @fuzefront/chat-service (a
+# private service this workflow has no business building at all) failed to
+# compile.
+#
+# It failed to compile for a real, separate reason worth recording:
+# lerna.json used to hand-list its own `packages` glob instead of trusting
+# npm's `workspaces` field, and that hand list had drifted — it was missing
+# `packages/auth` and `packages/service-auth` entirely. lerna's dependency
+# graph therefore did not know `packages/auth` existed, never built its dist
+# ahead of chat-service (which depends on it), and chat-service's `tsc` failed
+# with "Cannot find module '@fuzefront/auth'". lerna.json now has no `packages`
+# field at all — lerna 10 resolves workspaces from package.json by default —
+# so a new workspace can never again be invisible to the dependency graph.
+#
+# But the bigger fix is that chat-service's state — broken or not — can no
+# longer matter here at all. `verify` resolves the exact set of PUBLISHABLE
+# packages (scripts/publish-packages.mjs --list-json: non-private workspaces
+# with a name, the same definition the publish step itself uses — one source
+# of truth, not a second list to drift). `publish` fans that out into a matrix,
+# one job per package, `fail-fast: false`. Each leg builds ONLY that package
+# and its own dependency closure (`lerna run build --scope <name>
+# --include-dependencies`) — never the packages nobody publishing depends on —
+# and then publishes just that one package (`--only <name>`). A private app
+# that will never be published is never in any leg's dependency closure, so it
+# is never built here and can never block a release again. And if a
+# PUBLISHABLE package's own build breaks, `fail-fast: false` means every other
+# leg still runs to completion — that package's release stops, everyone
+# else's doesn't.
+#
+# This also explains the second, unrelated failure seen in the same run:
+# @fuzefront/portal-branding-ui was killed by SIGTERM (exit 143) with EPIPE
+# noise from @fuzefront/i18n's build. That was resource exhaustion, not a type
+# error — the old job ran `lerna run build` over ~24 packages concurrently in
+# one runner, and portal-branding-ui's Vite build plus i18n's build-time AI
+# translation step is heavy enough that the pair of them contending with
+# twenty-two other concurrent builds got OOM-killed. Splitting into one runner
+# per package removes that contention structurally: each leg now builds at
+# most a small handful of packages, on its own GitHub-hosted runner, instead of
+# the whole graph on one.
+#
+# `lerna` itself is now a pinned root devDependency (it never was — every prior
+# run resolved whatever `npx` fetched as "latest" that day, unpinned and
+# unreproducible). Pinning is what makes "verified locally" mean something.
+# ---------------------------------------------------------------------------
+
 on:
   push:
     branches: [master]
@@ -52,12 +106,54 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  verify:
     if: github.repository_owner == 'izzywdev'
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.list.outputs.packages }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Verify the rename/rewrite transform
+        # Its failure mode is silent: a wrong rewrite produces a tarball that
+        # publishes happily and installs for nobody. `npm publish` exiting 0
+        # proves nothing about that, so assert it before any matrix leg ships
+        # anything. Run once here rather than once per matrix leg — it is pure
+        # unit logic with no per-package variance.
+        run: node --test scripts/__tests__/publish-packages.test.mjs
+
+      - name: Resolve the publishable-package matrix
+        id: list
+        # Single source of truth with the publish step itself: `publishable()`
+        # in scripts/publish-packages.mjs (non-private workspace, has a name).
+        # A private app (chat-service, email-service, backend, …) never
+        # appears here, so it can never occupy a matrix leg or block one.
+        run: |
+          set -euo pipefail
+          packages=$(node scripts/publish-packages.mjs --list-json)
+          echo "$packages" | node -e "JSON.parse(require('fs').readFileSync(0,'utf8'))" # fail fast on malformed output
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "Publishable packages: $packages"
+
+  publish:
+    needs: verify
+    if: github.repository_owner == 'izzywdev' && needs.verify.outputs.packages != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write # publish to GitHub Packages
+    strategy:
+      fail-fast: false # one package's failure must never cancel the others
+      matrix:
+        package: ${{ fromJson(needs.verify.outputs.packages) }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -66,30 +162,30 @@ jobs:
           node-version: '24.x'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@izzywdev'
+          cache: 'npm'
 
       - name: Install
         run: npm ci
 
-      - name: Verify the rename/rewrite transform
-        # Its failure mode is silent: a wrong rewrite produces a tarball that
-        # publishes happily and installs for nobody. `npm publish` exiting 0
-        # proves nothing about that, so assert it before shipping anything.
-        run: node --test scripts/__tests__/publish-packages.test.mjs
-
-      - name: Build packages (topological)
-        # NOT `--if-present`: lerna 10 removed it and errors with
-        # "Unknown arguments: if-present, ifPresent". That flag was inherited
-        # from this workflow's original form and had never executed — the job was
-        # gated on an owner that does not exist, so every run for the life of the
-        # file was a skip. Fixing the guard is what first ran this line.
+      - name: Build ${{ matrix.package }} + its own dependency closure
+        # NOT `lerna run build` (unscoped) — that is the whole-monorepo build
+        # this workflow used to do, and is exactly what let an unrelated
+        # private service's compile error block every publish. `--scope`
+        # restricts the run to this one package; `--include-dependencies`
+        # adds only the local workspace packages it actually depends on (most
+        # publishable packages here have none — their dependencies are either
+        # external or already-published exact versions, not `file:` links).
+        # A package nothing here publishes ever depends on — chat-service,
+        # email-service, backend, portal-client, … — is never a member of this
+        # set and is never built.
         #
-        # The flag is also unnecessary: `lerna run <script>` already skips
-        # packages that do not define it. Verified locally — 24 projects built,
-        # exit 0.
-        run: npx lerna run build
+        # NOT `--if-present`: lerna 10 removed it and errors with "Unknown
+        # arguments: if-present, ifPresent". `lerna run <script>` already
+        # skips packages that do not define it, so the flag was unnecessary.
+        run: npx lerna run build --scope "${{ matrix.package }}" --include-dependencies
 
       - name: Resolve what would publish
-        run: node scripts/publish-packages.mjs --dry-run
+        run: node scripts/publish-packages.mjs --dry-run --only "${{ matrix.package }}"
 
       - name: Publish
         env:
@@ -108,4 +204,4 @@ jobs:
           # before today, so it never inherited the fix.
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node scripts/publish-packages.mjs
+        run: node scripts/publish-packages.mjs --only "${{ matrix.package }}"
