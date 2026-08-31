@@ -1472,13 +1472,6 @@
       "sourceSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187",
       "renderedSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187"
     },
-    "scripts/__tests__/test_gate_workflow_drift.py": {
-      "capability": "workflows",
-      "mode": "managed",
-      "sourcePath": "scripts/__tests__/test_gate_workflow_drift.py",
-      "sourceSha256": "6dbfa806b0915d972c9492d2cd64cd8cbd44d9c03f18ed724d26f582037eaa48",
-      "renderedSha256": "6dbfa806b0915d972c9492d2cd64cd8cbd44d9c03f18ed724d26f582037eaa48"
-    },
     "scripts/build-frames-site.mjs": {
       "capability": "workflows",
       "mode": "managed",
@@ -1562,13 +1555,6 @@
       "sourcePath": "scripts/gate_vacuous_check.py",
       "sourceSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0",
       "renderedSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0"
-    },
-    "scripts/gate_workflow_drift.py": {
-      "capability": "workflows",
-      "mode": "managed",
-      "sourcePath": "scripts/gate_workflow_drift.py",
-      "sourceSha256": "6f1c8cccdc0505547ad280def523bc55361ccb37883fd95d0c00010fe5d55276",
-      "renderedSha256": "6f1c8cccdc0505547ad280def523bc55361ccb37883fd95d0c00010fe5d55276"
     },
     "scripts/stamp-frames.mjs": {
       "capability": "workflows",
