@@ -18,7 +18,9 @@ name: design-approval
 #   4. Staleness    — (only reached for a flow NOT yet approved) compare the issue's
 #      stamp to the current one. Mismatch (or empty) → do NOT flip.
 #   5. Write        — on approve, flip build.flows[<flow>].approved on master via a
-#      DEPLOY KEY (RELEASE_BUMP_SSH_KEY), the SAME write path release.yml uses.
+#      DEPLOY KEY (DESIGN_APPROVAL_DEPLOY_KEY) dedicated to this pipeline — a
+#      separate key from release.yml's RELEASE_BUMP_SSH_KEY, registered the same
+#      way (scripts/register-design-approval-key.sh in FuzeSDLC).
 #      This is deliberate: the "Protect Master" ruleset has a pull_request rule and
 #      GitHub refuses to add the github-actions app as a bypass actor on a
 #      user-owned repo, so a Contents-API commit under GITHUB_TOKEN is REJECTED
@@ -235,17 +237,20 @@ jobs:
             core.setOutput('stamp', computedStamp);
             core.setOutput('manifest_path', manifestPath);
 
-      # The master write path — a DEPLOY KEY, identical to release.yml's tag bump.
+      # The master write path — a DEPLOY KEY dedicated to this pipeline (a separate
+      # key from release.yml's, sharing the same bypass mechanism, not the key
+      # itself — see scripts/register-design-approval-key.sh in FuzeSDLC).
       # The "Protect Master" ruleset has a pull_request rule and refuses the
       # github-actions app as a bypass actor, so a Contents-API/GITHUB_TOKEN commit
       # is rejected with "Repository rule violations found" (the reported bug). The
-      # deploy key IS a registered DeployKey bypass_actor, so its push clears both
-      # the PR rule and required_signatures. If this starts failing with a rule
-      # violation, the DeployKey bypass entry or the deploy key was removed.
+      # deploy key IS covered by the ruleset's DeployKey bypass_actor (a blanket
+      # bypass for any write-access deploy key on the repo), so its push clears
+      # both the PR rule and required_signatures. If this starts failing with a
+      # rule violation, the DeployKey bypass entry or the deploy key was removed.
       - name: Flip approved on master (deploy key)
         if: steps.decide.outputs.flip == 'true'
         env:
-          SSH_KEY: ${{ secrets.RELEASE_BUMP_SSH_KEY }}
+          SSH_KEY: ${{ secrets.DESIGN_APPROVAL_DEPLOY_KEY }}
           FEATURE: ${{ steps.decide.outputs.feature }}
           FLOW: ${{ steps.decide.outputs.flow }}
           AUTHOR: ${{ steps.decide.outputs.author }}
@@ -255,10 +260,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
-          chmod 600 ~/.ssh/release_bump
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/design_approval
+          chmod 600 ~/.ssh/design_approval
           ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/release_bump -o IdentitiesOnly=yes"
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/design_approval -o IdentitiesOnly=yes"
           git config user.name  "fuzefront-design"
           git config user.email "design-approve@users.noreply.github.com"
           git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
