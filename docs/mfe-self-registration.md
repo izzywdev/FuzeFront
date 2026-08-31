@@ -101,8 +101,23 @@ worked.)
 The value is **one platform-wide secret**, `CONSUMER_REGISTRATION_SECRET`. The registry
 compares the incoming Bearer against it in
 `backend/applications/src/middleware/consumer-auth.ts`; on a match the request is
-treated as a platform-admin service call and Permit checks are bypassed. On a miss it
-falls through to ordinary Authentik JWT validation, so human sessions are unaffected.
+treated as a platform-admin service call and Permit checks are bypassed.
+
+The middleware tells a consumer-secret attempt apart from a human JWT **by shape**,
+not by whether the comparison happens to succeed: a JWT is always
+`header.payload.signature` (two dots); the pre-shared secret is a flat hex string with
+none. A JWT-shaped bearer (or no `Authorization` header at all) falls through to
+ordinary Authentik JWT validation unaffected. A non-JWT-shaped bearer is a consumer
+attempt and is decided **right there, fail-closed** — it is never handed to JWT
+validation:
+- secret unset on this pod → `503 consumer_registration_unavailable`
+- secret set but the token doesn't match → `401 invalid_registration_token`
+
+Both responses log an actionable line naming which of the two it is. (Earlier, either
+case silently fell through to JWT validation and came back as a generic
+`401 Invalid token.` — indistinguishable from the caller sending the wrong token, even
+when the real problem was that the platform had no secret configured at all.)
+
 That single middleware is applied to **every** `/api/v1/app-registry` route, because
 `register.sh` calls `GET`, `POST`, and `PUT` in the course of one registration.
 
@@ -149,13 +164,21 @@ Do **not** probe `fuzefront-secrets` for a likely-looking key. `JWT_SECRET`,
 `PERMIT_API_KEY` and `AUTHENTIK_SECRET_KEY` all 401 here by design — none of them is
 this credential.
 
-### Diagnosing a 401
+### Diagnosing a 401 or 503
 
-If every token 401s, the usual cause is that `CONSUMER_REGISTRATION_SECRET` is **unset
-on the applications pod**. It is mounted `optional: true`
-(`deploy/helm/fuzefront/templates/applications.yaml`), so the pod starts healthy
-without it and the consumer branch is simply never reachable — the middleware degrades
-to JWT-only and rejects every static token. Check:
+Since the middleware fails closed, the response body tells you which of the two
+problems you have — no more generic `401 Invalid token.` guessing game:
+
+- **`503 { "error": "consumer_registration_unavailable" }`** — `CONSUMER_REGISTRATION_SECRET`
+  is **unset on the applications pod**. It is mounted `optional: true`
+  (`deploy/helm/fuzefront/templates/applications.yaml`), so the pod starts healthy
+  without it; this is a platform configuration gap, not something the consumer can fix
+  by changing its token. Check:
+- **`401 { "error": "invalid_registration_token" }`** — the secret IS configured, but
+  the caller's `FUZEFRONT_REGISTRATION_TOKEN` doesn't match it. Re-check step 2 below
+  (the consumer may be holding a stale or wrong value).
+
+For the 503 case, confirm the secret is actually sealed:
 
 ```bash
 kubectl -n fuzefront get secret fuzefront-secrets \
