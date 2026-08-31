@@ -1136,6 +1136,13 @@
       "sourceSha256": "a22e09f472571a5ba94ae81b247dbfe945a0781f1509b0c494feb1d39ff22e67",
       "renderedSha256": "a22e09f472571a5ba94ae81b247dbfe945a0781f1509b0c494feb1d39ff22e67"
     },
+    "governance/required-checks.json": {
+      "capability": "harden-gate-scripts",
+      "mode": "managed",
+      "sourcePath": "governance/required-checks.json",
+      "sourceSha256": "e2ed9b235e05fbfeed653c5dcce3b6532d184e3e87a9c1673756976ca3d5d6d5",
+      "renderedSha256": "e2ed9b235e05fbfeed653c5dcce3b6532d184e3e87a9c1673756976ca3d5d6d5"
+    },
     "governance/workflow-drift-policy.json": {
       "capability": "workflows",
       "mode": "managed",
@@ -1438,11 +1445,32 @@
       "renderedSha256": "93dd164cdfe1d9c7ed3b3ba8bc0da3e2f49b9b1628669a69d177b957693b5ba5"
     },
     "scripts/__tests__/test_gate_identifier.py": {
-      "capability": "entity-identity",
+      "capability": "harden-gate-scripts",
       "mode": "managed",
       "sourcePath": "scripts/__tests__/test_gate_identifier.py",
-      "sourceSha256": "d6b01fc736d59e4d1f1f8591f16f03cd4d1faa3a4b7bb422a155c13eb0040723",
-      "renderedSha256": "d6b01fc736d59e4d1f1f8591f16f03cd4d1faa3a4b7bb422a155c13eb0040723"
+      "sourceSha256": "17d58a407e607fd34ac674927c69e44484ca02d55c404ca8caafe2ca5dd5f64b",
+      "renderedSha256": "17d58a407e607fd34ac674927c69e44484ca02d55c404ca8caafe2ca5dd5f64b"
+    },
+    "scripts/__tests__/test_gate_openapi_conformance.py": {
+      "capability": "harden-gate-scripts",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_openapi_conformance.py",
+      "sourceSha256": "e77128e69431a108f64482ab48802b2abe1d39ed58669b4eda091c692e30be8d",
+      "renderedSha256": "e77128e69431a108f64482ab48802b2abe1d39ed58669b4eda091c692e30be8d"
+    },
+    "scripts/__tests__/test_gate_required_checks.py": {
+      "capability": "harden-gate-scripts",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_required_checks.py",
+      "sourceSha256": "f0cf7e2415607d1be0ef41efb280374a0f3a0ae4e542774b77dca4d8ae6e9949",
+      "renderedSha256": "f0cf7e2415607d1be0ef41efb280374a0f3a0ae4e542774b77dca4d8ae6e9949"
+    },
+    "scripts/__tests__/test_gate_vacuous_check.py": {
+      "capability": "harden-gate-scripts",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_vacuous_check.py",
+      "sourceSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187",
+      "renderedSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187"
     },
     "scripts/__tests__/test_gate_workflow_drift.py": {
       "capability": "workflows",
@@ -1480,11 +1508,11 @@
       "renderedSha256": "dbdcc301f2a9607ac4b23b71919ff990931cea0ef6404ec8646c03b3c428fafe"
     },
     "scripts/gate_ds_conformance.py": {
-      "capability": "design-system",
+      "capability": "harden-gate-scripts",
       "mode": "managed",
       "sourcePath": "scripts/gate_ds_conformance.py",
-      "sourceSha256": "2155d4d75c739c1cf20ef03f3a364e66d8d4d0e47d9aa6844014caa82bfc1844",
-      "renderedSha256": "2155d4d75c739c1cf20ef03f3a364e66d8d4d0e47d9aa6844014caa82bfc1844"
+      "sourceSha256": "fbedf04a6aa91033e0513b00d59184fbe132d76d3d04ad3259efd22b9e0830b3",
+      "renderedSha256": "fbedf04a6aa91033e0513b00d59184fbe132d76d3d04ad3259efd22b9e0830b3"
     },
     "scripts/gate_federation_contract.py": {
       "capability": "workflows",
@@ -1494,11 +1522,11 @@
       "renderedSha256": "306612164d7a33855bb4e1e36f70bbf289b1e00b29c1eebc3c8887f53351e10f"
     },
     "scripts/gate_identifier.py": {
-      "capability": "entity-identity",
+      "capability": "harden-gate-scripts",
       "mode": "managed",
       "sourcePath": "scripts/gate_identifier.py",
-      "sourceSha256": "ca1f8bfc2701346e949f1aa669fc4ace9a9586927379870e8dd67effe5d58ac8",
-      "renderedSha256": "ca1f8bfc2701346e949f1aa669fc4ace9a9586927379870e8dd67effe5d58ac8"
+      "sourceSha256": "ae5f4b8d2c1a8390e1339adb269232754c95b2ad0801c751c29e6dcd02cd4aaf",
+      "renderedSha256": "ae5f4b8d2c1a8390e1339adb269232754c95b2ad0801c751c29e6dcd02cd4aaf"
     },
     "scripts/gate_manifest.py": {
       "capability": "schema-validate",
@@ -1507,12 +1535,33 @@
       "sourceSha256": "527abd1ed32ff9a928b65e082b306b4055e55d1346cf031a3b8b6ec70ccd76b1",
       "renderedSha256": "527abd1ed32ff9a928b65e082b306b4055e55d1346cf031a3b8b6ec70ccd76b1"
     },
+    "scripts/gate_openapi_conformance.py": {
+      "capability": "harden-gate-scripts",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_openapi_conformance.py",
+      "sourceSha256": "9c417c928d98942eebd51c79c3f1e61d67e80f17f57ff775da37b932743a1950",
+      "renderedSha256": "9c417c928d98942eebd51c79c3f1e61d67e80f17f57ff775da37b932743a1950"
+    },
     "scripts/gate_pagination.py": {
-      "capability": "workflows",
+      "capability": "harden-gate-scripts",
       "mode": "managed",
       "sourcePath": "scripts/gate_pagination.py",
       "sourceSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35",
       "renderedSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35"
+    },
+    "scripts/gate_required_checks.py": {
+      "capability": "harden-gate-scripts",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_required_checks.py",
+      "sourceSha256": "0bf1dd75d601cfad14e935fd702e2667fc243e020f5e20758a493926c4fe9a6f",
+      "renderedSha256": "0bf1dd75d601cfad14e935fd702e2667fc243e020f5e20758a493926c4fe9a6f"
+    },
+    "scripts/gate_vacuous_check.py": {
+      "capability": "harden-gate-scripts",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_vacuous_check.py",
+      "sourceSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0",
+      "renderedSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0"
     },
     "scripts/gate_workflow_drift.py": {
       "capability": "workflows",

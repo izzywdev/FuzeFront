@@ -1,311 +1,263 @@
-#!/usr/bin/env python3
-"""Self-tests for gate_openapi_conformance.
+"""Tests for gate-openapi-conformance.
 
-Weighted deliberately toward asserting the gate FAILS. A conformance gate that
-only proves "passes on a clean tree" proves nothing: `sys.exit(0)` passes on a
-clean tree too. Every failure mode this gate claims to detect has a test that
-would go green if the detection were removed.
+Same governing principle as test_gate_identifier and test_gate_platform_auth:
+these assert the gate FIRES on a divergence, not merely that it passes on a
+matching pair. Passing is not evidence.
+
+The two mutations that matter are the two ways a contract goes false, and they
+fail in opposite directions:
+
+  delete a handler   the spec keeps promising an operation that now 404s
+  add a handler      the service grows a surface no consumer can discover
+
+A gate that catches only one of those is half a gate, so both are pinned here.
+
+`ResolverDoesNotManufactureDrift` exists because the first working version DID.
+It missed `import x, { y } from '...'` and reported twelve live billing
+operations as unimplemented. A false finding is not a cosmetic problem in a
+gate: it is how the gate loses the reader, and then its enforcement.
 """
-
+import json
 import os
 import subprocess
 import sys
 import tempfile
-import textwrap
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-GATE = os.path.join(os.path.dirname(HERE), "gate_openapi_conformance.py")
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+GATE = os.path.join(REPO, "scripts", "gate_openapi_conformance.py")
 
 
-def build_repo(root, spec_paths, app_src, router_src=None, allowlist=None,
-               servers=None, name="demo", spec=True):
-    """Materialise a minimal services/<name>/{openapi.yaml,src/} tree."""
-    svc = os.path.join(root, "services", name)
-    src = os.path.join(svc, "src")
-    os.makedirs(src, exist_ok=True)
-
-    if spec:
-        lines = ["openapi: 3.0.0", "info:", f"  title: {name}", "  version: 1.0.0"]
-        if servers:
-            lines += ["servers:"] + [f"  - url: {servers}"]
-        lines.append("paths:")
-        for path, methods in spec_paths.items():
-            lines.append(f"  {path}:")
-            for m in methods:
-                lines.append(f"    {m}:")
-                lines.append("      responses:")
-                lines.append("        '200': { description: ok }")
-        with open(os.path.join(svc, "openapi.yaml"), "w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
-
-    with open(os.path.join(src, "app.ts"), "w", encoding="utf-8") as fh:
-        fh.write(textwrap.dedent(app_src))
-    if router_src is not None:
-        with open(os.path.join(src, "routes.ts"), "w", encoding="utf-8") as fh:
-            fh.write(textwrap.dedent(router_src))
-    if allowlist is not None:
-        gov = os.path.join(root, "governance")
-        os.makedirs(gov, exist_ok=True)
-        with open(os.path.join(gov, "openapi-conformance-allowlist.txt"), "w", encoding="utf-8") as fh:
-            fh.write(allowlist)
+def make_repo(files):
+    d = tempfile.mkdtemp()
+    for rel, body in files.items():
+        p = os.path.join(d, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(body)
+    for cmd in (["git", "init", "-q", "."],
+                ["git", "config", "user.email", "t@t"],
+                ["git", "config", "user.name", "t"],
+                ["git", "add", "-A"],
+                ["git", "commit", "-qm", "x"]):
+        subprocess.run(cmd, cwd=d, check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return d
 
 
-def run(root):
-    p = subprocess.run([sys.executable, GATE, "--repo", root],
+def run(repo, *flags):
+    r = subprocess.run([sys.executable, GATE, repo, *flags],
                        capture_output=True, text=True)
-    return p.returncode, p.stdout + p.stderr
+    return r.returncode, r.stdout + r.stderr
 
 
-CLEAN_APP = """
-    import { createThing } from './routes';
-    export const createApp = () => {
-      const app = express();
-      app.use(express.json());
-      app.use('/v1', createThing());
-      return app;
-    };
-"""
-CLEAN_ROUTES = """
-    export function createThing() {
-      const router = Router();
-      router.get('/things', h);
-      router.post('/things', h);
-      return router;
-    }
+SPEC = json.dumps({
+    "openapi": "3.1.0",
+    "servers": [{"url": "{baseUrl}/api/v1/things"}],
+    "paths": {
+        "/items": {"get": {}, "post": {}},
+        "/items/{id}": {"get": {}},
+    },
+})
+
+INDEX = """
+import express from 'express';
+import itemRoutes from './routes/items';
+const app = express();
+app.use('/api/v1/things', itemRoutes);
 """
 
+ROUTES = """
+const router = express.Router();
+router.get('/items', h);
+router.post('/items', h);
+router.get('/items/:id', h);
+export default router;
+"""
 
-class ConformanceTests(unittest.TestCase):
-    def test_conformant_tree_passes(self):
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get", "post"]}, CLEAN_APP, CLEAN_ROUTES)
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
-
-    def test_missing_endpoint_fails(self):
-        """Declared in the contract, not implemented -> a consumer gets a 404."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root,
-                       {"/v1/things": ["get", "post"], "/v1/gone": ["get"]},
-                       CLEAN_APP, CLEAN_ROUTES)
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertIn("MISSING", out)
-            self.assertIn("/v1/gone", out)
-
-    def test_undocumented_endpoint_fails(self):
-        """Implemented but absent from the contract — unreviewed surface."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get"]}, CLEAN_APP, CLEAN_ROUTES)
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertIn("UNDOCUMENTED", out)
-            self.assertIn("POST", out)
-
-    def test_unresolved_mount_fails_rather_than_being_skipped(self):
-        """The routes hardest to parse are the likeliest to be undocumented.
-
-        Skipping them would bias the gate toward passing on exactly the cases it
-        exists to catch, so an unresolvable mount is a failure.
-        """
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get", "post"]},
-                       CLEAN_APP + "\napp.use('/v2', mysteryRouter);\n", CLEAN_ROUTES)
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertIn("UNRESOLVED", out)
-
-    def test_zero_routes_is_a_failure_not_a_pass(self):
-        """The vacuity guard: finding nothing must never read as conformant."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get"]},
-                       "export const createApp = () => express();\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertIn("ZERO routes", out)
-
-    def test_no_services_is_a_config_error_not_a_pass(self):
-        with tempfile.TemporaryDirectory() as root:
-            rc, out = run(root)
-            self.assertEqual(rc, 2, out)
-            self.assertIn("NOTHING to check", out)
-
-    def test_allowlist_excuses_an_undocumented_route(self):
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get"]}, CLEAN_APP, CLEAN_ROUTES,
-                       allowlist="POST /v1/things  # deliberately outside the contract\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
-
-    def test_param_naming_difference_is_not_a_violation(self):
-        """`:id` vs `{listId}` is a documentation nit, not a contract breach.
-
-        Failing on it would train people to ignore this gate, which costs more
-        than it buys.
-        """
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things/{listId}": ["get"]},
-                       CLEAN_APP,
-                       "export function createThing() {\n"
-                       "  const router = Router();\n"
-                       "  router.get('/things/:id', h);\n"
-                       "  return router;\n}\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
-
-    def test_express_middleware_is_not_mistaken_for_a_router(self):
-        """`app.use(express.json())` must not be reported UNRESOLVED."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get", "post"]},
-                       CLEAN_APP + "\napp.use(cors());\napp.use(helmet());\n",
-                       CLEAN_ROUTES)
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
+BASE = {"openapi.json": SPEC, "src/index.ts": INDEX, "src/routes/items.ts": ROUTES}
 
 
-class ServerBaseTests(unittest.TestCase):
-    """`servers[].url` is the frame the contract's paths are written in.
+class MatchingPairPasses(unittest.TestCase):
+    def test_spec_and_code_that_agree_report_ok(self):
+        code, out = run(make_repo(BASE))
+        self.assertEqual(code, 0, out)
+        self.assertIn("3 matched", out)
 
-    Ignoring it reported every billing- and payment-service endpoint as BOTH
-    missing and undocumented — 26 findings that were one prefix. That is the
-    precise failure that teaches a team to ignore a gate.
+    def test_the_census_prints_even_on_success(self):
+        # "OK" alone cannot be distinguished from "compared nothing".
+        _, out = run(make_repo(BASE))
+        self.assertIn("documented operation(s)", out)
+
+
+class BothDirectionsOfDriftAreCaught(unittest.TestCase):
+    def test_deleting_a_handler_is_reported(self):
+        files = dict(BASE)
+        files["src/routes/items.ts"] = ROUTES.replace("router.get('/items/:id', h);\n", "")
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 1, out)
+        self.assertIn("O2", out)
+        self.assertIn("/api/v1/things/items/{}", out)
+
+    def test_adding_an_undocumented_handler_is_reported(self):
+        files = dict(BASE)
+        files["src/routes/items.ts"] = ROUTES + "router.delete('/items/:id', h);\n"
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 1, out)
+        self.assertIn("O1", out)
+
+    def test_a_method_the_spec_does_not_declare_is_not_covered_by_a_sibling(self):
+        # GET /items being documented must not excuse DELETE /items.
+        files = dict(BASE)
+        files["src/routes/items.ts"] = ROUTES + "router.delete('/items', h);\n"
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 1, out)
+        self.assertIn("DELETE", out)
+
+
+class ResolverDoesNotManufactureDrift(unittest.TestCase):
+    """The regression that motivated this class: a default+named import.
+
+    `import billingRoutes, { billingWebhookRouter } from './routes/billing'`
+    did not match the original import pattern, so the router read as unmounted
+    and every operation it serves was reported as unimplemented.
     """
 
-    def test_code_mounting_the_public_base_is_conformant(self):
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/things": ["get"]},
-                       "const app = express();\napp.use('/api/v1/demo', r);\n",
-                       "export function r() {\n  const router = Router();\n"
-                       "  router.get('/things', h);\n  return router;\n}\n",
-                       servers="/api/v1/demo")
-            # app.ts references `r` as a bare identifier; import it so it resolves.
-            app = os.path.join(root, "services", "demo", "src", "app.ts")
-            with open(app, "w", encoding="utf-8") as fh:
-                fh.write("import { r } from './routes';\nconst app = express();\n"
-                         "app.use('/api/v1/demo', r());\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
-            self.assertIn("rebased off server base /api/v1/demo", out)
+    def test_default_plus_named_import_still_resolves_the_mount(self):
+        files = dict(BASE)
+        files["src/index.ts"] = INDEX.replace(
+            "import itemRoutes from './routes/items';",
+            "import itemRoutes, { extra } from './routes/items';")
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 0, out)
+        self.assertIn("3 matched", out)
 
-    def test_rebasing_does_not_hide_a_partial_mismatch(self):
-        """Strip only when EVERY route carries the base — else it is a fudge."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/things": ["get"]}, "", servers="/api/v1/demo")
-            app = os.path.join(root, "services", "demo", "src", "app.ts")
-            with open(app, "w", encoding="utf-8") as fh:
-                fh.write("import { r } from './routes';\nconst app = express();\n"
-                         "app.use('/api/v1/demo', r());\napp.use('/elsewhere', r());\n")
-            with open(os.path.join(root, "services", "demo", "src", "routes.ts"),
-                      "w", encoding="utf-8") as fh:
-                fh.write("export function r() {\n  const router = Router();\n"
-                         "  router.get('/things', h);\n  return router;\n}\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertNotIn("rebased", out)
+    def test_a_nested_router_composes_its_parents_prefix(self):
+        files = dict(BASE)
+        files["src/index.ts"] = """
+import express from 'express';
+import outer from './routes/outer';
+const app = express();
+app.use('/api/v1/things', outer);
+"""
+        files["src/routes/outer.ts"] = """
+import inner from './inner';
+const router = express.Router();
+router.use('/', inner);
+export default router;
+"""
+        files["src/routes/inner.ts"] = ROUTES
+        del files["src/routes/items.ts"]
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 0, out)
+        self.assertIn("3 matched", out)
 
-
-class NoContractTests(unittest.TestCase):
-    """A service with NO spec is the maximally undocumented case, not an exemption."""
-
-    def test_service_without_a_spec_fails_on_any_real_route(self):
-        """Serving routes with no contract is a finding, not a skip.
-
-        It must fail on its own — NOT only when some sibling service happens to
-        have a spec — because a repo whose services are ALL uncontracted is the
-        worst case, and the version of this gate that keyed on "has a spec"
-        reported that repo as having nothing to check.
-        """
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {}, CLEAN_APP, CLEAN_ROUTES, spec=False)
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertIn("NO CONTRACT", out)
-            self.assertIn("/v1/things", out)
-
-            build_repo(root, {"/v1/things": ["get", "post"]}, CLEAN_APP, CLEAN_ROUTES,
-                       name="contracted")
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertIn("NO CONTRACT", out)
-
-    def test_a_stub_serving_only_allowlisted_routes_stays_quiet(self):
-        """Otherwise every health-only stub reds CI and the gate gets disabled."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get", "post"]}, CLEAN_APP, CLEAN_ROUTES,
-                       allowlist="GET /health\n")
-            build_repo(root, {}, "const app = express();\napp.get('/health', h);\n",
-                       name="stub", spec=False)
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
-            self.assertIn("all allowlisted", out)
+    def test_a_route_whose_prefix_cannot_be_resolved_is_unresolved_not_drift(self):
+        # An orphan router nobody mounts must be named as the GATE failing to
+        # see, never counted as an undocumented endpoint.
+        files = dict(BASE)
+        files["src/routes/orphan.ts"] = (
+            "const r = express.Router();\nr.get('/nowhere', h);\nexport default r;\n")
+        _, out = run(make_repo(files))
+        self.assertIn("unresolved", out)
 
 
-class MiddlewareDeclarationTests(unittest.TestCase):
-    def test_external_middleware_is_unresolved_until_declared(self):
-        """`app.use(base, graphCreate({...}))` — imported from a package we cannot walk.
+class GatewayedServiceMatchesOnItsOwnSpelling(unittest.TestCase):
+    """A service behind a gateway mounts at ITS root while its spec describes
+    the public path. Both are correct and they differ; reporting that as drift
+    was what made the first version unusable on a real repo."""
 
-        The gate must not guess "probably middleware": guessing is how it stops
-        catching a router it genuinely cannot see. The operator asserts it in a
-        file that shows up in the diff, or it stays a finding.
-        """
-        app = ("import { graphCreate } from '@izzywdev/fuzefront-identity';\n"
-               "import { createThing } from './routes';\n"
-               "const app = express();\n"
-               "app.use('/v1', graphCreate({ aggregate: new Set(['x']) }));\n"
-               "app.use('/v1', createThing());\n")
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get", "post"]}, app, CLEAN_ROUTES)
-            rc, out = run(root)
-            self.assertEqual(rc, 1, out)
-            self.assertIn("UNRESOLVED", out)
-            self.assertIn("graphCreate", out)
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get", "post"]}, app, CLEAN_ROUTES,
-                       allowlist="middleware graphCreate\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
+    def test_service_serving_the_raw_path_counts_as_implemented(self):
+        files = {
+            "svc/openapi.json": SPEC,
+            "svc/src/main.ts": (
+                "import express from 'express';\n"
+                "import itemRoutes from './routes/items';\n"
+                "const app = express();\napp.use('/', itemRoutes);\n"),
+            "svc/src/routes/items.ts": ROUTES,
+        }
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 0, out)
+        self.assertIn("3 matched", out)
 
 
-class ExtractorTests(unittest.TestCase):
-    def test_default_export_router_resolves_through_the_import(self):
-        """The fleet's dominant idiom, and the one a name-keyed table cannot see.
+class ExemptionsAreDeclaredAndNarrow(unittest.TestCase):
+    def test_an_exemption_with_a_reason_is_honoured(self):
+        files = dict(BASE)
+        files["src/routes/items.ts"] = ROUTES + "router.delete('/items/:id', h);\n"
+        files["governance/openapi-exempt.txt"] = (
+            "DELETE /api/v1/things/items/{}  # internal admin purge, never published\n")
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 0, out)
 
-        A global export-name table resolved ZERO routes in four of six real
-        services for exactly this reason: `export default router` has no name.
-        """
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get"]},
-                       "import listsRouter from './routes';\n"
-                       "const app = express();\napp.use('/v1', listsRouter);\n",
-                       "const router = Router();\nrouter.get('/things', h);\n"
-                       "export default router;\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
-
-    def test_a_router_after_middleware_args_is_still_found(self):
-        """`app.use(BASE, guard, createXRouter(deps))`, often across five lines."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get"]},
-                       "import { createThing } from './routes';\n"
-                       "const API_BASE = '/v1';\nconst app = express();\n"
-                       "app.use(\n  API_BASE,\n  guard,\n"
-                       "  createThing({ a: 1, b: [2, 3] }),\n);\n",
-                       "export function createThing() {\n  const router = Router();\n"
-                       "  router.get('/things', h);\n  return router;\n}\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
-
-    def test_a_non_router_client_call_is_not_mistaken_for_a_route(self):
-        """`axios.get('/upstream')` is an outbound call, not served surface."""
-        with tempfile.TemporaryDirectory() as root:
-            build_repo(root, {"/v1/things": ["get", "post"]}, CLEAN_APP,
-                       CLEAN_ROUTES + "\nasync function f() {\n"
-                       "  await axios.get('/upstream/thing');\n"
-                       "  await http.get('/other');\n}\n")
-            rc, out = run(root)
-            self.assertEqual(rc, 0, out)
+    def test_an_exemption_without_a_reason_does_not_apply(self):
+        files = dict(BASE)
+        files["src/routes/items.ts"] = ROUTES + "router.delete('/items/:id', h);\n"
+        files["governance/openapi-exempt.txt"] = "DELETE /api/v1/things/items/{}\n"
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 1, out)
+        self.assertIn("O4", out)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+class UnreadableIsNotConformant(unittest.TestCase):
+    def test_an_unparsable_spec_is_a_finding_not_a_skip(self):
+        files = dict(BASE)
+        files["openapi.json"] = "{ not json"
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 1, out)
+        self.assertIn("O3", out)
+
+    def test_a_spec_with_zero_operations_is_a_finding(self):
+        # Otherwise the gate compares nothing and reports success.
+        files = dict(BASE)
+        files["openapi.json"] = json.dumps({"openapi": "3.1.0", "paths": {}})
+        code, out = run(make_repo(files))
+        self.assertEqual(code, 1, out)
+        self.assertIn("O3", out)
+
+    def test_a_repo_with_no_spec_is_not_a_failure(self):
+        code, out = run(make_repo({"src/index.ts": INDEX, "src/routes/items.ts": ROUTES}))
+        self.assertEqual(code, 0, out)
+        self.assertIn("no OpenAPI document", out)
+
+
+class RatchetDefersBacklogButNotNewDrift(unittest.TestCase):
+    def _repo_with_history(self, mutate):
+        d = make_repo(BASE)
+        subprocess.run(["git", "checkout", "-qb", "feat"], cwd=d, check=True)
+        mutate(d)
+        for cmd in (["git", "add", "-A"], ["git", "commit", "-qm", "m"]):
+            subprocess.run(cmd, cwd=d, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return d
+
+    def test_a_handler_this_diff_deletes_still_fails(self):
+        def mutate(d):
+            p = os.path.join(d, "src", "routes", "items.ts")
+            with open(p, "w") as fh:
+                fh.write(ROUTES.replace("router.get('/items/:id', h);\n", ""))
+        d = self._repo_with_history(mutate)
+        code, out = run(d, "--changed-only", "--base", "master")
+        self.assertEqual(code, 1, out)
+        self.assertIn("O2", out)
+
+    def test_pre_existing_drift_elsewhere_does_not_fail_the_pr(self):
+        d = make_repo({**BASE,
+                       "src/routes/items.ts": ROUTES + "router.delete('/items', h);\n",
+                       "docs/notes.md": "x\n"})
+        subprocess.run(["git", "checkout", "-qb", "feat"], cwd=d, check=True)
+        with open(os.path.join(d, "docs", "notes.md"), "w") as fh:
+            fh.write("y\n")
+        for cmd in (["git", "add", "-A"], ["git", "commit", "-qm", "m"]):
+            subprocess.run(cmd, cwd=d, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        code, out = run(d, "--changed-only", "--base", "master")
+        self.assertEqual(code, 0, out)
+        self.assertIn("debt, not clearance", out)
+
+    def test_an_uncomputable_diff_checks_everything(self):
+        files = dict(BASE)
+        files["src/routes/items.ts"] = ROUTES + "router.delete('/items', h);\n"
+        code, out = run(make_repo(files), "--changed-only", "--base", "no/such/ref")
+        self.assertEqual(code, 1, out)
+        self.assertIn("could not diff", out)

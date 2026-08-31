@@ -50,7 +50,18 @@ SKIP_DIRS = {".git", "node_modules", "dist", "build", ".venv", "vendor",
 SKIP_FEATURE_GLOBS = (
     "*.config.*",
     "*.d.ts",
-    "packages/*/src/*",   # contract-frozen generated client stubs
+    # GENERATED CLIENT STUBS ONLY — narrowed from `packages/*/src/*` when this script was
+    # promoted from FuzeFront to the canonical. In FuzeFront that broad glob is harmless
+    # because its packages/ holds contract-frozen generated clients. In a CONSUMING repo it
+    # is exactly wrong: `packages/<x>/src/**` is where the UI package and the repo-local
+    # design-system layer live (fuzeservice/packages/fuze-service/src/design-system/,
+    # fuzecontact/packages/fuzecontact-ui/src/, fuzehub/packages/fuzehub-*/). Copying the
+    # broad form would have made this gate blind to the primary location of feature UI in
+    # every consuming repo — passing vacuously, which is the failure this whole sweep exists
+    # to remove. `*-client` is the family's generated-client naming convention (fuzebi-client,
+    # fuzecontact-client, fuzeplan-client, fuzesales-client, fuzeservice-client, ...).
+    "packages/*-client/src/*",
+    "packages/*-client-py/src/*",
     "*.test.*",
     "*/__tests__/*",
 )
@@ -244,7 +255,12 @@ def detect_extraction_candidates(root: str, threshold: int) -> dict[str, dict]:
         uniq = sorted(set(locs))
         # recurring AND across >1 file = an extraction signal
         if len(uniq) >= threshold and len({l.split(":")[0] for l in uniq}) >= 2:
-            fp = hashlib.sha1(norm.encode()).hexdigest()[:12]
+            # sha256, not sha1: this is a non-cryptographic fingerprint used only to
+            # GROUP recurring literals, and it is truncated to 12 chars regardless --
+            # so the stronger digest is free, and it stops every consuming repo
+            # inheriting a code-scanning alert for an algorithm choice that does not
+            # matter here.
+            fp = hashlib.sha256(norm.encode()).hexdigest()[:12]
             out[fp] = {"fingerprint": fp, "locations": uniq, "sample": samples[norm]}
     return out
 

@@ -1,0 +1,354 @@
+{
+  "$schema": "./required-checks.schema.json",
+  "version": 1,
+  "doc": "governance/required-checks.md",
+  "note": "Single source of truth for which status checks are REQUIRED, per repo. scripts/apply_ruleset.sh reads `required_now` from here. Applying is devops-engineer's action, per repo; this file is policy only.",
+  "definition": {
+    "listed": "named in the repo's live ruleset required_status_checks",
+    "can_fail": "the decisive step propagates a non-zero exit: no trailing `|| true`, no terminal `exit 0`, no `set +e` without a re-raise, no `continue-on-error: true` on the decisive step, no scanner flag forcing exit 0",
+    "always_reports": "posts on EVERY pull request to the protected branch: no `paths:`/`paths-ignore:` on the workflow, no `branches:` excluding the base, no `name:` override changing the context string",
+    "available": "the runner exists and is funded, and the capability is enabled. A GitHub-hosted label is always available. A hardcoded self-hosted `runs-on` is NOT: it queues forever when the pool is down. A self-hosted pool listed in `allowed_self_hosted_runners` is available ONLY as the fallback arm of a hosted-default runner-selection chooser (see `no_self_hosted_required`), never hardcoded.",
+    "order": "can_fail and always_reports and available are established FIRST; listed is last. Never the reverse."
+  },
+  "allowed_self_hosted_runners_doc": "Self-hosted pools sanctioned as budget-EXHAUSTION fallback targets. A private repo's GitHub-hosted jobs fail instantly when the Actions budget is spent ('the job was not started because an Actions budget is preventing further use'); the budget resets each billing cycle. A required context may fall back to one of these pools ONLY through a hosted-default chooser (a `runs-on` expression that defaults to a GitHub-hosted runner, e.g. harden-gate.yml's `pick-runner`, which targets `fuze-runner`), so it keeps a hosted default and cannot queue forever. A HARDCODED `runs-on` naming one of these pools is still a C3/C6 error — allowlisting a pool sanctions it as a fallback, not as a permanent home. Declared in data, greppable and owned, exactly like `enforce`.",
+  "allowed_self_hosted_runners": [
+    "fuze-runner",
+    "fuzesdlc"
+  ],
+  "enforce": {
+    "_doc": "Does a finding FAIL the job, per repo? This is the ramp, and it is declared HERE rather than as a `|| true` in the workflow on purpose. gate-toolchain is the counter-example: its suppression is hardcoded in harden-gate.yml, invisible from any policy file, and its own comment block records three successive rounds of false confidence about whether it was enforcing. A ramp written in the data is greppable, diffable, and has an owner. The gate ALWAYS runs and ALWAYS prints every finding either way; `enforce` decides only the exit code, and the summary line says which mode it ran in.",
+    "owner": "@izzywdev",
+    "default": false,
+    "flip_criterion": "A repo flips to true once its Harden Gate reports on GitHub-hosted runners OR through a hosted-default budget-fallback chooser (the `available` property) and its required set is clean or its remaining findings are Stage-0 worklist items it has accepted. Flipping is a one-line diff in this file, per repo — never a workflow edit.",
+    "repos": {
+      "FuzeSDLC": true,
+      "FuzeFront": true
+    }
+  },
+  "vacuity_markers": [
+    "|| true",
+    "exit 0",
+    "set +e",
+    "continue-on-error: true",
+    "exit-code: '0'",
+    "exit-code: \"0\""
+  ],
+  "invariants": {
+    "no_self_hosted_required": "A required context's `runs-on` must be a GitHub-hosted label, or a runner-selection EXPRESSION that keeps a GitHub-hosted default and uses a self-hosted pool only as a budget-exhaustion fallback. When that expression selects a chooser job's output (`needs.<job>.outputs.*`), the chooser must exist and must itself run on a GitHub-hosted runner or a pool in `allowed_self_hosted_runners`. A HARDCODED self-hosted `runs-on` may never appear in any `required_now` — with no hosted default it does not fail when the pool is down, it queues forever, blocking merges with no error.",
+    "no_path_filtered_required": "A context emitted by a workflow with a `paths:`/`paths-ignore:` trigger filter may never appear in any `required_now`. Filter inside the job instead.",
+    "no_phantom_required": "A context may not appear in a repo's `required_now` unless that repo's workflows emit it.",
+    "never_require_is_absolute": "No context in `never_require` may appear in any repo's `required_now` or any stage list.",
+    "promotion_candidates_are_audited": "A context named in a stage's `promote` list must already satisfy can_fail, always_reports and available WHEREVER it is emitted. C1-C5 audit only what is required TODAY, so without this a defective context can sit in a stage list, green, until the ruleset edit that deadlocks the repo. Not-yet-emitted is silent -- that is what the stage is for."
+  },
+  "never_require": {
+    "gate-code-review": "Report-only by design AND self-hosted. Routes through an in-cluster LiteLLM gateway reachable only from the `fuzefront` ARC scale set; skips rather than reds when it cannot route, deliberately. Observed `queued` on 4/4 recent FuzeFront PR heads. Permanently violates the self-hosted invariant. Read its header comment in harden-gate.yml before revisiting.",
+    "call-autofix": "Remediation job — runs BECAUSE something failed. Requiring it makes the repair a merge precondition, inverting the dependency.",
+    "claude-ci-autofix": "Remediation job. Same inversion as call-autofix. Retained here even after the caller stub was renamed to fuze-ci-autofix.yml (izzywdev/FuzeSDLC): FuzeFront, MendysRobotics and MendysRoboticsWP still call izzywdev/AITools/.github/workflows/claude-ci-autofix.yml@main directly and will keep reporting under this name until that follow-up (retiring AITools) lands. Remove once no caller anywhere emits it.",
+    "fuze-ci-autofix": "Remediation job. Same inversion as call-autofix. The renamed caller stub (workflow-templates/fuze-ci-autofix.yml, formerly claude-ci-autofix.yml) — same reusable-claude-ci-autofix.yml behind it, same job id (call-autofix), listed separately only because the workflow FILE name changed and this policy is keyed for auditability by every name a caller can surface, not just the job id.",
+    "Re-run action-download flakes": "Remediation job. Same inversion as call-autofix.",
+    "Notify Team": "Notification side effect, asserts nothing about the PR. A paging outage would block merges.",
+    "notify / notify": "Notification side effect.",
+    "design-review-notify": "Notification side effect.",
+    "telegram-pr-merged": "Notification side effect; also post-merge, so it cannot gate a merge.",
+    "Deploy Documentation": "Publication side effect, not a verdict.",
+    "Auto Merge PR": "Merge machinery. Requiring the merge job as a precondition of merging is circular.",
+    "Dispatch release after merge": "Release machinery, post-merge.",
+    "a2a-maintain": "Actor-gated: red means 'an agent opened this PR', not 'this PR is bad'. Observed `failure` on 1/4 PR heads for that reason alone.",
+    "a2a-maintain preflight": "Actor-gated, as a2a-maintain.",
+    "mcp-maintain": "Actor-gated, as a2a-maintain.",
+    "mcp-maintain preflight": "Actor-gated, as a2a-maintain.",
+    "Trivy": "SARIF-aggregate check, not a job context. GitHub creates one check per SARIF *tool*, aggregating uploads from jobs finishing minutes apart; ci.yml documents this producing a permanently-red unclearable check. Require the job, never the rollup. Observed `neutral` on 4/4 heads — which counts as passing.",
+    "Semgrep OSS": "SARIF-aggregate check, as Trivy. Observed `neutral`."
+  },
+  "capability_gated": {
+    "CodeQL": "Needs code scanning (GHAS on private repos); errors with 'Code scanning is not enabled for this repository.' Requirable per-repo on PUBLIC repos only. Fleet-wide requires a GHAS decision — Stage 5.",
+    "CodeQL Analysis (javascript)": "As CodeQL.",
+    "Dependency Review": "As CodeQL.",
+    "Snyk Security Scan": "Secret-gated on SNYK_TOKEN; skips when absent, and a skip SATISFIES a required context. Requirable only once the secret is provisioned and the skip path removed.",
+    "Generate SBOM": "Condition-gated skip; observed `skipped`. Same reasoning as Snyk.",
+    "Container Security Scan": "Condition-gated skip; observed `skipped`.",
+    "Google OAuth full flow": "Credential-gated skip; observed `skipped`."
+  },
+  "fleet": {
+    "required_now": [
+      "gate-lint",
+      "gate-test",
+      "gate-build",
+      "gate-sast",
+      "gate-secret-scan",
+      "gate-dependency-scan"
+    ],
+    "audit": {
+      "gate-secret-scan": {
+        "can_fail": true,
+        "note": "The only fleet-default context that can actually fail a PR. `set -euo pipefail`; gitleaks reds on a new secret; no path that scans nothing. Reference implementation."
+      },
+      "gate-build": {
+        "can_fail": "partial",
+        "note": "Enforcing, but takes an `exit 0` no-op branch when the repo ROOT has no `build` script — true in 16 of 20 repos, FuzeFront included."
+      },
+      "gate-sast": {
+        "can_fail": false,
+        "note": "`semgrep … || true`; only a scanner-INSTALL failure reds. Stage 0."
+      },
+      "gate-lint": {
+        "can_fail": false,
+        "note": "`set +e` … `echo \"lint complete (report-only)\"; exit 0`. Stage 0."
+      },
+      "gate-test": {
+        "can_fail": false,
+        "note": "Same shape. PREREQUISITE before flipping: fix the pytest scoping, which the template documents as redding ~16 repos on the gate's own scaffolding."
+      },
+      "gate-dependency-scan": {
+        "can_fail": false,
+        "note": "Trivy `exit-code: '0'`. Observed `neutral` on 4/4 PR heads. Stage 0, one character."
+      }
+    }
+  },
+  "stages": {
+    "stage_0": {
+      "precondition": "none — today",
+      "kind": "de-vacuuming, NOT listing. No ruleset edit, so zero lockout risk.",
+      "actions": [
+        {
+          "what": "gate-dependency-scan: exit-code '0' -> '1'",
+          "where": "workflow-templates/harden-gate.yml + every repo copy",
+          "note": "Sequence with .trivyignore triage; expect first-run reds."
+        },
+        {
+          "what": "FuzeFront ci.yml: delete the `Security Scan` job",
+          "where": "FuzeFront",
+          "note": "Byte-for-byte third copy of the same vacuous Trivy scan, and it is REQUIRED. Removing a vacuous required context widens real enforcement, but it edits the ruleset — filed separately, owner's call."
+        },
+        {
+          "what": "FuzeFront workspace-deps-check.yml: delete the `paths:` block",
+          "where": "FuzeFront",
+          "note": "LIVE DEADLOCK, not a hardening improvement. Should not wait for a stage."
+        },
+        {
+          "what": "gate-lint: remove `set +e` / terminal `exit 0`",
+          "where": "canonical + repo copies"
+        },
+        {
+          "what": "gate-test: fix pytest scoping FIRST, then remove `set +e` / `exit 0`",
+          "where": "canonical + repo copies",
+          "note": "Do not flip with gate-lint."
+        },
+        {
+          "what": "gate-build: report loudly where it inspects nothing",
+          "where": "canonical",
+          "note": "Visibility fix, not a promotion."
+        }
+      ]
+    },
+    "stage_1": {
+      "precondition": "Stage 0 landed green",
+      "kind": "listing, in the six repos whose Harden Gate already emits these",
+      "repos": [
+        "FuzeSDLC",
+        "FuzeInfra",
+        "FuzeX",
+        "FuzeFinance",
+        "fuzeservice",
+        "fuzemerchandize"
+      ],
+      "promote": [
+        "gate-manifest",
+        "gate-identifier"
+      ],
+      "promote_fuzesdlc_only": [
+        "gate-actionlint",
+        "gate-api-version"
+      ],
+      "note": "Pure `listed`: can_fail and always_reports are already established and the fleet is already green on both. gate-manifest additionally needs its jsonschema structural-fallback path disallowed first (a degraded mode is a partial can_fail failure)."
+    },
+    "stage_2": {
+      "precondition": "scripts/push_harden.sh has propagated the jobs AND each repo is confirmed green on a real PR",
+      "kind": "listing, in the thirteen lean repos",
+      "repos": [
+        "fuzeplan",
+        "fuzesocial",
+        "fuzeagent",
+        "fuzebi",
+        "fuzekeys",
+        "fuzemarket",
+        "fuzedeploy",
+        "fuzecall",
+        "fuzeexecutive",
+        "fuzepicker",
+        "fuzecontact",
+        "fuzehub",
+        "fuzesales"
+      ],
+      "promote": [
+        "gate-manifest",
+        "gate-identifier",
+        "gate-actionlint"
+      ],
+      "blocker": "These repos carry only nine gate jobs; none of the three exists there yet. Listing before shipping is the FuzeHub/gate-actionlint lockout, hardening-convention.md §6."
+    },
+    "stage_3": {
+      "precondition": "gate-platform-auth shipped fleet-wide and opt-out reasons landed",
+      "promote": [
+        "gate-platform-auth"
+      ],
+      "note": "Currently in the template and in NO repo. Sequenced last among gate-* only because it has no deployment history — on value it is first. It exists because a finance service reached production with no authN AND no authZ while every gate passed it (FuzeFinance#28)."
+    },
+    "stage_4": {
+      "precondition": "OWNER DECISION — raise the GitHub Actions spending limit, OR accept the self-hosted budget fallback fleet-wide",
+      "blocks": [
+        "stage_1",
+        "stage_2",
+        "stage_3"
+      ],
+      "scope": "every repo except FuzeFront (all private)",
+      "note": "`ubuntu-latest` jobs on private repos fail instantly: 'The job was not started because an Actions budget is preventing further use.' This is the `available` property failing fleet-wide. Two coherent cures: raise the spending limit (a billing action), or route required gates through a hosted-default budget-fallback chooser so they run on an `allowed_self_hosted_runners` pool while the budget is spent and return to hosted when it resets — the shape harden-gate.yml's `pick-runner` now implements for FuzeSDLC. A repo that has adopted the chooser and whose fallback pool is healthy is no longer blocked here. Still do NOT route around the budget silently: the chooser is visible in the workflow and its selection is logged."
+    },
+    "stage_5": {
+      "precondition": "OWNER DECISION — buy GHAS, or require per-repo on public repos only",
+      "promote": [
+        "CodeQL",
+        "Dependency Review"
+      ],
+      "note": "Green on FuzeFront (public); errors on private repos. Leaving them advisory everywhere is a coherent choice; believing they gate while they do not is not."
+    },
+    "not_a_stage": {
+      "arc_pools": "A required context may run on a self-hosted pool ONLY through a hosted-default budget-fallback chooser (see `no_self_hosted_required`), never hardcoded. So the health of the fuzesdlc/fuzeplan/fuzesocial ARC pools matters two ways: it gates whether a chooser's fallback arm can actually run, and (for gate-code-review, which is hardcoded self-hosted by necessity and therefore permanently non-required) it gates reporting only. FuzeSDLC's own harden-gate.yml routed its required + promotion contexts through the `pick-runner` chooser (2026-08-30, on the renamed `fuze-runner` pool), which is what let them satisfy the `available` property; the remaining report-only jobs stay stamped `runs-on: fuze-runner` and are fine there because they are not required."
+    }
+  },
+  "repos": {
+    "FuzeFront": {
+      "visibility": "public",
+      "deploy_on_push": true,
+      "ruleset_name": "Protect Master",
+      "ruleset_name_drift": "Every audit and script in this repo filters rulesets by the canonical name 'Protect default branch'. FuzeFront is therefore INVISIBLE to fleet tooling, and apply_ruleset.sh would CREATE A SECOND competing ruleset rather than update it. Rename before applying anything here. devops-engineer.",
+      "required_signatures": false,
+      "required_signatures_drift": "FuzeFront's CLAUDE.md states 'This repo enables required_signatures on master'. The live ruleset has NO required_signatures rule. Documented-but-false; a widening to file separately.",
+      "required_now": [
+        "gate-lint",
+        "gate-test",
+        "gate-build",
+        "gate-sast",
+        "gate-secret-scan",
+        "gate-dependency-scan",
+        "gate-frontend-build",
+        "gate-ds-conformance",
+        "gate-sealed-keys",
+        "Security Scan",
+        "In-repo packages resolve from source"
+      ],
+      "audit": {
+        "gate-frontend-build": {
+          "can_fail": true,
+          "note": "Real vite/tsc build, no `|| true`. Genuinely required. AHEAD of the canonical template — the template should adopt it."
+        },
+        "gate-ds-conformance": {
+          "can_fail": "partial",
+          "note": "ENFORCING on `pull_request` — the changed-lines ratchet fails on any raw design value the PR adds, with no `|| true`. The `|| true` gate-required-checks flags is on the OTHER branch of the same step: the `push`-to-default full scan, which is advisory and opens ds-extraction issues. Classified `partial` rather than `true` because the textual audit cannot tell the branches apart, and a claim the auditor cannot verify must not be stated as certain. For a REQUIRED context only the pull_request branch is ever evaluated, so in practice this enforces — but say it here rather than let the marker read as a lie."
+        },
+        "gate-sealed-keys": {
+          "can_fail": true,
+          "note": "Fails on a dropped sealed key. Its escape is a NAMED per-PR label (allow-secret-key-removal) — a visible opt-out, not silent vacuity. Its header already documents the no-path-filter rule this policy generalises."
+        },
+        "gate-build": {
+          "can_fail": false,
+          "note": "FuzeFront's root package.json has no `build` script, so this takes the no-op branch on every run."
+        },
+        "Security Scan": {
+          "can_fail": false,
+          "note": "Trivy `exit-code: '0'` in ci.yml — the third copy of the same scan; the job's own comment says so. REQUIRED and unable to fail. Stage 0 removal."
+        },
+        "In-repo packages resolve from source": {
+          "can_fail": true,
+          "always_reports": false,
+          "note": "LIVE MERGE DEADLOCK. The check itself is sound and enforcing (`node scripts/check-workspace-deps.mjs`, no `|| true`) — it is `always_reports` that fails: the workflow's pull_request trigger is `paths:`-filtered to **/package.json. Verified against live master db7a8f6 (2026-08-23T14:25:14Z): still filtered, not fixed. Reported on NONE of four sampled PR heads. Any Helm/docs/workflow-only PR can never satisfy it. Fix: delete the `paths:` block, early-exit inside the job — gate-sealed-keys in the same repo already documents exactly this pattern and its reason."
+        }
+      },
+      "scored": "4 of 11 required contexts can actually fail a PR, on the repo that deploys to prod on push."
+    },
+    "FuzeSDLC": {
+      "visibility": "private",
+      "harden_gate_runner": "hosted-default budget-fallback chooser (harden-gate.yml `pick-runner`) → ubuntu-latest, or fuze-runner while the Actions budget is exhausted",
+      "required_now": [
+        "gate-lint",
+        "gate-test",
+        "gate-build",
+        "gate-sast",
+        "gate-secret-scan",
+        "gate-dependency-scan",
+        "gate-policy-integrity"
+      ],
+      "audit": {
+        "gate-policy-integrity": {
+          "can_fail": true,
+          "note": "`exit 1` on a missing baseline heading. The reference precedent for this whole policy: its header independently discovered BOTH deadlock routes — a `paths:` filter that produced ZERO check runs on #105/#106/#109 while the context was required, and a `name:` override that made the job report under a different string entirely. It also records why the deadlock stayed invisible: the merges that did happen used a ruleset-bypassing credential, so nobody hit the wall the rule was building."
+        }
+      },
+      "blocker": "RESOLVED 2026-08-30. All seven required contexts (and the gate-manifest/gate-identifier/gate-actionlint/gate-api-version promotion candidates) previously ran on a hardcoded self-hosted `runs-on` (the pool, renamed fuzesdlc→fuze-runner), violating no_self_hosted_required — they queued when the pool was down and could not report. They now route through harden-gate.yml + gate-policy-integrity.yml's `pick-runner` chooser: GitHub-hosted by default, falling back to the allowlisted `fuze-runner` pool only while the private-repo Actions budget is exhausted (Stage 4), and returning to hosted when it resets. This satisfies the `available` property without waiting on the budget."
+    },
+    "FuzeInfra": {
+      "visibility": "private",
+      "extra_required": [
+        "test-infrastructure",
+        "Lint & schema-validate chart"
+      ],
+      "extra_required_unmeasured": "These repo-specific contexts are required LIVE but their can_fail/always_reports properties were NOT measured in this pass. Audit them (governance/required-checks.md §6) before Stage 1 — an unmeasured required context is exactly the state this policy exists to end."
+    },
+    "fuzecontact": {
+      "visibility": "private",
+      "extra_required": [
+        "helm lint & kubeconform"
+      ],
+      "extra_required_unmeasured": "These repo-specific contexts are required LIVE but their can_fail/always_reports properties were NOT measured in this pass. Audit them (governance/required-checks.md §6) before Stage 1 — an unmeasured required context is exactly the state this policy exists to end."
+    },
+    "FuzeX": {
+      "visibility": "private"
+    },
+    "FuzeFinance": {
+      "visibility": "private",
+      "no_ruleset": "NO ruleset at all — `gh api repos/izzywdev/FuzeFinance/rulesets` returns []. The default branch is UNPROTECTED. Not a required-checks question; flagged because it is the same audit and it is worse than any finding here."
+    },
+    "fuzeservice": {
+      "visibility": "private"
+    },
+    "fuzemerchandize": {
+      "visibility": "private"
+    },
+    "fuzeplan": {
+      "visibility": "private"
+    },
+    "fuzesocial": {
+      "visibility": "private"
+    },
+    "fuzeagent": {
+      "visibility": "private"
+    },
+    "fuzebi": {
+      "visibility": "private"
+    },
+    "fuzekeys": {
+      "visibility": "private"
+    },
+    "fuzemarket": {
+      "visibility": "private"
+    },
+    "fuzedeploy": {
+      "visibility": "private"
+    },
+    "fuzecall": {
+      "visibility": "private"
+    },
+    "fuzeexecutive": {
+      "visibility": "private"
+    },
+    "fuzepicker": {
+      "visibility": "private"
+    },
+    "fuzehub": {
+      "visibility": "private"
+    },
+    "fuzesales": {
+      "visibility": "private"
+    }
+  }
+}
