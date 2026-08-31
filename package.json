@@ -11,6 +11,7 @@
     "shared",
     "packages/identity",
     "packages/auth",
+    "packages/service-auth",
     "billing-client",
     "config-client",
     "custom-hostname-client",
