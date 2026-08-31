@@ -159,7 +159,14 @@ jobs:
         # `npm publish` exiting 0 is not proof anyone can install this --
         # confirm the version is resolvable from a clean `npm view` against
         # the real registry before calling the job done.
+        #
+        # BOTH names -- same 401 the Publish step's comment documents (the
+        # project-level .npmrc references ${GITHUB_TOKEN}, which outranks the
+        # NODE_AUTH_TOKEN-only .npmrc setup-node writes). Missed here once
+        # already: the publish itself succeeded but this step 401'd because
+        # only NODE_AUTH_TOKEN was set.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm view "@izzywdev/fuzefront-service-auth@${{ steps.version.outputs.version }}" version --registry=https://npm.pkg.github.com
