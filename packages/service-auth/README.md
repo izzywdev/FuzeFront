@@ -20,8 +20,14 @@ vendor identity provider behind those endpoints — only to FuzeFront.
 ## Install
 
 ```bash
-npm install @fuzefront/service-auth        # + express, if you use the middleware
+npm install @izzywdev/fuzefront-service-auth        # + express, if you use the middleware
 ```
+
+> **Published name.** `@fuzefront/service-auth` is the *workspace-internal* name and is **not installable** —
+> the `@fuzefront` scope does not exist on GitHub. The published package is **`@izzywdev/fuzefront-service-auth`**
+> (latest `0.1.1`). To keep the short specifier used in the examples below, alias it in your
+> `package.json`: `"@fuzefront/service-auth": "npm:@izzywdev/fuzefront-service-auth@^0.1.1"`.
+
 
 ## The two halves
 

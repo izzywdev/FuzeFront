@@ -14,10 +14,16 @@ If the two disagree, the spec wins and this package is the bug.
 ## Install
 
 ```bash
-npm install @fuzefront/config-client
+npm install @izzywdev/fuzefront-config-client
 ```
 
-Private to the `@fuzefront` scope on GitHub Packages; you need a scoped
+> **Published name.** `@fuzefront/config-client` is the *workspace-internal* name and is **not installable** —
+> the `@fuzefront` scope does not exist on GitHub. The published package is **`@izzywdev/fuzefront-config-client`**
+> (latest `1.0.0`). To keep the short specifier used in the examples below, alias it in your
+> `package.json`: `"@fuzefront/config-client": "npm:@izzywdev/fuzefront-config-client@^1.0.0"`.
+
+
+Private to the **`@izzywdev`** scope on GitHub Packages; you need a scoped
 `.npmrc` and a token.
 
 ## Use

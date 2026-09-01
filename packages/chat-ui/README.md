@@ -13,13 +13,21 @@ Consumes the typed `@fuzefront/chat-client` SSE event union
 
 ```jsonc
 // .npmrc
-@fuzefront:registry=https://npm.pkg.github.com
+@izzywdev:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
 ```bash
-npm i @fuzefront/chat-ui @fuzefront/chat-client
+npm i @izzywdev/fuzefront-chat-ui @izzywdev/fuzefront-chat-client
 ```
+
+> **Published names.** `@fuzefront/chat-ui` / `@fuzefront/chat-client` are the
+> *workspace-internal* names and are **not installable** — the `@fuzefront` scope does not
+> exist on GitHub. The published packages are **`@izzywdev/fuzefront-chat-ui`** (latest
+> `1.2.3`) and **`@izzywdev/fuzefront-chat-client`** (latest `1.1.0`). To keep the short
+> specifiers used below, alias them in `package.json`, e.g.
+> `"@fuzefront/chat-ui": "npm:@izzywdev/fuzefront-chat-ui@^1.2.3"`.
+
 
 ## Usage
 

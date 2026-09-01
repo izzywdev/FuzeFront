@@ -22,9 +22,17 @@ Private package: published to GitHub Packages (`@fuzefront`, `access: restricted
 ## Install & usage
 
 ```bash
-npm i @fuzefront/billing-ui @fuzefront/billing-client \
+npm i @izzywdev/fuzefront-billing-ui @izzywdev/fuzefront-billing-client \
   @stripe/stripe-js @stripe/react-stripe-js
 ```
+
+> **Published names.** `@fuzefront/billing-ui` / `@fuzefront/billing-client` are the
+> *workspace-internal* names and are **not installable** — the `@fuzefront` scope does not
+> exist on GitHub. The published packages are **`@izzywdev/fuzefront-billing-ui`** (latest
+> `1.0.0`) and **`@izzywdev/fuzefront-billing-client`** (latest `1.0.1`). To keep the short
+> specifiers used below, alias them in `package.json`, e.g.
+> `"@fuzefront/billing-ui": "npm:@izzywdev/fuzefront-billing-ui@^1.0.0"`.
+
 
 ```tsx
 import {
