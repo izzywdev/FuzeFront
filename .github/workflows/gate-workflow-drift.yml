@@ -1,0 +1,105 @@
+# fuze:managed template=gate-workflow-drift.yml baseline=v1 digest=sha256:85362f869dc924f4d4e842f8399a708dcdb8b3cd51be2b048d369e30f8664925
+name: gate-workflow-drift
+
+# REQUIRED-check ratchet on `fuze:managed` workflow-file drift (governance/file-ownership.md).
+#
+# governance-sync.yml already DETECTS this (scripts/governance_sync.py's `workflows` bucket)
+# but only ever WARNS: the default GITHUB_TOKEN cannot push `.github/workflows/**` at all, and
+# the workflows-scoped fuze-agent App token that would let it self-heal has never been granted
+# the Workflows permission (governance/file-ownership.md) — so an unconditional hard-fail here
+# would redden every onboarded repo on the very next canonical release, for a condition this
+# job cannot fix itself. Instead it fails only once a marked file's drift has survived
+# `governance/workflow-drift-policy.json`'s `max_versions_behind` baseline releases without
+# being caught by a human bootstrap re-run or the nightly sweep — see that policy file and
+# `governance/workflow-template-containment.md` for the full ramp rationale.
+#
+# NEVER blocks on: a repo with no `.fuze/manifest.json` yet (not onboarded), a repo with no
+# `fuze:managed` marker anywhere yet (the re-stamp fan-out has not reached it), `detached`
+# files (the marker was deliberately removed — the supported way to fork a managed workflow),
+# or a workflow that does not exist in this repo at all. All of these degrade to a clean skip
+# or an advisory notice, never a red X — see scripts/gate_workflow_drift.py's module docstring.
+#
+# NO `paths:` FILTER, DELIBERATELY, once this is added to a repo's `required_now`
+# (governance/required-checks.json) — a required check that is path-filtered can produce zero
+# check runs on a PR that misses the filter and block that PR forever
+# (gate-policy-integrity.yml documents the exact incident this avoids repeating).
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-workflow-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-workflow-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Skip if not onboarded
+        id: guard
+        run: |
+          if [ ! -f .fuze/manifest.json ]; then
+            echo "::notice title=gate-workflow-drift::no .fuze/manifest.json — repo not onboarded yet; skipping."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve baselineRef
+        id: ref
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          BR=$(python3 -c "import json;print(json.load(open('.fuze/manifest.json')).get('baselineRef','main'))")
+          echo "ref=${BR:-main}" >> "$GITHUB_OUTPUT"
+
+      # FULL history (fetch-depth: 0), not the shallow default — the version-count ramp in
+      # scripts/gate_workflow_drift.py walks `workflow-templates/<template>`'s own commit
+      # history and `governance/baseline-version.txt`'s release history to compute how many
+      # releases a drifted file is behind. A shallow clone here would make every drift look
+      # like "unknown provenance" (advisory-only, by design — see the script's docstring),
+      # silently disabling the ratchet rather than failing loudly.
+      - name: Fetch FuzeSDLC canonical (read-only key, full history)
+        if: steps.guard.outputs.ok == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: izzywdev/FuzeSDLC
+          ref: ${{ steps.ref.outputs.ref }}
+          ssh-key: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
+          fetch-depth: 0
+          path: .fuzesdlc-canonical
+
+      - name: No deploy key — cannot check, skip rather than fail
+        if: steps.guard.outputs.ok == 'true'
+        id: keyguard
+        env:
+          KEY: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::notice title=gate-workflow-drift::FUZESDLC_DEPLOY_KEY not set — cannot fetch the canonical; skipping (set the read-only key to enable)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        if: steps.guard.outputs.ok == 'true' && steps.keyguard.outputs.ok == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Evaluate drift
+        if: steps.guard.outputs.ok == 'true' && steps.keyguard.outputs.ok == 'true'
+        run: |
+          python3 .fuzesdlc-canonical/scripts/gate_workflow_drift.py \
+            --canonical .fuzesdlc-canonical --repo . \
+            --policy .fuzesdlc-canonical/governance/workflow-drift-policy.json \
+            --report .gate-workflow-drift-report.json

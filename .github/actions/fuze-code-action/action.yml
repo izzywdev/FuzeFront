@@ -96,13 +96,23 @@ inputs:
     default: ''
   codex-sandbox:
     description: >-
-      codex-action `sandbox` input for the OpenAI rung. `workspace-write`, not
+      codex-action `sandbox` input for the OpenAI rung. `danger-full-access`, not
       `read-only`: rung 2 is the fallover for work rung 1 would have COMMITTED
       (the a2a/mcp maintainers edit files and push). A read-only Codex runs to
       completion having changed nothing and reports success — a vacuous green,
       the exact failure mode this action exists to prevent.
+      NOT `workspace-write` either: that mode wraps codex in the Codex CLI's
+      Landlock/seccomp OS sandbox, which cannot initialize inside the
+      containerized (docker-in-docker) self-hosted runner these jobs run on — the
+      kernel LSM/seccomp features it needs are unavailable in the nested
+      container, so codex-action aborts before doing any work and the fallover rung
+      silently fails (same environment class as the Gemini "untrusted directory"
+      break). `danger-full-access` disables that OS sandbox and relies on the
+      ephemeral, throwaway CI runner as the isolation boundary — codex retains the
+      write capability the fallover needs. Override per-caller if a host with
+      working Landlock ever runs this.
     required: false
-    default: 'workspace-write'
+    default: 'danger-full-access'
   codex-safety-strategy:
     description: >-
       codex-action `safety-strategy` input for the OpenAI rung. MUST NOT be
@@ -368,6 +378,7 @@ runs:
       # the always-fails-closed Gemini stub below.
       env:
         CODEX_OUTCOME: ${{ steps.codex.outcome }}
+        CODEX_OUTPUT_FILE: ${{ runner.temp }}/fuze-code-action-codex-output.txt
       run: |
         set -uo pipefail
         CONCLUSION="failure"
@@ -381,6 +392,35 @@ runs:
         echo "code=${CODE}" >> "$GITHUB_OUTPUT"
         echo "::notice title=fuze-code-action::rung=openai vendor=openai verdict: ${VERDICT}"
 
+        # Self-documenting failure: codex-action exposes no structured error output, so
+        # its reason otherwise lives only in the (log-buried) codex step stderr. On a
+        # non-success outcome, surface a diagnostic to the run SUMMARY (top of the run
+        # page, not buried) plus a ::warning, including whatever codex wrote to its
+        # output-file. That file is codex's OWN output (review text / a partial or
+        # aborted write), not a raw provider-response blob, so it is safe to echo here.
+        if [ "${CODEX_OUTCOME:-}" != "success" ]; then
+          {
+            echo "### fuze-code-action — Codex (OpenAI) rung failed"
+            echo ""
+            echo "\`codex-action\` outcome: \`${CODEX_OUTCOME:-unknown}\` (classify verdict: ${VERDICT})."
+            echo "codex-action surfaces no structured error, so the raw error is in the **Rung 2: openai/codex-action** step log."
+            echo "Most common cause on the containerized self-hosted runner: the Codex CLI OS sandbox (Landlock/seccomp) cannot initialize — mitigated by \`codex-sandbox: danger-full-access\`."
+            echo ""
+            if [ -n "${CODEX_OUTPUT_FILE:-}" ] && [ -s "${CODEX_OUTPUT_FILE:-}" ]; then
+              echo "<details><summary>codex output-file (first 2 KB)</summary>"
+              echo ""
+              echo '```'
+              head -c 2000 "${CODEX_OUTPUT_FILE}" || true
+              echo ""
+              echo '```'
+              echo "</details>"
+            else
+              echo "_codex output-file empty or absent — consistent with an abort before any work (e.g. a sandbox-init failure)._"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          echo "::warning title=fuze-code-action::rung=openai FAILED (outcome=${CODEX_OUTCOME:-unknown}). See the run summary and the 'Rung 2: openai/codex-action' step log for the raw error. Likely cause: Codex CLI OS sandbox unavailable in the container (now mitigated via codex-sandbox=danger-full-access)."
+        fi
+
     # RUNG 3 — Gemini, via google-github-actions/run-gemini-cli. Reached only when
     # BOTH real rungs failed on the AVAILABILITY cascade.
     #
@@ -391,6 +431,24 @@ runs:
     # this rung for the wrong reason and retry an honest red against a third vendor.
     # That is precisely the failure this action exists to avoid, so the gate stays
     # anchored on classify-claude.outputs.code == '1'.
+    # run-gemini-cli refuses to run in a fresh, non-interactive checkout — it exits
+    # with "Gemini CLI is not running in a trusted directory" because there is no
+    # interactive trust prompt in CI. The documented headless path is the
+    # GEMINI_CLI_TRUST_WORKSPACE=true env var. It is exported via $GITHUB_ENV (job
+    # scope) rather than a step-level `env:` on the `uses:` below, because — as the
+    # `extra-env` input above documents — a caller's step `env:` does not reliably
+    # reach a composite action's inner steps, and run-gemini-cli is a composite. The
+    # export runs under the SAME `if:` as the rung, so the flag is only set on the
+    # path that actually reaches Gemini.
+    - name: 'Rung 3 prep — trust the workspace for the Gemini CLI (headless)'
+      if: |
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt != '' &&
+        steps.codex.outcome != 'success' &&
+        inputs.gemini-api-key != ''
+      shell: bash
+      run: echo "GEMINI_CLI_TRUST_WORKSPACE=true" >> "$GITHUB_ENV"
+
     - name: 'Rung 3: google-github-actions/run-gemini-cli'
       id: gemini
       if: |

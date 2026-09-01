@@ -1,590 +1,472 @@
 #!/usr/bin/env python3
-"""Gate the CODE against the FROZEN OpenAPI contract, in both directions.
+"""gate-openapi-conformance — the routes a service SERVES must match the spec it PUBLISHES.
 
-THE DIRECTION IS THE WHOLE POINT. The contract is authored first and frozen; the
-implementation is measured against it. This gate NEVER regenerates the spec from
-code. A spec that can be regenerated from the code it governs is not a contract,
-it is a mirror — it agrees with the implementation by construction and therefore
-cannot detect that the implementation drifted. Every "spec-from-code" pipeline
-silently converts a contract into documentation.
+Nothing in this family checked this. What existed was adjacent and weaker, and
+the gap between the two is the whole point:
 
-So both directions are failures, and they are different failures:
+  FuzeService contract-lint.yml  spec <-> GENERATED CLIENT. Regenerating the
+                                 client from the spec proves the codegen works,
+                                 not that any handler exists. It is also
+                                 report-only, and its Spectral step ends in a
+                                 literal `exit 0`.
+  FuzeFront check-mcp-spec-drift spec <-> CHART COPY. Proves two files are
+                                 identical. Says nothing about the code.
 
-  MISSING      declared in the contract, not implemented. A consumer generated a
-               client from the spec, called the endpoint, and got a 404.
-  UNDOCUMENTED implemented, not in the contract. Surface nobody agreed to,
-               nobody reviewed, and no consumer knows about — the shape most
-               likely to be missing authz, because it was never designed.
+Both compare a document to another document. Neither ever looks at a route.
+So an endpoint can be deleted, renamed, or added with no signal anywhere: the
+spec keeps describing a surface that is gone, consumers generate clients for
+operations that 404, and the MCP tool surface — which is PROJECTED from the
+spec — advertises tools whose upstream does not exist. That last one is why
+this gate must run BEFORE the MCP gates rather than beside them.
 
-AND A THIRD, which is the one that keeps this honest:
+WHAT IT COMPARES
 
-  UNRESOLVED   a mount or route the extractor could not statically resolve.
+Full paths on both sides, so the comparison is real rather than a suffix match:
 
-UNRESOLVED FAILS. It is tempting to skip what cannot be parsed and report on the
-rest — that is exactly how a gate becomes vacuous: the routes hardest to parse
-(dynamically composed, conditionally mounted) are precisely the ones most likely
-to be undocumented, so skipping them biases the gate toward passing on the cases
-it exists to catch. If this gate cannot see a route, it says so and fails, rather
-than reporting a clean bill of health for a subset it never names.
+  spec side  servers[0].url contributes a base path. `{baseUrl}/api/v1/app-registry`
+             means every path in that document hangs off /api/v1/app-registry.
+  code side  `app.use('/api/v1/app-registry', appRegistryRoutes)` mounts a router
+             file at that prefix; a `router.get('/apps')` inside it is really
+             GET /api/v1/app-registry/apps. Mount prefixes compose transitively
+             through nested routers, and FastAPI's include_router(prefix=...)
+             and APIRouter(prefix=...) are resolved the same way.
 
-Likewise ZERO routes discovered is a FAILURE, never a pass. A parser that finds
-nothing would otherwise report "no undocumented endpoints" — technically true,
-entirely worthless, and indistinguishable in CI from a service that is genuinely
-conformant.
+A spec is paired with the routes whose resolved path falls under ITS base path,
+so a repo with several services and several specs does not cross-contaminate.
 
-    gate_openapi_conformance.py [--repo .] [--service NAME] [--list] [--verbose]
+FOUR OUTCOMES, AND UNRESOLVED IS NOT A MISMATCH
 
-Exit codes: 0 conformant · 1 findings · 2 usage/config error.
+  matched      an operation and a route agree
+  O1           a route serves a path the spec does not document
+  O2           the spec documents an operation nothing implements
+  UNRESOLVED   a route whose mount prefix could not be determined
+
+That fourth bucket is load-bearing. A route the resolver could not place is the
+GATE failing to see, not the repo drifting, and reporting it as O1 would bury a
+real finding under noise until someone silenced the whole check. It is counted
+and named separately, never mixed in.
+
+RATCHETED, for the reason every gate here is: run hot against a fleet that has
+never had this check, the backlog would red every PR and earn a `|| true`. With
+--changed-only, an operation or route this diff touches must agree; inherited
+disagreement is counted and printed, never blocking. Deleting a handler EDITS
+its route, and renaming a spec path EDITS the spec, so both stay in scope.
+
+  gate_openapi_conformance.py [repo] [--changed-only] [--base REF]
 """
-
-from __future__ import annotations
-
 import argparse
+import json
 import os
 import re
 import sys
+from urllib.parse import urlsplit
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    import yaml  # type: ignore
-except ImportError:  # pragma: no cover - matches the house convention
-    print("::error title=gate-openapi-conformance::PyYAML is required. `pip install pyyaml`.",
-          file=sys.stderr)
+    from gate_platform_auth import (  # noqa: E402
+        Finding, JS_PATH, JS_ROUTE, _balanced, _norm_path, _parse_decls,
+        _py_routes, _js_routes, _resolve_import, changed_lines, read,
+        source_files, tracked_files,
+    )
+except ImportError as exc:  # pragma: no cover - a bare traceback here is unreadable
+    # This gate reuses gate_platform_auth's route scanner rather than growing a
+    # second one that would drift from it. The two are installed together by the
+    # `openapi` capability for exactly that reason; if one arrived without the
+    # other, say so in one line instead of emitting a stack trace that reads
+    # like the gate itself is broken.
+    sys.stderr.write(
+        "::error title=gate-openapi-conformance::cannot import the shared route "
+        f"scanner from scripts/gate_platform_auth.py ({exc}). These two scripts "
+        "are installed as a pair — this gate reuses that scanner instead of "
+        "keeping a second copy that would drift. Re-run sdlc-bootstrap, or "
+        "install scripts/gate_platform_auth.py alongside this file.\n")
     sys.exit(2)
+
+# PyYAML is not guaranteed on every runner (gate_identifier.py:61 sets the house
+# convention). A JSON spec still works without it; a YAML one cannot be read, and
+# that MUST be said out loud rather than counted as "no specs found" — a gate
+# that reports success because it could not parse its input is the exact defect
+# this family exists to remove.
+try:
+    import yaml
+except ImportError:  # pragma: no cover - exercised by the degraded-mode test
+    yaml = None
+
+EXEMPT_FILES = ("governance/openapi-exempt.txt", ".fuze/openapi-exempt.txt")
+
+SPEC_NAME = re.compile(r"(^|/)(openapi|swagger)\.(ya?ml|json)$", re.I)
+# The Helm-mounted duplicate is a COPY of a spec, not a second contract.
+# Counting it would double every operation and invent O2s for the copy.
+# check-mcp-spec-drift.sh is what proves the copy matches; this gate reads the
+# source of truth only.
+SPEC_SKIP = re.compile(r"(^|/)(deploy|charts?|helm)/.*/files/|(^|/)node_modules/|"
+                       r"(^|/)(dist|build|vendor|coverage)/")
 
 HTTP_METHODS = ("get", "post", "put", "patch", "delete", "head", "options")
 
-# --- static extraction -------------------------------------------------------
-#
-# Resolution is per-FILE and follows IMPORTS, not a global name table. An
-# earlier cut mapped every exported name to a file and looked mounts up in that
-# one table; it resolved nothing in four of six real services, because the
-# dominant idiom here is `import listsRouter from './routes/lists'` against an
-# `export default router` — a default export has no name to key on. It was also
-# unsound: two files exporting the same identifier silently aliased.
 
-_IMPORT = re.compile(
-    r"""import\s+(?P<clause>[^;'"]*?)\s+from\s+['"](?P<spec>[^'"]+)['"]""", re.S)
-_REQUIRE = re.compile(
-    r"""(?:const|let|var)\s+(?P<clause>\{[^}]*\}|[A-Za-z_$][\w$]*)\s*="""
-    r"""\s*require\s*\(\s*['"](?P<spec>[^'"]+)['"]\s*\)""")
-_STR_CONST = re.compile(
-    r"""(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*(?::[^=]+?)?=\s*['"](?P<val>[^'"]*)['"]""")
-# A variable that actually holds a router/app. Restricting route extraction to
-# these is what keeps `axios.get('/x')`, `http.get(...)` and `stripe.charges.get`
-# out of the endpoint set — an unrestricted `<ident>.get('<path>'` matches those.
-_ROUTER_VAR = re.compile(
-    r"""(?:const|let|var)\s+(?P<name>[A-Za-z_$][\w$]*)\s*(?::[^=]+?)?=\s*"""
-    r"""(?:express\s*\.\s*)?(?:Router|express)\s*\(""")
-_ROUTE = re.compile(
-    r"""(?P<obj>[A-Za-z_$][\w$]*)\s*\.\s*(?P<method>%s)\s*\(\s*['"](?P<path>[^'"]*)['"]"""
-    % "|".join(HTTP_METHODS))
-_USE = re.compile(r"""(?P<obj>[A-Za-z_$][\w$]*)\s*\.\s*use\s*\(""")
-_DEFINED_HERE = re.compile(
-    r"""(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var)"""
-    r"""\s+(?P<name>[A-Za-z_$][\w$]*)""")
-_IDENT = re.compile(r"""^[A-Za-z_$][\w$]*$""")
-_CALL = re.compile(r"""^(?P<name>[A-Za-z_$][\w$]*)\s*\(""")
-
-# `.use(express.json())`, `.use(cors())` and friends are middleware, not route
-# mounts. Without this they read as unresolvable routers and fail for no reason.
-_NOT_A_ROUTER = {
-    "express", "cors", "helmet", "morgan", "compression", "cookieParser",
-    "bodyParser", "rateLimit", "slowDown", "session", "passport", "csurf",
-    "serveStatic", "favicon", "responseTime", "timeout", "multer", "pinoHttp",
-    "swaggerUi", "requestId", "errorHandler", "notFoundHandler",
-}
+def load_spec(repo, rel):
+    raw = read(repo, rel)
+    if not raw.strip():
+        return None, "empty file"
+    if rel.lower().endswith(".json"):
+        try:
+            return json.loads(raw), None
+        except json.JSONDecodeError as e:
+            return None, f"invalid JSON: {e}"
+    if yaml is None:
+        return None, "PyYAML is not installed on this runner, so this YAML spec could not be read"
+    try:
+        doc = yaml.safe_load(raw)
+    except yaml.YAMLError as e:
+        return None, f"invalid YAML: {e}"
+    return (doc, None) if isinstance(doc, dict) else (None, "not a mapping")
 
 
-def _split_args(text: str, open_paren: int) -> tuple[list[str], int]:
-    """Split a call's arguments at the top level, honouring nesting and strings.
+def spec_base_path(doc):
+    """Literal path prefix every path in this document hangs off.
 
-    A regex cannot do this. `app.use(API_BASE, guard, createInvoicesRouter({ s }))`
-    is real code in billing-service, and so is a `.use(` spanning five lines.
-    Returns ([], -1) for an unterminated call.
-    """
-    depth, i, n = 0, open_paren, len(text)
-    args: list[str] = []
-    start, quote = open_paren + 1, None
-    while i < n:
-        c = text[i]
-        if quote:
-            if c == "\\":
-                i += 2
-                continue
-            if c == quote:
-                quote = None
-        elif c in "'\"`":
-            quote = c
-        elif c in "([{":
-            depth += 1
-        elif c in ")]}":
-            depth -= 1
-            if depth == 0:
-                args.append(text[start:i])
-                return [a.strip() for a in args if a.strip()], i
-        elif c == "," and depth == 1:
-            args.append(text[start:i])
-            start = i + 1
-        i += 1
-    return [], -1
-
-
-def _clause_names(clause: str) -> list[tuple[str, bool]]:
-    """(local_name, is_default) for an import clause. `a as b` binds b."""
-    out: list[tuple[str, bool]] = []
-    clause = clause.strip()
-    brace = clause.find("{")
-    default_part = clause[:brace] if brace >= 0 else clause
-    named_part = clause[brace + 1:clause.rfind("}")] if brace >= 0 else ""
-    for piece in default_part.split(","):
-        piece = piece.strip().rstrip(",").strip()
-        if piece and not piece.startswith("*") and _IDENT.match(piece):
-            out.append((piece, True))
-    for piece in named_part.split(","):
-        piece = piece.strip()
-        if not piece:
-            continue
-        if " as " in piece:
-            piece = piece.split(" as ")[-1].strip()
-        if _IDENT.match(piece):
-            out.append((piece, False))
-    return out
-
-
-class Extractor:
-    """Resolve an Express app's mounted route table from source, statically."""
-
-    def __init__(self, src_root: str, middleware: set[str] | None = None):
-        self.root = src_root
-        self.middleware = _NOT_A_ROUTER | (middleware or set())
-        self.text: dict[str, str] = {}
-        for f in _source_files(src_root):
-            with open(f, encoding="utf-8", errors="replace") as fh:
-                self.text[f] = fh.read()
-        self.unresolved: list[str] = []
-        self._memo: dict[tuple[str, str | None], set[tuple[str, str]]] = {}
-
-    # -- per-file indices ----------------------------------------------------
-    def _imports(self, f: str) -> dict[str, str | None]:
-        """local name -> resolved file, or None when the module is external."""
-        out: dict[str, str | None] = {}
-        body = self.text[f]
-        for m in list(_IMPORT.finditer(body)) + list(_REQUIRE.finditer(body)):
-            spec = m.group("spec")
-            target = self._resolve_spec(f, spec)
-            for name, _is_default in _clause_names(m.group("clause")):
-                out[name] = target
-        return out
-
-    def _resolve_spec(self, f: str, spec: str) -> str | None:
-        if not spec.startswith("."):
-            return None  # external package; not ours to walk into
-        base = os.path.normpath(os.path.join(os.path.dirname(f), spec))
-        for cand in (base + ".ts", base + ".js", base + ".mjs",
-                     os.path.join(base, "index.ts"), os.path.join(base, "index.js")):
-            if cand in self.text:
-                return cand
-        return None
-
-    def _router_vars(self, f: str) -> set[str]:
-        names = {m.group("name") for m in _ROUTER_VAR.finditer(self.text[f])}
-        # `app`/`router` are so conventional that a factory taking one as a
-        # parameter (`function mount(router: Router)`) is still recognisable.
-        for conventional in ("app", "router"):
-            if re.search(r"\b%s\s*\.\s*(?:use|%s)\s*\(" % (conventional, "|".join(HTTP_METHODS)),
-                         self.text[f]):
-                names.add(conventional)
-        return names
-
-    def _string_of(self, f: str, name: str, depth: int = 0) -> str | None:
-        """Resolve an identifier to a string literal, following named imports."""
-        if depth > 4:
-            return None
-        for m in _STR_CONST.finditer(self.text[f]):
-            if m.group("name") == name:
-                return m.group("val")
-        target = self._imports(f).get(name)
-        if target:
-            return self._string_of(target, name, depth + 1)
-        return None
-
-    # -- the walk ------------------------------------------------------------
-    def routes(self, f: str, var: str | None = None,
-               seen: frozenset | None = None) -> set[tuple[str, str]]:
-        """Routes reachable from file `f` (optionally only via router `var`).
-
-        `var=None` means "every router this file defines". That is a deliberate
-        over-approximation for factory modules: we do not track which router a
-        `createXRouter()` returns, so a file defining two factories contributes
-        both. Over-approximating is the safe direction — it can produce a
-        spurious UNDOCUMENTED, which a human then reads; under-approximating
-        would hide a real one, which nobody ever sees.
-        """
-        key = (f, var)
-        seen = seen or frozenset()
-        if key in seen:
-            return set()          # import cycle; the other frame covers it
-        if key in self._memo:
-            return self._memo[key]
-        seen = seen | {key}
-
-        body = self.text[f]
-        router_vars = self._router_vars(f)
-        targets = {var} if var else router_vars
-        out: set[tuple[str, str]] = set()
-
-        for m in _ROUTE.finditer(body):
-            if m.group("obj") in targets:
-                out.add((m.group("method").upper(), m.group("path")))
-
-        for m in _USE.finditer(body):
-            if m.group("obj") not in targets:
-                continue
-            args, _end = _split_args(body, m.end() - 1)
-            if not args:
-                continue
-            out |= self._mount(f, args, seen)
-
-        self._memo[key] = out
-        return out
-
-    def _mount(self, f: str, args: list[str], seen: frozenset) -> set[tuple[str, str]]:
-        prefix = ""
-        rest = args
-        head = args[0]
-        if head[:1] in ("'", '"') and len(head) >= 2:
-            prefix, rest = head[1:-1], args[1:]
-        elif _IDENT.match(head):
-            resolved = self._string_of(f, head)
-            if resolved is not None and resolved.startswith("/"):
-                prefix, rest = resolved, args[1:]
-            elif resolved is not None:
-                return set()  # a string, but not a path — not a mount
-        elif head.startswith("`"):
-            # A template-literal prefix: the mount point is not statically known,
-            # so every path under it would be wrong. Say so instead of guessing.
-            self.unresolved.append(
-                f"{self._rel(f)}: mount prefix `{head[:40]}` is a template literal "
-                f"and cannot be resolved statically")
-            return set()
-
-        # Express convention mounts the router last; everything before it is
-        # middleware (`app.use(API_BASE, guard, createPlansRouter(deps))`).
-        ref = None
-        for arg in reversed(rest):
-            call = _CALL.match(arg)
-            if call:
-                ref = call.group("name")
-                break
-            if _IDENT.match(arg):
-                ref = arg
-                break
-            if arg.startswith(("express.", "swaggerUi.")) or "=>" in arg:
-                continue
-        if ref is None or ref in self.middleware:
-            return set()
-
-        sub = self._resolve_ref(f, ref, seen)
-        if sub is None:
-            self.unresolved.append(
-                f"{self._rel(f)}: mount '{prefix or '/'}' -> '{ref}' could not be "
-                f"resolved to a router definition")
-            return set()
-        return {(method, _join(prefix, path)) for method, path in sub}
-
-    def _resolve_ref(self, f: str, ref: str, seen: frozenset):
-        if ref in self._router_vars(f):
-            return self.routes(f, ref, seen)
-        imports = self._imports(f)
-        if ref in imports:
-            target = imports[ref]
-            if target is None:
-                return None       # comes from an external package: unknowable
-            return self.routes(target, None, seen)
-        if any(m.group("name") == ref for m in _DEFINED_HERE.finditer(self.text[f])):
-            return self.routes(f, None, seen)
-        return None
-
-    def _rel(self, f: str) -> str:
-        return os.path.relpath(f, self.root)
-
-    def entrypoints(self) -> list[str]:
-        """Files that construct the Express app. Everything hangs off these."""
-        # `const app = express()` and `() => express()` are both entrypoints;
-        # `express.Router()` is not, hence the guard on the preceding character.
-        return sorted(f for f, body in self.text.items()
-                      if re.search(r"(?<![.\w])express\s*\(\s*\)", body))
-
-
-def _join(prefix: str, path: str) -> str:
-    return normalise((prefix.rstrip("/") + "/" + path.lstrip("/")))
-
-
-def normalise(path: str) -> str:
-    """`/v1/x/:id` and `/v1/x/{id}` are the same endpoint. Compare shapes, not names.
-
-    Parameter NAMES deliberately do not participate: the spec calling it
-    `{listId}` while the code calls it `:id` is a documentation nit, not a
-    contract violation, and failing on it would train people to ignore this gate.
-    """
-    path = re.sub(r":([A-Za-z_][\w]*)", "{}", path)
-    path = re.sub(r"\{[^}]*\}", "{}", path)
-    path = re.sub(r"/+", "/", path)
-    if len(path) > 1:
-        path = path.rstrip("/")
-    return path or "/"
-
-
-def spec_base(doc: dict) -> str:
-    """The path component of `servers[0].url`, with `{vars}` expanded.
-
-    OpenAPI `paths` are relative to the server URL, so this is the frame the
-    contract is written in. Ignoring it made the gate report every billing and
-    payment endpoint as BOTH missing and undocumented — 26 findings that were
-    one prefix, and the exact shape of a gate people learn to ignore.
+    `servers[0].url` is commonly templated — `{baseUrl}/api/v1/app-registry`.
+    Stripping `{...}` first and then taking the URL path yields the literal
+    portion, which is the only part that can be matched against a mount prefix.
     """
     servers = doc.get("servers") or []
     if not servers or not isinstance(servers[0], dict):
         return ""
     url = str(servers[0].get("url") or "")
-    for var, spec in (servers[0].get("variables") or {}).items():
-        if isinstance(spec, dict) and "default" in spec:
-            url = url.replace("{%s}" % var, str(spec["default"]))
-    url = re.sub(r"^[a-zA-Z][\w+.-]*://[^/]*", "", url)   # drop scheme + authority
-    url = re.sub(r"\{[^}]*\}", "", url)                   # any var left is unknowable
-    url = "/" + url.strip("/")
-    return "" if url == "/" else url
+    url = re.sub(r"\{[^}]*\}", "", url)
+    path = urlsplit(url).path if "//" in url else url
+    return "/" + path.strip("/") if path.strip("/") else ""
 
 
-def rebase(code: set[tuple[str, str]], base: str) -> tuple[set[tuple[str, str]], bool]:
-    """Strip the server base from the code side, but ONLY if every route has it.
-
-    Both mounting styles are live here and both are conformant with the same
-    contract: billing-service mounts its own public base (`API_BASE =
-    '/api/v1/billing'`), while config-service mounts bare paths and lets the
-    ingress rewrite `/api/config`. What the contract fixes is the path RELATIVE
-    to the server base — which is precisely what `paths` means — so normalising
-    to that frame is reading OpenAPI correctly, not papering over a difference.
-
-    The `all()` is what stops it becoming a fudge: strip only when the base is
-    uniformly present. A service where only SOME routes carry it has a genuine
-    mismatch, and it stays visible as findings.
-    """
-    if not base or not code:
-        return code, False
-    if not all(p == base or p.startswith(base + "/") for _m, p in code):
-        return code, False
-    return {(m, normalise(p[len(base):] or "/")) for m, p in code}, True
-
-
-def spec_endpoints(spec_path: str) -> set[tuple[str, str]]:
-    with open(spec_path, encoding="utf-8") as fh:
-        doc = yaml.safe_load(fh) or {}
-    out: set[tuple[str, str]] = set()
-    for raw, ops in (doc.get("paths") or {}).items():
-        if not isinstance(ops, dict):
+def spec_operations(repo, rel):
+    """{(METHOD, full path): line-ish} for one document, plus any read failure."""
+    doc, err = load_spec(repo, rel)
+    if err:
+        return {}, err
+    base = spec_base_path(doc)
+    paths = doc.get("paths")
+    if not isinstance(paths, dict):
+        return {}, "no `paths` object"
+    ops = {}
+    for p, item in paths.items():
+        if not isinstance(item, dict):
             continue
-        for method in ops:
-            if method.lower() in HTTP_METHODS:
-                out.add((method.upper(), normalise(raw)))
+        full = _norm_path(f"{base}/{str(p).lstrip('/')}")
+        for method in item:
+            if str(method).lower() in HTTP_METHODS:
+                ops[(str(method).upper(), full)] = p
+    return ops, None
+
+
+PY_INCLUDE = re.compile(r"include_router\s*\(", re.I)
+PY_PREFIX = re.compile(r"""prefix\s*=\s*['"]([^'"]*)['"]""")
+
+
+def mount_prefixes(repo, files):
+    """{rel: set(URL prefixes at which this file's router is mounted)}.
+
+    Composed transitively: a sub-router mounted at '/tokens' inside a router
+    file itself mounted at '/api/organizations' resolves to
+    '/api/organizations/tokens'. Without this, every nested router's routes
+    would land in UNRESOLVED and the gate would see almost nothing.
+    """
+    edges = []  # (parent_rel, child_rel, prefix)
+    for rel in files:
+        body = read(repo, rel)
+        imports = {}
+        # Map EVERY identifier in an import clause to its module, rather than
+        # matching one shape of clause. The narrow form
+        # `import X from '...'` missed `import billingRoutes, { webhookRouter }
+        # from './routes/billing'` — a default-plus-named import — so
+        # backend/src/routes/billing.ts read as unmounted and all twelve billing
+        # operations were reported as documented-but-unimplemented. Manufacturing
+        # false drift is how a gate loses the reader; being over-broad here is
+        # harmless, because an identifier is only ever used if it also appears in
+        # an actual mount call.
+        for m in re.finditer(r"""import\s+([^'"]+?)\s+from\s+['"]([^'"]+)['"]""", body):
+            for ident in re.findall(r"[A-Za-z_$][\w$]*", m.group(1)):
+                if ident not in ("as", "type", "default"):
+                    imports.setdefault(ident, m.group(2))
+        for m in re.finditer(
+                r"""(?:const|let|var)\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*require\(\s*['"]([^'"]+)['"]""",
+                body):
+            for ident in re.findall(r"[A-Za-z_$][\w$]*", m.group(1)):
+                imports.setdefault(ident, m.group(2))
+        for m in re.finditer(
+                r"""from\s+([\w.]+)\s+import\s+([A-Za-z_][\w]*)""", body):  # python
+            imports[m.group(2)] = "./" + m.group(1).replace(".", "/")
+
+        # Express: app.use('<prefix>', ..., routerIdent)
+        for m in JS_ROUTE.finditer(body):
+            if m.group("method") != "use":
+                continue
+            call = _balanced(body, m.end() - 1)
+            pm = JS_PATH.match(call)
+            if not pm:
+                continue
+            prefix = pm.group("path")
+            for ident in set(re.findall(r"[A-Za-z_$][\w$]*", call[pm.end():])) & set(imports):
+                tgt = _resolve_import(repo, rel, imports[ident])
+                if tgt:
+                    edges.append((rel, tgt, prefix))
+
+        # FastAPI: app.include_router(router, prefix="/x")
+        for m in PY_INCLUDE.finditer(body):
+            call = _balanced(body, m.end() - 1)
+            pm = PY_PREFIX.search(call)
+            prefix = pm.group(1) if pm else ""
+            for ident in set(re.findall(r"[A-Za-z_][\w]*", call)) & set(imports):
+                tgt = _resolve_import(repo, rel, imports[ident])
+                if tgt:
+                    edges.append((rel, tgt, prefix))
+
+    # A file that mounts routers but is mounted by nobody is an entrypoint, and
+    # its own routes sit at the root.
+    mounted = {c for _, c, _ in edges}
+    out = {rel: {""} for rel in files if rel not in mounted}
+
+    # Fixpoint. Bounded: a mount chain deeper than this is a cycle or a shape
+    # nobody in this family has, and looping forever would be worse than
+    # reporting the leftovers as UNRESOLVED.
+    for _ in range(8):
+        changed = False
+        for parent, child, prefix in edges:
+            for base in out.get(parent, ()):
+                full = "/" + "/".join(x for x in (base.strip("/"), prefix.strip("/")) if x)
+                if full not in out.setdefault(child, set()):
+                    out[child].add(full)
+                    changed = True
+        if not changed:
+            break
     return out
 
 
-def _source_files(root: str) -> list[str]:
-    found = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames
-                       if d not in ("node_modules", "dist", "build", "__tests__",
-                                    "coverage", "migrations")]
-        for name in filenames:
-            if name.endswith((".ts", ".js", ".mjs")) and not name.endswith(
-                    (".d.ts", ".test.ts", ".spec.ts", ".test.js", ".spec.js")):
-                found.append(os.path.join(dirpath, name))
-    return sorted(found)
+def implemented_routes(repo):
+    """Every route with its resolved full path, plus the ones we could not place."""
+    files = [r for r in source_files(repo)
+             if r.endswith((".ts", ".tsx", ".js", ".mjs", ".cjs", ".py"))]
+    prefixes = mount_prefixes(repo, files)
 
-
-def code_endpoints(src_root: str,
-                   middleware: set[str] | None = None) -> tuple[set[tuple[str, str]], list[str]]:
-    """Return (endpoints, unresolved). `unresolved` is never silently dropped."""
-    ex = Extractor(src_root, middleware or set())
-    entries = ex.entrypoints()
-    if not entries:
-        return set(), ["no file constructs an Express app (`= express()`); "
-                       "the route table has no root to walk from"]
-    endpoints: set[tuple[str, str]] = set()
-    for entry in entries:
-        endpoints |= {(m, normalise(p)) for m, p in ex.routes(entry, None)}
-    return endpoints, sorted(set(ex.unresolved))
-
-
-def load_allowlist(repo: str) -> tuple[set[tuple[str, str]], set[str]]:
-    """Deliberate exceptions. Returns (endpoints, middleware-names).
-
-      METHOD /path      an endpoint deliberately outside the contract
-      middleware NAME   an identifier that is middleware, not a router
-
-    The second form exists because `app.use(API_BASE, graphCreate({...}))` mounts
-    middleware imported from an external package, which no static reader can
-    distinguish from a router it simply cannot see. Rather than guess — guessing
-    "probably middleware" is how a gate stops catching the thing it exists for —
-    the operator ASSERTS it, in a file that shows up in the diff.
-    """
-    out: set[tuple[str, str]] = set()
-    middleware: set[str] = set()
-    for candidate in ("governance/openapi-conformance-allowlist.txt",
-                      ".fuze/openapi-conformance-allowlist.txt"):
-        p = os.path.join(repo, candidate)
-        if not os.path.isfile(p):
+    placed, unresolved = [], []
+    for rel in files:
+        got = (_py_routes(repo, rel, set()) if rel.endswith(".py")
+               else _js_routes(repo, rel, set(), {}))
+        if not got:
             continue
-        with open(p, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.split("#", 1)[0].strip()
-                if not line:
-                    continue
-                parts = line.split(None, 1)
-                if len(parts) != 2:
-                    continue
-                if parts[0].lower() == "middleware":
-                    middleware.add(parts[1].strip())
-                else:
-                    out.add((parts[0].upper(), normalise(parts[1])))
-    return out, middleware
+        bases = prefixes.get(rel)
+        if not bases:
+            unresolved.extend(got)
+            continue
+        for r in got:
+            for base in bases:
+                full = _norm_path(f"{base}/{r.path.lstrip('/')}")
+                placed.append((r, full))
+    return placed, unresolved
 
 
-def discover(repo: str) -> tuple[list[tuple[str, str, str]], list[tuple[str, str]]]:
-    """((name, spec, src) with a contract, (name, src) with sources but none).
+def check(repo, ratchet=None):
+    findings = []
+    exempt_rel, exempt, ef = _parse_decls(repo, EXEMPT_FILES, "openapi-exempt")
+    # _parse_decls is shared with gate-platform-auth and stamps its E4 code.
+    # Re-label into this gate's namespace so a reader is never sent looking for
+    # an "E4" that belongs to a different gate.
+    for f in ef:
+        f.code = "O4"
+    findings.extend(ef)
 
-    The second list is the hole an earlier cut left open: `discover` returned
-    only services that HAD a spec, so a service with no contract at all — the
-    maximally undocumented case — was not a finding, it was invisible. A gate
-    that checks only the things already being checked is the vacuity pattern
-    this whole file is written against.
-    """
-    contracted: list[tuple[str, str, str]] = []
-    uncontracted: list[tuple[str, str]] = []
-    base = os.path.join(repo, "services")
-    if os.path.isdir(base):
-        for name in sorted(os.listdir(base)):
-            src = os.path.join(base, name, "src")
-            if not os.path.isdir(src):
+    specs = [r for r in tracked_files(repo)
+             if SPEC_NAME.search(r) and not SPEC_SKIP.search(r)]
+    if not specs:
+        print("gate-openapi-conformance: no OpenAPI document in this repo — nothing to compare")
+        return findings
+
+    ops, unreadable = {}, []
+    for rel in specs:
+        got, err = spec_operations(repo, rel)
+        if err:
+            unreadable.append((rel, err))
+            continue
+        for key, orig in got.items():
+            ops[key] = (rel, orig)
+
+    # A SECOND accepted spelling for every operation: the spec's raw path, with
+    # no server base applied.
+    #
+    # A standalone service behind a gateway has both, and they differ. The
+    # billing service's own code mounts its router at ITS root, so the handler
+    # for `/invoices` really is at `/invoices` inside that process — while the
+    # spec's servers[0].url says `{baseUrl}/api/v1/billing`, because that is
+    # where callers reach it once the gateway has forwarded. Neither is wrong;
+    # the mapping between them lives in the gateway's proxy config, which this
+    # gate cannot read. Insisting on the public spelling reported all twelve
+    # billing operations as unimplemented when every one of them exists.
+    #
+    # So an operation counts as implemented if the code serves EITHER spelling.
+    # That is deliberately the permissive direction: a missed disagreement costs
+    # one unreported drift, a manufactured one costs the gate its credibility
+    # and then its enforcement.
+    raw_alias = {}
+    for rel in specs:
+        doc, err = load_spec(repo, rel)
+        if err or not doc:
+            continue
+        base = spec_base_path(doc)
+        if not base:
+            continue
+        for p_, item in (doc.get("paths") or {}).items():
+            if not isinstance(item, dict):
                 continue
-            for spec_name in ("openapi.yaml", "openapi.yml",
-                              os.path.join("contracts", "openapi.yaml")):
-                spec = os.path.join(base, name, spec_name)
-                if os.path.isfile(spec):
-                    contracted.append((name, spec, src))
-                    break
-            else:
-                uncontracted.append((name, src))
-    return contracted, uncontracted
+            for method in item:
+                if str(method).lower() in HTTP_METHODS:
+                    full = _norm_path(f"{base}/{str(p_).lstrip('/')}")
+                    raw_alias[(str(method).upper(), _norm_path(str(p_)))] = (
+                        str(method).upper(), full)
 
+    for rel, err in unreadable:
+        findings.append(Finding(
+            "O3", rel, None,
+            f"could not be read ({err}), so the operations it declares were NOT "
+            "compared against the code. Unreadable is not the same as conformant — "
+            "this is the gate being unable to see, reported rather than skipped."))
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default=".")
-    ap.add_argument("--service", help="check only this service")
-    ap.add_argument("--list", action="store_true", help="list discovered services and exit")
-    ap.add_argument("--verbose", action="store_true", help="print the extracted route table")
-    args = ap.parse_args()
-    repo = os.path.abspath(args.repo)
+    if not ops:
+        if unreadable:
+            return findings
+        findings.append(Finding(
+            "O3", specs[0], None,
+            f"{len(specs)} OpenAPI document(s) found but ZERO operations parsed out "
+            "of them. A spec with no operations cannot disagree with anything, so "
+            "this check would report success having compared nothing."))
+        return findings
 
-    services, uncontracted = discover(repo)
-    if args.service:
-        services = [s for s in services if s[0] == args.service]
-        uncontracted = [u for u in uncontracted if u[0] == args.service]
-    if args.list:
-        for name, spec, src in services:
-            print(f"{name}\t{os.path.relpath(spec, repo)}\t{os.path.relpath(src, repo)}")
-        for name, src in uncontracted:
-            print(f"{name}\t(no contract)\t{os.path.relpath(src, repo)}")
-        return 0
+    placed, unresolved = implemented_routes(repo)
 
-    if not services and not uncontracted:
-        print("::error title=gate-openapi-conformance::No service pairs a spec with sources. "
-              "This gate found NOTHING to check, which is a configuration failure, not a pass.",
-              file=sys.stderr)
-        return 2
+    # Pair each spec base path with the routes underneath it. A route outside every
+    # base path belongs to no spec in this repo and is not this gate's business.
+    bases = sorted({_norm_path(spec_base_path(load_spec(repo, r)[0] or {}))
+                    for r in specs if load_spec(repo, r)[0]}, key=len, reverse=True)
 
-    allow, middleware = load_allowlist(repo)
-    failures = 0
+    def under_a_spec(full):
+        return any(b in ("", "/") or full == b or full.startswith(b.rstrip("/") + "/")
+                   for b in bases)
 
-    for name, spec, src in services:
-        with open(spec, encoding="utf-8") as fh:
-            base = spec_base(yaml.safe_load(fh) or {})
-        want = spec_endpoints(spec)
-        raw, unresolved = code_endpoints(src, middleware)
+    impl = {}
+    outside = 0
+    for r, full in placed:
+        key = (r.method, full)
+        # Resolve the raw/public spelling FIRST. A gatewayed service serves
+        # `/items` while its spec calls that `/api/v1/things/items`; testing the
+        # base path before folding would drop the route as "outside any spec"
+        # and then report the operation as unimplemented — the exact false
+        # finding this alias exists to prevent.
+        key = raw_alias.get(key, key)
+        if under_a_spec(key[1]):
+            impl.setdefault(key, []).append(r)
+        else:
+            outside += 1
 
-        # Allowlisted routes are removed BEFORE the rebase decision. They are
-        # precisely the ones that sit outside the server base — `GET /health` is
-        # a kubelet probe, not a contract endpoint — so leaving them in made the
-        # uniformity test fail and suppressed rebasing for every service that
-        # has one, which is all of them. Subtracting again afterwards lets an
-        # entry be written in either frame.
-        have = raw - allow
-        have, rebased = rebase(have, base)
-        have -= allow
+    matched = set(impl) & set(ops)
+    only_code = sorted(set(impl) - set(ops))
+    only_spec = sorted(set(ops) - set(impl))
 
-        if args.verbose:
-            for method, path in sorted(have):
-                print(f"  [{name}] code: {method} {path}")
+    print(f"gate-openapi-conformance: {len(ops)} documented operation(s) across "
+          f"{len(specs)} spec(s) vs {len(impl)} resolved route(s) — "
+          f"{len(matched)} matched, {len(only_code)} undocumented, "
+          f"{len(only_spec)} unimplemented, {len(unresolved)} unresolved, "
+          f"{outside} outside any spec's base path")
+    if unresolved:
+        print(f"gate-openapi-conformance: {len(unresolved)} route(s) could not be "
+              "placed at a URL prefix and were NOT compared. That is this gate "
+              "failing to see, not the repo drifting — listed below, never counted "
+              "as drift.")
+        for r in unresolved[:20]:
+            print(f"    unresolved  {r.method} {r.path}  {r.rel}:{r.line}")
 
-        if not raw and not unresolved:
-            print(f"::error title={name}::extracted ZERO routes from {os.path.relpath(src, repo)}. "
-                  f"A gate that finds no routes cannot report 'no undocumented endpoints' — "
-                  f"treating this as a failure rather than a pass.", file=sys.stderr)
-            failures += 1
+    deferred = 0
+    for key in only_code:
+        method, full = key
+        if f"{method} {full}" in exempt:
             continue
+        r = impl[key][0]
+        if ratchet is not None and not (r.span & set(ratchet.get(r.rel, ()))):
+            deferred += 1
+            continue
+        findings.append(Finding(
+            "O1", r.rel, r.line,
+            f"`{method} {full}` is served but no OpenAPI document declares it. An "
+            "undocumented endpoint is invisible to every consumer generated from "
+            "the spec, and to the MCP tool surface projected from it. Add it to "
+            f"the spec, or declare it in {exempt_rel or EXEMPT_FILES[0]} as "
+            f"`{method} {full}  # why`."))
 
-        missing = sorted(want - have - allow)
-        undocumented = sorted(have - want - allow)
+    # Which source files contribute routes under each spec's base path. An O2 is
+    # caused by CODE disappearing at least as often as by a spec gaining a path,
+    # so scoping it to "the spec file changed" — which the first version did —
+    # made the ratchet blind to the more common half: deleting a handler leaves
+    # the spec untouched, so the operation it orphans was deferred as
+    # pre-existing debt on the very PR that created it.
+    contributors = {}
+    for k, routes in impl.items():
+        for b in bases:
+            if b in ("", "/") or k[1] == b or k[1].startswith(b.rstrip("/") + "/"):
+                contributors.setdefault(b, set()).update(r.rel for r in routes)
 
-        for method, path in missing:
-            print(f"::error title={name} MISSING::{method} {path} is declared in "
-                  f"{os.path.relpath(spec, repo)} but no route implements it. A client generated "
-                  f"from this contract would get a 404.", file=sys.stderr)
-        for method, path in undocumented:
-            print(f"::error title={name} UNDOCUMENTED::{method} {path} is implemented but absent "
-                  f"from {os.path.relpath(spec, repo)}. Surface that was never designed or "
-                  f"reviewed — add it to the contract, or to the allowlist if it is deliberately "
-                  f"outside it.", file=sys.stderr)
-        for note in unresolved:
-            print(f"::error title={name} UNRESOLVED::{note}. Coverage here is UNKNOWN, so this "
-                  f"fails rather than reporting on the subset it could parse.", file=sys.stderr)
+    for key in only_spec:
+        method, full = key
+        if f"{method} {full}" in exempt:
+            continue
+        rel, orig = ops[key]
+        if ratchet is not None:
+            base = next((b for b in bases
+                         if b in ("", "/") or full == b
+                         or full.startswith(b.rstrip("/") + "/")), "")
+            touched = rel in ratchet or bool(
+                contributors.get(base, set()) & set(ratchet))
+            if not touched:
+                deferred += 1
+                continue
+        findings.append(Finding(
+            "O2", rel, None,
+            f"`{method} {full}` (spec path `{orig}`) is documented but nothing "
+            "implements it. Consumers will generate a client for an operation that "
+            "404s, and any MCP tool projected from it advertises an upstream that "
+            "does not exist."))
 
-        n = len(missing) + len(undocumented) + len(unresolved)
-        failures += n
-        status = "OK" if n == 0 else f"{n} finding(s)"
-        frame = f" (rebased off server base {base})" if rebased else ""
-        print(f"{name}: spec={len(want)} code={len(have)}{frame} -> {status}")
+    if ratchet is not None and deferred:
+        print(f"gate-openapi-conformance: {deferred} pre-existing disagreement(s) "
+              "are NOT failing this PR. They are debt, not clearance — run without "
+              "--changed-only to list them.")
+    return findings
 
-    # A service with no spec is not exempt — it is the extreme case. It fails the
-    # moment it exposes anything beyond the allowlist, so a stub serving only
-    # `GET /health` stays quiet while the first real endpoint added without a
-    # contract reds CI. That is the point at which a contract is cheap to write.
-    for name, src in uncontracted:
-        raw, unresolved = code_endpoints(src, middleware)
-        exposed = sorted(raw - allow)
-        for method, path in exposed:
-            print(f"::error title={name} NO CONTRACT::{method} {path} is served by a service with "
-                  f"no openapi.yaml at all. There is nothing for it to conform TO — write the "
-                  f"contract first, then implement against it.", file=sys.stderr)
-        for note in unresolved:
-            print(f"::error title={name} UNRESOLVED::{note}, and the service has no contract "
-                  f"either, so nothing bounds what it serves.", file=sys.stderr)
-        n = len(exposed) + len(unresolved)
-        failures += n
-        print(f"{name}: NO CONTRACT, {len(raw)} route(s) extracted -> "
-              f"{'OK (all allowlisted)' if n == 0 else f'{n} finding(s)'}")
 
-    if failures:
-        print(f"::error title=gate-openapi-conformance::{failures} conformance finding(s). "
-              f"The contract is frozen: fix the CODE to match it, or change the contract "
-              f"deliberately — never regenerate the spec from the code.", file=sys.stderr)
-        return 1
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("repo", nargs="?", default=".")
+    ap.add_argument("--changed-only", action="store_true")
+    ap.add_argument("--base", default=os.environ.get("GATE_BASE_REF", "origin/master"))
+    args = ap.parse_args(argv)
 
-    print(f"gate-openapi-conformance: {len(services)} contracted service(s) conformant, "
-          f"{len(uncontracted)} uncontracted service(s) exposing nothing beyond the allowlist.")
-    return 0
+    repo = os.path.abspath(args.repo)
+    ratchet = None
+    if args.changed_only:
+        ratchet = changed_lines(repo, args.base)
+        if ratchet is None:
+            print(f"::warning::gate-openapi-conformance: --changed-only could not "
+                  f"diff against '{args.base}'; checking everything rather than "
+                  "silently exempting it all.")
+
+    print(f"gate-openapi-conformance: repo={os.path.basename(repo)} "
+          f"yaml={'available' if yaml else 'MISSING (YAML specs unreadable)'}")
+    findings = check(repo, ratchet)
+    if not findings:
+        print("gate-openapi-conformance: OK")
+        return 0
+    for f in sorted(findings, key=lambda x: (x.code, x.path, x.line or 0)):
+        print(f"::error::gate-openapi-conformance {f.code}")
+        print(f)
+    print(f"\ngate-openapi-conformance: {len(findings)} finding(s)")
+    return 1
 
 
 if __name__ == "__main__":

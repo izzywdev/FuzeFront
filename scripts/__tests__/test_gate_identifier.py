@@ -193,6 +193,122 @@ class TestAdoptionCheck(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
 
 
+class TestAdoptionUsage(unittest.TestCase):
+    """A2: a declared dependency that nothing imports is not adoption.
+
+    Measured 2026-08-19: thirteen repos declared @izzywdev/fuzefront-identity and
+    not one imported it, so --adoption was green family-wide while the standard was
+    adopted nowhere. These tests pin the distinction the gate now draws, including
+    the exclusion that makes it meaningful — a manifest NAMES the package, only
+    source USES it.
+    """
+
+    MINTS = """
+        import { randomUUID } from 'node:crypto'
+        export function createQuote() {
+          const quoteId = randomUUID()
+          return { quoteId }
+        }
+    """
+
+    DECLARES = '{"name":"sales","dependencies":{"@izzywdev/fuzefront-identity":"^1.0.0"}}'
+
+    def test_declared_but_unimported_fails_when_the_repo_has_ratcheted(self):
+        with SyntheticRepo() as repo:
+            repo.manifest(
+                repo="izzywdev/FuzeSales",
+                identity={"namespace": "sales", "enforceUsage": True},
+            )
+            repo.write("package.json", self.DECLARES)
+            repo.write("src/quote.ts", self.MINTS)
+            repo.commit()
+            result = run_gate(repo.root, "--adoption")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("no tracked source file imports it", result.stdout)
+
+    def test_declared_but_unimported_only_warns_by_default(self):
+        """Landing this enforcing would red every repo that just declared the
+        dependency — the same 'enforcement ahead of adoption' mistake that produced
+        the inert declarations. Each repo opts in."""
+        with SyntheticRepo() as repo:
+            repo.manifest(repo="izzywdev/FuzeSales", identity={"namespace": "sales"})
+            repo.write("package.json", self.DECLARES)
+            repo.write("src/quote.ts", self.MINTS)
+            repo.commit()
+            result = run_gate(repo.root, "--adoption")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("::warning", result.stdout)
+
+    def test_a_real_import_satisfies_the_ratchet(self):
+        with SyntheticRepo() as repo:
+            repo.manifest(
+                repo="izzywdev/FuzeSales",
+                identity={"namespace": "sales", "enforceUsage": True},
+            )
+            repo.write("package.json", self.DECLARES)
+            repo.write(
+                "src/quote.ts",
+                """
+                import { mintId } from '@izzywdev/fuzefront-identity'
+                export const createQuote = () => ({ quoteId: mintId('quo') })
+                """,
+            )
+            repo.commit()
+            result = run_gate(repo.root, "--adoption")
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_a_python_import_satisfies_the_ratchet(self):
+        with SyntheticRepo() as repo:
+            repo.manifest(
+                repo="izzywdev/FuzePlan",
+                identity={"namespace": "plan", "enforceUsage": True},
+            )
+            repo.write("requirements.txt", "fuzefront-identity==1.0.0\n")
+            repo.write("package.json", '{"name":"plan"}')
+            repo.write("src/quote.ts", self.MINTS)
+            repo.write(
+                "api/quotes.py",
+                """
+                from fuzefront_identity import mint_id
+
+                def create_quote():
+                    return {"quote_id": mint_id("quo")}
+                """,
+            )
+            repo.commit()
+            result = run_gate(repo.root, "--adoption")
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_naming_the_package_in_a_lockfile_is_not_usage(self):
+        """The load-bearing exclusion. package.json, package-lock.json and the
+        manifest all contain the package name; if they counted, the tightened check
+        would be exactly as satisfiable-by-declaration as the one it replaces."""
+        with SyntheticRepo() as repo:
+            repo.manifest(
+                repo="izzywdev/FuzeSales",
+                identity={
+                    "namespace": "sales",
+                    "enforceUsage": True,
+                    "packages": {"node": "@izzywdev/fuzefront-identity"},
+                },
+            )
+            repo.write("package.json", self.DECLARES)
+            repo.write(
+                "package-lock.json",
+                json.dumps({
+                    "lockfileVersion": 3,
+                    "packages": {
+                        "node_modules/@izzywdev/fuzefront-identity": {"version": "1.0.0"},
+                    },
+                }),
+            )
+            repo.write("src/quote.ts", self.MINTS)
+            repo.commit()
+            result = run_gate(repo.root, "--adoption")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("no tracked source file imports it", result.stdout)
+
+
 class TestFlagHandling(unittest.TestCase):
     def test_unknown_flag_is_an_error_not_a_silent_pass(self):
         """A typo'd flag used to run NOTHING and print OK — indistinguishable
@@ -206,3 +322,110 @@ class TestFlagHandling(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPolymorphicRefInComposedSchemas(unittest.TestCase):
+    """
+    C3 must see references declared under allOf/oneOf/anyOf, not only inline ones.
+
+    It used to read top-level `properties` alone and `continue` past anything composed, so
+    a polymorphic id in a composition branch was never checked. Measured on FuzeSocial:
+    `LibraryItem.ownerId` and `HistoryRecord.ownerId` nest under allOf and were invisible,
+    while the structurally identical `ComposedPost.ownerId` and `MediaItem.ownerId` were
+    caught only because they happened to be declared inline. The gate reported clean on
+    half the violations of the same rule in the same file.
+
+    Asserting the gate FAILS is the point. A test that only checks a clean tree passes
+    cannot tell a working gate from one that inspects nothing — which is exactly the
+    defect being fixed here.
+    """
+
+    SPEC_HEAD = """
+        openapi: 3.0.0
+        info: { title: t, version: '1' }
+        paths: {}
+        components:
+          schemas:
+        """
+
+    def _repo(self, schemas: str) -> SyntheticRepo:
+        repo = SyntheticRepo()
+        repo.manifest(repo="izzywdev/Thing", identity={"namespace": "thing"})
+        repo.write("contracts/openapi.yaml", self.SPEC_HEAD + schemas)
+        repo.commit()
+        return repo
+
+    def test_a_polymorphic_id_under_allOf_is_CAUGHT(self):
+        with self._repo("""
+            Base:
+              type: object
+              properties:
+                createdAt: { type: string }
+            LibraryItem:
+              allOf:
+                - $ref: '#/components/schemas/Base'
+                - type: object
+                  properties:
+                    ownerId: { type: string }
+        """) as repo:
+            r = run_gate(repo.root)
+        self.assertNotEqual(r.returncode, 0,
+                            "a polymorphic id under allOf must fail the gate")
+        self.assertIn("ownerId", r.stdout + r.stderr)
+        self.assertIn("LibraryItem", r.stdout + r.stderr)
+
+    def test_the_discriminator_may_live_in_a_DIFFERENT_branch(self):
+        # A base contributing ownerType and a variant contributing ownerId satisfies the
+        # rule. Checking each part in isolation would raise a false violation here, which
+        # is why properties are unioned across the composition before checking.
+        with self._repo("""
+            Owned:
+              type: object
+              properties:
+                ownerType: { type: string }
+            LibraryItem:
+              allOf:
+                - $ref: '#/components/schemas/Owned'
+                - type: object
+                  properties:
+                    ownerId: { type: string }
+        """) as repo:
+            r = run_gate(repo.root)
+        self.assertEqual(r.returncode, 0,
+                         f"discriminator in a sibling branch satisfies C3\n{r.stdout}{r.stderr}")
+
+    def test_an_inline_polymorphic_id_is_still_caught(self):
+        with self._repo("""
+            ComposedPost:
+              type: object
+              properties:
+                ownerId: { type: string }
+        """) as repo:
+            r = run_gate(repo.root)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("ComposedPost", r.stdout + r.stderr)
+
+    def test_an_inline_pair_still_passes(self):
+        with self._repo("""
+            ComposedPost:
+              type: object
+              properties:
+                ownerId: { type: string }
+                ownerType: { type: string }
+        """) as repo:
+            r = run_gate(repo.root)
+        self.assertEqual(r.returncode, 0, f"{r.stdout}{r.stderr}")
+
+    def test_oneOf_and_anyOf_are_walked_too(self):
+        for key in ("oneOf", "anyOf"):
+            with self.subTest(key=key):
+                with self._repo(f"""
+                    Thing:
+                      {key}:
+                        - type: object
+                          properties:
+                            targetId: {{ type: string }}
+                """) as repo:
+                    r = run_gate(repo.root)
+                self.assertNotEqual(r.returncode, 0, f"{key} branch must be inspected")
+                self.assertIn("targetId", r.stdout + r.stderr)
