@@ -1,4 +1,23 @@
+# fuze:managed template=telegram-pr-merged.yml baseline=v1 digest=sha256:88f1f683caf4f797c6fdc41d81d819735cf3df14a21b29ba593087858d3ee27b
 name: Notify Telegram on PR merge
+
+# SELF-CONTAINED (inlined) as of the FuzeSDLC#758 fix. This job used to be a `uses:`
+# call into izzywdev/FuzeSDLC's reusable-telegram-pr-merged.yml. A PUBLIC repo cannot
+# resolve a reusable workflow hosted in a PRIVATE repo -- FuzeSDLC is private -- so on
+# every oss-public consumer (FuzeInfra, FuzeFront, FuzeAgent, FuzeKeys, FuzeX) this
+# call failed at STARTUP ("workflow was not found") and the notification had never
+# run once. Inlined so the fleet distributes by governance-sync COPY instead of
+# cross-repo reference: FuzeSDLC stays the one place to edit this job, and every
+# repo now carries a runnable copy regardless of its own visibility or the hub's.
+# See governance/reusable-workflows.md for the full decision and the fate of the
+# (still-hosted, now-legacy) reusable-telegram-pr-merged.yml.
+#
+# PROVENANCE: originally absorbed from izzywdev/AITools, which held only this
+# workflow, the auto-fix one, and a README, and is being retired.
+#
+# Deliberately plain `curl` rather than a marketplace Telegram action: this sends
+# one HTTP POST, and a third-party action here would be a supply-chain dependency
+# that sees TELEGRAM_BOT_TOKEN for no benefit.
 
 on:
   pull_request:
@@ -7,12 +26,49 @@ on:
 jobs:
   notify:
     if: github.event.pull_request.merged == true
-    uses: izzywdev/AITools/.github/workflows/telegram-pr-merged.yml@f2845cdc3efd603f4abac54acbcbd209661b0d2c # main (pinned snapshot)
-    with:
-      pr_title: ${{ github.event.pull_request.title }}
-      pr_url: ${{ github.event.pull_request.html_url }}
-      pr_number: ${{ github.event.pull_request.number }}
-      repository: ${{ github.repository }}
-      merged_by: ${{ github.event.pull_request.merged_by.login }}
-      base_branch: ${{ github.event.pull_request.base.ref }}
-    secrets: inherit
+    # Rewritten by the installer to this repo's ci.runner (render.py) via the same
+    # generic `runs-on: ubuntu-latest` substitution every other STAMPED workflow in
+    # this canonical gets -- no bespoke handling needed now that this is a plain job
+    # instead of a reusable-workflow call with its own `runner:` input.
+    #
+    # 21 of 22 repos currently pin ubuntu-latest while a healthy self-hosted
+    # `fuze-runner` ARC scale set idles -- that is the direct cause of the "budget
+    # exhausted, job never starts" failures across the fleet described above. This
+    # default is left at ubuntu-latest anyway (correct for a repo that has not
+    # migrated to the scale set; the installer only ever overwrites this exact
+    # default, never a repo's own choice) rather than silently switched to
+    # self-hosted here.
+    runs-on: ubuntu-latest
+    steps:
+      # Every value goes through env, never into the shell body. A PR title is
+      # author-controlled text and would otherwise be interpolated straight into a
+      # shell script.
+      - name: Send Telegram message
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          URL: ${{ github.event.pull_request.html_url }}
+          BY: ${{ github.event.pull_request.merged_by.login }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          # Unconfigured consumer -> clean skip, never a failure. Both secrets must
+          # be present to send; missing either one is a no-op, not an error. With
+          # the old `workflow_call` boundary gone there is no `secrets.X: required:
+          # false` declaration to point to -- this guard alone now carries that
+          # "missing config is a deliberate skip" contract.
+          if [ -z "${TOKEN}" ] || [ -z "${CHAT}" ]; then
+            echo "::notice::TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not configured on ${REPO} — skipping Telegram notification (not a failure)."
+            exit 0
+          fi
+          TEXT="✅ PR merged in ${REPO}
+          #${NUM}: ${TITLE}
+          merged by ${BY:-unknown} into ${BASE:-?}
+          ${URL}"
+          curl -sS --fail-with-body \
+            -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" \
+            --data-urlencode "text=${TEXT}" \
+            -d "disable_web_page_preview=false"
