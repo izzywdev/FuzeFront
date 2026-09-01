@@ -18,8 +18,10 @@ For the architecture and trust model, read
 - Your product is served **same-origin** with the platform (under
   `app.fuzefront.com` in prod, or local TLS in dev), so `/api/v1/security/*`
   resolves without a cross-origin base URL. Never hard-code an absolute API host.
-- You can read a GitHub Packages token to install a private `@fuzefront/*`
-  package (below).
+- You can read a GitHub Packages token (`read:packages`) to install a private
+  **`@izzywdev/fuzefront-*`** package (below). Note the scope: `@fuzefront` is a
+  workspace-internal name and is **not** a registry scope — no `fuzefront` user or
+  org exists on GitHub, so `npm install @fuzefront/…` 404s regardless of the token.
 
 ---
 
