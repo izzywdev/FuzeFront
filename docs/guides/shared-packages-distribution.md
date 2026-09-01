@@ -44,8 +44,8 @@ SemVer, enforced the same way as the rest of the family (`gate-version` bump dis
 
 | Package | Role | Published to `fuzeone`? |
 |---|---|---|
-| `@fuzefront/shared` (`/kafka`) | event contract + typed client + registry | **Not yet** — workspace-only; must gain `publishConfig` + workflow entry |
-| `@fuzefront/core` (outbox + relay) | Express-side transactional-outbox middleware | **Not yet** — workspace-only; must be published |
+| `@fuzefront/shared` (`/kafka`) | event contract + typed client + registry | **Not yet** on `fuzeone` — but published today as **`@izzywdev/fuzefront-shared@1.0.0`** |
+| `@fuzefront/core` (outbox + relay) | Express-side transactional-outbox middleware | **Not yet** on `fuzeone` — but published today as **`@izzywdev/fuzefront-core@1.0.0`** |
 | `fuzeone-events` (Python) | outbox + relay + Pydantic contract mirror | **Planned** (FFRNT-176) — publish from the start |
 
 Making these three publishable to the `fuzeone` org is the remaining step to satisfy this rule; see `docs/planning/entity-lifecycle-event-propagation.md` § Distribution & packaging.

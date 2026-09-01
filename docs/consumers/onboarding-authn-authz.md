@@ -350,7 +350,8 @@ Grants are convenience; `authz/check` (Step 4) stays the source of truth.
 | Your slug is in neither list on `/health` | `register.sh` never submitted the policy — an old vendored copy has no policy step, or the file is misnamed | The file must be exactly `registration/policy.json`; re-vendor `register.sh` from `@fuzefront/onboarding-kit`. |
 | `identity.tenantId` is `null` | Legacy token mode, tenant unresolved | Fail closed on tenant-scoped authz; do not default a tenant. |
 | Social login loops / no `code` | Absolute or cross-origin `redirectTo` | Use a **same-origin, app-relative** `redirectTo`; absolute URLs are rejected. |
-| `npm install` 401/403 for `@fuzefront/*` | Missing scoped `.npmrc` / token | Add the `@izzywdev:registry` line + a valid `GITHUB_TOKEN`. |
+| `npm install` **404** for `@fuzefront/*` | Wrong package name — that scope does not exist on GitHub | Install `@izzywdev/fuzefront-<name>` instead. |
+| `npm install` 401/403 for `@izzywdev/*` | Missing scoped `.npmrc` / token | Add the `@izzywdev:registry` line + a valid `GITHUB_TOKEN` with `read:packages`. |
 | Tempted to parse the JWT / fetch JWKS | Wrong layer | Resolve identity via `GET /session` (or `/tokens/introspect`); consume `Identity`. |
 
 ---
