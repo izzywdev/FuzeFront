@@ -1550,5 +1550,12 @@
       "sourceSha256": "45672c1f91889a84d3a34c499bb2d75c43f3c09b3e05236d752a5c3b7b7737c4",
       "renderedSha256": "45672c1f91889a84d3a34c499bb2d75c43f3c09b3e05236d752a5c3b7b7737c4"
     }
+  },
+  "workflows": {
+    "a2a-maintain.yml": {
+      "template": "a2a-maintain.yml",
+      "baseline": "v1",
+      "renderedSha256": "4298b3a94c7c05cacc09de13b4004e68d09adc0657609d974eeaf1efe6c282bc"
+    }
   }
 }

@@ -1,3 +1,4 @@
+# fuze:managed template=a2a-maintain.yml baseline=v1 digest=sha256:684c100ffe796edbd561c6b9bb6912ac9d14d8386fa30083f84abb4f110f1889
 name: A2A Maintain
 
 # Keeps this repo's agent-to-agent (A2A) surface current, as part of CI. On every PR it
@@ -26,6 +27,40 @@ name: A2A Maintain
 #                               can maintain.
 #   a2a.enabled true, a usable credential (LiteLLM OR fallback) -> run.
 #
+# THE SKIP-GREEN PATHS ARE GONE, and this is the file they were removed from. FuzeInfra
+# ran a divergent fork of this workflow with the SAME job id (`a2a-maintain`), so the two
+# produced identical status-check contexts that branch protection could not tell apart, and
+# both pushed `[skip a2a]` commits to the same PR branch and raced. Merging them into one
+# file is the fix; taking THIS file's gating is the decision. The fork went green on three
+# separate conditions, each of which let a declared A2A surface rot indefinitely behind a
+# passing check:
+#
+#   1. `LITELLM_CI_KEY` not set              -> ::notice:: + skip
+#   2. LiteLLM gateway unreachable           -> ::warning:: + skip
+#   3. provider billing/budget error         -> ::warning:: + skip
+#
+# All three are deleted. (1) is the vacuous-gate pattern the contract above replaces, and
+# note the gate is on whether `llm-endpoint` resolved ANY usable credential — never on one
+# named secret, because naming `LITELLM_CI_KEY` is what made a repo on the fallback vendor
+# look uncredentialed. (2) is a FALLBACK TRIGGER, not a skip: `./.github/actions/llm-endpoint`
+# falls back to anthropic/openai/gemini precisely because recovering the cluster may itself
+# require an agent run, so the agent path must not depend on the cluster being up. (3) is a
+# real failure of a declared surface; a warning-and-green there is how the 2026-07-29 credit
+# outage stayed invisible for a day.
+#
+# PROMOTED FROM THE FUZEINFRA FORK — "Surface the real result" + "Verdict" below. That fork
+# had one thing this file did not, and it survives the merge: the wrapper reports only
+# `is_error:true` and swallows WHY, so a red check said nothing actionable. Those steps pull
+# the result record out of the execution log, put the real error text in an `::error::` and
+# the run summary, and keep the whole log as an artifact. They also carry an ANTI-VACUITY
+# corroboration check worth having fleet-wide: when the agent reports success but produced
+# no execution log, there is no result record to confirm what it did, and the run says so
+# instead of printing a clean "completed" it has not earned.
+#
+# Nothing FuzeInfra-specific came across: no `ANTHROPIC_BASE_URL` pointing at that repo's
+# in-cluster gateway (llm-endpoint probes it generically), no `runs-on: staging` pin (see
+# the preflight comment below), and no `helm/litellm/**` references.
+#
 # The `a2a-maintainer`
 # agent def is stamped by sdlc-bootstrap into .claude/agents/ and reconciled by
 # governance-sync; this workflow just invokes it.
@@ -44,14 +79,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Runs on a HOSTED runner and always reports. Split out from the maintainer on
-  # purpose: a job on a self-hosted pool that is not serving QUEUES FOREVER with no
-  # red X, no log and no timeout — measured 2026-08-23, 175 jobs queued on `fuzesdlc`
-  # with zero running for 36 hours (FuzeInfra#623). A misconfiguration that produces
-  # no signal at all is worse than one that produces a red, so the check that must
-  # never be silent runs where it cannot be silenced. Since the llm-endpoint fallback
-  # landed, the maintainer job below no longer NEEDS in-cluster reachability either,
-  # so this split is now purely about signal placement, not runner placement.
+  # ALWAYS REPORTS, AND IS BOUNDED. That is the contract this job holds, and what holds it
+  # is `timeout-minutes` below — not a runner class. `runs-on:` here is the canonical's
+  # placeholder exactly like every other job in this file: the installer rewrites it to the
+  # repo's declared `ci.runner` (scripts/bootstrap/lib/render.py), and this job is
+  # deliberately NOT in `render.RUNNER_EXEMPT`. Do not pin it to a runner class; a pin here
+  # is the defect, not the fix (governance/ci-runners.md, issue #213).
+  #
+  # WHY THE SPLIT EXISTS — still valid, and unchanged. A job on a self-hosted pool that is
+  # not serving QUEUES FOREVER with no red X, no log and no timeout: measured 2026-08-23,
+  # 175 jobs queued on `fuzesdlc` with zero running for 36 hours. A misconfiguration that
+  # produces no signal at all is worse than one that produces a red, so the manifest and
+  # credential check lives in its own small, time-boxed job instead of being buried inside
+  # the maintainer, where a stall would be indistinguishable from a long agent run.
+  #
+  # WHY HOSTED IS NOT AUTOMATICALLY THE SAFER PLACE, which this comment used to assert. On
+  # a PRIVATE repo whose Actions budget is exhausted a hosted job is never assigned a runner
+  # at all. Measured 2026-08-25 on izzywdev/FuzePlan: `runs-on: ubuntu-latest` produced no
+  # runner_id, no runner_name, `steps: []` and a ~4s red with no log — nothing inside the
+  # job executed, so no check written in it could possibly be what failed, and `needs:
+  # preflight` took the whole workflow down with it. That is BOTH outcomes the split exists
+  # to prevent: no signal AND a red. The same job on that repo's own scale set ran its steps
+  # and produced a real, readable verdict. So hosted is the silenceable option there, and
+  # `timeout-minutes` is the guarantee that survives on either kind of runner.
+  #
+  # Since the llm-endpoint fallback landed, the maintainer job below no longer NEEDS
+  # in-cluster reachability either, so this split is now purely about signal placement, not
+  # runner placement.
   preflight:
     name: a2a-maintain preflight
     runs-on: ubuntu-latest
@@ -112,16 +166,52 @@ jobs:
       !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/')
     runs-on: ubuntu-latest
     steps:
+      # Agent-PR identity (governance/hardening-convention.md §8): mint the fuze-agent App
+      # token BEFORE checking out the (untrusted) PR head, so the maintainer's commit-back
+      # pushes under a collaborator-backed identity and the reconciled head gets CI. Fall back
+      # App -> bot PAT -> GITHUB_TOKEN, the last warning. This job already runs same-repo only
+      # (fork PRs get no secrets and never start), so this changes the push IDENTITY, not who
+      # may trigger it.
+      - name: Mint fuze-agent App token
+        id: app_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+      - name: Resolve agent-PR identity
+        id: identity
+        env:
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
+          GH_DEFAULT: ${{ github.token }}
+        run: |
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"
+          elif [ -n "${BOT_PAT:-}" ]; then
+            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"
+          else
+            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"
+            echo "::warning title=agent-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT on this repo — the maintainer's commit-back will push as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set the fuze-agent App secrets to fix."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "Agent-PR identity: $who"
+
       - name: Checkout PR head (writable, same-repo only)
         # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
         # repointed by the action owner (cf. the trivy-action / kics-github-action
-        # compromises). This workflow has `contents: write` on the PR branch, so a
-        # repointed checkout would run attacker code with push access.
+        # compromises). This workflow holds `contents: write` on the PR branch, so a
+        # repointed checkout would run attacker code with push access. Semgrep's
+        # github-actions-mutable-action-tag rule flags the unpinned form.
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
+          # §8: persist the resolved collaborator-backed identity so the maintainer's
+          # `git push` to this PR branch (below) triggers CI on the reconciled head.
+          token: ${{ steps.identity.outputs.token }}
 
       # Replaces the old in-line gateway liveliness check, which treated an
       # unreachable LiteLLM as fatal and demanded a self-hosted in-cluster runner.
@@ -150,7 +240,15 @@ jobs:
           fi
 
       - name: Run a2a-maintainer
+        id: maintainer
         if: steps.marker.outputs.run == 'true'
+        # continue-on-error so the steps BELOW own the verdict. fuze-code-action exits
+        # non-zero when every rung is exhausted, which is correct — but the runner would
+        # then end the job on this step and the only thing in the log would be the
+        # wrapper's own `is_error:true`. Letting it through to "Surface the real result"
+        # is what turns that into a diagnosable red. The verdict step re-fails the job;
+        # this does not make a failure green.
+        continue-on-error: true
         uses: ./.github/actions/fuze-code-action
         with:
           # Same shape as gate-code-review in harden-gate.yml: the CLI reads
@@ -215,3 +313,103 @@ jobs:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+
+      # PROMOTED FROM FuzeInfra's copy, unchanged in substance. The wrapper prints only
+      # `is_error:true` and swallows WHY. Pull the result record out of the execution log,
+      # put the actual error text in the log, and keep the whole log as an artifact — so
+      # the next failure is diagnosable from the run page instead of by re-deriving it from
+      # first principles.
+      #
+      # `execution-file` is fuze-code-action passing through claude-code-action's own
+      # `execution_file`; it is empty for any run that did not reach (or get a log out of)
+      # the claude rung, which is exactly the "unknown" case the verdict corroborates on.
+      - name: Surface the real result
+        id: result
+        if: always() && steps.maintainer.outcome != 'skipped'
+        env:
+          EXEC_FILE: ${{ steps.maintainer.outputs.execution-file }}
+        run: |
+          set -uo pipefail
+          if [ -z "${EXEC_FILE:-}" ] || [ ! -f "$EXEC_FILE" ]; then
+            echo "no execution file produced by the action"
+            echo "is_error=unknown" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          res=$(jq -rs '[.[] | .. | objects | select(.type? == "result")] | last' "$EXEC_FILE" 2>/dev/null || echo "null")
+          echo "--- claude result record ---"; echo "$res"
+          is_error=$(printf '%s' "$res" | jq -r '.is_error // false' 2>/dev/null || echo unknown)
+          # `.result`/`.error` carry the human-readable failure when the SDK sets one.
+          msg=$(printf '%s' "$res" | jq -r '(.error // .result // "") | tostring' 2>/dev/null || true)
+          echo "is_error=$is_error" >> "$GITHUB_OUTPUT"
+          # Random per-run delimiter rather than a literal `EOF`. $msg is arbitrary
+          # agent-generated text this workflow does not control, and $GITHUB_OUTPUT's
+          # heredoc form breaks if the body contains a line matching the delimiter
+          # verbatim — the same reason fuze-code-action's own `finish` step randomises its
+          # delimiter. The extraction above is otherwise byte-identical to the step this
+          # was promoted from.
+          DELIM="A2A_EOF_$(date +%s%N)_$$"
+          {
+            echo "msg<<${DELIM}"
+            echo "${msg:-<no message in result record>}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload agent execution log
+        if: always() && steps.maintainer.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: a2a-maintain-execution-log
+          path: ${{ steps.maintainer.outputs.execution-file }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # THE VERDICT. Two outcomes only, because the three skip-green paths documented at the
+      # top of this file are gone: a real agent failure is RED with the surfaced message, and
+      # a success is green — but a success that left no execution log says so out loud rather
+      # than claiming more than it verified.
+      - name: Verdict
+        if: always() && steps.marker.outputs.run == 'true'
+        env:
+          MAINTAINER_OUTCOME: ${{ steps.maintainer.outcome }}
+          MAINTAINER_CONCLUSION: ${{ steps.maintainer.outputs.conclusion }}
+          RESULT_IS_ERROR: ${{ steps.result.outputs.is_error }}
+          RESULT_MSG: ${{ steps.result.outputs.msg }}
+        run: |
+          set -uo pipefail
+          if [ "${MAINTAINER_OUTCOME:-}" = "failure" ] || [ "${RESULT_IS_ERROR:-}" = "true" ]; then
+            echo "::error::a2a-maintainer did not complete: ${RESULT_MSG:-no error message surfaced}"
+            {
+              echo "### ❌ a2a-maintainer failed"
+              echo ""
+              echo '```'
+              echo "${RESULT_MSG:-no error message surfaced}"
+              echo '```'
+              echo ""
+              echo "Full execution log is attached as the \`a2a-maintain-execution-log\` artifact."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          # fuze-code-action's third state. `neutral` means a rung RAN and declined to do any
+          # work (it emits its own ::warning:: saying so and exits 0). It is not a failure and
+          # must not be reported as one — but it is also not a run that maintained anything,
+          # so it does not get the clean "completed" line either.
+          if [ "${MAINTAINER_CONCLUSION:-}" = "neutral" ]; then
+            echo "::notice::a2a-maintainer performed no work on this commit (conclusion=neutral — the rung declined; see the fuze-code-action warning above). The A2A surface was NOT checked for drift here."
+            echo "### ⚪ a2a-maintainer declined — no work performed" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # ANTI-VACUITY, promoted from FuzeInfra. The action reported success. If it also
+          # left no execution log there is no result record to corroborate that, so say so
+          # rather than printing a clean "completed" the run has not actually earned. Still
+          # green — the action's own outcome is real evidence — but this check exists
+          # precisely because a green that overstates what it verified is how the original
+          # outage hid for a day.
+          if [ "${RESULT_IS_ERROR:-}" = "unknown" ]; then
+            echo "::notice::a2a-maintainer reported success, but produced no execution log — completion could not be corroborated from a result record."
+            {
+              echo "### ✅ a2a-maintainer completed (unverified)"
+              echo ""
+              echo "The action exited successfully but wrote no execution log, so there is no result record to confirm what it did."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "a2a-maintainer completed."
