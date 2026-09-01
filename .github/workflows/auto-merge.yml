@@ -69,7 +69,16 @@ jobs:
           # Mirror of release.yml's `push.paths`. Keep the two in sync — a path
           # here that release.yml ignores just wastes a build; a path release.yml
           # watches but this omits means that change silently never deploys.
-          PATTERN='^(backend/|shared/|frontend/|packages/|services/email-service/|services/sms-service/|services/provisioning-service/|services/billing-service/|clock-app/|deploy/helm/fuzefront/|\.github/workflows/release\.yml)'
+          #
+          # It HAD drifted, in exactly that direction. release.yml watches
+          # services/chat-service, notification-service, payment-service,
+          # selection-list-service and config-service — each added there with its
+          # own comment about the silent-ship gap it was closing — and none of
+          # them were ever added here, so an auto-merged change confined to one of
+          # those dirs hit "No deployable paths" and never built. Re-synced, plus
+          # the two new root workspaces (api-client/, sdk/) release.yml now
+          # watches because the root-installing Dockerfiles COPY their manifests.
+          PATTERN='^(backend/|shared/|frontend/|packages/|api-client/|sdk/|services/email-service/|services/sms-service/|services/provisioning-service/|services/billing-service/|services/chat-service/|services/notification-service/|services/payment-service/|services/selection-list-service/|services/config-service/|clock-app/|deploy/helm/fuzefront/|\.github/workflows/release\.yml)'
 
           if ! gh pr diff "$PR" --name-only | grep -qE "$PATTERN"; then
             echo "No deployable paths in PR #$PR — no release needed."
@@ -110,7 +119,18 @@ jobs:
           # publish, and publish-packages.mjs skips versions already in the
           # registry anyway, so a spurious dispatch is wasteful rather than
           # harmful.
-          PATTERN='^(packages/|shared/|design-system/|billing-client/|portal-client/|custom-hostname-client/|backend/core/|\.github/workflows/packages-publish\.yml|scripts/publish-packages\.mjs)'
+          #
+          # THIS LIST IS A SECOND SOURCE OF TRUTH FOR "WHAT IS PUBLISHABLE" AND IT
+          # HAD ALREADY DRIFTED. publish-packages.mjs derives the real answer from
+          # the root `workspaces` array; this regex is a hand-maintained mirror of
+          # it, and it was missing `api-client/`, `sdk/` and `config-client/` —
+          # all publishable workspaces. The consequence is the silent one this
+          # whole job exists to prevent: an auto-merge pushes under GITHUB_TOKEN,
+          # the recursion guard suppresses packages-publish.yml's push trigger,
+          # this step decides there is "nothing to publish", and the PR merges
+          # green having shipped nothing. Anything added to `workspaces` must be
+          # added here too, or its releases are invisible.
+          PATTERN='^(packages/|shared/|design-system/|api-client/|sdk/|billing-client/|config-client/|portal-client/|custom-hostname-client/|backend/core/|package\.json|package-lock\.json|\.github/workflows/packages-publish\.yml|scripts/publish-packages\.mjs)'
 
           if ! gh pr diff "$PR" --name-only | grep -qE "$PATTERN"; then
             echo "No publishable paths in PR #$PR — nothing to publish."

@@ -1,4 +1,3 @@
-import * as react_jsx_runtime from 'react/jsx-runtime';
 import React$1, { ReactNode } from 'react';
 
 interface User {
@@ -151,7 +150,7 @@ interface PlatformProviderProps {
     config: AppConfig;
     fallbackMode?: boolean;
 }
-declare function PlatformProvider({ children, config, fallbackMode, }: PlatformProviderProps): react_jsx_runtime.JSX.Element;
+declare function PlatformProvider({ children, config, fallbackMode, }: PlatformProviderProps): React$1.JSX.Element;
 declare function usePlatformContext(): {
     state: PlatformState;
     dispatch: React$1.Dispatch<PlatformAction>;
@@ -231,6 +230,84 @@ declare function useGlobalMenu(): UseGlobalMenuResult;
 
 declare function useSocketBus(appId?: string): UseSocketBusResult;
 
+type ToastLevel = 'info' | 'success' | 'warning' | 'error';
+interface ToastInput {
+    message: string;
+    title?: string;
+    level?: ToastLevel;
+    durationMs?: number;
+    appId?: string;
+}
+interface Toast extends Required<Omit<ToastInput, 'title' | 'appId'>> {
+    id: string;
+    title?: string;
+    appId?: string;
+    createdAt: number;
+}
+interface PlatformSnapshot {
+    user: {
+        id: string;
+        email: string;
+        roles: string[];
+    } | null;
+    apps: Array<{
+        id: string;
+        name: string;
+    }>;
+    activeApp: {
+        id: string;
+        name: string;
+    } | null;
+    isPlatformMode: boolean;
+}
+interface BridgeMenuItem {
+    id: string;
+    label: string;
+    icon?: string;
+    route?: string;
+    order?: number;
+}
+interface BridgeSocket {
+    on(event: string, handler: (payload: any) => void): void;
+    off(event: string, handler: (payload: any) => void): void;
+    emit(event: string, payload: any): void;
+    isConnected(): boolean;
+}
+interface FuzeFrontBridge {
+    version: number;
+    getContext(): PlatformSnapshot;
+    subscribe(listener: (ctx: PlatformSnapshot) => void): () => void;
+    notify(toast: ToastInput): string;
+    dismiss(id: string): void;
+    menu: {
+        add(appId: string, items: BridgeMenuItem[]): void;
+        remove(appId: string): void;
+    };
+    socket: BridgeSocket;
+}
+declare global {
+    interface Window {
+        __FUZEFRONT__?: FuzeFrontBridge;
+        __FRONTFUSE_PLATFORM__?: boolean;
+    }
+}
+/** Returns the host-provided bridge, or null when running standalone. */
+declare function getBridge(): FuzeFrontBridge | null;
+declare function isInPlatform(): boolean;
+
+/** Show toasts through the host's shared toaster (window.__FUZEFRONT__). */
+declare function useToast(): {
+    notify: (toast: ToastInput) => string | undefined;
+    dismiss: (id: string) => void;
+};
+
+/**
+ * Live platform context from the host (user, apps, active app), delivered over
+ * the bridge. Re-renders when the host pushes updates. Returns a standalone
+ * snapshot when not running inside the platform.
+ */
+declare function usePlatform(): PlatformSnapshot;
+
 interface RetryOptions {
     maxAttempts: number;
     baseDelay: number;
@@ -259,9 +336,12 @@ declare const _default: {
     useSession: typeof useSession;
     useGlobalMenu: typeof useGlobalMenu;
     useSocketBus: typeof useSocketBus;
+    useToast: typeof useToast;
+    usePlatform: typeof usePlatform;
+    getBridge: typeof getBridge;
     loadApp: typeof loadApp;
     clearModuleCache: typeof clearModuleCache;
 };
 
-export { AppHeartbeat, PlatformProvider, clearModuleCache, createHeartbeat, _default as default, getCachedModule, isModuleCached, loadApp, useCurrentUser, useGlobalMenu, usePlatformContext, useSession, useSocketBus };
-export type { App, AppConfig, CommandEvent, HeartbeatConfig, HeartbeatResponse, LoadedModule, MenuItem, ModuleFederationConfig, Permission, PlatformContext, Session, SocketBus, SocketMessage, UseCurrentUserResult, UseGlobalMenuResult, UseSessionResult, UseSocketBusResult, User };
+export { AppHeartbeat, PlatformProvider, clearModuleCache, createHeartbeat, _default as default, getBridge, getCachedModule, isInPlatform, isModuleCached, loadApp, useCurrentUser, useGlobalMenu, usePlatform, usePlatformContext, useSession, useSocketBus, useToast };
+export type { App, AppConfig, BridgeMenuItem, BridgeSocket, CommandEvent, FuzeFrontBridge, HeartbeatConfig, HeartbeatResponse, LoadedModule, MenuItem, ModuleFederationConfig, Permission, PlatformContext, PlatformSnapshot, Session, SocketBus, SocketMessage, Toast, ToastInput, ToastLevel, UseCurrentUserResult, UseGlobalMenuResult, UseSessionResult, UseSocketBusResult, User };
