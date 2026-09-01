@@ -15,8 +15,13 @@ eventual federated-JWKS migration — is uniform across the family.
 ## Install
 
 ```bash
-npm install @fuzefront/auth        # + express, if you use the middleware
+npm install @izzywdev/fuzefront-auth        # + express, if you use the middleware
 ```
+
+> **Published name.** `@fuzefront/auth` is the *workspace-internal* name and is **not installable** —
+> the `@fuzefront` scope does not exist on GitHub. The published package is **`@izzywdev/fuzefront-auth`**
+> (latest `0.2.2`). To keep the short specifier used in the examples below, alias it in your
+> `package.json`: `"@fuzefront/auth": "npm:@izzywdev/fuzefront-auth@^0.2.2"`.
 
 ## Use it as middleware
 
@@ -109,16 +114,18 @@ HTTP surface + schemas: [`openapi.yaml`](./openapi.yaml).
 
 ## Install (private registry)
 
-Published privately to **GitHub Packages** under `@fuzefront` (`access: restricted`).
+Published privately to **GitHub Packages** under **`@izzywdev`** (`access: restricted`), as
+`@izzywdev/fuzefront-auth`. `@fuzefront` is a workspace-internal scope and is not a registry
+scope — no `fuzefront` user or org exists on GitHub.
 Consumers need a scoped `.npmrc`:
 
 ```
-@fuzefront:registry=https://npm.pkg.github.com
+@izzywdev:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
 ```sh
-npm install @fuzefront/auth
+npm install @izzywdev/fuzefront-auth
 ```
 
 ## Contract lifecycle

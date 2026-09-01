@@ -47,13 +47,15 @@ a promise of a live endpoint.
   `servers: /api/config` entry is the intended same-origin path, but nothing
   in `deploy/helm/fuzefront/templates/` proxies `/api/config` to the service
   yet — that's a second, independent piece of wiring from `enabled: true`.
-- **`@fuzefront/config-client` (Node) is not published.** GitHub Packages
+- **`@fuzefront/config-client` (Node) IS published — under its real name.**
+  Verified 2026-09-01: `@izzywdev/fuzefront-config-client@1.0.0` resolves from
+  GitHub Packages. `@fuzefront/config-client` is the workspace-internal name and
+  is not installable (the `@fuzefront` scope does not exist on GitHub), which is
+  what made this look unpublished. Historical note: GitHub Packages
   publishing (`packages-publish.yml`) builds its list from the root
   `package.json`'s `workspaces` array, and `config-client` is not currently
-  in it — so `npm install @fuzefront/config-client` does not resolve today,
-  even though the package itself is fully built and its `publishConfig` is
-  correct. This guide documents installation as it will work once that's
-  fixed; treat the command in [§2](#2-install) as near-term, not current.
+  in it — which is why `npm install @fuzefront/config-client` does not resolve.
+  Install the published name instead; see [§2](#2-install).
 - **`fuzefront-config-client` (Python) has no release tag pushed.** The wheel
   builds and installs locally (`pip install -e packages/config-client-py`,
   which is how every code sample in this guide was actually verified — see
@@ -123,10 +125,11 @@ right as a consumer — see [§4](#4-read-effective-config--and-its-provenance).
 ## 2. Install
 
 ```bash
-# Node — private to the @fuzefront scope on GitHub Packages (see § 0: not
-# published yet). Same .npmrc convention as every other @fuzefront/* package —
-# see docs/guides/BUILDING_ON_FUZEFRONT.md § 2.
-npm install @fuzefront/config-client
+# Node — private to the @izzywdev scope on GitHub Packages. Same scoped-.npmrc
+# convention as every other published package — see
+# docs/guides/BUILDING_ON_FUZEFRONT.md § 2. (@fuzefront/config-client is the
+# workspace-internal name and is NOT installable.)
+npm install @izzywdev/fuzefront-config-client
 ```
 
 ```bash

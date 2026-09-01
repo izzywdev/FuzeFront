@@ -16,6 +16,7 @@ Apply universal fields from `../SKILL.md`, then:
 | Definition of Done | ≥ 5 of 7 standard items present | 3–4 items | < 3 items |
 | Sub-Tasks | ≥ 1 dev task (BE or FE) + ≥ 1 QA task | ≥ 1 task total | No sub-tasks |
 | Story Points | Set, equals sum of sub-task points from {2,4,8} | Set but doesn't match sub-task sum | Not set |
+| Story integration branch | `story/<KEY>-<slug>` exists; draft PR targets default branch; child task PRs target Story branch | Branch exists but PR/base links are incomplete | Missing or child PRs target default directly |
 | Sprint | Assigned (if status ≠ Backlog) | — | In Progress but no sprint |
 | References | Figma link present (if FE work involved) | — | No refs if design exists |
 

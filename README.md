@@ -248,7 +248,10 @@ npm create vite@latest my-app -- --template react-ts
 
 # 2. Add Module Federation
 npm install @originjs/vite-plugin-federation --save-dev
-npm install @fuzefront/sdk-react
+# NOTE: the React SDK is NOT published yet — no @fuzefront/sdk-react and no
+#       @izzywdev/fuzefront-sdk-react exists in the registry. Vendor it from
+#       this repo for now. (@fuzefront is a workspace-internal scope and is not
+#       installable at all; published packages are @izzywdev/fuzefront-<name>.)
 
 # 3. Configure vite.config.ts with federation setup
 # 4. Add self-registration code

@@ -16,10 +16,16 @@ This package is the **runtime** half of the build-time AI-translation model:
 ## Install
 
 ```bash
-npm install @fuzefront/i18n
+npm install @izzywdev/fuzefront-i18n
 ```
 
-Published privately to GitHub Packages under the `@fuzefront` scope (configure a
+> **Published name.** `@fuzefront/i18n` is the *workspace-internal* name and is **not installable** —
+> the `@fuzefront` scope does not exist on GitHub. The published package is **`@izzywdev/fuzefront-i18n`**
+> (latest `1.0.0`). To keep the short specifier used in the examples below, alias it in your
+> `package.json`: `"@fuzefront/i18n": "npm:@izzywdev/fuzefront-i18n@^1.0.0"`.
+
+
+Published privately to GitHub Packages under the **`@izzywdev`** scope (configure a
 scoped `.npmrc` + `GITHUB_TOKEN`).
 
 ## Usage
