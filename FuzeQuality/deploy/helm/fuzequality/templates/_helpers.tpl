@@ -14,6 +14,12 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
   value: {{ .Values.config.kafkaBrokers | quote }}
 - name: FUZEFRONT_SECURITY_URL
   value: {{ .Values.config.fuzefrontSecurityUrl | quote }}
+- name: FUZEQUALITY_KAFKA_TOPIC_PARTITIONS
+  value: {{ .Values.kafkaTopics.partitions | quote }}
+- name: FUZEQUALITY_KAFKA_REPLICATION_FACTOR
+  value: {{ .Values.kafkaTopics.replicationFactor | quote }}
+- name: FUZEQUALITY_KAFKA_RETENTION_MS
+  value: {{ .Values.kafkaTopics.retentionMs | quote }}
 - name: LITELLM_URL
   value: {{ .Values.config.litellmUrl | quote }}
 - name: FUZEQUALITY_LLM_MODEL

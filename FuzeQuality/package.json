@@ -20,6 +20,7 @@
     "start:intelligence": "tsx apps/workers/src/intelligence.ts",
     "start:projector": "tsx apps/workers/src/projector.ts",
     "migrate": "tsx scripts/migrate.ts",
+    "bootstrap": "tsx scripts/bootstrap.ts",
     "scan": "tsx scripts/scan.ts",
     "check:chroma": "tsx scripts/check-chroma.ts"
   },

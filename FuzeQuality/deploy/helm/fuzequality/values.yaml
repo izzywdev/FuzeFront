@@ -21,6 +21,12 @@ frontend:
   resources:
     requests: { cpu: 25m, memory: 32Mi }
     limits: { cpu: 200m, memory: 128Mi }
+bootstrap:
+  # Runs before every API/worker start. It is intentionally small because it
+  # only applies additive DDL and creates missing Kafka topics.
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
 workers:
   scanner:
     replicas: 1
@@ -114,7 +120,9 @@ federatedMount:
   slug: fuzequality
 
 kafkaTopics:
-  enabled: true
+  # Legacy Sync-hook provisioning is disabled. Bootstrap init containers now
+  # ensure topics on every API/worker startup, after Kafka is actually ready.
+  enabled: false
   image: apache/kafka:3.9.1
   partitions: 3
   replicationFactor: 1

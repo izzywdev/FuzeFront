@@ -23,6 +23,16 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: bootstrap-dependencies
+          image: "{{ .Values.backendImage.repository }}:{{ .Values.backendImage.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["npm", "run", "bootstrap"]
+          env:
+            {{- include "fuzequality.env" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.bootstrap.resources | nindent 12 }}
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000 }
       containers:
         - name: backend
           image: "{{ .Values.backendImage.repository }}:{{ .Values.backendImage.tag }}"

@@ -181,7 +181,18 @@ if (!openapi.available) {
 app.use(openapi.router)
 
 app.get('/health/live', (_request, response) => response.json({ status: 'ok' }))
-app.get('/health/ready', (_request, response) => response.json({ status: 'ready' }))
+app.get('/health/ready', async (_request, response) => {
+  // A listening process is not ready if its catalog store is unavailable.
+  // The bootstrap init container owns schema/topic creation; this probe proves
+  // the API can subsequently query its provisioned PostgreSQL database.
+  try {
+    await store.portfolio()
+    response.json({ status: 'ready' })
+  } catch (error) {
+    console.error('FuzeQuality readiness database check failed', error)
+    response.status(503).json({ status: 'not-ready', dependency: 'postgres' })
+  }
+})
 app.get('/metrics', async (_request, response) => {
   const portfolio = await store.portfolio()
   response.type('text/plain').send(
