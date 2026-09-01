@@ -1,0 +1,17 @@
+0 silly argv {
+0 silly argv   _: [ 'run' ],
+0 silly argv   scope: '@izzywdev/fuzefront-sdk-react',
+0 silly argv   'include-dependencies': true,
+0 silly argv   includeDependencies: true,
+0 silly argv   lernaVersion: '10.0.1',
+0 silly argv   '$0': 'node_modules\\lerna\\dist\\cli.js',
+0 silly argv   script: 'build'
+0 silly argv }
+1 notice cli v10.0.1
+2 verbose packageConfigs Resolving packages based on package.json "workspaces" configuration.
+3 verbose rootPath C:\Users\izzyw\AppData\Local\Temp\claude\ff-pub\repo
+4 error TypeError: native_1.FileLock is not a constructor
+4 error     at createProjectGraphAndSourceMapsAsync (C:\Users\izzyw\AppData\Local\Temp\claude\ff-pub\repo\node_modules\nx\dist\src\project-graph\project-graph.js:259:15)
+4 error     at createProjectGraphAsync (C:\Users\izzyw\AppData\Local\Temp\claude\ff-pub\repo\node_modules\nx\dist\src\project-graph\project-graph.js:226:45)
+4 error     at detectProjects (file:///C:/Users/izzyw/AppData/Local/Temp/claude/ff-pub/repo/node_modules/lerna/dist/chunk-WC2B4V4E.js:3314:31)
+4 error     at RunCommand.detectProjects (file:///C:/Users/izzyw/AppData/Local/Temp/claude/ff-pub/repo/node_modules/lerna/dist/chunk-WC2B4V4E.js:3479:52)

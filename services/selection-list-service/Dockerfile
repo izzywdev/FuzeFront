@@ -25,6 +25,8 @@ COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
 COPY packages/service-auth/package.json ./packages/service-auth/
+COPY api-client/package.json ./api-client/
+COPY sdk/package.json ./sdk/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY packages/config-ui/package.json ./packages/config-ui/
