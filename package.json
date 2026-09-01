@@ -12,6 +12,8 @@
     "packages/identity",
     "packages/auth",
     "packages/service-auth",
+    "api-client",
+    "sdk",
     "billing-client",
     "config-client",
     "custom-hostname-client",

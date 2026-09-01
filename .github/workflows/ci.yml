@@ -30,10 +30,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci   # root workspace (backend + shared) — applies root overrides
+          # sdk/ and api-client/ are NOT installed separately any more: they are
+          # npm workspaces of the root manifest (added so packages-publish.yml's
+          # publishable() can see them at all), so root `npm ci` installs both and
+          # their own package-lock.json files are gone. `cd sdk && npm ci` here
+          # would now fail with "no lock file". frontend/ is still standalone.
+          npm ci   # root workspace (backend + shared + sdk + api-client) — applies root overrides
           cd frontend && npm ci
-          cd ../sdk && npm ci
-          cd ../api-client && npm ci
 
       # @fuzefront/security-client's dist must exist before the identity-ui and
       # auth-ui d.ts builds: identity-ui now imports its DirectoryMember/
