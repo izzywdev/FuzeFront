@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/service-auth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -31,7 +31,7 @@
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "express": "^4.22.2"
+    "express": "^4.22.2 || ^5.0.0"
   },
   "peerDependenciesMeta": {
     "express": {
@@ -39,7 +39,7 @@
     }
   },
   "dependencies": {
-    "@fuzefront/security-client": "0.8.0"
+    "@fuzefront/security-client": "^0.8.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.25",
