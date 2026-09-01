@@ -23,7 +23,6 @@ npm install @izzywdev/fuzefront-auth        # + express, if you use the middlewa
 > (latest `0.2.2`). To keep the short specifier used in the examples below, alias it in your
 > `package.json`: `"@fuzefront/auth": "npm:@izzywdev/fuzefront-auth@^0.2.2"`.
 
-
 ## Use it as middleware
 
 ```ts
@@ -115,7 +114,9 @@ HTTP surface + schemas: [`openapi.yaml`](./openapi.yaml).
 
 ## Install (private registry)
 
-Published privately to **GitHub Packages** under `@fuzefront` (`access: restricted`).
+Published privately to **GitHub Packages** under **`@izzywdev`** (`access: restricted`), as
+`@izzywdev/fuzefront-auth`. `@fuzefront` is a workspace-internal scope and is not a registry
+scope — no `fuzefront` user or org exists on GitHub.
 Consumers need a scoped `.npmrc`:
 
 ```

@@ -28,7 +28,6 @@ npm i @izzywdev/fuzefront-chat-ui @izzywdev/fuzefront-chat-client
 > specifiers used below, alias them in `package.json`, e.g.
 > `"@fuzefront/chat-ui": "npm:@izzywdev/fuzefront-chat-ui@^1.2.3"`.
 
-
 ## Usage
 
 ```tsx

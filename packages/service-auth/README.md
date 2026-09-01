@@ -28,7 +28,6 @@ npm install @izzywdev/fuzefront-service-auth        # + express, if you use the 
 > (latest `0.1.1`). To keep the short specifier used in the examples below, alias it in your
 > `package.json`: `"@fuzefront/service-auth": "npm:@izzywdev/fuzefront-service-auth@^0.1.1"`.
 
-
 ## The two halves
 
 ### 1. Caller — obtain a machine token

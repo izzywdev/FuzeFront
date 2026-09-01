@@ -5,7 +5,8 @@ the frozen contract (`@fuzefront/billing-client`, generated from
 `services/billing-service/openapi.yaml`) — every request/response shape is
 imported, never hand-written.
 
-Private package: published to GitHub Packages (`@fuzefront`, `access: restricted`).
+Private package: published to GitHub Packages under **`@izzywdev`** (`access: restricted`), as
+`@izzywdev/fuzefront-billing-ui`. `@fuzefront` is a workspace-internal scope, not a registry one.
 
 ## Components
 
