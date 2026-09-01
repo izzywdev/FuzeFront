@@ -1,7 +1,7 @@
 # Building on FuzeFront
 
 How a downstream product runs **on top of** the FuzeFront platform: register a
-micro-frontend into the host shell, consume the shared `@fuzefront/*` packages,
+micro-frontend into the host shell, consume the shared platform packages,
 sign users in and authorize them through the **FuzeFront Security API**, and call
 the platform API.
 
@@ -130,29 +130,60 @@ with the host.
   quietly loads its own React copy and fails at runtime with "Invalid hook call";
   nothing in your build or the host's CI will warn you first.
 - Your app needs `react`/`react-dom` `^19.2.0` and `@types/react(-dom)` `^19.2.0`.
-- Build on Node `>=24.0.0` / npm `>=10.0.0`. The published `@fuzefront/*` packages
+- Build on Node `>=24.0.0` / npm `>=10.0.0`. The published `@izzywdev/fuzefront-*` packages
   peer-depend on `react@^19.0.0`, so a React 18 consumer fails peer resolution outright.
 
 ---
 
-## 2. Consume the `@fuzefront/*` packages
+## 2. Consume the shared packages
 
 FuzeFront publishes reusable packages **privately to GitHub Packages** under the
-`@fuzefront` (and `@izzywdev`) scopes. Consumers authenticate with a scoped
-`.npmrc` + a `GITHUB_TOKEN`/PAT that has `read:packages`.
+**`@izzywdev`** scope. Consumers authenticate with a scoped `.npmrc` + a
+`GITHUB_TOKEN`/PAT that has `read:packages`.
+
+> **`@fuzefront` is not a scope you can install from.** It is the *workspace-internal*
+> name FuzeFront's own monorepo uses, resolved by npm-workspace symlink. There is no
+> `fuzefront` user or organisation on GitHub (`gh api users/fuzefront` and
+> `gh api orgs/fuzefront` both 404), so `npm install @fuzefront/…` returns 404 and always
+> has. Every workspace package is *published* as `@izzywdev/fuzefront-<name>`. The family
+> rule is FuzeSDLC `governance/naming-and-addressing.md` § "The npm package scope".
 
 ```ini
 # .npmrc (in the consuming repo; do NOT commit the token)
-@fuzefront:registry=https://npm.pkg.github.com
 @izzywdev:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
-| package | what it gives you |
-|---|---|
-| `@fuzefront/shared` | shared types, Kafka `TOPICS` constant + `FuzeEvent<T>` envelope, typed producer/consumer helpers |
-| `@izzywdev/fuzefront-api-client` | generated TypeScript client for the platform API (auth, apps, health) |
-| `@izzywdev/fuzefront-sdk-react` | React SDK for self-registration, heartbeat, and host context |
+Packages that are **published and installable today** (verified against the registry
+on 2026-09-01 — `gh api "users/izzywdev/packages?package_type=npm&per_page=100"`):
+
+| install this | workspace name | what it gives you |
+|---|---|---|
+| `@izzywdev/fuzefront-shared` | `@fuzefront/shared` | shared types, Kafka `TOPICS` constant + `FuzeEvent<T>` envelope, typed producer/consumer helpers |
+| `@izzywdev/fuzefront-core` | `@fuzefront/core` | Express-side transactional-outbox middleware (`enqueueEvent` + relay) |
+| `@izzywdev/fuzefront-security-client` | `@fuzefront/security-client` | generated TypeScript client for the platform security/identity API |
+| `@izzywdev/fuzefront-design-system` | `@fuzefront/design-system` | the "fuse seam" design system — tokens + primitives |
+| `@izzywdev/fuzefront-auth` | `@fuzefront/auth` | Authentik/Permit-backed authN/authZ verifier + Express middleware |
+| `@izzywdev/fuzefront-service-auth` | `@fuzefront/service-auth` | service-to-service (client-credentials) auth |
+
+The full list is 24 packages; enumerate it rather than guessing a name — the mapping is
+**not** mechanically derivable (`@izzywdev/repo-digester-client` carries no `fuzefront-`
+prefix).
+
+**Not published — do not write installs for these.** `@fuzefront/sdk-react` and
+`@fuzefront/api-client` have appeared in this guide and in the root README as if they
+were installable; neither exists in the registry under any scope. Treat them as
+roadmap, not as available packages.
+
+If you want to keep the short `@fuzefront/…` specifier in your import statements, alias
+it in your `package.json` — this is the pattern several consumer repos already use:
+
+```jsonc
+"dependencies": {
+  "@fuzefront/shared": "npm:@izzywdev/fuzefront-shared@^1.0.0",
+  "@fuzefront/auth":   "npm:@izzywdev/fuzefront-auth@^0.2.2"
+}
+```
 
 If you publish your own reusable package, follow the same convention:
 `publishConfig` → `https://npm.pkg.github.com` with `access: restricted`, never
