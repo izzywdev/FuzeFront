@@ -40,6 +40,13 @@ Three check families:
         on an identity package. The other families are all "is what is here
         correct" checks; a repo that adopts nothing passes every one of them
         vacuously. This is the absence check.
+    A2  and it must actually IMPORT that package. A1 alone is satisfiable by an
+        inert dependency line: measured 2026-08-19, thirteen repos declared the
+        package and not one imported it, so A1 was green family-wide while nothing
+        had adopted anything. A2 is WARN by default and becomes a failure once the
+        repo sets `identity.enforceUsage: true` — enforcing it on arrival would
+        repeat the very mistake (enforcement ahead of adoption) that produced those
+        inert declarations.
 
 Exemptions: an operation may carry `x-client-assigned-id: allowed` (plus
 `x-client-assigned-id-reason`), or the route may be listed in
@@ -337,14 +344,35 @@ def check_contracts(root: str) -> list[str]:
                         )
 
         # C3 — polymorphic references must carry their type, wherever they appear.
+        #
+        # "Wherever they appear" has to include COMPOSED schemas, and it did not. This read
+        # only top-level `properties` and `continue`d past anything whose fields live under
+        # allOf/oneOf/anyOf — so a reference declared in a composition branch was never
+        # checked at all. Found on FuzeSocial: `LibraryItem.ownerId` and
+        # `HistoryRecord.ownerId` nest under allOf and were silently invisible, while the
+        # structurally identical `ComposedPost.ownerId` and `MediaItem.ownerId` were caught
+        # because they happened to be declared inline.
+        #
+        # A gate that misses a violation is worse than one that never ran: the clean report
+        # is taken as evidence the rule holds. C1 and C2 already walk compositions via
+        # composed_parts() — C3 simply never used the helper written for this.
+        #
+        # Properties are UNIONED across the parts before checking, because the id and its
+        # discriminator may legitimately be declared in different branches — a base schema
+        # contributing `ownerType` and a variant contributing `ownerId` satisfies the rule,
+        # and per-part checking would raise a false violation on it.
         schemas = (spec.get("components") or {}).get("schemas")
         if isinstance(schemas, dict):
             for name, schema in schemas.items():
                 schema = resolve_ref(spec, schema)
                 if not isinstance(schema, dict):
                     continue
-                props = schema.get("properties")
-                if not isinstance(props, dict):
+                props = {}
+                for part in composed_parts(spec, schema):
+                    sub = part.get("properties")
+                    if isinstance(sub, dict):
+                        props.update(sub)
+                if not props:
                     continue
                 for prop in props:
                     if not POLYMORPHIC_ID_RE.match(str(prop)):
@@ -531,13 +559,6 @@ SPINE_PREFIXES = {
     "cnv": "FuzeFront",
     "msg": "FuzeFront",
     "ntf": "FuzeFront",
-    # configuration (FF-EPIC-17) — config-service is FuzeFront-hosted for the
-    # whole family, same tier as billing/messaging above. The frozen contract
-    # (services/config-service/openapi.yaml, FFRNT-153) already declares these
-    # as bare prefixes.
-    "cns": "FuzeFront",
-    "ckd": "FuzeFront",
-    "cvh": "FuzeFront",
 }
 
 TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.M)
@@ -722,6 +743,41 @@ def _has_entity_work(root: str) -> tuple[int, int]:
     return mint_sites, creates
 
 
+SOURCE_GLOBS = [
+    "*.ts", "**/*.ts", "*.tsx", "**/*.tsx", "*.js", "**/*.js", "*.jsx", "**/*.jsx",
+    "*.mjs", "**/*.mjs", "*.cjs", "**/*.cjs", "*.py", "**/*.py",
+]
+
+# The Node package, and the module name the Python package installs as. A manifest
+# NAMES the package; only source IMPORTS it, and the difference is the whole point
+# of the usage check below.
+IDENTITY_IMPORT_RE = re.compile(
+    r"@izzywdev/fuzefront-identity|[\"']fuzefront-identity[\"']|\bfuzefront_identity\b"
+)
+
+
+def _imports_identity_package(root: str) -> int:
+    """Tracked SOURCE files that reference the identity package.
+
+    Deliberately excludes package.json, package-lock.json, .fuze/manifest.json and
+    the vendored repo-manifest schema: every one of those names the package without
+    using it, and counting them would make this check as satisfiable-by-declaration
+    as the one it is tightening.
+    """
+    hits = 0
+    for path in _candidate_files(root, SOURCE_GLOBS):
+        rel = os.path.relpath(path, root).replace("\\", "/")
+        if "node_modules/" in rel:
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                if IDENTITY_IMPORT_RE.search(f.read()):
+                    hits += 1
+        except OSError:
+            continue
+    return hits
+
+
 def check_adoption(root: str) -> list[str]:
     """Does this repo actually HAVE the standard, or merely not violate it?
 
@@ -730,23 +786,55 @@ def check_adoption(root: str) -> list[str]:
     check", and the source backstop is report-only. Green, and completely
     unprotected. Only an absence check catches that, and a family standard whose
     gate is satisfied by non-adoption is not a standard.
+
+    A1 asks whether the dependency is DECLARED. A2 asks whether it is USED, because
+    a declaration alone turned out to be satisfiable by an inert line: measured
+    2026-08-19, thirteen repos declared this package and not one imported it, so the
+    gate was green across the family while the standard was adopted nowhere. That is
+    the same defect this check exists to catch, one layer along.
+
+    A2 is WARN by default. Landing it enforcing would red every repo that just
+    declared the dependency, which is precisely the "enforcement shipped ahead of
+    adoption" mistake that produced the inert declarations in the first place. Each
+    repo flips its own ratchet with `identity.enforceUsage: true`, matching the
+    `enforce` switch governance_sync deliberately does not reconcile.
     """
-    if _declares_identity_dependency(root):
-        return []
+    declared = _declares_identity_dependency(root)
     mint_sites, creates = _has_entity_work(root)
     if not mint_sites and not creates:
         return []
+
     evidence = []
     if mint_sites:
         evidence.append(f"{mint_sites} entity-id mint site(s)")
     if creates:
         evidence.append(f"{creates} create operation(s)")
-    return [
-        f"adoption — this repo has {' and '.join(evidence)} but declares no "
-        f"dependency on an identity package (@izzywdev/fuzefront-identity or "
-        f"fuzefront-identity); the standard cannot be enforced by a package the "
-        f"repo does not have (identifier-standard.md 9)"
-    ]
+
+    if not declared:
+        return [
+            f"adoption — this repo has {' and '.join(evidence)} but declares no "
+            f"dependency on an identity package (@izzywdev/fuzefront-identity or "
+            f"fuzefront-identity); the standard cannot be enforced by a package the "
+            f"repo does not have (identifier-standard.md 9)"
+        ]
+
+    if _imports_identity_package(root):
+        return []
+
+    identity = load_manifest(root).get("identity")
+    enforce = bool(identity.get("enforceUsage")) if isinstance(identity, dict) else False
+    message = (
+        f"adoption — this repo has {' and '.join(evidence)} and declares a dependency "
+        f"on an identity package, but no tracked source file imports it. A dependency "
+        f"nothing imports is not adoption: ids are still minted by hand, and the "
+        f"declaration only makes the gate green (identifier-standard.md 9). Import "
+        f"mintId()/mint_id() where entities are created, then set "
+        f"identity.enforceUsage: true to keep it that way."
+    )
+    if enforce:
+        return [message]
+    print(f"::warning title=gate-identifier::{message}")
+    return []
 
 
 def main(argv: list[str]) -> int:

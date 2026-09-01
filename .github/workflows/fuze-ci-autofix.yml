@@ -1,0 +1,215 @@
+# fuze:managed template=fuze-ci-autofix.yml baseline=v1 digest=sha256:6b346a752716fca7bafa70d49a2bbc267a7f2d93cdefdd4038e606094a5d7b1d
+name: Fuze Auto-Fix CI
+
+# RENAMED from claude-ci-autofix.yml (the claude-* -> fuze-* fleet rename; see
+# claude.yml/fuze.yml, claude-auto-pr.yml/fuze-auto-pr.yml). This one was a straight
+# rename, not a permanent dual-track split like those pairs.
+#
+# SELF-CONTAINED (inlined) as of the FuzeSDLC#758 fix. This job used to be a `uses:`
+# call into izzywdev/FuzeSDLC's reusable-claude-ci-autofix.yml. A PUBLIC repo cannot
+# resolve a reusable workflow hosted in a PRIVATE repo -- FuzeSDLC is private -- so on
+# every oss-public consumer (FuzeInfra, FuzeFront, FuzeAgent, FuzeKeys, FuzeX) this
+# call failed at STARTUP ("workflow was not found") and auto-fix had never run once.
+# Inlined so the fleet distributes by governance-sync COPY instead of cross-repo
+# reference: FuzeSDLC stays the one place to edit this job, and every repo now
+# carries a runnable copy regardless of its own visibility or the hub's. See
+# governance/reusable-workflows.md for the full decision and the fate of the
+# (still-hosted, now-legacy) reusable-claude-ci-autofix.yml.
+#
+# It still calls `./.github/actions/fuze-code-action` (PR #196) -- that composite
+# action (and the `llm-endpoint` action it wraps) travels to every repo unconditionally
+# via scripts/bootstrap/caps/workflows.py's ACTIONS tuple, the same way every other
+# STAMPED template that references a local `.github/actions/**` path already relies on
+# it being vendored alongside. Inlining this workflow does not change that -- the
+# action ships with the template exactly as it did before, so the LiteLLM-gateway-first
+# -with-runner-local-fallback behaviour is unaffected.
+#
+# The `claude-auto-fix-ci-` branch-name guard below matches the literal prefix the
+# "Create fix branch" step still generates (`claude-auto-fix-ci-${SAFE_BRANCH}-
+# ${RUN_ID}`) -- this is the loop guard that stops an auto-fix failure from triggering
+# another auto-fix. FuzeInfra has been bitten by a self-trigger loop before (691
+# comments on one issue, see claude.yml's own loop-guard sentinel); do not remove or
+# rename this guard without keeping it in lockstep with the branch prefix it matches.
+#
+# Two real bugs, both measured and both fixed under izzywdev/FuzeSDLC#29 (mirroring
+# the same fix already landed in izzywdev/FuzeFront#159) -- carried forward unchanged
+# by this inlining:
+#
+#   1. `pull_requests[0]` as a truthiness GATE silently dropped every dispatch-triggered
+#      run: `workflow_run.pull_requests` is an empty array outside a pull_request-headed
+#      run, so the whole condition was false and auto-fix never fired. Not present here --
+#      the `pr_number` reference below already tolerates an absent PR via `|| ''`, so
+#      there is nothing left that needs the array non-empty.
+#   2. No guard against firing on a direct push to the default branch. Present below as
+#      the literal `'master'` (not a template variable) because this condition runs BEFORE
+#      any render-time substitution touches it, and the guard exists to protect exactly
+#      the branch that deploys/publishes on push (CLAUDE.baseline.md hardening) --
+#      naming it explicitly is the point, not a limitation. A repo whose default branch
+#      is `main` gets no false sense of protection from this line and is unaffected by
+#      it either way, since pushes to `main` were never what this guarded against.
+
+on:
+  workflow_run:
+    workflows: ["Infrastructure Tests", "Helm Chart Validation", "Harden Gate"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  issues: write
+  id-token: write
+
+jobs:
+  call-autofix:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'failure' &&
+          !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-') &&
+          github.event.workflow_run.head_branch != 'master' }}
+    # Rewritten by the installer to this repo's ci.runner (render.py) via the same
+    # generic `runs-on: ubuntu-latest` substitution every other STAMPED workflow in
+    # this canonical gets -- no bespoke handling needed now that this is a plain job
+    # instead of a reusable-workflow call with its own `runner:` input. 21 of 22 repos
+    # currently pin ubuntu-latest while a healthy self-hosted `fuze-runner` ARC scale
+    # set idles -- that is the direct cause of the "budget exhausted, job never
+    # starts" failures across the fleet described above. Left at ubuntu-latest as the
+    # canonical default anyway (correct for a repo that has not migrated).
+    runs-on: ubuntu-latest
+    steps:
+      # Preflight: run auto-fix only when at least one LLM key is configured on this
+      # repo. With every key optional (there is no `workflow_call` boundary anymore to
+      # declare `required: false` against -- a repo simply has the secret or doesn't),
+      # a repo that configured none would otherwise reach fuze-code-action with no
+      # credentials and fail there; skipping cleanly here keeps an unconfigured repo's
+      # CI green instead of red for something it never opted into.
+      - name: Preflight — is any LLM key configured?
+        id: keys
+        env:
+          ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+          LITELLM: ${{ secrets.LITELLM_FUZE_KEY }}
+          OPENAI: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "${ANTHROPIC}" ] || [ -n "${LITELLM}" ] || [ -n "${OPENAI}" ] || [ -n "${GEMINI}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No LLM key (ANTHROPIC_API_KEY / LITELLM_FUZE_KEY / OPENAI_API_KEY / GEMINI_API_KEY) configured on ${{ github.repository }} — skipping Claude CI auto-fix (not a failure)."
+          fi
+
+      - name: Checkout PR head branch
+        if: steps.keys.outputs.present == 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        if: steps.keys.outputs.present == 'true'
+        run: |
+          git config --global user.email "claude[bot]@users.noreply.github.com"
+          git config --global user.name "claude[bot]"
+
+      - name: Create fix branch
+        id: branch
+        if: steps.keys.outputs.present == 'true'
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          SAFE_BRANCH=$(printf '%s' "$HEAD_BRANCH" | tr -cd 'a-zA-Z0-9/_.-')
+          BRANCH_NAME="claude-auto-fix-ci-${SAFE_BRANCH}-${RUN_ID}"
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Gather CI failure logs
+        id: failure_details
+        if: steps.keys.outputs.present == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          # Passed through env, NOT interpolated into the script body. `${{ ... }}`
+          # is substituted as raw text BEFORE the JS is parsed, so an input carrying
+          # a quote would escape the string literal and execute as code. Number()
+          # around it would not help -- the injection happens at substitution time,
+          # not at evaluation time. Same class of fix as #98.
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        with:
+          script: |
+            const run_id = Number(process.env.RUN_ID);
+            if (!Number.isInteger(run_id)) {
+              core.setFailed(`run_id is not an integer: ${process.env.RUN_ID}`);
+              return;
+            }
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id,
+            });
+            const failed = jobs.data.jobs.filter(j => j.conclusion === 'failure');
+            let combined = "";
+            for (const job of failed) {
+              try {
+                const res = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  job_id: job.id,
+                });
+                const text = typeof res.data === 'string' ? res.data : String(res.data);
+                // Keep the tail of each job log where failures usually surface.
+                const tail = text.slice(-4000);
+                combined += `\n===== Job: ${job.name} =====\n${tail}\n`;
+              } catch (e) {
+                combined += `\n===== Job: ${job.name} (log download failed: ${e.message}) =====\n`;
+              }
+            }
+            return {
+              failedJobs: failed.map(j => j.name),
+              logs: combined.slice(-12000),
+            };
+
+      # NOTE ON PROMPT INJECTION: the CI logs below are attacker-influenceable --
+      # anyone who can open a PR can make a build print arbitrary text into them.
+      # That is inherent to the job (diagnosing a failure means reading its output),
+      # so it is bounded rather than eliminated: --allowedTools is an explicit
+      # allow-list with no arbitrary Bash, the work happens on a throwaway
+      # claude-auto-fix-ci-* branch, and the result is a PR a human reviews -- never
+      # a push to the PR under repair.
+      - name: Fix CI failures with Claude
+        if: steps.keys.outputs.present == 'true'
+        uses: ./.github/actions/fuze-code-action
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          claude-args: >-
+            --model claude-sonnet-4-6
+            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*),Bash(yarn:*),Bash(pnpm:*),Bash(python:*),Bash(pip:*),Bash(php:*),Bash(composer:*)'
+          task-prompt: |
+            A CI run failed on a pull request in this repository. You are checked out on a
+            fresh branch created from the PR's head branch. Investigate and fix the failures.
+
+            Repository: ${{ github.repository }}
+            Failing pull request: #${{ github.event.workflow_run.pull_requests[0].number || '' }}
+            Original PR head branch: ${{ github.event.workflow_run.head_branch }}
+            Your working branch (already checked out): ${{ steps.branch.outputs.branch_name }}
+            Failed CI run: ${{ github.event.workflow_run.html_url }}
+            Failed jobs: ${{ join(fromJSON(steps.failure_details.outputs.result).failedJobs, ', ') }}
+
+            Error logs (tail, truncated):
+            ${{ fromJSON(steps.failure_details.outputs.result).logs }}
+
+            Instructions:
+            1. Diagnose the root cause of the CI failure from the logs above and the code.
+            2. Make the minimal, targeted changes needed to make CI pass. Do not touch
+               unrelated code, CI secrets, or workflow files unless that is the actual cause.
+            3. Commit your changes to the current branch
+               (${{ steps.branch.outputs.branch_name }}) and push it with `git push -u origin HEAD`.
+            4. Open a pull request from your branch targeting "${{ github.event.workflow_run.head_branch }}"
+               using `gh pr create`, summarizing the root cause and the fix, and reference
+               PR #${{ github.event.workflow_run.pull_requests[0].number || '' }} in the body.
+            If you cannot determine a safe fix, push nothing and instead leave a comment on
+            PR #${{ github.event.workflow_run.pull_requests[0].number || '' }} explaining what you found.
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

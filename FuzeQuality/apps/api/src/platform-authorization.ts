@@ -1,6 +1,9 @@
 import type { NextFunction, Request, Response } from 'express'
+import type { Identity } from '@fuzefront/security-client'
 
-export interface PlatformIdentity { userId: string; tenantId: string; roles?: string[] }
+export interface PlatformIdentity extends Pick<Identity, 'userId' | 'tenantId' | 'roles'> {
+  tenantId: string
+}
 const identities = new WeakMap<Request, PlatformIdentity>()
 
 export function requestIdentity(request: Request) { return identities.get(request) }
@@ -16,14 +19,15 @@ export function requirePlatformPermission(resource: string, action: string) {
     if (!authorization?.startsWith('Bearer ')) return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_MISSING' })
     if (!baseUrl) return response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
     try {
-      const sessionResponse = await fetch(`${baseUrl}/api/v1/security/session`, { headers: { authorization } })
+      const identityHeaders: Record<string, string> = { authorization }
+      const sessionResponse = await fetch(`${baseUrl}/api/v1/security/session`, { headers: identityHeaders })
       if (!sessionResponse.ok) return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
-      const body = await sessionResponse.json() as { identity?: Partial<PlatformIdentity> }
+      const body = await sessionResponse.json() as { identity?: Partial<Identity> }
       if (!body.identity?.userId || !body.identity.tenantId) return response.status(403).json({ error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED' })
       const identity = body.identity as PlatformIdentity
       const decisionResponse = await fetch(`${baseUrl}/api/v1/security/authz/check`, {
         method: 'POST',
-        headers: { authorization, 'content-type': 'application/json' },
+        headers: { ...identityHeaders, 'content-type': 'application/json' },
         body: JSON.stringify({ subject: identity.userId, tenant: identity.tenantId, resource: { type: resource }, action }),
       })
       if (!decisionResponse.ok) return response.status(403).json({ error: 'Authorization decision unavailable; denying', code: 'DECISION_UNAVAILABLE' })

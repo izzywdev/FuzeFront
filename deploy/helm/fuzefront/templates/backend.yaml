@@ -77,6 +77,13 @@ spec:
                   key: SESSION_SECRET
             - name: FRONTEND_URL
               value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}"
+            # Federated asset proxy allowlist: slug -> in-cluster base URL,
+            # rendered as JSON from .Values.federatedProxy.upstreams. Absent or
+            # empty means every /apps/<slug>/* answers 404, which is the default
+            # and is a truthful answer rather than the SPA fallback's
+            # 200-that-is-HTML. See backend/src/routes/federatedProxy.ts.
+            - name: FEDERATED_PROXY_UPSTREAMS
+              value: {{ include "fuzefront.federatedProxyUpstreams" . | quote }}
             # Permit.io deferred in the minimal cut; placeholder lets the backend
             # boot (SDK uses throwOnError:false). PDP is intentionally absent.
             - name: PERMIT_API_KEY

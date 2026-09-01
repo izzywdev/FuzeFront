@@ -173,10 +173,15 @@ For M2M callers, introspect the token instead:
 
 ## Step 4 — Authorize actions
 
-> **Status:** the AuthZ endpoints below are **frozen in the contract** and
-> generated into the client, but are **not yet live** in the Security service —
-> AuthN ships first, AuthZ follows. Type your integration against them now and
-> gate the calls behind your own feature flag until the AuthZ rollout lands.
+> **Status:** the AuthZ endpoints below are **live** in the Security service
+> (`backend/security/src/routes/authz.ts`, mounted at `/api/v1/security` —
+> merged izzywdev/FuzeFront#272) — this banner previously said "not yet live"
+> after AuthN shipped first; that has been true since mid-2026 and this doc
+> was simply stale. `Authorization: Bearer <token>` accepts EITHER a
+> FuzeFront human session token OR a machine `client_credentials` token (S2S
+> — see `docs/runbooks/s2s-client-credentials.md` step 5) — same routes, same
+> shapes, resolved caller identity differs. You no longer need your own
+> feature flag to gate these calls.
 
 Ask the platform for the decision — never a local role cache and never a policy
 SDK. `authz/check` is authoritative and fail-closed (`{ allow: false }` on any
@@ -289,8 +294,16 @@ endpoint **before** debugging your own code.
 
 ## Step 5 — Manage tenants, members, roles, and grants
 
-Assign roles and manage org membership through the API (again, contract-frozen /
-AuthZ-rollout gated):
+Assign roles and manage org membership through the same live API used in Step 4.
+
+> A **machine (S2S) caller** hitting `POST`/`DELETE /authz/grants` must hold the
+> `authz:admin` scope on its token, or the request is rejected `403 FORBIDDEN`
+> — grant/revoke mutate the authorization graph platform-wide, so only a small,
+> explicitly-provisioned set of operator service accounts should carry that
+> scope (see `docs/runbooks/s2s-client-credentials.md` step 5). `authz/check`
+> has no such restriction: any authenticated caller — human or machine — may
+> ask it a question, since a check can't change what's true. Human callers are
+> unaffected by this gate.
 
 ```ts
 // make a user a seller in a tenant (tenant-wide RBAC grant)
@@ -329,7 +342,9 @@ Grants are convenience; `authz/check` (Step 4) stays the source of truth.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `401` on `/session` GET | Missing/expired token | Send `Authorization: Bearer <token>`; re-login on expiry. |
-| `authz/check` always `{ allow: false }` | Fail-closed on error, or the AuthZ rollout isn't live yet | Confirm the AuthZ endpoints are enabled; check `subject`/`tenant`/`resource.type`/`action` are all set. |
+| `authz/check` always `{ allow: false }` | Fail-closed on error/PDP-unreachable, a malformed request, or your policy never declared the role/resource/action | Check `subject`/`tenant`/`resource.type`/`action` are all set; confirm your `policy.json` declares them (Step 4b); check server logs for `authz: check errored — denying`. |
+| A machine (S2S) caller's `authz/check` gets `401` | The bearer token is neither a valid FuzeFront session nor a valid `client_credentials` token | Confirm the token was issued via the `client_credentials` grant against Authentik and hasn't expired — see `docs/runbooks/s2s-client-credentials.md`. |
+| A machine (S2S) caller's `POST`/`DELETE /authz/grants` gets `403 FORBIDDEN` | The token's `scope` claim is missing `authz:admin` | Grant/revoke require it; `check` does not. Re-provision the service account with `authz:admin` in its scopes if it is meant to be an authorization operator. |
 | One role denies everything, others work | The role references a resource/action your `policy.json` never declared — it grants nothing, silently | `npx fuzefront-validate-policy registration/policy.json` (Step 4b). |
 | **Every** role denies, right after a deploy | Your policy was stored but not yet synced, or the sync dropped it | `curl -s <host>/health \| jq .permit` — look for your slug in `registeredProducts` vs `rejectedProducts` (Step 4b). |
 | Your slug is in neither list on `/health` | `register.sh` never submitted the policy — an old vendored copy has no policy step, or the file is misnamed | The file must be exactly `registration/policy.json`; re-vendor `register.sh` from `@fuzefront/onboarding-kit`. |

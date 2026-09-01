@@ -49,6 +49,10 @@ workers:
       limits: { cpu: 500m, memory: 512Mi }
 
 config:
+  # The platform security service is the authority for portal bearer tokens and
+  # scoped authorization checks. This is deliberately the in-cluster Service,
+  # not the public host: FuzeQuality is a FuzeFront federated workload.
+  fuzefrontSecurityUrl: http://fuzefront-security.fuzefront.svc.cluster.local:3002
   kafkaBrokers: fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092
   litellmUrl: http://litellm.fuzeinfra.svc.cluster.local:4000/v1
   chromaUrl: http://fuzeinfra-chromadb.fuzeinfra.svc.cluster.local:8000

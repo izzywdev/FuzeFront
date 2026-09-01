@@ -1,0 +1,101 @@
+# fuze:managed template=gate-required-checks.yml baseline=v1 digest=sha256:3bf7264ff4fe6dbc9cc181e4db5b9aa824610a89ee5eadc60fac87b622889215
+name: gate-required-checks
+
+# Split out of harden-gate.yml so this gate's `runs-on` can be reasoned about
+# separately from the other gate jobs' — see the `runs-on` note below.
+#
+# It is NOT runner-exempt, despite what this header said until now: `gate-
+# required-checks.yml` has never been a key in lib/render.RUNNER_EXEMPT (only
+# `arc-register.yml` is), so the installer stamps `ci.runner` into this file in
+# every consuming repo, and always has. The exemption was described here and
+# never built — the split is still load-bearing, the exemption claim was not.
+#
+# The `ubuntu-latest` below is the canonical default for a repo that declares no
+# `ci.runner`; it is NOT a statement that this gate wants a hosted runner. On a
+# private repo with no hosted minutes, a hosted job is never assigned a runner
+# and reports failure in ~3s with zero steps — a required context that cannot
+# execute, which is the deadlock this gate exists to detect.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+# No `paths:` filter, on purpose, and this gate is the reason: a path-filtered
+# workflow does not run, so its context is never created, and a REQUIRED context
+# that is never created blocks every PR at "Expected — waiting for status to be
+# reported" with no red to look at. That is a live deadlock this gate detects in
+# other workflows; it must not be one itself.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-required-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-required-checks:
+    # Audit the REQUIRED status-check set against the workflows that are supposed
+    # to satisfy it. Policy: governance/required-checks.json + required-checks.md.
+    #
+    # WHY. "Required" was tracked as one property — is the context named in the
+    # ruleset — when it is four: listed, can-fail, always-reports, available.
+    # Measured 2026-08-23: of the six contexts required across the fleet exactly
+    # ONE (gate-secret-scan) could actually fail a PR, and of FuzeFront's eleven,
+    # four could — on the repo that deploys to prod on push. A vacuous REQUIRED
+    # check is strictly worse than an advisory one: advisory means nobody relies
+    # on it, required-and-vacuous means everybody does.
+    #
+    # None of that is visible from any API. There is no endpoint for "can this
+    # check fail" — you have to read the job. So this gate reads them, from
+    # inside the repo, on every PR, which is the only place that property can be
+    # seen. It also catches both deadlock routes before they land: a required
+    # context nothing emits, and a required context behind a `paths:` filter.
+    # gate-policy-integrity's own header records this repo hitting both.
+    #
+    # NOT YET LISTED AS REQUIRED, deliberately, and that ordering is the policy it
+    # enforces: can-fail and always-reports are established FIRST, listing is
+    # last. It is Stage 1 in governance/required-checks.md §4.
+    #
+    # RAMPED, AND THE RAMP IS IN THE DATA. `enforce` in required-checks.json
+    # decides per repo whether findings fail this job. There is deliberately no
+    # `|| true` here: the gate always runs and always prints every finding as an
+    # ::error annotation, and its summary line names the mode it ran in, so a
+    # ramped run cannot read as a clean one. gate-toolchain is the counter-example
+    # — its suppression is hardcoded in harden-gate.yml, invisible from any policy
+    # file, and its own comment history records three rounds of false confidence
+    # about whether it enforced. Flip a repo with a one-line diff in the policy;
+    # do NOT edit this workflow.
+    #
+    # EXPECT FINDINGS ON ARRIVAL in most repos, and they are real: a Harden Gate
+    # stamped to a self-hosted scale set means every context it emits — including
+    # the six required fleet-wide — queues forever when that pool is down, which
+    # is a merge deadlock with no red to look at. Restamp; do not silence.
+    #
+    # ubuntu-latest, NOT the repo stamp, on purpose: a gate whose whole subject is
+    # "required contexts must not depend on a self-hosted pool" cannot itself sit
+    # on the pool that is down. This is why the gate is its OWN workflow file
+    # rather than a job inside harden-gate.yml — lib/render.RUNNER_EXEMPT works
+    # per FILE, and harden-gate.yml's other jobs legitimately take the repo
+    # runner. A job-level exemption does not exist, so a shared file would have
+    # had this job stamped onto the very pool it audits.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with: { python-version: '3.12' }
+      - name: Self-test the gate (asserts it FAILS on each measured defect)
+        shell: bash
+        run: |
+          if [ ! -f scripts/__tests__/test_gate_required_checks.py ]; then
+            echo "::error title=gate-required-checks::self-tests are missing. They ship with scripts/gate_required_checks.py, deliberately. A gate proven only on a clean tree is the thing this whole family of gates exists to stop."
+            exit 1
+          fi
+          pip install -q pyyaml
+          python3 -m unittest discover -s scripts/__tests__ -p 'test_gate_required_checks.py' -v
+      - name: Audit the required set
+        shell: bash
+        run: python3 scripts/gate_required_checks.py .

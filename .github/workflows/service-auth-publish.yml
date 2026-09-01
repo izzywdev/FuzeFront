@@ -1,0 +1,172 @@
+name: Publish @fuzefront/service-auth (TypeScript)
+
+# Mirrors service-auth-py-publish.yml's shape exactly: a dedicated,
+# tag-triggered, single-package workflow so this package's release is never
+# gated on the shared packages-publish.yml pipeline. That pipeline used to run
+# `lerna run build` across the WHOLE monorepo before publishing anything, so
+# an unrelated private app's compile error (chat-service) blocked every
+# publish — including this one, merged and 30/30 tests green, unable to ship.
+# packages-publish.yml has since been split into a per-package matrix so that
+# specific failure mode is fixed too, but this package does not need to wait
+# on that pipeline at all: it depends on exactly one other workspace,
+# @fuzefront/security-client (packages/security), so this workflow builds
+# that one package first and nothing else.
+#
+# `@fuzefront/security-client` is listed in package.json as a plain version
+# ("0.8.0"), not a `file:` link, and IS already published as
+# @izzywdev/fuzefront-security-client@0.8.0 — but npm workspaces auto-link a
+# dependency to a local workspace of the same name regardless of the version
+# specifier's syntax, so `npm ci` still symlinks
+# node_modules/@fuzefront/security-client -> packages/security, and that
+# workspace's `dist/` does not exist until something builds it. Skipping that
+# build produces exactly the failure this workflow exists to avoid ever
+# hitting again: `error TS2307: Cannot find module '@fuzefront/security-client'`,
+# reproduced locally while wiring this workflow up. lerna's dependency graph
+# would resolve this ordering automatically (`--scope --include-dependencies`),
+# but this workflow deliberately does not depend on lerna at all — one
+# `npm run build -w packages/security` line is simpler and cannot be affected
+# by lerna's own tooling issues (see packages-publish.yml's comment on lerna
+# never having been a pinned dependency before now).
+#
+# WHY @izzywdev/fuzefront-service-auth AND NOT @fuzefront/service-auth ON THE
+# REGISTRY — READ BEFORE CHANGING THE SCOPE BACK.
+#
+# GitHub Packages' npm registry requires the scope of a published package to
+# match a GitHub account (user or org) that owns the publishing repository.
+# There is no such account: `gh api users/fuzefront` and
+# `gh api orgs/fuzefront` both 404 — `fuzefront` does not exist on GitHub in
+# any form, so `npm publish` for a `@fuzefront/*` name from this repo cannot
+# succeed at any registry GitHub hosts, regardless of token or permissions.
+# This is exactly why packages-publish.yml renames every package at publish
+# time (`@fuzefront/x` -> `@izzywdev/fuzefront-x`) instead of publishing the
+# canonical name directly — see scripts/publish-packages.mjs, which this
+# workflow reuses via `--only` so the alias/rewrite logic has one
+# implementation, not two.
+#
+# The Python sibling sidesteps this differently: GitHub Packages has no
+# PyPI-compatible registry at all, so it publishes a wheel as a GitHub Release
+# asset instead (no npm-style scope to satisfy). TypeScript has a real
+# GitHub-hosted npm registry available, so this workflow uses IT — under the
+# scope that actually works.
+#
+# Consumers install:
+#   npm install @izzywdev/fuzefront-service-auth
+# with a .npmrc mapping `@izzywdev:registry=https://npm.pkg.github.com` and a
+# token with `read:packages`, same as every other package in this family.
+#
+# Publishing is idempotent (scripts/publish-packages.mjs skips a version
+# already in the registry rather than overwriting it), so re-running this
+# workflow after a partial failure is safe.
+
+on:
+  push:
+    tags: ['service-auth-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (must match packages/service-auth/package.json)'
+        required: true
+
+permissions:
+  contents: read
+  packages: write # publish to GitHub Packages
+
+concurrency:
+  group: service-auth-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository_owner == 'izzywdev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@izzywdev'
+          cache: 'npm'
+
+      - name: Verify the tag matches package.json version
+        # Same rationale as service-auth-py-publish.yml: a tag that disagrees
+        # with the manifest ships a package whose published version contradicts
+        # the tag it was cut from -- caught only by a consumer, later.
+        #
+        # `inputs.version` and `github.*` reach the shell through env, never
+        # through ${{ }} interpolation in `run:` -- a dispatch input is
+        # arbitrary text, and this job holds `packages: write`.
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PKG_VER=$(node -p "require('./packages/service-auth/package.json').version")
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG_VER="$INPUT_VERSION"
+          else
+            TAG_VER="${REF_NAME#service-auth-v}"
+          fi
+          echo "package.json=$PKG_VER  tag=$TAG_VER"
+          [ "$PKG_VER" = "$TAG_VER" ] || { echo "::error::packages/service-auth version $PKG_VER != tag $TAG_VER"; exit 1; }
+          echo "version=$PKG_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Install
+        # Root install, not `npm install -w packages/service-auth`: npm needs
+        # the whole workspace tree resolved to create the
+        # @fuzefront/security-client -> packages/security symlink.
+        run: npm ci
+
+      - name: Build @fuzefront/security-client (service-auth's only local dependency)
+        run: npm run build -w packages/security
+
+      - name: Test before publishing
+        # 30/30 green is the whole reason this package is ready to ship; that
+        # claim gets re-checked here, not just trusted from the PR that merged it.
+        run: npm test -w packages/service-auth
+
+      - name: Build
+        run: npm run build -w packages/service-auth
+
+      - name: Verify dist contents
+        # A green build step is not evidence anything was produced -- confirm
+        # the compiled output exists before publishing it.
+        run: |
+          ls -lh packages/service-auth/dist/
+          test -f packages/service-auth/dist/index.js
+          test -f packages/service-auth/dist/index.d.ts
+
+      - name: Verify the rename/rewrite transform
+        run: node --test scripts/__tests__/publish-packages.test.mjs
+
+      - name: Resolve what would publish
+        run: node scripts/publish-packages.mjs --dry-run --only "@fuzefront/service-auth"
+
+      - name: Publish
+        env:
+          # BOTH names -- see packages-publish.yml's comment on the same step
+          # for why NODE_AUTH_TOKEN alone 401s (the root .npmrc references
+          # ${GITHUB_TOKEN}, which outranks the .npmrc setup-node writes).
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-packages.mjs --only "@fuzefront/service-auth"
+
+      - name: Verify it is actually installable, not just "published"
+        # `npm publish` exiting 0 is not proof anyone can install this --
+        # confirm the version is resolvable from a clean `npm view` against
+        # the real registry before calling the job done.
+        #
+        # BOTH names -- same 401 the Publish step's comment documents (the
+        # project-level .npmrc references ${GITHUB_TOKEN}, which outranks the
+        # NODE_AUTH_TOKEN-only .npmrc setup-node writes). Missed here once
+        # already: the publish itself succeeded but this step 401'd because
+        # only NODE_AUTH_TOKEN was set.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm view "@izzywdev/fuzefront-service-auth@${{ steps.version.outputs.version }}" version --registry=https://npm.pkg.github.com

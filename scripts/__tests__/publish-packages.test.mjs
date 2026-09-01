@@ -9,7 +9,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { aliasFor, rewriteForPublish } from '../publish-packages.mjs'
+import { aliasFor, rewriteForPublish, filterTargets } from '../publish-packages.mjs'
 
 test('aliasFor maps the canonical scope onto the owner scope', () => {
   assert.equal(aliasFor('@fuzefront/chat-ui'), '@izzywdev/fuzefront-chat-ui')
@@ -89,6 +89,26 @@ test('fails loudly when a local dependency is not publishable', () => {
       ),
     /not a publishable workspace/
   )
+})
+
+// --only backs packages-publish.yml's per-package matrix: a matrix leg's build
+// scope and its publish scope must agree on exactly one package, or the leg
+// either publishes nothing or (worse) silently falls back to publishing
+// everything it can see.
+test('filterTargets with no --only returns every target unchanged', () => {
+  const targets = [{ dir: 'a', pkg: { name: '@fuzefront/a' } }, { dir: 'b', pkg: { name: '@fuzefront/b' } }]
+  assert.equal(filterTargets(targets, null), targets)
+})
+
+test('filterTargets narrows to the exact package name', () => {
+  const targets = [{ dir: 'a', pkg: { name: '@fuzefront/a' } }, { dir: 'b', pkg: { name: '@fuzefront/b' } }]
+  const out = filterTargets(targets, '@fuzefront/b')
+  assert.deepEqual(out.map((t) => t.pkg.name), ['@fuzefront/b'])
+})
+
+test('filterTargets throws on an unknown name instead of publishing everything', () => {
+  const targets = [{ dir: 'a', pkg: { name: '@fuzefront/a' } }]
+  assert.throws(() => filterTargets(targets, '@fuzefront/typo'), /no publishable workspace has that name/)
 })
 
 test('does not mutate the input manifest', () => {

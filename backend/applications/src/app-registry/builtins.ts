@@ -21,8 +21,25 @@ const BUILTIN_MANIFESTS: unknown[] = [
     mode: 'portal',
     builtin: true,
     integration: {
-      type: 'iframe',
-      url: 'https://social.prod.fuzefront.com',
+      type: 'module-federation',
+      // Same-origin path, not the old public app-host iframe URL: identical
+      // value works on app.fuzefront.com, a tenant wildcard host, and
+      // localhost. FuzeSocial serves this remote in-cluster
+      // (izzywdev/FuzeSocial packages/fuzesocial-ui/vite.config.ts
+      // `base: '/apps/fuzesocial/'` + `assetsDir: ''`, nginx.conf, and
+      // deploy/helm/fuzesocial/templates/remote-ingress.yaml), so the host
+      // shell's /apps/fuzesocial Ingress proxies it straight to the Service
+      // instead of hairpinning out to social.prod.fuzefront.com — which sits
+      // behind the Cloudflare Access wall and answers asset requests with an
+      // HTML login page, breaking the federation runtime with "Failed to
+      // fetch dynamically imported module". Existing rows are re-pointed by
+      // migration 012 (upsertBuiltin never touches an already-registered row,
+      // so this seed alone is inert on prod). No `assets/` segment: the Vite
+      // build is flat (`assetsDir: ''`), so remoteEntry.js is at the root of
+      // /apps/fuzesocial/.
+      remoteEntry: '/apps/fuzesocial/remoteEntry.js',
+      scope: 'fuzesocial',
+      module: './App',
     },
     chrome: { menu: 'host', topbar: 'host' },
     nav: { section: 'revenue', order: 40 },

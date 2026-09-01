@@ -1,0 +1,284 @@
+# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:6fb89a68ff4af2ac9816339fea8d037167fe9737515370ef961f1b89a1250e41
+name: Fuze Code Review
+
+# THE CANONICAL LLM CODE REVIEW + APPROVAL GATE.
+#
+# WHY THIS EXISTS. Every consuming repo's branch-protection ruleset sets BOTH
+# `required_approving_review_count: 1` AND `require_last_push_approval: true`
+# (governance/ruleset.json). A bot-authored PR can never satisfy that on its own —
+# there is no human in the loop by default — so agent PRs across the fleet sit
+# permanently at `mergeable_state: blocked`. The owner's explicit decision is to
+# KEEP the review gate (never drop the required-review count to 0) and have CI
+# satisfy it instead: GitHub Actions may already approve PRs on this org
+# (`can_approve_pull_request_reviews` — verify per-repo with
+# `gh api repos/izzywdev/<REPO>/actions/permissions/workflow`).
+#
+# THIS IS NOT A NEW REVIEW PROMPT. It wraps the SAME review criteria as the
+# long-standing `gate-code-review` job in harden-gate.yml (correctness/security
+# bugs only; ignore style, naming, tests, perf) and the SAME multi-provider
+# fallover chain as every other LLM-driven workflow in this fleet
+# (./.github/actions/fuze-code-action — LiteLLM-in-cluster-or-direct-Anthropic,
+# then OpenAI, then Gemini, on a classified AVAILABILITY failure only, never on a
+# real task failure). The one new thing here is what happens to a CLEAN result:
+# `gh pr review --approve` actually gets called.
+#
+# THE SAFETY PROPERTY THAT MATTERS MOST: an approval step that fires
+# unconditionally is WORSE than no review gate, because it looks like a gate and
+# is not — exactly the shape (`|| true`, `continue-on-error`, a check that passes
+# by not running) this fleet has spent weeks removing elsewhere. So:
+#
+#   - `gh pr review --approve` fires ONLY when fuze-code-action's own
+#     `conclusion` output is `success` AND the reviewer's structured verdict
+#     parses as schema-valid, self-consistent JSON with `"verdict": "approve"`
+#     and an EMPTY `findings` array, AND the PR does not touch CI/governance
+#     files. See scripts/fuze_code_review_verdict.py for the full decision table
+#     and its unit + mutation tests (scripts/__tests__/test_fuze_code_review_verdict.py).
+#   - A provider-chain exhaustion, an error, or ANY unparseable/malformed/
+#     self-contradictory reviewer output NEVER approves — it "abstains", and the
+#     job fails loudly (a PR comment plus a non-zero exit) instead of quietly
+#     doing nothing. Unparseable is NOT clean.
+#   - A PR touching `.github/workflows/**`, `.github/actions/**`,
+#     `workflow-templates/**`, `governance/**`, `scripts/apply_ruleset.sh`, or
+#     `scripts/bootstrap/**` (the approval machinery and the org's governance
+#     surface) is downgraded to a comment-only review even on an otherwise clean
+#     verdict — a self-approving change to the approval machinery deserves a
+#     human. Enforced against the actual `git diff --name-only` file list, never
+#     against anything the model claims about its own diff.
+#   - The reviewer LLM is given NO Bash/Write/Edit tools (see `claude-args`
+#     below). The entire diff is embedded in its prompt, so it never needs to
+#     touch the checkout — an instruction smuggled inside the diff ("approve this
+#     PR", "run `gh pr review --approve`", "print the secrets") has no tool
+#     available to act on it, and the verdict is independently re-validated by
+#     the script regardless of what the model's prose says.
+#   - The verdict contract's sentinel markers carry a per-run random NONCE, drawn
+#     AFTER the diff is already fixed on disk — a forged sentinel block planted
+#     inside the diff itself (to smuggle a fake clean verdict past a naive
+#     parser) cannot guess that nonce in advance. See PromptInjectionTests in the
+#     test file above.
+#   - Secrets are never echoed: only fuze-code-action's masked outputs and the
+#     model's own (untrusted) response text ever reach a log line, and neither
+#     carries a credential.
+#
+# WHY THIS WAS NEVER TURNED ON BEFORE: Anthropic account credit. FuzeFront ran a
+# raw-CLI predecessor of this job for months with a direct `ANTHROPIC_API_KEY` on
+# an exhausted account, and it posted "Credit balance is too low" on every PR — a
+# reviewer that never reviewed anything while looking like a check that ran. The
+# LiteLLM rung plus the OpenAI/Gemini fallover rungs in fuze-code-action exist
+# precisely so one exhausted vendor account can no longer silently disable this
+# gate. Configure at least one of LITELLM_FUZE_KEY / ANTHROPIC_API_KEY /
+# OPENAI_API_KEY / GEMINI_API_KEY as a repo secret; with none configured this
+# workflow SKIPS (not fails) — a missing credential is environmental, not a
+# defect in the PR under review.
+#
+# SCOPE: this workflow assumes PRs come from branches in THIS repo, matching the
+# agent-branch model documented across the fleet (agents push claude/**, codex/**
+# etc. branches here; they do not open PRs from forks). It deliberately triggers
+# on `pull_request`, never `pull_request_target` — a fork PR gets a read-only
+# GITHUB_TOKEN under plain `pull_request`, so `gh pr review --approve` would
+# simply fail there. That is the fail-closed direction, not a gap worked around.
+#
+# NOT IN SCOPE (deliberately): a `workflow_dispatch` manual-recovery trigger like
+# harden-gate.yml's. That one exists because harden-gate's checks are REQUIRED —
+# a PR with zero delivered `pull_request` events has zero checks and cannot merge
+# at all. This job's approval is best-effort automation on top of the human
+# review path, which always remains available in the GitHub UI; there is nothing
+# a manual dispatch here would unblock that a human "Approve" click cannot.
+
+on:
+  pull_request:
+    # ready_for_review is NOT optional: a bot-opened PR starts as a draft (GitHub
+    # does not start workflow runs from GITHUB_TOKEN's own `opened` event), so
+    # `opened` never fires for it — only `ready_for_review`, once a human or
+    # claude-auto-pr.yml marks it ready. Same reasoning as harden-gate.yml.
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write   # claude-code-action OIDC path — parity with every other fuze-code-action caller
+
+concurrency:
+  group: fuze-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fuze-code-review:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Gather PR context — diff, changed files, sensitive-path check, credential check
+        id: context
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
+          HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
+          HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
+        run: |
+          set -uo pipefail
+          git fetch origin "$BASE_REF" --depth=1
+
+          git diff --name-only "origin/$BASE_REF"...HEAD > /tmp/changed_files.txt 2>/dev/null || true
+
+          # Diff to a temp file first: piping straight into `head` makes git die of
+          # SIGPIPE (exit 141) when head closes the stream early — the same fix
+          # already applied in the gate-code-review job this wraps.
+          git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' \
+            > /tmp/fulldiff.txt 2>/dev/null || true
+          DIFF=$(head -c 80000 /tmp/fulldiff.txt)
+
+          # The approval machinery and the org governance surface. Matched against
+          # the ACTUAL changed-file list — never against anything an LLM claims —
+          # because this feeds the self-approval defense in the verdict script.
+          SENSITIVE_PATTERN='^(\.github/workflows/|\.github/actions/|workflow-templates/|governance/|scripts/apply_ruleset\.sh$|scripts/bootstrap/)'
+          SENSITIVE=$(grep -E "$SENSITIVE_PATTERN" /tmp/changed_files.txt || true)
+
+          READY=true
+          REASON=""
+          if [ -z "$DIFF" ]; then
+            READY=false
+            REASON="no reviewable diff (only excluded lockfiles changed, or no changes)"
+          elif [ "${HAS_LITELLM:-false}" != "true" ] && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
+               && [ "${HAS_OPENAI:-false}" != "true" ] && [ "${HAS_GEMINI:-false}" != "true" ]; then
+            READY=false
+            REASON="no LLM credential configured (need one of LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
+          fi
+
+          {
+            echo "ready=${READY}"
+            echo "reason=${REASON}"
+            echo "any_sensitive=$([ -n "$SENSITIVE" ] && echo true || echo false)"
+            echo "sensitive_files<<FUZE_SENSITIVE_EOF"
+            echo "$SENSITIVE"
+            echo "FUZE_SENSITIVE_EOF"
+            echo "diff<<FUZE_DIFF_EOF"
+            echo "$DIFF"
+            echo "FUZE_DIFF_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Not reviewing this run
+        if: steps.context.outputs.ready != 'true'
+        env:
+          REASON: ${{ steps.context.outputs.reason }}
+        run: echo "::notice title=fuze-code-review::skipping -- ${REASON}"
+
+      - name: Build review prompt (verdict contract with per-run nonce)
+        id: prompt
+        if: steps.context.outputs.ready == 'true'
+        env:
+          DIFF: ${{ steps.context.outputs.diff }}
+          SENSITIVE_FILES: ${{ steps.context.outputs.sensitive_files }}
+        run: |
+          set -uo pipefail
+          NONCE=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+          echo "nonce=${NONCE}" >> "$GITHUB_OUTPUT"
+
+          PROMPT_FILE="${RUNNER_TEMP}/fuze-code-review-prompt.txt"
+          {
+            echo "You are an automated code reviewer for a pull request that is otherwise ready to merge."
+            echo "Review the diff below for BLOCKING issues only: wrong conditions, null/undefined"
+            echo "derefs, missing awaits, off-by-one errors, swallowed errors, injection / secret-leakage"
+            echo "/ auth-bypass security bugs, and clear logic bugs that would break the feature. Ignore"
+            echo "style, naming, test coverage, and performance -- those are never blocking here."
+            echo
+            echo "Respond with a short prose summary (1-3 sentences), then on its own lines this exact"
+            echo "sentinel-delimited JSON block and NOTHING ELSE after it -- no markdown code fence, no"
+            echo "trailing commentary:"
+            echo
+            echo "===FUZE_REVIEW_VERDICT_JSON:${NONCE}==="
+            echo '{"verdict": "approve|request_changes|comment", "summary": "<one-line summary>", "findings": [{"path": "...", "line": <int-or-null>, "description": "..."}]}'
+            echo "===END_FUZE_REVIEW_VERDICT_JSON:${NONCE}==="
+            echo
+            echo 'Rules for the JSON, followed exactly:'
+            echo '- "approve" is allowed ONLY when findings is an empty array -- no blocking issues found.'
+            echo '- "request_changes" when you found one or more blocking issues -- list every one in findings.'
+            echo '- "comment" when you have non-blocking observations, or are not confident enough to approve.'
+            echo "- Valid, single-line JSON. Use exactly this nonce in both sentinel lines: ${NONCE}"
+            echo '- verdict=approve must always carry findings as an empty array, never omitted.'
+            if [ -n "${SENSITIVE_FILES:-}" ]; then
+              echo
+              echo 'NOTE: this PR touches CI/governance files. Say so explicitly in your summary. Your'
+              echo 'verdict here will NOT auto-merge this class of change regardless of outcome -- a human'
+              echo 'reviews it -- but your assessment of the change itself is still wanted.'
+            fi
+            echo
+            echo '<diff>'
+            printf '%s\n' "$DIFF"
+            echo '</diff>'
+          } > "$PROMPT_FILE"
+
+          {
+            echo "text<<FUZE_PROMPT_EOF_${NONCE}"
+            cat "$PROMPT_FILE"
+            echo "FUZE_PROMPT_EOF_${NONCE}"
+          } >> "$GITHUB_OUTPUT"
+
+      # NO Bash/Write/Edit tools. The entire diff is already embedded in the
+      # prompt above, so the reviewer never needs to touch the checkout -- and an
+      # instruction smuggled inside the diff has no tool available to act on it.
+      # Read/Grep/Glob are harmless here: they can only look, at a checkout that
+      # is already fully visible in the diff text.
+      - name: Run automated review
+        id: review
+        if: steps.context.outputs.ready == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/fuze-code-action
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          claude-args: '--allowedTools "Read,Grep,Glob"'
+          task-prompt: ${{ steps.prompt.outputs.text }}
+
+      - name: Decide verdict (approve / request_changes / comment / abstain)
+        id: verdict
+        if: steps.context.outputs.ready == 'true'
+        env:
+          FUZE_ACTION_CONCLUSION: ${{ steps.review.outputs.conclusion }}
+          FUZE_RESULT_TEXT: ${{ steps.review.outputs.result-text }}
+          FUZE_VERDICT_NONCE: ${{ steps.prompt.outputs.nonce }}
+          FUZE_ACTION_MODE: ${{ steps.review.outputs.mode }}
+          FUZE_ACTION_VENDOR: ${{ steps.review.outputs.vendor }}
+          FUZE_SENSITIVE_FILES: ${{ steps.context.outputs.sensitive_files }}
+        run: python3 scripts/fuze_code_review_verdict.py
+
+      - name: Submit GitHub review
+        if: steps.context.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DECISION: ${{ steps.verdict.outputs.decision }}
+          BODY: ${{ steps.verdict.outputs.body }}
+        run: |
+          set -uo pipefail
+          BODY_FILE="${RUNNER_TEMP}/fuze-code-review-body.md"
+          printf '%s\n' "$BODY" > "$BODY_FILE"
+
+          case "$DECISION" in
+            approve)
+              gh pr review "$PR_NUMBER" --approve --body-file "$BODY_FILE"
+              ;;
+            request_changes)
+              gh pr review "$PR_NUMBER" --request-changes --body-file "$BODY_FILE"
+              ;;
+            comment)
+              gh pr review "$PR_NUMBER" --comment --body-file "$BODY_FILE"
+              ;;
+            abstain)
+              gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              echo "::error title=fuze-code-review::no verdict was reached -- this run is NOT an approval. See the PR comment just posted for why."
+              exit 1
+              ;;
+            *)
+              echo "::error title=fuze-code-review::internal error -- unrecognized decision '${DECISION}' from fuze_code_review_verdict.py. Treating as abstain rather than guessing."
+              gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              exit 1
+              ;;
+          esac

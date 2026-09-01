@@ -1,0 +1,135 @@
+{
+  "$comment": [
+    "federation-contract policy — the ramp + ratchet for scripts/gate_federation_contract.py",
+    "(gate-federation-contract). governance/naming-and-addressing.md, 'What must actually",
+    "agree': registration/manifest.json integration.remoteEntry, the bundler `base`, the",
+    "chart's Ingress `path`, and the web server's location/alias PLUS where the Dockerfile",
+    "puts the build are ONE contract.",
+    "",
+    "WHY A RATCHET AND NOT A FLAT `|| true`.",
+    "naming-and-addressing.md is right that 'a warning tier is a `|| true` spelled politely'",
+    "— gate-authz's trailing `|| true` and gate-identifier's never-set opt-in flag both",
+    "produced a check that could not fail. This file is deliberately NOT that shape:",
+    "",
+    "  * A repo NOT listed under ratchet.knownFailing is ENFORCED AT FULL STRENGTH from day",
+    "    one. There is no state in which a new remote lands with a broken serve contract and",
+    "    the gate stays quiet.",
+    "  * A listed repo is held ONLY for the exact layers named in its entry. A finding in any",
+    "    OTHER layer of a listed repo still FAILS. Fixing one layer and breaking a different",
+    "    one is caught.",
+    "  * The list is a worklist with a named owner and a flip condition, not an exemption.",
+    "    Each entry says what is wrong and what fixes it.",
+    "",
+    "WHY IT SHIPPED RAMPED AT ALL. Measured against every repo's LIVE DEFAULT BRANCH on",
+    "2026-08-23, at full strength: 15 repos CHECKED, 14 FAIL, 1 clean (fuzeservice); 3",
+    "SKIPPED. A gate that reds 14 of 15 repos the day it lands gets disabled within the",
+    "fortnight and is then worth nothing — the same disease naming-and-addressing.md",
+    "diagnoses, arriving by the other road. The ratchet keeps the gate live and enforcing on",
+    "everything new while the named backlog is burned down.",
+    "",
+    "TEACHING THE GATE A NEW DIALECT IS ALSO A WIDENING FIX.",
+    "The Node/Express reader made three carved-out repos checkable at once, and the count",
+    "moved in BOTH directions: fuzex left the worklist entirely (it was correct all along —",
+    "a literal mount prefix, a root from a Dockerfile ENV, and the build copied exactly",
+    "there), while fuzemarket's vague 'no web-server config' became a precise, actionable",
+    "L4a. Never assume repos sharing an architecture share a verdict; each was read.",
+    "",
+    "RESURVEY AFTER EVERY CHECK THAT WIDENS WHAT THE GATE CAN SEE.",
+    "Making vendored-copy ownership POSITIONAL rather than slug-scoped made a whole class of",
+    "L1 defect visible for the first time — a copy whose SLUG had drifted used to read as",
+    "'a different product' and be skipped, so the check turned itself off exactly when it had",
+    "something to say. fuzeagent gained an L1 finding the moment that landed, and because its",
+    "entry listed only L2 the ratchet correctly FAILED it on the newly-visible layer. That is",
+    "the ratchet working, not a bug — but it means a ramp built before a widening fix is stale",
+    "by construction. Re-measure; never carry a count across a change to the gate's reach.",
+    "",
+    "THIS LIST IS BUILT FROM LIVE DEFAULT BRANCHES, AND THAT CORRECTION MATTERS.",
+    "The first version was built from local clones, and ALL EIGHTEEN were stale — several by",
+    "days, several checked out on feature branches. Two entries were wrong in opposite and",
+    "equally damaging directions: fuzeservice was listed as failing when it had already been",
+    "fixed (a free pass on a layer it no longer violates, and the ratchet's stale-entry notice",
+    "is the only thing that would ever have said so), and fuzepicker was recorded CLEAN while",
+    "live master carried a wrong-prefix mount (a repo wrongly marked clean is enforced at full",
+    "strength and reds unexpectedly). Rebuild this list from fresh clones of each repo's live",
+    "default branch — never from whatever is on disk.",
+    "",
+    "TO FLIP: set mode to \"fail\". Do it when ratchet.knownFailing is empty, or empty enough",
+    "that the remainder is a deliberate, written-down decision. Removing a repo's entry is",
+    "how a fix is banked — the gate prints a notice when an entry no longer matches any",
+    "finding, so a stale entry cannot quietly re-open the ramp.",
+    "",
+    "modes:  \"ratchet\" — shipped default, described above",
+    "        \"fail\"    — the ratchet is ignored entirely; every finding fails",
+    "        \"warn\"    — everything warns. An escape hatch for a bisect, NOT a rollout mode.",
+    "A repo with NO policy file gets mode \"fail\": deleting this file must not be a way to",
+    "silence the gate."
+  ],
+
+  "mode": "ratchet",
+
+  "owner": "@izzywdev",
+
+  "flipCondition": "ratchet.knownFailing is empty (or its remainder is a written decision), then set mode to \"fail\".",
+
+  "ratchet": {
+    "surveyedAt": "2026-08-23",
+    "surveyedAgainst": "each repo's LIVE default branch, freshly cloned — not local checkouts",
+    "surveyResult": "15 CHECKED / 13 FAIL / 2 clean (fuzeservice, fuzex); 3 SKIPPED (fuzefront — no registration/manifest.json at the repo root, it is the host; fuzehub and fuzeplan — integration.type: iframe). Re-measured after the Node/Express dialect landed, not carried over: fuzex proved CORRECT once readable and left the worklist; fuzemarket's L4a became a precise finding instead of 'no web-server config'; fuzemerchandize's L4a became UNREADABLE (a dynamic root); fuzebi and fuzeexecutive kept L4b but for the truthful reason once the serving image and its final stage were scoped correctly.",
+
+    "knownFailing": {
+      "fuzepicker": {
+        "layers": ["L4a webserver"],
+        "note": "WRONG-PREFIX MOUNT, and the fifth instance of one root error. #88 (merged 06:41:38Z) set picker-app/nginx.conf to `location ^~ /apps/fuzepicker/ { alias /usr/share/nginx/html/; }` while the manifest, vite `base` and the Ingress all serve /apps/picker/ — so the block never matches and remoteEntry.js falls through to the SPA catch-all. The alias and the flat COPY are CORRECT for the design chosen; only the prefix is wrong. #89 fixes it with a one-word diff. Do NOT change the Dockerfile and do NOT touch the slug: #88 reasoned from backend/src/routes/appRegistry.ts, the CI/local-only fallback gated on APP_REGISTRY_LOCAL_ADAPTER=1 (default off); production is backend/applications/src/app-registry/service.ts, which stores `slug: row.slug` verbatim."
+      },
+      "fuzesocial": {
+        "layers": ["L4b image-layout"],
+        "note": "packages/fuzesocial-ui/Dockerfile copies dist flat to /usr/share/nginx/html while base is /apps/fuzesocial/, and its `location = /remoteEntry.js` matches the bare path, not the based one. Fix either by copying the build to /usr/share/nginx/html/apps/fuzesocial, or by adding an alias mount the way fuzeservice now does."
+      },
+      "fuzeagent": {
+        "layers": ["L1 manifest", "L2 build-base"],
+        "note": "L1: deploy/helm/fuzeagent/files/registration/manifest.json declares slug \"agent\" while the root declares \"fuzeagent\", AND still carries the old cross-origin https://fuzeagent.prod.fuzefront.com/remoteEntry.js. The init container POSTs the VENDORED copy, so this registers a SECOND, WRONG app rather than serving a broken one. Fix the vendored copy, never the root — the slug is immutable. FuzeAgent#177 is in flight for exactly this; remove L1 from this entry when it merges (the gate prints a stale-entry notice once it no longer fires). This finding was INVISIBLE until the ownership rule became positional: the stale slug made the copy read as a different product. L2: services/ui-react/vite.config.ts has base '/' with the default assetsDir, so the entry builds at /assets/remoteEntry.js while the manifest advertises /apps/fuzeagent/remoteEntry.js."
+      },
+      "fuzedeploy": {
+        "layers": ["L4b image-layout"],
+        "note": "frontend/Dockerfile copies /app/build flat to /usr/share/nginx/html; base is /apps/deploy/."
+      },
+      "fuzebi": {
+        "layers": ["L4b image-layout"],
+        "note": "frontend/Dockerfile is a static landing page with no build stage at all (its own header says so), so nothing places the frontend-mfe bundle in the image. Registration is disabled in prod for the same reason."
+      },
+      "fuzecall": {
+        "layers": ["L4b image-layout"],
+        "note": "No Dockerfile COPYs frontend/'s build output into a served image."
+      },
+      "fuzeexecutive": {
+        "layers": ["L4b image-layout"],
+        "note": "No Dockerfile COPYs frontend-mfe's build output into a served image."
+      },
+      "fuzefinance": {
+        "layers": ["L4b image-layout"],
+        "note": "Only backend/ and landing/ Dockerfiles exist; frontend-mfe has no image."
+      },
+      "fuzekeys": {
+        "layers": ["L2 build-base"],
+        "note": "LAYER-4 POSITIVE CONTROL, layer-2 defect. Its `location ^~ /apps/fuzekeys/ { alias ...; }` and its `COPY --from=build-mfe /app/dist-mfe /usr/share/nginx/html/apps/fuzekeys` are exactly right. But frontend/vite.config.ts sets no `assetsDir`, so Vite's default `assets` applies and @originjs/vite-plugin-federation emits the entry at ${assetsDir}/${filename} (dist/index.js:1231, default at :1777) — i.e. /apps/fuzekeys/assets/remoteEntry.js, while the manifest advertises /apps/fuzekeys/remoteEntry.js. Fix: add `assetsDir: ''` to build, per community-templates/mfe-starter/vite.config.ts note 4. Do NOT touch the slug."
+      },
+      "fuzemarket": {
+        "layers": ["L1 manifest", "L4a webserver"],
+        "note": "L1 is the serious one and is exactly what the vendored-copy check exists for: registration/manifest.json was corrected to /apps/market/remoteEntry.js, but deploy/helm/fuzemarket/files/registration/manifest.json — THE COPY THE CLUSTER ACTUALLY SERVES — still carries https://fuzemarket.fuze.internal/dist/remoteEntry.js, an RFC 6761 special-use name that resolves for nobody. The fix landed in the file people read and not in the file that deploys. Its L1 is being fixed separately in FuzeMarket#84 — drop L1 from this entry when that merges. L4a is REAL AND UNFIXED: server/server.js is a hand-rolled Node server whose serveStatic() joins the request path straight onto ROOT (= /app/site, from the Dockerfile's `ENV STATIC_DIR`), i.e. a mount at `/`, while the Dockerfile copies the MF build to /app/site/dist. So /apps/market/remoteEntry.js resolves to /app/site/apps/market and 404s live. Either mount /apps/market/ onto /app/site/dist or move the build to /app/site/apps/market — both valid, pick deliberately; do not change the Dockerfile by reflex."
+      },
+      "fuzemerchandize": {
+        "layers": ["L4a webserver", "L4b image-layout"],
+        "note": "L4a is UNREADABLE, not absent: server/app.mjs:127 does `app.use(express.static(staticDir, {...}))` where staticDir is threaded in at runtime and no Dockerfile ENV or chart value pins it, so the serve path cannot be verified statically. Make it a literal or set it from a Dockerfile `ENV`. L4b: no final-stage COPY places frontend/'s build into the image at all."
+      },
+
+      "fuzecontact": {
+        "layers": ["L3 ingress"],
+        "note": "helm/fuzecontact/templates/ingress.yaml uses `{{ .path }}` with no `default \"...\"`, so the shipped route is not readable from the chart. Fix: give the template a literal default."
+      },
+      "fuzesales": {
+        "layers": ["L3 ingress"],
+        "note": "Same as fuzecontact — a templated ingress path with no literal default."
+      }
+    }
+  }
+}

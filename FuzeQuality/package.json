@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^10.1.1",
+    "@fuzefront/security-client": "npm:@izzywdev/fuzefront-security-client@0.8.0",
     "express": "^5.1.0",
     "fast-glob": "^3.3.3",
     "jose": "^6.1.0",
