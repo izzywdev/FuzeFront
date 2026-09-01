@@ -205,9 +205,21 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci   # root workspace (backend + shared) — applies root overrides
+          # `cd ../sdk && npm ci` USED TO BE HERE AND IT SILENTLY BROKE THE NEXT
+          # STEP. sdk is a workspace now, so it has no lockfile of its own; `npm
+          # ci` run from inside a workspace directory resolves the ROOT lockfile
+          # and reinstalls root node_modules PRUNED TO THAT WORKSPACE. It exits
+          # 0, so `bash -e` is happy, and then the very next step dies with
+          #
+          #   npm error command sh -c tsup
+          #   Process completed with exit code 127
+          #
+          # because tsup — custom-hostname-client's builder — had just been
+          # deleted from node_modules/.bin. Root `npm ci` alone installs every
+          # workspace including sdk and api-client. frontend/ is still
+          # standalone and still needs its own install.
+          npm ci   # root workspace (backend + shared + sdk + api-client) — applies root overrides
           cd frontend && npm ci
-          cd ../sdk && npm ci
 
       # backend/src/custom-domains imports @fuzefront/custom-hostname-client
       # statically and its `types` points at dist/, so the workspace symlink
