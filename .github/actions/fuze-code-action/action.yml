@@ -218,6 +218,18 @@ outputs:
   result-text:
     description: 'Best-effort textual result from whichever rung succeeded.'
     value: ${{ steps.finish.outputs.result-text }}
+  execution-file:
+    description: >-
+      Path to claude-code-action's own `execution_file` (the rung-1 JSON execution log), or
+      empty when rung 1 never produced one — it was skipped for lack of a credential, could
+      not start, or the run fell through to another rung. EXPOSED, not just consumed
+      internally by classify.sh, because a CALLER needs it: this action's `conclusion` says
+      THAT the chain failed, and the result record inside this file is the only place the
+      agent's own error text survives. Without it a caller can only report `is_error:true`,
+      which is precisely the swallowed-reason failure mode a2a-maintain.yml's "Surface the
+      real result" step exists to end. It is a LOG, never a credential: this action never
+      writes secrets to a log or artifact, and callers that upload it rely on that.
+    value: ${{ steps.claude.outputs.execution_file }}
 
 runs:
   using: composite

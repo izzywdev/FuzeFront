@@ -72,22 +72,6 @@ A flagged change has **two** code paths; CI must exercise both. Don't test only 
 - For a kill-switch, test that flipping OFF cleanly disables the path (no half-state, no thrown 500).
 - For permission flags, also assert the **Permit** check still gates the capability with the flag ON (the flag is not the boundary).
 
-## Flag creation checklist — always attach the `developers` segment
-
-Every **new** flag gets the developer-cohort strategy at creation, so "developers see all features" holds going forward instead of drifting per-flag. In the **production** environment of the `default` project:
-
-1. Create the flag with its type + description recording **owner**, **default**, **removal criterion**.
-2. Add a strategy: **Standard / `flexibleRollout` → rollout 100% → Segments: `developers`** (segment id **1**).
-3. Enable the production environment.
-
-Net effect: ON for developers, and still following its deliberate rollout (i.e. OFF) for everyone else.
-
-**Exception — `ops-kill-switch` flags must NOT be bound to the `developers` segment.** A kill-switch is already ON for everyone by default, so a developer strategy adds nothing; worse, during a break-glass incident a developers-segment strategy would keep the killed path **ON for developers** while it is OFF for everyone else — the opposite of what a kill-switch is for. Give kill-switches a plain 100% strategy with **no segment**.
-
-The **global/in-code defaults never change** to accommodate this (release OFF, kill-switch ON). The segment is a targeting layer on top; the in-code default remains the fail-safe used when Unleash is unreachable.
-
-The `developers` segment constrains Unleash's built-in **`userId`** context field, whose values are FuzeFront `users.id` **UUIDs** — not emails. `@fuzefront/feature-flags` maps `userId` → OpenFeature `targetingKey`, which the Unleash provider supplies as the Unleash `userId`. To add a developer, append their `users.id` UUID to the segment's constraint values.
-
 ## Lifecycle + debt cleanup
 A flag is **debt** the moment it's created. At creation, record (in Unleash + the flag's PR): **owner**, **type**, **default**, and **removal criterion**. Then:
 1. **release / experiment flags are temporary** — once rolled out (or the experiment concludes), delete the flag AND the dead branch in code, in one cleanup PR. A long-lived release flag is a smell.
@@ -108,5 +92,4 @@ A flag is **debt** the moment it's created. At creation, record (in Unleash + th
 - [ ] In-code default is the fail-safe value (OFF release / ON kill-switch)
 - [ ] **Both** flag states tested (off-path AND on-path); permission flags still gated by Permit
 - [ ] Flag recorded with **owner + removal criterion**; release/experiment flags scheduled for cleanup
-- [ ] **`developers` segment strategy attached** in the production environment (100% + segment `developers`) — EXCEPT for `ops-kill-switch` flags, which get a plain 100% strategy with no segment
 - [ ] Read via `@fuzefront/feature-flags` (OpenFeature API), not a hand-wired Unleash/OpenFeature call

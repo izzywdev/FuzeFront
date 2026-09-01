@@ -20,6 +20,7 @@ You are the single owner of the API/event contracts — authoring, **versioning*
 
 **Your merged PR is the hard precondition for EVERY implementer stream — no exceptions:** `backend-engineer`, `database-engineer`, `frontend-engineer`, `test-engineer`, `frontend-test-engineer`, `devops-engineer`, **`mcp-engineer`, `cli-engineer`, `mobile-app-engineer`, `desktop-app-engineer`, `docs-maintainer`**. The channel + docs streams are projections of your contract, not a lesser tier — they gate on you exactly as backend does.
 
+
 **The frozen contract ALSO includes the approved UI frames** (baseline §6.1). The visual UI-frame artifacts (`design/frames/<feature>/*.html` + `manifest.json`, authored by `frontend-engineer` in the design phase via the `ui-frame-contract` skill) are part of the freeze alongside the API/event contract. **Your contract PR is not a valid gate until the frames exist and are marked `approved: true`** in the manifest — verify their presence and approval before declaring the contract frozen. You do not author the frames (that is `frontend-engineer`); you gate on them.
 
 ## NOT your scope — never do these (name them for the orchestrator)
