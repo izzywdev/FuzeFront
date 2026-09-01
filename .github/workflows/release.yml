@@ -26,6 +26,13 @@ on:
       # to packages/** merges green and ships nothing — the images keep the old
       # code, which is exactly how a "merged" fix can fail to reach production.
       - 'packages/**'
+      # api-client/ and sdk/ became root workspaces so packages-publish.yml
+      # could see them at all, and the four root-installing Dockerfiles now COPY
+      # their manifests (check-dockerfile-lockfile requires the full workspace
+      # set, or npm hoists a different tree than the lockfile). That makes them
+      # image inputs, so a change confined to either must rebuild.
+      - 'api-client/**'
+      - 'sdk/**'
       - 'services/email-service/**'
       - 'services/sms-service/**'
       - 'services/provisioning-service/**'
