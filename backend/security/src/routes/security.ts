@@ -145,6 +145,53 @@ function sendError(res: Response, err: unknown): void {
     // Retry-After marks it explicitly retryable; both errors are transient
     // from the caller's point of view (an unavailable provider recovers, and
     // an undriveable flow stage is retryable via the SSO button).
+    //
+    // THE RESPONSE DELIBERATELY DOES NOT SAY WHICH OF THE TWO IT IS, so the
+    // SERVER LOG MUST. `PROVIDER_UNAVAILABLE` covers two conditions that call
+    // for opposite responses from whoever is paged:
+    //
+    //   AuthentikUnavailableError  the identity provider is unreachable or too
+    //                              slow -> a platform incident, everyone is
+    //                              affected, go look at the provider.
+    //   UnsupportedFlowStageError  THIS account's login flow presented a stage
+    //                              a server cannot drive (MFA, consent, a
+    //                              prompt) -> nothing is down, browser/SSO
+    //                              sign-in still works, and only callers using
+    //                              the programmatic password grant are
+    //                              affected. `err.message` carries the
+    //                              offending stage component.
+    //
+    // Until 2026-08-26 this branch logged NOTHING and both rendered as one
+    // opaque 503. That cost real time: a monitoring account whose flow gained
+    // an undriveable stage was escalated as "production authentication is
+    // down" while browser sign-in was working the whole time. The stage name
+    // was in the thrown error and was being discarded one line from here.
+    //
+    // The BODY stays generic on purpose and is not what changed. The provider's
+    // raw message can name internal hosts and flow slugs, and this endpoint is
+    // unauthenticated -- `security-routes.test.ts` pins that the message is
+    // never echoed. Diagnosis belongs in the log, which is already trusted with
+    // it; the sibling legacy route (routes/auth.ts) has logged exactly this
+    // split since it was written, so this brings the two into line rather than
+    // inventing a scheme.
+    //
+    // Newlines are stripped before logging: `err.message` is provider-derived
+    // and must not be able to forge extra log lines.
+    const detail = String((err as Error)?.message ?? '').replace(/[\r\n]+/g, ' ')
+    if (name === 'UnsupportedFlowStageError') {
+      console.warn(
+        '[security] createSession 503 PROVIDER_UNAVAILABLE: undriveable Authentik flow stage ' +
+          '(NOT an outage -- browser/SSO sign-in is unaffected; this account needs it). ' +
+          JSON.stringify({ stage: detail })
+      )
+    } else {
+      console.error(
+        '[security] createSession 503 PROVIDER_UNAVAILABLE: Authentik unreachable or too slow ' +
+          '(platform incident -- all password sign-ins affected). ' +
+          JSON.stringify({ detail })
+      )
+    }
+
     res.setHeader('Retry-After', '5')
     res.status(503).json({ error: 'Authentication unavailable', code: 'PROVIDER_UNAVAILABLE' })
     return

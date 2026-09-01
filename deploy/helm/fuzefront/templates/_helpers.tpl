@@ -168,3 +168,32 @@ login needs is an outage.
 - /static/dist/
 - /static/authentik/
 {{- end -}}
+
+{{/*
+Render .Values.federatedProxy.upstreams as the JSON object the backend's
+federated asset proxy expects: {"<slug>":"<base url>"}.
+
+Returns "{}" when the feature is disabled or the list is empty, so the env var
+is always present and always parses — a backend that finds no upstreams answers
+404 for every remote, which is the intended default.
+
+Entries missing `slug` or `url` FAIL THE RENDER rather than being skipped. A
+silently dropped remote is indistinguishable from a working one until someone
+opens the portal and finds a blank panel; `helm template` is the last place that
+mistake is cheap to catch.
+*/}}
+{{- define "fuzefront.federatedProxyUpstreams" -}}
+{{- $out := dict -}}
+{{- if .Values.federatedProxy.enabled -}}
+{{- range $i, $u := .Values.federatedProxy.upstreams -}}
+{{- if not $u.slug -}}
+{{- fail (printf "federatedProxy.upstreams[%d] has no `slug` — the browser requests /apps/<slug>/..., so this entry could never be matched." $i) -}}
+{{- end -}}
+{{- if not $u.url -}}
+{{- fail (printf "federatedProxy.upstreams[%d] (slug %q) has no `url` — there is nothing to proxy to." $i $u.slug) -}}
+{{- end -}}
+{{- $_ := set $out $u.slug $u.url -}}
+{{- end -}}
+{{- end -}}
+{{- $out | toJson -}}
+{{- end -}}

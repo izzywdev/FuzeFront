@@ -467,6 +467,46 @@ a2aDeploy:
 # Each entry: { slug, serviceName, port, enabled }.
 federatedApps: []
 
+# Same-origin federated asset proxy — the mechanism that actually works
+# cross-namespace, and the one to use for a remote that is NOT in this release's
+# namespace.
+#
+# When enabled, templates/ingress.yaml routes /apps/* to the thin backend, and
+# backend/src/routes/federatedProxy.ts forwards /apps/<slug>/* to the upstream
+# named here. Because that is an ordinary HTTP call rather than an Ingress
+# backend reference, it is not bound by the same-namespace rule that has kept
+# `federatedApps` above empty since it was written, and it needs no
+# ExternalName Service (which Traefik refuses by default:
+# allowExternalNameServices=false).
+#
+# `url` is the remote's in-cluster base — the origin the remote's own assets are
+# served from, NOT including the /apps/<slug> prefix, which the proxy strips.
+# Cross-namespace Service DNS is the normal form:
+#
+#   federatedProxy:
+#     enabled: true
+#     upstreams:
+#       - slug: market
+#         url: http://fuzemarket.fuzemarket.svc.cluster.local:80
+#
+# The list is an ALLOWLIST and is deliberately the only source of upstreams.
+# It is not derived from the app registry: any product can edit its own
+# registered manifest, so deriving the target from registry data would let a
+# registered app aim this proxy at an arbitrary in-cluster address — an SSRF on
+# an unauthenticated endpoint. See the trust model in
+# backend/src/routes/federatedProxy.ts.
+#
+# `slug` must be the slug the remote is REGISTERED under, because that is what
+# the browser requests. It is read here, never written — CLAUDE.md's
+# immutable-slug rule is untouched by this.
+#
+# Empty and disabled by default: with no upstreams every /apps/<slug>/* answers
+# 404, which is a truthful "not configured" rather than the 200-that-is-HTML the
+# SPA fallback produces today.
+federatedProxy:
+  enabled: false
+  upstreams: []
+
 clockApp:
   enabled: false
   image:
