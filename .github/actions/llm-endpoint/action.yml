@@ -281,11 +281,32 @@ runs:
               openai)    model="$FALLBACK_OPENAI_MODEL";    keyref='os.environ/OPENAI_API_KEY' ;;
               gemini)    model="$FALLBACK_GEMINI_MODEL";    keyref='os.environ/GEMINI_API_KEY' ;;
             esac
+            # Remember the head vendor's route for the "*" catch-all below.
+            [ -z "${head_model:-}" ] && head_model="$model" && head_keyref="$keyref"
             echo "  - model_name: ${v}"
             echo "    litellm_params:"
             echo "      model: ${model}"
             echo "      api_key: \"${keyref}\""
           done
+          # CATCH-ALL. The vendor-named entries above are only reachable by a
+          # caller that knows to ask for "anthropic". claude-code-action does
+          # NOT: it sends its own model name (e.g. claude-opus-4-8), which
+          # matches nothing here, so LiteLLM answers
+          #     400 {'error': 'completion: Invalid model name passed in
+          #                    model=claude-opus-4-8'}
+          # and the rung writes that string as its assistant text, reports NO
+          # conclusion, and still exits 0. Downstream that is indistinguishable
+          # from "the model declined to work", so fuze-code-review abstained and
+          # went red on every PR that took the runner-local path -- while the
+          # job's own message blamed the workflow-self-modification guard, which
+          # was not involved (observed on FuzeInfra#823, a one-file Helm change).
+          #
+          # "*" routes any unrecognized model name to the HEAD vendor, so the
+          # chain works without every caller having to pass --model.
+          echo "  - model_name: \"*\""
+          echo "    litellm_params:"
+          echo "      model: ${head_model}"
+          echo "      api_key: \"${head_keyref}\""
           echo ""
           echo "router_settings:"
           echo "  num_retries: 0"
@@ -301,6 +322,10 @@ runs:
             rest_yaml="${rest// /\", \"}"
             echo "  fallbacks:"
             echo "    - ${head}: [\"${rest_yaml}\"]"
+            # The catch-all must roll over too, otherwise a caller that does not
+            # name a vendor (claude-code-action) gets a single-vendor chain and
+            # an exhausted head key fails the run instead of advancing.
+            echo "    - \"*\": [\"${rest_yaml}\"]"
           fi
           echo ""
           echo "general_settings:"
