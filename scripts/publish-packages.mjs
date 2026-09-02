@@ -32,6 +32,7 @@
 //   node scripts/publish-packages.mjs                    # publish every publishable package
 //   node scripts/publish-packages.mjs --only <pkgName>   # publish (or dry-run) just one package
 //   node scripts/publish-packages.mjs --list-json        # print `["@fuzefront/x", ...]` and exit
+//   node scripts/publish-packages.mjs --list-dirs        # print one publishable workspace dir per line
 //
 // Requires NODE_AUTH_TOKEN for a real publish.
 //
@@ -53,12 +54,37 @@ import { existsSync } from 'node:fs'
 const root = process.cwd()
 const REGISTRY = 'https://npm.pkg.github.com'
 const OWNER_SCOPE = '@izzywdev'
-const CANONICAL_SCOPE = '@fuzefront/'
+
+/**
+ * Canonical source-tree scope -> the prefix its packages take under the owner
+ * scope at publish time.
+ *
+ * EVERY canonical scope in the tree needs an entry here. GitHub Packages
+ * requires the published scope to equal the account that owns the repository
+ * (`izzywdev`), so a name that is neither owner-scoped nor aliased by this map
+ * is not publishable at all — `npm publish` answers
+ * `403 permission_denied: The requested installation does not exist`.
+ *
+ * This map used to be a single `CANONICAL_SCOPE = '@fuzefront/'` constant, and
+ * everything else fell through `aliasFor` unchanged. `@fuzeone/*` — a second,
+ * deliberate canonical scope (EPIC-17 records the decision: the intended future
+ * home is the `fuzeone` org) — therefore went out under its own name and 403'd
+ * on every single run. 24 of 25 legs succeeded and the run's conclusion was
+ * still `failure`, which destroys the only property this workflow is for: that
+ * a green `packages-publish` is evidence the packages actually shipped. See
+ * `assertAliasable` for why a future third scope now fails loudly instead.
+ */
+const SCOPE_ALIASES = {
+  '@fuzefront/': 'fuzefront-',
+  '@fuzeone/': 'fuzeone-',
+}
+
 const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies']
 const LOCAL_PROTOCOL = /^(file:|link:|workspace:|portal:)/
 
 const dryRun = process.argv.includes('--dry-run')
 const listJson = process.argv.includes('--list-json')
+const listDirs = process.argv.includes('--list-dirs')
 const onlyIdx = process.argv.indexOf('--only')
 const only = onlyIdx === -1 ? null : process.argv[onlyIdx + 1]
 if (onlyIdx !== -1 && !only) {
@@ -70,13 +96,61 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'))
 }
 
-/** `@fuzefront/chat-ui` -> `@izzywdev/fuzefront-chat-ui`. Already-owner-scoped names pass through. */
+/**
+ * `@fuzefront/chat-ui` -> `@izzywdev/fuzefront-chat-ui`.
+ * `@fuzeone/selection-lists-ui` -> `@izzywdev/fuzeone-selection-lists-ui`.
+ *
+ * Already-owner-scoped names pass through, and so does everything else —
+ * `aliasFor` is also applied to every DEPENDENCY name, where `react` and
+ * `@types/node` must survive untouched. That pass-through is why it cannot be
+ * the thing that rejects an unknown scope; `assertAliasable` does that, against
+ * publish TARGETS only.
+ */
 export function aliasFor(name) {
   if (name.startsWith(`${OWNER_SCOPE}/`)) return name
-  if (name.startsWith(CANONICAL_SCOPE)) {
-    return `${OWNER_SCOPE}/fuzefront-${name.slice(CANONICAL_SCOPE.length)}`
+  for (const [scope, prefix] of Object.entries(SCOPE_ALIASES)) {
+    if (name.startsWith(scope)) {
+      return `${OWNER_SCOPE}/${prefix}${name.slice(scope.length)}`
+    }
   }
   return name
+}
+
+/** True when `name` publishes to an owner-scoped name the registry will accept. */
+export function isPublishableName(name) {
+  return aliasFor(name).startsWith(`${OWNER_SCOPE}/`)
+}
+
+/**
+ * Fail the whole run if any publish target's name does not resolve into the
+ * owner scope — i.e. would 403 at `npm publish`.
+ *
+ * This is the generalisation of the `@fuzeone` bug rather than a patch for it.
+ * A scope with no alias rule is not a package-specific problem; it is a class
+ * of problem that reappears the next time someone introduces a scope, and its
+ * symptom (one red matrix leg among two dozen green ones) reads as flakiness.
+ *
+ * It deliberately throws EARLY — `publishable()` runs before `--list-json`
+ * resolves the matrix — so the failure is one loud error naming the offending
+ * package and the one-line fix (add the scope to SCOPE_ALIASES), raised before
+ * a single package has been uploaded. Nothing ships half-way: an aborted
+ * matrix resolution publishes nothing, and publishing is idempotent, so the
+ * re-run after the fix is a clean full release.
+ */
+export function assertAliasable(targets) {
+  const bad = targets.filter(({ pkg }) => !isPublishableName(pkg.name))
+  if (bad.length) {
+    const known = Object.keys(SCOPE_ALIASES).join(', ')
+    throw new Error(
+      `Not publishable — these workspace names resolve to no ${OWNER_SCOPE} name and would ` +
+        `fail with "403 permission_denied" at npm publish:\n` +
+        bad.map(({ dir, pkg }) => `  - ${pkg.name} (${dir})`).join('\n') +
+        `\nGitHub Packages requires the published scope to equal the repository owner ` +
+        `(${OWNER_SCOPE}). Add the scope to SCOPE_ALIASES in scripts/publish-packages.mjs ` +
+        `(currently: ${known}), or mark the workspace "private": true if it is not meant to publish.`
+    )
+  }
+  return targets
 }
 
 function workspaces() {
@@ -85,10 +159,12 @@ function workspaces() {
 
 /** Publishable = a workspace that is not marked private. One source of truth. */
 function publishable() {
-  return workspaces()
-    .filter((dir) => existsSync(`${root}/${dir}/package.json`))
-    .map((dir) => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
-    .filter(({ pkg }) => !pkg.private && pkg.name)
+  return assertAliasable(
+    workspaces()
+      .filter((dir) => existsSync(`${root}/${dir}/package.json`))
+      .map((dir) => ({ dir, pkg: readJson(`${root}/${dir}/package.json`) }))
+      .filter(({ pkg }) => !pkg.private && pkg.name)
+  )
 }
 
 /**
@@ -174,6 +250,19 @@ if (listJson) {
   // Deliberately independent of --dry-run/--only: the matrix needs the full
   // list to build its legs, not a filtered view of one.
   console.log(JSON.stringify(allTargets.map(({ pkg }) => pkg.name)))
+  return
+}
+
+if (listDirs) {
+  // One workspace DIRECTORY per publishable package, newline-separated, for
+  // auto-merge.yml's "did this merge touch anything publishable?" test.
+  //
+  // That test used to be a hand-maintained regex of publishable directories —
+  // a second source of truth for a question this file already answers, and it
+  // had already drifted twice (api-client/, sdk/ and config-client/ were all
+  // missing, so their releases were invisible). It now builds its pattern from
+  // this output, so adding a workspace can no longer silently fail to publish.
+  for (const { dir } of allTargets) console.log(dir)
   return
 }
 
