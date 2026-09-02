@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:687aa20600c85f6a233c3289ff230de51fa6e6a08a3dbfe558bc07a9c764c24d
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:6d63051eaf4c60a12997915510944b17d6fe44616b18e602950f0eb5868bf556
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -277,7 +277,7 @@ jobs:
               printf 'The responder errored before finishing your request, so **no changes were made and no branch was created**.\n\n'
               printf -- '- **Reason:** %s\n' "$REASON"
               printf -- '- **Run log:** %s\n\n' "$RUN_URL"
-              printf 'This notice is automated and will **not** retry on its own. Re-trigger by posting a new comment mentioning `@fuze` once the cause is fixed.\n'
+              printf 'This notice is automated and will **not** retry on its own. Re-trigger by posting a new comment mentioning @fuze once the cause is fixed.\n'
             } > "${RUNNER_TEMP}/fuze-fail.md"
             gh issue comment "$ISSUE" --repo "$REPO" --body-file "${RUNNER_TEMP}/fuze-fail.md" \
               && echo "posted failure notice to #$ISSUE" || echo "::warning::could not comment on #$ISSUE"
