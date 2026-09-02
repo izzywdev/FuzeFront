@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:6d63051eaf4c60a12997915510944b17d6fe44616b18e602950f0eb5868bf556
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:e9a5b6234d2b2341e1bb38ec4a68f4c4ceccac7338046f0393457dace68bca61
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -52,10 +52,25 @@ name: Fuze
 # Anthropic-or-LiteLLM leg has no working credential, this workflow fails — it does not
 # quietly answer from somewhere else.
 #
-# RELATIONSHIP TO `claude.yml`. `@claude` stays as an explicit, human-typed escape hatch to
-# the same routed path. `@fuze` is the family's DEFAULT handle and the one every doc, agent
-# and skill now names (governance/routing.md). Both files gate independently, so a comment
-# containing both mentions runs both handlers — write one or the other, not both.
+# THE TRIGGER TOKEN, AND WHY THIS IS NOT A CUTOVER. Gate 1 below matches the literal string
+# `@fuze`. Before this template existed, NO repo but FuzeInfra matched that token — every
+# other repo's only handler was `claude.yml`, gated on `@claude` — so a comment saying only
+# `@fuze` triggered nothing at all, in 21 of 22 repos, silently. That is the gap this file
+# closes, and it is why the documentation change and the workflow change must land together:
+# documenting `@fuze` in a repo that has not yet received THIS FILE points people at a token
+# no workflow listens for, which is strictly worse than the status quo.
+#
+# `@claude` KEEPS WORKING, and deliberately not by being matched here. Every repo already
+# carries `claude.yml`, which matches `@claude` and routes through the SAME
+# fuze-code-action/llm-endpoint path this file uses — so existing issue threads and muscle
+# memory continue to work untouched, and no open issue is stranded. Adding `@claude` to Gate 1
+# would NOT be a kindness: both handlers would then answer the same `@claude` mention and two
+# agents would act on one thread. The two gates are deliberately DISJOINT. A comment that
+# mentions both tokens does run both handlers — write one or the other.
+#
+# `@fuze` is the family's default handle and the one every doc, agent and skill now names
+# (governance/routing.md, CLAUDE.baseline.md §9). `@claude`/`@codex`/`@gemini` remain
+# human-typed escape hatches for when you deliberately want a named provider.
 #
 # SECURITY — trusted authors only. Gate 2 restricts triggering to OWNER/MEMBER/COLLABORATOR.
 # This handler holds a repo-write token and an agent that will push branches with it; an
@@ -164,6 +179,29 @@ jobs:
         uses: ./.github/actions/fuze-code-action
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          # WHERE THE GATEWAY IS, as a repo variable rather than a hardcoded literal.
+          #
+          # The default is the in-cluster service DNS name, which resolves only from a pod in
+          # the cluster. On the GitHub-hosted runner this job uses, the probe simply fails and
+          # llm-endpoint falls back to the direct vendor key — degraded but working, and the
+          # reason this template does not hardcode the base URL the way FuzeInfra's did.
+          #
+          # THE GATEWAY *IS* PUBLICLY REACHABLE, and pointing at it is the intended fix rather
+          # than a hypothetical: helm/litellm/values-contabo.yaml enables an ingress on
+          # `litellm.prod.fuzefront.com`. What blocks it today is Cloudflare Access, verified
+          # rather than assumed — `GET https://litellm.prod.fuzefront.com/v1/models` returns
+          # 302 to fuzefront.cloudflareaccess.com with `"service_token_status": false` and
+          # `"auth_status": "NONE"`. A hosted runner therefore gets a login page, not the API.
+          #
+          # Making the public host work needs TWO things this template cannot supply:
+          #   1. a Cloudflare Access SERVICE TOKEN — none exists (no `cloudflare_access_service_token`
+          #      declared in FuzeInfra's IaC). Minting it is a human step;
+          #   2. `CF-Access-Client-Id` / `CF-Access-Client-Secret` support in
+          #      ./.github/actions/llm-endpoint, which has no such inputs today.
+          # Until both land, setting this variable to the public host makes things WORSE, not
+          # better: the probe would get a 302 instead of a connection error and still fall
+          # back, with a configuration that looks deliberate. Leave it unset until then.
+          litellm-base-url: ${{ vars.FUZE_LITELLM_BASE_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000' }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Inert on this path — see MENTION MODE in the header. Passed for shape-parity

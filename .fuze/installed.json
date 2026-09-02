@@ -565,8 +565,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/fuze.yml",
-      "sourceSha256": "083f92f56b71eaba17639093f285b2662a36a29025c8b4af35d0105950a61cb9",
-      "renderedSha256": "083f92f56b71eaba17639093f285b2662a36a29025c8b4af35d0105950a61cb9",
+      "sourceSha256": "94880c4f76a38aaee7c356d8aeed23e5dea01c563a8ef3db878a428212b71022",
+      "renderedSha256": "94880c4f76a38aaee7c356d8aeed23e5dea01c563a8ef3db878a428212b71022",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1",
