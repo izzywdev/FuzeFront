@@ -385,12 +385,23 @@ mcp:
 a2a:
   enabled: false
   image:
-    repository: ghcr.io/izzywdev/fuzeagent-a2a
-    # Immutable; never `latest` in prod (values-prod.yaml pins by digest,
-    # encoded as `tag@digest` — see that file's comment). Left empty here
-    # (local/dev default; server disabled) so `helm template` with the base
-    # values alone never renders an unpinned image reference.
-    tag: ""
+    # ghcr.io/izzywdev/fuzeagent-a2a is a stale/abandoned image (last pushed
+    # 2026-08-24; anonymously pullable but no longer built). The image
+    # FuzeAgent's own release.yml actively builds and publishes on every
+    # release, and what its own a2a-shared/values-prod.yaml points at, is
+    # ghcr.io/izzywdev/fuze-a2a (agent-templates/a2a/Dockerfile). Corrected
+    # here 2026-09-02 — gate-a2a's own I1 default + the runtime standard doc
+    # still name the old `fuzeagent-a2a` repository (already flagged,
+    # FuzeAgent PR #257); a resulting I1 finding against this file is that
+    # known staleness, not a new fork.
+    repository: ghcr.io/izzywdev/fuze-a2a
+    # `latest` is the permitted dev-shape tag (forbidden only in
+    # values-prod.yaml, which pins an exact CI-built tag) — matches
+    # FuzeAgent's own a2a-shared/values.yaml base shape. A blank tag here
+    # previously made gate-a2a report the image as "not fully declared" even
+    # though the server is disabled; `latest` keeps the declaration complete
+    # and verifiable while still describing the disabled dev default.
+    tag: "latest"
     pullPolicy: IfNotPresent
   service:
     # MUST be ClusterIP — ingress is Cloudflare-tunnel-only, and `inClusterUrl`
@@ -402,11 +413,17 @@ a2a:
   # Unset would default to the SHARED server's card URL and this pod would be
   # unreachable through its own card despite passing every probe.
   inClusterUrl: ""
-  auth:
-    oidcIssuerUrl: ""
-    oidcDiscoveryUrl: ""
-    audience: a2a
-    callerClaim: repo
+  # `auth` is left UNSET (not an empty-valued object) in this disabled base
+  # shape on purpose: the frozen interface requires `oidcIssuerUrl` whenever
+  # `auth` is present at all, so a present-but-empty block is a gate-a2a C3
+  # fatal finding on a file that was never meant to carry a real issuer.
+  # Mirrors FuzeAgent's own a2a-shared/values.yaml base shape. values-prod.yaml
+  # supplies the real `auth:` block for the enabled deployment.
+  # auth:
+  #   oidcIssuerUrl: ""
+  #   oidcDiscoveryUrl: ""
+  #   audience: a2a
+  #   callerClaim: repo
   cardSigning:
     keySecretRef: { name: "", key: "" }
     keyId: a2a-v1

@@ -1,0 +1,41 @@
+{
+  "$comment": "Ratchet policy for gate-a2a (scripts/gate_a2a.py). See governance/a2a-runtime-standard.md §4 (FuzeSDLC). IF THIS FILE IS ABSENT THE GATE RUNS IN `fail` MODE — absence is not permission. Only the named worklist below is softened, and only for the rules that name it; a repo not on a worklist gets `fail` even while the mode reads `warn`. Seeded (not managed) from FuzeSDLC governance/a2a-policy.json — governance-sync seeds this once per repo and does not overwrite it on later syncs, because the ratchet worklist and the sealedSecretDirs customization below are this repo's own record of debt and layout, not fleet-wide config.",
+  "version": 1,
+  "skills": {
+    "adoption": "warn",
+    "$comment": "Rule 4.1 (a NAMED skill that does not resolve to .claude/skills/<name>/SKILL.md) ALWAYS fails and is not governed by this key — a new violation can never be ratcheted past. This key governs rule 4.2 (a2a.enabled repo whose serving roles declare ZERO bundle skills) and 4.3 (missing root CLAUDE.md). FuzeFront's app-shell-platform role currently declares zero bundle skills: none of this repo's .claude/skills/* bundles document the role's actual product knowledge (Module-Federation host shell, app registration/discovery, health/heartbeat, shell surface) — they are generic SDLC-process skills, not app-shell-platform domain knowledge, so none was claimed here rather than force-fitting an unrelated bundle name. CLAUDE.md itself is present at the repo root (rule 4.3 satisfied). Flip to `fail` once ratchet.knownUnadopted is empty.",
+    "ratchet": {
+      "owner": "@izzywdev",
+      "$comment": "Repos with a2a.enabled=true and zero bundle skills declared on their serving roles, measured on their LIVE default branch 2026-08-23 (FuzeSDLC governance/a2a-policy.json, unmodified list). Claiming FuzeFront's entry means giving app-shell-platform a real skills[] list pointing at a real .claude/skills/<name>/SKILL.md bundle that documents its actual domain behaviour — product/domain authorship, owned by frontend-engineer/backend-engineer, not a2a-maintainer. Removing the last entry is the trigger to set adoption=fail.",
+      "knownUnadopted": [
+        "izzywdev/FuzeFront",
+        "izzywdev/fuzeagent",
+        "izzywdev/fuzebi",
+        "izzywdev/fuzehub",
+        "izzywdev/fuzeplan",
+        "izzywdev/fuzesales",
+        "izzywdev/fuzeservice",
+        "izzywdev/fuzex"
+      ]
+    }
+  },
+  "image": {
+    "repository": "ghcr.io/izzywdev/fuzeagent-a2a",
+    "$comment": "Unmodified from the FuzeSDLC canonical on purpose — this is the fleet-wide default and gate_a2a.py's I1 check compares every repo's declared a2a.image.repository against it. It is KNOWN STALE (ghcr.io/izzywdev/fuzeagent-a2a was abandoned 2026-08-24; the image FuzeAgent's release.yml actually builds and publishes today is ghcr.io/izzywdev/fuze-a2a — already flagged, FuzeAgent PR #257). FuzeFront's own values.yaml/values-prod.yaml correctly declare fuze-a2a; the resulting I1 finding here is that known, already-reported gate/doc staleness, not a real fork — do not silently point this repo back at the stale name just to make I1 pass."
+  },
+  "creds": {
+    "sealedSecretDirs": ["deploy/contabo/sealed", "deploy/sealed-secrets", "helm/sealed-secrets", "deploy/helm/sealed-secrets"],
+    "$comment": "Added `deploy/contabo/sealed` ahead of the FuzeSDLC-canonical default list: that is FuzeFront's ACTUAL SealedSecrets directory (deploy/contabo/sealed/a2a-fuzefront-secrets.yaml carries a2a-card-signing/jws.key; deploy/contabo/sealed/fuzefront-secrets.yaml carries LITELLM_MASTER_KEY) — the canonical default (deploy/sealed-secrets) does not exist as a secrets tree in this repo (it holds unrelated Permit.io policy files) and gate-a2a reported both real secretRefs as unwired until this was added.",
+    "externallyProvisioned": {
+      "$comment": "secretRef {name} values provisioned OUTSIDE this repo's git tree. Each entry MUST name who provisions it — an unexplained entry is treated as missing. The gate NEVER reads a secret VALUE from anywhere; these names exist only so a legitimately-external secret is not reported as unwired."
+    }
+  },
+  "memory": {
+    "mode": "client-only",
+    "$comment": "The A2A pod is a Chroma CLIENT of the family's existing Chroma service, using a per-tenant collection. It never runs a Chroma server: chromadb carries PYSEC-2026-311 (unfixable pre-auth code injection in the SERVER's collections handler via trust_remote_code), and FuzeAgent is unaffected only because it never serves that endpoint. See governance/a2a-runtime-standard.md §7 (FuzeSDLC)."
+  },
+  "apiSurface": {
+    "mode": "mcp-only",
+    "$comment": "The A2A pod reaches FuzeFront's API through FuzeFront's own MCP gateway (packages/mcp-gateway, per .fuze/manifest.json mcp block) pointed at the product's FULL OpenAPI document. A raw-REST fallback is REFUSED, not deferred — see governance/a2a-runtime-standard.md §8 (FuzeSDLC)."
+  }
+}
