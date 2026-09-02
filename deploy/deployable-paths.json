@@ -1,0 +1,132 @@
+{
+  "$comment": [
+    "Deployable-paths manifest: the SOURCE OF TRUTH for release.yml's `on.push.paths`.",
+    "Rendered by scripts/gen-deployable-paths.mjs; enforced by scripts/check-deployable-paths.mjs",
+    "(gate-deployable-paths.yml). Edit THIS file, then run `npm run deployable-paths:write`.",
+    "Editing the block in .github/workflows/release.yml by hand makes the gate go red.",
+    "",
+    "WHAT BELONGS HERE.",
+    "Every path whose content is an INPUT to an image release.yml builds, plus the chart",
+    "values the tag-bump writes, plus release.yml itself. The test for an entry is:",
+    "\"if only this path changed, must an image be rebuilt and its tag bumped?\" If yes, it",
+    "belongs here. A source dir that feeds a `docker/build-push-action` step but is absent",
+    "from this list is the failure this file exists to stop.",
+    "",
+    "WHY A MANIFEST AND NOT DERIVATION.",
+    "auto-merge.yml's equivalent mirror was collapsed outright: it asks its question at",
+    "RUNTIME, so it can shell out to `node scripts/publish-packages.mjs --list-dirs`.",
+    "`on.push.paths` cannot be collapsed that way — GitHub reads the trigger block before",
+    "any step runs, so it MUST be static YAML committed in the workflow. The manifest is",
+    "therefore the source and the workflow block is a rendered artifact, kept honest by a",
+    "gate rather than by discipline.",
+    "",
+    "WHY THE GATE IS THE LOAD-BEARING PART.",
+    "This mirror's failure mode is silent and inverted: a MISSING path means the release",
+    "workflow does not trigger at all, so the change merges green and simply never ships.",
+    "There is no red run to notice — there is no run. That is how chat-service,",
+    "notification-service, payment-service, selection-list-service and config-service each",
+    "acquired a build step whose source dir could not trigger it. Without the drift gate a",
+    "manifest is just a FOURTH copy of the same truth; the gate is what makes it the only",
+    "copy that can be edited.",
+    "",
+    "FIELDS.",
+    "  path - the glob, rendered verbatim into the workflow as `- '<path>'`.",
+    "  why  - optional comment lines rendered ABOVE the entry, one `#` line each.",
+    "         Use it to record what a non-obvious entry protects; the rendered comments",
+    "         are part of the byte-for-byte comparison, so they cannot rot silently."
+  ],
+  "workflow": ".github/workflows/release.yml",
+  "header": [
+    "GENERATED BLOCK — do not hand-edit. Source of truth: deploy/deployable-paths.json.",
+    "Change it there, run `npm run deployable-paths:write`, commit both.",
+    "gate-deployable-paths.yml fails if these two disagree, because the failure mode of a",
+    "missing path is silent: the release workflow simply does not run, so the change merges",
+    "green and never ships. There is no red run to notice — there is no run."
+  ],
+  "paths": [
+    {
+      "path": "backend/**"
+    },
+    {
+      "path": "shared/**"
+    },
+    {
+      "path": "frontend/**"
+    },
+    {
+      "path": "packages/**",
+      "why": [
+        "Workspace packages are COMPILED INTO the images (the backend/applications",
+        "images build @fuzefront/feature-flags; the frontend bundles the UI",
+        "packages from source via vite aliases). Without this, a change confined",
+        "to packages/** merges green and ships nothing — the images keep the old",
+        "code, which is exactly how a \"merged\" fix can fail to reach production."
+      ]
+    },
+    {
+      "path": "api-client/**",
+      "why": [
+        "api-client/ and sdk/ became root workspaces so packages-publish.yml",
+        "could see them at all, and the four root-installing Dockerfiles now COPY",
+        "their manifests (check-dockerfile-lockfile requires the full workspace",
+        "set, or npm hoists a different tree than the lockfile). That makes them",
+        "image inputs, so a change confined to either must rebuild."
+      ]
+    },
+    {
+      "path": "sdk/**"
+    },
+    {
+      "path": "services/email-service/**"
+    },
+    {
+      "path": "services/sms-service/**"
+    },
+    {
+      "path": "services/provisioning-service/**"
+    },
+    {
+      "path": "services/billing-service/**"
+    },
+    {
+      "path": "services/chat-service/**",
+      "why": [
+        "Added in the same change that discovered the gap: #432 added the",
+        "\"Build & push chat-service\" step below, but never added chat-service's",
+        "own path here, so a change confined to services/chat-service/** (not",
+        "touching packages/**, deploy/helm/fuzefront/**, or this file) would",
+        "merge green and NEVER trigger a release — the exact same silent-ship",
+        "failure mode the packages/** comment above describes, just for a",
+        "different path. This was live for every commit between #432 and now."
+      ]
+    },
+    {
+      "path": "services/notification-service/**",
+      "why": [
+        "notification-service/** and payment-service/** were both missing here,",
+        "the same silent-ship gap the chat-service comment above describes: a",
+        "change confined to one of those service dirs would merge green and never",
+        "trigger a release, so the image would keep the old code (or, for the",
+        "never-built payment-service, stay absent entirely)."
+      ]
+    },
+    {
+      "path": "services/payment-service/**"
+    },
+    {
+      "path": "services/selection-list-service/**"
+    },
+    {
+      "path": "services/config-service/**"
+    },
+    {
+      "path": "clock-app/**"
+    },
+    {
+      "path": "deploy/helm/fuzefront/**"
+    },
+    {
+      "path": ".github/workflows/release.yml"
+    }
+  ]
+}
