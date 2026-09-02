@@ -58,6 +58,17 @@ jobs:
       actions: write # required to call workflow_dispatch
 
     steps:
+      # Needed by the publish dispatch below, which asks
+      # scripts/publish-packages.mjs what is publishable instead of carrying a
+      # hand-maintained copy of the answer. Checked out at the MERGE commit, so
+      # a workspace added by this very PR is already visible. `npm ci` is
+      # deliberately not run: `--list-dirs` only reads package.json files and
+      # uses node builtins, so the preinstalled node is enough.
+      - name: Checkout the merge commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
       - name: Dispatch release if the merge touched deployable paths
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,6 +80,19 @@ jobs:
           # Mirror of release.yml's `push.paths`. Keep the two in sync — a path
           # here that release.yml ignores just wastes a build; a path release.yml
           # watches but this omits means that change silently never deploys.
+          #
+          # STILL A MIRROR, DELIBERATELY — unlike the publish pattern below,
+          # which is now derived. This one answers a different question ("what is
+          # an IMAGE INPUT"), and its source of truth is release.yml's
+          # `on.push.paths`, which GitHub requires to be static YAML: it cannot
+          # be computed, so collapsing this means parsing that workflow's YAML at
+          # runtime — and `on:` is a documented YAML-1.1 parsing hazard (it reads
+          # as the boolean `true` in some parsers). Getting that subtly wrong
+          # fails toward "no deployable paths", i.e. silently not shipping to
+          # prod, which is worse than the drift it would fix. Doing it properly
+          # means a checked-in paths manifest that release.yml's `paths:` is
+          # GENERATED from, plus a CI gate asserting the generated block matches
+          # — a separate change with its own verification.
           #
           # It HAD drifted, in exactly that direction. release.yml watches
           # services/chat-service, notification-service, payment-service,
@@ -120,17 +144,35 @@ jobs:
           # registry anyway, so a spurious dispatch is wasteful rather than
           # harmful.
           #
-          # THIS LIST IS A SECOND SOURCE OF TRUTH FOR "WHAT IS PUBLISHABLE" AND IT
-          # HAD ALREADY DRIFTED. publish-packages.mjs derives the real answer from
-          # the root `workspaces` array; this regex is a hand-maintained mirror of
-          # it, and it was missing `api-client/`, `sdk/` and `config-client/` —
-          # all publishable workspaces. The consequence is the silent one this
-          # whole job exists to prevent: an auto-merge pushes under GITHUB_TOKEN,
-          # the recursion guard suppresses packages-publish.yml's push trigger,
-          # this step decides there is "nothing to publish", and the PR merges
-          # green having shipped nothing. Anything added to `workspaces` must be
-          # added here too, or its releases are invisible.
-          PATTERN='^(packages/|shared/|design-system/|api-client/|sdk/|billing-client/|config-client/|portal-client/|custom-hostname-client/|backend/core/|package\.json|package-lock\.json|\.github/workflows/packages-publish\.yml|scripts/publish-packages\.mjs)'
+          # THIS USED TO BE A HAND-MAINTAINED REGEX — A SECOND SOURCE OF TRUTH FOR
+          # "WHAT IS PUBLISHABLE" — AND IT HAD ALREADY DRIFTED TWICE. It was
+          # missing `api-client/`, `sdk/` and `config-client/`, all publishable
+          # workspaces, and the consequence is the silent failure this whole job
+          # exists to prevent: an auto-merge pushes under GITHUB_TOKEN, the
+          # recursion guard suppresses packages-publish.yml's push trigger, this
+          # step decides there is "nothing to publish", and the PR merges green
+          # having shipped nothing.
+          #
+          # It is now DERIVED from the real source. `--list-dirs` prints the
+          # workspace directory of every publishable package, computed by the
+          # same `publishable()` the publish step itself uses. Adding a workspace
+          # can no longer fail to reach this list, because there is no longer a
+          # list to update.
+          #
+          # The literals that remain are not workspaces: they are the publish
+          # machinery itself, a change to which can change what publishes.
+          dirs=$(node scripts/publish-packages.mjs --list-dirs)
+          if [ -z "$dirs" ]; then
+            # Empty means the script broke or the workspaces array emptied —
+            # either way, silently concluding "nothing to publish" is the exact
+            # failure being designed out. Fail loudly instead.
+            echo "::error::publish-packages.mjs --list-dirs produced no publishable workspaces"
+            exit 1
+          fi
+          # Escape regex metacharacters, anchor each dir as a path prefix.
+          alt=$(printf '%s\n' "$dirs" | sed -e 's/[][\.^$*+?(){}|]/\\&/g' -e 's|$|/|' | paste -sd'|' -)
+          PATTERN="^(${alt}|package\.json|package-lock\.json|\.github/workflows/packages-publish\.yml|scripts/publish-packages\.mjs)"
+          echo "Publishable-path pattern: $PATTERN"
 
           if ! gh pr diff "$PR" --name-only | grep -qE "$PATTERN"; then
             echo "No publishable paths in PR #$PR — nothing to publish."
