@@ -1765,6 +1765,18 @@
       "sourcePath": "",
       "sourceSha256": "45672c1f91889a84d3a34c499bb2d75c43f3c09b3e05236d752a5c3b7b7737c4",
       "renderedSha256": "45672c1f91889a84d3a34c499bb2d75c43f3c09b3e05236d752a5c3b7b7737c4"
+    },
+    "scripts/gate_platform_auth.py": {
+      "capability": "platform-auth",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_platform_auth.py",
+      "sourceSha256": "b2b643073efee75483274ad110c328960d83ecc8105ade3012d7a176500a1b63"
+    },
+    "scripts/__tests__/test_gate_platform_auth.py": {
+      "capability": "platform-auth",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_platform_auth.py",
+      "sourceSha256": "f2dcdf6a0ccbceb0ef8cfecf436ba2c98e6494a50c345e07fab821c3d55720fc"
     }
   },
   "workflows": {
