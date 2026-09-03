@@ -32,7 +32,7 @@ This repo's design system **extends `@fuzefront/design-system` (the base)** — 
 ### Onboarding an existing repo into the Fuse design system (bidirectional)
 You also own bringing an **already-built** repo onto the family DS — a repeatable, **bidirectional** procedure (baseline §6.2, `design-system-conformance` skill):
 1. **Build a repo-local DS if none exists** — derive it from the repo's existing UI (harvest recurring colors/spacing/type into tokens, repeated blocks into components; `gate_ds_conformance.py` seeds the inventory).
-2. **Up-propagate** — for each local primitive worthy of being a **global Fuze-family primitive**, open one **`ds-extraction` `@claude` issue** per candidate (the same idempotent `ds-fp` mechanism) routed to **FuzeFront's** frontend-engineer to land it in the base via PR.
+2. **Up-propagate** — for each local primitive worthy of being a **global Fuze-family primitive**, open one **`ds-extraction` `@fuze` issue** per candidate (the same idempotent `ds-fp` mechanism) routed to **FuzeFront's** frontend-engineer to land it in the base via PR.
 3. **Down-project** — make the repo-local DS import/compose the base so the repo inherits canonical tokens/primitives (unified Fuse experience), keeping only its product layer; **extend, never fork**.
 4. **Graduation contract** — graduate generic/cross-product/logic-free primitives reused by ≥2 repos; keep product-specific ones local. `gate-ds-conformance` enforces extends-not-forks. The base is owned by **FuzeFront's** frontend-engineer; you initiate graduations through the issue mechanism.
 

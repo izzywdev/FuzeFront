@@ -605,7 +605,7 @@
     },
     "dataTier": {
       "type": "array",
-      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@claude please provision' request (governance/shared-cluster-deploy.md \u00a75). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses \u2014 a role granted on the wrong db name is the classic silent-empty-data bug.",
+      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@fuze please provision' request (governance/shared-cluster-deploy.md \u00a75). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses \u2014 a role granted on the wrong db name is the classic silent-empty-data bug.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -677,7 +677,7 @@
     },
     "dataTier": {
       "type": "array",
-      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@claude please provision' request (governance/shared-cluster-deploy.md §5). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses — a role granted on the wrong db name is the classic silent-empty-data bug.",
+      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@fuze please provision' request (governance/shared-cluster-deploy.md §5). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses — a role granted on the wrong db name is the classic silent-empty-data bug.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -702,6 +702,26 @@
           "host": { "type": "string", "description": "FQDN, e.g. api.openai.com." },
           "port": { "type": "integer", "default": 443, "description": "Destination port (default 443)." },
           "reason": { "type": "string", "description": "Why the product needs it (e.g. 'AI keyword generation')." }
+        }
+      }
+    },
+    "clusterOps": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Declares that this repo's `@fuze` entrypoint is CLUSTER-CAPABLE — that it may hold prod cluster credentials and run kubectl/helm/terraform. This is the gate scripts/bootstrap/caps/workflows.py reads before installing `workflow-templates/fuze-cluster.yml`; with the block absent, or `enabled` anything other than literal true, that template is not planned for the repo and neither `secrets.KUBE_CONFIG`, nor terraform, nor the in-cluster runner label appears in any file the installer writes. EXACTLY ONE REPO MAY DECLARE THIS: izzywdev/FuzeInfra, which owns the cluster. CLAUDE.baseline.md 1 forbids a consuming repo from operating the cluster at all, so a product repo carrying this block is declaring a policy violation, not enabling a feature — treat it as a governance finding. THE FLAG IS HALF THE GATE. It decides whether the privileged workflow FILE exists; `vars.FUZE_CLUSTER_ENTRYPOINT == 'true'`, set by a human in the repo's own settings, decides whether it RUNS. Neither the installer nor governance-sync can set a repo variable, so no automated propagation path can switch on prod cluster access by itself.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Must be literal true to install the cluster-capable entrypoint. The installer tests `is True` rather than truthiness on purpose: an empty object or a string are exactly the shapes a half-finished manifest edit produces, and neither should be enough to hand a repo a prod kubeconfig."
+        },
+        "runner": {
+          "type": "string",
+          "description": "The in-cluster runner pool `fuze-cluster.yml` targets, recorded for audit. NOT read by the renderer — that template is in lib/render.RUNNER_EXEMPT so its own `runs-on:` stands (see that entry's reason). Declared here so a mismatch between what the repo believes and what the template says is greppable rather than only discoverable when a job queues forever."
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-text rationale, as every other operationally-loaded block here allows."
         }
       }
     },

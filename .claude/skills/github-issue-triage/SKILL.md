@@ -24,7 +24,7 @@ rework.
 |---------|------|------------|
 | **Close — fixed** | The reported problem was demonstrably resolved | Close with evidence (PR/commit link + symptom match) |
 | **Close — stale** | Issue is moot: branch gone, transient CI, superseded | Close with one-line explanation |
-| **Delegate** | Root fix lives in another repo | Open cross-repo issue with `@claude` + full STATE block |
+| **Delegate** | Root fix lives in another repo | Open cross-repo issue with `@fuze` + full STATE block |
 | **Implement** | Fix belongs in this repo and is actionable | Create PR following GitOps rules |
 
 Always pick the tightest-fitting outcome. "Implement" is a last resort — exhaust the other three first.
@@ -105,7 +105,7 @@ transient. No code change needed.
 
 <link>
 
-@claude please <do the thing>
+@fuze please <do the thing>
 
 ---
 STATE:
