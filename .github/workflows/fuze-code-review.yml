@@ -1,4 +1,3 @@
-# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:6fb89a68ff4af2ac9816339fea8d037167fe9737515370ef961f1b89a1250e41
 name: Fuze Code Review
 
 # THE CANONICAL LLM CODE REVIEW + APPROVAL GATE.
@@ -89,7 +88,7 @@ on:
     # ready_for_review is NOT optional: a bot-opened PR starts as a draft (GitHub
     # does not start workflow runs from GITHUB_TOKEN's own `opened` event), so
     # `opened` never fires for it — only `ready_for_review`, once a human or
-    # claude-auto-pr.yml marks it ready. Same reasoning as harden-gate.yml.
+    # fuze-auto-pr.yml marks it ready. Same reasoning as harden-gate.yml.
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
