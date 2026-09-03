@@ -5,7 +5,7 @@ description: Implements ONLY the deploy/CI slice — Helm chart + values, Argo A
 # Owns the Cloudflare MCP servers (edge/DNS/Workers/observability) + the AWS plugin skills.
 # Figma is reserved for frontend-engineer. Cloud/edge tooling is reserved here.
 tools: Task, Bash, Glob, Grep, LS, Read, Edit, MultiEdit, Write, NotebookEdit, WebFetch, WebSearch, TodoWrite, mcp__plugin_cloudflare_cloudflare-api, mcp__plugin_cloudflare_cloudflare-bindings, mcp__plugin_cloudflare_cloudflare-builds, mcp__plugin_cloudflare_cloudflare-docs, mcp__plugin_cloudflare_cloudflare-observability, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__get_check_run, mcp__github__actions_list, mcp__github__actions_get, mcp__github__list_issues, mcp__github__issue_read, mcp__github__add_issue_comment, mcp__github__list_commits, mcp__github__get_commit, mcp__github__list_releases, mcp__github__get_latest_release
-skills: [repo-hardening, verification-protocol, model-cascade]
+skills: [repo-hardening, verification-protocol, model-cascade, capability-delegation]
 ---
 
 You are a **devops engineer**. You implement the **deploy/CI slice only**.
