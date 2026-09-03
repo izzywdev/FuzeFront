@@ -1,0 +1,88 @@
+# fuze:managed template=fuze-auto-pr.yml baseline=v1 digest=sha256:81f87278191d3589313218d5737228e94cd6901906299747a81c6853680f5e45
+name: Auto-PR from agent branches
+
+# RENAMED from `claude-auto-pr.yml` (and `name:` from "Auto-PR from claude branches") for
+# naming consistency with the `@fuze` entrypoint (`fuze.yml`). NAMING ONLY — this workflow
+# makes NO LLM call of any kind: it is `gh pr create` and nothing else, so there is nothing
+# here to route through the LiteLLM gateway and nothing was added. Anyone reading the rename
+# as "this now goes through fuze-code-action" is reading it wrong.
+#
+# Closes the issue->PR autonomy gap: `anthropics/claude-code-action` (in `claude.yml` and
+# `fuze.yml`) pushes a branch and only posts a "Create PR" link — it does not open the PR
+# itself. This workflow opens a DRAFT PR from any pushed agent branch when one doesn't
+# already exist (draft = a human still reviews before merge).
+#
+# BOTH PREFIXES, deliberately. `claude/**` is what claude-code-action actually names its
+# branches today and MUST stay — dropping it would silently stop every agent PR in the
+# fleet. `fuze/**` is added because after the rename the filename promises fuze branches,
+# and a repo whose `@fuze` handler pushes that prefix (FuzeInfra's cluster-capable variant
+# does) would otherwise be covered by the name and not by the trigger. Strictly additive:
+# nothing that worked before stops working.
+on:
+  push:
+    branches:
+      - 'claude/**'
+      - 'fuze/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-draft-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Agent-PR identity (governance/hardening-convention.md §8): open the PR under a
+      # collaborator-backed identity so its head actually gets CI. A PR opened by the default
+      # GITHUB_TOKEN is frozen as action_required (public) or gets no runs at all (private).
+      # Mint a fuze-agent App installation token; fall back App -> bot PAT -> GITHUB_TOKEN,
+      # the last emitting a ::warning:: so a repo lacking the App secrets degrades, not breaks.
+      - name: Mint fuze-agent App token
+        id: app_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+      - name: Resolve agent-PR identity
+        id: identity
+        env:
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
+          GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"
+          elif [ -n "${BOT_PAT:-}" ]; then
+            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"
+          else
+            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"
+            echo "::warning title=agent-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT on this repo — opening this PR as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set the fuze-agent App secrets to fix."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "Agent-PR identity: $who"
+
+      - name: Open draft PR if none exists
+        env:
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
+          BRANCH: ${{ github.ref_name }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open for $BRANCH — nothing to do."
+            exit 0
+          fi
+          # Only open a PR if the branch actually diverges from base.
+          if git rev-list --count "origin/${BASE}..origin/${BRANCH}" | grep -qvE '^0$'; then
+            gh pr create --draft --base "$BASE" --head "$BRANCH" --fill \
+              || echo "gh pr create failed (no diff or transient) — skipping."
+          else
+            echo "No commits on $BRANCH ahead of $BASE — no PR opened."
+          fi

@@ -485,17 +485,6 @@
         "baselineRef": "v1"
       }
     },
-    ".github/workflows/claude-auto-pr.yml": {
-      "capability": "workflows",
-      "mode": "stamped",
-      "sourcePath": "workflow-templates/claude-auto-pr.yml",
-      "sourceSha256": "7d0fd50f72145abe4225120998b68bb23a5a79dee8a7d93cbe7f94730ea5e354",
-      "renderedSha256": "7d0fd50f72145abe4225120998b68bb23a5a79dee8a7d93cbe7f94730ea5e354",
-      "renderVars": {
-        "defaultBranch": "master",
-        "baselineRef": "v1"
-      }
-    },
     ".github/workflows/claude-ci-autofix.yml": {
       "capability": "workflows",
       "mode": "stamped",
@@ -536,6 +525,18 @@
       "sourceSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71",
       "renderedSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71"
     },
+    ".github/workflows/fuze-auto-pr.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze-auto-pr.yml",
+      "sourceSha256": "a066aa0c1fb0843482ad74445ba2783b90aa41bfdb6cc908c11cc2d2d81c4889",
+      "renderedSha256": "a066aa0c1fb0843482ad74445ba2783b90aa41bfdb6cc908c11cc2d2d81c4889",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
+      }
+    },
     ".github/workflows/fuze-ci-autofix.yml": {
       "capability": "workflows",
       "mode": "stamped",
@@ -554,6 +555,18 @@
       "sourcePath": "workflow-templates/fuze-code-review.yml",
       "sourceSha256": "d8c46216212e373a19ace47c387cf382d57df352987ff1d85cf8b16ec4ce43da",
       "renderedSha256": "d8c46216212e373a19ace47c387cf382d57df352987ff1d85cf8b16ec4ce43da",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
+      }
+    },
+    ".github/workflows/fuze.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze.yml",
+      "sourceSha256": "94880c4f76a38aaee7c356d8aeed23e5dea01c563a8ef3db878a428212b71022",
+      "renderedSha256": "94880c4f76a38aaee7c356d8aeed23e5dea01c563a8ef3db878a428212b71022",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1",
