@@ -30,7 +30,13 @@ try {
 
 ## Install locally (pre-publish)
 
-The `@fuzeone` scope is not published yet (tracked on FFRNT-266). Until then:
+The `@fuzeone` scope IS published now — but only for packages that are root
+workspaces. `@fuzeone/selection-lists-ui` is live as
+`@izzywdev/fuzeone-selection-lists-ui@0.1.0`; **this** package is not, because
+`selection-list-client` is missing from the root `package.json` `workspaces`
+array, which is the one list `scripts/publish-packages.mjs` reads. No workspace
+entry means no matrix leg, so `packages-publish` never attempts it and stays
+green regardless. Until it is added:
 
 ```bash
 cd selection-list-client && npm install && npm run build && npm pack

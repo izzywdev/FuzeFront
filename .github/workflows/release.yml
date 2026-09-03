@@ -17,6 +17,11 @@ on:
   push:
     branches: [master]
     paths:
+      # GENERATED BLOCK — do not hand-edit. Source of truth: deploy/deployable-paths.json.
+      # Change it there, run `npm run deployable-paths:write`, commit both.
+      # gate-deployable-paths.yml fails if these two disagree, because the failure mode of a
+      # missing path is silent: the release workflow simply does not run, so the change merges
+      # green and never ships. There is no red run to notice — there is no run.
       - 'backend/**'
       - 'shared/**'
       - 'frontend/**'
