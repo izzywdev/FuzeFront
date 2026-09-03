@@ -22,7 +22,7 @@ Before writing a styled block, **search the DS for an existing primitive** and c
 
 ## Detecting EXTRACTION candidates
 When the same ad-hoc styled block recurs across **>1 feature file** (≥ threshold, default 3), it should become a DS primitive. The gate fingerprints normalized styled blocks (whitespace/numbers stripped, so `p-4` and `p-6` collapse) and, on push to the default branch with `--emit-issues`, opens **one idempotent GitHub issue per candidate**:
-- label `ds-extraction`, stable marker `ds-fp:<hash>` (de-dupes across open+closed issues), mentions `@claude`
+- label `ds-extraction`, stable marker `ds-fp:<hash>` (de-dupes across open+closed issues), mentions `@fuze`
 - includes the recurring locations and a **proposed component spec**: props/variants/states/tokens + acceptance criteria.
 
 **Responding to such an issue:** `frontend-engineer` (the **sole** editor of `design-system/`) adds the primitive to the DS package, **tokens-only**, with a11y + RTL + a unit test, then refactors every listed call site to consume it. Extraction is design work — the gate only signals it.
@@ -34,7 +34,7 @@ When the same ad-hoc styled block recurs across **>1 feature file** (≥ thresho
 When bringing an **already-built** repo onto the family DS, the model is **bidirectional** — the repo-local DS *extends* the base (down) **and** worthy local primitives *graduate* to the base (up). Owned by the repo's `frontend-engineer` (sole DS owner). Baseline §6.2.
 
 1. **Build a repo-local DS if none exists.** Derive it from the repo's existing UI: harvest recurring colors/spacing/type into tokens and repeated blocks into components — run `gate_ds_conformance.py` (it surfaces both raw-value hotspots and the duplicated-block extraction candidates) to seed the inventory. This package becomes the repo's single styling source of truth.
-2. **Up-propagate (graduate to the base).** For each local primitive that should be a **global Fuze-family primitive**, open a promotion candidate using the **same `@claude` extraction-issue mechanism** (`ds-extraction` label + `ds-fp` fingerprint, idempotent) — one issue per candidate — routed to **FuzeFront's** frontend-engineer to land it in the base `@fuzefront/design-system` via PR. (Drive this manually or by pointing the gate's detector at the repo; the issue body's proposed-spec format is identical.)
+2. **Up-propagate (graduate to the base).** For each local primitive that should be a **global Fuze-family primitive**, open a promotion candidate using the **same `@fuze` extraction-issue mechanism** (`ds-extraction` label + `ds-fp` fingerprint, idempotent) — one issue per candidate — routed to **FuzeFront's** frontend-engineer to land it in the base `@fuzefront/design-system` via PR. (Drive this manually or by pointing the gate's detector at the repo; the issue body's proposed-spec format is identical.)
 3. **Down-project (the base into the repo).** Make the repo-local DS **import and re-export / compose** the base tokens+primitives so the repo inherits the canonical look (unified Fuse experience) and keeps only its product-specific layer on top. Never copy or redefine a base primitive locally.
 4. **Graduation contract — what graduates vs stays local:**
    - **Graduates** when generic/cross-product, free of product-specific business logic, and plausibly reused by ≥2 family repos (Button, Field, Modal, color/spacing/type tokens).

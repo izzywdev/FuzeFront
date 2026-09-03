@@ -32,4 +32,4 @@ Names the service, its scope, type (`http-service` | `worker` | `library`), lang
 - The service appears in the CI build matrix and prod values.
 
 ## Ownership (see governance/routing.md)
-Orchestrated; **contract gate = contract-designer**, **packaging + deploy wiring = devops-engineer**, **data tier = database-engineer**, **channels = mcp-engineer/cli-engineer**. Cluster-level datastore/infra is delegated to FuzeInfra via `@claude`. The orchestrator judges the service "stood up" only when every step above is verified.
+Orchestrated; **contract gate = contract-designer**, **packaging + deploy wiring = devops-engineer**, **data tier = database-engineer**, **channels = mcp-engineer/cli-engineer**. Cluster-level datastore/infra is delegated to FuzeInfra via `@fuze`. The orchestrator judges the service "stood up" only when every step above is verified.
