@@ -29,6 +29,30 @@ observability:
     enabled: true
     path: /metrics
 
+# Fleet policy: only core infra + frontend services stay on the durable/
+# control-plane node pool (vmi3383846/vmi3396106); backend/worker pods for an
+# individual product move to the autoscaled `elastic` pool instead. Every
+# service below reaches its state (Postgres/Redis/Mongo/Kafka) over the
+# network in the `fuzeinfra` namespace, not via a local PVC, so this is a
+# plain placement change — mirrors FuzeInfra's
+# runners/arc/runner-scale-set-values.yaml pattern. `frontend` below is
+# deliberately NOT given this block; it is the one service this policy keeps
+# on durable.
+.elasticPlacement: &elasticPlacement
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fuzeinfra.io/pool
+                operator: In
+                values:
+                  - elastic
+  tolerations:
+    - key: fuzeinfra.io/elastic
+      operator: Exists
+      effect: PreferNoSchedule
+
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
@@ -41,6 +65,7 @@ backend:
     appName: "fuzefront-host"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  <<: *elasticPlacement
 
 frontend:
   image:
@@ -193,6 +218,7 @@ securityService:
   socialReturnOrigins:
     - "https://marketplace.mendysrobotics.com"
     - "https://live.mendysrobotics.com"
+  <<: *elasticPlacement
 
 applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
@@ -212,6 +238,7 @@ applicationsService:
     appName: "applications-service"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  <<: *elasticPlacement
 
 # ---- MCP SSE gateway: ON ---------------------------------------------------
 # FuzeFront's own MCP pod, running the shared @fuzefront/mcp-gateway image this
@@ -359,6 +386,7 @@ emailService:
       host: "smtp.zeptomail.com"
       port: 587
       secure: false   # STARTTLS on 587; true for implicit TLS on 465
+  <<: *elasticPlacement
 
 # sms-service — Twilio Verify dispatcher behind phone 2FA (SMS/voice, PR #274).
 # Its image is built by release.yml, but its repository was likewise absent from
@@ -405,6 +433,7 @@ provisioningService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
     tag: 2e712754ebe9
+  <<: *elasticPlacement
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -447,16 +476,12 @@ billingService:
     productKeys: "mendys-datasets"
     currencies: "usd,eur"
     maxTotalCents: "5000000"
-  # Steer onto node-2 (keep LLM/chat/billing load off the DB-heavy node-1).
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
+  # Was: a soft `preferred` affinity to hostname `fuzefront-node-2`, which does
+  # not exist as a node label anywhere in the live Contabo cluster (see the
+  # note by chatService below) — so this never actually steered anything; the
+  # pod landed on durable purely because that's where the scheduler found
+  # room. Replaced with the real, working fleet placement: elastic pool.
+  <<: *elasticPlacement
 
 # payment-service — vendor-neutral payment GATEWAY (SCAFFOLD; not yet the live
 # money path). Synced by the UMBRELLA `fuzefront` Argo Application (gated by
@@ -478,19 +503,20 @@ paymentService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
     tag: 2e712754ebe9
-  # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
+  # Same dead node-2 hostname affinity as billingService above (fuzefront-node-2
+  # is not a real node label) — replaced with the real elastic-pool placement.
+  # Currently disabled (enabled: false) so this has zero live effect yet, but
+  # go-live should not silently reinherit the class of bug this PR fixes.
+  <<: *elasticPlacement
 
 permit:
   enabled: true
+  # fuzefront-permit-pdp confirmed live on durable (vmi3383846) with no
+  # placement config. Nested under `pdp` because templates/permit-pdp.yaml
+  # passes .Values.permit.pdp (not .Values.permit) to the fuzefront.scheduling
+  # helper — see permit.pdp.nodeSelector/affinity/tolerations in values.yaml.
+  pdp:
+    <<: *elasticPlacement
 
 # Private GHCR pull secret (sealed; see deploy/contabo/README.md).
 imagePullSecrets:
@@ -759,15 +785,13 @@ chatService:
     appName: "chat-service"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
-  affinity:
-    nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: ["fuzefront-node-2"]
+  # Same dead node-2 hostname affinity as billingService (fuzefront-node-2 is
+  # not a real node label in this cluster) — replaced with the real
+  # elastic-pool placement. Not seen in the live durable-node pod list at
+  # audit time (this session verified vmi3383846/vmi3396106 directly), but
+  # fixing the same defect class wherever it appears rather than leaving it
+  # for the next service that gets enabled.
+  <<: *elasticPlacement
 
 notificationService:
   # ENABLED. Its two hard secretKeyRefs — DB_PASSWORD and JWT_SECRET — are already
@@ -863,6 +887,7 @@ configService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
     tag: 2e712754ebe9
+  <<: *elasticPlacement
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
 # Application: deploy/helm/unleash/values-prod.yaml +
