@@ -123,6 +123,14 @@
       "path": "clock-app/**"
     },
     {
+      "path": "fuzefront-website/**",
+      "why": [
+        "fuzefront-website/frontend and fuzefront-website/backend each have their own",
+        "self-contained Dockerfile and are built into separate GHCR images. Without this",
+        "path a change confined to the public website would merge green and never ship."
+      ]
+    },
+    {
       "path": "deploy/helm/fuzefront/**"
     },
     {

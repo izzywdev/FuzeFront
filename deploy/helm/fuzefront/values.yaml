@@ -522,6 +522,40 @@ clockApp:
   affinity: {}
   tolerations: []
 
+# fuzefront-website — the public marketing/product site at fuzefront.com.
+# Frontend: nginx serving a React SPA (port 3000).
+# Backend:  Node.js API (port 3001).
+# Each has its own self-contained Dockerfile under fuzefront-website/{frontend,backend}.
+# Ingress routes fuzefront.com/ → frontend, fuzefront.com/api/* → backend.
+websiteFrontend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-frontend
+    tag: ""
+  port: 3000
+  replicas: 1
+  host: ""
+  resources:
+    requests: { cpu: 10m,  memory: 32Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+websiteBackend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-backend
+    tag: ""
+  port: 3001
+  replicas: 1
+  resources:
+    requests: { cpu: 10m,  memory: 32Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 # Permit.io authorization. Disabled by default (minimal cut). When enabled, the
 # chart runs a standalone PDP and (Task 3) a schema-sync Job. PERMIT_API_KEY is
 # read from the existing chart Secret. Local enablement needs a REAL key — the
