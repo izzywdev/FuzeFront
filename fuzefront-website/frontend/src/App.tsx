@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AnalyticsProvider } from './contexts/AnalyticsContext'
 import { NotificationProvider } from './contexts/NotificationContext'
@@ -17,26 +17,9 @@ import { IndustriesPage } from './pages/IndustriesPage'
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage'
 import { TermsPage } from './pages/TermsPage'
 import { FuzeHubPage } from './pages/FuzeHubPage'
-import { useAnalytics, useAutoPageTracking } from './hooks/useApi'
 import './App.css'
 
-const IS_DEVELOPMENT = import.meta.env.DEV || import.meta.env.NODE_ENV === 'development'
-
-function AppContent() {
-  const { trackEvent } = useAnalytics()
-  useAutoPageTracking()
-
-  useEffect(() => {
-    const hasTrackedAppLoad = sessionStorage.getItem('app_loaded')
-    if (!hasTrackedAppLoad) {
-      trackEvent({
-        event: 'app_loaded',
-        properties: { timestamp: new Date().toISOString() }
-      }).catch((err: unknown) => IS_DEVELOPMENT && console.error(err))
-      sessionStorage.setItem('app_loaded', 'true')
-    }
-  }, [trackEvent])
-
+function AppLayout() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
@@ -54,7 +37,6 @@ function AppContent() {
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/fuzehub" element={<FuzeHubPage />} />
-          {/* Fallback to home */}
           <Route path="*" element={<HomePage />} />
         </Routes>
       </main>
@@ -69,7 +51,7 @@ function App() {
     <BrowserRouter>
       <AnalyticsProvider>
         <NotificationProvider>
-          <AppContent />
+          <AppLayout />
         </NotificationProvider>
       </AnalyticsProvider>
     </BrowserRouter>
