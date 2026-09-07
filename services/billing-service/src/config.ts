@@ -31,6 +31,18 @@ export interface Config {
   internalToken?: string;
   databaseUrl?: string;
   payments: PaymentsConfig;
+  /**
+   * Real Stripe price IDs for the four subscription tiers. When set, these
+   * override the placeholder values in PLAN_ID_TO_PRICE_ID at runtime.
+   * Configure via STRIPE_PRICE_STARTER / STRIPE_PRICE_PROFESSIONAL /
+   * STRIPE_PRICE_SCALE environment variables. Enterprise has no Stripe price
+   * (contact-sales flow) — use the 'contact_sales' sentinel value in code.
+   */
+  stripePrices: {
+    starter?: string;
+    professional?: string;
+    scale?: string;
+  };
 }
 
 function parseList(raw: string | undefined, fallback: string[]): string[] {
@@ -74,6 +86,11 @@ export function loadConfig(): Config {
         Number.isFinite(maxTotalCents) && maxTotalCents > 0
           ? maxTotalCents
           : DEFAULT_PAYMENT_MAX_TOTAL_CENTS,
+    },
+    stripePrices: {
+      starter: process.env.STRIPE_PRICE_STARTER,
+      professional: process.env.STRIPE_PRICE_PROFESSIONAL,
+      scale: process.env.STRIPE_PRICE_SCALE,
     },
   };
 }
