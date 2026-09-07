@@ -246,6 +246,77 @@ paths:
         '502':
           $ref: '#/components/responses/ProviderError'
 
+  /subscriptions/{subscriptionId}/revoke-cancellation:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    post:
+      operationId: revokeCancellation
+      tags: [subscriptions]
+      summary: Revoke a scheduled cancellation
+      description: >-
+        Revokes a pending `cancel_at_period_end` on the subscription, re-activating
+        it as a normal subscription. Mirrors `POST /subscriptions/:id/revoke-cancellation`.
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The subscription mirror with cancellation revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
+  /subscriptions/{subscriptionId}/billing-anchor:
+    parameters:
+      - $ref: '#/components/parameters/SubscriptionId'
+    patch:
+      operationId: changeBillingAnchor
+      tags: [subscriptions]
+      summary: Change the billing cycle anchor day
+      description: >-
+        Changes the billing cycle anchor day (1–28). Stripe prorates the current
+        cycle and restarts billing on the new anchor day each month.
+        Mirrors `PATCH /subscriptions/:id/billing-anchor`.
+      security:
+        - internalToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeBillingAnchorRequest'
+      responses:
+        '200':
+          description: The subscription mirror with the updated billing anchor.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [subscription]
+                properties:
+                  subscription:
+                    $ref: '#/components/schemas/BillingSubscription'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+
   /setup-intent:
     post:
       operationId: createSetupIntent
@@ -1134,6 +1205,29 @@ components:
           type: integer
           minimum: 1
           description: New seat quantity.
+        cancelAtPeriodEnd:
+          type: boolean
+          description: >-
+            When true, schedules cancellation at period end (soft cancel).
+            When false, revokes a pending soft cancel, re-activating the subscription.
+
+    RevokeCancellationRequest:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    ChangeBillingAnchorRequest:
+      type: object
+      additionalProperties: false
+      required: [anchorDay]
+      properties:
+        anchorDay:
+          type: integer
+          minimum: 1
+          maximum: 28
+          description: >-
+            Day of month (1–28) to set as the new billing cycle anchor.
+            Stripe prorates the current cycle and restarts billing on this day each month.
 
     AddCreditsRequest:
       type: object
