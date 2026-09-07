@@ -33,6 +33,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- include "fuzefront.scheduling" (dict "svc" dict "root" $) | nindent 6 }}
       containers:
         - name: notification-db-migrate
           # Same image as the service, so the migrations run are exactly the ones

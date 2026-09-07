@@ -29,6 +29,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- include "fuzefront.scheduling" (dict "svc" dict "root" $) | nindent 6 }}
       containers:
         - name: seed-admin
           image: "{{ .Values.securityService.image.repository }}:{{ .Values.securityService.image.tag }}"

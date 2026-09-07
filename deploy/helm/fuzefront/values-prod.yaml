@@ -18,7 +18,39 @@ global:
   scheduling:
     nodeSelector: {}
     affinity: {}
-    tolerations: []
+    # Tolerate FuzeInfra's durable-node taint.
+    #
+    # FuzeInfra is tainting its three durable (control-plane/etcd) nodes
+    # `fuzeinfra.io/durable=true:NoSchedule` so that application workloads stop
+    # landing on them. Measured there on 2026-09-07: 70 and 57 pods on two of the
+    # three, 20,585 container restarts, load average 59, and etcd losing
+    # heartbeats on the node that was also the raft leader.
+    #
+    # FuzeFront is explicitly IN SCOPE for those nodes -- it is platform frontend,
+    # not a tenant app -- so it must carry the toleration or it gets pushed onto
+    # the autoscaled elastic pool, which is reaped on billing boundaries.
+    #
+    # THIS WILL NOT LOOK BROKEN IF IT IS MISSING. NoSchedule does not evict, so
+    # when the taint lands every FuzeFront pod keeps running exactly as before.
+    # It breaks at the NEXT restart or rollout, when those pods can no longer be
+    # placed back -- a delayed failure that reads as unrelated to the taint. That
+    # is why this has to land BEFORE the taint, not after it.
+    #
+    # TOLERATION IS NOT PLACEMENT. This only makes the durable nodes *eligible*;
+    # the scheduler may still choose elastic. Moving specific backend services
+    # deliberately ONTO elastic is a separate concern, expressed per-service via
+    # nodeSelector/affinity (see PR #910) -- and note the `fuzefront.scheduling`
+    # helper resolves per-service over global, so a service that declares its own
+    # `tolerations` REPLACES this list rather than adding to it. A service pinned
+    # to elastic simply does not need it.
+    #
+    # Tracked in izzywdev/FuzeInfra#913; the matching FuzeInfra-side tolerations
+    # (longhorn, coredns, ARC controller, Argo CD) landed in izzywdev/FuzeInfra#921.
+    tolerations:
+      - key: fuzeinfra.io/durable
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
 
 # Prometheus scrape annotations on FuzeFront pods. The FuzeInfra Prometheus
 # auto-discovers pods carrying prometheus.io/scrape=true (see Phase E). The
