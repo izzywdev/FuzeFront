@@ -13,10 +13,36 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes per spec
  * demo. A resolved price is ALWAYS re-validated against the active catalogue
  * (`getActivePlans`) before use so a stale/disabled price can never be charged
  * (MEDIUM-1).
+ *
+ * The starter/professional/scale values below are PLACEHOLDERS. Configure the
+ * real Stripe price IDs via environment variables before going live:
+ *   STRIPE_PRICE_STARTER       — Starter plan ($29/mo)
+ *   STRIPE_PRICE_PROFESSIONAL  — Professional plan ($99/mo)
+ *   STRIPE_PRICE_SCALE         — Scale plan ($299/mo)
+ * When an env var is set, resolvePriceId uses it in preference to the
+ * placeholder below. Enterprise uses a contact-sales flow (no Stripe price).
  */
 export const PLAN_ID_TO_PRICE_ID: Record<string, string> = {
+  starter: 'price_starter_monthly_placeholder',      // Starter $29/mo — set STRIPE_PRICE_STARTER
+  professional: 'price_professional_monthly_placeholder', // Professional $99/mo — set STRIPE_PRICE_PROFESSIONAL
+  scale: 'price_scale_monthly_placeholder',          // Scale $299/mo — set STRIPE_PRICE_SCALE
+  enterprise: 'contact_sales',                       // Enterprise — no Stripe price, contact sales
+  // Legacy
   basic: 'price_1TnCqVDaNn3aKLEz05TbFbFQ',
 };
+
+/**
+ * Environment-variable overrides for placeholder price IDs.
+ * Evaluated at call time so a restart is not required to pick up a new var.
+ */
+function resolveEnvPriceOverride(planId: string): string | undefined {
+  const overrides: Record<string, string | undefined> = {
+    starter: process.env.STRIPE_PRICE_STARTER,
+    professional: process.env.STRIPE_PRICE_PROFESSIONAL,
+    scale: process.env.STRIPE_PRICE_SCALE,
+  };
+  return overrides[planId];
+}
 
 /**
  * Syncs the Stripe product/price catalogue into the local billing.plans read
@@ -96,9 +122,12 @@ export class PlanService {
    */
   async resolvePriceId(planId: string): Promise<string> {
     const active = await this.getActivePlans();
+    const lowerPlanId = planId.toLowerCase();
 
-    // 1) Logical plan id mapping (e.g. 'basic' -> the live $9/mo price).
-    const mapped = PLAN_ID_TO_PRICE_ID[planId.toLowerCase()];
+    // 1) Logical plan id mapping. Env-var overrides take precedence over the
+    //    static placeholder so real Stripe prices slot in without a code change.
+    const envOverride = resolveEnvPriceOverride(lowerPlanId);
+    const mapped = envOverride ?? PLAN_ID_TO_PRICE_ID[lowerPlanId];
     const candidate = mapped ?? planId;
 
     // 2) Accept the candidate only if it is an active price OR an active tier.

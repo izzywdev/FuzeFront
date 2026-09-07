@@ -101,6 +101,102 @@ export const FLAG_KEYS = {
    * always falls back to its in-code default (OFF), same class of gap as #697.
    */
   MULTI_TENANT_PORTALS: 'fuzefront.platform.multi-tenant-portals',
+
+  // ── Plan-tier permission flags ─────────────────────────────────────────────
+  // These gate UI surfaces and server routes by subscription tier. They are
+  // ROLLOUT CONVENIENCE ONLY — real entitlement enforcement stays in Permit
+  // (permit.check). Flipping a flag does not bypass authorization.
+  // Long-lived: removed only if the corresponding tier is retired.
+  // Owner: feature-flags-engineer (billing domain).
+
+  /**
+   * fuzefront.billing.plan-starter
+   * Type: permission. Default: TRUE (every org on the lowest tier gets starter features).
+   * Gates: basic features, up to 5 members.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire only if the Starter tier is removed from the product.
+   */
+  BILLING_PLAN_STARTER: 'fuzefront.billing.plan-starter',
+  /**
+   * fuzefront.billing.plan-professional
+   * Type: permission. Default: FALSE (gate Pro features; enabled per-org by billing sync).
+   * Gates: advanced features, SSO, API access, up to 25 members.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire only if Professional tier is removed from the product.
+   */
+  BILLING_PLAN_PROFESSIONAL: 'fuzefront.billing.plan-professional',
+  /**
+   * fuzefront.billing.plan-scale
+   * Type: permission. Default: FALSE (gate Scale features; enabled per-org by billing sync).
+   * Gates: full platform, all products, up to 100 members.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire only if Scale tier is removed from the product.
+   */
+  BILLING_PLAN_SCALE: 'fuzefront.billing.plan-scale',
+  /**
+   * fuzefront.billing.plan-enterprise
+   * Type: permission. Default: FALSE (gate Enterprise features; enabled per-org by billing sync).
+   * Gates: unlimited members, on-premise option, custom SLA.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire only if Enterprise tier is removed from the product.
+   */
+  BILLING_PLAN_ENTERPRISE: 'fuzefront.billing.plan-enterprise',
+  /**
+   * fuzefront.billing.sso-enabled
+   * Type: permission. Default: FALSE.
+   * Gates: SSO/SAML configuration UI and the Authentik SSO integration routes.
+   * Requires Professional tier or above. Real SSO authz enforced by Permit.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire if SSO becomes available on all tiers.
+   */
+  BILLING_SSO_ENABLED: 'fuzefront.billing.sso-enabled',
+  /**
+   * fuzefront.billing.api-access
+   * Type: permission. Default: FALSE.
+   * Gates: API key management UI and the /api/keys routes.
+   * Requires Professional tier or above. Real API-key authz enforced by Permit.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire if API access becomes available on all tiers.
+   */
+  BILLING_API_ACCESS: 'fuzefront.billing.api-access',
+  /**
+   * fuzefront.billing.custom-domain
+   * Type: permission. Default: FALSE.
+   * Gates: custom-domain configuration UI and the domain provisioning routes.
+   * Requires Scale tier or above. Real domain authz enforced by Permit.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire if custom domains become available on all tiers.
+   */
+  BILLING_CUSTOM_DOMAIN: 'fuzefront.billing.custom-domain',
+  /**
+   * fuzefront.billing.module-federation
+   * Type: permission. Default: FALSE.
+   * Gates: Module-Federation hosting configuration UI and MF remote-serving routes.
+   * Requires Professional tier or above. Real MF-hosting authz enforced by Permit.
+   * Owner: feature-flags-engineer.
+   * Removal criterion: retire if MF hosting becomes available on all tiers.
+   */
+  BILLING_MODULE_FEDERATION: 'fuzefront.billing.module-federation',
+} as const;
+
+/**
+ * Server-side plan-tier flag keys for direct evaluation by backend services
+ * without going through the browser. These keys mirror the billing permission
+ * flags in FLAG_KEYS and are exported as a named group for ergonomic imports
+ * in service code (e.g. `PLAN_FLAGS.PROFESSIONAL`).
+ *
+ * Usage (backend, server SDK):
+ *   import { PLAN_FLAGS } from '@fuzefront/feature-flags';
+ *   const isPro = await flags.getBooleanValue(PLAN_FLAGS.PROFESSIONAL, false, ctx);
+ *
+ * IMPORTANT: These are rollout-convenience gates. Real entitlement enforcement
+ * must always go through Permit (permit.check) — never rely on a flag alone.
+ */
+export const PLAN_FLAGS = {
+  STARTER: 'fuzefront.billing.plan-starter',
+  PROFESSIONAL: 'fuzefront.billing.plan-professional',
+  SCALE: 'fuzefront.billing.plan-scale',
+  ENTERPRISE: 'fuzefront.billing.plan-enterprise',
 } as const;
 
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
@@ -124,4 +220,23 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   // switch (see FLAG_KEYS doc). Registry `web_exposed` flipped false -> true
   // to match: this entry is what makes GET /api/flags disclose it at all.
   { key: FLAG_KEYS.MULTI_TENANT_PORTALS, type: 'release', default: false },
+
+  // ── Plan-tier permission flags ─────────────────────────────────────────────
+  // Exposed to the browser so the shell UI can conditionally render plan-gated
+  // surfaces (upgrade prompts, locked nav items). Real authorization always
+  // lives in Permit on the server — these flags are convenience only.
+  //
+  // plan-starter defaults TRUE: every org can access Starter-tier features by
+  // default (fail-open for the base tier).
+  { key: FLAG_KEYS.BILLING_PLAN_STARTER, type: 'permission', default: true },
+  // All other plan flags default FALSE: higher-tier features are locked until
+  // the billing sync enables them per-org in Unleash.
+  { key: FLAG_KEYS.BILLING_PLAN_PROFESSIONAL, type: 'permission', default: false },
+  { key: FLAG_KEYS.BILLING_PLAN_SCALE, type: 'permission', default: false },
+  { key: FLAG_KEYS.BILLING_PLAN_ENTERPRISE, type: 'permission', default: false },
+  // Capability flags (also gated by plan; Permit enforces server-side).
+  { key: FLAG_KEYS.BILLING_SSO_ENABLED, type: 'permission', default: false },
+  { key: FLAG_KEYS.BILLING_API_ACCESS, type: 'permission', default: false },
+  { key: FLAG_KEYS.BILLING_CUSTOM_DOMAIN, type: 'permission', default: false },
+  { key: FLAG_KEYS.BILLING_MODULE_FEDERATION, type: 'permission', default: false },
 ] as const;
