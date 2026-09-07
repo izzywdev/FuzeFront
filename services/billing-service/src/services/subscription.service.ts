@@ -3,6 +3,7 @@ import {
   BillingSubscription,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
+  PlanTier,
   UpdateSubscriptionRequest,
 } from '../types';
 import { CustomerService } from './customer.service';
@@ -156,7 +157,7 @@ export class SubscriptionService {
 
     const updated = await this.stripe.subscriptions.update(
       stripeSubscriptionId,
-      { billing_cycle_anchor: anchorTimestamp, proration_behavior: 'create_prorations' },
+      { trial_end: anchorTimestamp, proration_behavior: 'create_prorations' },
       { idempotencyKey: `sub-anchor-${stripeSubscriptionId}-${anchorDay}` },
     );
     return this.repo.upsert(
@@ -188,9 +189,9 @@ export class SubscriptionService {
     );
   }
 
-  private async resolvePlanTier(priceId: string): Promise<string> {
+  private async resolvePlanTier(priceId: string): Promise<PlanTier> {
     const plans = await this.plans.getActivePlans();
-    return plans.find((p) => p.priceId === priceId)?.tierName ?? 'unknown';
+    return (plans.find((p) => p.priceId === priceId)?.tierName ?? 'unknown') as PlanTier;
   }
 
   /** Upgrade vs downgrade is decided by unit_amount of the target vs current price. */

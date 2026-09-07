@@ -76,7 +76,7 @@ export class PlanService {
       const plan: Plan = {
         priceId: price.id,
         productId: typeof price.product === 'string' ? price.product : product.id,
-        tierName: (md.tier_name as PlanTier) || product.name || 'unknown',
+        tierName: ((md.tier_name || product.name || 'unknown') as PlanTier),
         displayName: product.name || md.tier_name || price.id,
         billingInterval: price.recurring?.interval ?? 'month',
         unitAmount: price.unit_amount ?? 0,
