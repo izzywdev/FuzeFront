@@ -233,6 +233,12 @@ jobs:
           tags: |
             ghcr.io/izzywdev/fuzefront-applications-service:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-applications-service:latest
+          # Stamp the image with the SAME sha it is tagged with, so the running
+          # service can be asked what it is (X-Fuze-Build) and compared against
+          # what values-prod.yaml asked for. See the Dockerfile's BUILD_SHA note:
+          # without this, a stalled rollout is invisible to every black-box check.
+          build-args: |
+            BUILD_SHA=${{ steps.tag.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
