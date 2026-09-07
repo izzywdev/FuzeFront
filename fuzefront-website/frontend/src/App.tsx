@@ -17,6 +17,9 @@ import { IndustriesPage } from './pages/IndustriesPage'
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage'
 import { TermsPage } from './pages/TermsPage'
 import { FuzeHubPage } from './pages/FuzeHubPage'
+import { CareersPage } from './pages/CareersPage'
+import { PressPage } from './pages/PressPage'
+import { NotFoundPage } from './pages/NotFoundPage'
 import './App.css'
 
 function AppLayout() {
@@ -37,7 +40,9 @@ function AppLayout() {
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/fuzehub" element={<FuzeHubPage />} />
-          <Route path="*" element={<HomePage />} />
+          <Route path="/careers" element={<CareersPage />} />
+          <Route path="/press" element={<PressPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </main>
       <Footer />

@@ -16,7 +16,7 @@ export const PrivacyPolicyPage: React.FC = () => {
           </h1>
           <p className="text-gray-500">Last updated: September 2026</p>
           <p className="text-gray-500 text-sm mt-1">
-            FuzeOne, Inc. &bull; A Delaware Corporation &bull;{' '}
+            FuzeOne, Inc. &bull;{' '}
             <a href="mailto:privacy@fuzefront.com" className="text-primary-600 hover:underline">
               privacy@fuzefront.com
             </a>
@@ -180,7 +180,6 @@ export const PrivacyPolicyPage: React.FC = () => {
               <div className="mt-4 p-5 bg-secondary-50 rounded-xl border border-secondary-200">
                 <p className="font-semibold text-gray-900">FuzeOne, Inc.</p>
                 <p className="text-gray-600 mt-1">Attention: Privacy Team</p>
-                <p className="text-gray-600">Delaware Corporation</p>
                 <p className="mt-2">
                   <a href="mailto:privacy@fuzefront.com" className="text-primary-600 hover:underline">
                     privacy@fuzefront.com

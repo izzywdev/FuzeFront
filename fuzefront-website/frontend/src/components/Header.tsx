@@ -73,10 +73,10 @@ export const Header: React.FC = () => {
             className="flex items-center space-x-2"
             onClick={() => handleNavClick('logo')}
           >
-            <div className="w-9 h-9 bg-gradient-to-br from-primary-600 to-accent-600 rounded-xl flex items-center justify-center shadow-md">
-              <span className="text-white font-bold text-sm tracking-tight">F1</span>
-            </div>
-            <span className="font-heading font-bold text-xl text-gray-900">
+            <img src="/logo-icon.svg" alt="FuzeOne" className="w-9 h-9 rounded-xl shadow-md" />
+            <span className={`font-heading font-bold text-xl transition-colors duration-200 ${
+              isScrolled ? 'text-gray-900' : 'text-white'
+            }`}>
               FuzeOne
             </span>
           </Link>
@@ -99,7 +99,7 @@ export const Header: React.FC = () => {
                           ? 'text-primary-600'
                           : isScrolled
                           ? 'text-gray-700 hover:text-primary-600'
-                          : 'text-gray-900 hover:text-primary-600'
+                          : 'text-white hover:text-primary-300'
                       }`}
                       onClick={() => handleNavClick(item.name)}
                     >
@@ -157,7 +157,7 @@ export const Header: React.FC = () => {
                         ? 'text-primary-600'
                         : isScrolled
                         ? 'text-gray-700 hover:text-primary-600'
-                        : 'text-gray-900 hover:text-primary-600'
+                        : 'text-white hover:text-primary-300'
                     }`}
                     onClick={() => handleNavClick(item.name)}
                   >
@@ -171,18 +171,18 @@ export const Header: React.FC = () => {
           {/* Auth Buttons */}
           <div className="hidden lg:flex items-center space-x-3">
             <a
-              href="https://app.fuzefront.com/auth/login"
+              href="https://app.fuzefront.com/login"
               className={`font-medium px-4 py-2 rounded-lg text-sm transition-colors duration-200 ${
                 isScrolled
                   ? 'text-gray-700 hover:text-primary-600 hover:bg-primary-50'
-                  : 'text-gray-800 hover:text-primary-600'
+                  : 'text-white hover:text-primary-300'
               }`}
               onClick={() => trackEvent('cta_click', { button: 'sign_in', location: 'header' })}
             >
               Sign In
             </a>
             <a
-              href="https://app.fuzefront.com/auth/register"
+              href="https://app.fuzefront.com/signup"
               className="btn-primary text-sm py-2 px-5"
               onClick={() => trackEvent('cta_click', { button: 'sign_up', location: 'header' })}
             >
@@ -194,7 +194,11 @@ export const Header: React.FC = () => {
           <div className="lg:hidden">
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:text-primary-600 hover:bg-gray-100 transition-colors duration-200"
+              className={`inline-flex items-center justify-center p-2 rounded-md transition-colors duration-200 ${
+                isScrolled || isOpen
+                  ? 'text-gray-700 hover:text-primary-600 hover:bg-gray-100'
+                  : 'text-white hover:text-primary-300'
+              }`}
               aria-label={isOpen ? 'Close menu' : 'Open menu'}
             >
               {isOpen ? <X size={24} /> : <Menu size={24} />}
@@ -244,14 +248,14 @@ export const Header: React.FC = () => {
                 ))}
                 <div className="pt-4 border-t border-gray-100 space-y-2">
                   <a
-                    href="https://app.fuzefront.com/auth/login"
+                    href="https://app.fuzefront.com/login"
                     className="block w-full text-center px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                     onClick={() => trackEvent('cta_click', { button: 'sign_in', location: 'header_mobile' })}
                   >
                     Sign In
                   </a>
                   <a
-                    href="https://app.fuzefront.com/auth/register"
+                    href="https://app.fuzefront.com/signup"
                     className="block w-full text-center btn-primary text-sm"
                     onClick={() => trackEvent('cta_click', { button: 'sign_up', location: 'header_mobile' })}
                   >

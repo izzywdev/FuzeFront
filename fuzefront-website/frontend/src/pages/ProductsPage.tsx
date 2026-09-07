@@ -181,7 +181,7 @@ export const ProductsPage: React.FC = () => {
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
               <a
-                href="https://app.fuzefront.com/auth/register"
+                href="https://app.fuzefront.com/signup"
                 className="btn-primary flex items-center justify-center gap-2"
                 onClick={() => trackEvent('cta_click', { button: 'products_start', location: 'products_hero' })}
               >
