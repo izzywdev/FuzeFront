@@ -28,7 +28,19 @@ export function extractImageTag(text, serviceKey) {
   const lines = text.split(/\r?\n/)
   const indentOf = l => l.length - l.replace(/^\s*/, '').length
 
-  let i = lines.findIndex(l => new RegExp(`^${serviceKey}:\\s*(#.*)?$`).test(l))
+  // NO regex built from `serviceKey`. Semgrep flagged the interpolated
+  // `new RegExp(...)` this replaced (detect-non-literal-regexp), and behind the
+  // ReDoS flag sat a real correctness bug: a key containing regex metacharacters
+  // matched the WRONG service -- `a.b` would have matched a line `axb:` and
+  // returned another image's tag, which is exactly the silent near-miss the
+  // unit tests below exist to catch. String comparison has neither problem.
+  const isServiceHeader = line => {
+    if (line.startsWith(' ') || line.startsWith('\t')) return false // top-level keys only
+    const withoutComment = line.replace(/#.*$/, '').trimEnd()
+    return withoutComment === `${serviceKey}:`
+  }
+
+  let i = lines.findIndex(isServiceHeader)
   if (i === -1) return null
   const serviceIndent = indentOf(lines[i])
 

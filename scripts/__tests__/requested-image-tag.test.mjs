@@ -71,3 +71,24 @@ test('a trailing comment on the tag line is not part of the tag', () => {
     'abc123'
   )
 })
+
+// Regression for the Semgrep finding on the first version of this file
+// (javascript.lang.security.audit.detect-non-literal-regexp, PR #923): the
+// service key was interpolated into `new RegExp(...)`. Beyond the ReDoS flag,
+// that made regex metacharacters in the key match the WRONG service and return
+// another image's tag — a wrong answer that looks entirely plausible, which is
+// the worst shape a value-extractor can fail in.
+test('a key containing regex metacharacters is matched literally, not as a pattern', () => {
+  const values = 'axb:\n  image:\n    tag: wrongwrongwro\n'
+  assert.equal(extractImageTag(values, 'a.b'), null)
+  assert.equal(extractImageTag(values, 'a+b'), null)
+  assert.equal(extractImageTag(values, 'axb'), 'wrongwrongwro')
+})
+
+test('only TOP-LEVEL keys are service headers — a nested key of the same name is not', () => {
+  // `image:` nests an `applicationsService:` here; matching it would read a tag
+  // out of a block that is not the service.
+  const nested = 'other:\n  applicationsService:\n    image:\n      tag: nestedtag123\nbackend:\n  image:\n    tag: realtag456789\n'
+  assert.equal(extractImageTag(nested, 'applicationsService'), null)
+  assert.equal(extractImageTag(nested, 'backend'), 'realtag456789')
+})
