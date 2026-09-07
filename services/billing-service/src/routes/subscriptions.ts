@@ -20,6 +20,7 @@ const createSchema = z.object({
 const updateSchema = z.object({
   priceId: z.string().min(1).optional(),
   seatQuantity: z.number().int().positive().optional(),
+  cancelAtPeriodEnd: z.boolean().optional(),
 });
 
 export function createSubscriptionsRouter(
@@ -89,16 +90,28 @@ export function createSubscriptionsRouter(
     if (Object.keys(parsed.data as Record<string, unknown>).length === 0) {
       return res.status(400).json({
         error: 'invalid request',
-        details: { message: 'at least one updatable field (priceId or seatQuantity) is required' },
+        details: { message: 'at least one updatable field (priceId, seatQuantity, or cancelAtPeriodEnd) is required' },
       });
     }
     try {
+      const { cancelAtPeriodEnd, ...updateFields } = parsed.data as Record<string, unknown> & { cancelAtPeriodEnd?: boolean };
+      if (cancelAtPeriodEnd === true) {
+        const sub = await service.cancel(req.params.subscriptionId);
+        return res.json({ subscription: sub });
+      }
+      if (cancelAtPeriodEnd === false) {
+        const sub = await service.revokeCancel(req.params.subscriptionId);
+        return res.json({ subscription: sub });
+      }
       const sub = await service.update(
         req.params.subscriptionId,
-        parsed.data as UpdateSubscriptionRequest,
+        updateFields as UpdateSubscriptionRequest,
       );
       return res.json({ subscription: sub });
     } catch (err) {
+      if (err instanceof Error && err.message.includes('not found')) {
+        return res.status(404).json({ error: 'not found' });
+      }
       return res.status(502).json({ error: 'stripe error', message: errMsg(err) });
     }
   });
@@ -109,6 +122,39 @@ export function createSubscriptionsRouter(
       const sub = await service.cancel(req.params.subscriptionId);
       return res.json({ subscription: sub });
     } catch (err) {
+      return res.status(502).json({ error: 'stripe error', message: errMsg(err) });
+    }
+  });
+
+  // POST /subscriptions/:subscriptionId/revoke-cancellation
+  router.post('/subscriptions/:subscriptionId/revoke-cancellation', async (req: Request, res: Response) => {
+    try {
+      const sub = await service.revokeCancel(req.params.subscriptionId);
+      return res.json({ subscription: sub });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes('not found')) {
+        return res.status(404).json({ error: 'not found' });
+      }
+      return res.status(502).json({ error: 'stripe error', message: errMsg(err) });
+    }
+  });
+
+  // PATCH /subscriptions/:subscriptionId/billing-anchor
+  const billingAnchorSchema = z.object({ anchorDay: z.number().int().min(1).max(28) });
+
+  router.patch('/subscriptions/:subscriptionId/billing-anchor', async (req: Request, res: Response) => {
+    const parsed = validateBody(billingAnchorSchema, req.body);
+    if (!parsed.ok) return res.status(400).json({ error: 'invalid request', details: parsed.details });
+    try {
+      const sub = await service.changeBillingAnchor(req.params.subscriptionId, parsed.data.anchorDay);
+      return res.json({ subscription: sub });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes('not found')) {
+        return res.status(404).json({ error: 'not found' });
+      }
+      if (err instanceof Error && err.message.includes('must be between')) {
+        return res.status(400).json({ error: err.message });
+      }
       return res.status(502).json({ error: 'stripe error', message: errMsg(err) });
     }
   });
