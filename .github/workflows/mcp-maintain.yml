@@ -55,7 +55,7 @@ jobs:
   # about signal placement, not runner placement.
   preflight:
     name: mcp-maintain preflight
-    runs-on: ubuntu-latest
+    runs-on: fuzefront
     timeout-minutes: 5
     outputs:
       declared: ${{ steps.check.outputs.declared }}
@@ -111,7 +111,7 @@ jobs:
     if: >-
       needs.preflight.outputs.declared == 'true' &&
       !startsWith(github.event.pull_request.head.ref, 'mcp-maintain/')
-    runs-on: ubuntu-latest
+    runs-on: fuzefront
     steps:
       - name: Checkout PR head (writable, same-repo only)
         # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
