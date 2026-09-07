@@ -97,7 +97,7 @@ jobs:
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
-            git commit -m "chore(governance): reconcile managed files to FuzeSDLC ${{ steps.ref.outputs.ref }} [skip ci]"
+            git commit -m "chore(governance): reconcile managed files to FuzeSDLC ${{ steps.ref.outputs.ref }}"
             # Rebase-and-retry, not a bare push. This job commits onto a LIVE PR
             # branch, so any push the author makes between this job's checkout and
             # its push wins the race and the push is rejected "(fetch first)" —
