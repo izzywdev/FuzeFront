@@ -108,7 +108,7 @@ jobs:
   # runner placement.
   preflight:
     name: a2a-maintain preflight
-    runs-on: ubuntu-latest
+    runs-on: fuzefront
     timeout-minutes: 5
     outputs:
       declared: ${{ steps.check.outputs.declared }}
@@ -164,7 +164,7 @@ jobs:
     if: >-
       needs.preflight.outputs.declared == 'true' &&
       !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/')
-    runs-on: ubuntu-latest
+    runs-on: fuzefront
     steps:
       # Agent-PR identity (governance/hardening-convention.md §8): mint the fuze-agent App
       # token BEFORE checking out the (untrusted) PR head, so the maintainer's commit-back

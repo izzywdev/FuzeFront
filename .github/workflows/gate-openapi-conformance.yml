@@ -72,4 +72,4 @@ jobs:
         run: python -m unittest discover -s scripts/__tests__ -p 'test_gate_openapi_conformance.py' -v
 
       - name: Check every service against its contract
-        run: python scripts/gate_openapi_conformance.py --repo .
+        run: python scripts/gate_openapi_conformance.py .
