@@ -5,7 +5,8 @@ import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
-import axios from 'axios'
+
+const FORMSPREE_FORM_ID = import.meta.env.VITE_FORMSPREE_FORM_ID as string | undefined
 
 interface ContactFormData {
   name: string
@@ -22,7 +23,7 @@ export const ContactPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const { addNotification } = useNotifications()
   const { trackEvent } = useAnalytics()
-  
+
   const {
     register,
     handleSubmit,
@@ -31,22 +32,37 @@ export const ContactPage: React.FC = () => {
   } = useForm<ContactFormData>()
 
   const onSubmit = async (data: ContactFormData) => {
+    if (!FORMSPREE_FORM_ID) {
+      addNotification({
+        type: 'error',
+        title: 'Form not configured',
+        message: 'Set VITE_FORMSPREE_FORM_ID to enable the contact form.',
+      })
+      return
+    }
+
     setIsSubmitting(true)
-    
+
     try {
-      await axios.post('/api/contact/submit', data)
-      
+      const response = await fetch(`https://formspree.io/f/${FORMSPREE_FORM_ID}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(data),
+      })
+
+      if (!response.ok) throw new Error('Formspree submission failed')
+
       addNotification({
         type: 'success',
         title: 'Message Sent!',
         message: 'Thank you for your message. We\'ll get back to you soon.'
       })
-      
-      trackEvent('contact_form_submit', { 
+
+      trackEvent('contact_form_submit', {
         subject: data.subject,
-        interest: data.interest 
+        interest: data.interest
       })
-      
+
       reset()
     } catch {
       addNotification({
@@ -99,7 +115,7 @@ export const ContactPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-medium text-gray-900">Email</h3>
-                    <p className="text-gray-600">hello@fuzefront.com</p>
+                    <p className="text-gray-600">contact@fuzefront.com</p>
                   </div>
                 </div>
                 

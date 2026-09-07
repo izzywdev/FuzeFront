@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Check, X, ArrowRight, Zap, Building2, Rocket, Crown } from 'lucide-react'
+import { Check, X, ArrowRight, Zap, Building2, Rocket, Crown, Sparkles } from 'lucide-react'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Plan {
@@ -21,6 +21,25 @@ interface Plan {
 
 const plans: Plan[] = [
   {
+    name: 'Free',
+    icon: Sparkles,
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    description: 'Get started at no cost, forever',
+    members: 'Up to 2 members',
+    popular: false,
+    ctaText: 'Sign up free',
+    ctaHref: 'https://app.fuzefront.com/signup?plan=free',
+    features: [
+      'Up to 2 team members',
+      'Core auth & billing',
+      'FuzeFront Platform access',
+      '1 GB storage',
+      'Community support',
+    ],
+    notIncluded: ['Advanced analytics', 'SSO / SAML', 'Custom integrations', 'API access', 'Priority support'],
+  },
+  {
     name: 'Starter',
     icon: Rocket,
     monthlyPrice: 29,
@@ -29,7 +48,7 @@ const plans: Plan[] = [
     members: 'Up to 5 members',
     popular: false,
     ctaText: 'Start free trial',
-    ctaHref: 'https://app.fuzefront.com/auth/register?plan=starter',
+    ctaHref: 'https://app.fuzefront.com/signup?plan=starter',
     features: [
       'Up to 5 team members',
       'Core auth & billing',
@@ -50,7 +69,7 @@ const plans: Plan[] = [
     members: 'Up to 25 members',
     popular: true,
     ctaText: 'Start free trial',
-    ctaHref: 'https://app.fuzefront.com/auth/register?plan=professional',
+    ctaHref: 'https://app.fuzefront.com/signup?plan=professional',
     features: [
       'Up to 25 team members',
       'Advanced auth & SSO',
@@ -73,7 +92,7 @@ const plans: Plan[] = [
     members: 'Up to 100 members',
     popular: false,
     ctaText: 'Start free trial',
-    ctaHref: 'https://app.fuzefront.com/auth/register?plan=scale',
+    ctaHref: 'https://app.fuzefront.com/signup?plan=scale',
     features: [
       'Up to 100 team members',
       'Unlimited API calls',
@@ -115,21 +134,21 @@ const plans: Plan[] = [
 ]
 
 const featureComparison = [
-  { feature: 'Team members', starter: '5', professional: '25', scale: '100', enterprise: 'Unlimited' },
-  { feature: 'Core auth & billing', starter: true, professional: true, scale: true, enterprise: true },
-  { feature: 'SSO / SAML', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Advanced analytics', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'API access', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Module Federation hosting', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'All 10 products', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Custom integrations', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Dedicated support', starter: false, professional: false, scale: true, enterprise: true },
-  { feature: 'Custom domain', starter: false, professional: false, scale: true, enterprise: true },
-  { feature: 'Audit logs', starter: false, professional: false, scale: true, enterprise: true },
-  { feature: 'On-premise deployment', starter: false, professional: false, scale: false, enterprise: true },
-  { feature: 'Dedicated CSM', starter: false, professional: false, scale: false, enterprise: true },
-  { feature: 'Custom SLA', starter: false, professional: false, scale: false, enterprise: true },
-  { feature: 'Uptime SLA', starter: '99.9%', professional: '99.9%', scale: '99.99%', enterprise: 'Custom' },
+  { feature: 'Team members', free: '2', starter: '5', professional: '25', scale: '100', enterprise: 'Unlimited' },
+  { feature: 'Core auth & billing', free: true, starter: true, professional: true, scale: true, enterprise: true },
+  { feature: 'SSO / SAML', free: false, starter: false, professional: true, scale: true, enterprise: true },
+  { feature: 'Advanced analytics', free: false, starter: false, professional: true, scale: true, enterprise: true },
+  { feature: 'API access', free: false, starter: false, professional: true, scale: true, enterprise: true },
+  { feature: 'Module Federation hosting', free: false, starter: false, professional: true, scale: true, enterprise: true },
+  { feature: 'All 10 products', free: false, starter: false, professional: true, scale: true, enterprise: true },
+  { feature: 'Custom integrations', free: false, starter: false, professional: true, scale: true, enterprise: true },
+  { feature: 'Dedicated support', free: false, starter: false, professional: false, scale: true, enterprise: true },
+  { feature: 'Custom domain', free: false, starter: false, professional: false, scale: true, enterprise: true },
+  { feature: 'Audit logs', free: false, starter: false, professional: false, scale: true, enterprise: true },
+  { feature: 'On-premise deployment', free: false, starter: false, professional: false, scale: false, enterprise: true },
+  { feature: 'Dedicated CSM', free: false, starter: false, professional: false, scale: false, enterprise: true },
+  { feature: 'Custom SLA', free: false, starter: false, professional: false, scale: false, enterprise: true },
+  { feature: 'Uptime SLA', free: 'Best effort', starter: '99.9%', professional: '99.9%', scale: '99.99%', enterprise: 'Custom' },
 ]
 
 type FeatureValue = boolean | string

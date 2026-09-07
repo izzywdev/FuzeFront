@@ -24,13 +24,12 @@ const footerNavigation = {
   legal: [
     { name: 'Privacy Policy', href: '/privacy' },
     { name: 'Terms of Service', href: '/terms' },
-    { name: 'Security', href: '/security' },
   ],
   resources: [
     { name: 'Documentation', href: '/docs' },
     { name: 'GitHub', href: 'https://github.com/izzywdev/FuzeFront' },
     { name: 'Status', href: '/status' },
-    { name: 'API Reference', href: '/api-docs' },
+    { name: 'API Reference', href: 'https://developers.fuzefront.com' },
   ],
 }
 
@@ -59,9 +58,7 @@ export const Footer: React.FC = () => {
           {/* Company Info */}
           <div className="lg:col-span-2">
             <Link to="/" className="flex items-center space-x-2 mb-5">
-              <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-accent-600 rounded-xl flex items-center justify-center shadow-md">
-                <span className="text-white font-bold text-sm">F1</span>
-              </div>
+              <img src="/logo-icon.svg" alt="FuzeOne" className="w-9 h-9 rounded-xl shadow-md" />
               <span className="font-heading font-bold text-xl">FuzeOne</span>
             </Link>
             <p className="text-secondary-400 mb-6 text-sm leading-relaxed max-w-sm">
@@ -71,11 +68,11 @@ export const Footer: React.FC = () => {
             <div className="flex items-center space-x-3 mb-6">
               <Mail size={15} className="text-primary-400 flex-shrink-0" />
               <a
-                href="mailto:hello@fuzefront.com"
+                href="mailto:contact@fuzefront.com"
                 className="text-secondary-400 hover:text-white transition-colors text-sm"
                 onClick={() => handleFooterClick('contact', 'email')}
               >
-                hello@fuzefront.com
+                contact@fuzefront.com
               </a>
             </div>
             <div className="flex space-x-4">
@@ -186,7 +183,7 @@ export const Footer: React.FC = () => {
         {/* Bottom Bar */}
         <div className="mt-12 pt-8 border-t border-secondary-800 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-secondary-500 text-sm">
-            &copy; 2026 FuzeOne, Inc. All rights reserved. FuzeOne, Inc. is incorporated in Delaware.
+            &copy; 2026 FuzeOne, Inc. All rights reserved.
           </p>
           <div className="flex items-center space-x-6">
             <Link
@@ -202,13 +199,6 @@ export const Footer: React.FC = () => {
               onClick={() => handleFooterClick('bottom', 'terms')}
             >
               Terms
-            </Link>
-            <Link
-              to="/security"
-              className="text-secondary-500 hover:text-white transition-colors text-sm"
-              onClick={() => handleFooterClick('bottom', 'security')}
-            >
-              Security
             </Link>
           </div>
         </div>

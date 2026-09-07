@@ -208,7 +208,7 @@ export const HomePage: React.FC = () => {
               className="flex flex-col sm:flex-row items-center justify-center gap-4"
             >
               <a
-                href="https://app.fuzefront.com/auth/register"
+                href="https://app.fuzefront.com/signup"
                 className="btn-primary text-base px-8 py-4 flex items-center gap-2"
                 onClick={() => trackEvent('cta_click', { button: 'hero_start_building', location: 'hero' })}
               >
@@ -482,7 +482,7 @@ export const HomePage: React.FC = () => {
               </p>
               <div className="flex flex-col sm:flex-row justify-center gap-4">
                 <a
-                  href="https://app.fuzefront.com/auth/register"
+                  href="https://app.fuzefront.com/signup"
                   className="btn-primary flex items-center justify-center gap-2 text-base"
                   onClick={() => trackEvent('cta_click', { button: 'footer_start', location: 'final_cta' })}
                 >
