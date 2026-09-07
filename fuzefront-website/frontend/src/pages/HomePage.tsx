@@ -11,7 +11,6 @@ import {
   BarChart3,
   Layers,
   Key,
-  TrendingUp,
   CheckCircle2,
   Users,
   Globe,
