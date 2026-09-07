@@ -105,23 +105,14 @@ for (const spec of slugs) {
   // `slug` probes the two same-origin layouts. `slug=<absolute url>` probes the
   // entry the app's manifest actually declares.
   //
-  // This second form is not a convenience — omitting it made the probe LIE. A
-  // slug and its serve path are independent (CLAUDE.md, quoted above), and
-  // fuzekeys is the live proof: izzywdev/FuzeKeys registration/manifest.json
-  // declares "slug": "keys" with remoteEntry "/apps/fuzekeys/remoteEntry.js".
-  // The first version of this probe tried only /apps/keys/... , got a 404 that
-  // was CORRECT — nothing is supposed to be there — and reported fuzekeys as
-  // broken. A probe that fabricates a failure is as harmful as one that hides a
-  // real one; both make the report untrustworthy.
-  //
-  // The second form also accepts a fully off-origin entry: the frozen contract
-  // allows an absolute http(s) remoteEntry for a remote hosted outside the
-  // cluster. fuzekeys is NOT such a case, despite an earlier revision of this
-  // comment and of prod-federation-probe.yml both asserting it was. Its declared
-  // entry is relative, so the host resolves it against its own origin
-  // (frontend/src/utils/loadFederatedApp.ts) — and the absolute
-  // keys.prod.fuzefront.com URL this probe was pinned to answered 404 on every
-  // run while the authenticated census reported fuzekeys PASS.
+  // This second form is not a convenience — omitting it made the probe LIE. The
+  // frozen contract allows an absolute http(s) remoteEntry for remotes hosted
+  // outside the cluster, and fuzekeys uses one
+  // (https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js). The first
+  // version of this probe tried only /apps/keys/... on the host origin, got a
+  // 404 that was CORRECT — nothing is supposed to be there — and reported
+  // fuzekeys as broken. A probe that fabricates a failure is as harmful as one
+  // that hides a real one; both make the report untrustworthy.
   const eq = spec.indexOf('=')
   const slug = eq >= 0 ? spec.slice(0, eq) : spec
   const declared = eq >= 0 ? spec.slice(eq + 1) : null

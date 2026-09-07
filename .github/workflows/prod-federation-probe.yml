@@ -22,9 +22,15 @@ on:
         required: false
         default: 'https://app.fuzefront.com'
       slugs:
-        description: 'Comma-separated app slugs to probe (blank = the curated default below)'
+        description: 'Comma-separated app slugs to probe'
         required: false
-        default: ''
+        # Derived from each product repo's registration/manifest.json.
+        # module-federation apps only — fuzehub and fuzeplan register as iframe
+        # and have no remoteEntry to probe.
+        # `slug` probes the same-origin layouts; `slug=<url>` probes the absolute
+        # entry a manifest declares (fuzekeys hosts its remote off-origin, so
+        # probing /apps/keys/ on the host would fabricate a 404).
+        default: 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys=https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex'
   pull_request:
     # Path-scoped on purpose: this runs against LIVE production, so it must not
     # fire on every PR. It fires when the probe ITSELF changes, so a change to
@@ -57,41 +63,6 @@ jobs:
       - name: Probe every federated remote
         env:
           BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
-          SLUGS_OVERRIDE: ${{ inputs.slugs }}
+          SLUGS: ${{ inputs.slugs || 'finance,fuzequality,fuzeagent,fuzebi,call,contact,deploy,executive,keys=https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex' }}
         run: |
-          set -uo pipefail
-
-          # ONE definition of the roster, not two. It used to be pasted into both
-          # the workflow_dispatch input default and this env fallback, so the two
-          # could drift apart silently and a dispatched run and a scheduled run
-          # would probe different sets.
-          #
-          # Curated rather than read from scripts/expected-portal-apps.json: that
-          # roster deliberately carries no integration type, and probing an iframe
-          # app for a remoteEntry fabricates a failure. fuzehub and fuzeplan
-          # register as iframe and are excluded for exactly that reason.
-          #
-          # `slug` probes the two same-origin layouts (/apps/<slug>/remoteEntry.js
-          # and /apps/<slug>/assets/remoteEntry.js) and reports which answered.
-          # `slug=<absolute url>` probes the entry a manifest declares verbatim.
-          #
-          # `keys` needs the second form because its slug and its serve path
-          # differ: izzywdev/FuzeKeys registration/manifest.json declares
-          # "slug": "keys" with remoteEntry "/apps/fuzekeys/remoteEntry.js", so
-          # probing /apps/keys/ would fabricate a 404. That is a legitimate case
-          # of CLAUDE.md's rule that the slug and the serve path are independent.
-          #
-          # This entry previously read
-          # `keys=https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js`,
-          # justified by a comment claiming fuzekeys "hosts its remote
-          # off-origin". The manifest says otherwise -- the declared entry is a
-          # RELATIVE path, which the host resolves against its own origin
-          # (frontend/src/utils/loadFederatedApp.ts). That absolute URL answered
-          # 404 and the probe reported `keys` as broken on every run while the
-          # authenticated census reported it PASS. A probe that fabricates a
-          # failure is as harmful as one that hides a real one.
-          DEFAULT_SLUGS="finance,fuzequality,fuzeagent,fuzebi,call,clock,contact,deploy,executive,keys=${BASE_URL%/}/apps/fuzekeys/remoteEntry.js,market,fuzemerchandize,picker,sales,service,fuzesocial,fuzex"
-
-          SLUGS="${SLUGS_OVERRIDE:-$DEFAULT_SLUGS}"
-          echo "probing: $SLUGS"
           node scripts/probe-prod-federation.mjs --base "$BASE_URL" --slugs "$SLUGS"
