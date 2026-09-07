@@ -331,6 +331,22 @@ clockApp:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
     tag: f453b3dd0a93
 
+# fuzefront-website — public site at fuzefront.com.
+# Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
+# release.yml and their tags are bumped by the GitOps step on every release.
+websiteFrontend:
+  enabled: true
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-frontend
+    tag: ""
+  host: fuzefront.com
+
+websiteBackend:
+  enabled: true
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-backend
+    tag: ""
+
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
 # its repository was missing from the bump step's anchor list, so the tag below sat
