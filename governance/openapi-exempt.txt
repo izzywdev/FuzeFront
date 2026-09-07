@@ -123,6 +123,59 @@ POST /v2/schema/${}/${}/roles  # Permit.io SDK call — not a FuzeFront-owned ro
 PATCH /v2/schema/${}/${}/roles/${}  # Permit.io SDK call — not a FuzeFront-owned route
 GET /invoices/{}  # packages/auth authzMiddleware scanner artefact — not a server route
 #
+# --- O1: Main backend (additional routes missed in first pass) ---
+GET /api-docs  # backend: Swagger UI served by swagger-ui-express; not an API operation
+GET /api/flags  # backend: feature-flags list; backend/src lacks openapi.yaml
+GET /api/user  # backend: current user; backend/src lacks openapi.yaml
+GET /api/users  # backend: user list; backend/src lacks openapi.yaml
+GET /api/users/search  # backend: user search; backend/src lacks openapi.yaml
+GET /api/users/{}  # backend: user detail; backend/src lacks openapi.yaml
+GET /internal/resource  # machine-auth middleware: scanner artefact from middleware pattern — not a server route
+GET /resource  # machine-auth middleware: scanner artefact from middleware pattern — not a server route
+POST /jobs  # machine-auth middleware: scanner artefact from middleware pattern — not a server route
+#
+# --- O1: Billing-service backend routes (scanner sees backend/src, not billing-service spec) ---
+POST /api/v1/billing  # billing: create payment; backend/src/routes/billing.ts — matched against billing-service spec separately
+POST /api/v1/billing/webhooks/stripe  # billing: Stripe webhook ingress; backend/src/routes/billing.ts — no backend openapi.yaml
+POST /api/v1/billing/webhooks/stripe/checkout  # billing: Stripe checkout session; backend/src lacks openapi.yaml
+POST /api/v1/billing/webhooks/stripe/portal  # billing: Stripe customer portal; backend/src lacks openapi.yaml
+POST /api/v1/billing/webhooks/stripe/setup-intent  # billing: Stripe setup intent; backend/src lacks openapi.yaml
+POST /api/v1/billing/webhooks/stripe/subscriptions  # billing: Stripe create subscription; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/subscriptions  # billing: Stripe subscription list; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/subscriptions/{}  # billing: Stripe subscription detail; backend/src lacks openapi.yaml
+PATCH /api/v1/billing/webhooks/stripe/subscriptions/{}  # billing: Stripe subscription update; backend/src lacks openapi.yaml
+DELETE /api/v1/billing/webhooks/stripe/subscriptions/{}  # billing: Stripe subscription cancel; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/invoices  # billing: Stripe invoices list; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/plans  # billing: Stripe plans list; backend/src lacks openapi.yaml
+#
+# --- O1: Permit.io SDK calls (additional — product-authz.ts scanner artefact) ---
+PATCH /listings/{}  # Permit.io SDK call — not a FuzeFront-owned route
+#
+# --- O1: Custom-hostname client calls (${} template literal notation) ---
+GET /custom-hostnames/${}  # custom-hostname-client: client call — not a server route
+DELETE /custom-hostnames/${}  # custom-hostname-client: client call — not a server route
+#
+# --- O1: Frontend api.ts client calls (${} template literal notation) ---
+GET /organizations  # frontend api.ts client call — not a server route
+GET /organizations/${}  # frontend api.ts client call — not a server route
+POST /organizations  # frontend api.ts client call — not a server route
+PUT /organizations/${}  # frontend api.ts client call — not a server route
+DELETE /organizations/${}  # frontend api.ts client call — not a server route
+GET /organizations/${}/invitations  # frontend api.ts client call — not a server route
+POST /organizations/${}/invitations  # frontend api.ts client call — not a server route
+POST /organizations/${}/invitations/bulk  # frontend api.ts client call — not a server route
+DELETE /organizations/${}/invitations/${}  # frontend api.ts client call — not a server route
+GET /organizations/${}/members  # frontend api.ts client call — not a server route
+POST /organizations/${}/members  # frontend api.ts client call — not a server route
+PUT /organizations/${}/members/${}  # frontend api.ts client call — not a server route
+DELETE /organizations/${}/members/${}  # frontend api.ts client call — not a server route
+PUT /apps/${}/activate  # frontend api.ts client call — not a server route
+POST /apps/${}/install  # frontend api.ts client call — not a server route
+DELETE /apps/${}/install/${}  # frontend api.ts client call — not a server route
+GET /apps/installed  # frontend api.ts client call — not a server route
+GET /invitations/${}  # frontend api.ts client call — not a server route
+POST /invitations/${}/accept  # frontend api.ts client call — not a server route
+#
 # --- O1: Portal-admin-ui client calls (not server routes) ---
 POST /api/organizations/${}/invitations/${}/resend  # portal-admin-ui client call — not a server route
 DELETE /api/organizations/${}/invitations/${}  # portal-admin-ui client call — not a server route
