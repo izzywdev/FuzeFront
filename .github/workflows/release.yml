@@ -59,6 +59,19 @@ on:
       - 'services/payment-service/**'
       - 'services/selection-list-service/**'
       - 'services/config-service/**'
+      # docs/planning/developers-portal.md — devportal-service's own Dockerfile
+      # also COPYs scripts/collect-devportal-specs.mjs and every services/*/openapi.yaml
+      # it bundles (see that Dockerfile's `specs` build stage), so a change confined to
+      # this dir alone still needs the SAME silent-ship protection every other service
+      # path above exists for.
+      - 'services/devportal-service/**'
+      # Top-level, sibling to fuzefront-website/ — same self-contained-Dockerfile shape,
+      # same silent-ship gap if this path were absent.
+      - 'devportal-frontend/**'
+      # Consumed by services/devportal-service/Dockerfile's `specs` build stage. A change
+      # here changes what devportal-service bakes in without touching services/devportal-service/**
+      # itself.
+      - 'scripts/collect-devportal-specs.mjs'
       - 'clock-app/**'
       # fuzefront-website/frontend and fuzefront-website/backend each have their own
       # self-contained Dockerfile and are built into separate GHCR images. Without this
@@ -335,6 +348,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Build & push devportal-service
+        # Root build context: like selection-list-service, the Dockerfile runs
+        # `npm ci --workspace=services/devportal-service` and its `specs` stage
+        # COPYs individual services/*/openapi.yaml files from the repo root
+        # (docs/planning/developers-portal.md §4.2 bootstrap harvest) — needs
+        # the full checkout, not just services/devportal-service/.
+        #
+        # Ships dark (devportalService.enabled: false, fuzefront.devportal.enabled
+        # flag OFF) by default; continue-on-error matches the other auxiliary
+        # services. The `id` lets the bump step gate on the real outcome so no
+        # tag is pinned for an image that was never pushed (see #539).
+        id: devportal_service_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: services/devportal-service/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-devportal-service:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-devportal-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Build & push clock-app (built-in MF remote)
         id: clock_image
         # Built-in reference Module-Federation remote, served same-origin at
@@ -396,6 +433,32 @@ jobs:
           cache-from: type=gha,scope=website-backend
           cache-to: type=gha,mode=max,scope=website-backend
 
+      - name: "Sync design-system into devportal-frontend (vendored file: dependency)"
+        # Same vendoring necessity as fuzefront-website above — see
+        # devportal-frontend/scripts/sync-design-system.mjs. devportal-frontend's
+        # Docker build context is scoped to devportal-frontend/ only (no root
+        # workspace deps), so the vendored copy must be refreshed here, on the
+        # runner (full checkout), BEFORE `docker build` reads that context.
+        run: node devportal-frontend/scripts/sync-design-system.mjs
+
+      - name: Build & push devportal-frontend
+        # Self-contained Dockerfile (devportal-frontend/Dockerfile) — context is
+        # devportal-frontend/, no root workspace deps. design-system is vendored
+        # into it by the step above. Ships dark (devportalFrontend.enabled: false)
+        # by default; continue-on-error matches the other auxiliary services.
+        id: devportal_frontend_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: devportal-frontend
+          file: devportal-frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-devportal-frontend:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-devportal-frontend:latest
+          cache-from: type=gha,scope=devportal-frontend
+          cache-to: type=gha,mode=max,scope=devportal-frontend
+
       - name: Bump image tags in values-prod.yaml (GitOps)
         # The "Protect Master" ruleset has a pull_request rule, so neither a
         # plain `git push` with GITHUB_TOKEN nor a contents-API commit can land
@@ -446,8 +509,10 @@ jobs:
           CONFIG_SERVICE_OK=$(ok "${{ steps.config_service_image.outcome }}")
           WEBSITE_FRONTEND_OK=$(ok "${{ steps.website_frontend_image.outcome }}")
           WEBSITE_BACKEND_OK=$(ok "${{ steps.website_backend_image.outcome }}")
-          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK + PAYMENT_OK + SELECTION_LIST_OK + CONFIG_SERVICE_OK + WEBSITE_FRONTEND_OK + WEBSITE_BACKEND_OK))
-          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK} payment=${PAYMENT_OK} selection_list=${SELECTION_LIST_OK} config_service=${CONFIG_SERVICE_OK} website_frontend=${WEBSITE_FRONTEND_OK} website_backend=${WEBSITE_BACKEND_OK}"
+          DEVPORTAL_SERVICE_OK=$(ok "${{ steps.devportal_service_image.outcome }}")
+          DEVPORTAL_FRONTEND_OK=$(ok "${{ steps.devportal_frontend_image.outcome }}")
+          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK + PAYMENT_OK + SELECTION_LIST_OK + CONFIG_SERVICE_OK + WEBSITE_FRONTEND_OK + WEBSITE_BACKEND_OK + DEVPORTAL_SERVICE_OK + DEVPORTAL_FRONTEND_OK))
+          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK} payment=${PAYMENT_OK} selection_list=${SELECTION_LIST_OK} config_service=${CONFIG_SERVICE_OK} website_frontend=${WEBSITE_FRONTEND_OK} website_backend=${WEBSITE_BACKEND_OK} devportal_service=${DEVPORTAL_SERVICE_OK} devportal_frontend=${DEVPORTAL_FRONTEND_OK}"
           echo "expecting ${EXPECTED} tag rewrites (backend + frontend are always built)"
           if [ "${APPS_OK}${SECURITY_OK}${EMAIL_OK}${BILLING_OK}" != "1111" ]; then
             echo "::warning::one or more auxiliary images failed to build; their values-prod tags are left pinned to the last good release"
@@ -486,7 +551,8 @@ jobs:
               -v billing="$BILLING_OK" -v security="$SECURITY_OK" \
               -v apps="$APPS_OK" -v clock="$CLOCK_OK" -v payment="$PAYMENT_OK" \
               -v selection_list="$SELECTION_LIST_OK" -v config_service="$CONFIG_SERVICE_OK" \
-              -v website_frontend="$WEBSITE_FRONTEND_OK" -v website_backend="$WEBSITE_BACKEND_OK" '
+              -v website_frontend="$WEBSITE_FRONTEND_OK" -v website_backend="$WEBSITE_BACKEND_OK" \
+              -v devportal_service="$DEVPORTAL_SERVICE_OK" -v devportal_frontend="$DEVPORTAL_FRONTEND_OK" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -512,6 +578,8 @@ jobs:
             config_service == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-config-service\r?$/ { hot=1 }
             website_frontend == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-website-frontend\r?$/ { hot=1 }
             website_backend == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-website-backend\r?$/ { hot=1 }
+            devportal_service == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-devportal-service\r?$/ { hot=1 }
+            devportal_frontend == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-devportal-frontend\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml

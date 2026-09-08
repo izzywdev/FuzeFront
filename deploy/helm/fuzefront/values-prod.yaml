@@ -843,6 +843,26 @@ selectionListService:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: ce9c6809cc69
 
+# devportal-service / devportal-frontend (docs/planning/developers-portal.md).
+# Dark by default behind fuzefront.devportal.enabled — same two-step go-live
+# as selectionListService above: (1) let release.yml build+push the images
+# and bump these tags, (2) flip `enabled` to true here via GitOps in a
+# dedicated deploy window, internal-staff rollout first. `tag: pending` until
+# release.yml's first devportal build rewrites it — see the tag: placement
+# rule above.
+devportalService:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-devportal-service
+    tag: pending
+
+devportalFrontend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
+    tag: pending
+  host: developers.fuzefront.com
+
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
 # FuzeFront's own Security API (SECURITY_SERVICE_URL — plain in-cluster Service
 # DNS, set in templates/config-service-deployment.yaml, no secret needed)
