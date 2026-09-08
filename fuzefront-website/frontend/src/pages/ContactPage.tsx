@@ -125,7 +125,9 @@ export const ContactPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-medium text-gray-900">Phone</h3>
-                    <p className="text-gray-600">+1 (555) 123-4567</p>
+                    <a href="tel:+16502763313" className="text-gray-600 hover:text-primary-600 transition-colors">
+                      (650) 276-3313
+                    </a>
                   </div>
                 </div>
                 

@@ -1,0 +1,250 @@
+<!-- @dsCard group="Components" viewport="880x440" name="Launcher — App cards" subtitle="The dashboard launcher grid: app cards, health, integration type" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body {
+    margin: 0;
+    padding: var(--space-6) var(--space-8);
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-5);
+    align-items: start;
+    margin-bottom: var(--space-8);
+  }
+  .lbl {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin: 0 0 var(--space-3);
+    font-weight: var(--weight-medium);
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-6);
+    margin-bottom: var(--space-6);
+  }
+
+  /* ---- AppCard --------------------------------------------- */
+  .app-card {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-6);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition:
+      transform var(--duration-base) var(--ease-standard),
+      box-shadow var(--duration-base) var(--ease-standard),
+      border-color var(--duration-base) var(--ease-standard);
+  }
+  .app-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: transparent;
+  }
+  .app-card:hover .seam { opacity: 1; }
+  .app-card .seam {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--seam);
+    opacity: 0;
+    transition: opacity var(--duration-base) var(--ease-standard);
+  }
+  /* the offline card is grayscaled, dimmed and inert */
+  .app-card.offline {
+    cursor: not-allowed;
+    opacity: 0.6;
+    filter: grayscale(0.5);
+  }
+  .app-card.offline:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: var(--border-color);
+  }
+  .app-card.offline:hover .seam { opacity: 0; }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+  .icon-wrap {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    flex: none;
+  }
+  .icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-2xl);
+  }
+  .icon.mf { background: linear-gradient(135deg, #15414f, var(--accent-2)); }
+  .icon.wc { background: linear-gradient(135deg, #2f1f4f, var(--accent-color)); }
+
+  /* the small status dot pinned to the icon corner */
+  .corner-dot {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 12px;
+    height: 12px;
+    border-radius: var(--radius-pill);
+    border: 2px solid var(--bg-tertiary);
+  }
+  .corner-dot.healthy { background: var(--success-color); box-shadow: var(--shadow-xs); }
+  .corner-dot.down { background: var(--error-color); }
+
+  .card-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-semibold);
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+  .card-title.muted { color: var(--text-tertiary); }
+  .offline-tag {
+    margin-left: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-regular);
+    color: var(--error-color);
+  }
+  .card-badge-row { margin-top: var(--space-1); }
+  .card-desc {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    line-height: 1.4;
+  }
+
+  /* ---- IntegrationBadge ------------------------------------ */
+  .integration-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-medium);
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    text-transform: lowercase;
+    white-space: nowrap;
+    background: var(--accent-soft);
+    color: var(--accent-color);
+  }
+
+  /* ---- HealthDot (standalone) ------------------------------ */
+  .health-dot {
+    display: inline-block;
+    border-radius: var(--radius-pill);
+    flex: none;
+  }
+  .health-dot.healthy { background: var(--success-color); box-shadow: var(--shadow-xs); }
+  .health-dot.down { background: var(--error-color); }
+
+  .specimen { display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
+  .caption { font-size: var(--text-xs); color: var(--text-tertiary); font-family: var(--font-sans); }
+</style>
+</head>
+<body>
+
+  <p class="lbl">AppCard — launcher tile</p>
+  <div class="grid">
+    <!-- healthy module-federation card -->
+    <div class="specimen">
+      <div class="app-card" role="button" tabindex="0" title="FuzeClock">
+        <span class="seam" aria-hidden="true"></span>
+        <div class="card-head">
+          <div class="icon-wrap">
+            <div class="icon mf" aria-hidden="true">🔗</div>
+            <span class="corner-dot healthy" aria-hidden="true"></span>
+          </div>
+          <div style="min-width:0;">
+            <h3 class="card-title">FuzeClock</h3>
+            <div class="card-badge-row">
+              <span class="integration-badge">module-federation</span>
+            </div>
+          </div>
+        </div>
+        <p class="card-desc">A live runtime clock loaded over Module Federation — fused into the shell at runtime.</p>
+      </div>
+      <span class="caption">Healthy — hover lifts the card &amp; reveals the seam</span>
+    </div>
+
+    <!-- offline / grayed card -->
+    <div class="specimen">
+      <div class="app-card offline" role="button" tabindex="-1" aria-disabled="true" title="Reports (offline)">
+        <span class="seam" aria-hidden="true"></span>
+        <div class="card-head">
+          <div class="icon-wrap">
+            <div class="icon wc" aria-hidden="true">🧩</div>
+            <span class="corner-dot down" aria-hidden="true"></span>
+          </div>
+          <div style="min-width:0;">
+            <h3 class="card-title muted">
+              Reports
+              <span class="offline-tag">(Offline)</span>
+            </h3>
+            <div class="card-badge-row">
+              <span class="integration-badge">web-component</span>
+            </div>
+          </div>
+        </div>
+        <p class="card-desc">Remote unreachable — the card is grayscaled, dimmed and inert.</p>
+      </div>
+      <span class="caption">Offline — grayscaled, dimmed, not clickable</span>
+    </div>
+  </div>
+
+  <p class="lbl">HealthDot</p>
+  <div class="row">
+    <div class="specimen" style="align-items:center;">
+      <span class="health-dot healthy" style="width:12px;height:12px;border:2px solid var(--bg-tertiary);"></span>
+      <span class="caption">Healthy</span>
+    </div>
+    <div class="specimen" style="align-items:center;">
+      <span class="health-dot down" style="width:12px;height:12px;border:2px solid var(--bg-tertiary);"></span>
+      <span class="caption">Offline</span>
+    </div>
+  </div>
+
+  <p class="lbl">IntegrationBadge</p>
+  <div class="row">
+    <div class="specimen">
+      <span class="integration-badge">module-federation</span>
+      <span class="caption">module-federation</span>
+    </div>
+    <div class="specimen">
+      <span class="integration-badge">iframe</span>
+      <span class="caption">iframe</span>
+    </div>
+    <div class="specimen">
+      <span class="integration-badge">web-component</span>
+      <span class="caption">web-component</span>
+    </div>
+  </div>
+
+</body>
+</html>
