@@ -14,8 +14,8 @@ export const TermsPage: React.FC = () => {
           <h1 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-3">
             Terms of Service
           </h1>
-          <p className="text-gray-500">Last updated: September 2026</p>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="text-gray-600">Last updated: September 2026</p>
+          <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull; A Delaware Corporation &bull;{' '}
             <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">
               legal@fuzefront.com
