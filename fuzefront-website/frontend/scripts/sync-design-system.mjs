@@ -17,7 +17,7 @@
 // this package, since the copy must exist before npm attempts to resolve the
 // `file:` dependency). CI runs it as its own step in release.yml, immediately
 // before the fuzefront-website frontend Docker build.
-import { cpSync, rmSync, mkdirSync, existsSync } from 'node:fs'
+import { cpSync, rmSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -43,6 +43,23 @@ for (const entry of FILES_TO_VENDOR) {
   const src = path.join(source, entry)
   if (!existsSync(src)) continue
   cpSync(src, path.join(dest, entry), { recursive: true })
+}
+
+// scripts/check-workspace-deps.mjs (root CI gate) builds a repo-wide name -> package
+// map from every tracked package.json's own `name` field, keyed by that name — a
+// second package.json anywhere in the repo sharing the real design-system's name
+// silently clobbers that map entry with this (non-workspace) directory, which then
+// makes the gate misreport every OTHER real consumer's "@fuzefront/design-system"
+// semver range as an unresolvable registry reference. Renaming the vendored copy's
+// own `name` avoids that collision; it doesn't affect what fuzefront-website imports
+// it as, since a `file:` dependency installs under the KEY used in the consumer's
+// package.json ("@fuzefront/design-system": "file:./vendor-design-system"), not the
+// vendored copy's internal `name`.
+const pkgJsonPath = path.join(dest, 'package.json')
+if (existsSync(pkgJsonPath)) {
+  const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8'))
+  pkg.name = '@fuzefront/design-system-vendored'
+  writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + '\n')
 }
 
 console.log(`sync-design-system: vendored ${FILES_TO_VENDOR.join(', ')} -> ${path.relative(frontendRoot, dest)}`)

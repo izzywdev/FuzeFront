@@ -1,5 +1,5 @@
 {
-  "name": "@fuzefront/design-system",
+  "name": "@fuzefront/design-system-vendored",
   "version": "1.0.0",
   "engines": {
     "node": ">=24.0.0",
