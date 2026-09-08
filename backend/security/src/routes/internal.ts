@@ -276,6 +276,11 @@ router.post('/mint-session', async (req, res) => {
       expires_at: expiresAt,
     })
 
+    // This IS FuzeFront's identity service — the issuer of platform tokens
+    // (same mint as /login and the OIDC callback in routes/auth.ts), not a
+    // product self-minting. devportal-service calls this endpoint instead of
+    // signing its own token; see governance/architecture-guidelines.md §1.
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const token = jwt.sign({ userId, sessionId }, process.env.JWT_SECRET!, {
       expiresIn: '24h',
     })
