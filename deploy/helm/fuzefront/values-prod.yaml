@@ -259,21 +259,33 @@ mcp:
 #
 # `a2a-repos-git` is NOT needed: FuzeFront is a PUBLIC repo (verified via the
 # GitHub API), so the repo-sync init container clones anonymously.
-# `ghcr-pull` is NOT needed either: ghcr.io/izzywdev/fuzeagent-a2a is a public
+# `ghcr-pull` is NOT needed either: ghcr.io/izzywdev/fuze-a2a is a public
 # GHCR package (verified — anonymous token exchange + manifest GET succeeded).
 a2a:
   enabled: true
   image:
-    repository: ghcr.io/izzywdev/fuzeagent-a2a
-    # `tag` alone would be a mutable moving target (image reference grammar
-    # allows `tag@digest` together — kubelet/containerd resolve via the
-    # digest, so this is fully immutable regardless of what `latest` is
-    # repointed to later; the `tag` half is cosmetic/readable only). Digest
-    # verified anonymously pullable 2026-08-23 (what
-    # ghcr.io/izzywdev/fuzeagent-a2a:latest resolved to at verification time
-    # — `latest` itself is never dereferenced at deploy time, only used to
-    # locate this digest). Re-pin when FuzeAgent's CI publishes a new build.
-    tag: "latest@sha256:c233bb47409300e769c68f84c12077e3a74db132f287fa218929742fbe48ccf6"
+    # CORRECTED 2026-09-02: ghcr.io/izzywdev/fuzeagent-a2a (this pin's prior
+    # value) is a stale/abandoned image — last pushed 2026-08-24, still
+    # anonymously pullable but no longer built by anything. FuzeAgent's own
+    # release.yml ("Build & push a2a-shared" step) builds
+    # agent-templates/a2a/Dockerfile — the ONE shared A2A runtime — and
+    # publishes it ONLY as ghcr.io/izzywdev/fuze-a2a:{sha,latest}; that is
+    # also what FuzeAgent's own deploy/helm/a2a-shared/values-prod.yaml points
+    # at. (gate-a2a's own I1 default + the runtime standard doc still name
+    # `fuzeagent-a2a`; that is already-flagged gate/doc staleness, FuzeAgent
+    # PR #257 — an I1 finding against this file is that, not a new fork.)
+    repository: ghcr.io/izzywdev/fuze-a2a
+    # Plain CI-built SHA tag (not a `tag@digest` compound — that form is a
+    # valid Docker/OCI image-reference grammar, but gate-a2a's registry check
+    # GETs the literal `tag` string as the manifest reference and 404s on the
+    # compound form, which is what caused the prior pin to read as
+    # unpullable even though the underlying digest was fine). Matches the
+    # tag FuzeAgent's own release.yml currently has live in
+    # deploy/helm/a2a-shared/values-prod.yaml. Verified anonymously pullable
+    # 2026-09-02 (anonymous GHCR token + manifest GET → HTTP 200,
+    # digest sha256:26b84ab9c04844c685b0312b660e934232338f79f5b86001fc9e2520d4a3b9a6).
+    # Re-pin when FuzeAgent's CI publishes a new build.
+    tag: "624956d8983b"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
