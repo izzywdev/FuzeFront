@@ -9,6 +9,7 @@
   "description": "FuzeFront corporate website frontend",
   "type": "module",
   "scripts": {
+    "sync:ds": "node scripts/sync-design-system.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "build:check": "tsc && vite build",
@@ -21,6 +22,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@fuzefront/design-system": "file:./vendor-design-system",
     "axios": "^1.19.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.15.0",

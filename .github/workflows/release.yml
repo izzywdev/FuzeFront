@@ -354,9 +354,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: "Sync design-system into fuzefront-website (vendored file: dependency)"
+        # @fuzefront/design-system is an npm WORKSPACE package (root workspaces),
+        # never published to a registry — see fuzefront-website/frontend/scripts/
+        # sync-design-system.mjs for why. The website's Docker build context is
+        # scoped to fuzefront-website/frontend/ only (no root workspace deps), so
+        # the vendored copy must be refreshed here, on the runner (full checkout),
+        # BEFORE `docker build` reads that context — Docker cannot reach outside it.
+        run: node fuzefront-website/frontend/scripts/sync-design-system.mjs
+
       - name: Build & push fuzefront-website frontend
         # Self-contained Dockerfile (fuzefront-website/frontend/Dockerfile) — context
-        # is fuzefront-website/frontend/, no root workspace deps.
+        # is fuzefront-website/frontend/, no root workspace deps. design-system is
+        # vendored into it by the step above.
         id: website_frontend_image
         continue-on-error: true
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
