@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, ChevronDown, ExternalLink } from 'lucide-react'
+import { Logo } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const productLinks = [
@@ -37,6 +38,15 @@ const navigation = [
   { name: 'Contact', href: '/contact' },
 ]
 
+// The header is ALWAYS a solid, DS-token-driven surface (--bg-secondary /
+// --text-* / --accent-color) — never transparent. It previously swapped
+// between a transparent+white-text state and a white+dark-text state based
+// on scroll position, and anything that broke that scroll listener (or a
+// page whose content isn't a dark hero at the top) left white-on-white or
+// otherwise invisible nav text. A permanently solid, token-colored bar
+// removes that failure mode entirely rather than patching one instance of
+// it, and keeps the header on the same shared palette as the rest of the
+// Fuze family instead of a site-local Tailwind palette.
 export const Header: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
@@ -60,11 +70,11 @@ export const Header: React.FC = () => {
   }
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-      isScrolled
-        ? 'bg-white/95 backdrop-blur-md shadow-soft border-b border-gray-100'
-        : 'bg-transparent'
-    }`}>
+    <header
+      className={`fixed top-0 left-0 right-0 z-50 bg-[var(--bg-secondary)] border-b border-[var(--border-color)] transition-shadow duration-300 ${
+        isScrolled ? 'shadow-[0_4px_20px_var(--shadow)]' : ''
+      }`}
+    >
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -73,10 +83,8 @@ export const Header: React.FC = () => {
             className="flex items-center space-x-2"
             onClick={() => handleNavClick('logo')}
           >
-            <img src="/logo-icon.svg" alt="FuzeOne" className="w-9 h-9 rounded-xl shadow-md" />
-            <span className={`font-heading font-bold text-xl transition-colors duration-200 ${
-              isScrolled ? 'text-gray-900' : 'text-white'
-            }`}>
+            <Logo src="/logo-icon.svg" name="FuzeOne" size="md" style={{ width: 36, height: 36 }} />
+            <span className="font-heading font-bold text-xl text-[var(--text-primary)]">
               FuzeOne
             </span>
           </Link>
@@ -96,10 +104,8 @@ export const Header: React.FC = () => {
                       to={item.href}
                       className={`flex items-center space-x-1 font-medium transition-colors duration-200 ${
                         location.pathname.startsWith(item.href)
-                          ? 'text-primary-600'
-                          : isScrolled
-                          ? 'text-gray-700 hover:text-primary-600'
-                          : 'text-white hover:text-primary-300'
+                          ? 'text-[var(--accent-color)]'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       }`}
                       onClick={() => handleNavClick(item.name)}
                     >
@@ -116,7 +122,7 @@ export const Header: React.FC = () => {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 8 }}
                           transition={{ duration: 0.15 }}
-                          className={`absolute top-full left-0 mt-2 bg-white rounded-xl shadow-hard border border-gray-100 py-3 ${
+                          className={`absolute top-full left-0 mt-2 bg-[var(--bg-tertiary)] rounded-xl shadow-[0_8px_30px_var(--shadow)] border border-[var(--border-color)] py-3 ${
                             item.wide ? 'w-72' : 'w-56'
                           }`}
                         >
@@ -124,22 +130,22 @@ export const Header: React.FC = () => {
                             <Link
                               key={subItem.name}
                               to={subItem.href}
-                              className="block px-4 py-2.5 hover:bg-primary-50 transition-colors duration-150 group"
+                              className="block px-4 py-2.5 hover:bg-[var(--bg-quaternary)] transition-colors duration-150 group"
                               onClick={() => handleNavClick(`${item.name} - ${subItem.name}`)}
                             >
-                              <div className="text-sm font-medium text-gray-800 group-hover:text-primary-600">
+                              <div className="text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent-color)]">
                                 {subItem.name}
                               </div>
                               {'desc' in subItem && (
-                                <div className="text-xs text-gray-500 mt-0.5">{(subItem as { name: string; href: string; desc: string }).desc}</div>
+                                <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{(subItem as { name: string; href: string; desc: string }).desc}</div>
                               )}
                             </Link>
                           ))}
                           {item.name === 'Products' && (
-                            <div className="border-t border-gray-100 mt-2 pt-2 px-4">
+                            <div className="border-t border-[var(--border-color)] mt-2 pt-2 px-4">
                               <Link
                                 to="/products"
-                                className="text-xs font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                                className="text-xs font-medium text-[var(--accent-color)] hover:text-[var(--accent-hover)] flex items-center gap-1"
                               >
                                 View all products <ExternalLink size={10} />
                               </Link>
@@ -154,10 +160,8 @@ export const Header: React.FC = () => {
                     to={item.href}
                     className={`font-medium transition-colors duration-200 ${
                       location.pathname === item.href
-                        ? 'text-primary-600'
-                        : isScrolled
-                        ? 'text-gray-700 hover:text-primary-600'
-                        : 'text-white hover:text-primary-300'
+                        ? 'text-[var(--accent-color)]'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                     onClick={() => handleNavClick(item.name)}
                   >
@@ -172,11 +176,7 @@ export const Header: React.FC = () => {
           <div className="hidden lg:flex items-center space-x-3">
             <a
               href="https://app.fuzefront.com/login"
-              className={`font-medium px-4 py-2 rounded-lg text-sm transition-colors duration-200 ${
-                isScrolled
-                  ? 'text-gray-700 hover:text-primary-600 hover:bg-primary-50'
-                  : 'text-white hover:text-primary-300'
-              }`}
+              className="font-medium px-4 py-2 rounded-lg text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] transition-colors duration-200"
               onClick={() => trackEvent('cta_click', { button: 'sign_in', location: 'header' })}
             >
               Sign In
@@ -194,11 +194,7 @@ export const Header: React.FC = () => {
           <div className="lg:hidden">
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className={`inline-flex items-center justify-center p-2 rounded-md transition-colors duration-200 ${
-                isScrolled || isOpen
-                  ? 'text-gray-700 hover:text-primary-600 hover:bg-gray-100'
-                  : 'text-white hover:text-primary-300'
-              }`}
+              className="inline-flex items-center justify-center p-2 rounded-md text-[var(--text-primary)] hover:text-[var(--accent-color)] hover:bg-[var(--bg-quaternary)] transition-colors duration-200"
               aria-label={isOpen ? 'Close menu' : 'Open menu'}
             >
               {isOpen ? <X size={24} /> : <Menu size={24} />}
@@ -214,7 +210,7 @@ export const Header: React.FC = () => {
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.25 }}
-              className="lg:hidden bg-white border-t border-gray-100 overflow-hidden"
+              className="lg:hidden bg-[var(--bg-secondary)] border-t border-[var(--border-color)] overflow-hidden"
             >
               <div className="px-2 pt-2 pb-4 space-y-1">
                 {navigation.map((item) => (
@@ -223,8 +219,8 @@ export const Header: React.FC = () => {
                       to={item.href}
                       className={`block px-3 py-2 rounded-md text-base font-medium transition-colors duration-200 ${
                         location.pathname.startsWith(item.href)
-                          ? 'text-primary-600 bg-primary-50'
-                          : 'text-gray-700 hover:text-primary-600 hover:bg-gray-50'
+                          ? 'text-[var(--accent-color)] bg-[var(--accent-soft)]'
+                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
                       }`}
                       onClick={() => handleNavClick(item.name)}
                     >
@@ -236,7 +232,7 @@ export const Header: React.FC = () => {
                           <Link
                             key={subItem.name}
                             to={subItem.href}
-                            className="block px-3 py-1.5 text-sm text-gray-600 hover:text-primary-600 hover:bg-gray-50 rounded-md transition-colors duration-200"
+                            className="block px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)] rounded-md transition-colors duration-200"
                             onClick={() => handleNavClick(`${item.name} - ${subItem.name}`)}
                           >
                             {subItem.name}
@@ -246,10 +242,10 @@ export const Header: React.FC = () => {
                     )}
                   </div>
                 ))}
-                <div className="pt-4 border-t border-gray-100 space-y-2">
+                <div className="pt-4 border-t border-[var(--border-color)] space-y-2">
                   <a
                     href="https://app.fuzefront.com/login"
-                    className="block w-full text-center px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="block w-full text-center px-4 py-2 text-sm font-medium text-[var(--text-secondary)] border border-[var(--border-color)] rounded-lg hover:bg-[var(--bg-quaternary)] transition-colors"
                     onClick={() => trackEvent('cta_click', { button: 'sign_in', location: 'header_mobile' })}
                   >
                     Sign In

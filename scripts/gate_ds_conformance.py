@@ -39,7 +39,14 @@ import sys
 from collections import defaultdict
 
 UI_EXT = (".tsx", ".jsx", ".ts", ".js", ".vue", ".svelte", ".css", ".scss", ".less")
-SCAN_DIRS = ["frontend", "apps", "src", "packages"]
+# "fuzefront-website/frontend" is a compound (multi-segment) entry: the public
+# marketing/product site lives in its own top-level dir (fuzefront-website/),
+# not under one of the plain top-level names below, so a bare first-segment
+# match would silently skip it entirely — it shipped a hand-rolled Tailwind
+# palette with real contrast bugs (invisible nav text over its own hero) for
+# a full release cycle with this gate reporting green throughout, because
+# green meant "not scanned", not "conforms". See _under_scan_dir.
+SCAN_DIRS = ["frontend", "apps", "src", "packages", "fuzefront-website/frontend"]
 # Any path containing one of these segments is the DS package itself — exclude from feature checks.
 DS_EXCLUDE_SEGMENTS = ("design-system", "design_system", "ds-tokens", "tokens")
 SKIP_DIRS = {".git", "node_modules", "dist", "build", ".venv", "vendor",
@@ -152,13 +159,23 @@ def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
     return dict(out)
 
 
+def _under_scan_dir(reln: str) -> bool:
+    """True if `reln` (forward-slash repo-relative path) falls under one of
+    SCAN_DIRS. Entries may be a single top-level segment ("frontend") or a
+    compound path ("fuzefront-website/frontend") for an app that doesn't live
+    at a recognized top-level name."""
+    for base in SCAN_DIRS:
+        if reln == base or reln.startswith(base + "/"):
+            return True
+    return False
+
+
 def iter_ui_files(root: str):
     tracked = _git_ui_files(root)
     if tracked is not None:
         for rel in tracked:
             reln = rel.replace("\\", "/")
-            top = reln.split("/", 1)[0]
-            if SCAN_DIRS and top not in SCAN_DIRS:
+            if SCAN_DIRS and not _under_scan_dir(reln):
                 continue
             segs = reln.lower().split("/")
             if any(seg in DS_EXCLUDE_SEGMENTS for seg in segs):

@@ -384,6 +384,7 @@ export const HomePage: React.FC = () => {
               </p>
               <div className="flex flex-wrap justify-center gap-6 mb-10">
                 {[
+                  { name: 'Free', price: '$0/mo', note: 'Up to 2 members' },
                   { name: 'Starter', price: '$29/mo', note: 'Up to 5 members' },
                   { name: 'Professional', price: '$99/mo', note: 'Up to 25 members', featured: true },
                   { name: 'Scale', price: '$299/mo', note: 'Up to 100 members' },
