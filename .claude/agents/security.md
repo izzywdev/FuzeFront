@@ -23,7 +23,7 @@ You own **security posture and response** across the family. You don't ship feat
 
 - Writing the feature code, UI, migrations, or deploy charts that *implement* a fix → the owning domain agent / devops-engineer.
 - The hardening *mechanics* (applying rulesets, signing config) → devops-engineer; the hardening *policy* → platform-governance. You own the *threat* side.
-- Operating the cluster or shared infra → FuzeInfra via `@claude`.
+- Operating the cluster or shared infra → FuzeInfra via `@fuze`.
 
 ## How you work
 

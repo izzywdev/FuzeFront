@@ -1,4 +1,3 @@
-# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:6fb89a68ff4af2ac9816339fea8d037167fe9737515370ef961f1b89a1250e41
 name: Fuze Code Review
 
 # THE CANONICAL LLM CODE REVIEW + APPROVAL GATE.
@@ -65,10 +64,18 @@ name: Fuze Code Review
 # reviewer that never reviewed anything while looking like a check that ran. The
 # LiteLLM rung plus the OpenAI/Gemini fallover rungs in fuze-code-action exist
 # precisely so one exhausted vendor account can no longer silently disable this
-# gate. Configure at least one of LITELLM_FUZE_KEY / ANTHROPIC_API_KEY /
-# OPENAI_API_KEY / GEMINI_API_KEY as a repo secret; with none configured this
-# workflow SKIPS (not fails) — a missing credential is environmental, not a
-# defect in the PR under review.
+# gate.
+#
+# CREDENTIAL: this workflow is routed through the in-cluster LiteLLM gateway
+# (http://litellm.fuzeinfra.svc.cluster.local:4000), so the ONLY secret needed
+# is LITELLM_FUZE_KEY — a scoped virtual key minted with FuzeInfra's
+# scripts/mint-litellm-fuze-key.sh. With it set the gateway handles provider
+# routing and failover; without it (or if the gateway is unreachable from the
+# runner) the workflow SKIPS (not fails) — a missing credential is environmental,
+# not a defect in the PR under review. Direct provider keys (ANTHROPIC_API_KEY,
+# OPENAI_API_KEY, GEMINI_API_KEY) are fallback rungs via the runner-local LiteLLM
+# in fuze-code-action/llm-endpoint, but are NOT needed when the in-cluster gateway
+# is reachable from the self-hosted fuzefront runner this job runs on.
 #
 # SCOPE: this workflow assumes PRs come from branches in THIS repo, matching the
 # agent-branch model documented across the fleet (agents push claude/**, codex/**
@@ -89,7 +96,7 @@ on:
     # ready_for_review is NOT optional: a bot-opened PR starts as a draft (GitHub
     # does not start workflow runs from GITHUB_TOKEN's own `opened` event), so
     # `opened` never fires for it — only `ready_for_review`, once a human or
-    # claude-auto-pr.yml marks it ready. Same reasoning as harden-gate.yml.
+    # fuze-auto-pr.yml marks it ready. Same reasoning as harden-gate.yml.
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -104,7 +111,24 @@ concurrency:
 jobs:
   fuze-code-review:
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    # SELF-HOSTED RUNNER — NOT ubuntu-latest. The LiteLLM gateway is a
+    # Kubernetes service DNS name (http://litellm.fuzeinfra.svc.cluster.local:4000),
+    # so this job only routes from a runner inside the cluster. The external
+    # host (https://litellm.prod.fuzefront.com) is gated by Cloudflare Access
+    # email-OTP — not usable from CI without a service token, and bypassing
+    # that gate would expose live provider API keys. Same reasoning as the
+    # gate-code-review job in harden-gate.yml (the only other job in this
+    # fleet that needs in-cluster LiteLLM reachability). If the `fuzefront`
+    # scale set is unavailable, the job queues rather than starting on an
+    # ubuntu-latest runner — that is the fail-closed direction, same as
+    # gate-code-review's design intent. See harden-gate.yml for the note on
+    # the runner name vs governance/ci-runners.md mandated name (`fuze-runner`
+    # rename has not happened yet; change this when the set is renamed).
+    #
+    # REQUIRED REPO SECRET: LITELLM_FUZE_KEY — a LiteLLM virtual key minted
+    # with FuzeInfra scripts/mint-litellm-fuze-key.sh. Without it the job
+    # skips (not fails) as documented in the header comment above.
+    runs-on: fuzefront
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

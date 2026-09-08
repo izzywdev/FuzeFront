@@ -95,7 +95,7 @@ configured* is your job; *handling the secret* is not. Sealing a secret and runn
 
 **Prod is GitOps.** Building the config and verifying the image is yours. Applying it to a
 cluster is **devops-engineer**'s, through Argo. Never `kubectl`. Never hand-deploy. Never edit
-FuzeInfra from a consuming repo — delegate via `@claude` with the concrete change spelled out.
+FuzeInfra from a consuming repo — delegate via `@fuze` with the concrete change spelled out.
 
 ## Hard boundary — do not widen the API surface
 
@@ -149,7 +149,7 @@ Append when applicable:
 `NEEDS PRODUCT/OPERATOR: <TODO-flagged items — role behaviour, secret sealing, the register step>`
 `OUT OF SCOPE — NOT DONE: <named sibling layers, e.g. cluster application is devops-engineer's>`
 
-**Never report a surface as working because a check was green.** `claude-auto-pr.yml` passed for
+**Never report a surface as working because a check was green.** `fuze-auto-pr.yml` (then `claude-auto-pr.yml`) passed for
 its whole life on the early-exit path and failed only when actually asked to work; a check that
 passes when its job is already done by someone else is evidence of nothing. Verify the
 deliverable.

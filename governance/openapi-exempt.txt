@@ -1,0 +1,215 @@
+# governance/openapi-exempt.txt
+#
+# Routes exempted from gate-openapi-conformance (gate_openapi_conformance.py).
+#
+# Format: METHOD /path  # reason
+#
+# O1 exemptions: route is served but not declared in any OpenAPI spec.
+# O2 exemptions: route is declared in a spec but no implementation is found by
+#                the scanner (infrastructure-level handlers, not Express routes).
+#
+# Entries here are debts to resolve — each one is a consumer blind-spot or a
+# spec lie. Adding to this file is a last resort; the preferred fix is to add the
+# route to the spec or remove it from the spec. Do not exempt a route you own
+# today; open a follow-up ticket instead.
+#
+# Pre-existing violations catalogued 2026-09-07 — all were present on master
+# before this entry was created. Owner @izzywdev.
+#
+# --- O1: FuzeQuality service routes (no OpenAPI spec yet) ---
+GET /metrics  # FuzeQuality: Prometheus metrics endpoint; internal, not consumer-facing
+GET /api/v1/portfolio  # FuzeQuality: portfolio summary; service lacks openapi.yaml
+GET /api/v1/admin/organizations  # FuzeQuality: admin route; service lacks openapi.yaml
+POST /api/v1/admin/organizations/{}/context  # FuzeQuality: admin context; service lacks openapi.yaml
+GET /api/v1/catalog/apis  # FuzeQuality: catalog list; service lacks openapi.yaml
+GET /api/v1/catalog/apis/{}  # FuzeQuality: catalog detail; service lacks openapi.yaml
+GET /api/v1/catalog/frontend  # FuzeQuality: frontend catalog; service lacks openapi.yaml
+GET /api/v1/catalog/tests  # FuzeQuality: test catalog; service lacks openapi.yaml
+GET /api/v1/coverage/apis  # FuzeQuality: API coverage; service lacks openapi.yaml
+GET /api/v1/coverage/frontend  # FuzeQuality: frontend coverage; service lacks openapi.yaml
+GET /api/v1/coverage/portfolio  # FuzeQuality: portfolio coverage; service lacks openapi.yaml
+GET /api/v1/findings  # FuzeQuality: findings list; service lacks openapi.yaml
+GET /api/v1/flows  # FuzeQuality: flows list; service lacks openapi.yaml
+GET /api/v1/internal/repositories/{}  # FuzeQuality: internal repo detail; not consumer-facing
+GET /api/v1/requirements  # FuzeQuality: requirements list; service lacks openapi.yaml
+GET /api/v1/suggestions  # FuzeQuality: suggestions list; service lacks openapi.yaml
+GET /api/v1/test-implementations/{}  # FuzeQuality: test impl detail; service lacks openapi.yaml
+GET /api/v1/repositories  # FuzeQuality: repository list; service lacks openapi.yaml
+GET /api/v1/repositories/{}  # FuzeQuality: repository detail; service lacks openapi.yaml
+GET /api/v1/repositories/{}/catalog-status  # FuzeQuality: catalog status; service lacks openapi.yaml
+POST /api/v1/internal/coverage/rebuild  # FuzeQuality: internal trigger; not consumer-facing
+POST /api/v1/internal/intelligence/results  # FuzeQuality: internal ingest; not consumer-facing
+POST /api/v1/internal/scans/results  # FuzeQuality: internal ingest; not consumer-facing
+POST /api/v1/internal/test-implementations/{}/status  # FuzeQuality: internal status; not consumer-facing
+POST /api/v1/jira/sync  # FuzeQuality: Jira sync trigger; service lacks openapi.yaml
+POST /api/v1/organization/invitations  # FuzeQuality: org invitations; service lacks openapi.yaml
+POST /api/v1/repositories  # FuzeQuality: create repo; service lacks openapi.yaml
+POST /api/v1/repositories/verify  # FuzeQuality: verify repo; service lacks openapi.yaml
+POST /api/v1/repositories/{}/scans  # FuzeQuality: trigger scan; service lacks openapi.yaml
+POST /api/v1/suggestions/{}/decision  # FuzeQuality: record decision; service lacks openapi.yaml
+POST /api/v1/test-implementations  # FuzeQuality: create test impl; service lacks openapi.yaml
+POST /api/v1/webhooks/github  # FuzeQuality: GitHub webhook receiver; service lacks openapi.yaml
+PATCH /api/v1/repositories/{}/administration  # FuzeQuality: repo admin; service lacks openapi.yaml
+GET /api/v1/organization/members  # FuzeQuality: org members; service lacks openapi.yaml
+GET /api/v1/organization/roles  # FuzeQuality: org roles; service lacks openapi.yaml
+PUT /api/v1/organization/members/{}  # FuzeQuality: update member; service lacks openapi.yaml
+DELETE /api/v1/organization/members/{}  # FuzeQuality: remove member; service lacks openapi.yaml
+#
+# --- O1: App-registry-service routes (partial spec coverage) ---
+GET /api/v1/app-registry/portals/{}/catalog  # app-registry: portal catalog list; not in spec
+POST /api/v1/app-registry/portals/{}/catalog  # app-registry: add to catalog; not in spec
+PATCH /api/v1/app-registry/portals/{}/catalog/{}  # app-registry: update catalog entry; not in spec
+DELETE /api/v1/app-registry/portals/{}/catalog/{}  # app-registry: remove from catalog; not in spec
+#
+# --- O1: Main backend (no OpenAPI spec; covers org, app, token, auth routes) ---
+GET /api/apps  # backend: app listing; backend/src lacks openapi.yaml
+GET /api/apps/health  # backend: health; backend/src lacks openapi.yaml
+GET /api/apps/installed  # backend: installed apps; backend/src lacks openapi.yaml
+GET /api/apps/{}/installations  # backend: app installations; backend/src lacks openapi.yaml
+POST /api/apps  # backend: register app; backend/src lacks openapi.yaml
+POST /api/apps/register  # backend: register app (alt); backend/src lacks openapi.yaml
+POST /api/apps/{}/heartbeat  # backend: heartbeat; backend/src lacks openapi.yaml
+POST /api/apps/{}/install  # backend: install app; backend/src lacks openapi.yaml
+PUT /api/apps/{}/activate  # backend: activate app; backend/src lacks openapi.yaml
+DELETE /api/apps/{}  # backend: delete app; backend/src lacks openapi.yaml
+DELETE /api/apps/{}/install/{}  # backend: uninstall app; backend/src lacks openapi.yaml
+GET /api/organizations  # backend: org list; backend/src lacks openapi.yaml
+GET /api/organizations/{}  # backend: org detail; backend/src lacks openapi.yaml
+POST /api/organizations  # backend: create org; backend/src lacks openapi.yaml
+PUT /api/organizations/{}  # backend: update org; backend/src lacks openapi.yaml
+DELETE /api/organizations/{}  # backend: delete org; backend/src lacks openapi.yaml
+GET /api/organizations/{}/invitations  # backend: org invitations; backend/src lacks openapi.yaml
+POST /api/organizations/{}/invitations  # backend: send invitation; backend/src lacks openapi.yaml
+POST /api/organizations/{}/invitations/bulk  # backend: bulk invite; backend/src lacks openapi.yaml
+POST /api/organizations/{}/invitations/{}/resend  # backend: resend invitation; backend/src lacks openapi.yaml
+DELETE /api/organizations/{}/invitations/{}  # backend: cancel invitation; backend/src lacks openapi.yaml
+GET /api/organizations/{}/members  # backend: org members; backend/src lacks openapi.yaml
+POST /api/organizations/{}/members  # backend: add member; backend/src lacks openapi.yaml
+PUT /api/organizations/{}/members/{}  # backend: update member; backend/src lacks openapi.yaml
+DELETE /api/organizations/{}/members/{}  # backend: remove member; backend/src lacks openapi.yaml
+GET /api/organizations/{}/roles  # backend: org roles; backend/src lacks openapi.yaml
+GET /api/organizations/{}/tokens  # backend: org tokens; backend/src lacks openapi.yaml
+GET /api/tokens  # backend: token list; backend/src lacks openapi.yaml
+GET /api/tokens/{}  # backend: token detail; backend/src lacks openapi.yaml
+GET /api/tokens/{}/tokens  # backend: nested tokens; backend/src lacks openapi.yaml
+POST /api/tokens  # backend: create token; backend/src lacks openapi.yaml
+DELETE /api/tokens/{}  # backend: revoke token; backend/src lacks openapi.yaml
+GET /api/health  # backend: health; backend/src lacks openapi.yaml
+GET /admin/users  # backend: admin user list; internal, not consumer-facing
+GET /api/auth/oidc/signup  # backend: OIDC signup redirect; auth flow, not REST API
+POST /api/auth/oidc/password  # backend: OIDC password set; auth flow, not REST API
+POST /api/auth/token-exchange  # backend: token exchange; auth flow, not REST API
+GET /api/invitations/{}  # backend: invitation detail; backend/src lacks openapi.yaml
+POST /api/invitations/{}/accept  # backend: accept invitation; backend/src lacks openapi.yaml
+GET /api/v1/security/admin/reset-password  # N/A — this is POST not GET; gate scanner artefact
+POST /api/v1/security/admin/reset-password  # backend: admin password reset; internal admin route
+POST /internal/provision  # backend/security: Authentik lifecycle hook; internal, not REST API
+POST /internal/deprovision  # backend/security: Authentik lifecycle hook; internal, not REST API
+POST /internal/user-sync  # backend/security: Authentik lifecycle hook; internal, not REST API
+POST /internal/user-delete  # backend/security: Authentik lifecycle hook; internal, not REST API
+DELETE /apps/${}  # frontend api.ts call — client-side call, not a server route
+DELETE /organizations/{}  # Permit.io SDK call — not a FuzeFront-owned route
+GET /organizations/{}  # Permit.io SDK call — not a FuzeFront-owned route
+PUT /organizations/{}  # Permit.io SDK call — not a FuzeFront-owned route
+POST /organizations/{}/apps  # Permit.io SDK call — not a FuzeFront-owned route
+GET /v2/api-key/scope  # Permit.io SDK call — not a FuzeFront-owned route
+GET /v2/projects  # Permit.io SDK call — not a FuzeFront-owned route
+GET /v2/projects/${}/envs  # Permit.io SDK call — not a FuzeFront-owned route
+POST /v2/projects/${}/envs  # Permit.io SDK call — not a FuzeFront-owned route
+POST /v2/projects/${}/envs/${}/resources  # Permit.io SDK call — not a FuzeFront-owned route
+GET /v2/schema/${}/${}/resources  # Permit.io SDK call — not a FuzeFront-owned route
+GET /v2/schema/${}/${}/roles  # Permit.io SDK call — not a FuzeFront-owned route
+POST /v2/schema/${}/${}/roles  # Permit.io SDK call — not a FuzeFront-owned route
+PATCH /v2/schema/${}/${}/roles/${}  # Permit.io SDK call — not a FuzeFront-owned route
+GET /invoices/{}  # packages/auth authzMiddleware scanner artefact — not a server route
+#
+# --- O1: Main backend (additional routes missed in first pass) ---
+GET /api-docs  # backend: Swagger UI served by swagger-ui-express; not an API operation
+GET /api/flags  # backend: feature-flags list; backend/src lacks openapi.yaml
+GET /api/user  # backend: current user; backend/src lacks openapi.yaml
+GET /api/users  # backend: user list; backend/src lacks openapi.yaml
+GET /api/users/search  # backend: user search; backend/src lacks openapi.yaml
+GET /api/users/{}  # backend: user detail; backend/src lacks openapi.yaml
+GET /internal/resource  # machine-auth middleware: scanner artefact from middleware pattern — not a server route
+GET /resource  # machine-auth middleware: scanner artefact from middleware pattern — not a server route
+POST /jobs  # machine-auth middleware: scanner artefact from middleware pattern — not a server route
+#
+# --- O1: Billing-service backend routes (scanner sees backend/src, not billing-service spec) ---
+POST /api/v1/billing  # billing: create payment; backend/src/routes/billing.ts — matched against billing-service spec separately
+POST /api/v1/billing/webhooks/stripe  # billing: Stripe webhook ingress; backend/src/routes/billing.ts — no backend openapi.yaml
+POST /api/v1/billing/webhooks/stripe/checkout  # billing: Stripe checkout session; backend/src lacks openapi.yaml
+POST /api/v1/billing/webhooks/stripe/portal  # billing: Stripe customer portal; backend/src lacks openapi.yaml
+POST /api/v1/billing/webhooks/stripe/setup-intent  # billing: Stripe setup intent; backend/src lacks openapi.yaml
+POST /api/v1/billing/webhooks/stripe/subscriptions  # billing: Stripe create subscription; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/subscriptions  # billing: Stripe subscription list; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/subscriptions/{}  # billing: Stripe subscription detail; backend/src lacks openapi.yaml
+PATCH /api/v1/billing/webhooks/stripe/subscriptions/{}  # billing: Stripe subscription update; backend/src lacks openapi.yaml
+DELETE /api/v1/billing/webhooks/stripe/subscriptions/{}  # billing: Stripe subscription cancel; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/invoices  # billing: Stripe invoices list; backend/src lacks openapi.yaml
+GET /api/v1/billing/webhooks/stripe/plans  # billing: Stripe plans list; backend/src lacks openapi.yaml
+#
+# --- O1: Permit.io SDK calls (additional — product-authz.ts scanner artefact) ---
+PATCH /listings/{}  # Permit.io SDK call — not a FuzeFront-owned route
+#
+# --- O1: Custom-hostname client calls (${} template literal notation) ---
+GET /custom-hostnames/${}  # custom-hostname-client: client call — not a server route
+DELETE /custom-hostnames/${}  # custom-hostname-client: client call — not a server route
+#
+# --- O1: Frontend api.ts client calls (${} template literal notation) ---
+GET /organizations  # frontend api.ts client call — not a server route
+GET /organizations/${}  # frontend api.ts client call — not a server route
+POST /organizations  # frontend api.ts client call — not a server route
+PUT /organizations/${}  # frontend api.ts client call — not a server route
+DELETE /organizations/${}  # frontend api.ts client call — not a server route
+GET /organizations/${}/invitations  # frontend api.ts client call — not a server route
+POST /organizations/${}/invitations  # frontend api.ts client call — not a server route
+POST /organizations/${}/invitations/bulk  # frontend api.ts client call — not a server route
+DELETE /organizations/${}/invitations/${}  # frontend api.ts client call — not a server route
+GET /organizations/${}/members  # frontend api.ts client call — not a server route
+POST /organizations/${}/members  # frontend api.ts client call — not a server route
+PUT /organizations/${}/members/${}  # frontend api.ts client call — not a server route
+DELETE /organizations/${}/members/${}  # frontend api.ts client call — not a server route
+PUT /apps/${}/activate  # frontend api.ts client call — not a server route
+POST /apps/${}/install  # frontend api.ts client call — not a server route
+DELETE /apps/${}/install/${}  # frontend api.ts client call — not a server route
+GET /apps/installed  # frontend api.ts client call — not a server route
+GET /invitations/${}  # frontend api.ts client call — not a server route
+POST /invitations/${}/accept  # frontend api.ts client call — not a server route
+#
+# --- O1: Portal-admin-ui client calls (not server routes) ---
+POST /api/organizations/${}/invitations/${}/resend  # portal-admin-ui client call — not a server route
+DELETE /api/organizations/${}/invitations/${}  # portal-admin-ui client call — not a server route
+#
+# --- O1: Billing-service Swagger UI / OpenAPI doc endpoint ---
+GET /docs  # billing-service: Swagger UI served by swagger-ui-express; not an API operation
+#
+# --- O1: Config-service OpenAPI doc endpoints ---
+GET /docs/openapi.json  # config-service: OpenAPI spec served by the service itself; not an API operation
+GET /docs/openapi.yaml  # config-service: OpenAPI spec served by the service itself; not an API operation
+#
+# --- O1: fuzefront-website backend (standalone public website, no platform API contract) ---
+GET /  # fuzefront-website: static landing redirect; website-only, not part of platform API
+POST /api/analytics/page-view  # fuzefront-website: page-view analytics ingest; website-only
+POST /api/analytics/event  # fuzefront-website: custom event ingest; website-only
+GET /api/analytics/summary  # fuzefront-website: analytics summary; website-only, internal
+GET /api/analytics/health  # fuzefront-website: analytics health; website-only, internal
+GET /api/analytics/pages  # fuzefront-website: page-level analytics; website-only, internal
+POST /api/contact/submit  # fuzefront-website: contact form handler; website-only
+POST /api/newsletter/subscribe  # fuzefront-website: newsletter subscribe; website-only
+POST /api/newsletter/unsubscribe  # fuzefront-website: newsletter unsubscribe; website-only
+GET /api/newsletter/stats  # fuzefront-website: newsletter stats; website-only, internal
+#
+# --- O2: Documented in spec but implementation not found by scanner ---
+# These are routes declared in openapi.yaml files whose handlers are not
+# Express routes discoverable by the static scanner (e.g. health checks handled
+# at infra level, or broker endpoints not yet wired to Express).
+GET /api/v1/app-registry/health  # app-registry: /health handler not an Express route; infra-level
+GET /api/v1/billing/health  # billing-service: /health handler not an Express route; infra-level
+POST /api/v1/billing/webhooks/{}  # billing-service: webhook route exists but scanner cannot resolve dynamic provider param
+GET /api/v1/security/broker/clients/{}  # security: broker client lookup; planned feature, not yet implemented
+POST /api/v1/security/broker/handoff  # security: broker handoff; planned feature, not yet implemented
+POST /api/v1/security/broker/token-exchange  # security: broker token exchange; planned feature, not yet implemented
+DELETE /custom-hostnames/{}  # custom-hostname-api: route exists but scanner cannot find Express handler
+GET /custom-hostnames/{}  # custom-hostname-api: route exists but scanner cannot find Express handler
+GET /healthz  # custom-hostname-api: healthz handler not an Express route; infra-level
+GET /health  # portal-service: health handler not an Express route; infra-level

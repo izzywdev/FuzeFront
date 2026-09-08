@@ -1,0 +1,66 @@
+name: gate-deployable-paths
+
+# release.yml's `on.push.paths` must equal what deploy/deployable-paths.json renders.
+#
+# WHAT THIS CLOSES.
+# "What is deployable/publishable" lived in three hand-maintained places that drift
+# independently:
+#   1. root package.json `workspaces` — the real source (publish-packages.mjs reads it).
+#   2. auto-merge.yml's regex mirror — COLLAPSED, it now derives from
+#      `node scripts/publish-packages.mjs --list-dirs` at runtime.
+#   3. release.yml's `on.push.paths` — this one. It CANNOT be collapsed the same way:
+#      GitHub evaluates the trigger block before any step runs, so it must be static
+#      YAML in the file. So the manifest becomes the source and the block becomes a
+#      rendered artifact — and this gate is what keeps that true. Without it, the
+#      manifest is just a FOURTH copy of the same truth.
+#
+# WHY IT HAS TO BE A GATE AND NOT A CONVENTION.
+# This mirror's failure mode is silent and inverted. A MISSING path does not produce a
+# red run — it produces NO run: the change merges green and simply never ships, and the
+# image keeps the old code. Five services (chat, notification, payment, selection-list,
+# config) each acquired a `docker/build-push-action` step whose own source dir was absent
+# from the trigger, and nothing in CI could see it. The gate also checks the other
+# direction a round-trip cannot: every Dockerfile release.yml builds must have its source
+# directory covered, which is the #432 chat-service bug exactly.
+#
+# NO `paths:` FILTER, deliberately — the same rule workspace-deps-check.yml,
+# gate-route-ownership.yml and gate-sealed-keys.yml already state. A path-filtered
+# workflow does not run at all on a PR that misses the filter, so the check run is never
+# CREATED, and a required context that is never created leaves the PR permanently at
+# "Expected — waiting for status to be reported": no red to click, nothing to re-run.
+# This gate is dependency-free (bare `node`, no `npm ci`, no js-yaml) and finishes in
+# under a second, so running it unconditionally costs nothing.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-deployable-paths-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deployable-paths:
+    name: release.yml deploy triggers match the manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      # The gate's own extraction logic is the part most able to be quietly wrong: `on`
+      # is a YAML 1.1 boolean, so the classic bug is a checker that finds no `on` key,
+      # concludes "no deployable paths" and passes vacuously — failing toward exactly
+      # the silent no-ship it exists to catch. These tests assert it THROWS on every
+      # such shape, and that it fails on real injected drift. A gate never shown to fail
+      # on the bug it was written for is not evidence of anything.
+      - name: Unit-test the gate itself
+        run: npm run test:deployable-paths
+
+      - name: Check release.yml on.push.paths against deploy/deployable-paths.json
+        run: npm run check:deployable-paths

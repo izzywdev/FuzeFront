@@ -16,7 +16,7 @@ Helm Deployment+Service+values (with an `enabled` gate), the service's image in 
 ## Per-repo hardening mechanics (you execute the policy platform-governance owns)
 Branch protection and release hardening are part of your slice — you **execute** them on each repo via the `repo-hardening` skill, applying the policy that `platform-governance` defines (governance owns the standard; you apply it per repo, you don't invent it). Concretely:
 - **Apply the `Protect default branch` ruleset** to each repo (required PR + review, required status checks, linear history, no force-push/deletion, no direct push to the default branch).
-- **Keep bot pushes signing-safe** — ensure automation/bot identities can satisfy the ruleset (commit signing / verified pushes) so `@claude` and CI automation aren't blocked by the very protection you applied; never weaken the ruleset to unblock a bot — fix the signing path instead.
+- **Keep bot pushes signing-safe** — ensure automation/bot identities can satisfy the ruleset (commit signing / verified pushes) so `@fuze` and CI automation aren't blocked by the very protection you applied; never weaken the ruleset to unblock a bot — fix the signing path instead.
 - **Release / tag-bump** — own the version tag + prod values image-tag bump as the release mechanism, consistent with GitOps (the tag bump is committed and Argo syncs it; you never hand-deploy the bump to prod).
 Run these through the `repo-hardening` skill so every repo lands in parity with the governance standard.
 

@@ -107,7 +107,13 @@ jobs:
           node-version: '24.x'
 
       - name: "node --test (fixture-driven: healthy baseline + 3 required broken-input proofs + anti-vacuity)"
-        run: node --test scripts/check-portal-federation-health.selftest.mjs
+        run: |
+          node --test scripts/check-portal-federation-health.selftest.mjs
+          # The census now compares the pod's reported build against the tag
+          # values-prod.yaml requests, so the extractor that reads that tag is
+          # part of the verdict and is tested here with it. An extractor that
+          # silently returns nothing turns the drift check off without saying so.
+          node --test scripts/__tests__/requested-image-tag.test.mjs
 
   probe-production:
     name: Census against production
@@ -159,7 +165,24 @@ jobs:
           echo "reachability: $(curl -sS -o /dev/null -w 'HTTP %{http_code} in %{time_total}s' \
             --max-time 30 "$BASE_URL/" 2>&1 || echo 'no answer')" | tee -a "$GITHUB_STEP_SUMMARY"
 
-          node scripts/check-portal-federation-health.mjs --base-url "$BASE_URL" | tee -a "$GITHUB_STEP_SUMMARY"
+          # The image tag GitOps ASKED for, read from the SAME overlay
+          # deploy/argocd/applications/fuzefront.yaml pins (valueFiles:
+          # [values-prod.yaml]). Reading any other overlay would compare
+          # against a file prod never renders -- a trap this repo has already
+          # been caught by once (FuzeService pins values-contabo.yaml, so its
+          # values-prod.yaml is inert).
+          #
+          # `|| true` here is NOT suppressing a verdict: a missing tag means
+          # there is nothing to COMPARE, and the census below prints that it is
+          # not running the comparison rather than passing quietly. The verdict
+          # is the census's exit code, which this line cannot affect.
+          EXPECTED_BUILD="$(node scripts/requested-image-tag.mjs \
+            deploy/helm/fuzefront/values-prod.yaml applicationsService || true)"
+          echo "values-prod.yaml requests applications-service tag: ${EXPECTED_BUILD:-(could not read)}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+          node scripts/check-portal-federation-health.mjs --base-url "$BASE_URL" \
+            ${EXPECTED_BUILD:+--expected-build "$EXPECTED_BUILD"} | tee -a "$GITHUB_STEP_SUMMARY"
           status=$?
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           exit "$status"

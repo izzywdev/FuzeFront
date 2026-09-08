@@ -85,11 +85,50 @@ rather than returning an empty string.
 
 ## Install the client
 
-The `@fuzeone` scope is not yet published to npm (tracked on FFRNT-266).
-Until the registry publish lands, install from a local build:
+### React UI package — published, install it from the registry
+
+`@fuzeone/selection-lists-ui` ships to GitHub Packages under the owner scope as
+**`@izzywdev/fuzeone-selection-lists-ui`** (`0.1.0` is live; verified against
+`GET users/izzywdev/packages/npm/fuzeone-selection-lists-ui/versions`). The
+rename is not a typo — GitHub Packages requires the npm scope to equal the
+account that owns the repository, so `publish-packages.mjs` rewrites every
+canonical scope to `@izzywdev/<scope>-*` at publish time. See
+[`shared-packages-distribution.md`](./shared-packages-distribution.md) for the
+alias mechanism.
 
 ```bash
-# In the selection-list-client workspace
+# .npmrc in the consuming repo (the scope is @izzywdev, not @fuzeone)
+@izzywdev:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+```jsonc
+// package.json — alias it back to the canonical name if you prefer that import
+{
+  "dependencies": {
+    "@fuzeone/selection-lists-ui": "npm:@izzywdev/fuzeone-selection-lists-ui@^0.1.0"
+  }
+}
+```
+
+### TypeScript client — genuinely not published yet, and here is why
+
+`@fuzeone/selection-list-client` is **not** in the registry
+(`users/izzywdev/packages/npm/fuzeone-selection-list-client` → 404). The cause
+is not `publishConfig` — that is already correct in
+`selection-list-client/package.json`. It is that `selection-list-client` is
+**absent from the root `package.json` `workspaces` array**, and `workspaces` is
+the single source of truth `publish-packages.mjs` reads: a directory that is
+not a workspace produces no matrix leg, so `packages-publish` never tries to
+publish it and goes green anyway. `api-client/` and `sdk/` had exactly this
+defect until they were added as workspaces. Adding `selection-list-client` (and
+`packages/selection-list-client-py` for the Python side) to `workspaces` is the
+whole fix.
+
+Until then, install from a local build:
+
+```bash
+# In the selection-list-client directory
 cd selection-list-client
 npm install
 npm run build
@@ -100,9 +139,8 @@ npm pack
 npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-1.0.0.tgz
 ```
 
-**Python client** (tracked on the same FFRNT-266 milestone) is in
-`packages/selection-list-client-py/` and follows the same pack-and-install
-pattern until PyPI publication.
+**Python client** is in `packages/selection-list-client-py/` and follows the
+same pack-and-install pattern until PyPI publication.
 
 ---
 

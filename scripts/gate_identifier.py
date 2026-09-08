@@ -559,6 +559,12 @@ SPINE_PREFIXES = {
     "cnv": "FuzeFront",
     "msg": "FuzeFront",
     "ntf": "FuzeFront",
+    # config-service (FF-EPIC-17/18) — FuzeFront-hosted for the whole family, so
+    # these are bare spine prefixes, not front_-namespaced. Declared in the frozen
+    # contract (services/config-service/openapi.yaml) and in packages/identity.
+    "cns": "FuzeFront",
+    "ckd": "FuzeFront",
+    "cvh": "FuzeFront",
 }
 
 TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.M)

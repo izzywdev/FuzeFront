@@ -53,7 +53,10 @@
     "check:dockerfile-lockfile": "node scripts/check-dockerfile-lockfile.mjs",
     "check:frames-stamped": "node scripts/stamp-frames.mjs --check",
     "stamp:frames": "node scripts/stamp-frames.mjs --write",
-    "test:frames-stamped": "node --test scripts/__tests__/stamp-frames.test.mjs"
+    "test:frames-stamped": "node --test scripts/__tests__/stamp-frames.test.mjs",
+    "check:deployable-paths": "node scripts/check-deployable-paths.mjs",
+    "deployable-paths:write": "node scripts/gen-deployable-paths.mjs --write",
+    "test:deployable-paths": "node --test scripts/__tests__/deployable-paths.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

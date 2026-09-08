@@ -102,7 +102,7 @@ For every open issue:
 | Duplicate | Linked to a canonical open or closed issue | Close, link canonical |
 | Actionable (small) | Reproducible, fix fits one PR | Open a PR; link issue; close when merged |
 | Needs decision | Multi-file, architectural, or cross-repo | Leave open; add a comment with options |
-| Cross-repo | Root fix lives in another repo | Delegate via `@claude` cross-repo protocol; keep open until delegate PR merges |
+| Cross-repo | Root fix lives in another repo | Delegate via `@fuze` cross-repo protocol; keep open until delegate PR merges |
 
 3. **Evidence standard** — never close with "fixed in a newer version" alone. Always include:
    - The PR or commit link.

@@ -35,7 +35,7 @@ const SCRIPT = path.join(__dirname, 'check-portal-federation-health.mjs')
 
 /** Minimal fixture server: fakes the app-registry list + login endpoints, and
  * serves arbitrary fixed responses for any other path from `routes`. */
-function startFixtureServer({ apps, routes }) {
+function startFixtureServer({ apps, routes, buildSha }) {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost')
 
@@ -50,7 +50,12 @@ function startFixtureServer({ apps, routes }) {
     }
 
     if (req.method === 'GET' && url.pathname === '/api/v1/app-registry/apps') {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
+      // `buildSha: undefined` deliberately sends NO header at all, standing in
+      // for a service that predates build stamping — a distinct case from a
+      // service reporting the literal string 'unknown'.
+      const headers = { 'Content-Type': 'application/json' }
+      if (buildSha !== undefined) headers['X-Fuze-Build'] = buildSha
+      res.writeHead(200, headers)
       res.end(JSON.stringify({ apps, nextCursor: null }))
       return
     }
@@ -84,8 +89,9 @@ function writeExpected(dir, apps) {
  * setup during development: every test hung for exactly FETCH_TIMEOUT_MS
  * before failing, which is the tell.)
  */
-function runChecker({ baseUrl, expectedPath, useToken }) {
+function runChecker({ baseUrl, expectedPath, useToken, expectedBuild }) {
   const args = [SCRIPT, '--base-url', baseUrl, '--api-url', baseUrl, '--expected', expectedPath]
+  if (expectedBuild) args.push('--expected-build', expectedBuild)
   if (useToken) {
     args.push('--token', 'selftest-token')
   } else {
@@ -252,4 +258,92 @@ test('ANTI-VACUITY: a registry returning zero apps is a FAIL, never a silent pas
   } finally {
     server.close()
   }
+})
+
+// ---------------------------------------------------------------------------
+// DEPLOY DRIFT (--expected-build)
+//
+// The 2026-09-07 finding this was built for: migrations 012 (merged 09-01) and
+// 013 (merged 09-07) had both still not executed, because the applications-
+// service pods were never replaced with the image values-prod.yaml had been
+// requesting for six days. Every existing probe stayed green — the OLD pods
+// were healthy — so the drift was invisible and the registry rows looked like
+// a migration bug instead of a stalled rollout.
+//
+// A single healthy fixture is used for all four cases so the ONLY variable is
+// the build identity: every one of these would exit 0 without the drift check.
+// ---------------------------------------------------------------------------
+
+const DRIFT_APPS = [
+  {
+    slug: 'demo-mf',
+    status: 'activated',
+    manifest: { name: 'Demo MF', integration: { type: 'module-federation', remoteEntry: '/apps/demo-mf/remoteEntry.js' } },
+  },
+]
+const DRIFT_ROUTES = {
+  '/apps/demo-mf/remoteEntry.js': {
+    status: 200,
+    contentType: 'application/javascript',
+    body: 'import("./chunk-abc.js");',
+  },
+  '/apps/demo-mf/chunk-abc.js': { status: 200, contentType: 'application/javascript', body: 'console.log(1)' },
+}
+
+async function runDriftCase({ buildSha, expectedBuild }) {
+  const server = await startFixtureServer({ apps: DRIFT_APPS, routes: DRIFT_ROUTES, buildSha })
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`
+    const expectedPath = writeExpected(tmpDir, [
+      { slug: 'demo-mf', name: 'Demo MF', confidence: 'verified', source: 'selftest' },
+    ])
+    return await runChecker({ baseUrl, expectedPath, useToken: true, expectedBuild })
+  } finally {
+    server.close()
+  }
+}
+
+test('DRIFT 1/4: a pod reporting a DIFFERENT build than values-prod.yaml requests FAILS, exit 1', async () => {
+  const { status, stdout, stderr } = await runDriftCase({ buildSha: 'aaaaaaaaaaaa', expectedBuild: 'bbbbbbbbbbbb' })
+  const out = stdout + stderr
+  assert.equal(status, 1, `expected exit 1 for drifted build, got ${status}.\n${out}`)
+  assert.match(out, /DEPLOY DRIFT/, `expected a DEPLOY DRIFT report.\n${out}`)
+  // Both sides must be named: "they differ" without the two values sends the
+  // reader back to the cluster to find out which is which.
+  assert.match(out, /aaaaaaaaaaaa/, `expected the REPORTED build in the message.\n${out}`)
+  assert.match(out, /bbbbbbbbbbbb/, `expected the REQUESTED tag in the message.\n${out}`)
+})
+
+test('DRIFT 2/4: a pod sending NO build header is reported, never treated as matching, exit 1', async () => {
+  const { status, stdout, stderr } = await runDriftCase({ buildSha: undefined, expectedBuild: 'bbbbbbbbbbbb' })
+  const out = stdout + stderr
+  assert.equal(status, 1, `an unstamped service must not pass vacuously, got exit ${status}.\n${out}`)
+  assert.match(out, /did not send X-Fuze-Build/, `expected the unstamped-service message.\n${out}`)
+})
+
+test("DRIFT 3/4: a pod reporting build 'unknown' (built with no --build-arg) FAILS, exit 1", async () => {
+  const { status, stdout, stderr } = await runDriftCase({ buildSha: 'unknown', expectedBuild: 'bbbbbbbbbbbb' })
+  const out = stdout + stderr
+  assert.equal(status, 1, `expected exit 1 for an unstamped image, got ${status}.\n${out}`)
+  assert.match(out, /reports build 'unknown'/, `expected the unknown-build message.\n${out}`)
+})
+
+test('DRIFT 4/4: ANTI-VACUITY — a MATCHING build passes, so the check is not just always-red', async () => {
+  const { status, stdout, stderr } = await runDriftCase({ buildSha: 'bbbbbbbbbbbb', expectedBuild: 'bbbbbbbbbbbb' })
+  const out = stdout + stderr
+  assert.equal(status, 0, `a matching build must pass, got exit ${status}.\n${out}`)
+  assert.doesNotMatch(out, /DEPLOY DRIFT/, `a matching build must not report drift.\n${out}`)
+  // And the census must have actually printed what it compared.
+  assert.match(out, /applications-service build: bbbbbbbbbbbb/, `expected the build line.\n${out}`)
+})
+
+test('PASS rows name the entry URL that served, so a duplicate pair is self-adjudicating', async () => {
+  const { status, stdout, stderr } = await runDriftCase({ buildSha: 'bbbbbbbbbbbb', expectedBuild: 'bbbbbbbbbbbb' })
+  const out = stdout + stderr
+  assert.equal(status, 0, out)
+  assert.match(
+    out,
+    /\/apps\/demo-mf\/remoteEntry\.js — remoteEntry \+ 1 chunk\(s\) all load as JavaScript/,
+    `a PASS row must name the URL it passed at.\n${out}`
+  )
 })

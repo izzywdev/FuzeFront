@@ -17,6 +17,11 @@ on:
   push:
     branches: [master]
     paths:
+      # GENERATED BLOCK — do not hand-edit. Source of truth: deploy/deployable-paths.json.
+      # Change it there, run `npm run deployable-paths:write`, commit both.
+      # gate-deployable-paths.yml fails if these two disagree, because the failure mode of a
+      # missing path is silent: the release workflow simply does not run, so the change merges
+      # green and never ships. There is no red run to notice — there is no run.
       - 'backend/**'
       - 'shared/**'
       - 'frontend/**'
@@ -55,6 +60,10 @@ on:
       - 'services/selection-list-service/**'
       - 'services/config-service/**'
       - 'clock-app/**'
+      # fuzefront-website/frontend and fuzefront-website/backend each have their own
+      # self-contained Dockerfile and are built into separate GHCR images. Without this
+      # path a change confined to the public website would merge green and never ship.
+      - 'fuzefront-website/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
 
@@ -224,6 +233,12 @@ jobs:
           tags: |
             ghcr.io/izzywdev/fuzefront-applications-service:${{ steps.tag.outputs.sha }}
             ghcr.io/izzywdev/fuzefront-applications-service:latest
+          # Stamp the image with the SAME sha it is tagged with, so the running
+          # service can be asked what it is (X-Fuze-Build) and compared against
+          # what values-prod.yaml asked for. See the Dockerfile's BUILD_SHA note:
+          # without this, a stalled rollout is invisible to every black-box check.
+          build-args: |
+            BUILD_SHA=${{ steps.tag.outputs.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -339,6 +354,48 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: "Sync design-system into fuzefront-website (vendored file: dependency)"
+        # @fuzefront/design-system is an npm WORKSPACE package (root workspaces),
+        # never published to a registry — see fuzefront-website/frontend/scripts/
+        # sync-design-system.mjs for why. The website's Docker build context is
+        # scoped to fuzefront-website/frontend/ only (no root workspace deps), so
+        # the vendored copy must be refreshed here, on the runner (full checkout),
+        # BEFORE `docker build` reads that context — Docker cannot reach outside it.
+        run: node fuzefront-website/frontend/scripts/sync-design-system.mjs
+
+      - name: Build & push fuzefront-website frontend
+        # Self-contained Dockerfile (fuzefront-website/frontend/Dockerfile) — context
+        # is fuzefront-website/frontend/, no root workspace deps. design-system is
+        # vendored into it by the step above.
+        id: website_frontend_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: fuzefront-website/frontend
+          file: fuzefront-website/frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-website-frontend:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-website-frontend:latest
+          cache-from: type=gha,scope=website-frontend
+          cache-to: type=gha,mode=max,scope=website-frontend
+
+      - name: Build & push fuzefront-website backend
+        # Self-contained Dockerfile (fuzefront-website/backend/Dockerfile) — context
+        # is fuzefront-website/backend/, no root workspace deps.
+        id: website_backend_image
+        continue-on-error: true
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: fuzefront-website/backend
+          file: fuzefront-website/backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzefront-website-backend:${{ steps.tag.outputs.sha }}
+            ghcr.io/izzywdev/fuzefront-website-backend:latest
+          cache-from: type=gha,scope=website-backend
+          cache-to: type=gha,mode=max,scope=website-backend
+
       - name: Bump image tags in values-prod.yaml (GitOps)
         # The "Protect Master" ruleset has a pull_request rule, so neither a
         # plain `git push` with GITHUB_TOKEN nor a contents-API commit can land
@@ -387,8 +444,10 @@ jobs:
           PAYMENT_OK=$(ok "${{ steps.payment_image.outcome }}")
           SELECTION_LIST_OK=$(ok "${{ steps.selection_list_image.outcome }}")
           CONFIG_SERVICE_OK=$(ok "${{ steps.config_service_image.outcome }}")
-          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK + PAYMENT_OK + SELECTION_LIST_OK + CONFIG_SERVICE_OK))
-          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK} payment=${PAYMENT_OK} selection_list=${SELECTION_LIST_OK} config_service=${CONFIG_SERVICE_OK}"
+          WEBSITE_FRONTEND_OK=$(ok "${{ steps.website_frontend_image.outcome }}")
+          WEBSITE_BACKEND_OK=$(ok "${{ steps.website_backend_image.outcome }}")
+          EXPECTED=$((2 + EMAIL_OK + SMS_OK + PROV_OK + BILLING_OK + SECURITY_OK + APPS_OK + CLOCK_OK + CHAT_OK + NOTIF_OK + PAYMENT_OK + SELECTION_LIST_OK + CONFIG_SERVICE_OK + WEBSITE_FRONTEND_OK + WEBSITE_BACKEND_OK))
+          echo "built: email=${EMAIL_OK} sms=${SMS_OK} provisioning=${PROV_OK} billing=${BILLING_OK} security=${SECURITY_OK} applications=${APPS_OK} clock=${CLOCK_OK} chat=${CHAT_OK} notification=${NOTIF_OK} payment=${PAYMENT_OK} selection_list=${SELECTION_LIST_OK} config_service=${CONFIG_SERVICE_OK} website_frontend=${WEBSITE_FRONTEND_OK} website_backend=${WEBSITE_BACKEND_OK}"
           echo "expecting ${EXPECTED} tag rewrites (backend + frontend are always built)"
           if [ "${APPS_OK}${SECURITY_OK}${EMAIL_OK}${BILLING_OK}" != "1111" ]; then
             echo "::warning::one or more auxiliary images failed to build; their values-prod tags are left pinned to the last good release"
@@ -426,7 +485,8 @@ jobs:
               -v email="$EMAIL_OK" -v sms="$SMS_OK" -v prov="$PROV_OK" \
               -v billing="$BILLING_OK" -v security="$SECURITY_OK" \
               -v apps="$APPS_OK" -v clock="$CLOCK_OK" -v payment="$PAYMENT_OK" \
-              -v selection_list="$SELECTION_LIST_OK" -v config_service="$CONFIG_SERVICE_OK" '
+              -v selection_list="$SELECTION_LIST_OK" -v config_service="$CONFIG_SERVICE_OK" \
+              -v website_frontend="$WEBSITE_FRONTEND_OK" -v website_backend="$WEBSITE_BACKEND_OK" '
             hot {
               hot=0
               if ($0 ~ /^[[:space:]]*tag:/) {
@@ -450,6 +510,8 @@ jobs:
             payment == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-payment-service\r?$/ { hot=1 }
             selection_list == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-selection-list-service\r?$/ { hot=1 }
             config_service == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-config-service\r?$/ { hot=1 }
+            website_frontend == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-website-frontend\r?$/ { hot=1 }
+            website_backend == 1 && /repository: ghcr\.io\/izzywdev\/fuzefront-website-backend\r?$/ { hot=1 }
             { print }
             END { print n+0 > "/tmp/bump-count" }
           ' /tmp/vp-current.yaml > /tmp/vp-new.yaml

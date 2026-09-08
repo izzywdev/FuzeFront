@@ -35,7 +35,12 @@ export interface BillingPayment {
   updatedAt: string;
 }
 
-export type PlanTier = 'free' | 'starter' | 'pro' | 'enterprise' | string;
+/**
+ * Recognised subscription tier names. Aligned with the plan-tier flag taxonomy
+ * (`fuzefront.billing.plan-*`). 'basic' is the legacy $9/mo price kept for
+ * backwards-compat; 'unknown' covers unrecognised Stripe metadata values.
+ */
+export type PlanTier = 'starter' | 'professional' | 'scale' | 'enterprise' | 'basic' | 'unknown' | 'free';
 
 /** Mirrors Stripe subscription status enum values. */
 export type SubscriptionStatus =

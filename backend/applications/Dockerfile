@@ -104,6 +104,21 @@ RUN find ./backend/applications/dist -name "*.d.ts" -type f -delete
 
 WORKDIR /app/backend/applications
 
+# BUILD IDENTITY. Stamped by release.yml with the same SHA it tags the image
+# with, and echoed back by the service (X-Fuze-Build header + /health.build).
+# Without it there is NO way, from outside the cluster, to tell which image is
+# actually serving: values-prod.yaml records what GitOps ASKED for, and a
+# rollout that never completes leaves the previous ReplicaSet answering every
+# probe with a perfectly healthy 200. That is not hypothetical -- migrations
+# 012 (2026-09-01) and 013 (2026-09-07) both sat unapplied for days behind
+# exactly that failure while every black-box check stayed green.
+#
+# Deliberately defaulted to "unknown" rather than left unset: a local `docker
+# build` with no --build-arg must produce a service that SAYS it does not know
+# its build, not one that silently omits the field and reads as "matching".
+ARG BUILD_SHA=unknown
+ENV BUILD_SHA=${BUILD_SHA}
+
 ENV NODE_ENV=production
 ENV USE_POSTGRES=true
 ENV PORT=3003

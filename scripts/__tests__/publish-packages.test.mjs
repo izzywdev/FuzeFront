@@ -9,7 +9,15 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { aliasFor, rewriteForPublish, filterTargets } from '../publish-packages.mjs'
+import { readFileSync, existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import {
+  aliasFor,
+  rewriteForPublish,
+  filterTargets,
+  isPublishableName,
+  assertAliasable,
+} from '../publish-packages.mjs'
 
 test('aliasFor maps the canonical scope onto the owner scope', () => {
   assert.equal(aliasFor('@fuzefront/chat-ui'), '@izzywdev/fuzefront-chat-ui')
@@ -22,9 +30,65 @@ test('aliasFor leaves an already-owner-scoped name alone', () => {
   assert.equal(aliasFor('@izzywdev/fuzefront-identity'), '@izzywdev/fuzefront-identity')
 })
 
+test('aliasFor maps every canonical scope, not just @fuzefront', () => {
+  // The bug this prevents, measured: @fuzeone/selection-lists-ui fell through
+  // aliasFor unchanged and was published under its own scope, which GitHub
+  // Packages rejects because the scope is not the repo owner:
+  //
+  //   npm error 403 Forbidden - PUT https://npm.pkg.github.com/@fuzeone%2fselection-lists-ui
+  //   Permission permission_denied: The requested installation does not exist.
+  //
+  // 24 of 25 matrix legs went green and the RUN still concluded `failure`, so a
+  // green packages-publish stopped being evidence that anything shipped.
+  assert.equal(aliasFor('@fuzeone/selection-lists-ui'), '@izzywdev/fuzeone-selection-lists-ui')
+})
+
 test('aliasFor leaves third-party names alone', () => {
+  // aliasFor also runs over DEPENDENCY names, so pass-through has to stay.
+  // That is why the unknown-scope rejection lives in assertAliasable, which
+  // only ever sees publish targets.
   assert.equal(aliasFor('react'), 'react')
   assert.equal(aliasFor('@types/node'), '@types/node')
+})
+
+test('isPublishableName rejects a scope with no alias rule', () => {
+  assert.equal(isPublishableName('@fuzefront/chat-ui'), true)
+  assert.equal(isPublishableName('@fuzeone/selection-lists-ui'), true)
+  assert.equal(isPublishableName('@izzywdev/fuzefront-identity'), true)
+  // A scope nobody has taught the script about, and a bare unscoped name:
+  // both would 403 exactly like @fuzeone did.
+  assert.equal(isPublishableName('@fuzenext/thing'), false)
+  assert.equal(isPublishableName('selection-list-service'), false)
+})
+
+test('assertAliasable fails the run before anything publishes', () => {
+  // Loud and early beats one red leg among two dozen green ones — that reads
+  // as flakiness and is exactly how the @fuzeone 403 survived every run.
+  assert.throws(
+    () => assertAliasable([{ dir: 'packages/thing', pkg: { name: '@fuzenext/thing' } }]),
+    /403 permission_denied/
+  )
+  assert.throws(
+    () => assertAliasable([{ dir: 'packages/thing', pkg: { name: '@fuzenext/thing' } }]),
+    /SCOPE_ALIASES/
+  )
+})
+
+test('assertAliasable passes the real workspace set', () => {
+  // The regression guard with teeth: this reads the ACTUAL root package.json,
+  // so adding a workspace under a brand-new scope fails here — in `verify`,
+  // before any matrix leg uploads a byte — instead of 403-ing on merge to
+  // master. A per-package unit assertion could not have caught @fuzeone;
+  // nothing in the tree enumerated the scopes.
+  const root = fileURLToPath(new URL('../../', import.meta.url))
+  const ws = JSON.parse(readFileSync(`${root}/package.json`, 'utf8')).workspaces ?? []
+  const targets = ws
+    .filter((dir) => !dir.includes('*') && existsSync(`${root}/${dir}/package.json`))
+    .map((dir) => ({ dir, pkg: JSON.parse(readFileSync(`${root}/${dir}/package.json`, 'utf8')) }))
+    .filter(({ pkg }) => !pkg.private && pkg.name)
+
+  assert.ok(targets.length > 0, 'expected at least one publishable workspace')
+  assert.doesNotThrow(() => assertAliasable(targets))
 })
 
 test('rewrites in-family dependencies, not just the package name', () => {
