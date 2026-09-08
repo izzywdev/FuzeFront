@@ -49,6 +49,11 @@ UI_EXT = (".tsx", ".jsx", ".ts", ".js", ".vue", ".svelte", ".css", ".scss", ".le
 SCAN_DIRS = ["frontend", "apps", "src", "packages", "fuzefront-website/frontend"]
 # Any path containing one of these segments is the DS package itself — exclude from feature checks.
 DS_EXCLUDE_SEGMENTS = ("design-system", "design_system", "ds-tokens", "tokens")
+# A *-design-system segment (e.g. "vendor-design-system") is a vendored, synced-from-source copy
+# of the real design-system/ package — see fuzefront-website/frontend/scripts/sync-design-system.mjs
+# for why a consumer with an isolated build context vendors it via a `file:` dependency instead of
+# a registry package. It's a snapshot of the same source DS_EXCLUDE_SEGMENTS already exempts, not
+# feature code, so it gets the same exemption rather than being re-scanned as if hand-authored.
 SKIP_DIRS = {".git", "node_modules", "dist", "build", ".venv", "vendor",
              "__pycache__", "coverage", ".next", "storybook-static", "__snapshots__"}
 # Feature-path globs that are NOT hand-authored feature UI: config, type decls, contract-frozen
@@ -159,6 +164,15 @@ def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
     return dict(out)
 
 
+def _is_ds_package_segment(seg: str) -> bool:
+    """True for `seg` naming the DS package itself, either at its canonical location
+    (an exact DS_EXCLUDE_SEGMENTS match) or a vendored copy of it (a `*-design-system` /
+    `*-design_system` segment, e.g. "vendor-design-system")."""
+    if seg in DS_EXCLUDE_SEGMENTS:
+        return True
+    return seg.endswith("-design-system") or seg.endswith("-design_system")
+
+
 def _under_scan_dir(reln: str) -> bool:
     """True if `reln` (forward-slash repo-relative path) falls under one of
     SCAN_DIRS. Entries may be a single top-level segment ("frontend") or a
@@ -178,8 +192,8 @@ def iter_ui_files(root: str):
             if SCAN_DIRS and not _under_scan_dir(reln):
                 continue
             segs = reln.lower().split("/")
-            if any(seg in DS_EXCLUDE_SEGMENTS for seg in segs):
-                continue  # DS package — tokens defined here
+            if any(_is_ds_package_segment(seg) for seg in segs):
+                continue  # DS package (or a vendored copy of it) — tokens defined here
             if any(seg in SKIP_DIRS for seg in segs):
                 continue
             yield os.path.join(root, *reln.split("/"))
@@ -191,8 +205,8 @@ def iter_ui_files(root: str):
         for dirpath, dirnames, filenames in os.walk(start):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             rel = os.path.relpath(dirpath, root).replace("\\", "/").lower()
-            if any(seg in rel.split("/") for seg in DS_EXCLUDE_SEGMENTS):
-                continue  # inside the DS package — tokens are defined here
+            if any(_is_ds_package_segment(seg) for seg in rel.split("/")):
+                continue  # inside the DS package (or a vendored copy) — tokens are defined here
             for fn in filenames:
                 if fn.endswith(UI_EXT):
                     yield os.path.join(dirpath, fn)
