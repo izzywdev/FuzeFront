@@ -183,20 +183,23 @@ export const Footer: React.FC = () => {
 
         {/* Bottom Bar */}
         <div className="mt-12 pt-8 border-t border-[var(--border-color)] flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-[var(--text-tertiary)] text-sm">
+          {/* --text-tertiary here fails WCAG AA (3.7:1 vs the 4.5:1 this
+              14px text needs) against --bg-secondary — caught by
+              e2e/contrast.spec.ts. --text-secondary clears it. */}
+          <p className="text-[var(--text-secondary)] text-sm">
             &copy; 2026 FuzeOne, Inc. All rights reserved.
           </p>
           <div className="flex items-center space-x-6">
             <Link
               to="/privacy"
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors text-sm"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm"
               onClick={() => handleFooterClick('bottom', 'privacy')}
             >
               Privacy
             </Link>
             <Link
               to="/terms"
-              className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors text-sm"
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm"
               onClick={() => handleFooterClick('bottom', 'terms')}
             >
               Terms

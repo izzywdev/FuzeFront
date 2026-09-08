@@ -268,6 +268,12 @@ export const ProductDetailPage: React.FC = () => {
       {/* Hero */}
       <section className={`bg-gradient-to-br ${product.gradient} pt-28 pb-20 relative overflow-hidden`}>
         <div className="absolute inset-0 hero-pattern opacity-20" />
+        {/* Scrim: several of the per-product gradients (blue-500, pink-500,
+            lime-500, etc.) are bright/saturated enough that white text at
+            normal (non-"large") sizes can't reach 4.5:1 against them even at
+            full opacity — caught by e2e/contrast.spec.ts. A dark overlay
+            keeps every gradient variant safe for the text on top of it. */}
+        <div className="absolute inset-0 bg-black/30" />
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -276,7 +282,7 @@ export const ProductDetailPage: React.FC = () => {
           >
             <Link
               to="/products"
-              className="inline-flex items-center gap-1 text-white/70 hover:text-white text-sm mb-8 transition-colors"
+              className="inline-flex items-center gap-1 text-white/90 hover:text-white text-sm mb-8 transition-colors"
             >
               <ArrowLeft size={14} /> All products
             </Link>
@@ -289,11 +295,11 @@ export const ProductDetailPage: React.FC = () => {
                 <h1 className="text-3xl sm:text-4xl font-heading font-extrabold text-white">
                   {product.name}
                 </h1>
-                <p className="text-white/70 text-lg mt-1">{product.tagline}</p>
+                <p className="text-white/90 text-lg mt-1">{product.tagline}</p>
               </div>
             </div>
 
-            <p className="text-white/85 text-lg leading-relaxed max-w-2xl mb-8">
+            <p className="text-white text-lg leading-relaxed max-w-2xl mb-8">
               {product.heroDescription}
             </p>
 
@@ -337,7 +343,7 @@ export const ProductDetailPage: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-gray-900 mb-1">{feature.title}</h3>
-                  <p className="text-sm text-gray-500 leading-relaxed">{feature.description}</p>
+                  <p className="text-sm text-gray-600 leading-relaxed">{feature.description}</p>
                 </div>
               </motion.div>
             ))}
@@ -368,7 +374,7 @@ export const ProductDetailPage: React.FC = () => {
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-4">
             Ready to get started with {product.name}?
           </h2>
-          <p className="text-gray-500 mb-8">
+          <p className="text-gray-600 mb-8">
             Try free for 14 days. No credit card required.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">

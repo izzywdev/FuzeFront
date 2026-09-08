@@ -113,7 +113,10 @@ export const FuzeHubPage: React.FC = () => {
       </section>
 
       {/* Mock Dashboard Visual */}
-      <section className="bg-secondary-950 py-12 border-y border-secondary-800">
+      {/* secondary-950 doesn't exist in this site's Tailwind palette (only
+          50-900 are defined) — the class silently generated no CSS at all,
+          leaving this section's own background transparent. */}
+      <section className="bg-secondary-900 py-12 border-y border-secondary-800">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -126,7 +129,7 @@ export const FuzeHubPage: React.FC = () => {
               <div className="w-3 h-3 rounded-full bg-error-500" />
               <div className="w-3 h-3 rounded-full bg-warning-400" />
               <div className="w-3 h-3 rounded-full bg-success-500" />
-              <span className="ml-4 text-secondary-500 text-xs">FuzeHub — Production</span>
+              <span className="ml-4 text-secondary-300 text-xs">FuzeHub — Production</span>
               <div className="ml-auto flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-success-400 animate-pulse" />
                 <span className="text-success-400 text-xs">All systems operational</span>
@@ -141,7 +144,7 @@ export const FuzeHubPage: React.FC = () => {
               ].map((stat) => (
                 <div key={stat.label} className="bg-secondary-900 rounded-xl p-4 border border-secondary-700">
                   <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
-                  <div className="text-secondary-500 text-xs mt-1">{stat.label}</div>
+                  <div className="text-secondary-300 text-xs mt-1">{stat.label}</div>
                 </div>
               ))}
             </div>
@@ -152,7 +155,7 @@ export const FuzeHubPage: React.FC = () => {
                     <div className="w-2 h-2 rounded-full bg-success-400" />
                     <span className="text-secondary-300 text-sm">{service}</span>
                   </div>
-                  <span className="text-secondary-500 text-xs">99.9% uptime</span>
+                  <span className="text-secondary-300 text-xs">99.9% uptime</span>
                 </div>
               ))}
             </div>

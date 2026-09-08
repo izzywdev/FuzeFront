@@ -1,0 +1,79 @@
+name: fuzefront-website E2E (nav + contrast)
+
+# Builds the public site (fuzefront-website/frontend), previews it locally,
+# and runs the Playwright suite in fuzefront-website/frontend/e2e against
+# that local preview:
+#   - navigation.spec.ts: every route loads, no console/JS errors.
+#   - contrast.spec.ts: every piece of visible text on every route meets
+#     WCAG contrast against its ACTUAL RENDERED background (pixel-sampled,
+#     not a CSS-only check — see e2e/utils/contrast.ts for why this site
+#     specifically needs that: two real incidents (header/footer toggling
+#     transparent on scroll, and a hero's gradient background silently
+#     getting replaced by a decorative pattern class) both put light text on
+#     an effectively invisible background that a background-color-only
+#     check would have missed or skipped.
+#
+# NOT wired into governance/required-checks.json's required_now — that is a
+# separate policy decision (the repo owner's, since it also means deciding
+# whether an in-progress design overhaul is allowed to merge red here). The
+# check reports on every PR touching this path either way.
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'fuzefront-website/frontend/**'
+      - 'design-system/**'
+  push:
+    branches: [master]
+    paths:
+      - 'fuzefront-website/frontend/**'
+      - 'design-system/**'
+  workflow_dispatch:
+
+concurrency:
+  group: fuzefront-website-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright nav + contrast
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: fuzefront-website/frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: Sync design-system (vendored file: dependency)
+        run: node scripts/sync-design-system.mjs
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Playwright suite (against a local preview server)
+        run: npm run test:e2e -- --reporter=list,html
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzefront-website-playwright-report
+          path: |
+            fuzefront-website/frontend/playwright-report/
+            fuzefront-website/frontend/test-results/
+          retention-days: 14

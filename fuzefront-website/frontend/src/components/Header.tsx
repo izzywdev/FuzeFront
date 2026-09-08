@@ -100,11 +100,15 @@ export const Header: React.FC = () => {
               >
                 {item.submenu ? (
                   <>
+                    {/* Active-page indicator: --accent-color as the TEXT color at this
+                        weight/size only clears ~4:1 against --bg-secondary (needs 4.5:1)
+                        — caught by e2e/contrast.spec.ts. Keep the text on the always-safe
+                        --text-primary and carry the accent as an underline instead. */}
                     <Link
                       to={item.href}
                       className={`flex items-center space-x-1 font-medium transition-colors duration-200 ${
                         location.pathname.startsWith(item.href)
-                          ? 'text-[var(--accent-color)]'
+                          ? 'text-[var(--text-primary)] underline decoration-[var(--accent-color)] decoration-2 underline-offset-8'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                       }`}
                       onClick={() => handleNavClick(item.name)}
@@ -160,7 +164,7 @@ export const Header: React.FC = () => {
                     to={item.href}
                     className={`font-medium transition-colors duration-200 ${
                       location.pathname === item.href
-                        ? 'text-[var(--accent-color)]'
+                        ? 'text-[var(--text-primary)] underline decoration-[var(--accent-color)] decoration-2 underline-offset-8'
                         : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                     }`}
                     onClick={() => handleNavClick(item.name)}
@@ -219,7 +223,7 @@ export const Header: React.FC = () => {
                       to={item.href}
                       className={`block px-3 py-2 rounded-md text-base font-medium transition-colors duration-200 ${
                         location.pathname.startsWith(item.href)
-                          ? 'text-[var(--accent-color)] bg-[var(--accent-soft)]'
+                          ? 'text-[var(--text-primary)] bg-[var(--accent-soft)]'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'
                       }`}
                       onClick={() => handleNavClick(item.name)}
