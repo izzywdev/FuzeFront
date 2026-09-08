@@ -41,3 +41,21 @@ export async function syncOidcUser(userinfo: Record<string, unknown>): Promise<O
 export async function provisionDeveloper(userId: string): Promise<void> {
   await postInternal<{ ok: true }>('/devportal-provision', { userId });
 }
+
+export interface MintSessionResult {
+  ok: true;
+  token: string;
+  sessionId: string;
+  expiresAt: string;
+}
+
+/**
+ * Mints a REAL FuzeFront session (governance/architecture-guidelines.md §1 —
+ * products verify FuzeFront-issued tokens, they never mint their own).
+ * devportal-service sets the returned `token` as its session cookie and its
+ * own auth middleware verifies it with the same JWT_SECRET every other
+ * service does — never a service-local secret.
+ */
+export async function mintSession(userId: string): Promise<MintSessionResult> {
+  return postInternal<MintSessionResult>('/mint-session', { userId });
+}

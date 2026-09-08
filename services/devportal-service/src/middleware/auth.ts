@@ -1,18 +1,25 @@
 // auth.ts — stateless session-JWT verification middleware for
 // devportal-service.
 //
-// Unlike selection-list-service (which trusts a platform-wide JWT_SECRET
-// token minted elsewhere), devportal-service mints its OWN session after
-// completing its own Authentik OIDC exchange (routes/auth.ts) and hands it
-// back as an httpOnly cookie — a browser SPA session, not a service-to-
-// service Bearer token. DEVPORTAL_JWT_SECRET is deliberately its own secret
-// (not the platform JWT_SECRET) so a devportal session cannot be replayed
-// against any other FuzeFront service, and vice versa.
+// governance/architecture-guidelines.md §1 — AuthN is provided by FuzeFront;
+// products VERIFY FuzeFront-issued tokens, they never mint their own. The
+// session cookie devportal-service issues is the EXACT token
+// security-service's `/internal/mint-session` returns (services/
+// internalClient.ts's `mintSession`) — the same `{userId, sessionId}` shape,
+// same `JWT_SECRET`, same `sessions` table row as the core `/oidc/callback`
+// flow. This file only VERIFIES that token; it does not sign one. Mirrors
+// services/selection-list-service/src/middleware/auth.ts's JWT_SECRET
+// verification exactly, on purpose — devportal-service trusts the same
+// platform token every other service does, not a service-local secret.
 
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 export const SESSION_COOKIE = 'devportal_session';
+// Display-only hint, never used for an auth decision — the email claim does
+// not exist on the FuzeFront-issued token (see the header comment), so it is
+// carried here purely for "My access"/NavBar to show a friendly name.
+export const EMAIL_COOKIE = 'devportal_email';
 
 declare global {
   namespace Express {
@@ -23,28 +30,20 @@ declare global {
   }
 }
 
-interface DevportalSessionClaims {
+interface FuzeFrontSessionClaims {
   userId: string;
-  email?: string;
+  sessionId?: string;
   [key: string]: unknown;
 }
 
 function getSecret(): string | null {
-  return process.env.DEVPORTAL_JWT_SECRET || null;
-}
-
-export function signSession(claims: DevportalSessionClaims): string {
-  const secret = getSecret();
-  if (!secret) {
-    throw new Error('DEVPORTAL_JWT_SECRET is not set');
-  }
-  return jwt.sign(claims, secret, { expiresIn: '12h' });
+  return process.env.JWT_SECRET || null;
 }
 
 /**
- * Requires a valid session. Missing/invalid/expired -> 401. Reads the token
- * from the httpOnly cookie first (browser flow), falling back to a Bearer
- * header (useful for CLI/tooling access to the same catalog API).
+ * Requires a valid FuzeFront session. Missing/invalid/expired -> 401. Reads
+ * the token from the httpOnly cookie first (browser flow), falling back to a
+ * Bearer header (useful for CLI/tooling access to the same catalog API).
  */
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
   const cookieToken = (req as any).cookies?.[SESSION_COOKIE];
@@ -59,14 +58,14 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
   const secret = getSecret();
   if (!secret) {
-    res.status(500).json({ code: 'UNAUTHENTICATED', message: 'Server misconfiguration: DEVPORTAL_JWT_SECRET not set.' });
+    res.status(500).json({ code: 'UNAUTHENTICATED', message: 'Server misconfiguration: JWT_SECRET not set.' });
     return;
   }
 
   try {
-    const decoded = jwt.verify(token, secret) as DevportalSessionClaims;
+    const decoded = jwt.verify(token, secret) as FuzeFrontSessionClaims;
     req.userId = decoded.userId;
-    req.userEmail = decoded.email;
+    req.userEmail = (req as any).cookies?.[EMAIL_COOKIE];
     next();
   } catch {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Invalid or expired session.' });
@@ -87,9 +86,9 @@ export function optionalAuthMiddleware(req: Request, _res: Response, next: NextF
 
   if (token && secret) {
     try {
-      const decoded = jwt.verify(token, secret) as DevportalSessionClaims;
+      const decoded = jwt.verify(token, secret) as FuzeFrontSessionClaims;
       req.userId = decoded.userId;
-      req.userEmail = decoded.email;
+      req.userEmail = (req as any).cookies?.[EMAIL_COOKIE];
     } catch {
       // Not signed in — proceed as anonymous, same as no cookie at all.
     }

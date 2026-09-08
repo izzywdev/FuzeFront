@@ -1,7 +1,8 @@
 // index.ts — entry point for devportal-service.
 //
 // Startup sequence:
-//   1. Validate required env vars (DEVPORTAL_JWT_SECRET).
+//   1. Validate required env vars (JWT_SECRET — the platform secret this
+//      service VERIFIES sessions with; see middleware/auth.ts).
 //   2. Run pending DB migrations (idempotent knex migrate:latest).
 //   3. Bootstrap-harvest bundled specs (idempotent upsert).
 //   4. Start the HTTP server on $PORT (default 3013).
@@ -13,9 +14,9 @@ import { run as runMigrations } from './db/migrate';
 import { runBootstrapHarvest } from './services/bootstrapHarvest';
 
 async function main(): Promise<void> {
-  const jwtSecret = process.env.DEVPORTAL_JWT_SECRET;
+  const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    console.error('[devportal-service] FATAL: DEVPORTAL_JWT_SECRET is not set.');
+    console.error('[devportal-service] FATAL: JWT_SECRET is not set.');
     process.exit(1);
   }
 

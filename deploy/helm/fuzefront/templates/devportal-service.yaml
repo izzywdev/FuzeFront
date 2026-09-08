@@ -51,15 +51,19 @@ spec:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: DB_PASSWORD
-            - name: DEVPORTAL_JWT_SECRET
+            - name: JWT_SECRET
+              # governance/architecture-guidelines.md §1 — devportal-service
+              # VERIFIES the same platform-issued session token every other
+              # service does (middleware/auth.ts); it never mints its own.
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
-                  key: DEVPORTAL_JWT_SECRET
+                  key: JWT_SECRET
             - name: INTERNAL_PROVISION_SECRET
               # Same shared secret backend/security's /internal/* routes check —
-              # devportal-service calls /internal/oidc-sync and
-              # /internal/devportal-provision with it (services/internalClient.ts).
+              # devportal-service calls /internal/oidc-sync,
+              # /internal/devportal-provision and /internal/mint-session with
+              # it (services/internalClient.ts).
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}

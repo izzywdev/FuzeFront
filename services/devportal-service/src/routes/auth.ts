@@ -7,14 +7,15 @@
 //      would break as soon as the callback lands on a different pod).
 //   2. GET /auth/oidc/callback -> exchange code, get userinfo, resolve to a
 //      FuzeFront user via security-service's /internal/oidc-sync, provision
-//      root-org `developer` via /internal/devportal-provision, mint our own
-//      session cookie, redirect to the frontend.
+//      root-org `developer` via /internal/devportal-provision, get a REAL
+//      FuzeFront session via /internal/mint-session (governance/architecture-
+//      guidelines.md §1 — never mint our own), redirect to the frontend.
 //   3. POST /auth/logout       -> clear the session cookie.
 
 import { Router, Request, Response } from 'express';
 import { buildAuthorizeUrl, completeCallback } from '../services/oidcClient';
-import { syncOidcUser, provisionDeveloper } from '../services/internalClient';
-import { signSession, SESSION_COOKIE } from '../middleware/auth';
+import { syncOidcUser, provisionDeveloper, mintSession } from '../services/internalClient';
+import { SESSION_COOKIE, EMAIL_COOKIE } from '../middleware/auth';
 
 const router = Router();
 
@@ -66,12 +67,22 @@ router.get('/oidc/callback', async (req: Request, res: Response) => {
     const { userId, email } = await syncOidcUser(userinfo);
     await provisionDeveloper(userId);
 
-    const token = signSession({ userId, email });
+    // The FuzeFront-issued token itself (never signed locally — see the
+    // file header and middleware/auth.ts).
+    const { token, expiresAt } = await mintSession(userId);
+    const maxAge = new Date(expiresAt).getTime() - Date.now();
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
       secure: isProd(),
       sameSite: 'lax',
-      maxAge: 12 * 60 * 60 * 1000,
+      maxAge,
+    });
+    // Display-only hint (see middleware/auth.ts's EMAIL_COOKIE comment) —
+    // not httpOnly is fine, it carries no auth authority.
+    res.cookie(EMAIL_COOKIE, email, {
+      secure: isProd(),
+      sameSite: 'lax',
+      maxAge,
     });
 
     const frontendUrl = process.env.DEVPORTAL_FRONTEND_URL || '/';
@@ -84,6 +95,7 @@ router.get('/oidc/callback', async (req: Request, res: Response) => {
 
 router.post('/logout', (_req: Request, res: Response) => {
   res.clearCookie(SESSION_COOKIE);
+  res.clearCookie(EMAIL_COOKIE);
   res.json({ ok: true });
 });
 

@@ -48,7 +48,11 @@ export async function runBootstrapHarvest(): Promise<{ harvested: number; failed
       harvested += 1;
     } catch (err) {
       failed += 1;
-      console.error(`[devportal-service] Bootstrap harvest failed for ${entry.service}:`, err);
+      // Constant format string + arg (Semgrep unsafe-formatstring): entry.service
+      // is repo-generated (scripts/collect-devportal-specs.mjs), but interpolating
+      // it into the format string itself would still let a stray %s/%d in a future
+      // service name forge the rest of the log line.
+      console.error('[devportal-service] Bootstrap harvest failed for %s:', entry.service, err);
     }
   }
 

@@ -123,9 +123,6 @@ secret:
   # or a gitignored values file. NEVER commit real secrets here.
   jwtSecret: "dev-only-change-me"
   sessionSecret: "dev-only-change-me"
-  # devportal-service's own session-signing secret (docs/planning/developers-
-  # portal.md §5.1). DEV-ONLY default — override for anything real.
-  devportalJwtSecret: "dev-only-change-me"
   # Password for the least-privilege runtime role (`database.user`). The
   # bootstrap Job sets the role's password to this and the backend connects with
   # it. DEV-ONLY default — override for anything real.
