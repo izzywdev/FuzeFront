@@ -199,6 +199,14 @@ POST /api/newsletter/subscribe  # fuzefront-website: newsletter subscribe; websi
 POST /api/newsletter/unsubscribe  # fuzefront-website: newsletter unsubscribe; website-only
 GET /api/newsletter/stats  # fuzefront-website: newsletter stats; website-only, internal
 #
+# --- O1: devportal-service / security internal S2S endpoints (docs/planning/developers-portal.md) ---
+# Never on the public ingress, shared-secret (INTERNAL_PROVISION_SECRET) protected — not part of
+# any consumer-facing contract, so not declared in an OpenAPI document.
+POST /internal/oidc-sync  # security: S2S-only, called by devportal-service; not consumer-facing
+POST /internal/mint-session  # security: S2S-only, called by devportal-service; not consumer-facing
+POST /internal/devportal-provision  # security: S2S-only, called by devportal-service; not consumer-facing
+POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint; not consumer-facing
+#
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not
 # Express routes discoverable by the static scanner (e.g. health checks handled
@@ -213,3 +221,6 @@ DELETE /custom-hostnames/{}  # custom-hostname-api: route exists but scanner can
 GET /custom-hostnames/{}  # custom-hostname-api: route exists but scanner cannot find Express handler
 GET /healthz  # custom-hostname-api: healthz handler not an Express route; infra-level
 GET /health  # portal-service: health handler not an Express route; infra-level
+GET /auth/oidc/login  # devportal-service: raw path collides with backend/security's own /auth/oidc/login served at /api/auth/oidc/login — gate_openapi_conformance's raw_alias is keyed only by (method, raw path) across ALL specs, so this spec's unprefixed route gets redirected to the other spec's prefixed alias and reads as unimplemented. Genuinely implemented at services/devportal-service/src/routes/auth.ts.
+GET /auth/oidc/callback  # devportal-service: same raw_alias collision as /auth/oidc/login above. Genuinely implemented at services/devportal-service/src/routes/auth.ts.
+POST /auth/logout  # devportal-service: same raw_alias collision as /auth/oidc/login above. Genuinely implemented at services/devportal-service/src/routes/auth.ts.
