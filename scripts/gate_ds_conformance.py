@@ -76,6 +76,16 @@ SKIP_FEATURE_GLOBS = (
     "packages/*-client-py/src/*",
     "*.test.*",
     "*/__tests__/*",
+    # Playwright's naming convention (*.test.* above is Jest/Vitest's) and its
+    # conventional suite directory. e2e/ specs assert against RENDERED
+    # feature UI, they don't implement it — and their helper code often needs
+    # to construct/compare raw rgb()/hex strings from real pixels (e.g. a
+    # screenshot-based contrast checker), which is legitimate there in a way
+    # it never is in a component that ships raw colors to users. Caught here
+    # via fuzefront-website/frontend/e2e/utils/contrast.ts, which builds an
+    # `rgb(...)` string purely for a test-failure diagnostic message.
+    "*.spec.*",
+    "*/e2e/*",
 )
 
 HEX_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")

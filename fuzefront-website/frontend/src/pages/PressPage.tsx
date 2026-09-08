@@ -35,8 +35,12 @@ export const PressPage: React.FC = () => {
       {/* Hero */}
       <section
         ref={heroRef}
-        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 hero-pattern overflow-hidden"
+        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
+        {/* Separate overlay div: `hero-pattern` and the gradient classes both
+            set `background-image`, so combining them on one element drops the
+            gradient entirely instead of layering. */}
+        <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
@@ -58,7 +62,7 @@ export const PressPage: React.FC = () => {
       <section className="py-24 bg-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 flex items-center gap-3">
-            <Newspaper size={24} className="text-primary-600" />
+            <Newspaper size={24} className="text-primary-700" />
             Latest news
           </h2>
           <div className="space-y-6">
@@ -67,7 +71,7 @@ export const PressPage: React.FC = () => {
                 key={release.title}
                 className="bg-secondary-50 rounded-2xl border border-secondary-100 p-6"
               >
-                <div className="flex items-center gap-2 text-xs font-medium text-primary-600 uppercase tracking-wider mb-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-primary-700 uppercase tracking-wider mb-2">
                   <Calendar size={13} /> {release.date}
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">{release.title}</h3>
@@ -86,7 +90,7 @@ export const PressPage: React.FC = () => {
             <dl className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 shadow-soft">
               {factSheet.map((item) => (
                 <div key={item.label} className="flex justify-between px-5 py-4">
-                  <dt className="text-sm text-gray-500">{item.label}</dt>
+                  <dt className="text-sm text-gray-600">{item.label}</dt>
                   <dd className="text-sm font-medium text-gray-900">{item.value}</dd>
                 </div>
               ))}
@@ -127,7 +131,7 @@ export const PressPage: React.FC = () => {
         <div className="max-w-2xl mx-auto px-4 text-center">
           <p className="text-gray-600">
             For all press inquiries, contact{' '}
-            <a href="mailto:press@fuzefront.com" className="text-primary-600 hover:underline font-medium">
+            <a href="mailto:press@fuzefront.com" className="text-primary-700 hover:underline font-medium">
               press@fuzefront.com
             </a>
           </p>

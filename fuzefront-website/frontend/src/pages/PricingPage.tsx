@@ -191,7 +191,9 @@ export const PricingPage: React.FC = () => {
                 className={`px-5 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${yearly ? 'bg-white text-gray-900' : 'text-secondary-300 hover:text-white'}`}
               >
                 Yearly
-                <span className="bg-success-500 text-white text-xs px-2 py-0.5 rounded-full">Save 17%</span>
+                {/* success-500 is too light for white text at this size (2.4:1,
+                    needs 4.5:1) — caught by e2e/contrast.spec.ts. */}
+                <span className="bg-success-700 text-white text-xs px-2 py-0.5 rounded-full">Save 17%</span>
               </button>
             </div>
           </motion.div>
@@ -232,11 +234,11 @@ export const PricingPage: React.FC = () => {
                       </div>
                       <div>
                         <h3 className="font-bold text-gray-900">{plan.name}</h3>
-                        <p className="text-xs text-gray-500">{plan.members}</p>
+                        <p className="text-xs text-gray-600">{plan.members}</p>
                       </div>
                     </div>
 
-                    <p className="text-sm text-gray-500 mb-5 leading-relaxed">{plan.description}</p>
+                    <p className="text-sm text-gray-600 mb-5 leading-relaxed">{plan.description}</p>
 
                     <div className="mb-6">
                       {isEnterprise ? (
@@ -245,7 +247,7 @@ export const PricingPage: React.FC = () => {
                         <>
                           <div className="flex items-end gap-1">
                             <span className="text-4xl font-extrabold text-gray-900">${price}</span>
-                            <span className="text-gray-400 text-sm mb-1">/{yearly ? 'year' : 'mo'}</span>
+                            <span className="text-gray-600 text-sm mb-1">/{yearly ? 'year' : 'mo'}</span>
                           </div>
                           {yearly && (
                             <p className="text-xs text-success-600 mt-1">
@@ -288,7 +290,7 @@ export const PricingPage: React.FC = () => {
                       {plan.notIncluded?.map((feature) => (
                         <li key={feature} className="flex items-start gap-2 text-sm">
                           <X size={14} className="text-gray-300 flex-shrink-0 mt-0.5" />
-                          <span className="text-gray-400">{feature}</span>
+                          <span className="text-gray-600">{feature}</span>
                         </li>
                       ))}
                     </ul>

@@ -98,8 +98,12 @@ export const CareersPage: React.FC = () => {
       {/* Hero */}
       <section
         ref={heroRef}
-        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 hero-pattern overflow-hidden"
+        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
+        {/* Separate overlay div: `hero-pattern` and the gradient classes both
+            set `background-image`, so combining them on one element drops the
+            gradient entirely instead of layering. */}
+        <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
@@ -127,7 +131,7 @@ export const CareersPage: React.FC = () => {
               return (
                 <div key={perk.text} className="text-center">
                   <div className="w-11 h-11 rounded-xl bg-primary-50 flex items-center justify-center mx-auto mb-3">
-                    <Icon size={20} className="text-primary-600" />
+                    <Icon size={20} className="text-primary-700" />
                   </div>
                   <p className="text-sm text-gray-600 leading-snug">{perk.text}</p>
                 </div>
@@ -144,9 +148,9 @@ export const CareersPage: React.FC = () => {
             <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
               Open positions
             </h2>
-            <p className="text-lg text-gray-500 max-w-2xl mx-auto">
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Don't see a fit? Email us anyway at{' '}
-              <a href="mailto:hr@fuzefront.com" className="text-primary-600 hover:underline">
+              <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline">
                 hr@fuzefront.com
               </a>
               — we're always looking for great people.
@@ -170,11 +174,11 @@ export const CareersPage: React.FC = () => {
                         <Icon size={20} className="text-white" />
                       </div>
                       <div>
-                        <span className="inline-block text-xs font-mono font-semibold text-primary-600 bg-primary-50 rounded px-2 py-0.5 mb-1.5">
+                        <span className="inline-block text-xs font-mono font-semibold text-primary-700 bg-primary-50 rounded px-2 py-0.5 mb-1.5">
                           {position.code}
                         </span>
                         <h3 className="text-xl font-bold text-gray-900">{position.title}</h3>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-sm text-gray-500">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-sm text-gray-600">
                           <span>{position.department}</span>
                           <span className="flex items-center gap-1">
                             <MapPin size={13} /> {position.location}
@@ -225,9 +229,9 @@ export const CareersPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mt-5 pt-5 border-t border-gray-100 text-sm text-gray-500">
+                  <div className="mt-5 pt-5 border-t border-gray-100 text-sm text-gray-600">
                     To apply, send your resume to{' '}
-                    <a href="mailto:hr@fuzefront.com" className="text-primary-600 hover:underline font-medium">
+                    <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline font-medium">
                       hr@fuzefront.com
                     </a>{' '}
                     referencing position code <span className="font-mono font-semibold text-gray-700">{position.code}</span>.

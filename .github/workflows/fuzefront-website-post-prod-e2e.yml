@@ -1,0 +1,72 @@
+name: fuzefront-website Post-prod E2E (live)
+
+# Runs the READ-ONLY post-production Playwright suite
+# (fuzefront-website/frontend/e2e/{navigation,contrast}.spec.ts) against the
+# LIVE public site (default https://fuzefront.com). Mirrors the main app's
+# post-prod-e2e.yml pattern.
+#
+# Triggered manually (workflow_dispatch), or as a reusable workflow called
+# by prod-post-deploy.yml after each release (see the `fuzefront-website-e2e`
+# job there).
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Target base URL'
+        required: false
+        default: 'https://fuzefront.com'
+
+  workflow_call:
+    inputs:
+      base_url:
+        description: 'Target base URL'
+        type: string
+        required: false
+        default: 'https://fuzefront.com'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzefront-website-post-prod-e2e
+  cancel-in-progress: true
+
+jobs:
+  live-smoke:
+    name: Playwright live nav + contrast
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: fuzefront-website/frontend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.x'
+
+      - name: Install deps
+        # Post-prod hits the live site directly — no build needed, but `npm ci`
+        # still resolves @fuzefront/design-system from the committed
+        # vendor-design-system/ snapshot (unused by the e2e specs themselves,
+        # but installed regardless since it's a real dependency in package.json).
+        run: npm ci
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run post-prod smoke
+        env:
+          POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://fuzefront.com' }}
+        run: npx playwright test --config playwright.post-prod.config.ts --reporter=list,html
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzefront-website-post-prod-playwright-report
+          path: |
+            fuzefront-website/frontend/playwright-report-post-prod/
+            fuzefront-website/frontend/test-results-post-prod/
+          retention-days: 14

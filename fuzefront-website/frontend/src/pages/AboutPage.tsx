@@ -60,8 +60,12 @@ export const AboutPage: React.FC = () => {
       {/* Hero */}
       <section
         ref={heroRef}
-        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 hero-pattern overflow-hidden"
+        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
       >
+        {/* Separate overlay div: `hero-pattern` and the gradient classes both
+            set `background-image`, so combining them on one element drops the
+            gradient entirely instead of layering. */}
+        <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
         <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -89,7 +93,7 @@ export const AboutPage: React.FC = () => {
             {stats.map((s) => (
               <div key={s.label} className="text-center">
                 <div className="text-3xl font-bold text-white">{s.metric}</div>
-                <div className="text-secondary-400 text-xs sm:text-sm mt-1">{s.label}</div>
+                <div className="text-secondary-300 text-xs sm:text-sm mt-1">{s.label}</div>
               </div>
             ))}
           </motion.div>
@@ -114,7 +118,7 @@ export const AboutPage: React.FC = () => {
                     <Icon size={22} className="text-white" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">{value.title}</h3>
-                  <p className="text-gray-500 text-sm leading-relaxed">{value.description}</p>
+                  <p className="text-gray-600 text-sm leading-relaxed">{value.description}</p>
                 </motion.div>
               )
             })}
@@ -135,7 +139,7 @@ export const AboutPage: React.FC = () => {
             <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
               What we offer
             </h2>
-            <p className="text-lg text-gray-500 max-w-2xl mx-auto">
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Everything a growing SaaS product needs, bundled into one platform.
             </p>
           </motion.div>
@@ -171,7 +175,7 @@ export const AboutPage: React.FC = () => {
           <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
             Want to build with us?
           </h2>
-          <p className="text-lg text-gray-500 mb-8">
+          <p className="text-lg text-gray-600 mb-8">
             Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">

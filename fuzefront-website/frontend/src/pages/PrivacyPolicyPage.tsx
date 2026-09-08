@@ -9,15 +9,15 @@ export const PrivacyPolicyPage: React.FC = () => {
         {/* Header */}
         <div className="text-center mb-12">
           <div className="w-14 h-14 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
-            <Shield size={28} className="text-primary-600" />
+            <Shield size={28} className="text-primary-700" />
           </div>
           <h1 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-3">
             Privacy Policy
           </h1>
-          <p className="text-gray-500">Last updated: September 2026</p>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="text-gray-600">Last updated: September 2026</p>
+          <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull;{' '}
-            <a href="mailto:privacy@fuzefront.com" className="text-primary-600 hover:underline">
+            <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">
               privacy@fuzefront.com
             </a>
           </p>
@@ -121,7 +121,7 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <li>Opt out of the sale of personal information (we do not sell personal information)</li>
                 <li>Non-discrimination for exercising your rights</li>
               </ul>
-              <p className="mt-3">To exercise any of these rights, contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-600 hover:underline">privacy@fuzefront.com</a>.</p>
+              <p className="mt-3">To exercise any of these rights, contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">privacy@fuzefront.com</a>.</p>
             </section>
 
             <section>
@@ -163,7 +163,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">10. Children's Privacy</h2>
               <p>
-                Our services are not directed to individuals under 16 years of age. We do not knowingly collect personal information from children under 16. If you become aware that a child has provided us with personal information, please contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-600 hover:underline">privacy@fuzefront.com</a> and we will take steps to delete such information.
+                Our services are not directed to individuals under 16 years of age. We do not knowingly collect personal information from children under 16. If you become aware that a child has provided us with personal information, please contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">privacy@fuzefront.com</a> and we will take steps to delete such information.
               </p>
             </section>
 
@@ -181,7 +181,7 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <p className="font-semibold text-gray-900">FuzeOne, Inc.</p>
                 <p className="text-gray-600 mt-1">Attention: Privacy Team</p>
                 <p className="mt-2">
-                  <a href="mailto:privacy@fuzefront.com" className="text-primary-600 hover:underline">
+                  <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">
                     privacy@fuzefront.com
                   </a>
                 </p>
@@ -193,13 +193,13 @@ export const PrivacyPolicyPage: React.FC = () => {
 
         {/* Footer nav */}
         <div className="mt-16 pt-8 border-t border-gray-200 flex flex-wrap gap-4">
-          <Link to="/terms" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          <Link to="/terms" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
             Terms of Service
           </Link>
-          <Link to="/contact" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          <Link to="/contact" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
             Contact Us
           </Link>
-          <Link to="/" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          <Link to="/" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
             Back to Home
           </Link>
         </div>

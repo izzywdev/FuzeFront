@@ -9,15 +9,15 @@ export const TermsPage: React.FC = () => {
         {/* Header */}
         <div className="text-center mb-12">
           <div className="w-14 h-14 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
-            <FileText size={28} className="text-primary-600" />
+            <FileText size={28} className="text-primary-700" />
           </div>
           <h1 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-3">
             Terms of Service
           </h1>
-          <p className="text-gray-500">Last updated: September 2026</p>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="text-gray-600">Last updated: September 2026</p>
+          <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull; A Delaware Corporation &bull;{' '}
-            <a href="mailto:legal@fuzefront.com" className="text-primary-600 hover:underline">
+            <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">
               legal@fuzefront.com
             </a>
           </p>
@@ -192,7 +192,7 @@ export const TermsPage: React.FC = () => {
               <li><strong>Waiver:</strong> Failure to enforce any right or provision does not constitute a waiver of that right.</li>
               <li><strong>Assignment:</strong> You may not assign these Terms without our prior written consent. We may assign our rights without restriction.</li>
               <li><strong>Force Majeure:</strong> Neither party is liable for delays caused by circumstances beyond their reasonable control.</li>
-              <li><strong>Notices:</strong> Legal notices to FuzeOne should be sent to <a href="mailto:legal@fuzefront.com" className="text-primary-600 hover:underline">legal@fuzefront.com</a>.</li>
+              <li><strong>Notices:</strong> Legal notices to FuzeOne should be sent to <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">legal@fuzefront.com</a>.</li>
             </ul>
           </section>
 
@@ -204,7 +204,7 @@ export const TermsPage: React.FC = () => {
               <p className="text-gray-600 mt-1">Attention: Legal Team</p>
               <p className="text-gray-600">Delaware Corporation</p>
               <p className="mt-2">
-                <a href="mailto:legal@fuzefront.com" className="text-primary-600 hover:underline">
+                <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">
                   legal@fuzefront.com
                 </a>
               </p>
@@ -215,13 +215,13 @@ export const TermsPage: React.FC = () => {
 
         {/* Footer nav */}
         <div className="mt-16 pt-8 border-t border-gray-200 flex flex-wrap gap-4">
-          <Link to="/privacy" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          <Link to="/privacy" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
             Privacy Policy
           </Link>
-          <Link to="/contact" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          <Link to="/contact" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
             Contact Us
           </Link>
-          <Link to="/" className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+          <Link to="/" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
             Back to Home
           </Link>
         </div>

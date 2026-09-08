@@ -15,7 +15,11 @@ export const NotFoundPage: React.FC = () => {
   const { trackEvent } = useAnalytics()
 
   return (
-    <div className="relative min-h-[80vh] flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 hero-pattern overflow-hidden pt-16">
+    <div className="relative min-h-[80vh] flex items-center bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden pt-16">
+      {/* Separate overlay div: `hero-pattern` and the gradient classes both
+          set `background-image`, so combining them on one element drops the
+          gradient entirely instead of layering. */}
+      <div className="absolute inset-0 hero-pattern pointer-events-none" />
       <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
 
@@ -53,7 +57,7 @@ export const NotFoundPage: React.FC = () => {
             </Link>
           </div>
 
-          <div className="flex items-center justify-center gap-2 text-secondary-500 text-sm mb-4">
+          <div className="flex items-center justify-center gap-2 text-secondary-300 text-sm mb-4">
             <Search size={14} /> Or try one of these
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3">

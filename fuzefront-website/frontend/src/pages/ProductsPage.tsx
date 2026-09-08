@@ -134,9 +134,9 @@ function ProductCard({ product }: { product: Product }) {
         <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${product.gradient} flex items-center justify-center mb-5 shadow-sm group-hover:scale-105 transition-transform duration-300`}>
           <Icon size={22} className="text-white" />
         </div>
-        <p className="text-xs font-semibold text-primary-500 uppercase tracking-wider mb-1">{product.tagline}</p>
+        <p className="text-xs font-semibold text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
         <h3 className="text-xl font-bold text-gray-900 mb-3">{product.name}</h3>
-        <p className="text-gray-500 text-sm leading-relaxed mb-6">{product.description}</p>
+        <p className="text-gray-600 text-sm leading-relaxed mb-6">{product.description}</p>
 
         <ul className="space-y-2 mb-6">
           {product.features.map((feature) => (
@@ -215,7 +215,7 @@ export const ProductsPage: React.FC = () => {
           <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
             Not sure where to start?
           </h2>
-          <p className="text-gray-500 mb-8">
+          <p className="text-gray-600 mb-8">
             Talk to our team. We'll map your use case to the right products and set you up with a custom trial.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
