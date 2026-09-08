@@ -77,6 +77,7 @@ on:
       - 'scripts/check-portal-federation-health.mjs'
       - 'scripts/check-portal-federation-health.selftest.mjs'
       - 'scripts/expected-portal-apps.json'
+      - 'scripts/__tests__/expected-portal-apps.test.mjs'
       - 'scripts/check-federated-assets.mjs'
       - '.github/workflows/portal-federation-health.yml'
 
@@ -114,6 +115,12 @@ jobs:
           # part of the verdict and is tested here with it. An extractor that
           # silently returns nothing turns the drift check off without saying so.
           node --test scripts/__tests__/requested-image-tag.test.mjs
+          # The roster IS half the verdict: an entry naming a slug no product
+          # registers produces a permanent MISSING row indistinguishable from a
+          # real outage, which has now happened five times (fuzecontact,
+          # fuzehub-ventures, keys, merchandize, fuzeplan). This pins those
+          # corrections and asserts every built-in is still rostered.
+          node --test scripts/__tests__/expected-portal-apps.test.mjs
 
   probe-production:
     name: Census against production
