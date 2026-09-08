@@ -198,7 +198,11 @@ export const Header: React.FC = () => {
           <div className="lg:hidden">
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="inline-flex items-center justify-center p-2 rounded-md text-[var(--text-primary)] hover:text-[var(--accent-color)] hover:bg-[var(--bg-quaternary)] transition-colors duration-200"
+              /* p-2 (24px icon + 8px padding each side = 40px) sits under the
+                 44px WCAG 2.5.5 tap-target minimum — caught by
+                 e2e/post-prod/mobile-responsive.spec.ts. p-2.5 makes it 44px
+                 exactly. */
+              className="inline-flex items-center justify-center p-2.5 rounded-md text-[var(--text-primary)] hover:text-[var(--accent-color)] hover:bg-[var(--bg-quaternary)] transition-colors duration-200"
               aria-label={isOpen ? 'Close menu' : 'Open menu'}
             >
               {isOpen ? <X size={24} /> : <Menu size={24} />}
@@ -221,7 +225,12 @@ export const Header: React.FC = () => {
                   <div key={item.name}>
                     <Link
                       to={item.href}
-                      className={`block px-3 py-2 rounded-md text-base font-medium transition-colors duration-200 ${
+                      /* py-2 (text-base's 24px line-height + 8px padding each
+                         side = 40px) sits under the 44px WCAG 2.5.5
+                         tap-target minimum — caught by
+                         e2e/post-prod/mobile-responsive.spec.ts. py-2.5 makes
+                         it 44px exactly. */
+                      className={`block px-3 py-2.5 rounded-md text-base font-medium transition-colors duration-200 ${
                         location.pathname.startsWith(item.href)
                           ? 'text-[var(--text-primary)] bg-[var(--accent-soft)]'
                           : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-quaternary)]'

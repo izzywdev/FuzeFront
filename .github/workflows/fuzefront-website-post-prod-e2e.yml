@@ -1,8 +1,11 @@
 name: fuzefront-website Post-prod E2E (live)
 
-# Runs the READ-ONLY post-production Playwright suite
-# (fuzefront-website/frontend/e2e/{navigation,contrast}.spec.ts) against the
-# LIVE public site (default https://fuzefront.com). Mirrors the main app's
+# Runs the READ-ONLY post-production Playwright suite against the LIVE
+# public site (default https://fuzefront.com): navigation.spec.ts and
+# contrast.spec.ts at desktop viewport, plus e2e/post-prod/mobile-responsive
+# .spec.ts under real iPhone/Android device emulation (mobile-iphone /
+# mobile-android projects in playwright.post-prod.config.ts — no --project
+# filter here, so all three projects run). Mirrors the main app's
 # post-prod-e2e.yml pattern.
 #
 # Triggered manually (workflow_dispatch), or as a reusable workflow called
@@ -33,7 +36,7 @@ concurrency:
 
 jobs:
   live-smoke:
-    name: Playwright live nav + contrast
+    name: Playwright live nav + contrast + mobile
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:

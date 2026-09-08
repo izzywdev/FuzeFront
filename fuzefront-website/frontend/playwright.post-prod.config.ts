@@ -11,7 +11,6 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: '**/post-prod/**',
   // Live network target — never hammer it in parallel.
   fullyParallel: false,
   workers: 1,
@@ -33,6 +32,26 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      // navigation.spec.ts / contrast.spec.ts are desktop-only checks; the
+      // mobile-responsive spec below runs exclusively under the device
+      // projects so it's never redundantly re-run here too.
+      testIgnore: '**/post-prod/**',
+    },
+    {
+      name: 'mobile-iphone',
+      // devices['iPhone 13'] sets `defaultBrowserType: 'webkit'`, which
+      // Playwright's browserName fixture reads as the engine to launch for
+      // this project — but only Chromium is installed here (both in this
+      // sandbox and in CI's `playwright install --with-deps chromium`).
+      // Pinning browserName overrides that back to Chromium while keeping
+      // the device's viewport/UA/touch emulation.
+      use: { ...devices['iPhone 13'], browserName: 'chromium' },
+      testMatch: '**/post-prod/mobile-responsive.spec.ts',
+    },
+    {
+      name: 'mobile-android',
+      use: { ...devices['Pixel 5'] },
+      testMatch: '**/post-prod/mobile-responsive.spec.ts',
     },
   ],
   timeout: 90_000,
