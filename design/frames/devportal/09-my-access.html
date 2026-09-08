@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — My access</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 09 · flow `my-access` · route /access -->
+<div class="dp-wrap" data-frame="09-my-access">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 09 · flow <b>my-access</b> ·
+    route <code>/access</code></div>
+  <h1 class="dp-h1">My access — membership, quota, sandbox keys</h1>
+  <p class="dp-lead">What the signed-in developer actually holds, stated plainly: their root-org <code>Developer</code>
+    membership, what that role does <b>and does not</b> grant, their sandbox quota, and their sandbox keys. Every
+    state a real account can be in is below — including the two failure states people forget: <b>provisioning still in
+    flight</b> on very first sign-in, and <b>access denied</b>.</p>
+
+  <div class="dp-topbar" data-panel="portal-topbar" data-auth="authenticated">
+    <span class="dp-wordmark">Fuze <span class="seamtext">Developers</span></span>
+    <nav class="dp-topnav">
+      <a href="02-home-signed-in.html">Home</a>
+      <a href="03-catalog.html">Catalog</a>
+      <a href="07-playground.html">Playground</a>
+      <a href="#" class="active">My access</a>
+    </nav>
+    <span class="dp-spacer"></span>
+    <span class="dp-badge ok" data-membership-status="active"><span class="dp-dot"></span>Developer</span>
+    <span class="dp-avatar" data-user="dana.okafor">DO</span>
+  </div>
+
+  <div class="dp-appframe">
+
+    <!-- ============ membership ============ -->
+    <section class="dp-card seamed" data-panel="membership" data-state="ready">
+      <div class="dp-inline" style="justify-content:space-between">
+        <h3 class="dp-h3" style="margin:0">Organization membership</h3>
+        <span class="dp-badge ok" data-membership-status="active"><span class="dp-dot"></span>active</span>
+      </div>
+      <div class="dp-row" style="margin-top: var(--space-3)">
+        <span class="dp-dim">Organization</span>
+        <span><b>FuzeFront Platform</b> <span class="dp-badge neutral">root</span></span>
+      </div>
+      <div class="dp-row">
+        <span class="dp-dim">Membership role</span>
+        <span><code data-membership-role="developer">developer</code></span>
+      </div>
+      <div class="dp-row">
+        <span class="dp-dim">Granted</span>
+        <span class="dp-mono" style="font-size:var(--text-sm)">2026-06-02 · automatically, on first sign-in</span>
+      </div>
+      <div class="dp-row">
+        <span class="dp-dim">Identity</span>
+        <span class="dp-mono" style="font-size:var(--text-sm)">dana.okafor@fuzefront.com · Fuze SSO</span>
+      </div>
+
+      <div class="dp-grid-2" style="margin-top: var(--space-5)" data-scope="developer">
+        <div class="dp-card" data-scope-grants="allowed">
+          <h4 class="dp-h3" style="color:var(--success-color)">✓ This role lets you</h4>
+          <div class="dp-row"><span class="dp-dim">Read the API catalog</span>
+            <code style="font-size:var(--text-xs)">DevPortalCatalog:read</code></div>
+          <div class="dp-row"><span class="dp-dim">Send sandbox requests</span>
+            <code style="font-size:var(--text-xs)">DevPortalPlayground:use</code></div>
+          <div class="dp-row"><span class="dp-dim">See your own call history</span>
+            <code style="font-size:var(--text-xs)">DevPortalPlayground:view_history</code></div>
+        </div>
+        <div class="dp-card" data-scope-grants="denied">
+          <h4 class="dp-h3" style="color:var(--text-tertiary)">✕ It does not let you</h4>
+          <div class="dp-row"><span class="dp-dim">See any organization's tenant data</span>
+            <span class="dp-badge neutral">not granted</span></div>
+          <div class="dp-row"><span class="dp-dim">Administer apps, portals or members</span>
+            <span class="dp-badge neutral">not granted</span></div>
+          <div class="dp-row"><span class="dp-dim">See another developer's sandbox history</span>
+            <span class="dp-badge neutral">not granted</span></div>
+        </div>
+      </div>
+      <p class="dp-sub" style="margin-top: var(--space-4)"><code>developer</code> is deliberately narrower than
+        <code>viewer</code> — it inherits nothing from the platform's tenant roles. Signing in here never widens
+        what you can see elsewhere in Fuze.</p>
+    </section>
+
+    <!-- ============ quota ============ -->
+    <section class="dp-card" data-panel="quota" data-quota-state="ok" style="margin-top: var(--space-5)">
+      <h3 class="dp-h3">Sandbox quota</h3>
+      <div class="dp-meter-head">
+        <span>Requests today</span>
+        <span class="val" data-quota-used="138" data-quota-limit="500">138 / 500</span>
+      </div>
+      <div class="dp-meter"><div class="fill" style="width: 28%"></div></div>
+      <p class="dp-meter-foot">Resets <b class="dp-mono" data-quota-reset="2026-09-09T00:00:00Z">in 6h 12m</b>
+        · rolling 24h window, per developer.</p>
+      <table class="dp-table" style="margin-top: var(--space-4)">
+        <thead><tr><th>Target</th><th>Mode</th><th>Calls today</th></tr></thead>
+        <tbody>
+          <tr><td><code>app-registry-service</code></td>
+              <td><span class="dp-badge ok">mock</span></td><td class="dp-mono">96</td></tr>
+          <tr><td><code>billing-service</code></td>
+              <td><span class="dp-badge info">sandbox</span></td><td class="dp-mono">31</td></tr>
+          <tr><td><code>config-service</code></td>
+              <td><span class="dp-badge ok">mock</span></td><td class="dp-mono">11</td></tr>
+        </tbody>
+      </table>
+      <div class="dp-inline" style="margin-top: var(--space-4)">
+        <button class="dp-btn ghost" data-action="request-quota-increase">Request a higher quota</button>
+      </div>
+    </section>
+
+    <!-- ============ sandbox keys ============ -->
+    <section class="dp-card" data-panel="sandbox-keys" data-state="ready" style="margin-top: var(--space-5)">
+      <div class="dp-inline" style="justify-content:space-between">
+        <h3 class="dp-h3" style="margin:0">Sandbox keys</h3>
+        <button class="dp-btn primary" data-action="create-key">Create key</button>
+      </div>
+      <p class="dp-sub">For calling the sandbox from your own terminal or CI. A sandbox key is
+        <b>only</b> valid against sandbox/mock targets — it is not a Fuze credential and grants nothing in production.</p>
+      <table class="dp-table">
+        <thead><tr><th>Label</th><th>Key</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+        <tbody>
+          <tr data-key="sbk_01j8q">
+            <td>laptop</td>
+            <td class="dp-mono">sbk_01j8q…4f2a</td>
+            <td class="dp-mono">2026-08-14</td>
+            <td class="dp-mono">2h ago</td>
+            <td><button class="dp-btn danger" data-action="revoke-key">Revoke</button></td>
+          </tr>
+          <tr data-key="sbk_01j5m">
+            <td>ci-smoke</td>
+            <td class="dp-mono">sbk_01j5m…9c07</td>
+            <td class="dp-mono">2026-07-02</td>
+            <td class="dp-mono">never</td>
+            <td><button class="dp-btn danger" data-action="revoke-key">Revoke</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============ reveal-once ============ -->
+    <div class="dp-callout success" data-reveal="once" style="margin-top: var(--space-5)">
+      <span class="glyph">🔑</span>
+      <div>
+        <p class="ct">Copy this key now — it is shown once</p>
+        <p class="cb">This is the only time the full value is displayed. We store a hash, so if you lose it you must
+          revoke and create a new one.</p>
+        <div class="dp-code-head" style="margin-top: var(--space-3)"><span>new sandbox key</span>
+          <button class="dp-btn ghost" data-action="copy-key" style="padding:0 var(--space-2)">Copy</button></div>
+<pre class="dp-code" data-code="new-key">sbk_01j9k7v2rx8m5taq0wc3nh6dfe</pre>
+        <div class="ca"><button class="dp-btn ghost" data-action="dismiss-key-reveal">I've saved it</button></div>
+      </div>
+    </div>
+
+    <!-- ============ empty keys ============ -->
+    <h3 class="dp-h2">States</h3>
+
+    <section class="dp-state" data-state="empty">
+      <span class="state-label">(a) No keys yet</span>
+      <div class="dp-empty" data-empty="no-sandbox-keys">
+        <div class="icon">🔑</div>
+        <h4>No sandbox keys</h4>
+        <p>You don't need a key to use the Playground in the browser — only to call the sandbox from a terminal or CI.</p>
+        <button class="dp-btn primary" data-action="create-key">Create your first key</button>
+      </div>
+    </section>
+
+    <!-- ============ provisioning ============ -->
+    <section class="dp-state" data-state="provisioning">
+      <span class="state-label">(b) Provisioning · very first sign-in, membership grant still in flight</span>
+      <div class="dp-callout info" data-membership-status="provisioning">
+        <span class="glyph">⏳</span>
+        <div>
+          <p class="ct">Setting up your developer access…</p>
+          <p class="cb">Your <code>developer</code> membership on the platform root organization is being created and
+            synced to the policy engine. This usually takes a few seconds. The Catalog and Playground stay disabled
+            until it completes — <b>we don't show them as working and then 403 on the first click</b>.</p>
+          <div class="ca">
+            <button class="dp-btn ghost" data-action="retry">Check again</button>
+          </div>
+        </div>
+      </div>
+      <div class="dp-card" style="margin-top: var(--space-4)">
+        <div class="dp-skel" style="width:40%; height:16px; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:75%; margin-bottom: var(--space-2)"></div>
+        <div class="dp-skel" style="width:60%"></div>
+      </div>
+    </section>
+
+    <!-- ============ denied ============ -->
+    <section class="dp-state" data-state="denied">
+      <span class="state-label">(c) Denied · 403 — provisioning failed, or the capability is flag-gated off</span>
+      <div class="dp-callout warning" data-http="403" data-membership-status="denied">
+        <span class="glyph">🔒</span>
+        <div>
+          <p class="ct">Developer access isn't enabled for your account</p>
+          <p class="cb">You are signed in as <code>dana.okafor@fuzefront.com</code>, but no <code>developer</code>
+            membership exists on the platform root organization. Either automatic provisioning did not complete, or
+            <code>fuzefront.devportal.enabled</code> is currently limited to a smaller audience. <b>Nothing is
+            partially enabled</b> — the whole portal fails closed rather than exposing a subset.</p>
+          <div class="ca">
+            <button class="dp-btn primary" data-action="request-access">Request access</button>
+            <button class="dp-btn ghost" data-action="retry">Retry</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ error ============ -->
+    <section class="dp-state" data-state="error">
+      <span class="state-label">(d) Error · access/quota lookup failed</span>
+      <div class="dp-callout error" data-error="access-load-failed">
+        <span class="glyph">⚠</span>
+        <div>
+          <p class="ct">Couldn't load your access</p>
+          <p class="cb"><code>GET /api/v1/devportal/me/access</code> failed. We can't tell you what you hold right now,
+            so <b>we don't guess</b> — nothing on this page is rendered from a default or a cached assumption.</p>
+          <div class="ca"><button class="dp-btn primary" data-action="retry">Retry</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ revoke confirm ============ -->
+    <section class="dp-state" data-state="revoke-confirm">
+      <span class="state-label">(e) Revoke confirmation · destructive, so it is explicit</span>
+      <div class="dp-callout warning" data-panel="revoke-confirm">
+        <span class="glyph">⚠</span>
+        <div>
+          <p class="ct">Revoke sandbox key “ci-smoke”?</p>
+          <p class="cb">Anything using this key stops working immediately. This cannot be undone; create a new key
+            instead of restoring this one.</p>
+          <div class="ca">
+            <button class="dp-btn danger" data-action="confirm-revoke-key">Revoke key</button>
+            <button class="dp-btn ghost" data-action="cancel-revoke-key">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='09-my-access']</code> · <code>[data-panel='membership']</code> ·
+    <code>[data-membership-role='developer']</code> · <code>[data-membership-status='active']</code> ·
+    <code>[data-scope='developer']</code> · <code>[data-panel='quota']</code> ·
+    <code>[data-panel='sandbox-keys']</code> · <code>[data-action='create-key']</code> ·
+    <code>[data-action='revoke-key']</code> · <code>[data-reveal='once']</code> ·
+    <code>[data-empty='no-sandbox-keys']</code> · <code>[data-membership-status='provisioning']</code> ·
+    <code>[data-membership-status='denied']</code> · <code>[data-state='error']</code> ·
+    <code>[data-action='retry']</code>.<br />
+    Contract: <code>GET /api/v1/devportal/me/access</code>, <code>GET /api/v1/devportal/sandbox/quota</code>,
+    <code>POST /api/v1/devportal/me/sandbox-keys</code>,
+    <code>DELETE /api/v1/devportal/me/sandbox-keys/{keyId}</code>.
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>09 / 09</b> · flow <b>my-access</b> · <code class="dp-mono">/access</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="08-playground-states.html">← Prev</a>
+    <a class="dp-btn primary" href="index.html">All frames</a>
+  </span>
+</nav>
+</body>
+</html>
