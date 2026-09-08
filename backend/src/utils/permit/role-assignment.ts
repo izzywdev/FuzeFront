@@ -1,11 +1,15 @@
 import permit from '../../config/permit'
 
-// Strips CR/LF before a value reaches a log line (CodeQL js/log-injection —
-// an embedded newline could forge additional fake log lines). Same idiom as
-// routes/auth.ts and middleware/auth.ts: the constant-format-string + %s args
-// pattern below defeats format-string injection but not this, since
-// console.log writes %s args verbatim with no escaping.
-const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+// Neutralizes CR/LF before a value reaches a log line (CodeQL js/log-injection
+// — an embedded newline could forge additional fake log lines). The
+// constant-format-string + %s args pattern below defeats format-string
+// injection but not this, since console.log writes %s args verbatim with no
+// escaping. A manual `.replace(/[\r\n]+/g, ' ')` is NOT recognized as a
+// sanitizer by CodeQL's log-injection query (confirmed: re-fired identically
+// on this exact file after trying that) — `encodeURIComponent` is the
+// remediation CodeQL's own query-help documents, and is a no-op for the
+// UUID/role-name values actually passed through it here.
+const oneLine = (v: unknown) => encodeURIComponent(String(v))
 
 export interface RoleAssignment {
   user: string

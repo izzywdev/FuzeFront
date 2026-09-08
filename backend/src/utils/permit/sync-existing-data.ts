@@ -7,10 +7,14 @@ import {
 import { BackendUser } from './user-sync'
 import { Organization } from '../../types/shared'
 
-// Strips CR/LF before a value reaches a log line (CodeQL js/log-injection —
-// an embedded newline could forge additional fake log lines). Same idiom as
-// role-assignment.ts / bulk-operations.ts / routes/auth.ts / middleware/auth.ts.
-const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+// Neutralizes CR/LF before a value reaches a log line (CodeQL js/log-injection
+// — an embedded newline could forge additional fake log lines). A manual
+// `.replace(/[\r\n]+/g, ' ')` is NOT recognized as a sanitizer by CodeQL's
+// log-injection query (confirmed: re-fired identically on role-assignment.ts
+// after trying that) — `encodeURIComponent` is the remediation CodeQL's own
+// query-help documents, and is a no-op for the UUID values actually passed
+// through it here.
+const oneLine = (v: unknown) => encodeURIComponent(String(v))
 
 /**
  * Syncs all existing database data to Permit.io
