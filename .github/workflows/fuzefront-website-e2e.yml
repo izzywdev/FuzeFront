@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: Sync design-system (vendored file: dependency)
+      - name: "Sync design-system (vendored file: dependency)"
         run: node scripts/sync-design-system.mjs
 
       - name: Install deps
