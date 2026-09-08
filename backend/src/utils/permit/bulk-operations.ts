@@ -40,7 +40,7 @@ export async function bulkSyncUsers(
           await permit.api.users.sync(permitUser)
           results.success++
         } catch (error) {
-          console.error(`Failed to sync user ${permitUser.key}:`, error)
+          console.error('Failed to sync user %s:', permitUser.key, error)
           results.failed++
         }
       })
@@ -49,7 +49,9 @@ export async function bulkSyncUsers(
     }
 
     console.log(
-      `Bulk user sync completed: ${results.success} successful, ${results.failed} failed`
+      'Bulk user sync completed: %d successful, %d failed',
+      results.success,
+      results.failed
     )
   } catch (error) {
     console.error('Error in bulk user sync:', error)
@@ -94,7 +96,7 @@ export async function bulkSyncTenants(
           await permit.api.tenants.create(tenant)
           results.success++
         } catch (error) {
-          console.error(`Failed to sync tenant ${tenant.key}:`, error)
+          console.error('Failed to sync tenant %s:', tenant.key, error)
           results.failed++
         }
       })
@@ -103,7 +105,9 @@ export async function bulkSyncTenants(
     }
 
     console.log(
-      `Bulk tenant sync completed: ${results.success} successful, ${results.failed} failed`
+      'Bulk tenant sync completed: %d successful, %d failed',
+      results.success,
+      results.failed
     )
   } catch (error) {
     console.error('Error in bulk tenant sync:', error)
@@ -132,7 +136,9 @@ export async function bulkAssignRoles(
           results.success++
         } catch (error) {
           console.error(
-            `Failed to assign role ${assignment.role} to user ${assignment.user}:`,
+            'Failed to assign role %s to user %s:',
+            assignment.role,
+            assignment.user,
             error
           )
           results.failed++
@@ -143,7 +149,9 @@ export async function bulkAssignRoles(
     }
 
     console.log(
-      `Bulk role assignment completed: ${results.success} successful, ${results.failed} failed`
+      'Bulk role assignment completed: %d successful, %d failed',
+      results.success,
+      results.failed
     )
   } catch (error) {
     console.error('Error in bulk role assignment:', error)
@@ -189,6 +197,7 @@ export async function setupOrganizationWithRoles(
       admin: 'admin',
       member: 'editor',
       viewer: 'viewer',
+      developer: 'developer', // docs/planning/developers-portal.md §5.3 — catalog + sandbox only
     }
 
     const roleAssignments: RoleAssignment[] = membershipData.map(
@@ -202,11 +211,13 @@ export async function setupOrganizationWithRoles(
     await bulkAssignRoles(roleAssignments)
 
     console.log(
-      `Organization ${organization.id} setup completed with ${membershipData.length} members`
+      'Organization %s setup completed with %d members',
+      organization.id,
+      membershipData.length
     )
     return true
   } catch (error) {
-    console.error(`Error setting up organization ${organization.id}:`, error)
+    console.error('Error setting up organization %s:', organization.id, error)
     return false
   }
 }

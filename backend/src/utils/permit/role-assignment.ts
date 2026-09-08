@@ -15,13 +15,22 @@ export async function assignRoleInPermit(
 ): Promise<boolean> {
   try {
     await permit.api.roleAssignments.assign(assignment)
+    // Constant format string + %s args (log injection / unsafe-formatstring):
+    // assignment.role/user/tenant are never interpolated into the format
+    // string itself, so a stray %s/%d in one of them can't forge the rest
+    // of the log line.
     console.log(
-      `Role ${assignment.role} assigned to user ${assignment.user} in tenant ${assignment.tenant}`
+      'Role %s assigned to user %s in tenant %s',
+      assignment.role,
+      assignment.user,
+      assignment.tenant
     )
     return true
   } catch (error) {
     console.error(
-      `Error assigning role ${assignment.role} to user ${assignment.user}:`,
+      'Error assigning role %s to user %s:',
+      assignment.role,
+      assignment.user,
       error
     )
     return false
@@ -37,12 +46,17 @@ export async function unassignRoleInPermit(
   try {
     await permit.api.roleAssignments.unassign(assignment)
     console.log(
-      `Role ${assignment.role} unassigned from user ${assignment.user} in tenant ${assignment.tenant}`
+      'Role %s unassigned from user %s in tenant %s',
+      assignment.role,
+      assignment.user,
+      assignment.tenant
     )
     return true
   } catch (error) {
     console.error(
-      `Error unassigning role ${assignment.role} from user ${assignment.user}:`,
+      'Error unassigning role %s from user %s:',
+      assignment.role,
+      assignment.user,
       error
     )
     return false
@@ -63,7 +77,7 @@ export async function getUserRoleAssignments(
     const assignments = await permit.api.roleAssignments.list(filter)
     return assignments
   } catch (error) {
-    console.error(`Error getting role assignments for user ${userId}:`, error)
+    console.error('Error getting role assignments for user %s:', userId, error)
     return []
   }
 }
@@ -78,10 +92,7 @@ export async function getTenantRoleAssignments(tenantId: string) {
     })
     return assignments
   } catch (error) {
-    console.error(
-      `Error getting role assignments for tenant ${tenantId}:`,
-      error
-    )
+    console.error('Error getting role assignments for tenant %s:', tenantId, error)
     return []
   }
 }
@@ -101,7 +112,7 @@ export async function userHasRole(
         assignment.role === role && assignment.tenant === tenantId
     )
   } catch (error) {
-    console.error(`Error checking if user ${userId} has role ${role}:`, error)
+    console.error('Error checking if user %s has role %s:', userId, role, error)
     return false
   }
 }
@@ -132,10 +143,7 @@ export async function assignOrganizationRole(
       tenant: organizationId,
     })
   } catch (error) {
-    console.error(
-      `Error assigning organization role for user ${userId}:`,
-      error
-    )
+    console.error('Error assigning organization role for user %s:', userId, error)
     return false
   }
 }
@@ -178,7 +186,7 @@ export async function updateOrganizationRole(
 
     return true
   } catch (error) {
-    console.error(`Error updating organization role for user ${userId}:`, error)
+    console.error('Error updating organization role for user %s:', userId, error)
     return false
   }
 }
