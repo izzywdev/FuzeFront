@@ -1,5 +1,9 @@
 import permit from '../../config/permit'
 import { BackendUser } from './user-sync'
+// Strips CR/LF before a value reaches a log line (CodeQL js/log-injection —
+// an embedded newline could forge additional fake log lines). Same idiom as
+// role-assignment.ts / routes/auth.ts / middleware/auth.ts.
+const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
 import { Organization } from '../../types/shared'
 import { PermitUser } from './user-sync'
 import { PermitTenant } from './tenant-management'
@@ -40,7 +44,7 @@ export async function bulkSyncUsers(
           await permit.api.users.sync(permitUser)
           results.success++
         } catch (error) {
-          console.error('Failed to sync user %s:', permitUser.key, error)
+          console.error('Failed to sync user %s:', oneLine(permitUser.key), error)
           results.failed++
         }
       })
@@ -96,7 +100,7 @@ export async function bulkSyncTenants(
           await permit.api.tenants.create(tenant)
           results.success++
         } catch (error) {
-          console.error('Failed to sync tenant %s:', tenant.key, error)
+          console.error('Failed to sync tenant %s:', oneLine(tenant.key), error)
           results.failed++
         }
       })
@@ -137,8 +141,8 @@ export async function bulkAssignRoles(
         } catch (error) {
           console.error(
             'Failed to assign role %s to user %s:',
-            assignment.role,
-            assignment.user,
+            oneLine(assignment.role),
+            oneLine(assignment.user),
             error
           )
           results.failed++
@@ -212,12 +216,12 @@ export async function setupOrganizationWithRoles(
 
     console.log(
       'Organization %s setup completed with %d members',
-      organization.id,
+      oneLine(organization.id),
       membershipData.length
     )
     return true
   } catch (error) {
-    console.error('Error setting up organization %s:', organization.id, error)
+    console.error('Error setting up organization %s:', oneLine(organization.id), error)
     return false
   }
 }

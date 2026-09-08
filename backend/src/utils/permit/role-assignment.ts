@@ -1,5 +1,12 @@
 import permit from '../../config/permit'
 
+// Strips CR/LF before a value reaches a log line (CodeQL js/log-injection —
+// an embedded newline could forge additional fake log lines). Same idiom as
+// routes/auth.ts and middleware/auth.ts: the constant-format-string + %s args
+// pattern below defeats format-string injection but not this, since
+// console.log writes %s args verbatim with no escaping.
+const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 export interface RoleAssignment {
   user: string
   role: string
@@ -21,16 +28,16 @@ export async function assignRoleInPermit(
     // of the log line.
     console.log(
       'Role %s assigned to user %s in tenant %s',
-      assignment.role,
-      assignment.user,
-      assignment.tenant
+      oneLine(assignment.role),
+      oneLine(assignment.user),
+      oneLine(assignment.tenant)
     )
     return true
   } catch (error) {
     console.error(
       'Error assigning role %s to user %s:',
-      assignment.role,
-      assignment.user,
+      oneLine(assignment.role),
+      oneLine(assignment.user),
       error
     )
     return false
@@ -47,16 +54,16 @@ export async function unassignRoleInPermit(
     await permit.api.roleAssignments.unassign(assignment)
     console.log(
       'Role %s unassigned from user %s in tenant %s',
-      assignment.role,
-      assignment.user,
-      assignment.tenant
+      oneLine(assignment.role),
+      oneLine(assignment.user),
+      oneLine(assignment.tenant)
     )
     return true
   } catch (error) {
     console.error(
       'Error unassigning role %s from user %s:',
-      assignment.role,
-      assignment.user,
+      oneLine(assignment.role),
+      oneLine(assignment.user),
       error
     )
     return false
@@ -77,7 +84,7 @@ export async function getUserRoleAssignments(
     const assignments = await permit.api.roleAssignments.list(filter)
     return assignments
   } catch (error) {
-    console.error('Error getting role assignments for user %s:', userId, error)
+    console.error('Error getting role assignments for user %s:', oneLine(userId), error)
     return []
   }
 }
@@ -92,7 +99,7 @@ export async function getTenantRoleAssignments(tenantId: string) {
     })
     return assignments
   } catch (error) {
-    console.error('Error getting role assignments for tenant %s:', tenantId, error)
+    console.error('Error getting role assignments for tenant %s:', oneLine(tenantId), error)
     return []
   }
 }
@@ -112,7 +119,7 @@ export async function userHasRole(
         assignment.role === role && assignment.tenant === tenantId
     )
   } catch (error) {
-    console.error('Error checking if user %s has role %s:', userId, role, error)
+    console.error('Error checking if user %s has role %s:', oneLine(userId), oneLine(role), error)
     return false
   }
 }
@@ -143,7 +150,7 @@ export async function assignOrganizationRole(
       tenant: organizationId,
     })
   } catch (error) {
-    console.error('Error assigning organization role for user %s:', userId, error)
+    console.error('Error assigning organization role for user %s:', oneLine(userId), error)
     return false
   }
 }
@@ -186,7 +193,7 @@ export async function updateOrganizationRole(
 
     return true
   } catch (error) {
-    console.error('Error updating organization role for user %s:', userId, error)
+    console.error('Error updating organization role for user %s:', oneLine(userId), error)
     return false
   }
 }

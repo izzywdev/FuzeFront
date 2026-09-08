@@ -7,6 +7,11 @@ import {
 import { BackendUser } from './user-sync'
 import { Organization } from '../../types/shared'
 
+// Strips CR/LF before a value reaches a log line (CodeQL js/log-injection —
+// an embedded newline could forge additional fake log lines). Same idiom as
+// role-assignment.ts / bulk-operations.ts / routes/auth.ts / middleware/auth.ts.
+const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 /**
  * Syncs all existing database data to Permit.io
  * This should be run once after Permit.io setup is complete
@@ -107,12 +112,12 @@ export async function syncExistingDataToPermit(): Promise<void> {
  */
 export async function syncSingleUserToPermit(userId: string): Promise<boolean> {
   try {
-    console.log('🔄 Syncing user %s to Permit.io...', userId)
+    console.log('🔄 Syncing user %s to Permit.io...', oneLine(userId))
 
     // Fetch user data
     const userFromDb = await db('users').where('id', userId).first()
     if (!userFromDb) {
-      console.error('User %s not found in database', userId)
+      console.error('User %s not found in database', oneLine(userId))
       return false
     }
 
@@ -131,14 +136,14 @@ export async function syncSingleUserToPermit(userId: string): Promise<boolean> {
     const results = await bulkSyncUsers([user])
 
     if (results.success === 1) {
-      console.log('✅ User %s synced successfully', userId)
+      console.log('✅ User %s synced successfully', oneLine(userId))
       return true
     } else {
-      console.error('❌ Failed to sync user %s', userId)
+      console.error('❌ Failed to sync user %s', oneLine(userId))
       return false
     }
   } catch (error) {
-    console.error('Error syncing user %s:', userId, error)
+    console.error('Error syncing user %s:', oneLine(userId), error)
     return false
   }
 }
@@ -150,14 +155,14 @@ export async function syncSingleOrganizationToPermit(
   organizationId: string
 ): Promise<boolean> {
   try {
-    console.log('🔄 Syncing organization %s to Permit.io...', organizationId)
+    console.log('🔄 Syncing organization %s to Permit.io...', oneLine(organizationId))
 
     // Fetch organization data
     const orgFromDb = await db('organizations')
       .where('id', organizationId)
       .first()
     if (!orgFromDb) {
-      console.error('Organization %s not found in database', organizationId)
+      console.error('Organization %s not found in database', oneLine(organizationId))
       return false
     }
 
@@ -179,14 +184,14 @@ export async function syncSingleOrganizationToPermit(
     const results = await bulkSyncTenants([organization])
 
     if (results.success === 1) {
-      console.log('✅ Organization %s synced successfully', organizationId)
+      console.log('✅ Organization %s synced successfully', oneLine(organizationId))
       return true
     } else {
-      console.error('❌ Failed to sync organization %s', organizationId)
+      console.error('❌ Failed to sync organization %s', oneLine(organizationId))
       return false
     }
   } catch (error) {
-    console.error('Error syncing organization %s:', organizationId, error)
+    console.error('Error syncing organization %s:', oneLine(organizationId), error)
     return false
   }
 }
