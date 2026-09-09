@@ -32,6 +32,11 @@ spec:
             {{- include "fuzequality.env" . | nindent 12 }}
           resources:
             {{- toYaml .Values.bootstrap.resources | nindent 12 }}
+          # tsx creates its per-user runtime directory below /tmp. Keep the
+          # root filesystem immutable while mounting the existing pod-local
+          # emptyDir where the bootstrap process needs to write.
+          volumeMounts:
+            - { name: runtime-tmp, mountPath: /tmp }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000 }
       containers:
         - name: backend
