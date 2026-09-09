@@ -25,11 +25,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
+import ssl
 import sys
-import urllib.error
-import urllib.request
 from typing import Any
 
 try:
@@ -77,8 +77,6 @@ CHART_DIR = os.path.join("deploy", "helm", "fuzefront")
 SKILLS_DIR = os.path.join(".claude", "skills")
 ROLES_DIR = os.path.join("agent-templates", "roles")
 
-GHCR_AUTH_URL = "https://ghcr.io/token?service=ghcr.io&scope=repository:{owner}/{name}:pull"
-GHCR_MANIFEST_URL = "https://ghcr.io/v2/{owner}/{name}/manifests/{tag}"
 
 PRUNE_DIRS = {".git", "node_modules", "dist", "build", ".venv", "__pycache__", ".turbo", "out"}
 
@@ -170,27 +168,21 @@ def find_sealed_secrets(root: str, dirs: list[str]) -> dict[str, set[str]]:
     return result
 
 
-def _assert_ghcr_url(url: str) -> None:
-    """Raise ValueError for any URL that is not https://ghcr.io/…
-
-    Semgrep flags dynamic urllib calls because urllib accepts file:// schemes.
-    The URLs here come from hardcoded templates, but explicit validation is the
-    right defense-in-depth rather than a suppression comment.
-    """
-    import urllib.parse
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc != "ghcr.io":
-        raise ValueError(f"gate_a2a: refusing non-GHCR URL: {url!r}")
+def _ghcr_get(path: str, headers: dict[str, str], timeout: int = 10) -> http.client.HTTPResponse:
+    """HTTPS GET to ghcr.io with the host hardcoded — avoids urllib.request.urlopen
+    (which Semgrep flags for accepting file:// schemes) while keeping TLS validation."""
+    ctx = ssl.create_default_context()
+    conn = http.client.HTTPSConnection("ghcr.io", timeout=timeout, context=ctx)
+    conn.request("GET", path, headers=headers)
+    return conn.getresponse()
 
 
 def ghcr_token(owner: str, name: str) -> str | None:
-    url = GHCR_AUTH_URL.format(owner=owner, name=name)
-    _assert_ghcr_url(url)
+    path = f"/token?service=ghcr.io&scope=repository:{owner}/{name}:pull"
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-            data = json.loads(resp.read())
-            return data.get("token")
+        resp = _ghcr_get(path, {"Accept": "application/json"})
+        data = json.loads(resp.read())
+        return data.get("token")
     except Exception:
         return None
 
@@ -206,7 +198,7 @@ def ghcr_resolve_tag(repository: str, tag: str) -> tuple[bool, str]:
     owner, name = parts
     token = ghcr_token(owner, name)
     headers: dict[str, str] = {
-        # Broad accept covers OCI image index, OCI manifest, Docker v2 manifest — GHCR
+        # Broad Accept covers OCI image index, OCI manifest, Docker v2 manifest — GHCR
         # returns 404 when only one specific media type is requested but the stored artifact
         # is a different type (e.g. OCI index vs Docker manifest v2). The wildcard fallback
         # ensures any valid image manifest type is accepted.
@@ -219,16 +211,16 @@ def ghcr_resolve_tag(repository: str, tag: str) -> tuple[bool, str]:
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    url = GHCR_MANIFEST_URL.format(owner=owner, name=name, tag=tag)
-    _assert_ghcr_url(url)
+    path = f"/v2/{owner}/{name}/manifests/{tag}"
     try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-            return resp.status == 200, "ok"
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
+        resp = _ghcr_get(path, headers)
+        status = resp.status
+        resp.read()
+        if status == 200:
+            return True, "ok"
+        if status == 404:
             return False, f"tag {tag!r} not found (404) in {repository}"
-        return False, f"HTTP {e.code} resolving {repository}:{tag}"
+        return False, f"HTTP {status} resolving {repository}:{tag}"
     except Exception as ex:
         return None, f"registry unreachable: {ex}"  # type: ignore[return-value]
 
