@@ -17,15 +17,23 @@ const portfolio = {
 }
 
 async function mockQualityApi(page: Page) {
+  let suggestionConfirmed = false
   await page.addInitScript(() => { (window as any).__FRONTFUSE_CONTEXT__ = { getAccessToken: () => 'e2e-token' } })
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const method = route.request().method()
     const respond = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
-    if (url.pathname.endsWith('/portfolio')) return respond(portfolio)
+    if (url.pathname.endsWith('/portfolio')) return respond({
+      ...portfolio,
+      suggestions: suggestionConfirmed ? [] : portfolio.suggestions,
+    })
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/organization/members')) return respond([{ id: 'member-1', email: 'owner@example.com', role: 'owner' }])
     if (url.pathname.includes('/test-implementations') && method === 'POST') return respond({ id: 'impl-1', status: 'queued', agentProfile: 'FuzeSDLC QA agent', skills: ['playwright'] }, 202)
+    if (url.pathname.includes('/suggestions/') && url.pathname.endsWith('/decision') && method === 'POST') {
+      suggestionConfirmed = true
+      return respond({ id: 'suggestion-1', state: 'confirmed' })
+    }
     if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') return respond({ ok: true }, 202)
     return respond({})
   })
