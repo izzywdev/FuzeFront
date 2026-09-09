@@ -40,7 +40,7 @@
     "baselineRef": {
       "type": "string",
       "default": "v1",
-      "description": "FuzeSDLC ref this repo pins its baseline/agents/skills to; governance-sync reconciles against it. Use the moving major tag 'v1' \u2014 re-pointed on every compatible policy update, so propagation stays automatic while breaking changes land as 'v2' and are opted into per repo. Pin an immutable 'v1.x.y' only to deliberately freeze a repo. Do NOT pin 'main': unreviewed policy would propagate instantly. See governance/versioning.md."
+      "description": "FuzeSDLC ref this repo pins its baseline/agents/skills to; governance-sync reconciles against it. Use the moving major tag 'v1' — re-pointed on every compatible policy update, so propagation stays automatic while breaking changes land as 'v2' and are opted into per repo. Pin an immutable 'v1.x.y' only to deliberately freeze a repo. ENFORCED (see allOf below), not merely described: for every repo EXCEPT the hub itself, this must be a major alias (v1), an immutable release (v1.11.0), or a full 40-char SHA — 'main' and other branch names are rejected. Until 2026-09-02 the rule lived only in this sentence and nothing validated it, so six repos sat on 'main' and nothing was ever red. izzywdev/FuzeSDLC is exempt because it IS the baseline: a hub cannot pin to a tag of itself. A bare SHA is allowed but is almost never wanted: it silently un-pins the repo from the moving alias, so it stops receiving policy updates forever with no signal. FuzeDeploy and FuzeExecutive were both frozen that way by a bootstrap re-stamp that overwrote 'v1' with FuzeSDLC's then-current main SHA — neither freeze was intentional. See governance/versioning.md."
     },
     "agents": {
       "type": "array",
@@ -52,7 +52,7 @@
     },
     "roles": {
       "type": "object",
-      "description": "OPTIONAL Managed-Agents role definitions this repo provisions (agent-templates/). The FRAMEWORK (schema/roles/_base/sync/providers) is canonical in FuzeSDLC \u2014 stamped by sdlc-bootstrap, reconciled by governance-sync; the concrete roles/environments/vaults/coordinators are the repo's own. Present -> the repo gets the provision-sync.yml caller. See skills/managed-agents-roles.",
+      "description": "OPTIONAL Managed-Agents role definitions this repo provisions (agent-templates/). The FRAMEWORK (schema/roles/_base/sync/providers) is canonical in FuzeSDLC — stamped by sdlc-bootstrap, reconciled by governance-sync; the concrete roles/environments/vaults/coordinators are the repo's own. Present -> the repo gets the provision-sync.yml caller. See skills/managed-agents-roles.",
       "additionalProperties": false,
       "properties": {
         "source": {
@@ -101,7 +101,7 @@
     },
     "channels": {
       "type": "array",
-      "description": "DEPRECATED \u2014 declare the typed block instead (`mcp`, `mobile`, \u2026). This array names a channel without configuring it, and the two have drifted completely apart: 13 repos carry an `mcp` block with no `mcp` channel, and not one of the 10 repos with a `mobile` block declares `mobile-app`. Only FuzeAgent and FuzePlan agree with themselves. The typed block is authoritative for capability installation. Deliberately NOT linked to the blocks by `dependentRequired` \u2014 any such constraint fails 19 of 22 manifests today, which would make the schema unadoptable rather than make the fleet correct.",
+      "description": "DEPRECATED — declare the typed block instead (`mcp`, `mobile`, …). This array names a channel without configuring it, and the two have drifted completely apart: 13 repos carry an `mcp` block with no `mcp` channel, and not one of the 10 repos with a `mobile` block declares `mobile-app`. Only FuzeAgent and FuzePlan agree with themselves. The typed block is authoritative for capability installation. Deliberately NOT linked to the blocks by `dependentRequired` — any such constraint fails 19 of 22 manifests today, which would make the schema unadoptable rather than make the fleet correct.",
       "items": {
         "enum": [
           "mobile-app",
@@ -115,7 +115,7 @@
     "toolchain": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Node/React floor for this repo. MANAGED \u2014 governance_sync reconciles every key except `enforce` from governance/toolchain.json, so raising the family floor is one edit in the canonical rather than 20 PRs. `moduleFederationRequiredVersion` is the one with a runtime consequence: it must be byte-identical in the MF host and every remote, or the remote loads its own React copy and dies on 'Invalid hook call' in the browser with nothing in CI to catch it.",
+      "description": "Node/React floor for this repo. MANAGED — governance_sync reconciles every key except `enforce` from governance/toolchain.json, so raising the family floor is one edit in the canonical rather than 20 PRs. `moduleFederationRequiredVersion` is the one with a runtime consequence: it must be byte-identical in the MF host and every remote, or the remote loads its own React copy and dies on 'Invalid hook call' in the browser with nothing in CI to catch it.",
       "properties": {
         "node": {
           "type": "string",
@@ -166,16 +166,16 @@
     "ci": {
       "type": "object",
       "additionalProperties": false,
-      "description": "CI execution facts for this repo. Present so the RUNNER stops being something the installer has to infer: every ARC scale set is still named after its own repo, so no single runs-on value is correct everywhere, the templates ship ubuntu-latest, and render.detect_runner exists to read each repo's choice back off disk so a stamp does not clobber it. Measured 2026-08-23 across 20 live default branches: 15 repos declare this block, between them using 15 DISTINCT runner names. governance/ci-runners.md describes a future uniform `fuze-runner`; FuzeInfra has not renamed the sets, so that is a plan and not the current state \u2014 this block stays per-repo until it is.",
+      "description": "CI execution facts for this repo. Present so the RUNNER stops being something the installer has to infer: every ARC scale set is still named after its own repo, so no single runs-on value is correct everywhere, the templates ship ubuntu-latest, and render.detect_runner exists to read each repo's choice back off disk so a stamp does not clobber it. Measured 2026-08-23 across 20 live default branches: 15 repos declare this block, between them using 15 DISTINCT runner names. governance/ci-runners.md describes a future uniform `fuze-runner`; FuzeInfra has not renamed the sets, so that is a plan and not the current state — this block stays per-repo until it is.",
       "properties": {
         "runner": {
           "type": "string",
           "minLength": 1,
-          "description": "The runner every stamped workflow targets, written verbatim as runs-on. DECLARED, never derived \u2014 the same rule identity.namespace follows. This is a gha-runner-scale-set NAME, not a label: those runners register with no labels at all, so `self-hosted` and `[self-hosted, x]` match nothing. Omit the block entirely to keep the template's ubuntu-latest, which is the correct default for a repo with no scale set \u2014 a runs-on naming a set that does not exist does not fail fast, it queues forever."
+          "description": "The runner every stamped workflow targets, written verbatim as runs-on. DECLARED, never derived — the same rule identity.namespace follows. This is a gha-runner-scale-set NAME, not a label: those runners register with no labels at all, so `self-hosted` and `[self-hosted, x]` match nothing. Omit the block entirely to keep the template's ubuntu-latest, which is the correct default for a repo with no scale set — a runs-on naming a set that does not exist does not fail fast, it queues forever."
         },
         "note": {
           "type": "string",
-          "description": "Free-text rationale for this repo's runner choice. Every sibling block that carries hard-won operational reasoning allows one (a2a, mcp, identity, toolchain, platformAuth); `ci` was the only one that did not \u2014 and it is the block whose reasoning is least guessable from its value. `runner: fuzecall` reads like a label until the note tells you it is a gha-runner-scale-set NAME, that those runners register with no labels at all so `self-hosted` matches nothing, and that naming a set which does not exist does not fail fast but queues forever. ALL 15 `ci` blocks in the fleet carry a note (measured 2026-08-23), so under additionalProperties:false a schema missing this property rejects every real instance \u2014 which is exactly what 12 repos' STALE VENDORED copies did, failing with `ci \u2014 'note' was unexpected` while the canonical here was already correct. Pinned by scripts/__tests__/test_gate_manifest.py."
+          "description": "Free-text rationale for this repo's runner choice. Every sibling block that carries hard-won operational reasoning allows one (a2a, mcp, identity, toolchain, platformAuth); `ci` was the only one that did not — and it is the block whose reasoning is least guessable from its value. `runner: fuzecall` reads like a label until the note tells you it is a gha-runner-scale-set NAME, that those runners register with no labels at all so `self-hosted` matches nothing, and that naming a set which does not exist does not fail fast but queues forever. ALL 15 `ci` blocks in the fleet carry a note (measured 2026-08-23), so under additionalProperties:false a schema missing this property rejects every real instance — which is exactly what 12 repos' STALE VENDORED copies did, failing with `ci — 'note' was unexpected` while the canonical here was already correct. Pinned by scripts/__tests__/test_gate_manifest.py."
         }
       }
     },
@@ -187,7 +187,7 @@
         "namespace": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9]*$",
-          "description": "Prefix namespace for this product's entity types. DECLARED, never derived from the repo directory name \u2014 a rename would otherwise silently orphan every id already issued, surfacing much later as unresolvable references with no obvious cause. Only FuzeFront may mint the bare reserved spine prefixes (usr/org/prt/app, billing, messaging); a product's own types namespace as <namespace>_<type>."
+          "description": "Prefix namespace for this product's entity types. DECLARED, never derived from the repo directory name — a rename would otherwise silently orphan every id already issued, surfacing much later as unresolvable references with no obvious cause. Only FuzeFront may mint the bare reserved spine prefixes (usr/org/prt/app, billing, messaging); a product's own types namespace as <namespace>_<type>."
         },
         "packages": {
           "type": "object",
@@ -200,13 +200,13 @@
             },
             "python": {
               "type": "string",
-              "description": "e.g. 'fuzefront-identity' \u2014 installed from a tagged GitHub Release wheel, because GitHub Packages has no PyPI registry."
+              "description": "e.g. 'fuzefront-identity' — installed from a tagged GitHub Release wheel, because GitHub Packages has no PyPI registry."
             }
           }
         },
         "enforceUsage": {
           "type": "boolean",
-          "description": "Ratchet. --adoption A1 only asks whether the identity package is DECLARED, which an inert dependency line satisfies \u2014 measured 2026-08-19, thirteen repos declared it and none imported it. With this true, A2 also requires a tracked source file to IMPORT the package, and a declaration with no call site becomes a failure instead of a warning. Deliberately opt-in per repo and NOT reconciled by governance_sync: flipping it family-wide on arrival would be enforcement ahead of adoption, which is what produced the inert declarations."
+          "description": "Ratchet. --adoption A1 only asks whether the identity package is DECLARED, which an inert dependency line satisfies — measured 2026-08-19, thirteen repos declared it and none imported it. With this true, A2 also requires a tracked source file to IMPORT the package, and a declaration with no call site becomes a failure instead of a warning. Deliberately opt-in per repo and NOT reconciled by governance_sync: flipping it family-wide on arrival would be enforcement ahead of adoption, which is what produced the inert declarations."
         },
         "note": {
           "type": "string"
@@ -231,11 +231,11 @@
     "platformAuth": {
       "type": "object",
       "additionalProperties": false,
-      "description": "NEW BLOCK. Consume @fuzefront/auth (published as @izzywdev/fuzefront-auth) rather than a bespoke verifier. A product NEVER calls Permit directly; it knows exactly one thing, the base URL of FuzeFront's Security API. gate-platform-auth ENFORCES BY DEFAULT \u2014 this block is how a repo opts OUT, not how it opts in.",
+      "description": "NEW BLOCK. Consume @fuzefront/auth (published as @izzywdev/fuzefront-auth) rather than a bespoke verifier. A product NEVER calls Permit directly; it knows exactly one thing, the base URL of FuzeFront's Security API. gate-platform-auth ENFORCES BY DEFAULT — this block is how a repo opts OUT, not how it opts in.",
       "properties": {
         "enforce": {
           "type": "boolean",
-          "description": "Ratchet for gate-platform-auth, and it is OPT-OUT: absent means ENFORCING. Set false only to silence the gate while a repo migrates, and only together with `reason` \u2014 an `enforce: false` with no reason is ignored and the gate enforces anyway, because an undocumented opt-out is indistinguishable from an oversight. The earlier opt-in shape was chosen to avoid redding the fleet on pre-existing violations, but that is how gate-identifier reached zero adoption across 21 repos: a check nobody enabled is indistinguishable from a check that does not exist. What actually prevents a `|| true` is visibility, not coldness \u2014 an `enforce: false` naming a repo and a reason is greppable and countable; `|| true` in a workflow is neither."
+          "description": "Ratchet for gate-platform-auth, and it is OPT-OUT: absent means ENFORCING. Set false only to silence the gate while a repo migrates, and only together with `reason` — an `enforce: false` with no reason is ignored and the gate enforces anyway, because an undocumented opt-out is indistinguishable from an oversight. The earlier opt-in shape was chosen to avoid redding the fleet on pre-existing violations, but that is how gate-identifier reached zero adoption across 21 repos: a check nobody enabled is indistinguishable from a check that does not exist. What actually prevents a `|| true` is visibility, not coldness — an `enforce: false` naming a repo and a reason is greppable and countable; `|| true` in a workflow is neither."
         },
         "mode": {
           "enum": [
@@ -243,7 +243,7 @@
             "legacy-hs256",
             "session-delegation"
           ],
-          "description": "federated-jwks verifies Authentik-issued tokens against a cached JWKS and is the target. legacy-hs256 is a symmetric shared secret \u2014 a minting capability, interim only. session-delegation calls GET /api/v1/security/session instead of verifying locally."
+          "description": "federated-jwks verifies Authentik-issued tokens against a cached JWKS and is the target. legacy-hs256 is a symmetric shared secret — a minting capability, interim only. session-delegation calls GET /api/v1/security/session instead of verifying locally."
         },
         "package": {
           "type": "string",
@@ -265,7 +265,7 @@
     "a2a": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Agent-to-agent surface. Mirrors the frozen contract at FuzeAgent/agent-templates/contracts/a2a/v1/schema/manifest-a2a-extension.schema.json \u2014 mirrored rather than $ref'd because this file carries an absolute $id, which hijacks relative reference resolution and turns the ref into a GitHub HTML URL no validator will fetch. Note the AUTHORITATIVE caller allowlist is the top-level `providesTo`, not anything here: absent is NOT the same as empty, and absent must fail closed.",
+      "description": "Agent-to-agent surface. Mirrors the frozen contract at FuzeAgent/agent-templates/contracts/a2a/v1/schema/manifest-a2a-extension.schema.json — mirrored rather than $ref'd because this file carries an absolute $id, which hijacks relative reference resolution and turns the ref into a GitHub HTML URL no validator will fetch. Note the AUTHORITATIVE caller allowlist is the top-level `providesTo`, not anything here: absent is NOT the same as empty, and absent must fail closed.",
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -283,7 +283,7 @@
         "entryRole": {
           "type": "string",
           "pattern": "^[a-z0-9_-]+$",
-          "description": "Role that receives an incoming SendMessage when the caller names no skill. Optional \u2014 FuzeInfra declares servingRoles without it, so this must not be required."
+          "description": "Role that receives an incoming SendMessage when the caller names no skill. Optional — FuzeInfra declares servingRoles without it, so this must not be required."
         },
         "external": {
           "type": "boolean",
@@ -303,14 +303,14 @@
         },
         "_note": {
           "type": "string",
-          "description": "Legacy spelling of `note`, used by FuzeKeys. Accepted so the schema does not reject real manifests \u2014 a bare $ref to the frozen contract rejects 6 of 16 over exactly this. Prefer `note` in new work."
+          "description": "Legacy spelling of `note`, used by FuzeKeys. Accepted so the schema does not reject real manifests — a bare $ref to the frozen contract rejects 6 of 16 over exactly this. Prefer `note` in new work."
         }
       }
     },
     "mcp": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Model Context Protocol surface. The fleet standardised on the SHARED OpenAPI->MCP gateway image rather than per-repo server code, so `servers[]` has two legitimate and mutually-exclusive dialects \u2014 see its description. Do not add a `required` that assumes one.",
+      "description": "Model Context Protocol surface. The fleet standardised on the SHARED OpenAPI->MCP gateway image rather than per-repo server code, so `servers[]` has two legitimate and mutually-exclusive dialects — see its description. Do not add a `required` that assumes one.",
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -337,14 +337,14 @@
           "items": {
             "type": "string"
           },
-          "description": "Tools that mutate irreversibly. Each MUST resolve in the generated tools.json with mutates:true \u2014 the gateway refuses to start on a contradictory override, and that refusal IS the test."
+          "description": "Tools that mutate irreversibly. Each MUST resolve in the generated tools.json with mutates:true — the gateway refuses to start on a contradictory override, and that refusal IS the test."
         },
         "note": {
           "type": "string"
         },
         "servers": {
           "type": "array",
-          "description": "TWO DIALECTS, both valid. (a) stdio/entry: {name, transport, entry} where entry points at server code. (b) gateway: {name, transport, image, implementation, spec, overrides, manifest, deployment, endpoints} with NO entry, because the shared gateway needs no per-repo server code. A third hybrid sets kind:'openapi-gateway' with entry pointing at the spec. Only `name` and `transport` are universal \u2014 requiring `entry` would reject FuzeSales and FuzeService.",
+          "description": "TWO DIALECTS, both valid. (a) stdio/entry: {name, transport, entry} where entry points at server code. (b) gateway: {name, transport, image, implementation, spec, overrides, manifest, deployment, endpoints} with NO entry, because the shared gateway needs no per-repo server code. A third hybrid sets kind:'openapi-gateway' with entry pointing at the spec. Only `name` and `transport` are universal — requiring `entry` would reject FuzeSales and FuzeService.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -546,7 +546,7 @@
     },
     "modelCascade": {
       "type": "object",
-      "description": "OPTIONAL per-repo overrides for the model cascade (governance/model-cascade.md). Absent \u2192 canonical defaults from the copied agent files apply.",
+      "description": "OPTIONAL per-repo overrides for the model cascade (governance/model-cascade.md). Absent → canonical defaults from the copied agent files apply.",
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -675,36 +675,6 @@
         }
       }
     },
-    "dataTier": {
-      "type": "array",
-      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@fuze please provision' request (governance/shared-cluster-deploy.md §5). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses — a role granted on the wrong db name is the classic silent-empty-data bug.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["store", "database", "role"],
-        "properties": {
-          "store": { "enum": ["postgres", "mongo", "redis", "neo4j", "chroma"], "description": "Shared datastore this role needs access in." },
-          "database": { "type": "string", "description": "The exact database/keyspace name the app reads/writes (e.g. robot_catalog). The role MUST be granted on THIS name; provisioning verifies it." },
-          "role": { "type": "string", "description": "The per-service role/user (e.g. mendys)." },
-          "privileges": { "enum": ["readWrite", "read", "admin"], "default": "readWrite", "description": "Privilege level to grant the role on `database`." },
-          "authSource": { "type": "string", "description": "Mongo authSource db the role authenticates against (e.g. admin), when it differs from `database`." }
-        }
-      }
-    },
-    "egress": {
-      "type": "array",
-      "description": "External hosts the product's pods need outbound HTTPS to. The shared cluster is egress-restricted (HTTP-only behind the Cloudflare tunnel; no default outbound to third-party APIs), so every external dependency MUST be declared here. FuzeInfra's reconciler turns these into namespace egress allow-rules (NetworkPolicy / egress gateway). Declare each third-party API explicitly (e.g. LLM providers).",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["host"],
-        "properties": {
-          "host": { "type": "string", "description": "FQDN, e.g. api.openai.com." },
-          "port": { "type": "integer", "default": 443, "description": "Destination port (default 443)." },
-          "reason": { "type": "string", "description": "Why the product needs it (e.g. 'AI keyword generation')." }
-        }
-      }
-    },
     "clusterOps": {
       "type": "object",
       "additionalProperties": false,
@@ -746,5 +716,28 @@
         "type": "string"
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "$comment": "baselineRef must be a tag or SHA for consumers, but the hub pins 'main' because it is the baseline itself. Expressed as if/then rather than a flat pattern so the exemption is explicit and auditable instead of a special case buried in a script.",
+      "if": {
+        "properties": {
+          "repo": {
+            "const": "izzywdev/FuzeSDLC"
+          }
+        },
+        "required": [
+          "repo"
+        ]
+      },
+      "then": true,
+      "else": {
+        "properties": {
+          "baselineRef": {
+            "pattern": "^(v[0-9]+|v[0-9]+\\.[0-9]+\\.[0-9]+|[0-9a-f]{40})$"
+          }
+        }
+      }
+    }
+  ]
 }

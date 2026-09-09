@@ -10,7 +10,14 @@ description: >-
   gates, retry-masked prod failures) — this action exists to add resilience without
   reintroducing that exact defect.
   .
-  Order: (1) claude-code-action, credentialed through ./.github/actions/llm-endpoint
+  Order: (0) claude-code-action on a SUBSCRIPTION OAuth token
+  (`claude-code-oauth-token`, from `claude setup-token`) when one is configured —
+  rung 1a, direct to Anthropic with no gateway, because LiteLLM authenticates its
+  Anthropic provider with an x-api-key and has no OAuth path at all. This rung is
+  first for a COST reason, not a reliability one: it bills against an existing
+  Claude plan, while every rung below it bills per token. It is skipped by name
+  when no token is set, so the chain below is unchanged for any repo that has not
+  configured one — (1) claude-code-action, credentialed through ./.github/actions/llm-endpoint
   — which itself probes the in-cluster LiteLLM gateway with a bounded-timeout
   readiness check and falls back to a direct Anthropic key if LiteLLM is
   unreachable; LiteLLM is NEVER run on the runner itself, only probed over HTTP —
@@ -84,6 +91,30 @@ inputs:
     default: ''
   anthropic-api-key:
     description: 'Direct Anthropic API key. Forwarded to ./llm-endpoint as fallback-anthropic-key.'
+    required: false
+    default: ''
+  claude-code-oauth-token:
+    description: >-
+      Claude subscription OAuth token (`claude setup-token`), passed to
+      claude-code-action as `claude_code_oauth_token`. When non-empty this
+      becomes RUNG 1a, attempted BEFORE the LiteLLM/API-key path.
+      .
+      ORDER IS DELIBERATE AND IT IS A COST DECISION, not a reliability one:
+      a subscription token bills against an existing Claude plan, whereas
+      `anthropic-api-key` (and LiteLLM's own anthropic leg, which uses that
+      same key) bills per token. Trying the metered path first would spend
+      money on every run while a paid-for, already-working path sat unused.
+      .
+      It does NOT go through ./llm-endpoint, and that is not an oversight.
+      LiteLLM authenticates its Anthropic provider with an `x-api-key` API
+      key and has no OAuth handling anywhere in that path — handing it a
+      subscription token would fail auth, and the failure would look like a
+      vendor outage rather than a wiring error. So this rung talks to
+      Anthropic directly, with no ANTHROPIC_BASE_URL override.
+      .
+      Empty is a supported state: the rung is skipped by name and the chain
+      starts at the LiteLLM/API-key rung exactly as before. This input can
+      therefore be added fleet-wide before any token exists.
     required: false
     default: ''
   openai-api-key:
@@ -265,6 +296,64 @@ runs:
         done <<< "$EXTRA_ENV"
         echo "::notice title=fuze-code-action::exported ${n} caller-supplied environment variable(s) for the task (names and values not printed)."
 
+    # RUNG 1a — claude-code-action on a SUBSCRIPTION OAuth token, tried before the
+    # metered path. Skipped entirely, by name, when no token is configured, so the
+    # input can be rolled out fleet-wide ahead of any token existing.
+    #
+    # No ./llm-endpoint, no ANTHROPIC_BASE_URL: this rung talks to Anthropic
+    # directly. LiteLLM authenticates its Anthropic provider with an `x-api-key`
+    # API key and has no OAuth handling on that path, so routing a subscription
+    # token through the gateway would fail auth and read as a vendor outage rather
+    # than the wiring error it actually is.
+    #
+    # continue-on-error for the same reason as rung 1 below: this action classifies
+    # the failure itself before deciding whether falling through is even warranted.
+    - name: 'Rung 1a: claude-code-action (subscription OAuth)'
+      id: claude-oauth
+      if: inputs.claude-code-oauth-token != ''
+      continue-on-error: true
+      uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d # v1
+      with:
+        claude_code_oauth_token: ${{ inputs.claude-code-oauth-token }}
+        github_token: ${{ inputs.github-token }}
+        prompt: ${{ inputs.task-prompt }}
+        claude_args: ${{ inputs.claude-args }}
+        show_full_output: ${{ inputs.show-full-output }}
+        allowed_bots: ${{ inputs.allowed-bots }}
+        additional_permissions: ${{ inputs.additional-permissions }}
+        settings: ${{ inputs.settings }}
+
+    # Classified by the SAME classify.sh as rung 1 — deliberately, so the
+    # availability-vs-task distinction cannot drift between the two Anthropic rungs.
+    # code=1 (availability) is the ONLY verdict that falls through to the metered
+    # path below; code=2 (a real task failure) and code=3 (declined) stop the chain,
+    # because retrying an honest failure against a second credential would convert
+    # it into a green.
+    - name: 'Classify rung 1a'
+      id: classify-claude-oauth
+      if: steps.claude-oauth.outcome != 'skipped'
+      shell: bash
+      env:
+        CONCLUSION: ${{ steps.claude-oauth.outputs.conclusion }}
+        LOG_FILE: ${{ steps.claude-oauth.outputs.execution_file }}
+        OUTCOME: ${{ steps.claude-oauth.outcome }}
+      run: |
+        set -uo pipefail
+        if VERDICT="$("${GITHUB_ACTION_PATH}/classify.sh" "${CONCLUSION:-}" "${LOG_FILE:-}" "${OUTCOME:-}")"; then
+          CODE=0
+        else
+          CODE=$?
+        fi
+        echo "verdict=${VERDICT}" >> "$GITHUB_OUTPUT"
+        echo "code=${CODE}" >> "$GITHUB_OUTPUT"
+        echo "::notice title=fuze-code-action::rung=claude-oauth vendor=anthropic-subscription verdict: ${VERDICT}"
+        if [ "$CODE" = "1" ]; then
+          echo "::warning title=fuze-code-action::rung=claude-oauth failed on an AVAILABILITY error (an expired or revoked subscription token looks exactly like this). Falling through to the METERED LiteLLM/API-key path — this run will cost per-token. Re-mint the token with \`claude setup-token\` to return to subscription billing."
+        fi
+        if [ "$CODE" = "2" ]; then
+          echo "::error title=fuze-code-action::rung=claude-oauth failed with a TASK failure — refusing to retry on the metered path. Fix the underlying issue; this is not a credential problem."
+        fi
+
     # continue-on-error: llm-endpoint itself hard-fails (exit 1) when NEITHER a
     # reachable LiteLLM key NOR a direct Anthropic key resolves to a usable
     # credential ("nothing to fall back to"). Without continue-on-error here, that
@@ -275,13 +364,33 @@ runs:
     # reported" branch treats it as availability, falling through to codex.
     - name: Resolve LiteLLM / direct-Anthropic endpoint
       id: llm
+      # '' = rung 1a was not attempted (no token configured); '1' = it failed on
+      # availability. Any other value means 1a already settled the run, and probing
+      # LiteLLM — which can go as far as starting a runner-local container — would
+      # be pure waste on a run that is already finished.
+      if: |
+        steps.classify-claude-oauth.outputs.code == '' ||
+        steps.classify-claude-oauth.outputs.code == '1'
       continue-on-error: true
       uses: ./.github/actions/llm-endpoint
       with:
         litellm-base-url: ${{ inputs.litellm-base-url }}
         litellm-key: ${{ inputs.litellm-key }}
-        fallback-vendor: anthropic
+        # ALL THREE keys, not just anthropic. ./llm-endpoint filters its
+        # fallback-chain down to the vendors whose key is actually non-empty, so
+        # a key this action accepts but does not forward removes that vendor from
+        # the runner-local chain entirely. That is precisely how a three-vendor
+        # gateway silently degraded to one vendor and took the whole fleet's code
+        # review down when that vendor ran out of credit.
+        #
+        # There was no `fallback-vendor` input here before this line — there was
+        # a `fallback-vendor: anthropic` that ./llm-endpoint does not declare.
+        # Actions ignores an undeclared `with:` key with a warning, never an
+        # error, so it read as configuration while doing nothing at all.
+        # tests/test_local_action_inputs.py now fails on any such key.
         fallback-anthropic-key: ${{ inputs.anthropic-api-key }}
+        fallback-openai-key: ${{ inputs.openai-api-key }}
+        fallback-gemini-key: ${{ inputs.gemini-api-key }}
 
     # RUNG 1 — claude-code-action, credentialed via LiteLLM-or-direct-Anthropic
     # (see llm step above). Gated on the llm step's own outcome, not on raw input
@@ -291,7 +400,10 @@ runs:
     # fallthrough is even warranted.
     - name: 'Rung 1: claude-code-action'
       id: claude
-      if: steps.llm.outcome == 'success'
+      if: |
+        steps.llm.outcome == 'success' &&
+        (steps.classify-claude-oauth.outputs.code == '' ||
+         steps.classify-claude-oauth.outputs.code == '1')
       continue-on-error: true
       uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d # v1
       env:
@@ -532,6 +644,8 @@ runs:
       if: always()
       shell: bash
       env:
+        OAUTH_CODE: ${{ steps.classify-claude-oauth.outputs.code }}
+        OAUTH_RESULT: ${{ steps.claude-oauth.outputs.structured_output }}
         CLAUDE_CODE: ${{ steps.classify-claude.outputs.code }}
         CLAUDE_RESULT: ${{ steps.claude.outputs.structured_output }}
         LLM_VENDOR: ${{ steps.llm.outputs.vendor }}
@@ -546,6 +660,48 @@ runs:
         # delimiter verbatim, and CLAUDE_RESULT/CODEX_RESULT are arbitrary
         # LLM-generated text that this action does not control the content of.
         DELIM="FUZE_EOF_$(date +%s%N)_$$"
+        # RUNG 1a (subscription OAuth) is settled FIRST, and only codes 0/2/3 are
+        # terminal here. Code 1 deliberately falls past this block: an availability
+        # failure is the one verdict that licenses the metered path below, so the
+        # CLAUDE_CODE branches then decide the run exactly as they did before this
+        # rung existed. An empty OAUTH_CODE means the rung never ran.
+        if [ "${OAUTH_CODE:-}" = "3" ]; then
+          {
+            echo "mode=declined"
+            echo "vendor=anthropic-subscription"
+            echo "conclusion=neutral"
+            echo "result-text="
+          } >> "$GITHUB_OUTPUT"
+          echo "::warning title=fuze-code-action::conclusion=neutral mode=declined — rung=claude-oauth declined and NO WORK WAS PERFORMED (see the rung=claude-oauth notice above). Exiting 0: there is no failure to report, and the metered rungs are deliberately not attempted because they would run exactly the task the decline exists to prevent."
+          exit 0
+        fi
+        if [ "${OAUTH_CODE:-}" = "0" ]; then
+          {
+            echo "mode=claude-oauth"
+            echo "vendor=anthropic-subscription"
+            echo "conclusion=success"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "result-text<<${DELIM}"
+            echo "${OAUTH_RESULT:-}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ "${OAUTH_CODE:-}" = "2" ]; then
+          {
+            echo "mode=claude-oauth"
+            echo "vendor=anthropic-subscription"
+            echo "conclusion=failure"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "result-text<<${DELIM}"
+            echo "${OAUTH_RESULT:-}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+          echo "::error title=fuze-code-action::conclusion=failure mode=claude-oauth — rung=claude-oauth reported a TASK failure. No other rung was tried: this is a real finding from the work itself, not a provider problem, and retrying it elsewhere would manufacture a green."
+          exit 1
+        fi
         if [ "${CLAUDE_CODE:-}" = "3" ]; then
           # Declined, not failed, and NOT success either: no work was performed.
           # mode/conclusion say so explicitly so a caller can branch on it and a
