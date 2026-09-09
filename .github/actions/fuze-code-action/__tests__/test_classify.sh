@@ -76,6 +76,14 @@ expect 1 "connection refused"       "failure" "connect ECONNREFUSED 10.0.0.1:400
 expect 1 "dns failure"              "failure" "getaddrinfo EAI_AGAIN litellm.fuzeinfra.svc"
 expect 1 "fetch failed"             "failure" "TypeError: fetch failed"
 expect 1 "case-insensitive match"   "failure" "SERVICE UNAVAILABLE"
+# Vendor credit/quota exhaustion on the secondary rungs — the exact strings seen
+# on runs 34380696573 / 34267619335, which no pre-existing pattern matched.
+expect 1 "openai out of credits"    "failure" "ERROR: stream disconnected before completion: You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/."
+expect 1 "gemini 429 RESOURCE_EXHAUSTED" "failure" 'Attempt 1 failed with status 429. _ApiError: {"error":{"code":429,"message":"Your prepayment credits are depleted.","status":"RESOURCE_EXHAUSTED"}}'
+expect 1 "gemini prepayment depleted"    "failure" "Your prepayment credits are depleted. Please go to AI Studio"
+expect 1 "json code 429"            "failure" '{"error":{"code":429}}'
+expect 1 "json status 429"          "failure" '{"status": 429}'
+expect 1 "quota exceeded"           "failure" "Quota exceeded for quota metric"
 
 # ── task / indeterminate: MUST NOT fall through ──────────────────────────────
 # These are the cases that matter. Every one of them, if misclassified as
