@@ -7,7 +7,10 @@ import tsParser from '@typescript-eslint/parser'
 
 export default [
   {
-    ignores: ['dist/**/*']
+    // vendor-design-system is a generated copy of @fuzefront/design-system
+    // (see scripts/sync-design-system.mjs) — lint the real source in
+    // design-system/, not this vendored snapshot.
+    ignores: ['dist/**/*', 'vendor-design-system/**/*']
   },
   {
     files: ['**/*.{ts,tsx}'],
@@ -33,5 +36,13 @@ export default [
         { allowConstantExport: true }
       ]
     }
+  },
+  {
+    // Playwright configs and the e2e suite run under Node, not the browser —
+    // they need `process`/`Buffer`, not `globals.browser`.
+    files: ['playwright*.config.ts', 'e2e/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
   }
 ]

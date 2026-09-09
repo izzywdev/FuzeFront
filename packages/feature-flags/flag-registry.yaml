@@ -416,4 +416,32 @@ flags:
     web_exposed: true
     jira: ~
     epic: FF-EPIC-17
+
+  # ---------------------------------------------------------------------------
+  # fuzefront.devportal.*
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.devportal.enabled
+    type: release
+    default: false
+    description: >
+      docs/planning/developers-portal.md: gates the whole developers.fuzefront.com
+      capability — devportal-service (spec registry harvest, Security-API-authorized
+      catalog/playground routes), devportal-frontend (home/catalog/spec-viewer/
+      playground/my-access), the root-org `developer` membership auto-provisioning
+      hook, and the Authentik redirect URI. Flag OFF means the capability is dark:
+      no route is served, no provisioning happens, existing root-membership/Permit
+      behavior for every other flow is unaffected. Rolled out to internal staff
+      first (developers segment) before public developer access.
+    owner: backend-engineer / frontend-engineer / devops-engineer (devportal)
+    removal_criterion: >
+      Delete once developers.fuzefront.com is GA and the flag has been at 100%
+      rollout with no flag-OFF traffic for a full release cycle.
+    gates:
+      - "devportal-service routes (spec registry, catalog, playground proxy)"
+      - "devportal-frontend (home, catalog, spec viewer, playground, my access)"
+      - "ensureDeveloperMembership root-org provisioning (backend/src, backend/security/src)"
+      - "deploy/helm/fuzefront/authentik/blueprints/provider-oidc.yaml redirect_uris entry"
+    web_exposed: true
+    jira: ~
+    epic: ~
     story: S8/S9

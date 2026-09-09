@@ -63,6 +63,9 @@ spec:
             {{- if .Values.notificationService.enabled }}
             {{- $extraDbs = append $extraDbs .Values.notificationService.dbName }}
             {{- end }}
+            {{- if .Values.devportalService.enabled }}
+            {{- $extraDbs = append $extraDbs .Values.devportalService.dbName }}
+            {{- end }}
             {{- if $extraDbs }}
             - name: EXTRA_DATABASES
               value: {{ join "," $extraDbs | quote }}
