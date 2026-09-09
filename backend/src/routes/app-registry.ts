@@ -88,6 +88,23 @@ async function forward(req: Request, res: Response): Promise<void> {
     const hb = upstream.headers['x-app-heartbeat-token']
     if (hb) res.setHeader('X-App-Heartbeat-Token', hb as string)
 
+    // The applications-service stamps its own image SHA on every response
+    // (applications/src/index.ts). Nothing on app.fuzefront.com talks to that
+    // service directly — /api/v1/app-registry has no Ingress rule of its own, so
+    // it falls through /api to THIS backend and reaches the service only here.
+    // This relay is therefore the ONLY way the header survives to a caller, and
+    // it is the whole reason build stamping exists: scripts/check-portal-
+    // federation-health.mjs compares it against the tag values-prod.yaml
+    // requests, to tell "the fix is deployed and still wrong" apart from "the
+    // fix has not rolled yet".
+    //
+    // Dropping it does not fail loudly — the census reads the absence as "this
+    // service predates build stamping", i.e. as EVIDENCE THE ROLLOUT IS BEHIND.
+    // That is a false negative that reads like a finding, and it is exactly the
+    // wrong conclusion this session drew from it before the relay was traced.
+    const build = upstream.headers['x-fuze-build']
+    if (build) res.setHeader('X-Fuze-Build', build as string)
+
     res.status(upstream.status).send(Buffer.from(upstream.data))
   } catch (err) {
     const ax = err as AxiosError
