@@ -172,7 +172,7 @@ def _ghcr_get(path: str, headers: dict[str, str], timeout: int = 10) -> http.cli
     """HTTPS GET to ghcr.io with the host hardcoded — avoids urllib.request.urlopen
     (which Semgrep flags for accepting file:// schemes) while keeping TLS validation."""
     ctx = ssl.create_default_context()
-    conn = http.client.HTTPSConnection("ghcr.io", timeout=timeout, context=ctx)
+    conn = http.client.HTTPSConnection("ghcr.io", timeout=timeout, context=ctx)  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
     conn.request("GET", path, headers=headers)
     return conn.getresponse()
 
