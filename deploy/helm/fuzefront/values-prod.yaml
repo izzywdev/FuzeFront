@@ -333,6 +333,39 @@ a2aDeploy:
       cpu: 500m
       memory: 512Mi
 
+# Same-origin federated asset proxy. /apps/<slug>/* -> fuzefront-backend ->
+# the allowlisted in-cluster upstream below (backend/src/routes/federatedProxy.ts).
+#
+# ENABLED FOR fuzesocial. Migration 012 flips the `fuzesocial` registry row from
+# an iframe embed of social.prod.fuzefront.com to the federated remote
+# /apps/fuzesocial/remoteEntry.js. That migration has not executed yet (the
+# applications-service pods have not rolled), and when it does the panel is blank
+# unless something actually serves that path. This is the FuzeFront-owned half of
+# making it serve.
+#
+# FuzeSocial also ships its own Ingress for the same path
+# (izzywdev/FuzeSocial deploy/helm/fuzesocial/templates/remote-ingress.yaml,
+# gated on federation.enabled which values-prod.yaml sets true). The two are not
+# in conflict: Traefik orders routers by RULE LENGTH, so that chart's
+# `/apps/fuzesocial` router outranks this `/apps` one and wins whenever it is
+# actually present in the cluster. This entry is what answers while it is not.
+#
+# The upstream is FuzeSocial's remote Service — name `fuzesocial-remote`,
+# namespace `fuzesocial`, port 8080 (remote-deployment.yaml Service block +
+# values.yaml `remote.port`). NOT including the /apps/fuzesocial prefix: the
+# proxy strips it, and that container's nginx serves `location = /remoteEntry.js`
+# at the stripped path with the build copied flat (vite `assetsDir: ''`).
+#
+# Only fuzesocial is listed. fuzeagent is served by its own chart's Ingress and
+# its Service name/port were not verified from this repo — adding an unverified
+# upstream would point this proxy at an address nobody checked, which is exactly
+# what the allowlist exists to prevent.
+federatedProxy:
+  enabled: true
+  upstreams:
+    - slug: fuzesocial
+      url: http://fuzesocial-remote.fuzesocial.svc.cluster.local:8080
+
 # Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
 # (matches the seeded built-in manifest remoteEntry). Image built by release.yml
 # (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten

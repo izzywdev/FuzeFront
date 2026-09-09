@@ -1,0 +1,55 @@
+name: gate-workflow-yaml
+
+# Every file in .github/workflows/ must be parseable YAML.
+#
+# The failure this catches is SILENT, which is why it needs a gate rather than
+# review: GitHub does not report an unparseable workflow as a failing job, it
+# schedules NO JOBS AT ALL. On 2026-09-08 #925 added a step name containing an
+# unquoted colon, release.yml stopped parsing, release run 491 came back with
+# zero jobs, and every image in this repo was unable to release for ~2.5h.
+# Nothing went red until a human noticed (#984).
+#
+# NO `paths:` FILTER, deliberately. A gate that only runs when a workflow file
+# changes cannot be added to the branch ruleset's required contexts — a required
+# check that does not run on every PR blocks the merge queue instead of guarding
+# it. Same rule workspace-deps-check.yml and gate-route-ownership.yml follow.
+# It costs seconds.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate-workflow-yaml:
+    name: Workflow files parse as YAML
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+
+      # The gate's own tests run FIRST, in the same job, mirroring
+      # gate-required-checks.yml. A gate whose proof-of-failure lives elsewhere
+      # can rot into a vacuous pass unnoticed; here, if the proof that it goes
+      # red on the #925 construct stops working, this job fails before it ever
+      # judges the repo.
+      - name: Self-test the gate (asserts it FAILS on the #925 construct)
+        shell: bash
+        run: |
+          if [ ! -f scripts/__tests__/test_gate_workflow_yaml.py ]; then
+            echo "::error title=gate-workflow-yaml::self-test file is missing — refusing to run a gate whose proof-of-failure is absent"
+            exit 1
+          fi
+          pip install -q pyyaml
+          python3 -m unittest discover -s scripts/__tests__ -p 'test_gate_workflow_yaml.py' -v
+
+      - name: Every workflow file parses
+        shell: bash
+        run: python3 scripts/gate_workflow_yaml.py .github/workflows
