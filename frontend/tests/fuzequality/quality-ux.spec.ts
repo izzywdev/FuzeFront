@@ -69,6 +69,23 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('button', { name: /Implement 1 selected/i })).toBeEnabled()
   })
 
+  test('onboards a repository only after GitHub App verification and can request a scan', async ({ page }) => {
+    await page.getByRole('button', { name: 'Repositories' }).click()
+    await page.getByRole('button', { name: 'Add repository' }).click()
+    await page.getByLabel('Repository name').fill('FuzeCatalog')
+    await page.getByLabel('GitHub App installation ID').fill('123')
+    const verify = page.waitForRequest(request => request.url().endsWith('/api/v1/repositories/verify') && request.method() === 'POST')
+    const add = page.waitForRequest(request => request.url().endsWith('/api/v1/repositories') && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Verify and add' }).click()
+    await expect((await verify).postDataJSON()).toMatchObject({ name: 'FuzeCatalog', installationId: '123' })
+    await expect((await add).postDataJSON()).toMatchObject({ name: 'FuzeCatalog', installationId: '123' })
+    await expect(page.getByRole('heading', { name: 'Add repository' })).not.toBeVisible()
+
+    const scan = page.waitForRequest(request => request.url().endsWith('/api/v1/repositories/repo-1/scans') && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Scan now' }).click()
+    await expect((await scan).postDataJSON()).toEqual({})
+  })
+
   test('shows the frontend visual-reference gap and supports review decisions', async ({ page }) => {
     await page.getByRole('button', { name: 'Frontend inventory' }).click()
     await page.getByRole('button', { name: 'Visual reference' }).click()
