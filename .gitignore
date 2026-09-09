@@ -117,3 +117,8 @@ backend/database.sqlite
 # generated HTML + lcov per workspace. CI ships it to Codecov from the runner;
 # it is never a source artifact. Unanchored so it matches any workspace.
 coverage/
+
+# scripts/collect-devportal-specs.mjs generated output — this repo's own
+# openapi.yaml files, gathered for devportal-service's bootstrap harvest
+# (docs/planning/developers-portal.md §4.2). Regenerated on every build.
+services/devportal-service/specs/

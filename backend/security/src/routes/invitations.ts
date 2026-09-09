@@ -144,7 +144,7 @@ router.post('/:token/accept', async (req: any, res) => {
       await assignOrganizationRole(
         req.user.id,
         invitation.organization_id,
-        invitation.role as 'owner' | 'admin' | 'member' | 'viewer'
+        invitation.role as 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
       )
     } catch (permitErr) {
       console.error(

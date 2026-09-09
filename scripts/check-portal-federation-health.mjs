@@ -118,12 +118,14 @@ function parseArgs(argv) {
     password:
       process.env.PORTAL_HEALTH_PASSWORD || process.env.POST_PROD_PASSWORD || null,
     token: process.env.PORTAL_HEALTH_TOKEN || null,
+    expectedBuild: process.env.PORTAL_HEALTH_EXPECTED_BUILD || null,
     timeoutMs: Number(process.env.PORTAL_HEALTH_TIMEOUT_MS) || 10_000,
   }
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i]
     const next = () => argv[++i]
     if (v === '--base-url') a.baseUrl = next()
+    else if (v === '--expected-build') a.expectedBuild = next()
     else if (v === '--api-url') a.apiUrl = next()
     else if (v === '--expected') a.expectedPath = next()
     else if (v === '--email') a.email = next()
@@ -132,7 +134,7 @@ function parseArgs(argv) {
     else if (v === '--timeout-ms') a.timeoutMs = Number(next())
     else if (v === '--help' || v === '-h') {
       console.log(
-        'usage: check-portal-federation-health.mjs --base-url <url> [--api-url <url>] [--expected <path>] [--email <e> --password <p> | --token <bearer>] [--timeout-ms <n>]'
+        'usage: check-portal-federation-health.mjs --base-url <url> [--api-url <url>] [--expected <path>] [--expected-build <image-tag>] [--email <e> --password <p> | --token <bearer>] [--timeout-ms <n>]'
       )
       process.exit(0)
     }
@@ -334,7 +336,13 @@ async function probeApp(app, baseUrl) {
     }
     return {
       result: 'PASS',
-      detail: `remoteEntry + ${toCheck.length} chunk(s) all load as JavaScript`,
+      // The URL is part of the verdict, not decoration. Two rows for the same
+      // product can BOTH be 'activated' with one passing and one failing (that
+      // is exactly the duplicate-registration state this census exists to
+      // surface), and "which of these two is the working registration" is
+      // unanswerable from a bare PASS. Printing the entry that actually served
+      // makes the row self-adjudicating.
+      detail: `${entryUrl} — remoteEntry + ${toCheck.length} chunk(s) all load as JavaScript`,
       checked,
     }
   }
@@ -391,6 +399,7 @@ async function login(apiUrl, email, password) {
  * the service's MAX_LIMIT). */
 async function listAllApps(apiUrl, token) {
   const apps = []
+  let buildSha = null
   let cursor = null
   let pages = 0
   const MAX_PAGES = 25 // guard against a pagination bug looping forever
@@ -410,12 +419,50 @@ async function listAllApps(apiUrl, token) {
       }
       throw new Error(`GET ${url} -> HTTP ${resp.status}. Body: ${bodyText.slice(0, 300)}`)
     }
+    // Build identity of the pod that actually answered (backend/applications/
+    // src/index.ts stamps it from the image's BUILD_SHA). Captured from the
+    // FIRST page only: later pages can be served by a different replica during
+    // a rollout, and a mid-rollout disagreement is not the steady-state drift
+    // this check is about.
+    if (buildSha === null) buildSha = resp.headers.get('x-fuze-build') || ''
     const body = await resp.json()
     apps.push(...(body.apps || []))
     cursor = body.nextCursor || null
     pages++
   } while (cursor && pages < MAX_PAGES)
-  return apps
+  return { apps, buildSha }
+}
+
+/**
+ * Compares the build the registry service REPORTS against the image tag
+ * values-prod.yaml ASKED for.
+ *
+ * This is the check that would have caught the 2026-09-07 finding: migrations
+ * 012 (merged 2026-09-01) and 013 (merged 2026-09-07) had both still not
+ * executed, because the applications-service pods were never replaced with the
+ * images GitOps had been pointing at for six days. Every black-box probe stayed
+ * green throughout — the OLD pods were perfectly healthy — so the only visible
+ * symptom was registry rows that would not change, which reads as a migration
+ * bug and is not one.
+ *
+ * Returns null when there is nothing to compare (no --expected-build given, or
+ * a service too old to stamp itself), and a message otherwise. An UNSTAMPED
+ * service is reported, never treated as matching: "the field is missing" and
+ * "the field agrees" must not produce the same verdict, which is how a check
+ * ends up passing vacuously.
+ */
+function buildDriftMessage(expectedBuild, reportedBuild) {
+  if (!expectedBuild) return null
+  if (!reportedBuild) {
+    return `applications-service did not send X-Fuze-Build — it predates build stamping, so THIS CHECK IS NOT RUNNING. Expected tag from values-prod.yaml: ${expectedBuild}. (A service this old is itself evidence the rollout is behind.)`
+  }
+  if (reportedBuild === 'unknown') {
+    return `applications-service reports build 'unknown' — the image was built without --build-arg BUILD_SHA, so it cannot be compared against the requested tag ${expectedBuild}.`
+  }
+  if (reportedBuild !== expectedBuild) {
+    return `DEPLOY DRIFT: values-prod.yaml requests applications-service image ${expectedBuild}, but the pod answering /api/v1/app-registry reports build ${reportedBuild}. The rollout has NOT completed — every registry migration merged since ${reportedBuild} is still unapplied, and every black-box healthcheck will keep passing while that is true.`
+  }
+  return null
 }
 
 function loadExpected(expectedPath) {
@@ -480,8 +527,11 @@ async function main() {
   }
 
   let apps
+  let reportedBuild = ''
   try {
-    apps = await listAllApps(args.apiUrl, token)
+    const listed = await listAllApps(args.apiUrl, token)
+    apps = listed.apps
+    reportedBuild = listed.buildSha
   } catch (err) {
     fail(`could not enumerate the registry: ${err.message}`)
     process.exitCode = 1
@@ -491,7 +541,22 @@ async function main() {
   console.log(
     `Portal federation health census — ${args.apiUrl} (resolving remotes against ${args.baseUrl}), authenticated as ${whoami}`
   )
+  console.log(
+    `applications-service build: ${reportedBuild || '(not reported)'}${args.expectedBuild ? ` | values-prod.yaml requests: ${args.expectedBuild}` : ''}`
+  )
   console.log(`Registry returned ${apps.length} app(s) visible to this identity.\n`)
+
+  // Deploy drift is scored BEFORE the per-app rows, because it changes what
+  // every row below MEANS. Against a stale pod the census is an accurate
+  // report of an out-of-date registry, and reading it as "the migration is
+  // broken" sends the next person after the wrong bug — which is precisely
+  // what happened on 2026-09-07.
+  const driftMessage = buildDriftMessage(args.expectedBuild, reportedBuild)
+  let buildDrifted = false
+  if (driftMessage) {
+    buildDrifted = true
+    fail(driftMessage)
+  }
 
   // Anti-vacuity: zero apps returned is never a silent pass, even before
   // consulting the expected list — a check that examined nothing must not
@@ -505,7 +570,7 @@ async function main() {
 
   const bySlug = new Map(apps.map(a => [a.slug, a]))
   const rows = []
-  let anyFail = apps.length === 0
+  let anyFail = apps.length === 0 || buildDrifted
 
   for (const app of apps) {
     const name = app.manifest?.name || '(no name)'

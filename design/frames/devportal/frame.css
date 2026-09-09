@@ -1,0 +1,224 @@
+/* devportal frame chrome — shared across design/frames/devportal/*.html.
+   Tokens only (see tokens.css); no raw hex, no raw type scale. The few bare pixel
+   values here are structural hairlines/dot sizes and grid tracks, matching the
+   precedent already on master (design/frames/portals-directory/frame.css,
+   design/frames/api-tokens/frame.css).
+
+   Every class here maps to a named component in manifest.json -> build.components,
+   or to a design-system primitive that already exists. Where a primitive is
+   MISSING from @fuzefront/design-system it is listed in
+   manifest.json -> build.designSystemAdditions and drawn here from tokens only —
+   never one-offed into feature code. */
+
+/* ---------- page scaffold ---------- */
+.dp-wrap { max-width: 1180px; margin: 0 auto; padding: var(--space-8) var(--space-8) var(--space-16); }
+.dp-crumbline { font-family: var(--font-mono); font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-wide); text-transform: uppercase;
+  color: var(--text-tertiary); margin-bottom: var(--space-4); }
+.dp-crumbline a { color: var(--cyan-400); text-decoration: none; }
+.dp-crumbline a:hover { text-decoration: underline; }
+.dp-h1 { font-family: var(--font-display); font-size: var(--text-2xl);
+  letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+.dp-h2 { font-family: var(--font-display); font-size: var(--text-xl);
+  letter-spacing: var(--tracking-display); margin: var(--space-10) 0 var(--space-2); }
+.dp-h3 { font-family: var(--font-display); font-size: var(--text-md);
+  font-weight: var(--weight-semibold); margin: 0 0 var(--space-3); }
+.dp-lead { color: var(--text-secondary); margin: 0 0 var(--space-6); max-width: 72ch; }
+.dp-sub { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-4); }
+.dp-notes { margin-top: var(--space-8); font-size: var(--text-sm); color: var(--text-tertiary); }
+.dp-notes code { font-family: var(--font-mono); color: var(--text-secondary); }
+.dp-mono { font-family: var(--font-mono); }
+.dp-muted { color: var(--text-tertiary); }
+.dp-dim { color: var(--text-secondary); }
+
+/* ---------- app chrome: DevPortalShell ---------- */
+.dp-topbar { display: flex; align-items: center; gap: var(--space-4);
+  height: var(--top-bar-height); padding: 0 var(--space-6);
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0; position: relative; }
+.dp-topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: var(--seam); opacity: 0.7; }
+.dp-wordmark { font-family: var(--font-display); font-weight: var(--weight-semibold);
+  font-size: var(--text-lg); letter-spacing: var(--tracking-display); }
+.dp-wordmark .seamtext { background: var(--seam); -webkit-background-clip: text;
+  background-clip: text; color: transparent; }
+.dp-topnav { display: flex; gap: var(--space-1); margin-left: var(--space-6); }
+.dp-topnav a { text-decoration: none; color: var(--text-secondary); font-size: var(--text-md);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); }
+.dp-topnav a:hover { background: var(--bg-quaternary); color: var(--text-primary); }
+.dp-topnav a.active { background: var(--accent-soft); color: var(--text-primary); }
+.dp-spacer { flex: 1; }
+.dp-avatar { width: 32px; height: 32px; border-radius: var(--radius-pill);
+  background: var(--seam); display: grid; place-items: center;
+  font-weight: var(--weight-semibold); font-size: var(--text-sm); color: var(--bg-primary); }
+.dp-appframe { border: 1px solid var(--border-color); border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--bg-primary); padding: var(--space-7); }
+
+/* ---------- surfaces ---------- */
+.dp-card { background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); padding: var(--space-5); position: relative; overflow: hidden; }
+.dp-card.seamed::before { content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 2px; background: var(--seam); }
+.dp-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
+.dp-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-4); }
+.dp-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); }
+@media (max-width: 900px) {
+  .dp-grid-2, .dp-grid-3, .dp-grid-4 { grid-template-columns: 1fr; }
+}
+.dp-row { display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-4); padding: var(--space-3) 0; border-bottom: 1px solid var(--border-color); }
+.dp-row:last-child { border-bottom: 0; }
+.dp-stack { display: flex; flex-direction: column; gap: var(--space-4); }
+.dp-inline { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+
+/* ---------- buttons (design-system Button) ---------- */
+.dp-btn { font-family: var(--font-sans); font-size: var(--text-md);
+  font-weight: var(--weight-medium); border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4); cursor: pointer; border: 1px solid transparent; }
+.dp-btn.primary { background: var(--accent-color); color: var(--bg-primary); box-shadow: var(--shadow-accent); }
+.dp-btn.primary:hover { background: var(--accent-hover); }
+.dp-btn.ghost { background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
+.dp-btn.ghost:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.dp-btn.danger { background: transparent; color: var(--error-color); border-color: var(--error-soft); }
+.dp-btn[disabled], .dp-btn[aria-disabled='true'] { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+/* ---------- badges / pills (design-system Badge, StatusPill) ---------- */
+.dp-badge { display: inline-flex; align-items: center; gap: var(--space-1);
+  font-family: var(--font-mono); font-size: var(--text-2xs);
+  padding: 2px var(--space-2); border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color); color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: var(--tracking-wide); white-space: nowrap; }
+.dp-badge.ok { color: var(--success-color); background: var(--success-soft); border-color: var(--success-soft); }
+.dp-badge.warn { color: var(--warning-color); background: var(--warning-soft); border-color: var(--warning-soft); }
+.dp-badge.err { color: var(--error-color); background: var(--error-soft); border-color: var(--error-soft); }
+.dp-badge.info { color: var(--cyan-400); background: var(--accent-soft); border-color: var(--accent-soft); }
+.dp-badge.neutral { color: var(--text-tertiary); background: var(--neutral-soft); }
+.dp-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: currentColor; }
+
+/* ---------- MethodBadge — DS ADDITION (Badge + HTTP-method color scale).
+   Colors are existing semantic tokens; the method->tone MAP is the addition. ---- */
+.dp-method { display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: var(--text-2xs); font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide); padding: 2px var(--space-2);
+  border-radius: var(--radius-sm); min-width: 52px; text-transform: uppercase; }
+.dp-method.get { color: var(--cyan-400); background: var(--accent-soft); }
+.dp-method.post { color: var(--success-color); background: var(--success-soft); }
+.dp-method.put, .dp-method.patch { color: var(--warning-color); background: var(--warning-soft); }
+.dp-method.delete { color: var(--error-color); background: var(--error-soft); }
+
+/* ---------- CodeBlock — DS ADDITION (read-only, copyable monospace surface) ---- */
+.dp-code { background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-xs);
+  color: var(--text-secondary); padding: var(--space-4); overflow: auto;
+  white-space: pre; line-height: 1.6; margin: 0; }
+.dp-code .k { color: var(--cyan-400); }
+.dp-code .s { color: var(--success-color); }
+.dp-code .n { color: var(--warning-color); }
+.dp-code-head { display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3); padding: var(--space-2) var(--space-3);
+  background: var(--bg-quaternary); border: 1px solid var(--border-color); border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+.dp-code-head + .dp-code { border-radius: 0 0 var(--radius-md) var(--radius-md); }
+
+/* ---------- TreeNav — DS ADDITION (collapsible product -> service -> spec) ---- */
+.dp-tree { font-size: var(--text-md); }
+.dp-tree .node { display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+  color: var(--text-secondary); cursor: pointer; text-decoration: none; }
+.dp-tree .node:hover { background: var(--bg-quaternary); color: var(--text-primary); }
+.dp-tree .node.selected { background: var(--accent-soft); color: var(--text-primary);
+  box-shadow: inset 2px 0 0 var(--accent-color); }
+.dp-tree .node .twisty { width: 12px; color: var(--text-tertiary); font-size: var(--text-2xs); }
+.dp-tree .node .count { margin-left: auto; font-family: var(--font-mono);
+  font-size: var(--text-2xs); color: var(--text-tertiary); }
+.dp-tree .depth-1 { padding-left: var(--space-6); }
+.dp-tree .depth-2 { padding-left: var(--space-10); font-size: var(--text-sm); }
+
+/* ---------- inputs (design-system Input / SearchField / Select / CodeField) ---- */
+.dp-input, .dp-select, .dp-codefield {
+  width: 100%; background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); color: var(--text-primary);
+  padding: var(--space-2) var(--space-3); font-family: var(--font-sans); font-size: var(--text-md); }
+.dp-codefield { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; }
+.dp-input::placeholder, .dp-codefield::placeholder { color: var(--text-tertiary); }
+.dp-label { display: block; font-size: var(--text-xs); color: var(--text-tertiary);
+  margin-bottom: var(--space-1); letter-spacing: var(--tracking-wide); text-transform: uppercase;
+  font-family: var(--font-mono); }
+.dp-field { margin-bottom: var(--space-4); }
+.dp-field-error { color: var(--error-color); font-size: var(--text-xs); margin-top: var(--space-1); }
+
+/* ---------- StatusCallout (design-system primitive) ---------- */
+.dp-callout { display: flex; gap: var(--space-3); padding: var(--space-4);
+  border-radius: var(--radius-md); border: 1px solid var(--border-color);
+  background: var(--bg-quaternary); }
+.dp-callout .glyph { flex: none; width: 26px; height: 26px; border-radius: var(--radius-sm);
+  display: grid; place-items: center; font-size: var(--text-sm); }
+.dp-callout .ct { font-weight: var(--weight-semibold); margin: 0 0 var(--space-1);
+  font-size: var(--text-md); color: var(--text-primary); }
+.dp-callout .cb { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); }
+.dp-callout .ca { margin-top: var(--space-3); display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.dp-callout.error { border-color: var(--error-soft); background: var(--error-soft); }
+.dp-callout.error .glyph, .dp-callout.error .ct { color: var(--error-color); }
+.dp-callout.warning { border-color: var(--warning-soft); background: var(--warning-soft); }
+.dp-callout.warning .glyph, .dp-callout.warning .ct { color: var(--warning-color); }
+.dp-callout.success { border-color: var(--success-soft); background: var(--success-soft); }
+.dp-callout.success .glyph, .dp-callout.success .ct { color: var(--success-color); }
+.dp-callout.info { border-color: var(--accent-soft); background: var(--accent-soft); }
+.dp-callout.info .glyph, .dp-callout.info .ct { color: var(--cyan-400); }
+
+/* ---------- QuotaMeter (composes design-system ProgressMeter) ---------- */
+.dp-meter-head { display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--space-3); margin-bottom: var(--space-2); font-size: var(--text-sm); }
+.dp-meter-head .val { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  color: var(--text-primary); }
+.dp-meter { height: 8px; border-radius: var(--radius-pill); background: var(--bg-quaternary);
+  overflow: hidden; }
+.dp-meter .fill { height: 100%; border-radius: var(--radius-pill); background: var(--seam); }
+.dp-meter .fill.warning { background: var(--warning-color); }
+.dp-meter .fill.danger { background: var(--error-color); }
+.dp-meter-foot { margin-top: var(--space-2); font-size: var(--text-xs); color: var(--text-tertiary); }
+
+/* ---------- Skeleton (design-system primitive) ---------- */
+.dp-skel { height: 12px; border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+  background-size: 200% 100%; animation: dpsh 1.3s ease-in-out infinite; }
+@keyframes dpsh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .dp-skel { animation: none; } }
+
+/* ---------- EmptyState (design-system primitive) ---------- */
+.dp-empty { text-align: center; padding: var(--space-10) var(--space-6); color: var(--text-secondary); }
+.dp-empty .icon { font-size: var(--text-2xl); color: var(--text-tertiary); margin-bottom: var(--space-3); }
+.dp-empty h4 { margin: 0 0 var(--space-2); font-family: var(--font-display);
+  font-size: var(--text-lg); color: var(--text-primary); }
+.dp-empty p { margin: 0 auto var(--space-4); max-width: 52ch; font-size: var(--text-sm); }
+
+/* ---------- tables (design-system DataTable) ---------- */
+.dp-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.dp-table th { text-align: left; font-family: var(--font-mono); font-size: var(--text-2xs);
+  text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary);
+  font-weight: var(--weight-regular); padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-color); }
+.dp-table td { padding: var(--space-3); border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary); vertical-align: top; }
+.dp-table tr:last-child td { border-bottom: 0; }
+.dp-table td .req { color: var(--error-color); font-size: var(--text-2xs); }
+
+/* ---------- state section separators used by the *-states frames ---------- */
+.dp-state { border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+  padding: var(--space-5); background: var(--bg-tertiary); margin-bottom: var(--space-5); }
+.dp-state > .state-label { font-family: var(--font-mono); font-size: var(--text-2xs);
+  text-transform: uppercase; letter-spacing: var(--tracking-wide);
+  color: var(--text-tertiary); margin-bottom: var(--space-3); display: block; }
+
+/* ---------- footer nav shared by every frame ---------- */
+.dp-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  padding: var(--space-3) var(--space-6); background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color); }
+.dp-nav .caption { font-size: var(--text-sm); color: var(--text-tertiary); }
+.dp-nav .caption b { color: var(--text-secondary); font-weight: var(--weight-semibold); }
+.dp-nav a { text-decoration: none; }
+body { padding-bottom: var(--space-16); }

@@ -3,6 +3,7 @@ import {
   BillingSubscription,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
+  PlanTier,
   UpdateSubscriptionRequest,
 } from '../types';
 import { CustomerService } from './customer.service';
@@ -126,6 +127,44 @@ export class SubscriptionService {
     );
   }
 
+  /** Revoke a pending cancel_at_period_end. Re-activates the subscription as normal. */
+  async revokeCancel(stripeSubscriptionId: string): Promise<BillingSubscription> {
+    const existing = await this.repo.findByStripeId(stripeSubscriptionId);
+    if (!existing) throw new Error(`Subscription not found: ${stripeSubscriptionId}`);
+    const updated = await this.stripe.subscriptions.update(
+      stripeSubscriptionId,
+      { cancel_at_period_end: false },
+      { idempotencyKey: `sub-revoke-cancel-${stripeSubscriptionId}` },
+    );
+    return this.repo.upsert(
+      mapStripeSubscription(updated, { customerId: existing.customerId, planTier: existing.planTier }),
+    );
+  }
+
+  /**
+   * Change the billing cycle anchor day (1-28). Stripe prorates the current
+   * cycle and restarts billing on the new anchor day each month.
+   */
+  async changeBillingAnchor(stripeSubscriptionId: string, anchorDay: number): Promise<BillingSubscription> {
+    if (anchorDay < 1 || anchorDay > 28) throw new Error('anchorDay must be between 1 and 28');
+    const existing = await this.repo.findByStripeId(stripeSubscriptionId);
+    if (!existing) throw new Error(`Subscription not found: ${stripeSubscriptionId}`);
+
+    const now = new Date();
+    const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), anchorDay));
+    if (anchor.getTime() <= now.getTime()) anchor.setUTCMonth(anchor.getUTCMonth() + 1);
+    const anchorTimestamp = Math.floor(anchor.getTime() / 1000);
+
+    const updated = await this.stripe.subscriptions.update(
+      stripeSubscriptionId,
+      { trial_end: anchorTimestamp, proration_behavior: 'create_prorations' },
+      { idempotencyKey: `sub-anchor-${stripeSubscriptionId}-${anchorDay}` },
+    );
+    return this.repo.upsert(
+      mapStripeSubscription(updated, { customerId: existing.customerId, planTier: existing.planTier }),
+    );
+  }
+
   /**
    * Cancel immediately (hard cancel); Stripe ends the subscription now rather
    * than at period end. Used when the owning entity is being purged (e.g. an
@@ -150,9 +189,9 @@ export class SubscriptionService {
     );
   }
 
-  private async resolvePlanTier(priceId: string): Promise<string> {
+  private async resolvePlanTier(priceId: string): Promise<PlanTier> {
     const plans = await this.plans.getActivePlans();
-    return plans.find((p) => p.priceId === priceId)?.tierName ?? 'unknown';
+    return (plans.find((p) => p.priceId === priceId)?.tierName ?? 'unknown') as PlanTier;
   }
 
   /** Upgrade vs downgrade is decided by unit_amount of the target vs current price. */

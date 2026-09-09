@@ -1,0 +1,406 @@
+{
+  "product": "fuzefront",
+  "generatedFrom": "services/app-registry-service/openapi.yaml",
+  "protocolVersion": "2025-06-18",
+  "note": "Static tool manifest for the fuzefront-mcp gateway. The gateway (packages/mcp-gateway) derives these at runtime from the OpenAPI spec + deploy/helm/fuzefront/files/mcp-tools.overrides.yaml; this file is the checked-in record that CI and the mcp-maintainer agent use to detect drift. Regenerate by running the gateway locally against the spec and capturing GET /tools.json, or update manually when the spec changes. `mutates` is the load-bearing field — a wrong value is a safety defect, not a cosmetic one.",
+  "tools": [
+    {
+      "name": "listApps",
+      "description": "[READ-ONLY] List registered apps (GET /apps). GET is a safe method.",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["registered", "activated", "suspended"],
+            "description": "Filter by lifecycle status. Omit for all non-suspended."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["portal", "standalone", "embed"],
+            "description": "Filter by app mode (portal | standalone)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque pagination cursor returned as nextCursor."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "registerApp",
+      "description": "[WRITE] Register an app (POST /apps). Registers an app; DELETE /apps/{slug} removes it again.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["manifest"],
+            "properties": {
+              "manifest": {
+                "type": "object",
+                "description": "The declarative document describing how the host mounts and chromes an app.",
+                "additionalProperties": false,
+                "required": ["manifestVersion", "slug", "name", "menuLabel", "mode", "integration"],
+                "properties": {
+                  "manifestVersion": {"type": "string", "enum": ["1"]},
+                  "slug": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+                    "description": "URL-safe unique identifier, immutable once registered."
+                  },
+                  "name": {"type": "string", "maxLength": 120},
+                  "menuLabel": {"type": "string", "maxLength": 40, "description": "Label shown in the application menu / launcher (e.g. \"Market\")."},
+                  "description": {"type": "string", "maxLength": 1024},
+                  "mode": {
+                    "type": "string",
+                    "enum": ["portal", "standalone", "embed"],
+                    "deprecated": true,
+                    "description": "DEPRECATED — single-surface form, superseded by modes."
+                  },
+                  "modes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {"type": "string", "enum": ["portal", "standalone", "embed"]},
+                    "description": "Every surface this app supports, in preference order."
+                  },
+                  "builtin": {"type": "boolean", "default": false},
+                  "integration": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type"],
+                    "description": "How the host loads/mounts the app.",
+                    "properties": {
+                      "type": {"type": "string", "enum": ["module-federation", "iframe", "web-component", "spa"]},
+                      "remoteEntry": {"type": "string", "description": "Full Module-Federation remote entry URL or same-origin absolute path."},
+                      "scope": {"type": "string", "description": "MF remote scope/name. Required for module-federation."},
+                      "module": {"type": "string", "description": "Exposed module path, e.g. `./ClockApp`. Required for module-federation."},
+                      "url": {"type": "string", "description": "Navigable URL for iframe and standalone/spa integrations."}
+                    }
+                  },
+                  "nav": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Where the app sits in the host's side menu.",
+                    "properties": {
+                      "section": {"type": "string", "enum": ["executive", "plan", "build", "revenue", "customer", "insight", "platform"], "default": "platform"},
+                      "order": {"type": "integer", "minimum": 0, "maximum": 9999, "default": 999},
+                      "suite": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["id", "label"],
+                        "properties": {
+                          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"},
+                          "label": {"type": "string", "maxLength": 40},
+                          "order": {"type": "integer", "minimum": 0, "maximum": 9999, "default": 999}
+                        }
+                      }
+                    }
+                  },
+                  "chrome": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "menu": {"type": "string", "enum": ["host", "substitute"], "default": "host"},
+                      "topbar": {"type": "string", "enum": ["host", "hidden"], "default": "host"},
+                      "items": {"type": "array", "items": {"type": "object"}}
+                    }
+                  },
+                  "routing": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {"type": "string", "pattern": "^/[a-zA-Z0-9/_-]*$"},
+                      "host": {"type": "string"}
+                    }
+                  },
+                  "auth": {"type": "object", "description": "Identity the app needs the platform to provision."},
+                  "infra": {"type": "object", "description": "Platform infrastructure the app opts into."},
+                  "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
+                  "roles": {"type": "array", "items": {"type": "string"}, "description": "Roles permitted to see/activate the app. Empty = all members."}
+                }
+              },
+              "organizationId": {
+                "type": ["string", "null"],
+                "format": "uuid",
+                "description": "Owning org for org-scoped apps; omit for platform-global."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getApp",
+      "description": "[READ-ONLY] Get an app by slug (GET /apps/{slug}). GET is a safe method.",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "updateApp",
+      "description": "[WRITE] Replace an app's manifest (PUT /apps/{slug}). Full replace of the app manifest; PUT the previous document to restore it.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug", "body"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body — the full AppManifest replacement. `slug`, `builtin`, and `manifestVersion` are immutable and must match.",
+            "additionalProperties": false,
+            "required": ["manifestVersion", "slug", "name", "menuLabel", "mode", "integration"],
+            "properties": {
+              "manifestVersion": {"type": "string", "enum": ["1"]},
+              "slug": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"},
+              "name": {"type": "string", "maxLength": 120},
+              "menuLabel": {"type": "string", "maxLength": 40},
+              "description": {"type": "string", "maxLength": 1024},
+              "mode": {"type": "string", "enum": ["portal", "standalone", "embed"], "deprecated": true},
+              "modes": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "enum": ["portal", "standalone", "embed"]}},
+              "builtin": {"type": "boolean", "default": false},
+              "integration": {"type": "object", "required": ["type"], "properties": {"type": {"type": "string", "enum": ["module-federation", "iframe", "web-component", "spa"]}, "remoteEntry": {"type": "string"}, "scope": {"type": "string"}, "module": {"type": "string"}, "url": {"type": "string"}}},
+              "nav": {"type": "object"},
+              "chrome": {"type": "object"},
+              "routing": {"type": "object"},
+              "auth": {"type": "object"},
+              "infra": {"type": "object"},
+              "visibility": {"type": "string", "enum": ["private", "organization", "public", "marketplace"]},
+              "roles": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "deleteApp",
+      "description": "[WRITE — IRREVERSIBLE] Delete a registered app (DELETE /apps/{slug}). Permanently removes the registered app. The contract exposes no undelete and no soft-delete state, so the record cannot be recovered through this API.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "activateApp",
+      "description": "[WRITE] Activate an app (POST /apps/{slug}/activate). Transitions the app to `activated`; suspendApp returns it to `suspended`. Idempotent.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "suspendApp",
+      "description": "[WRITE] Suspend an app (POST /apps/{slug}/suspend). Hides the app from the menu and retains the record; activateApp restores it. Idempotent.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "putAppPolicy",
+      "description": "[WRITE] Submit the app's authorization policy (PUT /apps/{slug}/policy). Idempotent full replace of the app's own Permit resources/actions/roles; PUT the previous policy to restore it.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug", "body"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body — the product's self-declared authorization policy.",
+            "additionalProperties": false,
+            "required": ["resources", "roles"],
+            "properties": {
+              "product": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+                "description": "Product slug — implied by path slug; rejected if it disagrees."
+              },
+              "name": {"type": "string", "description": "Human-readable product name, used to prefix display names."},
+              "resources": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["key", "name", "actions"],
+                  "properties": {
+                    "key": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]*$", "description": "Bare resource key, e.g. `Listing`. Namespaced to `<slug>_Listing`."},
+                    "name": {"type": "string"},
+                    "actions": {"type": "object", "description": "Map of action key -> { name }."}
+                  }
+                }
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["key", "name", "permissions"],
+                  "properties": {
+                    "key": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]*$", "description": "Bare role key, e.g. `seller`. Namespaced to `<slug>_seller`."},
+                    "name": {"type": "string"},
+                    "permissions": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9-]*:[A-Za-z][A-Za-z0-9_-]*$"}, "description": "Permission strings against this product's BARE resource keys, e.g. `Listing:create`."}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "putAppBillingProfile",
+      "description": "[WRITE] Register the app's billing profile (PUT /apps/{slug}/billing-profile). Full replace of the app's billing profile; PUT the previous profile to restore it.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug", "body"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body — the app's billing identity.",
+            "additionalProperties": false,
+            "required": ["productKey"],
+            "properties": {
+              "productKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                "description": "The key stamped on checkout sessions and echoed on billing events, e.g. `mendys-datasets`."
+              },
+              "currencies": {
+                "type": "array",
+                "description": "ISO-4217 lowercase currency codes the product accepts. Empty = platform default.",
+                "items": {"type": "string", "pattern": "^[a-z]{3}$"}
+              },
+              "maxTotalCents": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Upper bound on a single checkout total, in minor units."
+              },
+              "meteredUsage": {
+                "type": "boolean",
+                "default": false,
+                "description": "Whether the product reports metered usage for billing."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "heartbeatApp",
+      "description": "[WRITE] Report app liveness (POST /apps/{slug}/heartbeat). Advances lastSeenAt and emits app.heartbeat; superseded by the next heartbeat and destroys nothing.",
+      "mutates": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["slug", "body"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "description": "The app's immutable url-safe slug (e.g. `clock`)."
+          },
+          "body": {
+            "type": "object",
+            "description": "Request body.",
+            "additionalProperties": false,
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["online", "degraded"],
+                "default": "online"
+              },
+              "metadata": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Free-form app-reported metadata (version, build, etc)."
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "getHealth",
+      "description": "[READ-ONLY] Liveness / readiness (GET /health). GET is a safe method.",
+      "mutates": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    }
+  ]
+}

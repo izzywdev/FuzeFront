@@ -45,6 +45,35 @@ const startTime = Date.now()
 const io = initializeSocketIO(httpServer)
 app.set('io', io)
 
+// BUILD IDENTITY, echoed on EVERY response.
+//
+// `values-prod.yaml` records the image tag GitOps ASKED for. It is not evidence
+// about what is running: a rollout that never completes (unschedulable pod,
+// crash-looping new ReplicaSet, a failed Argo sync) leaves the PREVIOUS pods
+// answering every healthcheck with a green 200 while the requested image is
+// never pulled. Nothing in this repo could see that difference, and the cost
+// was real — migration 012 (merged 2026-09-01) and 013 (merged 2026-09-07) had
+// both still not executed on 2026-09-07, so `fuzesocial` was serving as an
+// iframe and the duplicate `fuzesales`/`fuzeservice` tiles were still in the
+// portal, six days after the fix for each had shipped green.
+//
+// A RESPONSE HEADER rather than a new route, deliberately: it needs no route
+// ownership entry, no host-backend proxy change and no new auth surface, and it
+// therefore rides `GET /api/v1/app-registry/apps` — an endpoint the census
+// already authenticates to and calls. `scripts/check-portal-federation-health.mjs
+// --expected-build` compares it against values-prod.yaml and fails when they
+// diverge, which is what turns a silent six-day stall into a red run.
+//
+// The value is stamped at image build time (Dockerfile ARG BUILD_SHA <- release.yml).
+// It is NOT read per-request: an operator setting BUILD_SHA in the Deployment env
+// would be describing the pod spec, not the image, which is the very confusion
+// this exists to remove.
+const BUILD_SHA = process.env.BUILD_SHA || 'unknown'
+app.use((_req: any, res: any, next: any) => {
+  res.setHeader('X-Fuze-Build', BUILD_SHA)
+  next()
+})
+
 // Installation routes mount FIRST so `/installed`, `/:id/installations` and
 // `/:id/install*` resolve before appsRoutes' own `/:id` handlers. Express falls
 // through to appsRoutes for every path this router does not define.
@@ -73,6 +102,7 @@ const health = async (_req: any, res: any) => {
     timestamp: new Date().toISOString(),
     uptime,
     version: process.env.npm_package_version || '1.0.0',
+    build: BUILD_SHA,
     environment: process.env.NODE_ENV || 'development',
     database: { status: dbHealthy ? 'connected' : 'disconnected' },
   })

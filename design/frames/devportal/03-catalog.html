@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Catalog</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 03 · flow `catalog` · route /catalog -->
+<div class="dp-wrap" data-frame="03-catalog">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 03 · flow <b>catalog</b> · route <code>/catalog</code></div>
+  <h1 class="dp-h1">Catalog — browse product → service → spec</h1>
+  <p class="dp-lead">The aggregated index over every harvested <code>openapi.yaml</code> in the family. Left rail is a
+    collapsible <b>TreeNav</b> (product → service → spec); the main column is a filterable result list. Each result
+    states its <b>sandbox mode</b> up front — <code>mock</code> (spec-generated, the default) or <code>sandbox</code>
+    (the repo opted a real sandbox URL in) — because that determines whether "Try it" will do anything useful.</p>
+
+  <div class="dp-topbar" data-panel="portal-topbar" data-auth="authenticated">
+    <span class="dp-wordmark">Fuze <span class="seamtext">Developers</span></span>
+    <nav class="dp-topnav">
+      <a href="02-home-signed-in.html">Home</a>
+      <a href="#" class="active">Catalog</a>
+      <a href="07-playground.html">Playground</a>
+      <a href="09-my-access.html">My access</a>
+    </nav>
+    <span class="dp-spacer"></span>
+    <span class="dp-badge ok" data-membership-status="active"><span class="dp-dot"></span>Developer</span>
+    <span class="dp-avatar" data-user="dana.okafor">DO</span>
+  </div>
+
+  <div class="dp-appframe">
+    <div style="display:grid; grid-template-columns: 260px 1fr; gap: var(--space-6); align-items:start">
+
+      <!-- ============ TreeNav ============ -->
+      <aside class="dp-card" data-panel="catalog-tree" style="padding: var(--space-3)">
+        <div class="dp-label" style="padding: var(--space-2) var(--space-3) 0">Family</div>
+        <div class="dp-tree">
+          <a class="node" href="#" data-tree-node="fuzefront" data-expanded="true">
+            <span class="twisty">▾</span> FuzeFront <span class="count">8</span></a>
+          <a class="node depth-1 selected" href="#" data-tree-node="fuzefront/app-registry-service">
+            app-registry-service <span class="count">24</span></a>
+          <a class="node depth-1" href="#" data-tree-node="fuzefront/billing-service">
+            billing-service <span class="count">11</span></a>
+          <a class="node depth-1" href="#" data-tree-node="fuzefront/config-service">
+            config-service <span class="count">9</span></a>
+          <a class="node depth-1" href="#" data-tree-node="fuzefront/notification-service">
+            notification-service <span class="count">7</span></a>
+          <a class="node depth-1" href="#" data-tree-node="fuzefront/portal-service">
+            portal-service <span class="count">15</span></a>
+          <a class="node" href="#" data-tree-node="fuzeagent" data-expanded="false">
+            <span class="twisty">▸</span> FuzeAgent <span class="count">3</span></a>
+          <a class="node" href="#" data-tree-node="fuzebi" data-expanded="false">
+            <span class="twisty">▸</span> FuzeBI <span class="count">2</span></a>
+          <a class="node" href="#" data-tree-node="fuzex" data-expanded="false">
+            <span class="twisty">▸</span> FuzeX <span class="count">4</span></a>
+          <a class="node" href="#" data-tree-node="mendysrobotics" data-expanded="false">
+            <span class="twisty">▸</span> MendysRobotics <span class="count">2</span></a>
+        </div>
+      </aside>
+
+      <!-- ============ search + filters + results ============ -->
+      <main>
+        <div class="dp-inline" data-panel="catalog-filters" style="margin-bottom: var(--space-4)">
+          <input class="dp-input" data-input="catalog-search" type="search"
+                 placeholder="Search endpoints, tags, operationIds…" value="app" style="flex:2; min-width: 220px" />
+          <select class="dp-select" data-filter="product" style="flex:1; min-width: 140px">
+            <option>All products</option><option selected>FuzeFront</option>
+            <option>FuzeAgent</option><option>FuzeBI</option><option>FuzeX</option>
+          </select>
+          <select class="dp-select" data-filter="tag" style="flex:1; min-width: 140px">
+            <option selected>All tags</option><option>apps</option><option>billing</option><option>portals</option>
+          </select>
+          <select class="dp-select" data-filter="sandbox-mode" style="flex:1; min-width: 150px">
+            <option selected>Any sandbox mode</option><option>mock</option><option>sandbox</option>
+          </select>
+        </div>
+
+        <div class="dp-inline" style="justify-content:space-between; margin-bottom: var(--space-3)">
+          <span class="dp-sub" data-result-count="4" style="margin:0">4 specs · 59 operations</span>
+          <span class="dp-inline">
+            <span class="dp-badge neutral" data-filter-chip="product:FuzeFront">FuzeFront ✕</span>
+            <button class="dp-btn ghost" data-action="clear-filters">Clear filters</button>
+          </span>
+        </div>
+
+        <div class="dp-stack" data-panel="catalog-results">
+
+          <a class="dp-card seamed" href="05-spec-viewer.html"
+             data-spec="fuzefront/app-registry-service" style="text-decoration:none;color:inherit">
+            <div class="dp-inline" style="justify-content:space-between">
+              <span class="dp-inline">
+                <b style="font-size:var(--text-lg)">app-registry-service</b>
+                <span class="dp-badge neutral">FuzeFront</span>
+                <span class="dp-badge info" data-spec-version="v1.4.0">v1.4.0</span>
+              </span>
+              <span class="dp-badge ok" data-sandbox-mode="mock"><span class="dp-dot"></span>mock</span>
+            </div>
+            <p class="dp-sub" style="margin: var(--space-2) 0">Register, list and resolve federated + standalone
+              applications, their integration manifests and health.</p>
+            <div class="dp-inline">
+              <span class="dp-method get">GET</span><span class="dp-method post">POST</span>
+              <span class="dp-method put">PUT</span><span class="dp-method delete">DELETE</span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">24 operations · tags: apps, health, manifests</span>
+              <span class="dp-spacer"></span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)" data-harvested-at="2026-09-08T04:12:00Z">harvested 6h ago</span>
+            </div>
+          </a>
+
+          <a class="dp-card" href="05-spec-viewer.html"
+             data-spec="fuzefront/billing-service" style="text-decoration:none;color:inherit">
+            <div class="dp-inline" style="justify-content:space-between">
+              <span class="dp-inline">
+                <b style="font-size:var(--text-lg)">billing-service</b>
+                <span class="dp-badge neutral">FuzeFront</span>
+                <span class="dp-badge info" data-spec-version="v2.1.0">v2.1.0</span>
+              </span>
+              <span class="dp-badge info" data-sandbox-mode="sandbox"><span class="dp-dot"></span>sandbox</span>
+            </div>
+            <p class="dp-sub" style="margin: var(--space-2) 0">Vendor-neutral invoices, subscriptions and metered
+              usage. Opted a dedicated staging sandbox URL into its spec.</p>
+            <div class="dp-inline">
+              <span class="dp-method get">GET</span><span class="dp-method post">POST</span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">11 operations · tags: billing, invoices</span>
+              <span class="dp-spacer"></span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)" data-harvested-at="2026-09-08T02:40:00Z">harvested 8h ago</span>
+            </div>
+          </a>
+
+          <a class="dp-card" href="05-spec-viewer.html"
+             data-spec="fuzefront/config-service" style="text-decoration:none;color:inherit">
+            <div class="dp-inline" style="justify-content:space-between">
+              <span class="dp-inline">
+                <b style="font-size:var(--text-lg)">config-service</b>
+                <span class="dp-badge neutral">FuzeFront</span>
+                <span class="dp-badge info" data-spec-version="v1.0.3">v1.0.3</span>
+              </span>
+              <span class="dp-badge ok" data-sandbox-mode="mock"><span class="dp-dot"></span>mock</span>
+            </div>
+            <p class="dp-sub" style="margin: var(--space-2) 0">Hierarchical configuration resolution per
+              organization, app and environment.</p>
+            <div class="dp-inline">
+              <span class="dp-method get">GET</span><span class="dp-method patch">PATCH</span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">9 operations · tags: config</span>
+              <span class="dp-spacer"></span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">harvested 6h ago</span>
+            </div>
+          </a>
+
+          <a class="dp-card" href="06-spec-viewer-states.html"
+             data-spec="fuzefront/portal-service" style="text-decoration:none;color:inherit">
+            <div class="dp-inline" style="justify-content:space-between">
+              <span class="dp-inline">
+                <b style="font-size:var(--text-lg)">portal-service</b>
+                <span class="dp-badge neutral">FuzeFront</span>
+                <span class="dp-badge info" data-spec-version="v3.0.0">v3.0.0</span>
+              </span>
+              <span class="dp-badge err" data-sandbox-mode="unavailable"><span class="dp-dot"></span>spec invalid</span>
+            </div>
+            <p class="dp-sub" style="margin: var(--space-2) 0">White-label portals and custom hostnames. <b>The last
+              harvest failed validation</b> — the catalog still lists it, and the viewer explains why rather than
+              rendering a broken page.</p>
+            <div class="dp-inline">
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">15 operations (last valid version) · tags: portals</span>
+              <span class="dp-spacer"></span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">harvest failed 40m ago</span>
+            </div>
+          </a>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='03-catalog']</code> · <code>[data-panel='catalog-tree']</code> ·
+    <code>[data-tree-node='fuzefront/app-registry-service']</code> · <code>[data-input='catalog-search']</code> ·
+    <code>[data-filter='product']</code> · <code>[data-panel='catalog-results']</code> ·
+    <code>[data-spec='fuzefront/app-registry-service']</code> · <code>[data-sandbox-mode='mock']</code> ·
+    <code>[data-action='clear-filters']</code>.<br />
+    Contract: <code>GET /api/v1/devportal/catalog</code> (query: <code>q</code>, <code>product</code>,
+    <code>tag</code>, <code>sandboxMode</code>).
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>03 / 09</b> · flow <b>catalog</b> · <code class="dp-mono">/catalog</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="02-home-signed-in.html">← Prev</a>
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="04-catalog-states.html">Next → Catalog states</a>
+  </span>
+</nav>
+</body>
+</html>

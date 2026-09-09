@@ -115,6 +115,13 @@ entries:
           url: "https://app.fuzefront.com/api/auth/oidc/callback"
         - matching_mode: strict
           url: "http://localhost:3001/api/auth/oidc/callback"
+        # docs/planning/developers-portal.md §5.1 — developers.fuzefront.com
+        # (devportal-frontend/devportal-service) is a first-party subdomain,
+        # so its redirect_uri is added statically here rather than via the
+        # runtime Admin-API registrar (backend/src/custom-domains/
+        # authentikRedirect.ts), which is for customer-provisioned domains.
+        - matching_mode: strict
+          url: "https://developers.fuzefront.com/api/auth/oidc/callback"
       # Scope mappings defined inline above — !Find resolves within this same
       # blueprint run since those entries are applied before this one.
       property_mappings:
