@@ -188,7 +188,7 @@ def ghcr_token(owner: str, name: str) -> str | None:
     _assert_ghcr_url(url)
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             data = json.loads(resp.read())
             return data.get("token")
     except Exception:
@@ -223,7 +223,7 @@ def ghcr_resolve_tag(repository: str, tag: str) -> tuple[bool, str]:
     _assert_ghcr_url(url)
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             return resp.status == 200, "ok"
     except urllib.error.HTTPError as e:
         if e.code == 404:
