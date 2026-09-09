@@ -17,7 +17,7 @@ spec:
         app: fuzefront-chat-service
         {{- include "fuzefront.labels" . | nindent 8 }}
     spec:
-      {{- include "fuzefront.scheduling" (dict "svc" dict "root" $) | nindent 6 }}
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.chatService "root" .) | nindent 6 }}
       containers:
         - name: chat-service
           image: "{{ .Values.chatService.image.repository }}:{{ .Values.chatService.image.tag }}"

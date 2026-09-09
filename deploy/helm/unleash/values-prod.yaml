@@ -34,16 +34,28 @@ unleash:
   ingress:
     enabled: true
     host: unleash.prod.fuzefront.com
-  # Steer onto node-2 (keep flag-server load off the DB-heavy node-1).
+  # Was: a soft `preferred` affinity to hostname `fuzefront-node-2`, which is
+  # not a real node label anywhere in the live Contabo cluster — it never
+  # actually steered anything, so this pod landed on durable (vmi3383846)
+  # purely because that's where the scheduler found room (confirmed live via
+  # `kubectl get pods -A -o wide --field-selector spec.nodeName=vmi3383846`).
+  # Fleet policy: only core infra + frontend stay on durable; Unleash is a
+  # stateless flag server (state lives in the shared FuzeInfra Postgres), so
+  # it moves to the autoscaled elastic pool instead — mirrors FuzeInfra's
+  # runners/arc/runner-scale-set-values.yaml pattern.
   affinity:
     nodeAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          preference:
-            matchExpressions:
-              - key: kubernetes.io/hostname
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: fuzeinfra.io/pool
                 operator: In
-                values: ["fuzefront-node-2"]
+                values:
+                  - elastic
+  tolerations:
+    - key: fuzeinfra.io/elastic
+      operator: Exists
+      effect: PreferNoSchedule
 
 # Prod FuzeInfra Postgres DNS — the shared cluster's service is fuzeinfra-postgres
 # (the chart default postgres.fuzeinfra.svc… is the local/dev name and does not
