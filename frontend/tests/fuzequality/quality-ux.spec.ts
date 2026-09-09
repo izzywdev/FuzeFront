@@ -45,7 +45,10 @@ test.describe('FuzeQuality implemented UX flows', () => {
   test('loads the portfolio and navigates every implemented workspace', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /See what the platform promises/i })).toBeVisible()
     for (const [nav, heading] of [['Repositories', 'Repository inventory'], ['API catalog', 'API coverage matrix'], ['Frontend inventory', 'Frontend coverage matrix'], ['Requirements & flows', 'Requirements & inferred flows'], ['AI review queue', 'AI review queue'], ['Organization', 'Organization access & integrations'], ['Organizations', 'Organization QA portfolio']] as const) {
-      await page.getByRole('button', { name: nav, exact: true }).click()
+      const navigationButton = nav === 'AI review queue'
+        ? page.getByRole('button', { name: /^AI review queue/ })
+        : page.getByRole('button', { name: nav, exact: true })
+      await navigationButton.click()
       await expect(page.getByRole('heading', { name: heading })).toBeVisible()
     }
   })
