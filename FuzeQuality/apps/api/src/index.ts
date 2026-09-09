@@ -45,7 +45,14 @@ const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 
 const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
 const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
 const mayReviewSuggestions = requirePlatformPermission('fuzequality.Evidence', 'export')
-const maySyncRequirements = requirePlatformPermission('fuzequality.Evidence', 'export')
+const maySyncRequirementsAsHuman = requirePlatformPermission('fuzequality.Evidence', 'export')
+// The reconciler is a workload, not a portal user. It authenticates with the
+// FuzeQuality service token injected from the cluster Secret; a human caller
+// still has to pass the FuzeFront Security permission check below.
+const maySyncRequirements: express.RequestHandler = (request, response, next) => {
+  if (isFuzeQualityServiceRequest(request)) return next()
+  return maySyncRequirementsAsHuman(request, response, next)
+}
 const mayCreateTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'create')
 const mayReadTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'read')
 const mayReadOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'read')
@@ -130,6 +137,11 @@ function organizationSummaries(portfolio: Portfolio): OrganizationQualitySummary
   }).sort((left, right) => right.gaps - left.gaps || left.organizationId.localeCompare(right.organizationId))
 }
 
+function isFuzeQualityServiceRequest(request: express.Request) {
+  const configuredToken = process.env.FUZEQUALITY_API_TOKEN
+  return Boolean(configuredToken && request.header('authorization') === `Bearer ${configuredToken}`)
+}
+
 app.use(express.json({
   // A normalized inventory for the current FuzeFront repository is ~2.4 MB.
   // Keep this above the scanner's bounded payload while still rejecting
@@ -141,12 +153,11 @@ app.use(express.json({
 }))
 
 app.use((request, response, next) => {
-  const configuredToken = process.env.FUZEQUALITY_API_TOKEN
   const authorization = request.headers.authorization
   if (
-    !configuredToken ||
+    !process.env.FUZEQUALITY_API_TOKEN ||
     isPublicRequest(request.method, request.path) ||
-    authorization === `Bearer ${configuredToken}` ||
+    isFuzeQualityServiceRequest(request) ||
     (
       request.path.startsWith('/api/v1/internal/test-implementations/') &&
       process.env.FUZEQUALITY_CLOUD_CALLBACK_TOKEN &&
