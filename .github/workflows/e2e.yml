@@ -32,6 +32,10 @@ concurrency:
   group: e2e-signin-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   signin:
     name: Playwright sign-in flow
@@ -131,6 +135,12 @@ jobs:
       # live Jira project.
       - name: Install FuzeQuality browser-test dependencies
         working-directory: FuzeQuality
+        # FuzeQuality consumes the private published security client. Its
+        # checked-in .npmrc intentionally reads GITHUB_TOKEN (not
+        # NODE_AUTH_TOKEN), so pass the workflow token explicitly and retain
+        # only package-read scope.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm install --include=dev --ignore-scripts
 
       - name: Run FuzeQuality Playwright UX flows
