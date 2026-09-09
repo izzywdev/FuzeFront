@@ -123,6 +123,22 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # ── FuzeQuality: mocked API contract + browser UX flows ───────────────
+      # This runs the federated remote as its own Vite application. The browser
+      # intercepts its same-origin API requests with deterministic catalog data,
+      # so portfolio navigation, gap planning, implementation dispatch, visual
+      # references, and AI review do not depend on production credentials or a
+      # live Jira project.
+      - name: Install FuzeQuality browser-test dependencies
+        working-directory: FuzeQuality
+        run: npm install --include=dev --ignore-scripts
+
+      - name: Run FuzeQuality Playwright UX flows
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e:fuzequality -- --project=chromium
+
       # ── Playwright: sign-in + runtime federated load ────────────────────────
       - name: Run Playwright e2e (sign-in + FuzeClock load)
         working-directory: frontend
@@ -161,11 +177,20 @@ jobs:
             | head -400 || true
 
       - name: Upload Playwright report
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-report
+          name: playwright-report-signin
           path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Upload FuzeQuality Playwright report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-fuzequality
+          path: frontend/playwright-report-fuzequality/
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Tear down E2E stack
