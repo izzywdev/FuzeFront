@@ -210,7 +210,7 @@ export const FuzeHubPage: React.FC = () => {
             Ready for full operational visibility?
           </h2>
           <p className="text-secondary-400 mb-8">
-            FuzeHub is included in Professional, Scale, and Enterprise plans. Start your 14-day trial.
+            FuzeHub is included in Growth and Enterprise plans. Start your 14-day trial.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <a

@@ -194,7 +194,7 @@ export const HomePage: React.FC = () => {
               transition={{ duration: 0.7, delay: 0.1 }}
               className="text-5xl sm:text-6xl lg:text-7xl font-heading font-extrabold text-white leading-tight mb-6"
             >
-              The operating system
+              The Software Factory
               <span className="block gradient-text mt-2">for your SaaS</span>
             </motion.h1>
 
@@ -393,8 +393,7 @@ export const HomePage: React.FC = () => {
                 {[
                   { name: 'Free', price: '$0/mo', note: 'Up to 2 members' },
                   { name: 'Starter', price: '$29/mo', note: 'Up to 5 members' },
-                  { name: 'Professional', price: '$99/mo', note: 'Up to 25 members', featured: true },
-                  { name: 'Scale', price: '$299/mo', note: 'Up to 100 members' },
+                  { name: 'Growth', price: '$99/mo', note: 'Up to 25 members', featured: true },
                   { name: 'Enterprise', price: 'Custom', note: 'Unlimited everything' },
                 ].map((plan) => (
                   <div
