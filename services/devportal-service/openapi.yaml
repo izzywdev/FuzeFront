@@ -1,0 +1,433 @@
+openapi: 3.0.3
+info:
+  title: devportal-service
+  version: 0.1.0
+  description: >
+    Spec registry, Authentik OIDC session, and sandboxed "Try it" playground
+    proxy backing developers.fuzefront.com. See
+    docs/planning/developers-portal.md for the full design.
+tags:
+  - name: Health
+    description: Liveness/readiness probes.
+  - name: Auth
+    description: Authentik OIDC sign-in/sign-out for the devportal session.
+  - name: Catalog
+    description: The aggregated OpenAPI spec catalog (§7 Home/Catalog/Spec viewer).
+  - name: Playground
+    description: The sandboxed "Try it" endpoint and its quota/history (§6).
+  - name: Access
+    description: The signed-in developer's own root-org access status (§7 My access).
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness/readiness probe
+      description: Unauthenticated health check used by the Kubernetes probes.
+      tags: [Health]
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /auth/oidc/login:
+    get:
+      operationId: startOidcLogin
+      summary: Begin Authentik OIDC sign-in
+      description: >
+        Redirects the browser to Authentik's authorization endpoint, stashing
+        PKCE state in short-lived httpOnly cookies.
+      tags: [Auth]
+      responses:
+        '302':
+          description: Redirect to Authentik.
+        '503':
+          description: OIDC is not configured on this deployment.
+
+  /auth/oidc/callback:
+    get:
+      operationId: completeOidcCallback
+      summary: Authentik OIDC callback
+      description: >
+        Exchanges the authorization code, resolves the FuzeFront user via
+        security-service, provisions root-org `developer` membership, mints
+        the devportal session cookie, and redirects to the frontend.
+      tags: [Auth]
+      parameters:
+        - name: code
+          in: query
+          required: true
+          description: The Authentik-issued authorization code.
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          description: The CSRF state value echoed back by Authentik.
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the devportal frontend with a session cookie set.
+        '400':
+          description: Missing or mismatched OIDC state.
+        '401':
+          description: Sign-in failed (code exchange or user sync error).
+
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: End the devportal session
+      description: Clears the devportal session cookie.
+      tags: [Auth]
+      responses:
+        '200':
+          description: Session cleared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /v1/catalog:
+    get:
+      operationId: listCatalog
+      summary: List every harvested spec
+      description: Lightweight catalog entries — no full spec bodies. Requires a devportal session.
+      tags: [Catalog]
+      security:
+        - devportalSession: []
+      responses:
+        '200':
+          description: The catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogListResponse'
+        '401':
+          description: No devportal session.
+        '403':
+          description: Session lacks DevPortalCatalog:read.
+
+  /v1/catalog/{repo}/{service}:
+    get:
+      operationId: getSpec
+      summary: Get one full spec
+      description: Returns the full raw OpenAPI document for one harvested service.
+      tags: [Catalog]
+      security:
+        - devportalSession: []
+      parameters:
+        - name: repo
+          in: path
+          required: true
+          description: The repo the spec was harvested from (e.g. "fuzefront").
+          schema:
+            type: string
+        - name: service
+          in: path
+          required: true
+          description: The service name within that repo (e.g. "app-registry-service").
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The spec.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpecRecord'
+        '401':
+          description: No devportal session.
+        '403':
+          description: Session lacks DevPortalCatalog:read.
+        '404':
+          description: No spec harvested for that repo/service pair.
+
+  /v1/playground/quota:
+    get:
+      operationId: getPlaygroundQuota
+      summary: Get the caller's current sandbox quota
+      description: Rolling-window sandbox-call usage and limit for the signed-in developer.
+      tags: [Playground]
+      security:
+        - devportalSession: []
+      responses:
+        '200':
+          description: Current quota state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quota'
+        '401':
+          description: No devportal session.
+        '403':
+          description: Session lacks DevPortalPlayground:use.
+
+  /v1/playground/history:
+    get:
+      operationId: getPlaygroundHistory
+      summary: List the caller's own recent sandbox calls
+      description: Never another developer's calls — always scoped to the signed-in user.
+      tags: [Playground]
+      security:
+        - devportalSession: []
+      responses:
+        '200':
+          description: Recent sandbox calls.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaygroundHistoryResponse'
+        '401':
+          description: No devportal session.
+        '403':
+          description: Session lacks DevPortalPlayground:view_history.
+
+  /v1/playground/try:
+    post:
+      operationId: tryOperation
+      summary: Execute a sandboxed "Try it" call
+      description: >
+        Never reaches a real production system. Returns the selected
+        operation's documented example response (or a schema-synthesized
+        stand-in) from the spec itself.
+      tags: [Playground]
+      security:
+        - devportalSession: []
+      requestBody:
+        description: The spec and operation to exercise.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TryRequest'
+      responses:
+        '200':
+          description: The mocked response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TryResponse'
+        '400':
+          description: Missing specId or operationId.
+        '401':
+          description: No devportal session.
+        '403':
+          description: Session lacks DevPortalPlayground:use.
+        '404':
+          description: Spec or operation not found.
+        '429':
+          description: Sandbox call quota exceeded for the current window.
+
+  /v1/me:
+    get:
+      operationId: getMyAccess
+      summary: Get the signed-in developer's own access status
+      description: Root-org developer membership status + current sandbox quota (§7 My access).
+      tags: [Access]
+      security:
+        - devportalSession: []
+      responses:
+        '200':
+          description: The caller's access status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyAccess'
+        '401':
+          description: No devportal session.
+
+components:
+  securitySchemes:
+    devportalSession:
+      type: apiKey
+      in: cookie
+      name: devportal_session
+      description: The devportal session cookie minted by /auth/oidc/callback.
+  schemas:
+    Ok:
+      type: object
+      description: A trivial success acknowledgement.
+      properties:
+        ok:
+          type: boolean
+          description: Always true on success.
+      required: [ok]
+    HealthStatus:
+      type: object
+      description: The health-check response body.
+      properties:
+        status:
+          type: string
+          description: Always "ok" when reachable.
+        service:
+          type: string
+          description: This service's own name, for log/alert correlation.
+      required: [status, service]
+    CatalogEntry:
+      type: object
+      description: One catalog row — enough to render a catalog tile without fetching the full spec.
+      properties:
+        id:
+          type: string
+          description: The spec's internal registry id.
+        repo:
+          type: string
+          description: The repo the spec was harvested from.
+        service:
+          type: string
+          description: The service name within that repo.
+        version:
+          type: string
+          description: The spec's own `info.version`.
+        title:
+          type: string
+          description: The spec's own `info.title`.
+        description:
+          type: string
+          description: The spec's own `info.description`.
+        tags:
+          type: array
+          description: The distinct operation tags found in the spec.
+          items:
+            type: string
+        fetchedAt:
+          type: string
+          description: When this spec was last harvested, ISO-8601.
+      required: [id, repo, service, version, title, description, tags, fetchedAt]
+    CatalogListResponse:
+      type: object
+      description: The full catalog listing.
+      properties:
+        items:
+          type: array
+          description: One entry per harvested spec.
+          items:
+            $ref: '#/components/schemas/CatalogEntry'
+      required: [items]
+    SpecRecord:
+      type: object
+      description: A full harvested spec, including its raw OpenAPI document.
+      properties:
+        id:
+          type: string
+          description: The spec's internal registry id.
+        repo:
+          type: string
+          description: The repo the spec was harvested from.
+        service:
+          type: string
+          description: The service name within that repo.
+        specPath:
+          type: string
+          description: The path the spec was harvested from within its repo.
+        version:
+          type: string
+          description: The spec's own `info.version`.
+        rawSpec:
+          type: object
+          description: The full, unmodified OpenAPI document as parsed from YAML.
+        fetchedAt:
+          type: string
+          description: When this spec was last harvested, ISO-8601.
+      required: [id, repo, service, specPath, version, rawSpec, fetchedAt]
+    Quota:
+      type: object
+      description: The caller's current rolling-window sandbox quota.
+      properties:
+        used:
+          type: integer
+          description: Sandbox calls made in the current window.
+        limit:
+          type: integer
+          description: The maximum calls allowed per window.
+        windowHours:
+          type: integer
+          description: The rolling window size, in hours.
+      required: [used, limit, windowHours]
+    PlaygroundCall:
+      type: object
+      description: One logged sandbox call.
+      properties:
+        id:
+          type: string
+          description: The call log row id.
+        operation_id:
+          type: string
+          description: The OpenAPI operationId that was exercised.
+        method:
+          type: string
+          description: The HTTP method of the exercised operation.
+        path:
+          type: string
+          description: The HTTP path of the exercised operation.
+        response_status:
+          type: integer
+          description: The mocked HTTP status code returned.
+        called_at:
+          type: string
+          description: When the call was made, ISO-8601.
+      required: [id, operation_id, method, path, response_status, called_at]
+    PlaygroundHistoryResponse:
+      type: object
+      description: The caller's own recent sandbox calls.
+      properties:
+        items:
+          type: array
+          description: Most recent first, capped at 50.
+          items:
+            $ref: '#/components/schemas/PlaygroundCall'
+      required: [items]
+    TryRequest:
+      type: object
+      description: Which operation, on which harvested spec, to exercise in the sandbox.
+      properties:
+        specId:
+          type: string
+          description: The registry id of the spec (from GET /v1/catalog/{repo}/{service}).
+        operationId:
+          type: string
+          description: The OpenAPI operationId to exercise.
+      required: [specId, operationId]
+    TryResponse:
+      type: object
+      description: The mocked response for a sandboxed "Try it" call.
+      properties:
+        status:
+          type: integer
+          description: The mocked HTTP status code.
+        body:
+          description: The mocked response body — shape depends on the exercised operation.
+        source:
+          type: string
+          description: Where the mocked body came from.
+          enum: [example, schema-synthesized, no-example-available]
+        sandboxed:
+          type: boolean
+          description: Always true — confirms no real backend was reached.
+        target:
+          type: string
+          description: Always "mock" in this MVP; reserved for a future opt-in real sandbox URL (§6).
+      required: [status, body, source, sandboxed, target]
+    MyAccess:
+      type: object
+      description: The signed-in developer's own root-org access status.
+      properties:
+        userId:
+          type: string
+          description: The caller's FuzeFront user id.
+        email:
+          type: string
+          nullable: true
+          description: The caller's email, if present in their session.
+        developer:
+          type: boolean
+          description: Whether a DevPortalCatalog:read grant is confirmed for this user.
+        rootOrgId:
+          type: string
+          description: The platform root organization id every devportal grant is scoped to.
+        quota:
+          $ref: '#/components/schemas/Quota'
+      required: [userId, developer, rootOrgId, quota]

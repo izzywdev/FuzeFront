@@ -766,6 +766,73 @@ selectionListService:
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
 
+# devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
+# "Try it" playground proxy backing developers.fuzefront.com (docs/planning/
+# developers-portal.md). Ships dark by default; gate: fuzefront.devportal.enabled.
+#
+# Port 3012: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
+# 3005=provisioning, 3006=chat/billing, 3008=selection-list, 3009=notification,
+# 3010=payment, 3011=config. 3012 was verified free against every `port:` in
+# this file at the time it was added.
+# NOTE: networkPolicy.port MUST equal port and MUST be declared explicitly —
+# do NOT use | int / | default / | toString in the template. A missing default
+# renders as `port: 0`, which kubeconform accepts (valid integer) but the k8s
+# API server rejects at admission (ports 1-65535), breaking every Argo sync
+# of the whole Application (FuzeInfra#501). The explicit value here is the only
+# safe path.
+devportalService:
+  enabled: false
+  replicas: 1
+  port: 3012
+  # Dedicated DB (co-located on the shared Postgres, shared `database.user`
+  # role — same EXTRA_DATABASES pattern as notificationService.dbName) so
+  # devportal's knex_migrations ledger never collides with the backend's.
+  dbName: "fuzefront_devportal"
+  image:
+    repository: fuzefront/devportal-service
+    tag: local
+  # devportal-service's own Authentik OIDC exchange (§5.1) — a redirect_uri on
+  # the SAME FuzeFront OAuth2 provider (.Values.authentik.oidc.issuerUrl), not
+  # a new IdP. Client id/secret come from the existing chart Secret
+  # (AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET keys, shared with backend.yaml
+  # / security.yaml); the redirect URI itself is not secret and is set here —
+  # it MUST match deploy/helm/fuzefront/authentik/blueprints/provider-oidc.yaml's
+  # devportal redirect_uris entry exactly.
+  oidcRedirectUri: "https://developers.fuzefront.com/api/auth/oidc/callback"
+  frontendUrl: "https://developers.fuzefront.com"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  networkPolicy:
+    # Must equal devportalService.port — declared explicitly, never coerced.
+    port: 3012
+    ingressControllerNamespace: kube-system
+
+# devportal-frontend — the developers.fuzefront.com SPA (docs/planning/
+# developers-portal.md §4.1). Standalone app, NOT a Module-Federation remote —
+# structurally modeled on websiteFrontend above (own nginx, own Ingress).
+devportalFrontend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
+    tag: ""
+  port: 3000
+  replicas: 1
+  host: ""
+  resources:
+    requests: { cpu: 10m,  memory: 32Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 # Config service — namespaced, hierarchical configuration catalog + scope-chain
 # resolution engine (FF-EPIC-17-S7, FFRNT-159). Ships dark by default here —
 # every other optional service in this file (securityService, chatService,

@@ -124,7 +124,7 @@ export async function userHasRole(
 export async function assignOrganizationRole(
   userId: string,
   organizationId: string,
-  membershipRole: 'owner' | 'admin' | 'member' | 'viewer'
+  membershipRole: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
 ): Promise<boolean> {
   try {
     // Map membership roles to Permit roles
@@ -133,6 +133,7 @@ export async function assignOrganizationRole(
       admin: 'admin', // Admins get admin permissions
       member: 'editor', // Members get editor permissions
       viewer: 'viewer', // Viewers get view-only permissions
+      developer: 'developer', // docs/planning/developers-portal.md §5.3 — catalog + sandbox only
     }
 
     const permitRole = roleMapping[membershipRole] || 'viewer'
@@ -159,7 +160,7 @@ export async function assignOrganizationRole(
 export async function unassignOrganizationRole(
   userId: string,
   organizationId: string,
-  membershipRole: 'owner' | 'admin' | 'member' | 'viewer'
+  membershipRole: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
 ): Promise<boolean> {
   try {
     // Same mapping as assignOrganizationRole.
@@ -168,6 +169,7 @@ export async function unassignOrganizationRole(
       admin: 'admin',
       member: 'editor',
       viewer: 'viewer',
+      developer: 'developer',
     }
 
     const permitRole = roleMapping[membershipRole] || 'viewer'
@@ -205,6 +207,7 @@ export async function updateOrganizationRole(
       admin: 'admin',
       member: 'editor',
       viewer: 'viewer',
+      developer: 'developer',
     }
 
     const oldPermitRole = roleMapping[oldRole] || 'viewer'

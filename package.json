@@ -35,6 +35,7 @@
     "services/email-service",
     "services/notification-service",
     "services/selection-list-service",
+    "services/devportal-service",
     "packages/selection-lists-ui",
     "packages/config-ui"
   ],
