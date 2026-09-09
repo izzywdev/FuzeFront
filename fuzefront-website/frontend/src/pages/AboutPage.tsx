@@ -2,21 +2,22 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2 } from 'lucide-react'
+import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
 import { useAnalytics } from '../contexts/AnalyticsContext'
+import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
 const values = [
   {
     icon: Target,
     title: 'Our Mission',
     description:
-      "Developers should focus on what makes their product unique — not on rebuilding the same authentication, billing, and infrastructure components over and over again.",
+      "Developers should focus on what makes their product unique — not on rebuilding the same authentication, billing, and infrastructure components over and over again. We've lived that problem firsthand across multiple ventures, which is exactly why FuzeOne exists.",
   },
   {
     icon: Lightbulb,
     title: 'Our Story',
     description:
-      'Founded by engineers tired of reinventing the wheel, FuzeOne emerged from the frustration of building the same SaaS foundations across multiple projects, one platform at a time.',
+      'Founded in 2025 by engineers tired of reinventing the wheel, FuzeOne emerged from the frustration of building the same SaaS foundations across multiple projects, one platform at a time.',
   },
   {
     icon: ShieldCheck,
@@ -39,6 +40,17 @@ const stats = [
   { metric: '24/7', label: 'Priority support' },
 ]
 
+const leadership = [
+  {
+    name: 'Israel Weinberg',
+    title: 'Founder & CEO',
+    photo: israelWeinbergPhoto,
+    linkedin: 'https://www.linkedin.com/in/israel-weinberg/',
+    bio:
+      'Prior to founding FuzeOne, Israel was CTO at Phone.do, leading engineering for a high-availability, real-time communications platform spanning voice, video, and text — including AI-driven call analysis — for a gig-economy call-center model, managing a team of 30+ engineers. Before that, he co-founded and served as CEO of EntireOne, one of the first cloud-native SaaS platforms for retail point-of-sale and inventory management, unifying inventory visibility across the supply chain before the company was acquired by a major payment processor. Altogether, Israel brings 25+ years of software development and sales experience to FuzeOne.',
+  },
+]
+
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
@@ -52,6 +64,7 @@ const stagger = {
 export const AboutPage: React.FC = () => {
   const [heroRef, heroInView] = useInView({ triggerOnce: true, threshold: 0.1 })
   const [valuesRef, valuesInView] = useInView({ triggerOnce: true, threshold: 0.1 })
+  const [leadershipRef, leadershipInView] = useInView({ triggerOnce: true, threshold: 0.1 })
   const [offerRef, offerInView] = useInView({ triggerOnce: true, threshold: 0.1 })
   const { trackEvent } = useAnalytics()
 
@@ -122,6 +135,60 @@ export const AboutPage: React.FC = () => {
                 </motion.div>
               )
             })}
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Leadership */}
+      <section className="py-24 bg-white border-t border-secondary-100">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div
+            ref={leadershipRef}
+            initial={{ opacity: 0, y: 20 }}
+            animate={leadershipInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-12"
+          >
+            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
+              Leadership
+            </h2>
+          </motion.div>
+
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            animate={leadershipInView ? 'visible' : 'hidden'}
+            className="grid grid-cols-1 gap-8"
+          >
+            {leadership.map((person) => (
+              <motion.div
+                key={person.name}
+                variants={fadeUp}
+                className="bg-white rounded-2xl border border-gray-100 p-8 shadow-soft flex flex-col sm:flex-row gap-6 items-center sm:items-start text-center sm:text-left"
+              >
+                <img
+                  src={person.photo}
+                  alt={person.name}
+                  className="w-28 h-28 rounded-full object-cover flex-shrink-0"
+                />
+                <div>
+                  <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                    <h3 className="text-lg font-semibold text-gray-900">{person.name}</h3>
+                    <a
+                      href={person.linkedin}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${person.name} on LinkedIn`}
+                      className="text-primary-700 hover:text-primary-800"
+                    >
+                      <Linkedin size={18} />
+                    </a>
+                  </div>
+                  <p className="text-sm text-primary-700 font-medium mb-3">{person.title}</p>
+                  <p className="text-gray-600 text-sm leading-relaxed">{person.bio}</p>
+                </div>
+              </motion.div>
+            ))}
           </motion.div>
         </div>
       </section>
