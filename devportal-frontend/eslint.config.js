@@ -36,5 +36,13 @@ export default [
         { allowConstantExport: true }
       ]
     }
+  },
+  {
+    // Playwright configs and the e2e suite run under Node, not the browser —
+    // they need `process`/`Buffer`, not `globals.browser`.
+    files: ['playwright*.config.ts', 'e2e/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
   }
 ]
