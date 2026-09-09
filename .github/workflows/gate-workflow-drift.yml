@@ -1,17 +1,25 @@
-# fuze:managed template=gate-workflow-drift.yml baseline=v1 digest=sha256:85362f869dc924f4d4e842f8399a708dcdb8b3cd51be2b048d369e30f8664925
 name: gate-workflow-drift
 
 # REQUIRED-check ratchet on `fuze:managed` workflow-file drift (governance/file-ownership.md).
 #
-# governance-sync.yml already DETECTS this (scripts/governance_sync.py's `workflows` bucket)
-# but only ever WARNS: the default GITHUB_TOKEN cannot push `.github/workflows/**` at all, and
-# the workflows-scoped fuze-agent App token that would let it self-heal has never been granted
-# the Workflows permission (governance/file-ownership.md) — so an unconditional hard-fail here
-# would redden every onboarded repo on the very next canonical release, for a condition this
-# job cannot fix itself. Instead it fails only once a marked file's drift has survived
-# `governance/workflow-drift-policy.json`'s `max_versions_behind` baseline releases without
-# being caught by a human bootstrap re-run or the nightly sweep — see that policy file and
-# `governance/workflow-template-containment.md` for the full ramp rationale.
+# governance-sync.yml DETECTS this and -- since the workflows-scoped fuze-agent App token was
+# wired into it -- also RECONCILES the files that still carry their `fuze:managed` marker.
+#
+# So this gate does not exist because nothing can fix the drift. It exists because the
+# reconciler deliberately does NOT touch three categories: files carrying no marker, files
+# whose marker was removed on purpose (`detached` -- the supported way to fork a managed
+# workflow), and files absent from the repo entirely (installing those is sdlc-bootstrap's
+# job, not a per-PR reconciler's). Drift there is real, invisible to the reconciler by
+# design, and needs a human. The ramp below gives it a bounded grace window before it blocks.
+#
+# HISTORICAL NOTE, because this comment asserted the opposite for months and misled readers
+# (including into briefing others with the false constraint): the default GITHUB_TOKEN
+# genuinely cannot push `.github/workflows/**` under GitHub's `workflows` OAuth scope, and
+# for a long time the App had not been granted the Workflows permission -- so the reconciler
+# really was detect-only. Both halves are resolved now. If you are reading this while asking
+# "why can't the bot fix its own drift", the answer for a MARKED file is that it now can, and
+# a repo where it still does not is one where the scoped token mint FAILED. Check
+# governance-sync's own run log: it emits a notice naming which branch it took.
 #
 # NEVER blocks on: a repo with no `.fuze/manifest.json` yet (not onboarded), a repo with no
 # `fuze:managed` marker anywhere yet (the re-stamp fan-out has not reached it), `detached`
@@ -27,7 +35,7 @@ name: gate-workflow-drift
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: read
