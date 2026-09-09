@@ -385,12 +385,23 @@ mcp:
 a2a:
   enabled: false
   image:
-    repository: ghcr.io/izzywdev/fuzeagent-a2a
-    # Immutable; never `latest` in prod (values-prod.yaml pins by digest,
-    # encoded as `tag@digest` — see that file's comment). Left empty here
-    # (local/dev default; server disabled) so `helm template` with the base
-    # values alone never renders an unpinned image reference.
-    tag: ""
+    # ghcr.io/izzywdev/fuzeagent-a2a is a stale/abandoned image (last pushed
+    # 2026-08-24; anonymously pullable but no longer built). The image
+    # FuzeAgent's own release.yml actively builds and publishes on every
+    # release, and what its own a2a-shared/values-prod.yaml points at, is
+    # ghcr.io/izzywdev/fuze-a2a (agent-templates/a2a/Dockerfile). Corrected
+    # here 2026-09-02 — gate-a2a's own I1 default + the runtime standard doc
+    # still name the old `fuzeagent-a2a` repository (already flagged,
+    # FuzeAgent PR #257); a resulting I1 finding against this file is that
+    # known staleness, not a new fork.
+    repository: ghcr.io/izzywdev/fuze-a2a
+    # `latest` is the permitted dev-shape tag (forbidden only in
+    # values-prod.yaml, which pins an exact CI-built tag) — matches
+    # FuzeAgent's own a2a-shared/values.yaml base shape. A blank tag here
+    # previously made gate-a2a report the image as "not fully declared" even
+    # though the server is disabled; `latest` keeps the declaration complete
+    # and verifiable while still describing the disabled dev default.
+    tag: "latest"
     pullPolicy: IfNotPresent
   service:
     # MUST be ClusterIP — ingress is Cloudflare-tunnel-only, and `inClusterUrl`
@@ -402,11 +413,17 @@ a2a:
   # Unset would default to the SHARED server's card URL and this pod would be
   # unreachable through its own card despite passing every probe.
   inClusterUrl: ""
-  auth:
-    oidcIssuerUrl: ""
-    oidcDiscoveryUrl: ""
-    audience: a2a
-    callerClaim: repo
+  # `auth` is left UNSET (not an empty-valued object) in this disabled base
+  # shape on purpose: the frozen interface requires `oidcIssuerUrl` whenever
+  # `auth` is present at all, so a present-but-empty block is a gate-a2a C3
+  # fatal finding on a file that was never meant to carry a real issuer.
+  # Mirrors FuzeAgent's own a2a-shared/values.yaml base shape. values-prod.yaml
+  # supplies the real `auth:` block for the enabled deployment.
+  # auth:
+  #   oidcIssuerUrl: ""
+  #   oidcDiscoveryUrl: ""
+  #   audience: a2a
+  #   callerClaim: repo
   cardSigning:
     keySecretRef: { name: "", key: "" }
     keyId: a2a-v1
@@ -518,6 +535,40 @@ clockApp:
   resources:
     requests: { cpu: 10m,  memory: 16Mi }
     limits:   { cpu: 100m, memory: 64Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+# fuzefront-website — the public marketing/product site at fuzefront.com.
+# Frontend: nginx serving a React SPA (port 3000).
+# Backend:  Node.js API (port 3001).
+# Each has its own self-contained Dockerfile under fuzefront-website/{frontend,backend}.
+# Ingress routes fuzefront.com/ → frontend, fuzefront.com/api/* → backend.
+websiteFrontend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-frontend
+    tag: ""
+  port: 3000
+  replicas: 1
+  host: ""
+  resources:
+    requests: { cpu: 10m,  memory: 32Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+websiteBackend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-backend
+    tag: ""
+  port: 3001
+  replicas: 1
+  resources:
+    requests: { cpu: 10m,  memory: 32Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -714,6 +765,73 @@ selectionListService:
     # services calling the selection-list API). The Traefik rule below covers
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
+
+# devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
+# "Try it" playground proxy backing developers.fuzefront.com (docs/planning/
+# developers-portal.md). Ships dark by default; gate: fuzefront.devportal.enabled.
+#
+# Port 3012: 3001=backend, 3002=security, 3003=apps/email, 3004=sms,
+# 3005=provisioning, 3006=chat/billing, 3008=selection-list, 3009=notification,
+# 3010=payment, 3011=config. 3012 was verified free against every `port:` in
+# this file at the time it was added.
+# NOTE: networkPolicy.port MUST equal port and MUST be declared explicitly —
+# do NOT use | int / | default / | toString in the template. A missing default
+# renders as `port: 0`, which kubeconform accepts (valid integer) but the k8s
+# API server rejects at admission (ports 1-65535), breaking every Argo sync
+# of the whole Application (FuzeInfra#501). The explicit value here is the only
+# safe path.
+devportalService:
+  enabled: false
+  replicas: 1
+  port: 3012
+  # Dedicated DB (co-located on the shared Postgres, shared `database.user`
+  # role — same EXTRA_DATABASES pattern as notificationService.dbName) so
+  # devportal's knex_migrations ledger never collides with the backend's.
+  dbName: "fuzefront_devportal"
+  image:
+    repository: fuzefront/devportal-service
+    tag: local
+  # devportal-service's own Authentik OIDC exchange (§5.1) — a redirect_uri on
+  # the SAME FuzeFront OAuth2 provider (.Values.authentik.oidc.issuerUrl), not
+  # a new IdP. Client id/secret come from the existing chart Secret
+  # (AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET keys, shared with backend.yaml
+  # / security.yaml); the redirect URI itself is not secret and is set here —
+  # it MUST match deploy/helm/fuzefront/authentik/blueprints/provider-oidc.yaml's
+  # devportal redirect_uris entry exactly.
+  oidcRedirectUri: "https://developers.fuzefront.com/api/auth/oidc/callback"
+  frontendUrl: "https://developers.fuzefront.com"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  networkPolicy:
+    # Must equal devportalService.port — declared explicitly, never coerced.
+    port: 3012
+    ingressControllerNamespace: kube-system
+
+# devportal-frontend — the developers.fuzefront.com SPA (docs/planning/
+# developers-portal.md §4.1). Standalone app, NOT a Module-Federation remote —
+# structurally modeled on websiteFrontend above (own nginx, own Ingress).
+devportalFrontend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
+    tag: ""
+  port: 3000
+  replicas: 1
+  host: ""
+  resources:
+    requests: { cpu: 10m,  memory: 32Mi }
+    limits:   { cpu: 200m, memory: 128Mi }
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # Config service — namespaced, hierarchical configuration catalog + scope-chain
 # resolution engine (FF-EPIC-17-S7, FFRNT-159). Ships dark by default here —

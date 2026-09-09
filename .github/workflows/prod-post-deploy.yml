@@ -119,6 +119,17 @@ jobs:
       POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
       INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
 
+  # The public marketing site (fuzefront-website) has its own deploy image and
+  # its own release-time contrast/nav regressions (see
+  # fuzefront-website/frontend/e2e/contrast.spec.ts) — unrelated to the MF
+  # shell's health, so it runs in parallel with `e2e` rather than gating on it.
+  fuzefront-website-e2e:
+    name: fuzefront-website live smoke
+    needs: health
+    uses: ./.github/workflows/fuzefront-website-post-prod-e2e.yml
+    with:
+      base_url: 'https://fuzefront.com'
+
   # Live boundary probe: asserts Authentik's admin/API/application-list surface
   # is NOT reachable on the public edge. Deliberately SEPARATE from the static
   # `gate-authentik-public-paths` check in helm-validate.yml — that guard

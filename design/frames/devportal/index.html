@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Developer Portal — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<style>
+  .idx { max-width: 1080px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-5);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam);
+    opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary);
+    letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-md); font-family: var(--font-display); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-5); background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-display); }
+  .inv h3.mt { margin-top: var(--space-6); }
+  .flowrow { display: grid; grid-template-columns: 130px 1fr; gap: var(--space-2) var(--space-4);
+    align-items: baseline; padding: var(--space-2) 0; border-bottom: 1px solid var(--border-color); }
+  .flowrow:last-of-type { border-bottom: 0; }
+  .flowrow .fid { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent-color); }
+  .flowrow .fdesc { color: var(--text-secondary); font-size: var(--text-sm); }
+  .flowrow .fpaths { grid-column: 2; font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: var(--text-tertiary); }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-pill);
+    padding: 2px var(--space-2); margin: 0 var(--space-1) var(--space-1) 0; color: var(--text-secondary); }
+  .chip.pkg { color: var(--accent-2); border-color: var(--accent-soft); }
+  .chip.add { color: var(--warning-color); border-color: var(--warning-soft); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px var(--space-2); border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid var(--warning-soft); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+  body { padding-bottom: 0; }
+</style>
+</head>
+<body>
+<div class="idx">
+  <div class="eyebrow">Design-first gate · UX approval · frames-only PR</div>
+  <h1 class="dp-h1">developers.fuzefront.com — Approval Frames</h1>
+  <p class="dp-lead" style="max-width:78ch">Nine navigable frames covering the five flows of the new
+    <b>developer portal</b>: a standalone app at <code>developers.fuzefront.com</code> (<b>not</b> a
+    Module-Federation remote — it must be reachable pre-shell, at sign-in, on its own subdomain), structurally
+    modeled on <code>fuzefront-website/frontend/</code> and sibling to it at repo root.
+    Plan of record: <code>docs/planning/developers-portal.md</code> §4.1 and §7.
+    Built in fuse-seam tokens only. <b>Approving a flow approves its slice of the build inventory below</b>, so the
+    implementation cannot quietly invent a different component or package layout.</p>
+
+  <!-- ===================== flow: home ===================== -->
+  <h2 class="dp-h2">1 · Home <span class="dp-mono" style="font-size:var(--text-2xs);color:var(--text-tertiary)">— flow <code>home</code> · route <code>/</code></span></h2>
+  <p class="dp-sub">What the portal is, quick links, the sign-in CTA — and, once signed in, the personalized recent-specs
+    and sandbox-activity panels with their empty first-sign-in variants.</p>
+  <div class="dp-grid-2">
+    <a href="01-home-signed-out.html" class="frame-link" data-frame-link="01-home-signed-out">
+      <div class="seam"></div><div class="step">Frame 01 · anonymous</div>
+      <h3>Home — signed out</h3>
+      <p>Hero, quick links (Playground shown <b>locked</b>, not hidden), the <code>providesTo</code> product directory,
+        and the sandbox-safety promise stated up front.</p>
+    </a>
+    <a href="02-home-signed-in.html" class="frame-link" data-frame-link="02-home-signed-in">
+      <div class="seam"></div><div class="step">Frame 02 · authenticated</div>
+      <h3>Home — signed in</h3>
+      <p>Quota strip, <b>your recent specs</b>, <b>your sandbox activity</b> — plus both panels' empty state for a
+        developer's very first sign-in.</p>
+    </a>
+  </div>
+
+  <!-- ===================== flow: catalog ===================== -->
+  <h2 class="dp-h2">2 · Catalog <span class="dp-mono" style="font-size:var(--text-2xs);color:var(--text-tertiary)">— flow <code>catalog</code> · route <code>/catalog</code></span></h2>
+  <p class="dp-sub">Browse product → service → spec, search and filter, with every state the harvest can produce.</p>
+  <div class="dp-grid-2">
+    <a href="03-catalog.html" class="frame-link" data-frame-link="03-catalog">
+      <div class="seam"></div><div class="step">Frame 03 · populated</div>
+      <h3>Catalog</h3>
+      <p>TreeNav rail, search + product/tag/sandbox-mode filters, result cards carrying version, operation count,
+        harvest age and <b>sandbox mode</b> (<code>mock</code> vs <code>sandbox</code>).</p>
+    </a>
+    <a href="04-catalog-states.html" class="frame-link" data-frame-link="04-catalog-states">
+      <div class="seam"></div><div class="step">Frame 04 · states</div>
+      <h3>Catalog states</h3>
+      <p>Loading skeletons · empty (<b>nothing harvested yet</b>) · filtered-empty · error (<b>harvest failed</b>,
+        degrading to a badged stale catalog) · 403 not-a-Developer.</p>
+    </a>
+  </div>
+
+  <!-- ===================== flow: spec-viewer ===================== -->
+  <h2 class="dp-h2">3 · Spec viewer <span class="dp-mono" style="font-size:var(--text-2xs);color:var(--text-tertiary)">— flow <code>spec-viewer</code> · route <code>/catalog/:product/:service</code></span></h2>
+  <p class="dp-sub">Our aggregated overview wrapped around an OSS OpenAPI render (Stoplight Elements / Swagger UI — the
+    plan's §3 spike decides which), themed with fuse-seam tokens.</p>
+  <div class="dp-grid-2">
+    <a href="05-spec-viewer.html" class="frame-link" data-frame-link="05-spec-viewer">
+      <div class="seam"></div><div class="step">Frame 05 · populated</div>
+      <h3>Spec viewer</h3>
+      <p>Three panes — operations by tag, overview + selected operation (params, request/response schemas, examples,
+        <b>Try it</b>), and copy-paste code samples.</p>
+    </a>
+    <a href="06-spec-viewer-states.html" class="frame-link" data-frame-link="06-spec-viewer-states">
+      <div class="seam"></div><div class="step">Frame 06 · states</div>
+      <h3>Spec viewer states</h3>
+      <p>Loading · spec-fetch failed (502) · <b>invalid spec</b> (validator output shown, Try-it disabled, source repo
+        named) · 404 not found · stale-spec badge.</p>
+    </a>
+  </div>
+
+  <!-- ===================== flow: playground ===================== -->
+  <h2 class="dp-h2">4 · Playground <span class="dp-mono" style="font-size:var(--text-2xs);color:var(--text-tertiary)">— flow <code>playground</code> · route <code>/playground</code></span></h2>
+  <p class="dp-sub">The "Try it" panel. This is where a wrong state is a security incident, so the fail-closed cases
+    get a frame of their own.</p>
+  <div class="dp-grid-2">
+    <a href="07-playground.html" class="frame-link" data-frame-link="07-playground">
+      <div class="seam"></div><div class="step">Frame 07 · populated</div>
+      <h3>Playground</h3>
+      <p>Request builder (target selector, params, non-editable auth header, body), response panel, quota meter, and
+        the permanent <b>“this never touches production”</b> notice.</p>
+    </a>
+    <a href="08-playground-states.html" class="frame-link" data-frame-link="08-playground-states">
+      <div class="seam"></div><div class="step">Frame 08 · fail-closed</div>
+      <h3>Playground states</h3>
+      <p>Sending · request-invalid (blocked locally, no quota spent) · <b>429 quota exceeded</b> ·
+        <b>sandbox target unavailable</b> with an explicit <b>no-production-fallback</b> statement · no-sandbox ·
+        403 · proxy 5xx · and target 4xx rendered as <b>data, not as a portal error</b>.</p>
+    </a>
+  </div>
+
+  <!-- ===================== flow: my-access ===================== -->
+  <h2 class="dp-h2">5 · My access <span class="dp-mono" style="font-size:var(--text-2xs);color:var(--text-tertiary)">— flow <code>my-access</code> · route <code>/access</code></span></h2>
+  <p class="dp-sub">What the developer holds, and — just as important — what the <code>Developer</code> role does
+    <b>not</b> grant.</p>
+  <div class="dp-grid-2">
+    <a href="09-my-access.html" class="frame-link" data-frame-link="09-my-access">
+      <div class="seam"></div><div class="step">Frame 09 · membership · quota · keys</div>
+      <h3>My access</h3>
+      <p>Root-org <code>developer</code> membership with an explicit grants/does-not-grant split, sandbox quota with
+        per-target breakdown, sandbox keys with reveal-once and revoke — plus <b>provisioning</b>, <b>denied (403)</b>,
+        empty-keys, error and revoke-confirm states.</p>
+    </a>
+  </div>
+
+  <!-- ===================== build inventory ===================== -->
+  <h2 class="dp-h2">Build inventory
+    <span class="dp-mono" style="font-size:var(--text-2xs);color:var(--text-tertiary)">— approving each flow approves its slice of this plan</span></h2>
+  <div class="inv" data-build-inventory>
+
+    <h3>Flows (per-flow approval)</h3>
+    <div class="flowrow">
+      <span class="fid">home</span>
+      <span class="fdesc"><b>DevPortalHomeFlow</b> · <code>/</code> · approved: <b>false</b></span>
+      <span class="fpaths">devportal-frontend/src/pages/home/** · packages/devportal-ui/src/home/**</span>
+    </div>
+    <div class="flowrow">
+      <span class="fid">catalog</span>
+      <span class="fdesc"><b>SpecCatalogFlow</b> · <code>/catalog</code> · approved: <b>false</b></span>
+      <span class="fpaths">devportal-frontend/src/pages/catalog/** · packages/devportal-ui/src/catalog/**</span>
+    </div>
+    <div class="flowrow">
+      <span class="fid">spec-viewer</span>
+      <span class="fdesc"><b>SpecViewerFlow</b> · <code>/catalog/:product/:service</code> · approved: <b>false</b></span>
+      <span class="fpaths">devportal-frontend/src/pages/spec/** · packages/devportal-ui/src/spec-viewer/**</span>
+    </div>
+    <div class="flowrow">
+      <span class="fid">playground</span>
+      <span class="fdesc"><b>PlaygroundFlow</b> · <code>/playground</code> · approved: <b>false</b></span>
+      <span class="fpaths">devportal-frontend/src/pages/playground/** · packages/devportal-ui/src/playground/**</span>
+    </div>
+    <div class="flowrow">
+      <span class="fid">my-access</span>
+      <span class="fdesc"><b>MyAccessFlow</b> · <code>/access</code> · approved: <b>false</b></span>
+      <span class="fpaths">devportal-frontend/src/pages/access/** · packages/devportal-ui/src/access/**</span>
+    </div>
+
+    <h3 class="mt">React components</h3>
+    <div>
+      <span class="chip">DevPortalShell</span><span class="chip">PortalTopBar</span>
+      <span class="chip">HomeHero</span><span class="chip">QuickLinkGrid</span>
+      <span class="chip">ProductDirectory</span><span class="chip">SignInCta</span>
+      <span class="chip">RecentSpecsPanel</span><span class="chip">SandboxActivityPanel</span>
+      <span class="chip">CatalogTree</span><span class="chip">CatalogFilters</span>
+      <span class="chip">CatalogResultList</span><span class="chip">SpecResultCard</span>
+      <span class="chip">SandboxModeBadge</span><span class="chip">SpecHeader</span>
+      <span class="chip">SpecOverviewPanel</span><span class="chip">EndpointList</span>
+      <span class="chip">OperationPanel</span><span class="chip">SchemaTable</span>
+      <span class="chip">SpecRendererEmbed</span><span class="chip">CodeSamplePanel</span>
+      <span class="chip">TryItButton</span><span class="chip">PlaygroundPanel</span>
+      <span class="chip">SandboxTargetSelector</span><span class="chip">RequestBuilder</span>
+      <span class="chip">ParamTable</span><span class="chip">ResponsePanel</span>
+      <span class="chip">QuotaMeter</span><span class="chip">SandboxSafetyNotice</span>
+      <span class="chip">RequestHistoryPanel</span><span class="chip">MembershipPanel</span>
+      <span class="chip">RoleScopeSummary</span><span class="chip">SandboxKeyTable</span>
+      <span class="chip">RevealOnceKey</span>
+    </div>
+
+    <h3 class="mt">npm packages</h3>
+    <div>
+      <span class="chip pkg">@fuzefront/devportal-ui</span>
+      <span class="chip pkg">@fuzefront/devportal-client</span>
+    </div>
+    <p class="dp-sub" style="margin: var(--space-2) 0 0">
+      <code>@fuzefront/devportal-ui</code> holds every component above; <code>devportal-frontend/</code> is the thin
+      standalone Vite app (own Helm Deployment/Service/Ingress) that routes them.
+      <code>@fuzefront/devportal-client</code> is generated from the frozen
+      <code>services/devportal-service/openapi.yaml</code>. Both publish privately to GitHub Packages
+      (<code>access: restricted</code>).</p>
+
+    <h3 class="mt">Design-system additions (foundation PRs, owned by <code>frontend-engineer</code>)</h3>
+    <div>
+      <span class="chip add">CodeBlock</span><span class="chip add">TreeNav</span>
+      <span class="chip add">Badge — HTTP method tone map</span>
+    </div>
+    <p class="dp-sub" style="margin: var(--space-2) 0 0">These three are <b>not</b> in
+      <code>@fuzefront/design-system</code> today and are drawn here from tokens only, never one-offed into feature
+      code. Everything else composes existing primitives: <code>ProgressMeter</code> (→ QuotaMeter),
+      <code>StatusCallout</code>, <code>EmptyState</code>, <code>Skeleton</code>, <code>StatusPill</code>,
+      <code>Badge</code>, <code>Button</code>, <code>SearchField</code>, <code>Select</code>, <code>Input</code>,
+      <code>CodeField</code> (multiline → request body), <code>DataTable</code>, <code>Tabs</code>,
+      <code>Breadcrumb</code>, <code>TopBar</code>, <code>Avatar</code>.</p>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval — all 5 flows</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>services/devportal-service/openapi.yaml</code> → <code>@fuzefront/devportal-client</code>
+    (frozen by <code>contract-designer</code> in plan phase 0 — these frames name the endpoints they bind to) ·
+    Flag: <code>fuzefront.devportal.enabled</code> (default OFF, builders audience targeted).<br />
+    Coverage for <code>gate-frames-first</code> is <b>declared</b>, not inferred:
+    <code>implementation.paths</code> at feature level and per flow, pointing at
+    <code>devportal-frontend/**</code> and <code>packages/devportal-ui/**</code>.<br />
+    Approve <b>per flow</b> via the <code>design-approval</code> workflow (never hand-edit
+    <code>approved</code> on master), or reply <code>@claude approve &lt;flow-id&gt;</code> /
+    <code>@claude reject: &lt;reason&gt;</code>. Reject re-dispatches <code>product-designer</code>; it does not
+    close the thread.
+  </p>
+</div>
+</body>
+</html>

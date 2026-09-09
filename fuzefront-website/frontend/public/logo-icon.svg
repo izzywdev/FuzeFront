@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="fuzeone-gradient" x1="20" y1="10" x2="180" y2="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="45%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#C026D3"/>
+    </linearGradient>
+    <radialGradient id="fuzeone-glow" cx="30%" cy="25%" r="60%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- squircle badge -->
+  <rect x="4" y="4" width="192" height="192" rx="56" fill="url(#fuzeone-gradient)"/>
+  <rect x="4" y="4" width="192" height="192" rx="56" fill="url(#fuzeone-glow)"/>
+
+  <!-- subtle left arc swoosh -->
+  <path d="M46 118 a34 34 0 0 1 0 -48" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="6" stroke-linecap="round" fill="none"/>
+
+  <!-- "1" numeral mark, slightly italicized -->
+  <g transform="translate(100 100) rotate(-6) translate(-100 -100)">
+    <path d="M92 62 L118 52 L118 138 L96 138 L96 82 L86 86 Z" fill="#FFFFFF"/>
+  </g>
+
+  <!-- sparkle accent -->
+  <path d="M132 44 L136 56 L148 60 L136 64 L132 76 L128 64 L116 60 L128 56 Z" fill="#FFFFFF"/>
+</svg>

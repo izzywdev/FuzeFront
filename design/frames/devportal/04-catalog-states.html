@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Catalog states</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 04 · flow `catalog` · route /catalog · every non-happy state -->
+<div class="dp-wrap" data-frame="04-catalog-states">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 04 · flow <b>catalog</b> · route <code>/catalog</code></div>
+  <h1 class="dp-h1">Catalog — loading, empty, filtered-empty, error, forbidden</h1>
+  <p class="dp-lead">States are contract, not decoration. A catalog that only draws the populated case produces a UI
+    that only handles the populated case. Five states below; each is a distinct thing the API can hand us, and each
+    tells the developer <b>what to do next</b>.</p>
+
+  <!-- ============ loading ============ -->
+  <section class="dp-state" data-state="loading">
+    <span class="state-label">(a) Loading · GET /catalog in flight</span>
+    <div style="display:grid; grid-template-columns: 260px 1fr; gap: var(--space-6); align-items:start">
+      <div class="dp-card" style="padding: var(--space-4)">
+        <div class="dp-skel" style="width:60%; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:85%; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:70%; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:80%"></div>
+      </div>
+      <div class="dp-stack">
+        <div class="dp-card">
+          <div class="dp-skel" style="width:45%; height:16px; margin-bottom: var(--space-3)"></div>
+          <div class="dp-skel" style="width:90%; margin-bottom: var(--space-2)"></div>
+          <div class="dp-skel" style="width:35%"></div>
+        </div>
+        <div class="dp-card">
+          <div class="dp-skel" style="width:38%; height:16px; margin-bottom: var(--space-3)"></div>
+          <div class="dp-skel" style="width:80%; margin-bottom: var(--space-2)"></div>
+          <div class="dp-skel" style="width:30%"></div>
+        </div>
+      </div>
+    </div>
+    <p class="dp-sub" style="margin-top: var(--space-3)">Skeletons preserve the populated layout so nothing jumps on
+      arrival. <code>aria-busy="true"</code> on the results region; no spinner-only screen.</p>
+  </section>
+
+  <!-- ============ empty: nothing harvested at all ============ -->
+  <section class="dp-state" data-state="empty">
+    <span class="state-label">(b) Empty · 200 with zero specs — nothing has been harvested yet</span>
+    <div class="dp-card" data-panel="catalog-results">
+      <div class="dp-empty" data-empty="no-specs">
+        <div class="icon">📭</div>
+        <h4>No specs have been published yet</h4>
+        <p>The catalog is built from specs that repos publish on merge. Nothing has arrived yet — this is a
+          <b>cold start</b>, not a failure.</p>
+        <div class="dp-inline" style="justify-content:center">
+          <a class="dp-btn primary" href="#" data-action="view-publish-guide">How to publish your spec</a>
+          <button class="dp-btn ghost" data-action="retry">Check again</button>
+        </div>
+      </div>
+    </div>
+    <p class="dp-sub" style="margin-top: var(--space-3)">Distinct from (c): this is <b>zero specs in the registry</b>.
+      Copy points at the one-step CI action that fixes it, rather than leaving a dead end.</p>
+  </section>
+
+  <!-- ============ empty: filters exclude everything ============ -->
+  <section class="dp-state" data-state="empty-filtered">
+    <span class="state-label">(c) Filtered empty · specs exist, this query matches none</span>
+    <div class="dp-inline" style="margin-bottom: var(--space-4)">
+      <input class="dp-input" data-input="catalog-search" type="search" value="webhook subscriptions" style="flex:2" />
+      <span class="dp-badge neutral" data-filter-chip="product:FuzeBI">FuzeBI ✕</span>
+      <span class="dp-badge neutral" data-filter-chip="tag:billing">billing ✕</span>
+    </div>
+    <div class="dp-card">
+      <div class="dp-empty" data-empty="no-results">
+        <div class="icon">🔍</div>
+        <h4>No specs match “webhook subscriptions”</h4>
+        <p>22 specs are in the catalog — your filters exclude all of them.</p>
+        <button class="dp-btn primary" data-action="clear-filters">Clear filters</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ error: harvest / catalog unavailable ============ -->
+  <section class="dp-state" data-state="error">
+    <span class="state-label">(d) Error · harvest failed / catalog unavailable — degrade honestly</span>
+    <div class="dp-callout error" data-error="harvest-failed">
+      <span class="glyph">⚠</span>
+      <div>
+        <p class="ct">The catalog could not be refreshed</p>
+        <p class="cb">The last harvest run failed at <b class="dp-mono">08:12 UTC</b>
+          (<code>502 from 3 of 22 sources</code>). You are seeing the <b>last known-good catalog</b> from
+          <b class="dp-mono">2026-09-07 22:40 UTC</b> — it may be out of date, and newly published specs will be
+          missing.</p>
+        <div class="ca">
+          <button class="dp-btn primary" data-action="retry">Retry now</button>
+          <a class="dp-btn ghost" href="#" data-action="view-harvest-status">Harvest status</a>
+        </div>
+      </div>
+    </div>
+    <div class="dp-inline" style="margin-top: var(--space-4)">
+      <span class="dp-badge warn" data-catalog="stale"><span class="dp-dot"></span>stale catalog</span>
+      <span class="dp-sub" style="margin:0">Every result below is served from cache and carries the same stale badge —
+        we never present cached data as fresh.</span>
+    </div>
+    <div class="dp-card" style="margin-top: var(--space-3); opacity: 0.75">
+      <div class="dp-inline" style="justify-content:space-between">
+        <span class="dp-inline"><b>app-registry-service</b>
+          <span class="dp-badge neutral">FuzeFront</span>
+          <span class="dp-badge warn" data-catalog="stale">stale</span></span>
+        <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">cached · 14h old</span>
+      </div>
+    </div>
+    <p class="dp-sub" style="margin-top: var(--space-3)">Total failure (no cache at all) renders the same callout with
+      the list replaced by <code>[data-empty='catalog-unavailable']</code> and no stale rows.</p>
+  </section>
+
+  <!-- ============ forbidden ============ -->
+  <section class="dp-state" data-state="forbidden">
+    <span class="state-label">(e) Forbidden · 403 from Permit — signed in, but not a Developer yet</span>
+    <div class="dp-callout warning" data-http="403" data-error="not-a-developer">
+      <span class="glyph">🔒</span>
+      <div>
+        <p class="ct">Your account doesn't have developer access yet</p>
+        <p class="cb">Reading the catalog needs <code>DevPortalCatalog:read</code>, granted by the
+          <code>Developer</code> role on the platform root organization. Provisioning normally happens on first
+          sign-in; if it hasn't completed, or the capability is still flag-gated for your account, it lands here.
+          <b>We do not silently show a partial catalog</b> — this fails closed.</p>
+        <div class="ca">
+          <a class="dp-btn primary" href="09-my-access.html" data-action="view-my-access">Check my access</a>
+          <button class="dp-btn ghost" data-action="retry">Retry</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='04-catalog-states']</code> · <code>[data-state='loading']</code> ·
+    <code>[data-state='empty']</code> · <code>[data-empty='no-specs']</code> ·
+    <code>[data-state='empty-filtered']</code> · <code>[data-empty='no-results']</code> ·
+    <code>[data-state='error']</code> · <code>[data-error='harvest-failed']</code> ·
+    <code>[data-catalog='stale']</code> · <code>[data-state='forbidden']</code> · <code>[data-http='403']</code> ·
+    <code>[data-action='retry']</code> · <code>[data-action='clear-filters']</code>.
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>04 / 09</b> · flow <b>catalog</b> · <code class="dp-mono">/catalog</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="03-catalog.html">← Prev</a>
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="05-spec-viewer.html">Next → Spec viewer</a>
+  </span>
+</nav>
+</body>
+</html>

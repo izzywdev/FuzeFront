@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Playground states</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 08 · flow `playground` · every fail-closed state -->
+<div class="dp-wrap" data-frame="08-playground-states">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 08 · flow <b>playground</b> ·
+    route <code>/playground</code></div>
+  <h1 class="dp-h1">Playground — the fail-closed states</h1>
+  <p class="dp-lead">This is the part of the feature where a wrong state is a <b>security incident</b>, not a cosmetic
+    bug. Every failure below has one non-negotiable property: <b>it never falls back to production.</b> A sandbox that
+    is unavailable produces an error, never a live call.</p>
+
+  <!-- ============ sending ============ -->
+  <section class="dp-state" data-state="sending">
+    <span class="state-label">(a) Sending · request in flight</span>
+    <div class="dp-inline" style="justify-content:space-between">
+      <button class="dp-btn primary" data-action="send-request" aria-disabled="true" disabled>Sending…</button>
+      <span class="dp-sub" style="margin:0">Send is disabled for the duration — no double-submit, and no second
+        quota unit consumed by an impatient click.</span>
+    </div>
+    <div class="dp-card" style="margin-top: var(--space-4)" data-panel="response" aria-busy="true">
+      <div class="dp-skel" style="width:30%; height:16px; margin-bottom: var(--space-4)"></div>
+      <div class="dp-skel" style="width:100%; height:96px"></div>
+    </div>
+  </section>
+
+  <!-- ============ request invalid, blocked before send ============ -->
+  <section class="dp-state" data-state="request-invalid">
+    <span class="state-label">(b) Request invalid · schema-checked before it leaves the browser — no quota spent</span>
+    <div class="dp-field">
+      <label class="dp-label">Request body · <code>AppRegistration</code></label>
+      <textarea class="dp-codefield" data-input="request-body" rows="5" aria-invalid="true">{
+  "id": "app_01j9k2xq7ne3ta6yb1m4v0dzcw",
+  "name": "Picker"
+}</textarea>
+      <p class="dp-field-error" data-error="request-invalid">
+        <b>2 problems.</b> <code>id</code> is not allowed — the service mints entity ids
+        (<code>additionalProperties: false</code>). <code>slug</code> is required and missing.</p>
+    </div>
+    <div class="dp-inline">
+      <button class="dp-btn primary" data-action="send-request" aria-disabled="true" disabled>Send request</button>
+      <span class="dp-sub" style="margin:0">Blocked locally. The quota meter does <b>not</b> move.</span>
+    </div>
+  </section>
+
+  <!-- ============ 429 quota exceeded ============ -->
+  <section class="dp-state" data-state="quota-exceeded">
+    <span class="state-label">(c) Quota exceeded · 429 from the sandbox proxy</span>
+    <div class="dp-card" data-panel="quota" data-quota-state="exceeded" style="margin-bottom: var(--space-4)">
+      <div class="dp-meter-head">
+        <span>Sandbox requests today</span>
+        <span class="val" data-quota-used="500" data-quota-limit="500">500 / 500</span>
+      </div>
+      <div class="dp-meter"><div class="fill danger" style="width: 100%"></div></div>
+      <p class="dp-meter-foot">Limit reached.</p>
+    </div>
+    <div class="dp-callout error" data-http="429" data-error="quota-exceeded">
+      <span class="glyph">🚦</span>
+      <div>
+        <p class="ct">Daily sandbox quota reached</p>
+        <p class="cb">You have used all <b>500</b> sandbox requests for today. The proxy returned
+          <b class="dp-mono">429</b> with <code>Retry-After: 22320</code>. Your quota resets at
+          <b class="dp-mono" data-quota-reset="2026-09-09T00:00:00Z">00:00 UTC (in 6h 12m)</b>. Reading the catalog
+          and specs is unaffected.</p>
+        <div class="ca">
+          <a class="dp-btn primary" href="09-my-access.html" data-action="view-my-access">View quota &amp; request an increase</a>
+          <a class="dp-btn ghost" href="05-spec-viewer.html" data-action="back-to-spec">Back to the spec</a>
+        </div>
+      </div>
+    </div>
+    <div class="dp-inline" style="margin-top: var(--space-4)">
+      <button class="dp-btn primary" data-action="send-request" aria-disabled="true" disabled>Send request</button>
+      <span class="dp-sub" style="margin:0">Send stays <b>disabled until reset</b>, with the reason on the button's
+        accessible description — not a silent no-op.</span>
+    </div>
+  </section>
+
+  <!-- ============ sandbox target unavailable ============ -->
+  <section class="dp-state" data-state="target-unavailable">
+    <span class="state-label">(d) Sandbox target unavailable · 503 — and explicitly NOT retried against production</span>
+    <div class="dp-callout error" data-http="503" data-error="sandbox-target-unavailable">
+      <span class="glyph">🔌</span>
+      <div>
+        <p class="ct">The sandbox target isn't responding</p>
+        <p class="cb">The mock server for <code>app-registry-service v1.4.0</code>
+          (<code class="dp-mono">mock://app-registry-service@v1.4.0</code>) did not answer within 10s. This is an
+          infrastructure problem on our side, not a problem with your request.</p>
+        <p class="cb" data-safety-note="no-prod-fallback" style="margin-top: var(--space-2)">
+          <b>Your request was not sent anywhere else.</b> There is no fallback to the service's production
+          <code>servers:</code> entry — by design, an unavailable sandbox fails the call rather than escalating it to
+          a live system.</p>
+        <div class="ca">
+          <button class="dp-btn primary" data-action="retry">Retry</button>
+          <a class="dp-btn ghost" href="#" data-action="view-sandbox-status">Sandbox status</a>
+        </div>
+      </div>
+    </div>
+    <div class="dp-inline" style="margin-top: var(--space-4)">
+      <span class="dp-badge err" data-sandbox-health="down"><span class="dp-dot"></span>target down</span>
+      <span class="dp-sub" style="margin:0">The target selector shows the same health state, so the condition is
+        visible before pressing Send as well as after.</span>
+    </div>
+  </section>
+
+  <!-- ============ no sandbox available for this spec ============ -->
+  <section class="dp-state" data-state="no-sandbox">
+    <span class="state-label">(e) No sandbox for this spec · try-it disabled with the reason</span>
+    <div class="dp-callout warning" data-error="sandbox-not-available">
+      <span class="glyph">🚧</span>
+      <div>
+        <p class="ct">This operation can't be tried yet</p>
+        <p class="cb"><code>portal-service</code>'s current spec is not valid enough to generate a mock, and the repo
+          has not declared an <code>x-fuzefront-sandbox-url</code>. <b>Absence of an opt-in means "mock only", never
+          "call production"</b> — so there is nothing safe to target.</p>
+        <div class="ca">
+          <a class="dp-btn ghost" href="06-spec-viewer-states.html" data-action="view-validation-errors">See the validation errors</a>
+          <a class="dp-btn ghost" href="#" data-action="report-to-source-repo">Report to the owning repo</a>
+        </div>
+      </div>
+    </div>
+    <div class="dp-inline" style="margin-top: var(--space-4)">
+      <button class="dp-btn primary" data-action="send-request" data-try-it="disabled" aria-disabled="true" disabled>Send request</button>
+      <span class="dp-sub" style="margin:0">Disabled, visible, explained.</span>
+    </div>
+  </section>
+
+  <!-- ============ forbidden ============ -->
+  <section class="dp-state" data-state="forbidden">
+    <span class="state-label">(f) Forbidden · 403 — Permit denied DevPortalPlayground:use</span>
+    <div class="dp-callout warning" data-http="403" data-error="playground-forbidden">
+      <span class="glyph">🔒</span>
+      <div>
+        <p class="ct">You don't have sandbox access</p>
+        <p class="cb">The Playground needs <code>DevPortalPlayground:use</code> on the platform root organization.
+          Your account can read the catalog but not send sandbox requests — either provisioning hasn't finished, or
+          <code>fuzefront.devportal.enabled</code> is off for your account. Catalog and spec viewing keep working.</p>
+        <div class="ca">
+          <a class="dp-btn primary" href="09-my-access.html" data-action="view-my-access">Check my access</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ proxy error ============ -->
+  <section class="dp-state" data-state="error">
+    <span class="state-label">(g) Proxy error · 5xx from devportal-service itself</span>
+    <div class="dp-callout error" data-http="500" data-error="proxy-error">
+      <span class="glyph">⚠</span>
+      <div>
+        <p class="ct">The sandbox proxy failed</p>
+        <p class="cb">Request id <code class="dp-mono" data-request-id="req_01j9k5r8w2n4qd7cyv3h0tefam">req_01j9k5r8w2n4qd7cyv3h0tefam</code>
+          — quote this if you report it. The call was <b>not</b> forwarded anywhere; no quota was consumed.</p>
+        <div class="ca">
+          <button class="dp-btn primary" data-action="retry">Retry</button>
+          <button class="dp-btn ghost" data-action="copy-request-id">Copy request id</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ target error responses are NOT portal errors ============ -->
+  <section class="dp-state" data-state="target-error-response">
+    <span class="state-label">(h) The target answered 4xx/5xx · that is a successful sandbox call, rendered as data</span>
+    <div class="dp-card" data-panel="response">
+      <div class="dp-inline" style="justify-content:space-between; margin-bottom: var(--space-4)">
+        <span class="dp-inline">
+          <span class="dp-badge err" data-response-status="409"><span class="dp-dot"></span>409 Conflict</span>
+          <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">61 ms</span>
+        </span>
+        <span class="dp-badge info" data-sandbox-mode="mock">from mock</span>
+      </div>
+      <div class="dp-code-head"><span>response body · application/json</span></div>
+<pre class="dp-code" data-code="response-body">{
+  <span class="k">"error"</span>: <span class="s">"slug_already_registered"</span>,
+  <span class="k">"message"</span>: <span class="s">"An application with slug 'fuzepicker' already exists."</span>
+}</pre>
+      <p class="dp-sub" style="margin-top: var(--space-3)">A <code>409</code> from the target is the API behaving
+        correctly and is rendered as a <b>response</b>, not as a portal failure callout. Only the portal's own
+        failures (c, d, f, g) use <code>StatusCallout</code>. Confusing the two is how a playground trains developers
+        to ignore errors.</p>
+    </div>
+  </section>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='08-playground-states']</code> · <code>[data-state='sending']</code> ·
+    <code>[data-state='request-invalid']</code> · <code>[data-error='request-invalid']</code> ·
+    <code>[data-state='quota-exceeded']</code> · <code>[data-http='429']</code> ·
+    <code>[data-error='quota-exceeded']</code> · <code>[data-quota-state='exceeded']</code> ·
+    <code>[data-state='target-unavailable']</code> · <code>[data-error='sandbox-target-unavailable']</code> ·
+    <code>[data-safety-note='no-prod-fallback']</code> · <code>[data-state='no-sandbox']</code> ·
+    <code>[data-error='sandbox-not-available']</code> · <code>[data-state='forbidden']</code> ·
+    <code>[data-http='403']</code> · <code>[data-state='error']</code> · <code>[data-error='proxy-error']</code> ·
+    <code>[data-state='target-error-response']</code> · <code>[data-response-status='409']</code>.
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>08 / 09</b> · flow <b>playground</b> · <code class="dp-mono">/playground</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="07-playground.html">← Prev</a>
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="09-my-access.html">Next → My access</a>
+  </span>
+</nav>
+</body>
+</html>

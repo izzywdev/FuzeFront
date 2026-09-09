@@ -32,7 +32,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 2e712754ebe9
+    tag: 35095772b923
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -45,7 +45,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 2e712754ebe9
+    tag: 35095772b923
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -73,7 +73,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -198,7 +198,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -259,21 +259,33 @@ mcp:
 #
 # `a2a-repos-git` is NOT needed: FuzeFront is a PUBLIC repo (verified via the
 # GitHub API), so the repo-sync init container clones anonymously.
-# `ghcr-pull` is NOT needed either: ghcr.io/izzywdev/fuzeagent-a2a is a public
+# `ghcr-pull` is NOT needed either: ghcr.io/izzywdev/fuze-a2a is a public
 # GHCR package (verified — anonymous token exchange + manifest GET succeeded).
 a2a:
   enabled: true
   image:
-    repository: ghcr.io/izzywdev/fuzeagent-a2a
-    # `tag` alone would be a mutable moving target (image reference grammar
-    # allows `tag@digest` together — kubelet/containerd resolve via the
-    # digest, so this is fully immutable regardless of what `latest` is
-    # repointed to later; the `tag` half is cosmetic/readable only). Digest
-    # verified anonymously pullable 2026-08-23 (what
-    # ghcr.io/izzywdev/fuzeagent-a2a:latest resolved to at verification time
-    # — `latest` itself is never dereferenced at deploy time, only used to
-    # locate this digest). Re-pin when FuzeAgent's CI publishes a new build.
-    tag: "latest@sha256:c233bb47409300e769c68f84c12077e3a74db132f287fa218929742fbe48ccf6"
+    # CORRECTED 2026-09-02: ghcr.io/izzywdev/fuzeagent-a2a (this pin's prior
+    # value) is a stale/abandoned image — last pushed 2026-08-24, still
+    # anonymously pullable but no longer built by anything. FuzeAgent's own
+    # release.yml ("Build & push a2a-shared" step) builds
+    # agent-templates/a2a/Dockerfile — the ONE shared A2A runtime — and
+    # publishes it ONLY as ghcr.io/izzywdev/fuze-a2a:{sha,latest}; that is
+    # also what FuzeAgent's own deploy/helm/a2a-shared/values-prod.yaml points
+    # at. (gate-a2a's own I1 default + the runtime standard doc still name
+    # `fuzeagent-a2a`; that is already-flagged gate/doc staleness, FuzeAgent
+    # PR #257 — an I1 finding against this file is that, not a new fork.)
+    repository: ghcr.io/izzywdev/fuze-a2a
+    # Plain CI-built SHA tag (not a `tag@digest` compound — that form is a
+    # valid Docker/OCI image-reference grammar, but gate-a2a's registry check
+    # GETs the literal `tag` string as the manifest reference and 404s on the
+    # compound form, which is what caused the prior pin to read as
+    # unpullable even though the underlying digest was fine). Matches the
+    # tag FuzeAgent's own release.yml currently has live in
+    # deploy/helm/a2a-shared/values-prod.yaml. Verified anonymously pullable
+    # 2026-09-02 (anonymous GHCR token + manifest GET → HTTP 200,
+    # digest sha256:26b84ab9c04844c685b0312b660e934232338f79f5b86001fc9e2520d4a3b9a6).
+    # Re-pin when FuzeAgent's CI publishes a new build.
+    tag: "624956d8983b"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
@@ -321,6 +333,39 @@ a2aDeploy:
       cpu: 500m
       memory: 512Mi
 
+# Same-origin federated asset proxy. /apps/<slug>/* -> fuzefront-backend ->
+# the allowlisted in-cluster upstream below (backend/src/routes/federatedProxy.ts).
+#
+# ENABLED FOR fuzesocial. Migration 012 flips the `fuzesocial` registry row from
+# an iframe embed of social.prod.fuzefront.com to the federated remote
+# /apps/fuzesocial/remoteEntry.js. That migration has not executed yet (the
+# applications-service pods have not rolled), and when it does the panel is blank
+# unless something actually serves that path. This is the FuzeFront-owned half of
+# making it serve.
+#
+# FuzeSocial also ships its own Ingress for the same path
+# (izzywdev/FuzeSocial deploy/helm/fuzesocial/templates/remote-ingress.yaml,
+# gated on federation.enabled which values-prod.yaml sets true). The two are not
+# in conflict: Traefik orders routers by RULE LENGTH, so that chart's
+# `/apps/fuzesocial` router outranks this `/apps` one and wins whenever it is
+# actually present in the cluster. This entry is what answers while it is not.
+#
+# The upstream is FuzeSocial's remote Service — name `fuzesocial-remote`,
+# namespace `fuzesocial`, port 8080 (remote-deployment.yaml Service block +
+# values.yaml `remote.port`). NOT including the /apps/fuzesocial prefix: the
+# proxy strips it, and that container's nginx serves `location = /remoteEntry.js`
+# at the stripped path with the build copied flat (vite `assetsDir: ''`).
+#
+# Only fuzesocial is listed. fuzeagent is served by its own chart's Ingress and
+# its Service name/port were not verified from this repo — adding an unverified
+# upstream would point this proxy at an address nobody checked, which is exactly
+# what the allowlist exists to prevent.
+federatedProxy:
+  enabled: true
+  upstreams:
+    - slug: fuzesocial
+      url: http://fuzesocial-remote.fuzesocial.svc.cluster.local:8080
+
 # Clock-app built-in MF remote. Served same-origin at app.fuzefront.com/apps/clock/
 # (matches the seeded built-in manifest remoteEntry). Image built by release.yml
 # (matrix add pending — deploy/PENDING-WORKFLOW-CHANGES.md); tag "" is rewritten
@@ -329,7 +374,23 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 2e712754ebe9
+    tag: 35095772b923
+
+# fuzefront-website — public site at fuzefront.com.
+# Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
+# release.yml and their tags are bumped by the GitOps step on every release.
+websiteFrontend:
+  enabled: true
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-frontend
+    tag: 35095772b923
+  host: fuzefront.com
+
+websiteBackend:
+  enabled: true
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-website-backend
+    tag: 35095772b923
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -340,7 +401,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -384,7 +445,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -404,7 +465,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
 # (gated by billingService.enabled), NOT a separate Application: billing's
@@ -439,7 +500,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -477,7 +538,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
   # Steer onto node-2 (keep it off the DB-heavy node-1, like billing/chat/litellm).
   affinity:
     nodeAffinity:
@@ -742,7 +803,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -792,7 +853,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -814,6 +875,26 @@ selectionListService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: ce9c6809cc69
+
+# devportal-service / devportal-frontend (docs/planning/developers-portal.md).
+# Dark by default behind fuzefront.devportal.enabled — same two-step go-live
+# as selectionListService above: (1) let release.yml build+push the images
+# and bump these tags, (2) flip `enabled` to true here via GitOps in a
+# dedicated deploy window, internal-staff rollout first. `tag: pending` until
+# release.yml's first devportal build rewrites it — see the tag: placement
+# rule above.
+devportalService:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-devportal-service
+    tag: pending
+
+devportalFrontend:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
+    tag: pending
+  host: developers.fuzefront.com
 
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
 # FuzeFront's own Security API (SECURITY_SERVICE_URL — plain in-cluster Service
@@ -862,7 +943,7 @@ configService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
-    tag: 2e712754ebe9
+    tag: 35095772b923
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
 # Application: deploy/helm/unleash/values-prod.yaml +

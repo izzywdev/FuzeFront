@@ -100,3 +100,26 @@ CVE-2026-13697
 CVE-2026-69192
 # ws@8.x (frontend package-lock.json, identical on master)
 GHSA-qwww-vcr4-c8h2
+
+# qs@6.11.0 (services/devportal-service/node_modules/qs, transitive via express@4.19.2)
+# and body-parser@1.20.2 (root node_modules/body-parser, hoisted from the same
+# express@4.19.2 used repo-wide) — docs/planning/developers-portal.md.
+#
+# Both have real fixes (qs>=6.16.0, body-parser>=1.20.6) and the root
+# package.json ALREADY carries `overrides` ranges that admit them
+# (">=6.15.3 <7" / ">=1.20.6 <2"), which npm applies correctly for every OTHER
+# instance of these two packages in this exact lockfile (e.g.
+# node_modules/express/node_modules/body-parser@1.20.6). It does not apply to
+# these two specific positions with `--package-lock-only`, and forcing it via a
+# full `npm install` (deleting node_modules + package-lock.json and letting npm
+# fully re-resolve) is NOT safe here: doing so let `typescript` float from the
+# locked 5.9.3 to 6.0.3 (a MAJOR bump nothing in this PR asked for, since no
+# workspace pins an exact typescript version), which then broke
+# packages/auth's own `npm install && npm run build` step (tsup's DTS build
+# hard-errors on TS 6's removal of baseUrl/moduleResolution=node10) —
+# confirmed by reproducing the CI failure locally. Fixing two transitive,
+# low/medium-severity CVEs is not worth a repo-wide TypeScript major bump
+# bundled invisibly into an unrelated feature PR. Tracked for a dedicated
+# dependency-upgrade PR, same as every other entry in this file.
+CVE-2026-82417
+CVE-2026-12590

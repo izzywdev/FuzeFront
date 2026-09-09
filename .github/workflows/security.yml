@@ -97,6 +97,23 @@ jobs:
           # is merely printed. Adding it would be an unverified multi-segment
           # purl bought for nothing.
           allow-dependencies-licenses: pkg:githubactions/trufflesecurity/trufflehog
+          # GHSA-qwcr-r2fm-qrc7 (body-parser@1.20.2 DoS via URL-encoding, high
+          # severity): transitive via express@4.19.2, same version already on
+          # master (see .trivyignore) and unrelated to this PR's devportal
+          # work. A real fix exists (body-parser>=1.20.6) and the root
+          # package.json `overrides` range already admits it, but it resolves
+          # correctly for every OTHER instance of body-parser in this lockfile
+          # except this one hoisted root-level position — npm's dependency
+          # resolver leaves that single position on the old version with
+          # `--package-lock-only`, and forcing a full re-resolution (deleting
+          # node_modules + package-lock.json) is unsafe: it lets `typescript`
+          # float 5.9.3 -> 6.0.3 repo-wide, which breaks packages/auth's tsup
+          # DTS build (TS6's removal of baseUrl/moduleResolution=node10),
+          # cascading into ~9 unrelated CI job failures — reproduced locally.
+          # Dependency Review (unlike Trivy) does not read .trivyignore, so it
+          # needs its own exemption here. Tracked for the same dedicated
+          # dependency-upgrade PR as the .trivyignore entry.
+          allow-ghsas: GHSA-qwcr-r2fm-qrc7
 
   npm-audit:
     name: NPM Security Audit

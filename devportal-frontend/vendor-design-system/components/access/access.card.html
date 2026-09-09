@@ -1,0 +1,123 @@
+<!-- @dsCard group="Components" viewport="720x220" name="Access — Role badges" subtitle="Org membership roles" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body {
+    margin: 0;
+    padding: var(--space-8) var(--space-8);
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .lbl {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin: 0 0 var(--space-5);
+    font-weight: var(--weight-semibold);
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-8);
+  }
+  .specimen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .caption {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+    letter-spacing: var(--tracking-wide);
+  }
+
+  /* RoleBadge — tinted, icon-led pill encoding org authority */
+  .role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 3px 10px 3px 8px;
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 1;
+    white-space: nowrap;
+    border-radius: var(--radius-pill);
+    border: 1px solid transparent;
+  }
+  .role-badge svg { flex: none; }
+
+  /* owner = amber spark */
+  .role-owner {
+    color: var(--warning-color);
+    background: rgba(245, 166, 35, 0.14);
+    border-color: rgba(245, 166, 35, 0.32);
+  }
+  /* admin = the indigo fuse */
+  .role-admin {
+    color: var(--accent-color);
+    background: var(--accent-soft);
+    border-color: rgba(110, 92, 255, 0.34);
+  }
+  /* member = cyan signal */
+  .role-member {
+    color: var(--accent-2);
+    background: rgba(41, 211, 230, 0.12);
+    border-color: rgba(41, 211, 230, 0.30);
+  }
+  /* viewer = cool neutral */
+  .role-viewer {
+    color: var(--text-tertiary);
+    background: var(--bg-quaternary);
+    border-color: var(--border-color);
+  }
+</style>
+</head>
+<body>
+  <p class="lbl">RoleBadge — org membership roles</p>
+  <div class="row">
+    <div class="specimen">
+      <span class="role-badge role-owner" title="Owner">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l4 4 5-7 5 7 4-4-2 12H5L3 7z"/></svg>
+        Owner
+      </span>
+      <span class="caption">owner — amber</span>
+    </div>
+
+    <div class="specimen">
+      <span class="role-badge role-admin" title="Admin">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/></svg>
+        Admin
+      </span>
+      <span class="caption">admin — indigo</span>
+    </div>
+
+    <div class="specimen">
+      <span class="role-badge role-member" title="Member">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/></svg>
+        Member
+      </span>
+      <span class="caption">member — cyan</span>
+    </div>
+
+    <div class="specimen">
+      <span class="role-badge role-viewer" title="Viewer">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg>
+        Viewer
+      </span>
+      <span class="caption">viewer — neutral</span>
+    </div>
+  </div>
+</body>
+</html>

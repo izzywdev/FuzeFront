@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Spec viewer</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 05 · flow `spec-viewer` · route /catalog/:product/:service -->
+<div class="dp-wrap" data-frame="05-spec-viewer">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 05 · flow <b>spec-viewer</b> ·
+    route <code>/catalog/:product/:service</code></div>
+  <h1 class="dp-h1">Spec viewer — overview + embedded OpenAPI render</h1>
+  <p class="dp-lead">Three panes. Left: operations grouped by tag. Middle: the <b>aggregated overview</b> we own
+    (what this service is, where it came from, when it was harvested) followed by the selected operation rendered from
+    the spec — parameters, request schema, response schemas. Right: copy-paste code samples. The renderer is an OSS
+    embed (Stoplight Elements / Swagger UI — the §3 spike decides which), themed with fuse-seam tokens; everything
+    around it is ours.</p>
+
+  <div class="dp-topbar" data-panel="portal-topbar" data-auth="authenticated">
+    <span class="dp-wordmark">Fuze <span class="seamtext">Developers</span></span>
+    <nav class="dp-topnav">
+      <a href="02-home-signed-in.html">Home</a>
+      <a href="03-catalog.html" class="active">Catalog</a>
+      <a href="07-playground.html">Playground</a>
+      <a href="09-my-access.html">My access</a>
+    </nav>
+    <span class="dp-spacer"></span>
+    <span class="dp-badge ok" data-membership-status="active"><span class="dp-dot"></span>Developer</span>
+    <span class="dp-avatar" data-user="dana.okafor">DO</span>
+  </div>
+
+  <div class="dp-appframe">
+
+    <!-- ============ spec header ============ -->
+    <header data-panel="spec-header" data-spec="fuzefront/app-registry-service">
+      <div class="dp-crumbline" style="margin-bottom: var(--space-3)">
+        <a href="03-catalog.html">Catalog</a> / <a href="03-catalog.html">FuzeFront</a> / app-registry-service
+      </div>
+      <div class="dp-inline" style="justify-content:space-between; align-items:flex-start">
+        <div>
+          <div class="dp-inline">
+            <h2 class="dp-h1" style="margin:0">app-registry-service</h2>
+            <span class="dp-badge info" data-spec-version="v1.4.0">v1.4.0</span>
+            <span class="dp-badge ok" data-sandbox-mode="mock"><span class="dp-dot"></span>sandbox: mock</span>
+          </div>
+          <p class="dp-sub" style="margin: var(--space-2) 0 0">
+            Source <code data-source-repo="izzywdev/FuzeFront">izzywdev/FuzeFront</code> ·
+            <code>services/app-registry-service/openapi.yaml</code> ·
+            harvested <b data-harvested-at="2026-09-08T04:12:00Z">6h ago</b> · OpenAPI 3.1.0 · 24 operations
+          </p>
+        </div>
+        <div class="dp-inline">
+          <button class="dp-btn ghost" data-action="download-spec">Download openapi.yaml</button>
+          <a class="dp-btn primary" href="07-playground.html" data-action="try-it">Try it</a>
+        </div>
+      </div>
+    </header>
+
+    <div style="display:grid; grid-template-columns: 240px 1fr 300px; gap: var(--space-5);
+                align-items:start; margin-top: var(--space-6)">
+
+      <!-- ============ left: endpoint list ============ -->
+      <aside class="dp-card" data-panel="endpoint-list" style="padding: var(--space-3)">
+        <div class="dp-label" style="padding: var(--space-2) var(--space-3) 0">apps</div>
+        <div class="dp-tree">
+          <a class="node" href="#" data-operation="listApps">
+            <span class="dp-method get">GET</span> <span style="font-size:var(--text-sm)">/apps</span></a>
+          <a class="node selected" href="#" data-operation="registerApp">
+            <span class="dp-method post">POST</span> <span style="font-size:var(--text-sm)">/apps</span></a>
+          <a class="node" href="#" data-operation="getApp">
+            <span class="dp-method get">GET</span> <span style="font-size:var(--text-sm)">/apps/{slug}</span></a>
+          <a class="node" href="#" data-operation="upsertApp">
+            <span class="dp-method put">PUT</span> <span style="font-size:var(--text-sm)">/apps/{slug}</span></a>
+          <a class="node" href="#" data-operation="deleteApp">
+            <span class="dp-method delete">DELETE</span> <span style="font-size:var(--text-sm)">/apps/{slug}</span></a>
+        </div>
+        <div class="dp-label" style="padding: var(--space-4) var(--space-3) 0">health</div>
+        <div class="dp-tree">
+          <a class="node" href="#" data-operation="getAppHealth">
+            <span class="dp-method get">GET</span> <span style="font-size:var(--text-sm)">/apps/{slug}/health</span></a>
+        </div>
+        <div class="dp-label" style="padding: var(--space-4) var(--space-3) 0">manifests</div>
+        <div class="dp-tree">
+          <a class="node" href="#" data-operation="getManifest">
+            <span class="dp-method get">GET</span> <span style="font-size:var(--text-sm)">/apps/{slug}/manifest</span></a>
+        </div>
+      </aside>
+
+      <!-- ============ middle: overview + operation ============ -->
+      <main>
+        <section class="dp-card seamed" data-panel="spec-overview">
+          <h3 class="dp-h3">Overview</h3>
+          <p class="dp-sub" style="margin:0 0 var(--space-3)">Registers and resolves the applications mounted into the
+            FuzeFront shell — federated remotes and standalone apps alike. Every entity id is a wire-typed TypeID
+            minted by this service; <code>slug</code> is immutable after registration.</p>
+          <div class="dp-inline">
+            <span class="dp-badge neutral">tag: apps</span>
+            <span class="dp-badge neutral">tag: health</span>
+            <span class="dp-badge neutral">tag: manifests</span>
+            <span class="dp-badge info">auth: bearer (Authentik)</span>
+          </div>
+        </section>
+
+        <section class="dp-card" data-panel="operation" data-operation="registerApp" style="margin-top: var(--space-5)">
+          <div class="dp-inline" style="justify-content:space-between">
+            <span class="dp-inline">
+              <span class="dp-method post">POST</span>
+              <code class="dp-mono" style="font-size:var(--text-md)">/api/v1/apps</code>
+            </span>
+            <a class="dp-btn primary" href="07-playground.html" data-action="try-it-operation">Try it →</a>
+          </div>
+          <h3 class="dp-h3" style="margin-top: var(--space-4)">Register an application</h3>
+          <p class="dp-sub">Creates an app registration. The <b>id is minted by this service</b> — a client-supplied
+            <code>id</code> is rejected (<code>additionalProperties: false</code>).</p>
+
+          <h4 class="dp-label" style="margin-top: var(--space-5)">Request body · <code>AppRegistration</code></h4>
+          <table class="dp-table" data-panel="request-schema">
+            <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>slug</code> <span class="req">required</span></td><td>string</td>
+                  <td>Immutable. Free-form at creation; never renamed by a later PUT.</td></tr>
+              <tr><td><code>name</code> <span class="req">required</span></td><td>string</td>
+                  <td>Display name. Drops the <code>Fuze</code> prefix except for FuzeBI / FuzeX.</td></tr>
+              <tr><td><code>integration</code></td><td>object</td>
+                  <td><code>remoteEntry</code> resolved against the host origin for federated remotes.</td></tr>
+              <tr><td><code>routing</code></td><td>object</td>
+                  <td><code>path</code> is independent of <code>slug</code>.</td></tr>
+            </tbody>
+          </table>
+
+          <h4 class="dp-label" style="margin-top: var(--space-5)">Responses</h4>
+          <div class="dp-stack" data-panel="response-schema">
+            <div class="dp-row">
+              <span class="dp-inline"><span class="dp-badge ok">201</span>
+                <span class="dp-dim">Created — <code>App</code></span></span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">application/json</span>
+            </div>
+            <div class="dp-row">
+              <span class="dp-inline"><span class="dp-badge warn">400</span>
+                <span class="dp-dim">Invalid body — <code>ErrorBody</code></span></span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">application/json</span>
+            </div>
+            <div class="dp-row">
+              <span class="dp-inline"><span class="dp-badge err">409</span>
+                <span class="dp-dim">Slug already registered — <code>ErrorBody</code></span></span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">application/json</span>
+            </div>
+          </div>
+
+          <h4 class="dp-label" style="margin-top: var(--space-5)">Example · 201</h4>
+          <div class="dp-code-head"><span>response · application/json</span>
+            <button class="dp-btn ghost" data-action="copy-example" style="padding:0 var(--space-2)">Copy</button></div>
+<pre class="dp-code" data-code="response-example">{
+  <span class="k">"id"</span>: <span class="s">"app_01h455vb4pex5vsknk084sn02q"</span>,
+  <span class="k">"slug"</span>: <span class="s">"fuzepicker"</span>,
+  <span class="k">"name"</span>: <span class="s">"Picker"</span>,
+  <span class="k">"routing"</span>: { <span class="k">"path"</span>: <span class="s">"/app/fuzepicker"</span> },
+  <span class="k">"createdAt"</span>: <span class="s">"2026-09-08T04:12:00Z"</span>
+}</pre>
+        </section>
+      </main>
+
+      <!-- ============ right: code samples ============ -->
+      <aside class="dp-card" data-panel="code-sample">
+        <div class="dp-inline" style="margin-bottom: var(--space-3)">
+          <span class="dp-badge info" data-sample-lang="curl">curl</span>
+          <span class="dp-badge neutral" data-sample-lang="typescript">TypeScript</span>
+          <span class="dp-badge neutral" data-sample-lang="python">Python</span>
+        </div>
+<pre class="dp-code">curl -X POST \
+  <span class="s">"$SANDBOX/api/v1/apps"</span> \
+  -H <span class="s">"content-type: application/json"</span> \
+  -d <span class="s">'{"slug":"fuzepicker",
+       "name":"Picker"}'</span></pre>
+        <p class="dp-sub" style="margin-top: var(--space-3)"><code>$SANDBOX</code> is the sandbox base the Playground
+          uses. The production host is <b>never</b> substituted here.</p>
+        <a class="dp-btn ghost" href="07-playground.html" data-action="open-in-playground"
+           style="display:block; text-align:center; margin-top: var(--space-3)">Open in Playground</a>
+      </aside>
+    </div>
+  </div>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='05-spec-viewer']</code> · <code>[data-panel='spec-header']</code> ·
+    <code>[data-panel='spec-overview']</code> · <code>[data-panel='endpoint-list']</code> ·
+    <code>[data-operation='registerApp']</code> · <code>[data-panel='request-schema']</code> ·
+    <code>[data-panel='response-schema']</code> · <code>[data-panel='code-sample']</code> ·
+    <code>[data-action='try-it']</code> · <code>[data-action='download-spec']</code>.<br />
+    Contract: <code>GET /api/v1/devportal/specs/{specId}</code> (returns the raw spec + our overview metadata).
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>05 / 09</b> · flow <b>spec-viewer</b> ·
+    <code class="dp-mono">/catalog/:product/:service</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="04-catalog-states.html">← Prev</a>
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="06-spec-viewer-states.html">Next → Spec viewer states</a>
+  </span>
+</nav>
+</body>
+</html>

@@ -3,10 +3,10 @@
     "purpose": "The checked-in roster scripts/check-portal-federation-health.mjs diffs the live registry against, so a product that silently drops out of /api/v1/app-registry/apps (the '13 of 18' symptom) fails loudly instead of producing a shorter-but-still-green table.",
     "notASlugMigrationWorklist": "This file is NOT authority to edit any product's registered `slug`. Per CLAUDE.md §'slug, display name, and the federated serve path are THREE INDEPENDENT questions', slug is free at registration and immutable after. If a live registry slug genuinely differs from an entry below, FIX THIS FILE to match the registry — never the other way around. This list exists only to notice disappearance, not to prescribe naming.",
     "maintainedBy": "owner (izzywdev) — add an entry when a new product joins the family, remove one when a product is formally retired, correct the slug if a `confidence` below turns out wrong.",
-    "lastReviewed": "2026-08-26",
-    "countRationale": "18 entries. Reconciled against the live registry by census run 32949523555 (2026-08-26), which reported 4 roster defects as its own warnings: three entries whose slug the registry has never served (keys->fuzekeys, fuzecontact->contact, fuzehub-ventures->fuzehub), and 'clock' returned by the registry but absent here. Each produced a spurious MISSING row, which is the exact false signal this roster exists to avoid -- a MISSING that means 'the roster is wrong' is indistinguishable from one that means 'a product dropped out'. FuzeQuality was REMOVED: PR #810 (merged 2026-08-26) deleted it from builtins.ts and added migration 011_suspend_phantom_fuzequality_builtin because the product has NO repository. It is deliberately not expected. Note the same census still found it activated in prod, so its migration has not yet run -- that now surfaces as an 'in the registry but not expected' warning, which is the correct signal.",
+    "lastReviewed": "2026-09-08",
+    "countRationale": "19 entries. Re-reconciled against the live registry by census run 34261472714 (2026-09-08), which returned 16 apps: executive, finance, fuzehub, deploy, market, sales, contact, service, fuzekeys, fuzesocial, fuzeagent, clock, picker, fuzeservice, fuzesales, fuzequality. Every roster defect found so far has been the same shape -- an entry naming a slug no product has ever registered, which yields a MISSING row indistinguishable from a product that genuinely dropped out. Four have now been corrected: 'fuzesales' -> 'sales' and 'fuzeservice' -> 'service' (2026-09-07, each also listed as absent while its live twin went unlisted), 'merchandize' -> 'fuzemerchandize' (2026-09-07, the file's only 'inferred' entry), and 'fuzeplan' -> 'plan' (2026-09-08, the file's last 'documented' entry, sourced only from the RETIRED slug-deprefix runbook). The stranded 'fuzesales' and 'fuzeservice' rows are suspended by applications migration 013, so the portal shows one tile per product; the roster names the surviving slug in each pair. No entry now rests on 'documented' or 'inferred' confidence: every slug is read either from BUILTIN_MANIFESTS, from the product's own registration/manifest.json, or from the owner's 2026-08-19 ruling.",
     "confidenceLevels": {
-      "verified": "slug read directly from code in THIS repo (backend/applications/src/app-registry/builtins.ts BUILTIN_MANIFESTS, or FuzeQuality/registration/manifest.json) — cannot be stale without this repo's own tests catching it.",
+      "verified": "slug read directly from the code that decides it -- either BUILTIN_MANIFESTS in this repo (backend/applications/src/app-registry/builtins.ts) for a built-in, or the product's own registration/manifest.json for a self-registering product, which production stores verbatim (backend/applications/src/app-registry/service.ts: slug: row.slug) and register.sh re-PUTs on every pod start. Cannot be stale without the owning repo changing its own registration.",
       "owner-ruling": "slug is one of the exact values the owner named on 2026-08-19 (quoted verbatim in CLAUDE.md §'slug, display name, and the federated serve path') as either a prefixed exception to keep (fuzex, fuzebi) or an already-correct unprefixed slug not to be migrated.",
       "documented": "slug taken from a specific named FuzeFront doc that is not itself flagged RETIRED/historical-snapshot for this purpose, but was not independently re-measured for this file.",
       "inferred": "no direct citation found; slug is a best guess by family naming convention. Treat a MISSING result for one of these as 'go verify the real slug', not as proof the product is down."
@@ -17,9 +17,10 @@
       "CLAUDE.md §'slug, display name, and the federated serve path are THREE INDEPENDENT questions' (owner ruling, 2026-08-19, quoted verbatim)",
       "docs/planning/app-suites-and-modes.md (FuzeHub suite example)",
       "packages/onboarding-kit/README.md (FuzeService used as the running naming-convention example)",
-      "docs/runbooks/app-slug-deprefix-migration.md — RETIRED; its measured-state table was read only as a last-resort snapshot for products no other source names, and is called out per-entry below"
+      "docs/runbooks/app-slug-deprefix-migration.md — RETIRED; no entry in this file relies on it any more (the last one, 'fuzeplan', was corrected to 'plan' on 2026-09-08 against FuzePlan's own manifest). Do not reintroduce it as a source.",
+      "izzywdev/FuzeSales, izzywdev/FuzeService, izzywdev/FuzeMerchandize and izzywdev/FuzePlan registration/manifest.json -- each product's own declared slug, which production stores verbatim (backend/applications/src/app-registry/service.ts: slug: row.slug) and register.sh re-PUTs on every pod start"
     ],
-    "genuinelyAbsentAtLastReview": "After these corrections, census 32949523555's MISSING set reduces from 9 to 6 genuinely unregistered products: fuzex, fuzebi, deploy, call, fuzeplan, merchandize."
+    "genuinelyAbsentAtLastReview": "Census 34261472714 (2026-09-08) MISSING set, after these corrections: call, fuzebi, plan, fuzex, fuzemerchandize. All five are absent because nothing has ever written their registry row -- not because a row was removed. Each cause is owned by the product's own repo (or FuzeInfra), never by editing this file: call -- FuzeInfra's one-time `argocd-register` has never run for izzywdev/FuzeCall, so there is no fuzecall namespace and no Ingress at all (/apps/call answers 404); fuzebi -- deployed and its remote SERVES (probe 34157206072: /apps/fuzebi/remoteEntry.js is 200 with all chunks), but the registration init container rides the BACKEND Deployment, whose `fuzefront-registration` Secret does not exist in the fuzebi namespace, so it never runs (izzywdev/FuzeBI helm/fuzebi/templates/_sealed-fuzefront-registration.RESERVED.txt); fuzex and fuzemerchandize -- Ingress exists but nothing healthy backs it (503), so their fail-closed init containers never complete; plan -- deployed and running, but its chart registers via a PostSync Job against the LEGACY unauthenticated /api/apps/register that swallows failures with process.exit(0) (see that entry's `source`). A 503/404 here is evidence about SERVING, not about the slug: never edit a slug to chase one."
   },
   "apps": [
     {
@@ -83,28 +84,16 @@
       "source": "census run 32949523555 (2026-08-26): live registry slug, corrected per _meta.notASlugMigrationWorklist (was 'keys' — never registered under that slug)"
     },
     {
-      "slug": "fuzeplan",
-      "name": "FuzePlan",
-      "confidence": "documented",
-      "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)"
+      "slug": "fuzemerchandize",
+      "name": "FuzeMerchandize",
+      "confidence": "verified",
+      "source": "izzywdev/FuzeMerchandize registration/manifest.json: \"slug\": \"fuzemerchandize\". CORRECTED from the 'inferred' guess 'merchandize', which that entry itself flagged as \"VERIFY before trusting a MISSING result for this one\" -- the guess was wrong, so every census since has reported a MISSING row for a slug no product ever used."
     },
     {
       "slug": "fuzequality",
       "name": "FuzeQuality",
       "confidence": "verified",
-      "source": "builtins.ts BUILTIN_MANIFESTS + census run 32960147607 (2026-08-26 10:49Z): live registry returns it, status 'activated'. RESTORED — an earlier revision of this file removed it on the false premise that it was not registered; the census disproves that."
-    },
-    {
-      "slug": "fuzesales",
-      "name": "Sales",
-      "confidence": "documented",
-      "source": "docs/runbooks/app-slug-deprefix-migration.md snapshot (RETIRED doc — read only as a last-resort snapshot; not independently re-measured)"
-    },
-    {
-      "slug": "fuzeservice",
-      "name": "FuzeService",
-      "confidence": "documented",
-      "source": "packages/onboarding-kit/README.md — used verbatim as the naming-convention's running example: \"slug\": \"fuzeservice\""
+      "source": "census run 34261472714 (2026-09-08): the live registry returns it, status 'activated', and its remote serves -- that measurement is the whole basis for this entry. NOT a built-in any more: backend/applications/src/app-registry/builtins.ts REMOVED the `fuzequality` BUILTIN_MANIFESTS entry on 2026-08-25 as a phantom tile, and applications migration 011 suspended the seeded row, so citing builtins.ts here (as this entry used to) is stale. Note the vendored FuzeQuality/registration/manifest.json in this repo declares \"slug\": \"quality\", which the live registry does NOT serve; per _meta.notASlugMigrationWorklist the registry wins and this entry stays 'fuzequality'. Do not 'reconcile' the two by editing either slug."
     },
     {
       "slug": "fuzesocial",
@@ -125,16 +114,28 @@
       "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone"
     },
     {
-      "slug": "merchandize",
-      "name": "FuzeMerchandize",
-      "confidence": "inferred",
-      "source": "no direct citation found anywhere in this repo; guessed by family convention (unprefixed, matches the 'deploy/call/executive/finance/keys/market/picker' pattern). VERIFY before trusting a MISSING result for this one."
-    },
-    {
       "slug": "picker",
       "name": "FuzePicker",
       "confidence": "owner-ruling",
       "source": "CLAUDE.md 2026-08-19 — named as an already-unprefixed slug to leave alone; corroborated by docs/runbooks/app-slug-deprefix-migration.md ('name only — already correct')"
+    },
+    {
+      "slug": "plan",
+      "name": "Plan",
+      "confidence": "verified",
+      "source": "izzywdev/FuzePlan registration/manifest.json: \"slug\": \"plan\", \"name\": \"Plan\". CORRECTED from 'fuzeplan', which came only from the RETIRED docs/runbooks/app-slug-deprefix-migration.md snapshot (the file's own 'documented' confidence level warned it had not been re-measured). No product has ever registered 'fuzeplan': census run 34261472714 (2026-09-08) returns neither 'plan' nor 'fuzeplan', so the old entry produced a MISSING row for a slug that does not exist -- the same false signal already corrected for 'merchandize', 'fuzesales' and 'fuzeservice'. FuzePlan is genuinely unregistered under EITHER name, for a cause its own repo owns: deploy/helm/fuzeplan/templates/register-hook.yaml is a PostSync Job that POSTs an unauthenticated, slug-less payload to the LEGACY POST /api/apps/register -- which has required authentication since appsec #100 (backend/src/routes/apps.ts:719) and whose insert sets neither `slug` nor `manifest`, both of which backend/applications/src/app-registry/service.ts:212 requires (.whereNotNull('slug').whereNotNull('manifest')). The Job swallows every failure with process.exit(0), so it reports Succeeded while never writing a registry row. The fail-closed init container that would consume this manifest is not wired into that chart."
+    },
+    {
+      "slug": "sales",
+      "name": "Sales",
+      "confidence": "verified",
+      "source": "izzywdev/FuzeSales registration/manifest.json: \"slug\": \"sales\". Census run 34084771931 (2026-09-07) returns BOTH 'sales' (PASS) and 'fuzesales' (FAIL) -- 'fuzesales' is a stranded row from an earlier registration that nothing re-PUTs, suspended by applications migration 013. Corrected per _meta.notASlugMigrationWorklist."
+    },
+    {
+      "slug": "service",
+      "name": "Service",
+      "confidence": "verified",
+      "source": "izzywdev/FuzeService registration/manifest.json: \"slug\": \"service\". Census run 34084771931 (2026-09-07) returns BOTH 'service' and 'fuzeservice' -- 'fuzeservice' is a stranded row from an earlier registration that nothing re-PUTs, suspended by applications migration 013. Corrected per _meta.notASlugMigrationWorklist."
     }
   ]
 }

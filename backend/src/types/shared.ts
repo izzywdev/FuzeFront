@@ -41,7 +41,7 @@ export interface OrganizationMembership {
   id: string
   user_id: string
   organization_id: string
-  role: 'owner' | 'admin' | 'member' | 'viewer'
+  role: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
   status: 'active' | 'pending' | 'suspended' | 'revoked'
   invited_by?: string
   invited_at?: string

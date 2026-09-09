@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Home (signed in)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 02 · flow `home` · route / (authenticated) -->
+<div class="dp-wrap" data-frame="02-home-signed-in">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 02 · flow <b>home</b> · route <code>/</code></div>
+  <h1 class="dp-h1">Home — signed in</h1>
+  <p class="dp-lead">Same route, personalized. The hero collapses into a compact welcome and the page leads with
+    <b>your recent specs</b> and <b>your sandbox activity</b>. Both panels have an <b>empty</b> variant, shown
+    below the populated one — a developer's very first sign-in has neither, and that state is contract, not an
+    afterthought.</p>
+
+  <div class="dp-topbar" data-panel="portal-topbar" data-auth="authenticated">
+    <span class="dp-wordmark">Fuze <span class="seamtext">Developers</span></span>
+    <nav class="dp-topnav">
+      <a href="#" class="active">Home</a>
+      <a href="03-catalog.html">Catalog</a>
+      <a href="07-playground.html">Playground</a>
+      <a href="09-my-access.html">My access</a>
+    </nav>
+    <span class="dp-spacer"></span>
+    <span class="dp-badge ok" data-membership-status="active"><span class="dp-dot"></span>Developer</span>
+    <span class="dp-avatar" data-user="dana.okafor">DO</span>
+  </div>
+
+  <div class="dp-appframe">
+
+    <section data-panel="home-welcome">
+      <h2 class="dp-h1" style="margin-bottom: var(--space-2)">Welcome back, Dana.</h2>
+      <p class="dp-sub">Signed in as <code>dana.okafor@fuzefront.com</code> · <code>Developer</code> on
+        <b>FuzeFront Platform (root)</b> · <a href="09-my-access.html" style="color:var(--cyan-400)">manage access</a></p>
+    </section>
+
+    <!-- ============ quota strip ============ -->
+    <div class="dp-card" data-panel="quota-summary" style="margin-top: var(--space-5)">
+      <div class="dp-meter-head">
+        <span>Sandbox requests today</span>
+        <span class="val" data-quota-used="137" data-quota-limit="500">137 / 500</span>
+      </div>
+      <div class="dp-meter"><div class="fill" style="width: 27%"></div></div>
+      <p class="dp-meter-foot">Resets in 6h 12m · quota is per developer, counted against
+        <code>DevPortalPlayground:use</code>.</p>
+    </div>
+
+    <div class="dp-grid-2" style="margin-top: var(--space-5)">
+
+      <!-- ============ recent specs (populated) ============ -->
+      <section class="dp-card seamed" data-panel="recent-specs" data-state="ready">
+        <h3 class="dp-h3">Your recent specs</h3>
+        <a class="dp-row" href="05-spec-viewer.html" data-recent-spec="fuzefront/app-registry-service" style="text-decoration:none;color:inherit">
+          <span>
+            <b class="dp-dim">app-registry-service</b>
+            <span class="dp-muted dp-mono" style="font-size:var(--text-xs)"> · FuzeFront · v1.4.0</span>
+          </span>
+          <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">2h ago</span>
+        </a>
+        <a class="dp-row" href="05-spec-viewer.html" data-recent-spec="fuzeagent/agent-runtime-service" style="text-decoration:none;color:inherit">
+          <span>
+            <b class="dp-dim">agent-runtime-service</b>
+            <span class="dp-muted dp-mono" style="font-size:var(--text-xs)"> · FuzeAgent · v0.9.2</span>
+          </span>
+          <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">yesterday</span>
+        </a>
+        <a class="dp-row" href="05-spec-viewer.html" data-recent-spec="fuzefront/billing-service" style="text-decoration:none;color:inherit">
+          <span>
+            <b class="dp-dim">billing-service</b>
+            <span class="dp-muted dp-mono" style="font-size:var(--text-xs)"> · FuzeFront · v2.1.0</span>
+          </span>
+          <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">3d ago</span>
+        </a>
+      </section>
+
+      <!-- ============ sandbox activity (populated) ============ -->
+      <section class="dp-card seamed" data-panel="sandbox-activity" data-state="ready">
+        <h3 class="dp-h3">Your sandbox activity</h3>
+        <p class="dp-sub" style="margin-top:calc(var(--space-2) * -1)">Only your own calls
+          (<code>DevPortalPlayground:view_history</code>) — never another developer's.</p>
+        <div class="dp-row" data-activity="1">
+          <span class="dp-inline"><span class="dp-method post">POST</span>
+            <code class="dp-mono" style="font-size:var(--text-xs)">/api/v1/apps</code></span>
+          <span class="dp-inline"><span class="dp-badge ok">201</span>
+            <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">12m</span></span>
+        </div>
+        <div class="dp-row" data-activity="2">
+          <span class="dp-inline"><span class="dp-method get">GET</span>
+            <code class="dp-mono" style="font-size:var(--text-xs)">/api/v1/apps/{slug}</code></span>
+          <span class="dp-inline"><span class="dp-badge ok">200</span>
+            <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">14m</span></span>
+        </div>
+        <div class="dp-row" data-activity="3">
+          <span class="dp-inline"><span class="dp-method delete">DELETE</span>
+            <code class="dp-mono" style="font-size:var(--text-xs)">/api/v1/apps/{slug}</code></span>
+          <span class="dp-inline"><span class="dp-badge err">403</span>
+            <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">15m</span></span>
+        </div>
+        <div class="dp-row">
+          <a href="09-my-access.html" style="color:var(--cyan-400);font-size:var(--text-sm);text-decoration:none">
+            View full history →</a>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ first sign-in: both panels empty ============ -->
+    <h3 class="dp-h2">First sign-in — both panels empty</h3>
+    <p class="dp-sub">A brand-new <code>Developer</code> has no history. The empty state must onboard, not just say
+      "nothing here".</p>
+    <div class="dp-grid-2">
+      <section class="dp-card" data-panel="recent-specs-empty" data-state="empty">
+        <h3 class="dp-h3">Your recent specs</h3>
+        <div class="dp-empty" data-empty="no-recent-specs">
+          <div class="icon">📚</div>
+          <h4>Nothing viewed yet</h4>
+          <p>Specs you open show up here so you can get back to them fast.</p>
+          <a class="dp-btn primary" href="03-catalog.html" data-action="browse-catalog">Browse the catalog</a>
+        </div>
+      </section>
+      <section class="dp-card" data-panel="sandbox-activity-empty" data-state="empty">
+        <h3 class="dp-h3">Your sandbox activity</h3>
+        <div class="dp-empty" data-empty="no-sandbox-activity">
+          <div class="icon">🧪</div>
+          <h4>No sandbox calls yet</h4>
+          <p>Open any endpoint and press <b>Try it</b>. Calls run against a mock generated from the spec —
+            nothing you send here can reach production.</p>
+          <a class="dp-btn primary" href="07-playground.html" data-action="open-playground">Open the Playground</a>
+        </div>
+      </section>
+    </div>
+
+  </div>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='02-home-signed-in']</code> · <code>[data-auth='authenticated']</code> ·
+    <code>[data-membership-status='active']</code> · <code>[data-panel='quota-summary']</code> ·
+    <code>[data-panel='recent-specs']</code> · <code>[data-panel='sandbox-activity']</code> ·
+    <code>[data-empty='no-recent-specs']</code> · <code>[data-empty='no-sandbox-activity']</code>.<br />
+    Contract: <code>GET /api/v1/devportal/me/activity</code>, <code>GET /api/v1/devportal/me/access</code>.
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>02 / 09</b> · flow <b>home</b> · <code class="dp-mono">/</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="01-home-signed-out.html">← Prev</a>
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="03-catalog.html">Next → Catalog</a>
+  </span>
+</nav>
+</body>
+</html>

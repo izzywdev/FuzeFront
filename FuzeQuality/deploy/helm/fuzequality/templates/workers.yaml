@@ -31,6 +31,10 @@ spec:
             {{- include "fuzequality.env" $ | nindent 12 }}
           resources:
             {{- toYaml $.Values.bootstrap.resources | nindent 12 }}
+          # The bootstrap command uses tsx, which requires a writable /tmp.
+          # Use the pod-local emptyDir rather than relaxing its immutable root.
+          volumeMounts:
+            - { name: runtime-tmp, mountPath: /tmp }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000 }
       containers:
         - name: {{ $name }}
