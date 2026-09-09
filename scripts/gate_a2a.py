@@ -170,11 +170,25 @@ def find_sealed_secrets(root: str, dirs: list[str]) -> dict[str, set[str]]:
     return result
 
 
+def _assert_ghcr_url(url: str) -> None:
+    """Raise ValueError for any URL that is not https://ghcr.io/…
+
+    Semgrep flags dynamic urllib calls because urllib accepts file:// schemes.
+    The URLs here come from hardcoded templates, but explicit validation is the
+    right defense-in-depth rather than a suppression comment.
+    """
+    import urllib.parse
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or parsed.netloc != "ghcr.io":
+        raise ValueError(f"gate_a2a: refusing non-GHCR URL: {url!r}")
+
+
 def ghcr_token(owner: str, name: str) -> str | None:
     url = GHCR_AUTH_URL.format(owner=owner, name=name)
+    _assert_ghcr_url(url)
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
             data = json.loads(resp.read())
             return data.get("token")
     except Exception:
@@ -206,9 +220,10 @@ def ghcr_resolve_tag(repository: str, tag: str) -> tuple[bool, str]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     url = GHCR_MANIFEST_URL.format(owner=owner, name=name, tag=tag)
+    _assert_ghcr_url(url)
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
             return resp.status == 200, "ok"
     except urllib.error.HTTPError as e:
         if e.code == 404:
