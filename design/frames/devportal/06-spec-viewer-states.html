@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Spec viewer states</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 06 · flow `spec-viewer` · every non-happy state -->
+<div class="dp-wrap" data-frame="06-spec-viewer-states">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 06 · flow <b>spec-viewer</b> ·
+    route <code>/catalog/:product/:service</code></div>
+  <h1 class="dp-h1">Spec viewer — loading, fetch failed, invalid spec, not found, stale</h1>
+  <p class="dp-lead">A spec can be slow, missing, unreachable, or <b>present but not valid OpenAPI</b>. The last one
+    is the interesting case: an invalid spec must not render as a half-broken doc page with a "Try it" button that
+    fires nonsense. It fails closed, names the offending source repo, and disables the Playground for that spec.</p>
+
+  <!-- ============ loading ============ -->
+  <section class="dp-state" data-state="loading">
+    <span class="state-label">(a) Loading · spec blob + renderer bootstrapping</span>
+    <div style="display:grid; grid-template-columns: 240px 1fr 300px; gap: var(--space-5); align-items:start">
+      <div class="dp-card" style="padding: var(--space-4)">
+        <div class="dp-skel" style="width:70%; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:90%; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:60%; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:80%"></div>
+      </div>
+      <div class="dp-card">
+        <div class="dp-skel" style="width:40%; height:18px; margin-bottom: var(--space-4)"></div>
+        <div class="dp-skel" style="width:95%; margin-bottom: var(--space-2)"></div>
+        <div class="dp-skel" style="width:88%; margin-bottom: var(--space-2)"></div>
+        <div class="dp-skel" style="width:55%; margin-bottom: var(--space-5)"></div>
+        <div class="dp-skel" style="width:70%; height:16px; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:100%; height:80px"></div>
+      </div>
+      <div class="dp-card">
+        <div class="dp-skel" style="width:50%; margin-bottom: var(--space-3)"></div>
+        <div class="dp-skel" style="width:100%; height:90px"></div>
+      </div>
+    </div>
+    <p class="dp-sub" style="margin-top: var(--space-3)">The <b>spec header is rendered from catalog data we already
+      have</b> — name, product, version — so only the panes that need the blob show skeletons. Nothing reflows when
+      the spec lands.</p>
+  </section>
+
+  <!-- ============ fetch failed ============ -->
+  <section class="dp-state" data-state="error">
+    <span class="state-label">(b) Fetch failed · 502/504 retrieving the stored spec</span>
+    <div class="dp-callout error" data-error="spec-fetch-failed" data-http="502">
+      <span class="glyph">⚠</span>
+      <div>
+        <p class="ct">Couldn't load this spec</p>
+        <p class="cb"><code>GET /api/v1/devportal/specs/app-registry-service</code> returned
+          <b class="dp-mono">502</b>. The catalog entry exists — the stored document could not be retrieved. Nothing
+          is wrong with your account.</p>
+        <div class="ca">
+          <button class="dp-btn primary" data-action="retry">Retry</button>
+          <a class="dp-btn ghost" href="03-catalog.html" data-action="back-to-catalog">Back to catalog</a>
+          <a class="dp-btn ghost" href="#" data-action="download-spec">Download the raw file instead</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ invalid spec ============ -->
+  <section class="dp-state" data-state="invalid-spec">
+    <span class="state-label">(c) Invalid spec · the document parsed but is not valid OpenAPI — fail closed</span>
+    <div class="dp-inline" style="margin-bottom: var(--space-4)">
+      <b style="font-size:var(--text-lg)">portal-service</b>
+      <span class="dp-badge neutral">FuzeFront</span>
+      <span class="dp-badge err" data-spec-validity="invalid"><span class="dp-dot"></span>spec invalid</span>
+      <span class="dp-badge warn" data-catalog="stale">showing v2.9.4 (last valid)</span>
+    </div>
+    <div class="dp-callout error" data-error="spec-invalid">
+      <span class="glyph">⛔</span>
+      <div>
+        <p class="ct">This spec failed validation and can't be rendered</p>
+        <p class="cb">The version published by <code data-source-repo="izzywdev/FuzeFront">izzywdev/FuzeFront</code>
+          at <b class="dp-mono">2026-09-08 07:31 UTC</b> is not a valid OpenAPI 3.x document, so the renderer and the
+          Playground are both <b>disabled for it</b> — a partially-parsed spec would produce request builders for
+          operations that do not exist.</p>
+        <div class="ca">
+          <a class="dp-btn primary" href="#" data-action="report-to-source-repo">Report to izzywdev/FuzeFront</a>
+          <a class="dp-btn ghost" href="#" data-action="view-last-valid">View last valid version (v2.9.4)</a>
+          <a class="dp-btn ghost" href="03-catalog.html" data-action="back-to-catalog">Back to catalog</a>
+        </div>
+      </div>
+    </div>
+    <div class="dp-code-head" style="margin-top: var(--space-4)"><span>validator output · spectral</span></div>
+<pre class="dp-code" data-code="validation-errors">paths./portals/{portalId}.get.responses
+  <span class="n">error</span>  oas3-schema           Property "200" must have required property "description"
+components.schemas.PortalSummary
+  <span class="n">error</span>  invalid-ref           $ref "#/components/schemas/Hostname" is not resolvable
+paths./portals.post.requestBody
+  <span class="n">error</span>  oas3-valid-media-type Media type "application/jsonl" is not defined</pre>
+    <div class="dp-inline" style="margin-top: var(--space-4)">
+      <button class="dp-btn primary" data-action="try-it" data-try-it="disabled" aria-disabled="true" disabled>Try it</button>
+      <span class="dp-sub" style="margin:0">"Try it" is <b>disabled, not hidden</b> — the developer needs to know the
+        capability exists and why it is unavailable here.</span>
+    </div>
+  </section>
+
+  <!-- ============ not found ============ -->
+  <section class="dp-state" data-state="not-found">
+    <span class="state-label">(d) Not found · 404 — the spec was removed or renamed since the link was made</span>
+    <div class="dp-card">
+      <div class="dp-empty" data-empty="spec-not-found" data-http="404">
+        <div class="icon">🕳</div>
+        <h4>That spec isn't in the catalog</h4>
+        <p><code>fuzefront/legacy-portal-api</code> no longer publishes a spec — it was removed in the harvest on
+          <b>2026-08-30</b>. Bookmarks and old links land here.</p>
+        <a class="dp-btn primary" href="03-catalog.html" data-action="back-to-catalog">Back to catalog</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ stale ============ -->
+  <section class="dp-state" data-state="stale">
+    <span class="state-label">(e) Stale · renders normally, but says so</span>
+    <div class="dp-callout warning" data-catalog="stale">
+      <span class="glyph">⏳</span>
+      <div>
+        <p class="ct">This spec hasn't been refreshed in 34 days</p>
+        <p class="cb">Last successful harvest <b class="dp-mono">2026-08-05</b>. The source repo may have shipped
+          changes that are not reflected here. Everything below still renders — we mark age rather than hiding it.</p>
+        <div class="ca">
+          <a class="dp-btn ghost" href="#" data-action="view-harvest-status">Why?</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='06-spec-viewer-states']</code> · <code>[data-state='loading']</code> ·
+    <code>[data-state='error']</code> · <code>[data-error='spec-fetch-failed']</code> ·
+    <code>[data-state='invalid-spec']</code> · <code>[data-error='spec-invalid']</code> ·
+    <code>[data-spec-validity='invalid']</code> · <code>[data-try-it='disabled']</code> ·
+    <code>[data-state='not-found']</code> · <code>[data-empty='spec-not-found']</code> ·
+    <code>[data-state='stale']</code> · <code>[data-action='retry']</code> ·
+    <code>[data-action='back-to-catalog']</code>.
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>06 / 09</b> · flow <b>spec-viewer</b></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="05-spec-viewer.html">← Prev</a>
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="07-playground.html">Next → Playground</a>
+  </span>
+</nav>
+</body>
+</html>
