@@ -123,3 +123,26 @@ GHSA-qwww-vcr4-c8h2
 # dependency-upgrade PR, same as every other entry in this file.
 CVE-2026-82417
 CVE-2026-12590
+
+# devportal-frontend/package-lock.json — PR #990 shipped this app's package.json
+# without ever committing a lockfile, which silently breaks `npm ci` in
+# Dockerfile (there is no lockfile to install from). Generating one surfaces
+# these 3 findings that a `--package-lock-only` resolve introduces (moderate
+# severity; the rest of the resolved tree's CVEs are already covered by
+# entries above — same versions as the rest of the monorepo).
+#
+# @vitest/mocker (devDependency only; vitest itself is a transitive dev-tool
+# pulled in via the vendored design-system, never shipped in the built
+# `dist/` the Dockerfile's production nginx stage actually serves).
+GHSA-82fw-gwwq-j7x9
+# react-router-dom@6.30.6 (a real production dependency, unlike the above).
+# Fix requires a major bump to react-router-dom@7.18.3, which is a breaking
+# API change nothing in this fix asked for. devportal-frontend is fully dark
+# in production (`devportalFrontend.enabled: false` in values-prod.yaml,
+# `fuzefront.devportal.enabled` flag OFF), so there is no live exposure right
+# now. Tracked for a dedicated dependency-upgrade PR, same as every other
+# entry in this file — same reasoning as the typescript-float case above:
+# fixing a moderate CVE is not worth an invisible breaking bump bundled into
+# an unrelated lockfile-generation fix.
+GHSA-wrjc-x8rr-h8h6
+GHSA-337j-9hxr-rhxg
