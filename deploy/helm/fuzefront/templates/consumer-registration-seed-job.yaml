@@ -49,6 +49,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: consumer-registration-seed
+      {{- include "fuzefront.scheduling" (dict "svc" dict "root" $) | nindent 6 }}
       containers:
         - name: seed
           # Kubernetes' own community kubectl image. DO NOT switch this back to
