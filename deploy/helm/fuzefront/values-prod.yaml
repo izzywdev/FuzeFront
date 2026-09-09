@@ -334,17 +334,13 @@ a2a:
     # `fuzeagent-a2a`; that is already-flagged gate/doc staleness, FuzeAgent
     # PR #257 — an I1 finding against this file is that, not a new fork.)
     repository: ghcr.io/izzywdev/fuze-a2a
-    # Plain CI-built SHA tag (not a `tag@digest` compound — that form is a
-    # valid Docker/OCI image-reference grammar, but gate-a2a's registry check
-    # GETs the literal `tag` string as the manifest reference and 404s on the
-    # compound form, which is what caused the prior pin to read as
-    # unpullable even though the underlying digest was fine). Matches the
-    # tag FuzeAgent's own release.yml currently has live in
-    # deploy/helm/a2a-shared/values-prod.yaml. Verified anonymously pullable
-    # 2026-09-02 (anonymous GHCR token + manifest GET → HTTP 200,
-    # digest sha256:26b84ab9c04844c685b0312b660e934232338f79f5b86001fc9e2520d4a3b9a6).
-    # Re-pin when FuzeAgent's CI publishes a new build.
-    tag: "624956d8983b"
+    # Plain CI-built SHA tag. Verified anonymously pullable 2026-09-09
+    # (anonymous GHCR token + manifest GET → HTTP 200 with OCI image index
+    # media type). Re-pin when FuzeAgent's CI publishes a new build.
+    # Previous tag `624956d8983b` returned HTTP 404 from GHCR on 2026-09-09
+    # (likely purged from the registry on a retention policy); replaced with
+    # the most recent tag that resolves clean.
+    tag: "98b9b314bb0d"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
