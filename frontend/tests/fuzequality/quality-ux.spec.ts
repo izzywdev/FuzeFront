@@ -2,12 +2,12 @@ import { expect, test, type Page } from '@playwright/test'
 
 const portfolio = {
   repositories: [{ id: 'repo-1', tenantId: 'tenant-1', owner: 'izzywdev', name: 'FuzeService', canonicalUrl: 'https://github.com/izzywdev/FuzeService', defaultBranch: 'main', kind: 'service', enabled: true, lastScanStatus: 'complete', lastScanRevision: 'abcdef123456', jiraBindings: [] }],
-  operations: [{ id: 'api-1', repositoryId: 'repo-1', method: 'post', path: '/apps/{slug}/suspend', tags: ['apps'], summary: 'Suspend app' }],
-  surfaces: [{ id: 'ui-1', repositoryId: 'repo-1', name: 'PlanPicker', packageName: '@fuze/ui', sourcePath: 'src/PlanPicker.tsx', kind: 'component', stories: [] }],
+  operations: [{ id: 'api-1', repositoryId: 'repo-1', documentPath: 'openapi.yaml', method: 'post', path: '/apps/{slug}/suspend', tags: ['apps'], summary: 'Suspend app', security: true, parameters: [], responses: ['200'] }],
+  surfaces: [{ id: 'ui-1', repositoryId: 'repo-1', name: 'PlanPicker', packageName: '@fuze/ui', sourcePath: 'src/PlanPicker.tsx', kind: 'component', public: true, states: ['default'], hasStory: false, stories: [] }],
   tests: [],
   expectations: [
-    { id: 'api-gap', subjectId: 'api-1', subjectType: 'api-operation', label: 'Missing authentication is rejected', rule: 'api.security.authentication', priority: 'required', coverage: 'gap' },
-    { id: 'ui-gap', subjectId: 'ui-1', subjectType: 'frontend-surface', label: 'Default render is covered', rule: 'ui.default', priority: 'required', coverage: 'gap' },
+    { id: 'api-gap', subjectId: 'api-1', subjectType: 'api-operation', kind: 'authentication-missing', label: 'Missing authentication is rejected', rule: 'api.security.authentication', priority: 'required', coverage: 'gap' },
+    { id: 'ui-gap', subjectId: 'ui-1', subjectType: 'frontend-surface', kind: 'state-default', label: 'Default render is covered', rule: 'ui.default', priority: 'required', coverage: 'gap' },
   ],
   findings: [{ id: 'finding-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' }],
   requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do' }],
@@ -44,7 +44,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
   test('loads the portfolio and navigates every implemented workspace', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /See what the platform promises/i })).toBeVisible()
-    for (const [nav, heading] of [['Repositories', 'Repository inventory'], ['API catalog', 'API catalog'], ['Frontend inventory', 'Frontend inventory'], ['Requirements & flows', 'Requirements & inferred flows'], ['AI review queue', 'AI review queue'], ['Organization', 'Organization access & integrations'], ['Organizations', 'Organization QA portfolio']] as const) {
+    for (const [nav, heading] of [['Repositories', 'Repository inventory'], ['API catalog', 'API coverage matrix'], ['Frontend inventory', 'Frontend coverage matrix'], ['Requirements & flows', 'Requirements & inferred flows'], ['AI review queue', 'AI review queue'], ['Organization', 'Organization access & integrations'], ['Organizations', 'Organization QA portfolio']] as const) {
       await page.getByRole('button', { name: nav }).click()
       await expect(page.getByRole('heading', { name: heading })).toBeVisible()
     }
@@ -59,6 +59,16 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Cloud Codex: queued')).toBeVisible()
   })
 
+  test('keeps the gap plan selection explicit before launching cloud implementation', async ({ page }) => {
+    await page.getByRole('button', { name: 'API catalog' }).click()
+    await page.getByRole('button', { name: /Gap: Missing authentication/i }).click()
+    const plannedTest = page.getByRole('checkbox', { name: /Select POST/i })
+    await plannedTest.uncheck()
+    await expect(page.getByRole('button', { name: /Implement 0 selected/i })).toBeDisabled()
+    await plannedTest.check()
+    await expect(page.getByRole('button', { name: /Implement 1 selected/i })).toBeEnabled()
+  })
+
   test('shows the frontend visual-reference gap and supports review decisions', async ({ page }) => {
     await page.getByRole('button', { name: 'Frontend inventory' }).click()
     await page.getByRole('button', { name: 'Visual reference' }).click()
@@ -66,6 +76,12 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByRole('button', { name: 'Close component preview' }).click()
     await page.getByRole('button', { name: 'AI review queue' }).click()
     await page.getByRole('button', { name: 'Confirm' }).click()
+    await expect(page.getByText('Review queue cleared')).toBeVisible()
+  })
+
+  test('rejects an AI proposal without presenting it as authoritative coverage', async ({ page }) => {
+    await page.getByRole('button', { name: 'AI review queue' }).click()
+    await page.getByRole('button', { name: 'Reject' }).click()
     await expect(page.getByText('Review queue cleared')).toBeVisible()
   })
 })
