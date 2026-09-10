@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Enable auto-merge
         if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
@@ -65,7 +65,7 @@ jobs:
       # deliberately not run: `--list-dirs` only reads package.json files and
       # uses node builtins, so the preinstalled node is enough.
       - name: Checkout the merge commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
 
