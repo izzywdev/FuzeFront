@@ -16,19 +16,45 @@ const portfolio = {
   diagnostics: [],
 }
 
-async function mockQualityApi(page: Page) {
+const documentedStoryPortfolio = {
+  ...portfolio,
+  repositories: [{ ...portfolio.repositories[0], storybookBaseUrl: 'https://storybook.example.test' }],
+  surfaces: [{
+    ...portfolio.surfaces[0],
+    hasStory: true,
+    stories: [{ id: 'plan-picker--default', title: 'UI/PlanPicker', name: 'Default', exportName: 'Default', sourcePath: 'src/PlanPicker.stories.tsx', hasPlay: false, previewPath: 'iframe.html?id=plan-picker--default' }],
+  }],
+}
+
+async function mockQualityApi(page: Page, fixture = portfolio) {
   let suggestionConfirmed = false
+  let members = [{ id: 'member-1', email: 'owner@example.com', role: 'owner' }]
   await page.addInitScript(() => { (window as any).__FRONTFUSE_CONTEXT__ = { getAccessToken: () => 'e2e-token' } })
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const method = route.request().method()
     const respond = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     if (url.pathname.endsWith('/portfolio')) return respond({
-      ...portfolio,
-      suggestions: suggestionConfirmed ? [] : portfolio.suggestions,
+      ...fixture,
+      suggestions: suggestionConfirmed ? [] : fixture.suggestions,
     })
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
-    if (url.pathname.endsWith('/organization/members')) return respond([{ id: 'member-1', email: 'owner@example.com', role: 'owner' }])
+    if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
+    if (url.pathname.endsWith('/organization/invitations') && method === 'POST') {
+      const payload = route.request().postDataJSON() as { email: string, role: string }
+      members = [...members, { id: 'member-invited', email: payload.email, role: payload.role }]
+      return respond({ ok: true }, 202)
+    }
+    const memberId = url.pathname.match(/\/organization\/members\/([^/]+)$/)?.[1]
+    if (memberId && method === 'PUT') {
+      const payload = route.request().postDataJSON() as { role: string }
+      members = members.map(member => member.id === memberId ? { ...member, role: payload.role } : member)
+      return respond({ ok: true }, 202)
+    }
+    if (memberId && method === 'DELETE') {
+      members = members.filter(member => member.id !== memberId)
+      return respond({ ok: true }, 202)
+    }
     if (url.pathname.includes('/test-implementations') && method === 'POST') return respond({ id: 'impl-1', status: 'queued', agentProfile: 'FuzeSDLC QA agent', skills: ['playwright'] }, 202)
     if (url.pathname.includes('/suggestions/') && url.pathname.endsWith('/decision') && method === 'POST') {
       suggestionConfirmed = true
@@ -97,6 +123,35 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByRole('button', { name: 'AI review queue' }).click()
     await page.getByRole('button', { name: 'Confirm' }).click()
     await expect(page.getByText('Review queue cleared')).toBeVisible()
+  })
+
+  test('renders a discovered Storybook state in a sandboxed visual preview', async ({ page }) => {
+    await page.unroute('**/api/v1/**')
+    await mockQualityApi(page, documentedStoryPortfolio)
+    await page.reload()
+    await page.getByRole('button', { name: 'Frontend inventory' }).click()
+    await page.getByRole('button', { name: '1 visual state' }).click()
+    await expect(page.getByTitle('PlanPicker: Default')).toHaveAttribute('src', 'https://storybook.example.test/iframe.html?id=plan-picker--default')
+    await expect(page.getByRole('link', { name: /Open Storybook/ })).toHaveAttribute('href', 'https://storybook.example.test/iframe.html?id=plan-picker--default')
+  })
+
+  test('invites, changes a role, and removes an organization member through FuzeFront security', async ({ page }) => {
+    await page.getByRole('button', { name: 'Organization', exact: true }).click()
+    await expect(page.locator('.member-row').filter({ hasText: 'owner@example.com' })).toBeVisible()
+    await page.getByPlaceholder('teammate@example.com').fill('qa@example.com')
+    const invite = page.waitForRequest(request => request.url().endsWith('/api/v1/organization/invitations') && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Invite' }).click()
+    await expect((await invite).postDataJSON()).toEqual({ email: 'qa@example.com', role: 'member' })
+    const invitedMember = page.locator('.member-row').filter({ hasText: 'qa@example.com' })
+    await expect(invitedMember).toBeVisible()
+    const roleUpdate = page.waitForRequest(request => request.url().endsWith('/api/v1/organization/members/member-invited') && request.method() === 'PUT')
+    await invitedMember.getByRole('combobox').selectOption('viewer')
+    await expect((await roleUpdate).postDataJSON()).toEqual({ role: 'viewer' })
+    page.once('dialog', dialog => dialog.accept())
+    const removal = page.waitForRequest(request => request.url().endsWith('/api/v1/organization/members/member-invited') && request.method() === 'DELETE')
+    await invitedMember.getByRole('button', { name: 'Remove member' }).click()
+    await removal
+    await expect(page.getByText('qa@example.com')).not.toBeVisible()
   })
 
   test('rejects an AI proposal without presenting it as authoritative coverage', async ({ page }) => {
