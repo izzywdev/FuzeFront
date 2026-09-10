@@ -9,7 +9,7 @@ const portfolio = {
     { id: 'api-gap', subjectId: 'api-1', subjectType: 'api-operation', kind: 'authentication-missing', label: 'Missing authentication is rejected', rule: 'api.security.authentication', priority: 'required', coverage: 'gap' },
     { id: 'ui-gap', subjectId: 'ui-1', subjectType: 'frontend-surface', kind: 'state-default', label: 'Default render is covered', rule: 'ui.default', priority: 'required', coverage: 'gap' },
   ],
-  findings: [{ id: 'finding-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' }],
+  findings: [{ id: 'finding-1', repositoryId: 'repo-1', subjectId: 'api-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' }],
   requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do' }],
   flows: [{ id: 'flow-1', requirementId: 'req-1', title: 'Suspend application' }],
   suggestions: [{ id: 'suggestion-1', requirementId: 'req-1', type: 'flow', title: 'Confirm authorization boundary', confidence: 0.91, evidence: ['Only administrators may suspend an app.'], state: 'proposed' }],
@@ -87,6 +87,18 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Arrange')).toBeVisible()
     await page.getByRole('button', { name: /Implement 1 selected/i }).click()
     await expect(page.getByText('Cloud Codex: queued')).toBeVisible()
+  })
+
+  test('filters the API matrix and keeps remediation findings scoped to the visible contract set', async ({ page }) => {
+    await page.getByRole('button', { name: 'API catalog' }).click()
+    const filters = page.locator('.catalog-filters')
+    await filters.getByLabel('Tag').selectOption('apps')
+    await filters.getByLabel('Coverage').selectOption('gap')
+    await expect(page.getByText('/apps/{slug}/suspend')).toBeVisible()
+    await expect(page.getByText('Unauthenticated endpoint')).toBeVisible()
+    await filters.getByLabel('Coverage').selectOption('covered-explicit')
+    await expect(page.getByText('No catalog entries match')).toBeVisible()
+    await expect(page.getByText('No findings in this view')).toBeVisible()
   })
 
   test('keeps the gap plan selection explicit before launching cloud implementation', async ({ page }) => {
