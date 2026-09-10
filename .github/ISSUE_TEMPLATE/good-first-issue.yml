@@ -1,0 +1,44 @@
+name: Good first issue proposal
+description: Suggest a small, newcomer-friendly contribution
+title: "[Good first issue proposal]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping make FuzeFront easier to contribute to. Keep proposals small enough that a newcomer can understand and complete them without deep platform knowledge.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is confusing, missing, or unnecessarily difficult?
+      placeholder: Describe one focused problem.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Suggested small change
+      placeholder: What could a newcomer change in one focused PR?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: List 2-5 concrete conditions for completion.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Documentation
+        - Developer experience
+        - Example application
+        - Tests
+        - Accessibility
+        - Internationalization
+        - SDK
+        - Other
+    validations:
+      required: true
