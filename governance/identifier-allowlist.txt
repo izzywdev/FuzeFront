@@ -69,4 +69,4 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
 src FuzeQuality/packages/core/src/store.ts:102              # FuzeQuality-owned entity
 src FuzeQuality/packages/core/src/store.ts:219              # FuzeQuality-owned entity
-src FuzeQuality/packages/core/src/store.ts:448              # FuzeQuality-owned entity
+src FuzeQuality/packages/core/src/store.ts:459              # FuzeQuality-owned entity

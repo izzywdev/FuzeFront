@@ -230,7 +230,7 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async portfolio(tenantId?: string): Promise<Portfolio> {
-    const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, flows, steps, suggestions] = await Promise.all([
+    const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, criteria, flows, steps, suggestions] = await Promise.all([
       this.pool.query('SELECT * FROM fuzequality.repositories WHERE enabled = true ORDER BY name'),
       this.pool.query('SELECT * FROM fuzequality.api_operations WHERE active = true ORDER BY path, method'),
       this.pool.query('SELECT * FROM fuzequality.frontend_surfaces WHERE active = true ORDER BY package_name, name'),
@@ -239,6 +239,7 @@ export class PostgresCatalogStore implements CatalogStore {
       this.pool.query('SELECT * FROM fuzequality.findings ORDER BY severity, title'),
       this.pool.query('SELECT * FROM fuzequality.scan_diagnostics ORDER BY source_path, code'),
       this.pool.query('SELECT * FROM fuzequality.requirements WHERE active = true ORDER BY jira_key'),
+      this.pool.query('SELECT * FROM fuzequality.acceptance_criteria WHERE active = true ORDER BY requirement_id, position'),
       this.pool.query('SELECT * FROM fuzequality.flows WHERE status <> \'rejected\' ORDER BY updated_at DESC'),
       this.pool.query('SELECT * FROM fuzequality.flow_steps ORDER BY flow_id, position'),
       this.pool.query('SELECT * FROM fuzequality.suggestions ORDER BY created_at DESC'),
@@ -272,7 +273,7 @@ export class PostgresCatalogStore implements CatalogStore {
       expectations: expectations.rows.map(row => ({ id: row.id, subjectType: row.subject_type, subjectId: row.subject_id, kind: row.kind, label: row.label, priority: row.priority, rule: row.rule, coverage: row.coverage, evidenceIds: row.evidence_ids })),
       findings: findings.rows.map(row => ({ id: row.id, repositoryId: row.repository_id ?? undefined, subjectId: row.subject_id ?? undefined, type: row.type, severity: row.severity, title: row.title, detail: row.detail, owner: row.owner ?? undefined, remediation: row.remediation ?? undefined, sourceRevision: row.source_revision ?? undefined, status: row.status })),
       diagnostics: diagnostics.rows.map(row => ({ repositoryId: row.repository_id, revision: row.revision, sourcePath: row.source_path, category: row.category, severity: row.severity, code: row.code, message: row.message })),
-      requirements: requirements.rows.map(row => ({ id: row.id, jiraKey: row.jira_key, issueType: row.issue_type, parentKey: row.parent_key ?? undefined, summary: row.summary, description: row.normalized_description, status: row.status, project: row.project, updatedAt: row.source_updated_at.toISOString() })),
+      requirements: requirements.rows.map(row => ({ id: row.id, jiraKey: row.jira_key, issueType: row.issue_type, parentKey: row.parent_key ?? undefined, summary: row.summary, description: row.normalized_description, status: row.status, project: row.project, updatedAt: row.source_updated_at.toISOString(), acceptanceCriteria: criteria.rows.filter(item => item.requirement_id === row.id).map(item => ({ fingerprint: item.fingerprint, position: item.position, text: item.normalized_text })) })),
       flows: flows.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, title: row.title, owner: row.owner ?? undefined, origin: row.origin, status: row.status, steps: steps.rows.filter(step => step.flow_id === row.id).map(step => ({ id: step.id, position: step.position, actor: step.actor, action: step.action, expectedOutcome: step.expected_outcome, variant: step.variant, targetIds: step.target_ids })) })),
       suggestions: suggestions.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, type: row.type, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, payload: row.payload, state: row.state, createdAt: row.created_at.toISOString() })),
     } as Portfolio
@@ -388,6 +389,16 @@ export class PostgresCatalogStore implements CatalogStore {
       for (const { requirement, suggestions } of results) {
         const saved = await client.query(`INSERT INTO fuzequality.requirements (jira_key,issue_type,parent_key,summary,normalized_description,project,status,source_updated_at,source_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (jira_key) DO UPDATE SET issue_type=EXCLUDED.issue_type,parent_key=EXCLUDED.parent_key,summary=EXCLUDED.summary,normalized_description=EXCLUDED.normalized_description,project=EXCLUDED.project,status=EXCLUDED.status,source_updated_at=EXCLUDED.source_updated_at,source_payload=EXCLUDED.source_payload,active=true RETURNING id`, [requirement.jiraKey,requirement.issueType,requirement.parentKey,requirement.summary,requirement.description,requirement.project,requirement.status,requirement.updatedAt,JSON.stringify(requirement)])
         const requirementId = saved.rows[0].id
+        await client.query('UPDATE fuzequality.acceptance_criteria SET active=false WHERE requirement_id=$1', [requirementId])
+        for (const criterion of requirement.acceptanceCriteria ?? []) {
+          await client.query(
+            `INSERT INTO fuzequality.acceptance_criteria (requirement_id,fingerprint,position,normalized_text,active)
+             VALUES ($1,$2,$3,$4,true)
+             ON CONFLICT (requirement_id,fingerprint) DO UPDATE SET
+               position=EXCLUDED.position,normalized_text=EXCLUDED.normalized_text,active=true`,
+            [requirementId, criterion.fingerprint, criterion.position, criterion.text],
+          )
+        }
         for (const suggestion of suggestions) await client.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
       }
       if (sync) {

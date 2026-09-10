@@ -1,5 +1,5 @@
 import type { Requirement, RequirementSyncResult } from '@fuzequality/contracts'
-import { adfToText } from '@fuzequality/core'
+import { adfToText, extractAcceptanceCriteria } from '@fuzequality/core'
 
 type JiraIssue = {
   key: string
@@ -27,6 +27,7 @@ type JiraSearchOptions = {
   email?: string
   token?: string
   startedAt?: string
+  acceptanceCriteriaFields?: string[]
 }
 
 export function incrementalJql(jql: string, since?: string): string {
@@ -42,7 +43,11 @@ export function incrementalJql(jql: string, since?: string): string {
   return `(${scope}) AND updated >= ${timestamp.getTime()} ORDER BY updated ASC, key ASC`
 }
 
-function asRequirement(issue: JiraIssue): Requirement {
+function asRequirement(issue: JiraIssue, acceptanceCriteriaFields: string[]): Requirement {
+  const acceptanceCriteria = extractAcceptanceCriteria(
+    issue.fields.description,
+    acceptanceCriteriaFields.map(field => issue.fields[field]),
+  )
   return {
     id: `jira:${issue.key}`,
     jiraKey: issue.key,
@@ -55,6 +60,7 @@ function asRequirement(issue: JiraIssue): Requirement {
     status: issue.fields.status?.name ?? 'Unknown',
     project: issue.fields.project?.key ?? 'Unknown',
     updatedAt: issue.fields.updated ?? new Date(0).toISOString(),
+    acceptanceCriteria,
   }
 }
 
@@ -68,6 +74,13 @@ export async function searchJira(jql: string, options: JiraSearchOptions = {}): 
   const seenTokens = new Set<string>()
   let nextPageToken: string | undefined
   const startedAt = options.startedAt ?? new Date().toISOString()
+  const acceptanceCriteriaFields = options.acceptanceCriteriaFields
+    ?? process.env.JIRA_ACCEPTANCE_CRITERIA_FIELDS?.split(',').map(item => item.trim()).filter(Boolean)
+    ?? []
+  const fields = [...new Set([
+    'summary', 'description', 'status', 'issuetype', 'project', 'parent', 'updated',
+    ...acceptanceCriteriaFields,
+  ])]
 
   do {
     const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/rest/api/3/search/jql`, {
@@ -81,12 +94,12 @@ export async function searchJira(jql: string, options: JiraSearchOptions = {}): 
         jql: incrementalJql(jql, options.since),
         maxResults: 100,
         ...(nextPageToken ? { nextPageToken } : {}),
-        fields: ['summary', 'description', 'status', 'issuetype', 'project', 'parent', 'updated'],
+        fields,
       }),
     })
     if (!response.ok) throw new Error(`Jira search returned ${response.status}`)
     const body = (await response.json()) as JiraSearchResponse
-    for (const issue of body.issues ?? []) requirements.set(issue.key, asRequirement(issue))
+    for (const issue of body.issues ?? []) requirements.set(issue.key, asRequirement(issue, acceptanceCriteriaFields))
     if (body.isLast !== false || !body.nextPageToken) break
     if (seenTokens.has(body.nextPageToken)) throw new Error('Jira search returned a repeated page token')
     seenTokens.add(body.nextPageToken)
