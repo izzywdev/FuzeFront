@@ -12,7 +12,34 @@ The broader thesis is simple:
 
 That is the idea behind the **One-Man Unicorn Platform**.
 
-This repository is only one layer of that system.
+## Start here
+
+FuzeFront is being opened to developers, platform engineers, engineering leaders, founders, and teams that want to test the Software Factory model against real workloads.
+
+| You are... | Best next step |
+|---|---|
+| **A developer** | Run the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md) and tell us where it breaks. |
+| **A platform / DevOps engineer** | Test the Kubernetes path and challenge the runtime/infrastructure assumptions. |
+| **An architect / CTO** | Join the public [Architecture Review](https://github.com/izzywdev/FuzeFront/issues/1015). |
+| **A startup / engineering team** | Become a [Design Partner](https://github.com/izzywdev/FuzeFront/issues/1016) and bring a real workload. |
+| **A contributor** | Read [COMMUNITY.md](COMMUNITY.md), then pick a focused issue and submit a PR. |
+
+### We actively want criticism
+
+Do not just star the repository. If you think a boundary is wrong, the architecture is over-engineered, an existing tool already solves a layer better, or something would fail in production, say so.
+
+**Useful participation:**
+
+- reproduce the quickstart and report friction;
+- review the Software Factory architecture;
+- test onboarding with an existing application;
+- contribute examples, docs, adapters, tests, or developer-experience fixes;
+- propose a real design-partner workload;
+- compare Fuze to Backstage, internal developer platforms, PaaS products, agentic coding systems, or your own platform stack.
+
+Read the full [Software Factory architecture](docs/SOFTWARE_FACTORY.md) and [Community guide](COMMUNITY.md).
+
+---
 
 ## The Software Factory thesis
 
@@ -379,6 +406,7 @@ Current and planned areas include:
 
 See:
 
+- `COMMUNITY.md`
 - `CONTRIBUTING.md`
 - `CODE_OF_CONDUCT.md`
 - `SECURITY.md`
