@@ -9,7 +9,7 @@ await runConsumer(
   async (topic, payload) => {
     if (topic !== TOPICS.REQUIREMENT_SYNC_REQUESTED) return
     const command = requirementSyncRequestedSchema.parse(payload)
-    const requirements = await searchJira(command.jql)
+    const sync = await searchJira(command.jql, { since: command.since })
     const portfolio = await apiRequest<Portfolio>('/api/v1/portfolio')
     const analyzer = new LiteLlmFlowAnalyzer(
       process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1',
@@ -17,7 +17,7 @@ await runConsumer(
       process.env.LITELLM_MASTER_KEY
     )
     const results = []
-    for (const requirement of requirements) {
+    for (const requirement of sync.requirements) {
       const analysis = await analyzer.analyze(requirement, {
         operations: portfolio.operations,
         surfaces: portfolio.surfaces,
@@ -26,7 +26,10 @@ await runConsumer(
     }
     await apiRequest('/api/v1/internal/intelligence/results', {
       method: 'POST',
-      body: JSON.stringify({ results }),
+      body: JSON.stringify({
+        results,
+        sync: { sourceType: 'jira', sourceKey: command.scopeId, cursor: sync.cursor },
+      }),
     })
   }
 )
