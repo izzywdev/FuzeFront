@@ -60,7 +60,7 @@ jobs:
     outputs:
       declared: ${{ steps.check.outputs.declared }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Is mcp-maintain declared?
         id: check
@@ -118,7 +118,7 @@ jobs:
         # repointed by the action owner (cf. the trivy-action / kics-github-action
         # compromises). This workflow has `contents: write` on the PR branch, so a
         # repointed checkout would run attacker code with push access.
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
