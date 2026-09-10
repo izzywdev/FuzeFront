@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import type { ApiOperation, Flow, FrontendSurface, Requirement, Suggestion } from '@fuzequality/contracts'
+export { adfToText, extractAcceptanceCriteria } from './adf'
 
 const flowAnalysisSchema = z.object({
   title: z.string(),
@@ -29,16 +30,6 @@ const flowAnalysisSchema = z.object({
 })
 
 export type FlowAnalysis = z.infer<typeof flowAnalysisSchema>
-
-export function adfToText(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (!value || typeof value !== 'object') return ''
-  const node = value as { text?: unknown; content?: unknown[]; type?: unknown }
-  const own = typeof node.text === 'string' ? node.text : ''
-  const children = Array.isArray(node.content) ? node.content.map(adfToText).filter(Boolean) : []
-  const separator = ['paragraph', 'heading', 'listItem'].includes(String(node.type)) ? '\n' : ' '
-  return [own, ...children].filter(Boolean).join(separator).replace(/\n{3,}/g, '\n\n').trim()
-}
 
 export class LiteLlmFlowAnalyzer {
   constructor(
@@ -89,6 +80,7 @@ export class LiteLlmFlowAnalyzer {
                 key: requirement.jiraKey,
                 summary: requirement.summary,
                 description: requirement.description,
+                acceptanceCriteria: requirement.acceptanceCriteria?.map(item => item.text) ?? [],
               },
               candidates: candidatePayload,
               schema: {

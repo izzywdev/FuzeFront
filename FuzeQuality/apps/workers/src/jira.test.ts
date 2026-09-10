@@ -61,6 +61,27 @@ describe('incremental Jira synchronization', () => {
     expect(result).toEqual({ requirements: [], cursor: '2026-09-10T04:00:00.000Z' })
   })
 
+  it('requests configured acceptance fields and fingerprints their criteria', async () => {
+    const jiraIssue = issue('FQ-40', '2026-09-10T05:00:00.000Z')
+    Object.assign(jiraIssue.fields, { customfield_10042: '- First criterion\n- Second criterion' })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ issues: [jiraIssue], isLast: true }), { status: 200 }),
+    )
+    const result = await searchJira('project = FQ', {
+      baseUrl: 'https://example.atlassian.net',
+      email: 'reader@example.com',
+      token: 'secret',
+      fetchImpl,
+      acceptanceCriteriaFields: ['customfield_10042'],
+    })
+    const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))
+    expect(request.fields).toContain('customfield_10042')
+    expect(result.requirements[0].acceptanceCriteria?.map(item => item.text)).toEqual([
+      'First criterion',
+      'Second criterion',
+    ])
+  })
+
   it('fails closed when Jira repeats a pagination token', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(JSON.stringify({ issues: [], isLast: false, nextPageToken: 'loop' }), { status: 200 }),

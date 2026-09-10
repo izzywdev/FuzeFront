@@ -229,6 +229,11 @@ export type Requirement = {
   status: string
   project: string
   updatedAt: string
+  acceptanceCriteria?: Array<{
+    fingerprint: string
+    position: number
+    text: string
+  }>
 }
 
 export type SyncCursor = {
