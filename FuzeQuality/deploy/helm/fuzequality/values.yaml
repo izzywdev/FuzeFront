@@ -60,6 +60,11 @@ config:
   jiraJql: project = FUZE ORDER BY updated DESC
   reconcileSchedule: "*/15 * * * *"
 
+jira:
+  # Jira custom-field IDs containing acceptance criteria, for example
+  # ["customfield_10042"]. Standard description headings are always scanned.
+  acceptanceCriteriaFields: []
+
 secret:
   existingSecret: fuzequality-secrets
 
