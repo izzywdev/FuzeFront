@@ -111,6 +111,14 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('button', { name: /Implement 1 selected/i })).toBeEnabled()
   })
 
+  test('shows Jira-backed product intent separately from confirmed flows and AI proposals', async ({ page }) => {
+    await page.getByRole('button', { name: 'Requirements & flows' }).click()
+    await expect(page.getByText('FQ-1')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Protect app access' })).toBeVisible()
+    await expect(page.getByText('1 confirmed flows')).toBeVisible()
+    await expect(page.getByText('1 proposals')).toBeVisible()
+  })
+
   test('onboards a repository only after GitHub App verification and can request a scan', async ({ page }) => {
     await page.getByRole('button', { name: 'Repositories' }).click()
     await page.getByRole('button', { name: 'Add repository' }).click()
