@@ -573,7 +573,7 @@ app.post('/api/v1/internal/scans/results', async (request, response) => {
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/intelligence/results', async (request, response) => {
-  await store.saveIntelligence(request.body.results ?? [])
+  await store.saveIntelligence(request.body.results ?? [], request.body.sync)
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
@@ -581,11 +581,14 @@ app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
+  const scopeId = request.body?.scopeId ?? 'default'
+  const cursor = await store.syncCursor('jira', scopeId)
   await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
-    scopeId: request.body?.scopeId ?? 'default',
+    scopeId,
     jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
+    ...(cursor?.cursor ? { since: cursor.cursor } : {}),
   })
-  response.status(202).json({ status: 'queued' })
+  response.status(202).json({ status: 'queued', scopeId, incrementalFrom: cursor?.cursor })
 })
 
 app.post('/api/v1/webhooks/github', async (request, response) => {
