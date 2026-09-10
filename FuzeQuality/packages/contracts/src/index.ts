@@ -231,6 +231,19 @@ export type Requirement = {
   updatedAt: string
 }
 
+export type SyncCursor = {
+  sourceType: 'jira'
+  sourceKey: string
+  cursor?: string
+  lastSuccessAt?: string
+  freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'
+}
+
+export type RequirementSyncResult = {
+  requirements: Requirement[]
+  cursor: string
+}
+
 export type FlowStep = {
   id: string
   position: number
@@ -379,8 +392,8 @@ export const scanRequestedSchema = z.object({
 })
 
 export const requirementSyncRequestedSchema = z.object({
-  scopeId: z.string(),
-  jql: z.string(),
+  scopeId: z.string().trim().min(1).max(200),
+  jql: z.string().trim().min(1).max(10_000),
   since: z.string().datetime().optional(),
 })
 

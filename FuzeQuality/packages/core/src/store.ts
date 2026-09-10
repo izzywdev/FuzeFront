@@ -9,6 +9,7 @@ import type {
   ScanResult,
   Suggestion,
   Requirement,
+  SyncCursor,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
@@ -24,7 +25,11 @@ export interface CatalogStore {
   ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   saveScan(result: ScanResult): Promise<void>
-  saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>): Promise<void>
+  syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
+  saveIntelligence(
+    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
+  ): Promise<void>
   decideSuggestion(id: string, decision: 'confirm' | 'reject'): Promise<Suggestion | undefined>
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
@@ -49,6 +54,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
   private adminContextAudits: AdminContextAudit[] = []
+  private syncCursors: SyncCursor[] = []
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -163,7 +169,14 @@ export class MemoryCatalogStore implements CatalogStore {
     return suggestion
   }
 
-  async saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>) {
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    return this.syncCursors.find(item => item.sourceType === sourceType && item.sourceKey === sourceKey)
+  }
+
+  async saveIntelligence(
+    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
+  ) {
     for (const result of results) {
       const existing = this.data.requirements.find(item => item.jiraKey === result.requirement.jiraKey)
       if (existing) Object.assign(existing, result.requirement)
@@ -172,6 +185,17 @@ export class MemoryCatalogStore implements CatalogStore {
         ...this.data.suggestions.filter(item => item.requirementId !== result.requirement.id || item.state !== 'proposed'),
         ...result.suggestions,
       ]
+    }
+    if (sync) {
+      const existing = await this.syncCursor(sync.sourceType, sync.sourceKey)
+      const value: SyncCursor = {
+        ...sync,
+        cursor: sync.cursor,
+        lastSuccessAt: new Date().toISOString(),
+        freshnessStatus: 'fresh',
+      }
+      if (existing) Object.assign(existing, value)
+      else this.syncCursors.push(value)
     }
   }
 
@@ -338,11 +362,49 @@ export class PostgresCatalogStore implements CatalogStore {
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
 
-  async saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>) {
-    for (const { requirement, suggestions } of results) {
-      const saved = await this.pool.query(`INSERT INTO fuzequality.requirements (jira_key,issue_type,parent_key,summary,normalized_description,project,status,source_updated_at,source_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (jira_key) DO UPDATE SET issue_type=EXCLUDED.issue_type,parent_key=EXCLUDED.parent_key,summary=EXCLUDED.summary,normalized_description=EXCLUDED.normalized_description,project=EXCLUDED.project,status=EXCLUDED.status,source_updated_at=EXCLUDED.source_updated_at,source_payload=EXCLUDED.source_payload,active=true RETURNING id`, [requirement.jiraKey,requirement.issueType,requirement.parentKey,requirement.summary,requirement.description,requirement.project,requirement.status,requirement.updatedAt,JSON.stringify(requirement)])
-      const requirementId = saved.rows[0].id
-      for (const suggestion of suggestions) await this.pool.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    const result = await this.pool.query(
+      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2',
+      [sourceType, sourceKey],
+    )
+    const row = result.rows[0]
+    if (!row) return undefined
+    return {
+      sourceType: row.source_type,
+      sourceKey: row.source_key,
+      cursor: row.cursor ?? undefined,
+      lastSuccessAt: row.last_success_at?.toISOString(),
+      freshnessStatus: row.freshness_status,
+    } as SyncCursor
+  }
+
+  async saveIntelligence(
+    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
+  ) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const { requirement, suggestions } of results) {
+        const saved = await client.query(`INSERT INTO fuzequality.requirements (jira_key,issue_type,parent_key,summary,normalized_description,project,status,source_updated_at,source_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (jira_key) DO UPDATE SET issue_type=EXCLUDED.issue_type,parent_key=EXCLUDED.parent_key,summary=EXCLUDED.summary,normalized_description=EXCLUDED.normalized_description,project=EXCLUDED.project,status=EXCLUDED.status,source_updated_at=EXCLUDED.source_updated_at,source_payload=EXCLUDED.source_payload,active=true RETURNING id`, [requirement.jiraKey,requirement.issueType,requirement.parentKey,requirement.summary,requirement.description,requirement.project,requirement.status,requirement.updatedAt,JSON.stringify(requirement)])
+        const requirementId = saved.rows[0].id
+        for (const suggestion of suggestions) await client.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+      }
+      if (sync) {
+        await client.query(
+          `INSERT INTO fuzequality.sync_cursors (source_type,source_key,cursor,last_success_at,freshness_status)
+           VALUES ($1,$2,$3,now(),'fresh')
+           ON CONFLICT (source_type,source_key) DO UPDATE SET
+             cursor=EXCLUDED.cursor,last_success_at=EXCLUDED.last_success_at,freshness_status='fresh'`,
+          [sync.sourceType, sync.sourceKey, sync.cursor],
+        )
+      }
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
     }
   }
 
