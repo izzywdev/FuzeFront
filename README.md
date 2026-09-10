@@ -1,5 +1,11 @@
 # FuzeFront
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Good First Issues](https://img.shields.io/github/issues-search/izzywdev/FuzeFront?query=label%3A%22good%20first%20issue%22%20is%3Aopen&label=good%20first%20issues)](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22)
+[![Help Wanted](https://img.shields.io/github/issues-search/izzywdev/FuzeFront?query=label%3A%22help%20wanted%22%20is%3Aopen&label=help%20wanted)](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22)
+[![Public Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
+[![Community](https://img.shields.io/badge/community-join-brightgreen)](COMMUNITY.md)
+
 **The application layer of the Fuze Software Factory.**
 
 Fuze is being built as an AI-native **Software Factory**: a platform that standardizes how software is planned, built, integrated, deployed, governed, observed, and operated.
@@ -15,6 +21,8 @@ That is the idea behind the **One-Man Unicorn Platform**.
 ## Start here
 
 FuzeFront is being opened to developers, platform engineers, engineering leaders, founders, and teams that want to test the Software Factory model against real workloads.
+
+**Public launch:** [Read the launch note](docs/PUBLIC_LAUNCH.md) · [Public roadmap](ROADMAP.md) · [Good first issues](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) · [Help wanted](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22)
 
 | You are... | Best next step |
 |---|---|
@@ -388,7 +396,7 @@ Current platform capabilities include:
 
 ## Roadmap direction
 
-The roadmap is centered on increasing factory automation and decreasing per-product manual work.
+The roadmap is centered on increasing factory automation and decreasing per-product manual work. See the full public [ROADMAP.md](ROADMAP.md).
 
 Current and planned areas include:
 
