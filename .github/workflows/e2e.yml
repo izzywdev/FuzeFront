@@ -32,6 +32,10 @@ concurrency:
   group: e2e-signin-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   signin:
     name: Playwright sign-in flow
@@ -123,6 +127,44 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # ── FuzeQuality: mocked API contract + browser UX flows ───────────────
+      # This runs the federated remote as its own Vite application. The browser
+      # intercepts its same-origin API requests with deterministic catalog data,
+      # so portfolio navigation, gap planning, implementation dispatch, visual
+      # references, and AI review do not depend on production credentials or a
+      # live Jira project.
+      - name: Install FuzeQuality browser-test dependencies
+        working-directory: FuzeQuality
+        # FuzeQuality consumes the private published security client. Its
+        # checked-in .npmrc intentionally reads GITHUB_TOKEN (not
+        # NODE_AUTH_TOKEN), so pass the workflow token explicitly and retain
+        # only package-read scope.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm install --include=dev --ignore-scripts
+
+      - name: Run FuzeQuality Playwright UX flows
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e:fuzequality -- --project=chromium
+
+      - name: Create sampled FuzeQuality UX videos
+        if: always()
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p playwright-video-fuzequality
+          while IFS= read -r -d '' video; do
+            target="playwright-video-fuzequality/$(basename "$(dirname "$video")").webm"
+            if command -v ffmpeg >/dev/null 2>&1; then
+              ffmpeg -y -i "$video" -vf 'fps=3,scale=960:-2:flags=lanczos' -c:v libvpx-vp9 -b:v 500k -an "$target"
+            else
+              cp "$video" "$target"
+            fi
+          done < <(find test-results -type f -name '*.webm' -print0)
+
       # ── Playwright: sign-in + runtime federated load ────────────────────────
       - name: Run Playwright e2e (sign-in + FuzeClock load)
         working-directory: frontend
@@ -161,11 +203,29 @@ jobs:
             | head -400 || true
 
       - name: Upload Playwright report
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-report
+          name: playwright-report-signin
           path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Upload FuzeQuality Playwright report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-fuzequality
+          path: frontend/playwright-report-fuzequality/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload sampled FuzeQuality UX videos
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-video-fuzequality-3fps
+          path: frontend/playwright-video-fuzequality/
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Tear down E2E stack
