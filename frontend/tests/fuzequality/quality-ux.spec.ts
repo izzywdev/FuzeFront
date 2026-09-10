@@ -39,6 +39,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       suggestions: suggestionConfirmed ? [] : fixture.suggestions,
     })
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
+    if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
     if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
     if (url.pathname.endsWith('/organization/invitations') && method === 'POST') {
       const payload = route.request().postDataJSON() as { email: string, role: string }
@@ -151,7 +152,19 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const removal = page.waitForRequest(request => request.url().endsWith('/api/v1/organization/members/member-invited') && request.method() === 'DELETE')
     await invitedMember.getByRole('button', { name: 'Remove member' }).click()
     await removal
-    await expect(page.getByText('qa@example.com')).not.toBeVisible()
+    await expect(page.locator('.member-row').filter({ hasText: 'qa@example.com' })).not.toBeVisible()
+  })
+
+  test('lets a platform administrator review and exit a read-only tenant context', async ({ page }) => {
+    await page.getByRole('button', { name: 'Organizations', exact: true }).click()
+    await expect(page.getByText('tenant-1')).toBeVisible()
+    const contextRequest = page.waitForRequest(request => request.url().endsWith('/api/v1/admin/organizations/tenant-1/context') && request.method() === 'POST')
+    await page.getByRole('button', { name: 'Review', exact: true }).click()
+    await expect((await contextRequest).postDataJSON()).toEqual({ reason: 'Platform QA portfolio review' })
+    await expect(page.getByRole('status')).toContainText('Read-only organization context')
+    await expect(page.getByRole('heading', { name: 'Organization tenant-1' })).toBeVisible()
+    await page.getByRole('button', { name: 'Exit context' }).click()
+    await expect(page.getByRole('heading', { name: 'Organization QA portfolio' })).toBeVisible()
   })
 
   test('rejects an AI proposal without presenting it as authoritative coverage', async ({ page }) => {
