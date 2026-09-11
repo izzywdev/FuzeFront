@@ -168,6 +168,19 @@ and recovery steps, authorization and tenant boundaries, candidate targets,
 test scenarios, confidence, evidence, model identity, and prompt/schema
 versions. These remain proposed evidence until a human confirms them.
 
+The projector applies deterministic policy `flow-orphans-v1` after repository,
+requirement, analysis, or review events. It records story-without-flow,
+flow-without-active-story, uncovered criterion/step, implementation-without-story,
+and missing role, failure, cancellation, and retry paths. Proposed AI mappings are
+excluded: only confirmed flows are authoritative. Rebuilds use stable finding IDs,
+replace only the current flow-policy projection, preserve scanner findings and the
+last trustworthy projection on failure, and write an immutable coverage snapshot.
+
+Each projected finding exposes its source revision, policy and schema versions, deterministic
+evidence strength, evidence identifiers, calculation time, and audit entry through
+`GET /api/v1/findings`. `POST /api/v1/internal/coverage/rebuild` returns totals by
+type and severity for worker logs and operational metrics.
+
 ## Deployment
 
 The Helm chart is in `deploy/helm/fuzequality`; its Argo CD Application is in
