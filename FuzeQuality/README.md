@@ -122,7 +122,11 @@ JIRA_API_TOKEN
 LITELLM_URL
 LITELLM_MASTER_KEY
 FUZEQUALITY_LLM_MODEL
+FUZEQUALITY_EMBEDDING_MODEL
 CHROMA_URL
+CHROMA_TOKEN
+CHROMA_TENANT
+CHROMA_DATABASE
 ```
 
 Authentication and authorization are platform-owned dependencies. Production
@@ -147,6 +151,15 @@ The complete registration, webhook, rotation, and verification contract is in
 - Storybook stories are documentation evidence, not executed test evidence.
 - Scanner checkouts use short-lived GitHub App tokens and temporary directories.
 - Invalid Kafka messages are routed to per-topic `.dlq` topics.
+
+The intelligence worker builds immutable, content-addressed Chroma collections
+for API operations, frontend surfaces, tests, and confirmed/proposed flows.
+Collection IDs incorporate the catalog source revisions, so a failed rebuild
+does not replace the last trustworthy index and a retry is idempotent. Jira
+analysis retrieves at most 40 API/UI candidates, restricted to repositories
+bound to the Jira project when bindings exist. Embeddings are supplied through
+the existing LiteLLM gateway and can be replaced with the
+`FUZEQUALITY_EMBEDDING_MODEL` configuration without changing indexed entities.
 
 ## Deployment
 
