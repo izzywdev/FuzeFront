@@ -12,6 +12,7 @@ const portfolio = {
   findings: [
     { id: 'finding-1', repositoryId: 'repo-1', subjectId: 'api-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' },
     { id: 'flow-finding-1', subjectId: 'req-1', type: 'story-without-flow', title: 'FQ-1 has no confirmed user flow', detail: 'The active story has no accepted flow.', severity: 'high', status: 'open', sourceRevision: 'FQ-1@2026-09-11T00:00:00.000Z', policyVersion: 'flow-orphans-v1', schemaVersion: '1.0', evidenceStrength: 'deterministic', evidence: ['FQ-1'], generatedAt: '2026-09-11T00:01:00.000Z' },
+    { id: 'requirement-finding-1', subjectId: 'req-1', type: 'conflicting-requirement-outcome', title: 'FQ-1 contains conflicting outcomes', detail: 'Criteria 1 and 2 express opposite results.', severity: 'high', status: 'open', sourceRevision: 'FQ-1@2026-09-11T00:00:00.000Z', policyVersion: 'requirement-review-v1', schemaVersion: '1.0', evidenceStrength: 'deterministic', sourcePassages: ['Administrators can suspend an app.', 'Administrators cannot suspend an app.'], affectedFlowIds: ['flow-1'], affectedTargetIds: ['api-1'], remediation: 'Resolve the contradiction in Jira.', remediationOptions: ['Keep criterion 1', 'Keep criterion 2', 'Rewrite both criteria in Jira'], generatedAt: '2026-09-11T00:01:00.000Z' },
   ],
   requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do' }],
   flows: [{ id: 'flow-1', requirementId: 'req-1', title: 'Suspend application' }],
@@ -129,10 +130,14 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('heading', { name: 'Protect app access' })).toBeVisible()
     await expect(page.getByText('1 confirmed flows')).toBeVisible()
     await expect(page.getByText('1 proposals')).toBeVisible()
-    await expect(page.getByText('1 flow gaps')).toBeVisible()
+    await expect(page.getByText('2 quality findings')).toBeVisible()
     await page.getByText('FQ-1 has no confirmed user flow').click()
     await expect(page.getByText(/deterministic evidence · policy flow-orphans-v1 · schema 1.0/)).toBeVisible()
     await expect(page.locator('.requirement-findings code').getByText('FQ-1', { exact: true })).toBeVisible()
+    await page.getByText('FQ-1 contains conflicting outcomes').click()
+    await expect(page.getByText('Administrators cannot suspend an app.')).toBeVisible()
+    await expect(page.getByLabel('Remediation choices').getByText('Rewrite both criteria in Jira')).toBeVisible()
+    await expect(page.getByText('flow-1', { exact: true })).toBeVisible()
   })
 
   test('onboards a repository only after GitHub App verification and can request a scan', async ({ page }) => {
