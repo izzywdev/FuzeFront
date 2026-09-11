@@ -428,7 +428,22 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
 }
 
 function Requirements({ data }: { data: Portfolio }) {
-  return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." /><div className="requirements-grid">{data.requirements.map(requirement => { const flows = data.flows.filter(flow => flow.requirementId === requirement.id); const suggestions = data.suggestions.filter(item => item.requirementId === requirement.id && item.state === 'proposed'); return <article className="requirement-card" key={requirement.id}><div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span><h3>{requirement.summary}</h3><p>{requirement.description}</p><div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span></div></article>})}</div></>
+  return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." /><div className="requirements-grid">{data.requirements.map(requirement => {
+    const flows = data.flows.filter(flow => flow.requirementId === requirement.id)
+    const suggestions = data.suggestions.filter(item => item.requirementId === requirement.id && item.state === 'proposed')
+    const findings = data.findings.filter(item => item.subjectId === requirement.id || item.sourceRevision?.startsWith(`${requirement.jiraKey}@`))
+    return <article className="requirement-card" key={requirement.id}>
+      <div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span>
+      <h3>{requirement.summary}</h3><p>{requirement.description}</p>
+      <div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span><span className={findings.length ? 'requirement-gap-count' : ''}><AlertTriangle /> {findings.length} flow gaps</span></div>
+      {findings.length > 0 && <div className="requirement-findings">{findings.map(finding => <details key={finding.id}>
+        <summary><span className={`severity severity-${finding.severity}`}>{finding.severity}</span>{finding.title}</summary>
+        <p>{finding.detail}</p>
+        <small>{finding.evidenceStrength ?? 'unknown'} evidence · policy {finding.policyVersion ?? 'unknown'} · schema {finding.schemaVersion ?? 'unknown'} · source {finding.sourceRevision ?? 'catalog'} · {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'}</small>
+        {(finding.evidence?.length ?? 0) > 0 && <code>{finding.evidence?.join(' · ')}</code>}
+      </details>)}</div>}
+    </article>
+  })}</div></>
 }
 
 function ReviewQueue({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {

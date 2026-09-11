@@ -9,7 +9,10 @@ const portfolio = {
     { id: 'api-gap', subjectId: 'api-1', subjectType: 'api-operation', kind: 'authentication-missing', label: 'Missing authentication is rejected', rule: 'api.security.authentication', priority: 'required', coverage: 'gap' },
     { id: 'ui-gap', subjectId: 'ui-1', subjectType: 'frontend-surface', kind: 'state-default', label: 'Default render is covered', rule: 'ui.default', priority: 'required', coverage: 'gap' },
   ],
-  findings: [{ id: 'finding-1', repositoryId: 'repo-1', subjectId: 'api-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' }],
+  findings: [
+    { id: 'finding-1', repositoryId: 'repo-1', subjectId: 'api-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' },
+    { id: 'flow-finding-1', subjectId: 'req-1', type: 'story-without-flow', title: 'FQ-1 has no confirmed user flow', detail: 'The active story has no accepted flow.', severity: 'high', status: 'open', sourceRevision: 'FQ-1@2026-09-11T00:00:00.000Z', policyVersion: 'flow-orphans-v1', schemaVersion: '1.0', evidenceStrength: 'deterministic', evidence: ['FQ-1'], generatedAt: '2026-09-11T00:01:00.000Z' },
+  ],
   requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do' }],
   flows: [{ id: 'flow-1', requirementId: 'req-1', title: 'Suspend application' }],
   suggestions: [{
@@ -122,10 +125,14 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
   test('shows Jira-backed product intent separately from confirmed flows and AI proposals', async ({ page }) => {
     await page.getByRole('button', { name: 'Requirements & flows' }).click()
-    await expect(page.getByText('FQ-1')).toBeVisible()
+    await expect(page.locator('.requirement-key').getByText('FQ-1', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Protect app access' })).toBeVisible()
     await expect(page.getByText('1 confirmed flows')).toBeVisible()
     await expect(page.getByText('1 proposals')).toBeVisible()
+    await expect(page.getByText('1 flow gaps')).toBeVisible()
+    await page.getByText('FQ-1 has no confirmed user flow').click()
+    await expect(page.getByText(/deterministic evidence · policy flow-orphans-v1 · schema 1.0/)).toBeVisible()
+    await expect(page.locator('.requirement-findings code').getByText('FQ-1', { exact: true })).toBeVisible()
   })
 
   test('onboards a repository only after GitHub App verification and can request a scan', async ({ page }) => {

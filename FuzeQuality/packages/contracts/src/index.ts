@@ -175,7 +175,29 @@ export type CatalogFinding = {
   owner?: string
   remediation?: string
   sourceRevision?: string
+  policyVersion?: string
+  schemaVersion?: string
+  evidenceStrength?: 'deterministic' | 'reviewed' | 'semantic'
+  evidence?: string[]
+  generatedAt?: string
+  auditHistory?: Array<{
+    action: string
+    at: string
+    detail?: string
+  }>
   status: 'open' | 'resolved' | 'suppressed'
+}
+
+export type CoverageProjection = {
+  policyVersion: string
+  schemaVersion: string
+  generatedAt: string
+  findings: CatalogFinding[]
+  metrics: {
+    total: number
+    byType: Record<string, number>
+    bySeverity: Record<CatalogFinding['severity'], number>
+  }
 }
 
 export type ApiCoverageQuery = {

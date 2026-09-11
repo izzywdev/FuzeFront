@@ -214,6 +214,9 @@ app.get('/metrics', async (_request, response) => {
       '# HELP fuzequality_open_findings Number of open catalog findings',
       '# TYPE fuzequality_open_findings gauge',
       `fuzequality_open_findings ${portfolio.findings.filter(item => item.status === 'open').length}`,
+      '# HELP fuzequality_flow_gap_findings Number of open deterministic flow-gap findings',
+      '# TYPE fuzequality_flow_gap_findings gauge',
+      `fuzequality_flow_gap_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'flow-orphans-v1').length}`,
     ].join('\n')
   )
 })
@@ -577,7 +580,20 @@ app.post('/api/v1/internal/intelligence/results', async (request, response) => {
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
-  response.status(202).json({ accepted: true, rebuiltAt: new Date().toISOString() })
+  try {
+    const projection = await store.rebuildCoverage()
+    console.info(JSON.stringify({
+      event: 'coverage_projection_rebuilt',
+      policyVersion: projection.policyVersion,
+      schemaVersion: projection.schemaVersion,
+      findings: projection.metrics.total,
+      byType: projection.metrics.byType,
+    }))
+    response.status(200).json(projection)
+  } catch {
+    console.error(JSON.stringify({ event: 'coverage_projection_failed', code: 'FLOW_PROJECTION_FAILED', retryable: true }))
+    response.status(503).json({ error: 'Coverage projection failed; the previous snapshot remains active', code: 'FLOW_PROJECTION_FAILED' })
+  }
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
