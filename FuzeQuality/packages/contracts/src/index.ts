@@ -179,6 +179,11 @@ export type CatalogFinding = {
   schemaVersion?: string
   evidenceStrength?: 'deterministic' | 'reviewed' | 'semantic'
   evidence?: string[]
+  confidence?: number
+  sourcePassages?: string[]
+  affectedFlowIds?: string[]
+  affectedTargetIds?: string[]
+  remediationOptions?: string[]
   generatedAt?: string
   auditHistory?: Array<{
     action: string
