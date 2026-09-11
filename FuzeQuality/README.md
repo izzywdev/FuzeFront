@@ -161,6 +161,13 @@ bound to the Jira project when bindings exist. Embeddings are supplied through
 the existing LiteLLM gateway and can be replaced with the
 `FUZEQUALITY_EMBEDDING_MODEL` configuration without changing indexed entities.
 
+Flow extraction uses the versioned `fuzequality-flow-v1` prompt and `1.0`
+structured schema. Zod rejects malformed model output before it can be stored.
+Review proposals preserve actors, preconditions, trigger, main/alternate/error
+and recovery steps, authorization and tenant boundaries, candidate targets,
+test scenarios, confidence, evidence, model identity, and prompt/schema
+versions. These remain proposed evidence until a human confirms them.
+
 ## Deployment
 
 The Helm chart is in `deploy/helm/fuzequality`; its Argo CD Application is in

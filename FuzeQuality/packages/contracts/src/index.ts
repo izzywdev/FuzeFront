@@ -255,7 +255,7 @@ export type FlowStep = {
   actor: string
   action: string
   expectedOutcome: string
-  variant: 'main' | 'alternate' | 'error'
+  variant: 'main' | 'alternate' | 'error' | 'recovery'
   targetIds: string[]
 }
 
@@ -266,6 +266,11 @@ export type Flow = {
   owner?: string
   origin: 'confirmed' | 'inferred'
   status: 'proposed' | 'confirmed' | 'rejected'
+  actors?: string[]
+  preconditions?: string[]
+  trigger?: string
+  authorizationBoundaries?: string[]
+  tenantBoundaries?: string[]
   steps: FlowStep[]
 }
 

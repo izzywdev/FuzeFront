@@ -12,7 +12,16 @@ const portfolio = {
   findings: [{ id: 'finding-1', repositoryId: 'repo-1', subjectId: 'api-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' }],
   requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do' }],
   flows: [{ id: 'flow-1', requirementId: 'req-1', title: 'Suspend application' }],
-  suggestions: [{ id: 'suggestion-1', requirementId: 'req-1', type: 'flow', title: 'Confirm authorization boundary', confidence: 0.91, evidence: ['Only administrators may suspend an app.'], state: 'proposed' }],
+  suggestions: [{
+    id: 'suggestion-1', requirementId: 'req-1', type: 'flow', title: 'Confirm authorization boundary',
+    confidence: 0.91, evidence: ['Only administrators may suspend an app.'], state: 'proposed',
+    payload: {
+      actors: ['administrator'], trigger: 'Suspend an app',
+      authorizationBoundaries: ['Administrator role is required'],
+      tenantBoundaries: ['App belongs to the active organization'],
+      analysis: { promptVersion: 'fuzequality-flow-v1', schemaVersion: '1.0', model: 'quality-analysis' },
+    },
+  }],
   diagnostics: [],
 }
 
@@ -142,6 +151,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('No Storybook visual reference found')).toBeVisible()
     await page.getByRole('button', { name: 'Close component preview' }).click()
     await page.getByRole('button', { name: 'AI review queue' }).click()
+    await expect(page.getByText('Authorization boundaries')).toBeVisible()
+    await expect(page.getByText('Administrator role is required')).toBeVisible()
+    await expect(page.getByText(/Prompt fuzequality-flow-v1/)).toBeVisible()
     await page.getByRole('button', { name: 'Confirm' }).click()
     await expect(page.getByText('Review queue cleared')).toBeVisible()
   })
