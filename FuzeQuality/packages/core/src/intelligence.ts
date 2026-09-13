@@ -204,5 +204,19 @@ export function suggestionsFromAnalysis(requirement: Requirement, analysis: Flow
       state: 'proposed' as const,
       createdAt: new Date().toISOString(),
     })),
+    ...analysis.missingCriteria.map((criterion, index) => ({
+      id: suggestionId(`missing-criteria:${index}:${criterion}`),
+      requirementId: requirement.id,
+      type: 'missing-criteria' as const,
+      title: `Suggested missing criterion: ${criterion}`,
+      confidence: analysis.confidence,
+      evidence: analysis.evidence,
+      payload: {
+        criterion,
+        analysis: analysis.provenance,
+      },
+      state: 'proposed' as const,
+      createdAt: new Date().toISOString(),
+    })),
   ]
 }

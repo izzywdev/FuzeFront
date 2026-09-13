@@ -14,7 +14,9 @@ import type {
   CoverageProjection,
 } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
-import { buildFlowCoverageProjection, isFlowCoverageFinding } from './orphan-analysis'
+import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
+import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
+import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
 
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
@@ -176,9 +178,9 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async rebuildCoverage() {
-    const projection = buildFlowCoverageProjection(this.data)
+    const projection = buildQualityIntelligenceProjection(this.data)
     this.data.findings = [
-      ...this.data.findings.filter(item => !isFlowCoverageFinding(item.type)),
+      ...this.data.findings.filter(item => !isQualityIntelligenceFinding(item.type)),
       ...projection.findings,
     ]
     return projection
@@ -286,7 +288,7 @@ export class PostgresCatalogStore implements CatalogStore {
       surfaces: surfaces.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, packageName: row.package_name, kind: row.kind, name: row.name, sourcePath: row.source_path, routePath: row.route_path ?? undefined, public: row.is_public, states: row.states, hasStory: row.has_story, stories: row.stories ?? [] })),
       tests: tests.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, framework: row.framework, level: row.test_level, title: row.title, sourcePath: row.source_path, assertionCount: row.assertion_count, targets: row.targets })),
       expectations: expectations.rows.map(row => ({ id: row.id, subjectType: row.subject_type, subjectId: row.subject_id, kind: row.kind, label: row.label, priority: row.priority, rule: row.rule, coverage: row.coverage, evidenceIds: row.evidence_ids })),
-      findings: findings.rows.map(row => ({ id: row.id, repositoryId: row.repository_id ?? undefined, subjectId: row.subject_id ?? undefined, type: row.type, severity: row.severity, title: row.title, detail: row.detail, owner: row.owner ?? undefined, remediation: row.remediation ?? undefined, sourceRevision: row.source_revision ?? undefined, policyVersion: row.policy_version ?? undefined, schemaVersion: row.schema_version ?? undefined, evidenceStrength: row.evidence_strength ?? undefined, evidence: row.evidence ?? undefined, generatedAt: row.generated_at?.toISOString(), auditHistory: row.audit_history ?? undefined, status: row.status })),
+      findings: findings.rows.map(row => ({ id: row.id, repositoryId: row.repository_id ?? undefined, subjectId: row.subject_id ?? undefined, type: row.type, severity: row.severity, title: row.title, detail: row.detail, owner: row.owner ?? undefined, remediation: row.remediation ?? undefined, sourceRevision: row.source_revision ?? undefined, policyVersion: row.policy_version ?? undefined, schemaVersion: row.schema_version ?? undefined, evidenceStrength: row.evidence_strength ?? undefined, evidence: row.evidence ?? undefined, confidence: row.confidence === null ? undefined : Number(row.confidence), sourcePassages: row.source_passages ?? undefined, affectedFlowIds: row.affected_flow_ids ?? undefined, affectedTargetIds: row.affected_target_ids ?? undefined, remediationOptions: row.remediation_options ?? undefined, generatedAt: row.generated_at?.toISOString(), auditHistory: row.audit_history ?? undefined, status: row.status })),
       diagnostics: diagnostics.rows.map(row => ({ repositoryId: row.repository_id, revision: row.revision, sourcePath: row.source_path, category: row.category, severity: row.severity, code: row.code, message: row.message })),
       requirements: requirements.rows.map(row => ({ id: row.id, jiraKey: row.jira_key, issueType: row.issue_type, parentKey: row.parent_key ?? undefined, summary: row.summary, description: row.normalized_description, status: row.status, project: row.project, updatedAt: row.source_updated_at.toISOString(), acceptanceCriteria: criteria.rows.filter(item => item.requirement_id === row.id).map(item => ({ fingerprint: item.fingerprint, position: item.position, text: item.normalized_text })) })),
       flows: flows.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, title: row.title, owner: row.owner ?? undefined, origin: row.origin, status: row.status, actors: row.details?.actors ?? [], preconditions: row.details?.preconditions ?? [], trigger: row.details?.trigger, authorizationBoundaries: row.details?.authorizationBoundaries ?? [], tenantBoundaries: row.details?.tenantBoundaries ?? [], steps: steps.rows.filter(step => step.flow_id === row.id).map(step => ({ id: step.id, position: step.position, actor: step.actor, action: step.action, expectedOutcome: step.expected_outcome, variant: step.variant, targetIds: step.target_ids })) })),
@@ -436,17 +438,17 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async rebuildCoverage() {
     const portfolio = await this.portfolio()
-    const projection = buildFlowCoverageProjection(portfolio)
+    const projection = buildQualityIntelligenceProjection(portfolio)
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      await client.query('DELETE FROM fuzequality.findings WHERE policy_version=$1', [projection.policyVersion])
+      await client.query('DELETE FROM fuzequality.findings WHERE policy_version = ANY($1::text[])', [[FLOW_COVERAGE_POLICY_VERSION, REQUIREMENT_REVIEW_POLICY_VERSION]])
       for (const item of projection.findings) {
         await client.query(
           `INSERT INTO fuzequality.findings
-           (id,repository_id,subject_id,type,severity,title,detail,status,source_revision,policy_version,schema_version,evidence_strength,evidence,generated_at,audit_history)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-          [item.id,item.repositoryId,item.subjectId,item.type,item.severity,item.title,item.detail,item.status,item.sourceRevision,item.policyVersion,item.schemaVersion,item.evidenceStrength,JSON.stringify(item.evidence ?? []),item.generatedAt,JSON.stringify(item.auditHistory ?? [])],
+           (id,repository_id,subject_id,type,severity,title,detail,status,source_revision,policy_version,schema_version,evidence_strength,evidence,confidence,source_passages,affected_flow_ids,affected_target_ids,remediation_options,generated_at,audit_history)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+          [item.id,item.repositoryId,item.subjectId,item.type,item.severity,item.title,item.detail,item.status,item.sourceRevision,item.policyVersion,item.schemaVersion,item.evidenceStrength,JSON.stringify(item.evidence ?? []),item.confidence,JSON.stringify(item.sourcePassages ?? []),JSON.stringify(item.affectedFlowIds ?? []),JSON.stringify(item.affectedTargetIds ?? []),JSON.stringify(item.remediationOptions ?? []),item.generatedAt,JSON.stringify(item.auditHistory ?? [])],
         )
       }
       await client.query(

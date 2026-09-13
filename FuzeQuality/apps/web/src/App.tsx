@@ -435,11 +435,15 @@ function Requirements({ data }: { data: Portfolio }) {
     return <article className="requirement-card" key={requirement.id}>
       <div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span>
       <h3>{requirement.summary}</h3><p>{requirement.description}</p>
-      <div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span><span className={findings.length ? 'requirement-gap-count' : ''}><AlertTriangle /> {findings.length} flow gaps</span></div>
+      <div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span><span className={findings.length ? 'requirement-gap-count' : ''}><AlertTriangle /> {findings.length} quality findings</span></div>
       {findings.length > 0 && <div className="requirement-findings">{findings.map(finding => <details key={finding.id}>
         <summary><span className={`severity severity-${finding.severity}`}>{finding.severity}</span>{finding.title}</summary>
         <p>{finding.detail}</p>
-        <small>{finding.evidenceStrength ?? 'unknown'} evidence · policy {finding.policyVersion ?? 'unknown'} · schema {finding.schemaVersion ?? 'unknown'} · source {finding.sourceRevision ?? 'catalog'} · {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'}</small>
+        <small>{finding.evidenceStrength ?? 'unknown'} evidence{finding.confidence !== undefined ? ` · ${Math.round(finding.confidence * 100)}% confidence` : ''} · policy {finding.policyVersion ?? 'unknown'} · schema {finding.schemaVersion ?? 'unknown'} · source {finding.sourceRevision ?? 'catalog'} · {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'}</small>
+        {(finding.sourcePassages?.length ?? 0) > 0 && <div className="finding-passages"><b>Conflicting or incomplete source</b>{finding.sourcePassages?.map((passage, index) => <blockquote key={`${finding.id}:passage:${index}`}>“{passage}”</blockquote>)}</div>}
+        {((finding.affectedFlowIds?.length ?? 0) > 0 || (finding.affectedTargetIds?.length ?? 0) > 0) && <div className="finding-impact"><b>Affected graph</b>{finding.affectedFlowIds?.map(id => <code key={id}>{id}</code>)}{finding.affectedTargetIds?.map(id => <code key={id}>{id}</code>)}</div>}
+        {finding.remediation && <p className="finding-remediation"><b>Next:</b> {finding.remediation}</p>}
+        {(finding.remediationOptions?.length ?? 0) > 0 && <div className="remediation-options" aria-label="Remediation choices">{finding.remediationOptions?.map(option => <span key={option}>{option}</span>)}</div>}
         {(finding.evidence?.length ?? 0) > 0 && <code>{finding.evidence?.join(' · ')}</code>}
       </details>)}</div>}
     </article>

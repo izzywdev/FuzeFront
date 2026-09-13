@@ -181,6 +181,18 @@ evidence strength, evidence identifiers, calculation time, and audit entry throu
 `GET /api/v1/findings`. `POST /api/v1/internal/coverage/rebuild` returns totals by
 type and severity for worker logs and operational metrics.
 
+Requirement review policy `requirement-review-v1` adds a read-only product-planning
+layer on the same projection. It identifies stories without acceptance criteria,
+conservatively matches opposite criteria for the same behavior, and materializes
+LiteLLM `missingCriteria` output as semantic findings instead of silently discarding
+it. Each finding carries the relevant Jira passages, confidence when semantic,
+affected confirmed flows and implementation targets, and remediation choices. The
+web explorer never writes these choices back to Jira; product owners resolve source
+requirements in Jira and resync. Repeated events replace only FuzeQuality's derived
+policies, retain unrelated scanner findings, and keep the previous committed snapshot
+if calculation or persistence fails. Prometheus exposes flow and requirement-review
+finding gauges separately.
+
 ## Deployment
 
 The Helm chart is in `deploy/helm/fuzequality`; its Argo CD Application is in
