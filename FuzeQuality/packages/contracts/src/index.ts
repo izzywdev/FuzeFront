@@ -175,7 +175,29 @@ export type CatalogFinding = {
   owner?: string
   remediation?: string
   sourceRevision?: string
+  policyVersion?: string
+  schemaVersion?: string
+  evidenceStrength?: 'deterministic' | 'reviewed' | 'semantic'
+  evidence?: string[]
+  generatedAt?: string
+  auditHistory?: Array<{
+    action: string
+    at: string
+    detail?: string
+  }>
   status: 'open' | 'resolved' | 'suppressed'
+}
+
+export type CoverageProjection = {
+  policyVersion: string
+  schemaVersion: string
+  generatedAt: string
+  findings: CatalogFinding[]
+  metrics: {
+    total: number
+    byType: Record<string, number>
+    bySeverity: Record<CatalogFinding['severity'], number>
+  }
 }
 
 export type ApiCoverageQuery = {
@@ -229,6 +251,24 @@ export type Requirement = {
   status: string
   project: string
   updatedAt: string
+  acceptanceCriteria?: Array<{
+    fingerprint: string
+    position: number
+    text: string
+  }>
+}
+
+export type SyncCursor = {
+  sourceType: 'jira'
+  sourceKey: string
+  cursor?: string
+  lastSuccessAt?: string
+  freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'
+}
+
+export type RequirementSyncResult = {
+  requirements: Requirement[]
+  cursor: string
 }
 
 export type FlowStep = {
@@ -237,7 +277,7 @@ export type FlowStep = {
   actor: string
   action: string
   expectedOutcome: string
-  variant: 'main' | 'alternate' | 'error'
+  variant: 'main' | 'alternate' | 'error' | 'recovery'
   targetIds: string[]
 }
 
@@ -248,6 +288,11 @@ export type Flow = {
   owner?: string
   origin: 'confirmed' | 'inferred'
   status: 'proposed' | 'confirmed' | 'rejected'
+  actors?: string[]
+  preconditions?: string[]
+  trigger?: string
+  authorizationBoundaries?: string[]
+  tenantBoundaries?: string[]
   steps: FlowStep[]
 }
 
@@ -379,8 +424,8 @@ export const scanRequestedSchema = z.object({
 })
 
 export const requirementSyncRequestedSchema = z.object({
-  scopeId: z.string(),
-  jql: z.string(),
+  scopeId: z.string().trim().min(1).max(200),
+  jql: z.string().trim().min(1).max(10_000),
   since: z.string().datetime().optional(),
 })
 
