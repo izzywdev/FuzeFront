@@ -217,6 +217,9 @@ app.get('/metrics', async (_request, response) => {
       '# HELP fuzequality_flow_gap_findings Number of open deterministic flow-gap findings',
       '# TYPE fuzequality_flow_gap_findings gauge',
       `fuzequality_flow_gap_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'flow-orphans-v1').length}`,
+      '# HELP fuzequality_requirement_review_findings Number of open conflicting or incomplete requirement findings',
+      '# TYPE fuzequality_requirement_review_findings gauge',
+      `fuzequality_requirement_review_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'requirement-review-v1').length}`,
     ].join('\n')
   )
 })
@@ -591,8 +594,8 @@ app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
     }))
     response.status(200).json(projection)
   } catch {
-    console.error(JSON.stringify({ event: 'coverage_projection_failed', code: 'FLOW_PROJECTION_FAILED', retryable: true }))
-    response.status(503).json({ error: 'Coverage projection failed; the previous snapshot remains active', code: 'FLOW_PROJECTION_FAILED' })
+    console.error(JSON.stringify({ event: 'coverage_projection_failed', code: 'QUALITY_PROJECTION_FAILED', retryable: true }))
+    response.status(503).json({ error: 'Coverage projection failed; the previous snapshot remains active', code: 'QUALITY_PROJECTION_FAILED' })
   }
 })
 

@@ -42,7 +42,7 @@ describe('Jira intelligence', () => {
       suggestedTests: [
         { title: 'Reject expired token', priority: 'required', rationale: 'Explicit criterion' },
       ],
-      missingCriteria: [],
+      missingCriteria: ['The reset link expiry is specified.'],
       authorizationBoundaries: ['anonymous access is limited to reset requests'],
       tenantBoundaries: ['tokens cannot cross organizations'],
       confidence: 0.9,
@@ -53,13 +53,18 @@ describe('Jira intelligence', () => {
         model: 'quality-analysis',
       },
     })
-    expect(suggestions).toHaveLength(2)
+    expect(suggestions).toHaveLength(3)
     expect(suggestions.every(item => item.state === 'proposed')).toBe(true)
     expect(suggestions[0].payload).toMatchObject({
       actors: ['anonymous user'],
       authorizationBoundaries: ['anonymous access is limited to reset requests'],
       tenantBoundaries: ['tokens cannot cross organizations'],
       analysis: { promptVersion: FLOW_PROMPT_VERSION, model: 'quality-analysis' },
+    })
+    expect(suggestions[2]).toMatchObject({
+      type: 'missing-criteria',
+      confidence: 0.9,
+      payload: { criterion: 'The reset link expiry is specified.' },
     })
   })
 
