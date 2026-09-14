@@ -20,6 +20,10 @@ vi.mock('../services/billingService', () => ({
   listPlans: vi.fn(),
   getSubscription: vi.fn(),
   createCheckoutSession: vi.fn(),
+  updateSubscription: vi.fn(),
+  cancelSubscription: vi.fn(),
+  revokeCancellation: vi.fn(),
+  getBalance: vi.fn(),
   listInvoices: vi.fn(),
   createBillingPortalSession: vi.fn(),
   // Keep the formatting helpers real-ish (deterministic) so card content asserts.
@@ -33,6 +37,10 @@ const mocked = billing as unknown as {
   listPlans: ReturnType<typeof vi.fn>
   getSubscription: ReturnType<typeof vi.fn>
   createCheckoutSession: ReturnType<typeof vi.fn>
+  updateSubscription: ReturnType<typeof vi.fn>
+  cancelSubscription: ReturnType<typeof vi.fn>
+  revokeCancellation: ReturnType<typeof vi.fn>
+  getBalance: ReturnType<typeof vi.fn>
   listInvoices: ReturnType<typeof vi.fn>
   createBillingPortalSession: ReturnType<typeof vi.fn>
 }
@@ -75,6 +83,7 @@ let assignMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   vi.clearAllMocks()
   mocked.getSubscription.mockResolvedValue(undefined)
+  mocked.getBalance.mockResolvedValue({ customerBalance: null })
   mocked.listPlans.mockResolvedValue(PLANS)
   mocked.listInvoices.mockResolvedValue({ invoices: [], nextCursor: null })
   mocked.createCheckoutSession.mockResolvedValue({ url: 'https://checkout' })
