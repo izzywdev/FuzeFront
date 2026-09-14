@@ -34,11 +34,11 @@ export interface CatalogStore {
   markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<void>
   saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
   reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
-  suggestionDecisions(id: string): Promise<SuggestionDecision[]>
+  suggestionDecisions(id: string, tenantId: string): Promise<SuggestionDecision[]>
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
@@ -86,11 +86,9 @@ export class MemoryCatalogStore implements CatalogStore {
       expectations: result.expectations.filter(item => subjectIds.has(item.subjectId)),
       findings: result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId)),
       diagnostics: result.diagnostics.filter(item => repositoryIds.has(item.repositoryId)),
-      // Requirement intelligence predates tenant ownership. Fail closed until
-      // FQ-182 migrates Jira scopes and their graph to an organization.
-      requirements: [],
-      flows: [],
-      suggestions: [],
+    requirements: result.requirements.filter(item => item.tenantId === tenantId),
+    flows: result.flows.filter(item => result.requirements.some(requirement => requirement.tenantId === tenantId && requirement.id === item.requirementId)),
+    suggestions: result.suggestions.filter(item => result.requirements.some(requirement => requirement.tenantId === tenantId && requirement.id === item.requirementId)),
     }
   }
 
@@ -168,7 +166,7 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
-    const suggestion = this.data.suggestions.find(item => item.id === id)
+    const suggestion = this.data.suggestions.find(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
     if (!suggestion || suggestion.state !== 'proposed') return undefined
     const payload = input.editedPayload ?? suggestion.payload
     const action = input.action
@@ -185,7 +183,10 @@ export class MemoryCatalogStore implements CatalogStore {
     return suggestion
   }
 
-  async suggestionDecisions(id: string) { return this.decisions.filter(item => item.suggestionId === id) }
+  async suggestionDecisions(id: string, tenantId: string) {
+    const visible = this.data.suggestions.some(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === tenantId))
+    return visible ? this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId) : []
+  }
 
   async rebuildCoverage() {
     const projection = buildQualityIntelligenceProjection(this.data)
@@ -215,14 +216,15 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
   ) {
     for (const result of results) {
-      const existing = this.data.requirements.find(item => item.jiraKey === result.requirement.jiraKey)
-      if (existing) Object.assign(existing, result.requirement)
-      else this.data.requirements.push(result.requirement)
+      const requirement = { ...result.requirement, tenantId: sync?.tenantId }
+      const existing = this.data.requirements.find(item => item.jiraKey === requirement.jiraKey && item.tenantId === requirement.tenantId)
+      if (existing) Object.assign(existing, requirement)
+      else this.data.requirements.push(requirement)
       this.data.suggestions = [
-        ...this.data.suggestions.filter(item => item.requirementId !== result.requirement.id || item.state !== 'proposed'),
+        ...this.data.suggestions.filter(item => item.requirementId !== requirement.id || item.state !== 'proposed'),
         ...result.suggestions,
       ]
     }
@@ -278,11 +280,11 @@ export class PostgresCatalogStore implements CatalogStore {
       this.pool.query('SELECT * FROM fuzequality.test_expectations WHERE active = true ORDER BY subject_id, kind'),
       this.pool.query('SELECT * FROM fuzequality.findings ORDER BY severity, title'),
       this.pool.query('SELECT * FROM fuzequality.scan_diagnostics ORDER BY source_path, code'),
-      this.pool.query('SELECT * FROM fuzequality.requirements WHERE active = true ORDER BY jira_key'),
+      this.pool.query(`SELECT * FROM fuzequality.requirements WHERE active = true${tenantId ? ' AND tenant_id=$1' : ''} ORDER BY jira_key`, tenantId ? [tenantId] : []),
       this.pool.query('SELECT * FROM fuzequality.acceptance_criteria WHERE active = true ORDER BY requirement_id, position'),
-      this.pool.query('SELECT * FROM fuzequality.flows WHERE status <> \'rejected\' ORDER BY updated_at DESC'),
+      this.pool.query(`SELECT f.* FROM fuzequality.flows f JOIN fuzequality.requirements r ON r.id=f.requirement_id WHERE f.status <> 'rejected'${tenantId ? ' AND r.tenant_id=$1' : ''} ORDER BY f.updated_at DESC`, tenantId ? [tenantId] : []),
       this.pool.query('SELECT * FROM fuzequality.flow_steps ORDER BY flow_id, position'),
-      this.pool.query('SELECT * FROM fuzequality.suggestions ORDER BY created_at DESC'),
+      this.pool.query(`SELECT s.* FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id${tenantId ? ' WHERE r.tenant_id=$1' : ''} ORDER BY s.created_at DESC`, tenantId ? [tenantId] : []),
     ])
     const result = {
       repositories: repositories.rows.filter(row => !tenantId || row.tenant_id === tenantId).map(row => ({
@@ -326,11 +328,6 @@ export class PostgresCatalogStore implements CatalogStore {
     result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId))
     result.findings = result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId))
     result.diagnostics = result.diagnostics.filter(item => repositoryIds.has(item.repositoryId))
-    // Requirement intelligence predates tenant ownership. Never expose the
-    // legacy global graph through an organization-scoped portfolio.
-    result.requirements = []
-    result.flows = []
-    result.suggestions = []
     return result
   }
 
@@ -435,8 +432,9 @@ export class PostgresCatalogStore implements CatalogStore {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
+      if (!sync?.tenantId) throw new Error('Tenant-scoped Jira intelligence is required')
       for (const { requirement, suggestions } of results) {
-        const saved = await client.query(`INSERT INTO fuzequality.requirements (jira_key,issue_type,parent_key,summary,normalized_description,project,status,source_updated_at,source_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (jira_key) DO UPDATE SET issue_type=EXCLUDED.issue_type,parent_key=EXCLUDED.parent_key,summary=EXCLUDED.summary,normalized_description=EXCLUDED.normalized_description,project=EXCLUDED.project,status=EXCLUDED.status,source_updated_at=EXCLUDED.source_updated_at,source_payload=EXCLUDED.source_payload,active=true RETURNING id`, [requirement.jiraKey,requirement.issueType,requirement.parentKey,requirement.summary,requirement.description,requirement.project,requirement.status,requirement.updatedAt,JSON.stringify(requirement)])
+        const saved = await client.query(`INSERT INTO fuzequality.requirements (tenant_id,jira_key,issue_type,parent_key,summary,normalized_description,project,status,source_updated_at,source_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (tenant_id,jira_key) WHERE tenant_id IS NOT NULL DO UPDATE SET issue_type=EXCLUDED.issue_type,parent_key=EXCLUDED.parent_key,summary=EXCLUDED.summary,normalized_description=EXCLUDED.normalized_description,project=EXCLUDED.project,status=EXCLUDED.status,source_updated_at=EXCLUDED.source_updated_at,source_payload=EXCLUDED.source_payload,active=true RETURNING id`, [sync.tenantId,requirement.jiraKey,requirement.issueType,requirement.parentKey,requirement.summary,requirement.description,requirement.project,requirement.status,requirement.updatedAt,JSON.stringify(requirement)])
         const requirementId = saved.rows[0].id
         await client.query('UPDATE fuzequality.acceptance_criteria SET active=false WHERE requirement_id=$1', [requirementId])
         for (const criterion of requirement.acceptanceCriteria ?? []) {
@@ -503,7 +501,7 @@ export class PostgresCatalogStore implements CatalogStore {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      const original = await client.query('SELECT * FROM fuzequality.suggestions WHERE id=$1 AND state=\'proposed\' FOR UPDATE', [id])
+      const original = await client.query(`SELECT s.* FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id WHERE s.id=$1 AND s.state='proposed' AND r.tenant_id=$2 FOR UPDATE`, [id, input.tenantId])
       const originalRow = original.rows[0]
       if (!originalRow) { await client.query('ROLLBACK'); return undefined }
       const result = await client.query('UPDATE fuzequality.suggestions SET state=$2, payload=COALESCE($3,payload) WHERE id=$1 RETURNING *', [id, state, input.editedPayload ? JSON.stringify(input.editedPayload) : null])
@@ -538,11 +536,11 @@ export class PostgresCatalogStore implements CatalogStore {
     } finally {
       client.release()
     }
-    return (await this.portfolio()).suggestions.find(item => item.id === id)
+    return (await this.portfolio(input.tenantId)).suggestions.find(item => item.id === id)
   }
 
-  async suggestionDecisions(id: string): Promise<SuggestionDecision[]> {
-    const result = await this.pool.query('SELECT * FROM fuzequality.review_decisions WHERE suggestion_id=$1 ORDER BY decided_at DESC', [id])
+  async suggestionDecisions(id: string, tenantId: string): Promise<SuggestionDecision[]> {
+    const result = await this.pool.query(`SELECT d.* FROM fuzequality.review_decisions d JOIN fuzequality.suggestions s ON s.id=d.suggestion_id JOIN fuzequality.requirements r ON r.id=s.requirement_id WHERE d.suggestion_id=$1 AND r.tenant_id=$2 AND d.tenant_id=$2 ORDER BY d.decided_at DESC`, [id, tenantId])
     return result.rows.map(row => ({ id: row.id, suggestionId: row.suggestion_id, actorId: row.actor, tenantId: row.tenant_id, action: row.decision, originalPayload: row.original_payload, editedPayload: row.edited_payload ?? undefined, reason: row.reason ?? undefined, owner: row.owner ?? undefined, expiresAt: row.expires_at?.toISOString(), targetSuggestionId: row.target_suggestion_id ?? undefined, decidedAt: row.decided_at.toISOString() }))
   }
 

@@ -248,6 +248,7 @@ export type ApiCoverageResponse = {
 
 export type Requirement = {
   id: string
+  tenantId?: string
   jiraKey: string
   issueType: 'Epic' | 'Story' | 'Task'
   parentKey?: string
@@ -444,6 +445,7 @@ export const scanRequestedSchema = z.object({
 })
 
 export const requirementSyncRequestedSchema = z.object({
+  tenantId: z.string().trim().min(1).max(200),
   scopeId: z.string().trim().min(1).max(200),
   jql: z.string().trim().min(1).max(10_000),
   since: z.string().datetime().optional(),
