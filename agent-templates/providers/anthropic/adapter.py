@@ -5,10 +5,10 @@ Additive: delegates to the existing `sync/` modules (`common`, `driver`,
 standalone sync scripts keep working. The idempotent create/update logic mirrors
 `sync/sync_{environments,agents,vaults,memory}.py`.
 """
-import glob
 import json
 import os
 import sys
+from typing import ClassVar
 
 from providers.base import AgentProvider
 
@@ -17,9 +17,9 @@ _SYNC = os.environ.get("HANDOFF_SYNC_DIR") or os.path.join(_TEMPLATES_ROOT, "syn
 if _SYNC not in sys.path:
     sys.path.insert(0, _SYNC)
 
-import common          # noqa: E402
-import driver          # noqa: E402
-import role_loader as rl  # noqa: E402
+import common
+import driver
+import role_loader as rl
 
 # Agent fields we compare to decide whether an update is needed.
 _COMPARE = ("model", "system", "description", "tools", "mcp_servers", "skills", "multiagent")
@@ -45,7 +45,7 @@ def _agent_changed(current, desired):
 
 class AnthropicProvider(AgentProvider):
     name = "anthropic"
-    capabilities = {"self_hosted": True, "vaults": True, "memory": True, "multiagent": True}
+    capabilities: ClassVar[dict[str, bool]] = {"self_hosted": True, "vaults": True, "memory": True, "multiagent": True}
 
     # ---- provisioning -------------------------------------------------------
     def ensure_environment(self, manifest):

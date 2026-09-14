@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import unittest
+from typing import ClassVar
 
 try:
     import yaml
@@ -251,7 +252,7 @@ class TestEvaluator(unittest.TestCase):
     tested too. A permissive evaluator would pass every invariant above while
     proving nothing about the real gates."""
 
-    CTX = {"a": "x", "b": "", "steps.s.outcome": "failure"}
+    CTX: ClassVar[dict[str, str]] = {"a": "x", "b": "", "steps.s.outcome": "failure"}
 
     def test_comparisons(self):
         self.assertTrue(_evaluate("a == 'x'", self.CTX))

@@ -14,7 +14,11 @@ What matters here, and why:
     for a working endpoint itself, and a literal override would defeat that.
   * Values may be secrets. They must reach $GITHUB_ENV and never stdout.
 """
-import os, subprocess, sys, tempfile, textwrap, unittest
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
 
 try:
     import yaml
@@ -42,7 +46,7 @@ def run(extra_env):
     p = subprocess.run(
         ["bash", "-c", _script()],
         env={**os.environ, "EXTRA_ENV": extra_env, "GITHUB_ENV": envf},
-        capture_output=True, text=True,
+        check=False, capture_output=True, text=True,
     )
     with open(envf, encoding="utf-8") as fh:
         written = fh.read()
@@ -71,12 +75,12 @@ class TestExtraEnv(unittest.TestCase):
         self.assertEqual(w.strip(), "", "refused input must write nothing")
 
     def test_refuses_anthropic_auth_token_without_echoing_it(self):
-        rc, out, w = run("ANTHROPIC_AUTH_TOKEN=sk-ant-SECRET")
+        rc, out, _w = run("ANTHROPIC_AUTH_TOKEN=sk-ant-SECRET")
         self.assertEqual(rc, 1)
         self.assertNotIn("sk-ant-SECRET", out, "refusal message leaked the value")
 
     def test_refuses_malformed_line(self):
-        rc, out, _ = run("NOT_A_PAIR")
+        rc, _out, _ = run("NOT_A_PAIR")
         self.assertEqual(rc, 1)
 
     def test_never_echoes_a_value_on_success(self):

@@ -29,7 +29,7 @@ def load_sessions(path: str):
 def repo_of(session: dict) -> str:
     try:
         return session["session_context"]["sources"][0]["git_repository"]["url"]
-    except Exception:
+    except (KeyError, IndexError, TypeError):
         return ""
 
 
