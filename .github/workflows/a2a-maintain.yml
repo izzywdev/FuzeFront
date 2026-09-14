@@ -111,6 +111,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       declared: ${{ steps.check.outputs.declared }}
+      needs-llm: ${{ steps.drift.outputs.needs-llm }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -126,10 +127,33 @@ jobs:
             echo "::notice title=a2a-maintain::.fuze/manifest.json does not declare a2a.enabled — nothing to maintain. Skipping is correct here: there is no surface."
           fi
 
-      # Declared. From here, having NO usable credential — neither a LiteLLM virtual
-      # key nor the configured fallback vendor's key — is a MISCONFIGURATION, not an
-      # environmental gap, and it fails. The action's own ::error:: names the exact
-      # remedy, so this job does not duplicate it.
+      # Only invoke the LLM agent when A2A-relevant files actually changed. The helm
+      # template and manifest already exist and are correct; the agent only needs to
+      # run when something that can cause drift was touched. This prevents unnecessary
+      # LLM calls (and credential failures) on unrelated PRs.
+      - name: Detect A2A surface drift
+        id: drift
+        if: steps.check.outputs.declared == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          A2A_PATTERN='^(\.fuze/manifest\.json$|deploy/helm/fuzefront/templates/a2a\.yaml$|\.claude/agents/|\.claude/skills/|agent-templates/|contracts/a2a/)'
+          changed=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" \
+            --paginate --jq '.[].filename' 2>/dev/null || true)
+          if echo "$changed" | grep -qE "$A2A_PATTERN"; then
+            echo "needs-llm=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=a2a-maintain::A2A-relevant files changed — will run maintainer agent."
+          else
+            echo "needs-llm=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=a2a-maintain::No A2A-relevant files changed — surface cannot have drifted, skipping LLM agent."
+          fi
+
+      # Declared AND drift detected. From here, having NO usable credential —
+      # neither a LiteLLM virtual key nor the configured fallback vendor's key — is a
+      # MISCONFIGURATION, not an environmental gap, and it fails. The action's own
+      # ::error:: names the exact remedy, so this job does not duplicate it.
       #
       # This workflow used to skip when the key was absent, under a "no key -> skip,
       # never red" contract. That contract is the vacuous-gate pattern this repo has
@@ -141,10 +165,11 @@ jobs:
       # "LiteLLM unreachable -> skip": unreachable is a FALLBACK trigger, and only the
       # total absence of any usable credential is red.
       #
-      # Skipping stays correct for the undeclared case above, because there the
-      # absence of a surface is the truth, not a gap.
+      # Skipping stays correct for the undeclared case above, and for PRs where no
+      # A2A-relevant files changed (drift cannot have occurred without touching those
+      # files, so no credential is needed and no agent should run).
       - name: Resolve LLM endpoint — proves a usable credential exists
-        if: steps.check.outputs.declared == 'true'
+        if: steps.check.outputs.declared == 'true' && steps.drift.outputs.needs-llm == 'true'
         uses: ./.github/actions/llm-endpoint
         with:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
@@ -165,6 +190,21 @@ jobs:
       !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/')
     runs-on: ubuntu-latest
     steps:
+      # Early exit when no A2A-relevant files changed. The job must still run (so the
+      # required check context is written as success, not skipped) but there is nothing for
+      # the LLM agent to do — all subsequent steps are guarded by this output.
+      - name: Gate — skip if no A2A drift possible
+        id: gate
+        env:
+          NEEDS_LLM: ${{ needs.preflight.outputs.needs-llm }}
+        run: |
+          if [ "${NEEDS_LLM:-true}" = "false" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No A2A-relevant files changed — surface is in sync by construction. Skipping LLM maintainer."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # Agent-PR identity (governance/hardening-convention.md §8): mint the fuze-agent App
       # token BEFORE checking out the (untrusted) PR head, so the maintainer's commit-back
       # pushes under a collaborator-backed identity and the reconciled head gets CI. Fall back
@@ -173,6 +213,7 @@ jobs:
       # may trigger it.
       - name: Mint fuze-agent App token
         id: app_token
+        if: steps.gate.outputs.run == 'true'
         continue-on-error: true
         uses: actions/create-github-app-token@v1
         with:
@@ -180,6 +221,7 @@ jobs:
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
       - name: Resolve agent-PR identity
         id: identity
+        if: steps.gate.outputs.run == 'true'
         env:
           APP_TOKEN: ${{ steps.app_token.outputs.token }}
           BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
@@ -198,6 +240,7 @@ jobs:
           echo "Agent-PR identity: $who"
 
       - name: Checkout PR head (writable, same-repo only)
+        if: steps.gate.outputs.run == 'true'
         # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
         # repointed by the action owner (cf. the trivy-action / kics-github-action
         # compromises). This workflow holds `contents: write` on the PR branch, so a
@@ -220,6 +263,7 @@ jobs:
       # resolution cannot legitimately fail here.
       - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
         id: llm
+        if: steps.gate.outputs.run == 'true'
         uses: ./.github/actions/llm-endpoint
         with:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
@@ -230,6 +274,7 @@ jobs:
 
       - name: Skip on last-commit marker
         id: marker
+        if: steps.gate.outputs.run == 'true'
         run: |
           if git log -1 --pretty=%B | grep -q '\[skip a2a\]'; then
             echo "::notice::last commit marked [skip a2a] — skipping to avoid a self-trigger loop."
@@ -240,7 +285,7 @@ jobs:
 
       - name: Run a2a-maintainer
         id: maintainer
-        if: steps.marker.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
         # continue-on-error so the steps BELOW own the verdict. fuze-code-action exits
         # non-zero when every rung is exhausted, which is correct — but the runner would
         # then end the job on this step and the only thing in the log would be the
