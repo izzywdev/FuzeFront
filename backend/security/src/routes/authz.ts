@@ -44,7 +44,7 @@
 import express, { Request, Response } from 'express'
 import { getIdentityProvider } from '../providers/factory'
 import { getAuthorizationProvider } from '../providers/authzFactory'
-import type { AuthzQuery } from '../providers/AuthorizationProvider'
+import type { AttributeValue, AuthzQuery, SubjectType } from '../providers/AuthorizationProvider'
 import { withReqId } from '../lib/logger'
 import { introspectMachineToken } from '../services/machine-identity'
 
@@ -292,6 +292,83 @@ router.get('/authz/grants', async (req: Request, res: Response) => {
     cursor: req.query.cursor ? String(req.query.cursor) : undefined,
   })
   res.status(200).json(page)
+})
+
+// ── Subject ABAC attributes ──────────────────────────────────────────────────
+
+const SUBJECT_TYPES: ReadonlySet<string> = new Set<SubjectType>(['user', 'tenant'])
+
+/** Validate a scalar ABAC attribute value (string, number, or boolean only — no nested objects/arrays). */
+function isAttributeValue(v: unknown): v is AttributeValue {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+}
+
+/**
+ * `PATCH /authz/subjects/{subjectType}/{subjectKey}/attributes` — merge ABAC
+ * attributes onto a subject. Gated identically to grant/revoke
+ * (`requireAuthzAdmin` for machine callers): this writes entitlement-relevant
+ * state, so it is never less protected than a role grant.
+ *
+ * WRITE, not a decision: unlike `/authz/check`'s fail-closed-returns-`{allow:
+ * false}` contract, a provider outage/timeout/rejection here returns an
+ * explicit 502 `PROVIDER_UNAVAILABLE` — never a fail-open/fail-silent 200, so
+ * a caller (e.g. billing entitlement sync) can tell the write did not land
+ * and retry rather than trust a stale/absent attribute state.
+ */
+router.patch('/authz/subjects/:subjectType/:subjectKey/attributes', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId)
+  const c = await caller(req)
+  if (!c) return unauthorized(res)
+  if (!requireAuthzAdmin(c, res)) return
+
+  const subjectType = req.params.subjectType
+  if (!SUBJECT_TYPES.has(subjectType)) {
+    return res.status(400).json({ error: `subjectType must be one of: user, tenant`, code: 'MALFORMED' })
+  }
+  const subjectKey = req.params.subjectKey
+
+  const rawAttributes = req.body?.attributes
+  if (!rawAttributes || typeof rawAttributes !== 'object' || Array.isArray(rawAttributes)) {
+    return res.status(400).json({ error: 'attributes is required', code: 'MALFORMED' })
+  }
+  const entries = Object.entries(rawAttributes)
+  if (entries.length === 0) {
+    return res.status(400).json({ error: 'attributes must have at least one key', code: 'MALFORMED' })
+  }
+  // MERGE, not replace: only the keys named here are written. Values must be
+  // scalar (string/number/boolean) — this is the entire reason the endpoint
+  // exists instead of a role grant (e.g. `seat_limit` must round-trip as a
+  // number, never stringified).
+  const attributes: Record<string, AttributeValue> = {}
+  for (const [key, value] of entries) {
+    if (!isAttributeValue(value)) {
+      return res.status(400).json({
+        error: `attribute '${key}' must be a string, number, or boolean`,
+        code: 'MALFORMED',
+      })
+    }
+    attributes[key] = value
+  }
+
+  try {
+    const result = await getAuthorizationProvider().setAttributes({
+      subject: { type: subjectType as SubjectType, key: subjectKey },
+      attributes,
+    })
+    log.info(
+      { subjectType, subjectKey, attributeKeys: Object.keys(attributes) },
+      'authz: subject attributes merged'
+    )
+    res.status(200).json(result)
+  } catch (err) {
+    // Fail-closed AT THE HTTP BOUNDARY for a WRITE: never 200, never a bare
+    // 500 — an explicit 502 PROVIDER_UNAVAILABLE so the caller can retry.
+    log.error(
+      { subjectType, subjectKey, err: (err as Error).message },
+      'authz: setAttributes errored — provider unavailable'
+    )
+    res.status(502).json({ error: 'authorization provider unavailable', code: 'PROVIDER_UNAVAILABLE' })
+  }
 })
 
 // ── Tenants / members / roles ───────────────────────────────────────────────
