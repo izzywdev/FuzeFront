@@ -44,7 +44,9 @@ const mayManageRepositories = requirePlatformPermission('fuzequality.Repository'
 const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 'scan')
 const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
 const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReviewSuggestions = requirePlatformPermission('fuzequality.Evidence', 'export')
+const mayReadSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'read')
+const mayReviewSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'review')
+const maySuppressSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'suppress')
 const maySyncRequirementsAsHuman = requirePlatformPermission('fuzequality.Evidence', 'export')
 // The reconciler is a workload, not a portal user. It authenticates with the
 // FuzeQuality service token injected from the cluster Secret; a human caller
@@ -66,6 +68,11 @@ const invitationSchema = z.object({
   role: organizationRoleSchema,
 }).strict()
 const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
+const intelligenceFailureSchema = z.object({
+  sourceType: z.literal('jira'),
+  sourceKey: z.string().trim().min(1).max(200),
+  code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'SEMANTIC_INDEX_UNAVAILABLE']),
+}).strict()
 const repositoryAdministrationSchema = z.object({
   ownership: z.object({
     team: z.string().trim().min(1).max(100),
@@ -206,6 +213,7 @@ app.get('/health/ready', async (_request, response) => {
 })
 app.get('/metrics', async (_request, response) => {
   const portfolio = await store.portfolio()
+  const jiraFreshness = await store.syncCursor('jira', 'default')
   response.type('text/plain').send(
     [
       '# HELP fuzequality_repositories Number of onboarded repositories',
@@ -214,6 +222,15 @@ app.get('/metrics', async (_request, response) => {
       '# HELP fuzequality_open_findings Number of open catalog findings',
       '# TYPE fuzequality_open_findings gauge',
       `fuzequality_open_findings ${portfolio.findings.filter(item => item.status === 'open').length}`,
+      '# HELP fuzequality_flow_gap_findings Number of open deterministic flow-gap findings',
+      '# TYPE fuzequality_flow_gap_findings gauge',
+      `fuzequality_flow_gap_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'flow-orphans-v1').length}`,
+      '# HELP fuzequality_requirement_review_findings Number of open conflicting or incomplete requirement findings',
+      '# TYPE fuzequality_requirement_review_findings gauge',
+      `fuzequality_requirement_review_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'requirement-review-v1').length}`,
+      '# HELP fuzequality_jira_sync_freshness Jira requirement synchronization freshness: 1 fresh, 0 otherwise',
+      '# TYPE fuzequality_jira_sync_freshness gauge',
+      `fuzequality_jira_sync_freshness ${jiraFreshness?.freshnessStatus === 'fresh' ? 1 : 0}`,
     ].join('\n')
   )
 })
@@ -547,17 +564,34 @@ app.get('/api/v1/requirements', mayReadRequirements, async (request, response) =
 app.get('/api/v1/flows', mayReadRequirements, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).flows)
 )
-app.get('/api/v1/suggestions', mayReadRequirements, async (request, response) =>
+app.get('/api/v1/suggestions', mayReadSuggestions, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).suggestions)
 )
-app.post('/api/v1/suggestions/:id/decision', mayReviewSuggestions, async (request, response) => {
+app.get('/api/v1/suggestions/:id/decisions', mayReadSuggestions, async (request, response) => {
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  response.json(await store.suggestionDecisions(suggestionId, requestIdentity(request)!.tenantId))
+})
+app.post('/api/v1/suggestions/:id/decision', async (request, response, next) => {
   const parsed = reviewDecisionSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
   const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
-  const suggestion = await store.decideSuggestion(suggestionId, parsed.data.decision)
+  const authorize = parsed.data.decision === 'suppress' ? maySuppressSuggestions : mayReviewSuggestions
+  return authorize(request, response, async () => {
+    const identity = requestIdentity(request)!
+    const suggestion = await store.reviewSuggestion(suggestionId, {
+      actorId: identity.userId,
+      tenantId: identity.tenantId,
+      action: parsed.data.decision,
+      editedPayload: parsed.data.editedPayload,
+      reason: parsed.data.reason,
+      owner: parsed.data.owner,
+      expiresAt: parsed.data.expiresAt,
+      targetSuggestionId: parsed.data.mergeIntoSuggestionId,
+    })
   if (!suggestion) return response.status(404).json({ error: 'Suggestion not found' })
-  await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
+    await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
   response.json(suggestion)
+  })
 })
 app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).findings)
@@ -573,19 +607,45 @@ app.post('/api/v1/internal/scans/results', async (request, response) => {
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/intelligence/results', async (request, response) => {
-  await store.saveIntelligence(request.body.results ?? [])
+  await store.saveIntelligence(request.body.results ?? [], request.body.sync)
   response.status(202).json({ accepted: true })
 })
+app.post('/api/v1/internal/intelligence/failure', async (request, response) => {
+  const failure = intelligenceFailureSchema.parse(request.body)
+  await store.markSyncFailed(failure.sourceType, failure.sourceKey)
+  console.error(JSON.stringify({ event: 'intelligence_sync_failed', sourceType: failure.sourceType, sourceKey: failure.sourceKey, code: failure.code, retryable: true }))
+  response.status(202).json({ accepted: true })
+})
+app.get('/api/v1/requirements/freshness', mayReadRequirements, async (_request, response) =>
+  response.json(await store.syncCursor('jira', 'default') ?? { sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'unknown' })
+)
 app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
-  response.status(202).json({ accepted: true, rebuiltAt: new Date().toISOString() })
+  try {
+    const projection = await store.rebuildCoverage()
+    console.info(JSON.stringify({
+      event: 'coverage_projection_rebuilt',
+      policyVersion: projection.policyVersion,
+      schemaVersion: projection.schemaVersion,
+      findings: projection.metrics.total,
+      byType: projection.metrics.byType,
+    }))
+    response.status(200).json(projection)
+  } catch {
+    console.error(JSON.stringify({ event: 'coverage_projection_failed', code: 'QUALITY_PROJECTION_FAILED', retryable: true }))
+    response.status(503).json({ error: 'Coverage projection failed; the previous snapshot remains active', code: 'QUALITY_PROJECTION_FAILED' })
+  }
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
+  const scopeId = request.body?.scopeId ?? 'default'
+  const cursor = await store.syncCursor('jira', scopeId)
   await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
-    scopeId: request.body?.scopeId ?? 'default',
+    tenantId: requestIdentity(request)!.tenantId,
+    scopeId,
     jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
+    ...(cursor?.cursor ? { since: cursor.cursor } : {}),
   })
-  response.status(202).json({ status: 'queued' })
+  response.status(202).json({ status: 'queued', scopeId, incrementalFrom: cursor?.cursor })
 })
 
 app.post('/api/v1/webhooks/github', async (request, response) => {

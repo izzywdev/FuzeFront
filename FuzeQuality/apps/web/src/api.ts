@@ -73,6 +73,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
+  requirementFreshness: () => request<{ freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'; lastSuccessAt?: string }>('/api/v1/requirements/freshness'),
   addRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   scanRepository: (id: string, localPath?: string) =>
@@ -80,11 +81,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ localPath }),
     }),
-  decideSuggestion: (id: string, decision: 'confirm' | 'reject') =>
+  decideSuggestion: (id: string, value: Record<string, unknown>) =>
     request(`/api/v1/suggestions/${id}/decision`, {
       method: 'POST',
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(value),
     }),
+  suggestionDecisions: (id: string) => request(`/api/v1/suggestions/${id}/decisions`),
   verifyRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories/verify', { method: 'POST', body: JSON.stringify(value) }),
   updateRepositoryAdministration: (id: string, value: Record<string, unknown>) =>

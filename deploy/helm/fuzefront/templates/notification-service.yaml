@@ -17,6 +17,7 @@ spec:
         app: fuzefront-notification-service
         {{- include "fuzefront.labels" . | nindent 8 }}
     spec:
+      {{- include "fuzefront.scheduling" (dict "svc" dict "root" $) | nindent 6 }}
       containers:
         - name: notification-service
           image: "{{ .Values.notificationService.image.repository }}:{{ .Values.notificationService.image.tag }}"

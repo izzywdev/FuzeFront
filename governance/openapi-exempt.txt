@@ -206,6 +206,13 @@ POST /internal/oidc-sync  # security: S2S-only, called by devportal-service; not
 POST /internal/mint-session  # security: S2S-only, called by devportal-service; not consumer-facing
 POST /internal/devportal-provision  # security: S2S-only, called by devportal-service; not consumer-facing
 POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint; not consumer-facing
+# --- O1: FuzeQuality authenticated product and worker endpoints ---
+# The FuzeQuality contract deliberately publishes only public operational routes.
+# These are tenant-authorized portal data and a cluster-token-only worker callback;
+# publishing either would make it a public generated/MCP operation.
+GET /api/v1/requirements/freshness  # fuzequality: tenant-authorized Jira freshness evidence; not public contract surface
+POST /api/v1/internal/intelligence/failure  # fuzequality: S2S worker failure signal; bounded/redacted and not consumer-facing
+GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review audit history; not public contract surface
 #
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not

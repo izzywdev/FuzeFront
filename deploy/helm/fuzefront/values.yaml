@@ -346,7 +346,7 @@ mcp:
     # GHCR (digest sha256:442078552b16112f007323085a28bdc17c1eb67b0c7eec37cd670f094352c3de).
     # `0.1.0` was NEVER published despite several charts referencing it — do not
     # reintroduce it.
-    tag: "12cb4f787248"
+    tag: "1abe510f5981"
     pullPolicy: IfNotPresent
   # Empty = derive from the in-cluster applications-service Service, INCLUDING
   # the /api/v1/app-registry prefix the contract's `servers` entry declares.

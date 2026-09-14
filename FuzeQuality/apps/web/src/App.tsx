@@ -35,6 +35,7 @@ import type {
   ApiOperation,
   AdminTenantContext,
   CoverageState,
+  Flow,
   FrontendSurface,
   Portfolio,
   OrganizationQualitySummary,
@@ -428,13 +429,94 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
 }
 
 function Requirements({ data }: { data: Portfolio }) {
-  return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." /><div className="requirements-grid">{data.requirements.map(requirement => { const flows = data.flows.filter(flow => flow.requirementId === requirement.id); const suggestions = data.suggestions.filter(item => item.requirementId === requirement.id && item.state === 'proposed'); return <article className="requirement-card" key={requirement.id}><div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span><h3>{requirement.summary}</h3><p>{requirement.description}</p><div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span></div></article>})}</div></>
+  const [freshness, setFreshness] = useState<'unknown' | 'fresh' | 'stale' | 'failed'>('unknown')
+  useEffect(() => { api.requirementFreshness().then(value => setFreshness(value.freshnessStatus)).catch(() => setFreshness('failed')) }, [])
+  return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." action={<div className={`header-badge freshness-${freshness}`}><Database /> Jira {freshness}</div>} /><div className="requirements-grid">{data.requirements.map(requirement => {
+    const flows = data.flows.filter(flow => flow.requirementId === requirement.id)
+    const suggestions = data.suggestions.filter(item => item.requirementId === requirement.id && item.state === 'proposed')
+    const findings = data.findings.filter(item => item.subjectId === requirement.id || item.sourceRevision?.startsWith(`${requirement.jiraKey}@`))
+    return <article className="requirement-card" key={requirement.id}>
+      <div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span>
+      <h3>{requirement.summary}</h3><p>{requirement.description}</p>
+      <div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span><span className={findings.length ? 'requirement-gap-count' : ''}><AlertTriangle /> {findings.length} quality findings</span></div>
+      {findings.length > 0 && <div className="requirement-findings">{findings.map(finding => <details key={finding.id}>
+        <summary><span className={`severity severity-${finding.severity}`}>{finding.severity}</span>{finding.title}</summary>
+        <p>{finding.detail}</p>
+        <small>{finding.evidenceStrength ?? 'unknown'} evidence{finding.confidence !== undefined ? ` · ${Math.round(finding.confidence * 100)}% confidence` : ''} · policy {finding.policyVersion ?? 'unknown'} · schema {finding.schemaVersion ?? 'unknown'} · source {finding.sourceRevision ?? 'catalog'} · {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'}</small>
+        {(finding.sourcePassages?.length ?? 0) > 0 && <div className="finding-passages"><b>Conflicting or incomplete source</b>{finding.sourcePassages?.map((passage, index) => <blockquote key={`${finding.id}:passage:${index}`}>“{passage}”</blockquote>)}</div>}
+        {((finding.affectedFlowIds?.length ?? 0) > 0 || (finding.affectedTargetIds?.length ?? 0) > 0) && <div className="finding-impact"><b>Affected graph</b>{finding.affectedFlowIds?.map(id => <code key={id}>{id}</code>)}{finding.affectedTargetIds?.map(id => <code key={id}>{id}</code>)}</div>}
+        {finding.remediation && <p className="finding-remediation"><b>Next:</b> {finding.remediation}</p>}
+        {(finding.remediationOptions?.length ?? 0) > 0 && <div className="remediation-options" aria-label="Remediation choices">{finding.remediationOptions?.map(option => <span key={option}>{option}</span>)}</div>}
+        {(finding.evidence?.length ?? 0) > 0 && <code>{finding.evidence?.join(' · ')}</code>}
+      </details>)}</div>}
+    </article>
+  })}</div></>
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function FlowReviewDetail({ data, requirement, payload, evidence }: { data: Portfolio; requirement: Portfolio['requirements'][number] | undefined; payload: Record<string, unknown>; evidence: string[] }) {
+  const flow = payload as unknown as Partial<Flow>
+  const steps = Array.isArray(flow.steps) ? flow.steps : []
+  const targetName = (targetId: string) => {
+    const operation = data.operations.find(item => item.id === targetId)
+    if (operation) return `${operation.method.toUpperCase()} ${operation.path}`
+    const surface = data.surfaces.find(item => item.id === targetId)
+    if (surface) return `${surface.kind}: ${surface.name}`
+    return targetId.startsWith('criterion:') ? `Jira criterion: ${targetId.slice('criterion:'.length)}` : targetId
+  }
+  const suggestedTests = requirement ? data.suggestions.filter(item => item.requirementId === requirement.id && item.type === 'expected-test') : []
+  const analysis = payload.analysis && typeof payload.analysis === 'object' ? payload.analysis as Record<string, unknown> : undefined
+  return <div className="flow-review-detail">
+    <section className="jira-source-panel" aria-label="Jira source">
+      <div className="flow-panel-label"><BookOpen size={14} /> Jira source</div>
+      <strong>{requirement?.jiraKey ?? 'Source unavailable'} · {requirement?.updatedAt ? new Date(requirement.updatedAt).toLocaleString() : 'revision unavailable'}</strong>
+      <p>{requirement?.description || 'No Jira description was synchronized.'}</p>
+      <ol>{requirement?.acceptanceCriteria?.map(criterion => <li key={criterion.fingerprint}>{criterion.text}</li>) ?? <li>No acceptance criteria were synchronized.</li>}</ol>
+      <small>Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small>
+    </section>
+    <section className="flow-graph-panel" aria-label="Proposed flow graph">
+      <div className="flow-panel-label"><Network size={14} /> Proposed flow graph</div>
+      <div className="flow-context"><span>Actors: {stringList(flow.actors).join(' · ') || 'not inferred'}</span>{typeof flow.trigger === 'string' && <span>Trigger: {flow.trigger}</span>}</div>
+      <ol className="flow-steps">{steps.map((step, index) => <li key={step.id ?? index} className={`flow-step-${step.variant}`}><b>{step.position ?? index + 1}</b><div><strong>{step.actor}</strong><span>{step.action}</span><small>Expected: {step.expectedOutcome}</small>{step.targetIds.length > 0 && <div className="flow-targets">{step.targetIds.map(target => <code key={target}>{targetName(target)}</code>)}</div>}</div></li>)}</ol>
+      {!steps.length && <p className="flow-empty">No structured steps were proposed.</p>}
+    </section>
+    <section className="flow-provenance-panel" aria-label="Review evidence and provenance">
+      <div className="flow-panel-label"><Sparkles size={14} /> Evidence & provenance</div>
+      <div className="flow-boundaries">{stringList(flow.preconditions).map(item => <span key={`pre:${item}`}>Precondition: {item}</span>)}{stringList(flow.authorizationBoundaries).map(item => <span key={`auth:${item}`}>Authorization: {item}</span>)}{stringList(flow.tenantBoundaries).map(item => <span key={`tenant:${item}`}>Tenant: {item}</span>)}</div>
+      <div className="evidence-list">{evidence.map(item => <blockquote key={item}>“{item}”</blockquote>)}</div>
+      <div className="suggested-test-list"><b>Suggested tests</b>{suggestedTests.length ? suggestedTests.map(item => <span key={item.id}>{item.title}</span>) : <span>No test proposals were generated for this revision.</span>}</div>
+      <small>Prompt {String(analysis?.promptVersion ?? 'unknown')} · schema {String(analysis?.schemaVersion ?? 'unknown')} · model {String(analysis?.model ?? 'unknown')} · unreviewed semantic evidence</small>
+    </section>
+  </div>
+}
+
+function SuggestionActions({ id, payload, onComplete }: { id: string; payload: Record<string, unknown>; onComplete: () => Promise<void> }) {
+  const [reason, setReason] = useState('')
+  const [owner, setOwner] = useState('')
+  const [expiresAt, setExpiresAt] = useState('')
+  const [mergeIntoSuggestionId, setMergeIntoSuggestionId] = useState('')
+  const [editedPayload, setEditedPayload] = useState(JSON.stringify(payload, null, 2))
+  const [error, setError] = useState('')
+  async function submit(decision: 'confirm' | 'edit' | 'reject' | 'merge' | 'suppress') {
+    setError('')
+    try {
+      const value: Record<string, unknown> = { decision, reason: reason || undefined }
+      if (decision === 'edit') value.editedPayload = JSON.parse(editedPayload)
+      if (decision === 'merge') value.mergeIntoSuggestionId = mergeIntoSuggestionId
+      if (decision === 'suppress') Object.assign(value, { owner, expiresAt })
+      await api.decideSuggestion(id, value)
+      await onComplete()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+  }
+  return <div className="suggestion-actions"><div className="review-actions"><button className="reject-button" onClick={() => submit('reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => submit('confirm')}><Check size={16} /> Confirm</button></div><details><summary>Govern this proposal</summary><label>Reason<input value={reason} onChange={event => setReason(event.target.value)} placeholder="Required for suppression" /></label><label>Edited payload<textarea value={editedPayload} onChange={event => setEditedPayload(event.target.value)} /></label><button className="secondary-button" onClick={() => submit('edit')}>Save edit for review</button><label>Merge into suggestion ID<input value={mergeIntoSuggestionId} onChange={event => setMergeIntoSuggestionId(event.target.value)} placeholder="Target proposal UUID" /></label><button className="secondary-button" onClick={() => submit('merge')}>Merge and confirm</button><label>Suppression owner<input value={owner} onChange={event => setOwner(event.target.value)} placeholder="Owning team" /></label><label>Suppression expiry<input type="datetime-local" value={expiresAt} onChange={event => setExpiresAt(event.target.value ? new Date(event.target.value).toISOString() : '')} /></label><button className="reject-button" onClick={() => submit('suppress')}>Suppress with expiry</button>{error && <p className="form-error">{error}</p>}</details></div>
 }
 
 function ReviewQueue({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
   const proposals = data.suggestions.filter(item => item.state === 'proposed')
-  async function decide(id: string, decision: 'confirm' | 'reject') { await api.decideSuggestion(id, decision); await reload() }
-  return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Evidence-backed proposals never affect authoritative coverage until you decide." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3><div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div></div><div className="review-actions"><button className="reject-button" onClick={() => decide(item.id, 'reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => decide(item.id, 'confirm')}><Check size={16} /> Confirm</button></div></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
+  return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Review Jira source, the proposed graph, candidates, and provenance before a semantic proposal can affect coverage." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); const payload = item.payload ?? {}; return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3>{item.type === 'flow' ? <FlowReviewDetail data={data} requirement={requirement} payload={payload} evidence={item.evidence} /> : <><div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div><small className="review-source-revision">Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small></>}</div><SuggestionActions id={item.id} payload={payload} onComplete={reload} /></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
 }
 
 function RepositoryAdministrationCard({ repository, reload }: { repository: Repository; reload: () => Promise<void> }) {

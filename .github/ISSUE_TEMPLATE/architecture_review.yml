@@ -1,0 +1,50 @@
+name: Architecture Review
+description: Challenge or improve the Fuze Software Factory architecture
+title: "[Architecture] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Strong technical criticism is welcome. Please be specific about the boundary, assumption, or failure mode you are reviewing.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - FuzeFront runtime/application shell
+        - Module Federation / app integration
+        - FuzeInfra / Kubernetes / GitOps
+        - FuzeSDLC / governance
+        - AI agents / orchestration
+        - Security / tenancy / trust boundaries
+        - Developer experience / onboarding
+        - Observability / operations
+        - End-to-end Software Factory model
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: assumption
+    attributes:
+      label: What assumption or design decision are you reviewing?
+      placeholder: Describe the current behavior or architectural assumption.
+    validations:
+      required: true
+  - type: textarea
+    id: concern
+    attributes:
+      label: What is the problem or risk?
+      placeholder: Explain the failure mode, tradeoff, scaling concern, security concern, or developer-experience problem.
+    validations:
+      required: true
+  - type: textarea
+    id: alternative
+    attributes:
+      label: Proposed alternative
+      placeholder: What would you do differently and why?
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence / references
+      placeholder: Benchmarks, production experience, docs, papers, repos, diagrams, or reproducible examples.

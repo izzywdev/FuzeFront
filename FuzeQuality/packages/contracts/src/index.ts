@@ -175,7 +175,34 @@ export type CatalogFinding = {
   owner?: string
   remediation?: string
   sourceRevision?: string
+  policyVersion?: string
+  schemaVersion?: string
+  evidenceStrength?: 'deterministic' | 'reviewed' | 'semantic'
+  evidence?: string[]
+  confidence?: number
+  sourcePassages?: string[]
+  affectedFlowIds?: string[]
+  affectedTargetIds?: string[]
+  remediationOptions?: string[]
+  generatedAt?: string
+  auditHistory?: Array<{
+    action: string
+    at: string
+    detail?: string
+  }>
   status: 'open' | 'resolved' | 'suppressed'
+}
+
+export type CoverageProjection = {
+  policyVersion: string
+  schemaVersion: string
+  generatedAt: string
+  findings: CatalogFinding[]
+  metrics: {
+    total: number
+    byType: Record<string, number>
+    bySeverity: Record<CatalogFinding['severity'], number>
+  }
 }
 
 export type ApiCoverageQuery = {
@@ -221,6 +248,7 @@ export type ApiCoverageResponse = {
 
 export type Requirement = {
   id: string
+  tenantId?: string
   jiraKey: string
   issueType: 'Epic' | 'Story' | 'Task'
   parentKey?: string
@@ -229,6 +257,24 @@ export type Requirement = {
   status: string
   project: string
   updatedAt: string
+  acceptanceCriteria?: Array<{
+    fingerprint: string
+    position: number
+    text: string
+  }>
+}
+
+export type SyncCursor = {
+  sourceType: 'jira'
+  sourceKey: string
+  cursor?: string
+  lastSuccessAt?: string
+  freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'
+}
+
+export type RequirementSyncResult = {
+  requirements: Requirement[]
+  cursor: string
 }
 
 export type FlowStep = {
@@ -237,7 +283,7 @@ export type FlowStep = {
   actor: string
   action: string
   expectedOutcome: string
-  variant: 'main' | 'alternate' | 'error'
+  variant: 'main' | 'alternate' | 'error' | 'recovery'
   targetIds: string[]
 }
 
@@ -248,6 +294,11 @@ export type Flow = {
   owner?: string
   origin: 'confirmed' | 'inferred'
   status: 'proposed' | 'confirmed' | 'rejected'
+  actors?: string[]
+  preconditions?: string[]
+  trigger?: string
+  authorizationBoundaries?: string[]
+  tenantBoundaries?: string[]
   steps: FlowStep[]
 }
 
@@ -259,8 +310,23 @@ export type Suggestion = {
   confidence: number
   evidence: string[]
   payload: Record<string, unknown>
-  state: 'proposed' | 'confirmed' | 'rejected'
+  state: 'proposed' | 'confirmed' | 'rejected' | 'suppressed'
   createdAt: string
+}
+
+export type SuggestionDecision = {
+  id: string
+  suggestionId: string
+  actorId: string
+  tenantId: string
+  action: 'confirm' | 'edit' | 'reject' | 'merge' | 'suppress'
+  originalPayload: Record<string, unknown>
+  editedPayload?: Record<string, unknown>
+  reason?: string
+  owner?: string
+  expiresAt?: string
+  targetSuggestionId?: string
+  decidedAt: string
 }
 
 export type ScanDiagnostic = {
@@ -379,15 +445,19 @@ export const scanRequestedSchema = z.object({
 })
 
 export const requirementSyncRequestedSchema = z.object({
-  scopeId: z.string(),
-  jql: z.string(),
+  tenantId: z.string().trim().min(1).max(200),
+  scopeId: z.string().trim().min(1).max(200),
+  jql: z.string().trim().min(1).max(10_000),
   since: z.string().datetime().optional(),
 })
 
 export const reviewDecisionSchema = z.object({
-  decision: z.enum(['confirm', 'reject']),
+  decision: z.enum(['confirm', 'edit', 'reject', 'merge', 'suppress']),
   reason: z.string().max(2000).optional(),
   editedPayload: z.record(z.unknown()).optional(),
+  mergeIntoSuggestionId: z.string().uuid().optional(),
+  owner: z.string().trim().min(1).max(200).optional(),
+  expiresAt: z.string().datetime().optional(),
 })
 
 export const TOPICS = {
