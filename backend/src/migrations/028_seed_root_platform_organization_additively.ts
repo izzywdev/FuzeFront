@@ -200,13 +200,32 @@ export async function up(knex: Knex): Promise<void> {
   // Runs whether or not Part A created the row: on a re-run, or on a database
   // where 015 already succeeded, the WHERE matches nothing and this is a
   // no-op. It must not be conditional on having just created the org.
+  // TWO TREES, ONE TABLE. `apps` is migrated by BOTH this tree and the
+  // applications-service's, and they do not agree on its columns. In the
+  // SHARED production database `slug` and `manifest` exist, because the
+  // applications tree created them (004_apps_slug_unique_constraint,
+  // 003_add_app_manifest_and_lifecycle). In a database where only THIS tree
+  // has run — every CI run of backend/tests — they do not exist at all.
+  //
+  // The first version of this migration selected `slug` unconditionally. CI
+  // caught it: `column "slug" does not exist`, which aborts the surrounding
+  // transaction and takes the whole migration chain down with it. That is the
+  // very crashloop shape this migration exists to end, so every column beyond
+  // the ones THIS tree guarantees is probed first — the same discipline
+  // 006_update_apps_for_organizations already uses for its own additions.
+  const hasSlug = await knex.schema.hasColumn('apps', 'slug')
+  const hasManifest = await knex.schema.hasColumn('apps', 'manifest')
+
+  // `id`, `organization_id` and `visibility` are guaranteed by this tree
+  // (002_create_apps_table + 006_update_apps_for_organizations).
+  const label = hasSlug ? 'slug' : 'id'
   const pending = await knex.raw(
-    `SELECT slug, visibility
+    `SELECT ${label} AS label, visibility
        FROM apps
       WHERE organization_id IS NULL
         AND (visibility IS NULL OR visibility NOT IN ('public', 'marketplace'))`
   )
-  const rows: Array<{ slug: string; visibility: string | null }> = (pending as any)?.rows ?? []
+  const rows: Array<{ label: string; visibility: string | null }> = (pending as any)?.rows ?? []
 
   if (rows.length === 0) {
     // eslint-disable-next-line no-console
@@ -218,18 +237,27 @@ export async function up(knex: Knex): Promise<void> {
   // not reversible from the resulting state — see down().
   // eslint-disable-next-line no-console
   console.log(
-    `[028] pinning ${rows.length} org-less app(s) to public, preserving the access they already have ` +
-      `via the orWhereNull branch: ${rows.map(r => `${r.slug}(was ${r.visibility ?? 'null'})`).join(', ')}`
+    `[028] pinning ${rows.length} org-less app(s) to public, preserving the access they already ` +
+      `have via the orWhereNull branch: ` +
+      rows.map(r => `${r.label}(was ${r.visibility ?? 'null'})`).join(', ')
   )
 
-  await knex.raw(
-    `UPDATE apps
-        SET visibility = 'public',
+  // The manifest is the copy the HOST reads (canRead() uses
+  // manifest.visibility) while list() filters on the COLUMN, so both must move
+  // together wherever both exist. Where the manifest column does not exist,
+  // there is no second copy to drift from.
+  const manifestSet = hasManifest
+    ? `,
             manifest = CASE
               WHEN manifest IS NOT NULL
                 THEN jsonb_set(manifest, '{visibility}', '"public"'::jsonb, true)
               ELSE manifest
-            END,
+            END`
+    : ''
+
+  await knex.raw(
+    `UPDATE apps
+        SET visibility = 'public'${manifestSet},
             updated_at = NOW()
       WHERE organization_id IS NULL
         AND (visibility IS NULL OR visibility NOT IN ('public', 'marketplace'))`

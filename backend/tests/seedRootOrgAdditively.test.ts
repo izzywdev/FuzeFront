@@ -38,7 +38,10 @@ function makeKnex(
   // Left false, the row never appears, which models the #750 state where the
   // insert was silently swallowed. Both are real production shapes, so which
   // one a test picks is the whole point of that test.
-  materializeOrgInsert = false
+  materializeOrgInsert = false,
+  // Which optional `apps` columns this database has. Defaults to the SHARED
+  // production shape; pass [] for the backend-only shape CI actually builds.
+  columns: string[] = ['slug', 'manifest']
 ) {
   const raws: Raw[] = []
   const knex: any = (table: string) => {
@@ -59,6 +62,15 @@ function makeKnex(
     }
     return api
   }
+  // `apps` is migrated by BOTH this tree and the applications-service's, and
+  // they do not agree on its columns: `slug` and `manifest` exist only in the
+  // shared production database, never in a CI database where only this tree
+  // ran. The migration probes for them, so the stub has to answer.
+  knex.schema = {
+    async hasColumn(_table: string, column: string) {
+      return columns.includes(column)
+    },
+  }
   knex.raw = async (sql: string, bindings: unknown[] = []) => {
     raws.push({ sql, bindings })
     if (materializeOrgInsert && /INSERT INTO organizations/i.test(sql)) {
@@ -69,7 +81,10 @@ function makeKnex(
         type: 'platform',
       })
     }
-    if (/^\s*SELECT\s+slug/i.test(sql)) return { rows: rawRows }
+    // Matches the SELECT whatever label column it chose — keying this to
+    // `SELECT slug` is how the first version of these tests silently stopped
+    // exercising the no-slug path at all.
+    if (/^\s*SELECT\b/i.test(sql)) return { rows: rawRows }
     return { rowCount: 1 }
   }
   return { knex, raws }
@@ -214,5 +229,69 @@ describe('028 — visibility pin', () => {
     await migration028.up(knex)
 
     expect(appUpdates(raws)).toHaveLength(0)
+  })
+})
+
+describe('028 — two trees, one `apps` table', () => {
+  // The first version of this migration selected `slug` unconditionally and
+  // wrote `manifest` unconditionally. Both columns are created by the
+  // APPLICATIONS-SERVICE tree, not this one, so they exist in the shared
+  // production database and NOT in the database every backend CI run builds.
+  // The result was `column "slug" does not exist`, which aborts the
+  // transaction and takes the whole migration chain down — the exact crashloop
+  // shape this migration exists to end. These pin the guards.
+  const ROOT_PRESENT = {
+    users: [{ id: PLATFORM_REGISTRAR_ID }],
+    organizations: [{ id: ROOT_ORG_ID, slug: 'fuzefront-root', type: 'platform' }],
+  }
+
+  it('does not reference `slug` when the column does not exist', async () => {
+    const { knex, raws } = makeKnex(
+      { ...ROOT_PRESENT },
+      [{ label: 'some-uuid', visibility: 'private' }],
+      false,
+      [] // backend-only schema: no slug, no manifest
+    )
+
+    await migration028.up(knex)
+
+    const selects = raws.filter(r => /^\s*SELECT/i.test(r.sql))
+    expect(selects).toHaveLength(1)
+    expect(selects[0].sql).not.toMatch(/\bslug\b/)
+    expect(selects[0].sql).toMatch(/\bid AS label\b/)
+  })
+
+  it('does not write `manifest` when the column does not exist', async () => {
+    const { knex, raws } = makeKnex(
+      { ...ROOT_PRESENT },
+      [{ label: 'some-uuid', visibility: 'private' }],
+      false,
+      []
+    )
+
+    await migration028.up(knex)
+
+    const [update] = appUpdates(raws)
+    expect(update).toBeDefined()
+    // Still pins the column that DOES exist...
+    expect(update.sql).toMatch(/SET visibility = 'public'/i)
+    // ...and never names the one that does not.
+    expect(update.sql).not.toMatch(/manifest/i)
+  })
+
+  it('uses `slug` and writes `manifest` when both exist (the shared prod shape)', async () => {
+    const { knex, raws } = makeKnex(
+      { ...ROOT_PRESENT },
+      [{ label: 'fuzesocial', visibility: 'private' }],
+      false,
+      ['slug', 'manifest']
+    )
+
+    await migration028.up(knex)
+
+    const selects = raws.filter(r => /^\s*SELECT/i.test(r.sql))
+    expect(selects[0].sql).toMatch(/\bslug AS label\b/)
+    const [update] = appUpdates(raws)
+    expect(update.sql).toMatch(/jsonb_set\(manifest/i)
   })
 })
