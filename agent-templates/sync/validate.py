@@ -38,7 +38,8 @@ def main():
         # _base is a defaults fragment merged into other roles, not a full manifest.
         if os.path.basename(os.path.dirname(path)) == "_base":
             continue
-        manifest = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as f:
+            manifest = json.load(f)
         try:
             jsonschema.validate(manifest, role_schema)
             # exercise the full render (persona read + merge) for non-base roles
@@ -52,7 +53,8 @@ def main():
             errors += 1
 
     for path in sorted(glob.glob(os.path.join(TEMPLATES_ROOT, "environments", "*.json"))):
-        manifest = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as f:
+            manifest = json.load(f)
         try:
             jsonschema.validate(manifest, env_schema)
             print(f"ok  {os.path.relpath(path, TEMPLATES_ROOT)}")

@@ -23,7 +23,8 @@ def main():
     existing = {e["name"]: e["id"] for e in common.list_all("/v1/environments")}
     ids = {}
     for path in sorted(glob.glob(os.path.join(ENV_DIR, "*.json"))):
-        manifest = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as f:
+            manifest = json.load(f)
         name = manifest["name"]
         if name in existing:
             ids[name] = existing[name]
