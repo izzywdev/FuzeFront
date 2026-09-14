@@ -14,11 +14,7 @@ What matters here, and why:
     for a working endpoint itself, and a literal override would defeat that.
   * Values may be secrets. They must reach $GITHUB_ENV and never stdout.
 """
-import os
-import subprocess
-import sys
-import tempfile
-import unittest
+import os, subprocess, sys, tempfile, textwrap, unittest
 
 try:
     import yaml
