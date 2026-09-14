@@ -53,6 +53,8 @@ spec:
               value: {{ $.Values.chroma.database | quote }}
             - name: CHROMA_READY_COLLECTION
               value: {{ $.Values.chroma.readyCollection | quote }}
+            - name: FUZEQUALITY_EMBEDDING_MODEL
+              value: {{ $.Values.config.embeddingModel | quote }}
             - name: CHROMA_TOKEN
               valueFrom:
                 secretKeyRef:
