@@ -171,7 +171,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByLabel('Proposed flow graph')).toContainText('submits suspension')
     await expect(page.getByLabel('Proposed flow graph')).toContainText('POST /apps/{slug}/suspend')
     await expect(page.getByLabel('Jira source')).toContainText('Source revision: FQ-1@2026-09-14T05:00:00.000Z')
-    await expect(page.getByText('Administrator role is required')).toBeVisible()
+    await expect(page.getByLabel('Review evidence and provenance')).toContainText('Administrator role is required')
     await expect(page.getByText(/Prompt fuzequality-flow-v1/)).toBeVisible()
     await page.getByRole('button', { name: 'Confirm' }).click()
     await expect(page.getByText('Review queue cleared')).toBeVisible()

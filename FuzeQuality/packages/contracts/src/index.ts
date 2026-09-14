@@ -309,8 +309,23 @@ export type Suggestion = {
   confidence: number
   evidence: string[]
   payload: Record<string, unknown>
-  state: 'proposed' | 'confirmed' | 'rejected'
+  state: 'proposed' | 'confirmed' | 'rejected' | 'suppressed'
   createdAt: string
+}
+
+export type SuggestionDecision = {
+  id: string
+  suggestionId: string
+  actorId: string
+  tenantId: string
+  action: 'confirm' | 'edit' | 'reject' | 'merge' | 'suppress'
+  originalPayload: Record<string, unknown>
+  editedPayload?: Record<string, unknown>
+  reason?: string
+  owner?: string
+  expiresAt?: string
+  targetSuggestionId?: string
+  decidedAt: string
 }
 
 export type ScanDiagnostic = {
@@ -435,9 +450,12 @@ export const requirementSyncRequestedSchema = z.object({
 })
 
 export const reviewDecisionSchema = z.object({
-  decision: z.enum(['confirm', 'reject']),
+  decision: z.enum(['confirm', 'edit', 'reject', 'merge', 'suppress']),
   reason: z.string().max(2000).optional(),
   editedPayload: z.record(z.unknown()).optional(),
+  mergeIntoSuggestionId: z.string().uuid().optional(),
+  owner: z.string().trim().min(1).max(200).optional(),
+  expiresAt: z.string().datetime().optional(),
 })
 
 export const TOPICS = {

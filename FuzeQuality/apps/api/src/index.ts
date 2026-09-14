@@ -44,7 +44,9 @@ const mayManageRepositories = requirePlatformPermission('fuzequality.Repository'
 const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 'scan')
 const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
 const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReviewSuggestions = requirePlatformPermission('fuzequality.Evidence', 'export')
+const mayReadSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'read')
+const mayReviewSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'review')
+const maySuppressSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'suppress')
 const maySyncRequirementsAsHuman = requirePlatformPermission('fuzequality.Evidence', 'export')
 // The reconciler is a workload, not a portal user. It authenticates with the
 // FuzeQuality service token injected from the cluster Secret; a human caller
@@ -562,17 +564,34 @@ app.get('/api/v1/requirements', mayReadRequirements, async (request, response) =
 app.get('/api/v1/flows', mayReadRequirements, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).flows)
 )
-app.get('/api/v1/suggestions', mayReadRequirements, async (request, response) =>
+app.get('/api/v1/suggestions', mayReadSuggestions, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).suggestions)
 )
-app.post('/api/v1/suggestions/:id/decision', mayReviewSuggestions, async (request, response) => {
+app.get('/api/v1/suggestions/:id/decisions', mayReadSuggestions, async (request, response) => {
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  response.json(await store.suggestionDecisions(suggestionId))
+})
+app.post('/api/v1/suggestions/:id/decision', async (request, response, next) => {
   const parsed = reviewDecisionSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
   const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
-  const suggestion = await store.decideSuggestion(suggestionId, parsed.data.decision)
+  const authorize = parsed.data.decision === 'suppress' ? maySuppressSuggestions : mayReviewSuggestions
+  return authorize(request, response, async () => {
+    const identity = requestIdentity(request)!
+    const suggestion = await store.reviewSuggestion(suggestionId, {
+      actorId: identity.userId,
+      tenantId: identity.tenantId,
+      action: parsed.data.decision,
+      editedPayload: parsed.data.editedPayload,
+      reason: parsed.data.reason,
+      owner: parsed.data.owner,
+      expiresAt: parsed.data.expiresAt,
+      targetSuggestionId: parsed.data.mergeIntoSuggestionId,
+    })
   if (!suggestion) return response.status(404).json({ error: 'Suggestion not found' })
-  await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
+    await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
   response.json(suggestion)
+  })
 })
 app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).findings)

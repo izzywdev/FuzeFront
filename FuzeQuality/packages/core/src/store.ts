@@ -8,6 +8,7 @@ import type {
   RepositoryInput,
   ScanResult,
   Suggestion,
+  SuggestionDecision,
   Requirement,
   SyncCursor,
   TestImplementationRequest,
@@ -36,7 +37,8 @@ export interface CatalogStore {
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
-  decideSuggestion(id: string, decision: 'confirm' | 'reject'): Promise<Suggestion | undefined>
+  reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
+  suggestionDecisions(id: string): Promise<SuggestionDecision[]>
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
@@ -59,6 +61,7 @@ const emptyPortfolio = (): Portfolio => ({
 export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
+  private decisions: SuggestionDecision[] = []
   private adminContextAudits: AdminContextAudit[] = []
   private syncCursors: SyncCursor[] = []
 
@@ -164,19 +167,25 @@ export class MemoryCatalogStore implements CatalogStore {
     ]
   }
 
-  async decideSuggestion(id: string, decision: 'confirm' | 'reject') {
+  async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
     const suggestion = this.data.suggestions.find(item => item.id === id)
-    if (!suggestion) return undefined
-    suggestion.state = decision === 'confirm' ? 'confirmed' : 'rejected'
-    if (decision === 'confirm' && suggestion.type === 'flow') {
-      const flow = suggestion.payload as unknown as Flow
+    if (!suggestion || suggestion.state !== 'proposed') return undefined
+    const payload = input.editedPayload ?? suggestion.payload
+    const action = input.action
+    suggestion.state = action === 'confirm' || action === 'merge' ? 'confirmed' : action === 'suppress' ? 'suppressed' : action === 'reject' ? 'rejected' : 'proposed'
+    if ((action === 'confirm' || action === 'merge') && suggestion.type === 'flow') {
+      const flow = payload as unknown as Flow
       const confirmed = { ...flow, status: 'confirmed' as const, origin: 'confirmed' as const }
       const existing = this.data.flows.findIndex(item => item.id === flow.id)
       if (existing >= 0) this.data.flows[existing] = confirmed
       else this.data.flows.push(confirmed)
     }
+    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input })
+    if (action === 'edit') suggestion.payload = payload
     return suggestion
   }
+
+  async suggestionDecisions(id: string) { return this.decisions.filter(item => item.suggestionId === id) }
 
   async rebuildCoverage() {
     const projection = buildQualityIntelligenceProjection(this.data)
@@ -489,15 +498,24 @@ export class PostgresCatalogStore implements CatalogStore {
     }
   }
 
-  async decideSuggestion(id: string, decision: 'confirm' | 'reject') {
-    const state = decision === 'confirm' ? 'confirmed' : 'rejected'
+  async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const state = input.action === 'confirm' || input.action === 'merge' ? 'confirmed' : input.action === 'suppress' ? 'suppressed' : input.action === 'reject' ? 'rejected' : 'proposed'
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      const result = await client.query('UPDATE fuzequality.suggestions SET state=$2 WHERE id=$1 RETURNING *', [id, state])
+      const original = await client.query('SELECT * FROM fuzequality.suggestions WHERE id=$1 AND state=\'proposed\' FOR UPDATE', [id])
+      const originalRow = original.rows[0]
+      if (!originalRow) { await client.query('ROLLBACK'); return undefined }
+      const result = await client.query('UPDATE fuzequality.suggestions SET state=$2, payload=COALESCE($3,payload) WHERE id=$1 RETURNING *', [id, state, input.editedPayload ? JSON.stringify(input.editedPayload) : null])
       const row = result.rows[0]
-      if (row && decision === 'confirm' && row.type === 'flow') {
-        const flow = row.payload as Flow
+      await client.query(
+        `INSERT INTO fuzequality.review_decisions
+         (id,suggestion_id,actor,tenant_id,decision,original_payload,edited_payload,reason,owner,expires_at,target_suggestion_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [randomUUID(), id, input.actorId, input.tenantId, input.action, JSON.stringify(originalRow.payload), input.editedPayload ? JSON.stringify(input.editedPayload) : null, input.reason ?? null, input.owner ?? null, input.expiresAt ?? null, input.targetSuggestionId ?? null],
+      )
+      if (row && (input.action === 'confirm' || input.action === 'merge') && row.type === 'flow') {
+        const flow = (input.editedPayload ?? row.payload) as Flow
         await client.query(
           `INSERT INTO fuzequality.flows (id,requirement_id,title,owner,origin,status,confirmed_revision,details)
            VALUES ($1,$2,$3,$4,'confirmed','confirmed',1,$5)
@@ -521,6 +539,11 @@ export class PostgresCatalogStore implements CatalogStore {
       client.release()
     }
     return (await this.portfolio()).suggestions.find(item => item.id === id)
+  }
+
+  async suggestionDecisions(id: string): Promise<SuggestionDecision[]> {
+    const result = await this.pool.query('SELECT * FROM fuzequality.review_decisions WHERE suggestion_id=$1 ORDER BY decided_at DESC', [id])
+    return result.rows.map(row => ({ id: row.id, suggestionId: row.suggestion_id, actorId: row.actor, tenantId: row.tenant_id, action: row.decision, originalPayload: row.original_payload, editedPayload: row.edited_payload ?? undefined, reason: row.reason ?? undefined, owner: row.owner ?? undefined, expiresAt: row.expires_at?.toISOString(), targetSuggestionId: row.target_suggestion_id ?? undefined, decidedAt: row.decided_at.toISOString() }))
   }
 
   async createTestImplementation(request: TestImplementationRequest, idempotencyKey: string) {

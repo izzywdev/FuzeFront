@@ -81,11 +81,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ localPath }),
     }),
-  decideSuggestion: (id: string, decision: 'confirm' | 'reject') =>
+  decideSuggestion: (id: string, value: Record<string, unknown>) =>
     request(`/api/v1/suggestions/${id}/decision`, {
       method: 'POST',
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(value),
     }),
+  suggestionDecisions: (id: string) => request(`/api/v1/suggestions/${id}/decisions`),
   verifyRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories/verify', { method: 'POST', body: JSON.stringify(value) }),
   updateRepositoryAdministration: (id: string, value: Record<string, unknown>) =>
