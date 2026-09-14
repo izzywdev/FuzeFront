@@ -193,6 +193,15 @@ policies, retain unrelated scanner findings, and keep the previous committed sna
 if calculation or persistence fails. Prometheus exposes flow and requirement-review
 finding gauges separately.
 
+Jira and intelligence delivery uses three bounded attempts with exponential
+backoff. Exhausted messages go to the topic DLQ with a stable failure code and
+attempt count only: provider responses, credentials, source text, and URLs are
+never copied into Kafka diagnostics. A failed sync marks its Jira cursor as
+`failed` while preserving its last successful cursor and catalog state; the next
+successful sync restores `fresh`. Operators can read this state through
+`GET /api/v1/requirements/freshness`, the Requirements workspace badge, and the
+`fuzequality_jira_sync_freshness` metric.
+
 ## Deployment
 
 The Helm chart is in `deploy/helm/fuzequality`; its Argo CD Application is in

@@ -7,13 +7,15 @@ import {
   repositoryScopeForRequirement,
   suggestionsFromAnalysis,
 } from '@fuzequality/core'
-import { apiRequest, runConsumer } from './runtime'
+import { apiRequest, failureCode, runConsumer } from './runtime'
 import { searchJira } from './jira'
 
 await runConsumer(
   'fuzequality-intelligence-v1',
   [TOPICS.REPOSITORY_INVENTORY_CHANGED, TOPICS.REQUIREMENT_SYNC_REQUESTED, TOPICS.ANALYSIS_REQUESTED],
   async (topic, payload, _correlationId, { heartbeat }) => {
+    const command = topic === TOPICS.REQUIREMENT_SYNC_REQUESTED ? requirementSyncRequestedSchema.parse(payload) : undefined
+    try {
     const portfolio = await apiRequest<Portfolio>('/api/v1/portfolio')
     const embeddingModel = process.env.FUZEQUALITY_EMBEDDING_MODEL ?? 'text-embedding-3-small'
     const index = new SemanticCandidateIndex(
@@ -35,8 +37,7 @@ await runConsumer(
       candidates: semantic.candidates.length,
       durationMs: Date.now() - startedAt,
     }))
-    if (topic !== TOPICS.REQUIREMENT_SYNC_REQUESTED) return
-    const command = requirementSyncRequestedSchema.parse(payload)
+    if (!command) return
     const sync = await searchJira(command.jql, { since: command.since })
     const analyzer = new LiteLlmFlowAnalyzer(
       process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1',
@@ -71,5 +72,14 @@ await runConsumer(
         sync: { sourceType: 'jira', sourceKey: command.scopeId, cursor: sync.cursor },
       }),
     })
+    } catch (error) {
+      if (command) {
+        await apiRequest('/api/v1/internal/intelligence/failure', {
+          method: 'POST',
+          body: JSON.stringify({ sourceType: 'jira', sourceKey: command.scopeId, code: failureCode(error) }),
+        }).catch(() => undefined)
+      }
+      throw error
+    }
   }
 )

@@ -18,6 +18,9 @@
   --violet: #a998ff;
   --amber: #f7bc61;
 }
+.freshness-fresh { color: var(--green); }
+.freshness-stale, .freshness-unknown { color: var(--amber); }
+.freshness-failed { color: var(--coral); }
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
