@@ -38,6 +38,7 @@ export interface CatalogStore {
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
   reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
+  approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
   suggestionDecisions(id: string, tenantId: string): Promise<SuggestionDecision[]>
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
@@ -180,6 +181,16 @@ export class MemoryCatalogStore implements CatalogStore {
     }
     this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input })
     if (action === 'edit') suggestion.payload = payload
+    return suggestion
+  }
+
+  async approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const suggestion = this.data.suggestions.find(item => item.id === id && item.type === 'expected-test' && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
+    if (!suggestion || suggestion.state !== 'proposed') return undefined
+    const priority = suggestion.payload.priority === 'required' ? 'required' : 'recommended'
+    this.data.expectations.push({ id: `expectation:ai:${id}`, subjectType: 'flow-step', subjectId: `requirement:${suggestion.requirementId}`, kind: 'ai-approved', label: suggestion.title, priority, rule: `ai-reviewed:${id}`, coverage: 'gap', evidenceIds: [] })
+    suggestion.state = 'confirmed'
+    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' })
     return suggestion
   }
 
@@ -536,6 +547,22 @@ export class PostgresCatalogStore implements CatalogStore {
     } finally {
       client.release()
     }
+    return (await this.portfolio(input.tenantId)).suggestions.find(item => item.id === id)
+  }
+
+  async approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const source = await client.query(`SELECT s.*, r.tenant_id FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id WHERE s.id=$1 AND s.type='expected-test' AND s.state='proposed' AND r.tenant_id=$2 FOR UPDATE`, [id, input.tenantId])
+      const row = source.rows[0]
+      if (!row) { await client.query('ROLLBACK'); return undefined }
+      const expectationId = `expectation:ai:${id}`
+      await client.query(`INSERT INTO fuzequality.test_expectations (id,subject_type,subject_id,kind,label,priority,rule,coverage,evidence_ids) VALUES ($1,'flow-step',$2,'ai-approved',$3,$4,$5,'gap','[]') ON CONFLICT (id) DO NOTHING`, [expectationId, `requirement:${row.requirement_id}`, row.title, row.payload?.priority === 'required' ? 'required' : 'recommended', `ai-reviewed:${id}`])
+      await client.query(`UPDATE fuzequality.suggestions SET state='confirmed' WHERE id=$1`, [id])
+      await client.query(`INSERT INTO fuzequality.review_decisions (suggestion_id,actor,tenant_id,decision,original_payload) VALUES ($1,$2,$3,'confirm',$4)`, [id, input.actorId, input.tenantId, JSON.stringify(row.payload)])
+      await client.query('COMMIT')
+    } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
     return (await this.portfolio(input.tenantId)).suggestions.find(item => item.id === id)
   }
 
