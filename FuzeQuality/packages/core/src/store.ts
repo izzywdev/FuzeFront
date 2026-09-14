@@ -12,6 +12,7 @@ import type {
   Requirement,
   SyncCursor,
   TestImplementationRequest,
+  ExpectationExclusionInput,
   CoverageProjection,
 } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
@@ -38,6 +39,8 @@ export interface CatalogStore {
   ): Promise<void>
   rebuildCoverage(): Promise<CoverageProjection>
   reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
+  approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
+  excludeExpectation(id: string, tenantId: string, input: ExpectationExclusionInput): Promise<boolean>
   suggestionDecisions(id: string, tenantId: string): Promise<SuggestionDecision[]>
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
@@ -64,6 +67,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private decisions: SuggestionDecision[] = []
   private adminContextAudits: AdminContextAudit[] = []
   private syncCursors: SyncCursor[] = []
+  private exclusions = new Map<string, ExpectationExclusionInput>()
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -77,13 +81,19 @@ export class MemoryCatalogStore implements CatalogStore {
     const operations = result.operations.filter(item => repositoryIds.has(item.repositoryId))
     const surfaces = result.surfaces.filter(item => repositoryIds.has(item.repositoryId))
     const subjectIds = new Set([...operations.map(item => item.id), ...surfaces.map(item => item.id)])
+    const requirementIds = new Set(result.requirements.filter(item => item.tenantId === tenantId).map(item => item.id))
     return {
       ...result,
       repositories,
       operations,
       surfaces,
       tests: result.tests.filter(item => repositoryIds.has(item.repositoryId)),
-      expectations: result.expectations.filter(item => subjectIds.has(item.subjectId)),
+      expectations: result.expectations.filter(item => subjectIds.has(item.subjectId) || (item.subjectType === 'flow-step' && requirementIds.has(item.subjectId.replace(/^requirement:/, '')))).map(item => {
+        const exclusion = this.exclusions.get(`${tenantId}:${item.id}`)
+        if (!exclusion || new Date(exclusion.expiresAt).getTime() <= Date.now()) return item
+        const expiresSoon = new Date(exclusion.expiresAt).getTime() - Date.now() <= 7 * 24 * 60 * 60 * 1000
+        return { ...item, coverage: 'excluded' as const, exclusion: { ...exclusion, expiresSoon } }
+      }),
       findings: result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId)),
       diagnostics: result.diagnostics.filter(item => repositoryIds.has(item.repositoryId)),
     requirements: result.requirements.filter(item => item.tenantId === tenantId),
@@ -183,6 +193,23 @@ export class MemoryCatalogStore implements CatalogStore {
     return suggestion
   }
 
+  async approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const suggestion = this.data.suggestions.find(item => item.id === id && item.type === 'expected-test' && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
+    if (!suggestion || suggestion.state !== 'proposed') return undefined
+    const priority = suggestion.payload.priority === 'required' ? 'required' : 'recommended'
+    this.data.expectations.push({ id: `expectation:ai:${id}`, subjectType: 'flow-step', subjectId: `requirement:${suggestion.requirementId}`, kind: 'ai-approved', label: suggestion.title, priority, rule: `ai-reviewed:${id}`, coverage: 'gap', evidenceIds: [] })
+    suggestion.state = 'confirmed'
+    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' })
+    return suggestion
+  }
+
+  async excludeExpectation(id: string, tenantId: string, input: ExpectationExclusionInput) {
+    const visible = (await this.portfolio(tenantId)).expectations.some(item => item.id === id)
+    if (!visible) return false
+    this.exclusions.set(`${tenantId}:${id}`, input)
+    return true
+  }
+
   async suggestionDecisions(id: string, tenantId: string) {
     const visible = this.data.suggestions.some(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === tenantId))
     return visible ? this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId) : []
@@ -272,7 +299,7 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async portfolio(tenantId?: string): Promise<Portfolio> {
-    const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, criteria, flows, steps, suggestions] = await Promise.all([
+    const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, criteria, flows, steps, suggestions, exclusions] = await Promise.all([
       this.pool.query('SELECT * FROM fuzequality.repositories WHERE enabled = true ORDER BY name'),
       this.pool.query('SELECT * FROM fuzequality.api_operations WHERE active = true ORDER BY path, method'),
       this.pool.query('SELECT * FROM fuzequality.frontend_surfaces WHERE active = true ORDER BY package_name, name'),
@@ -285,6 +312,7 @@ export class PostgresCatalogStore implements CatalogStore {
       this.pool.query(`SELECT f.* FROM fuzequality.flows f JOIN fuzequality.requirements r ON r.id=f.requirement_id WHERE f.status <> 'rejected'${tenantId ? ' AND r.tenant_id=$1' : ''} ORDER BY f.updated_at DESC`, tenantId ? [tenantId] : []),
       this.pool.query('SELECT * FROM fuzequality.flow_steps ORDER BY flow_id, position'),
       this.pool.query(`SELECT s.* FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id${tenantId ? ' WHERE r.tenant_id=$1' : ''} ORDER BY s.created_at DESC`, tenantId ? [tenantId] : []),
+      tenantId ? this.pool.query(`SELECT expectation_id, owner, reason, expires_at FROM fuzequality.expectation_exclusions WHERE tenant_id=$1 AND revoked_at IS NULL AND expires_at > now()`, [tenantId]) : Promise.resolve({ rows: [] }),
     ])
     const result = {
       repositories: repositories.rows.filter(row => !tenantId || row.tenant_id === tenantId).map(row => ({
@@ -325,7 +353,14 @@ export class PostgresCatalogStore implements CatalogStore {
     result.surfaces = result.surfaces.filter(item => repositoryIds.has(item.repositoryId))
     result.tests = result.tests.filter(item => repositoryIds.has(item.repositoryId))
     const subjectIds = new Set([...result.operations.map(item => item.id), ...result.surfaces.map(item => item.id)])
-    result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId))
+    const requirementIds = new Set(result.requirements.map(item => item.id))
+    const exclusionByExpectation = new Map(exclusions.rows.map(row => [row.expectation_id, row]))
+    result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId) || (item.subjectType === 'flow-step' && requirementIds.has(item.subjectId.replace(/^requirement:/, '')))).map(item => {
+      const exclusion = exclusionByExpectation.get(item.id)
+      if (!exclusion) return item
+      const expiresAt = exclusion.expires_at.toISOString()
+      return { ...item, coverage: 'excluded' as const, exclusion: { owner: exclusion.owner, reason: exclusion.reason, expiresAt, expiresSoon: exclusion.expires_at.getTime() - Date.now() <= 7 * 24 * 60 * 60 * 1000 } }
+    })
     result.findings = result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId))
     result.diagnostics = result.diagnostics.filter(item => repositoryIds.has(item.repositoryId))
     return result
@@ -537,6 +572,35 @@ export class PostgresCatalogStore implements CatalogStore {
       client.release()
     }
     return (await this.portfolio(input.tenantId)).suggestions.find(item => item.id === id)
+  }
+
+  async approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const source = await client.query(`SELECT s.*, r.tenant_id FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id WHERE s.id=$1 AND s.type='expected-test' AND s.state='proposed' AND r.tenant_id=$2 FOR UPDATE`, [id, input.tenantId])
+      const row = source.rows[0]
+      if (!row) { await client.query('ROLLBACK'); return undefined }
+      const expectationId = `expectation:ai:${id}`
+      await client.query(`INSERT INTO fuzequality.test_expectations (id,subject_type,subject_id,kind,label,priority,rule,coverage,evidence_ids) VALUES ($1,'flow-step',$2,'ai-approved',$3,$4,$5,'gap','[]') ON CONFLICT (id) DO NOTHING`, [expectationId, `requirement:${row.requirement_id}`, row.title, row.payload?.priority === 'required' ? 'required' : 'recommended', `ai-reviewed:${id}`])
+      await client.query(`UPDATE fuzequality.suggestions SET state='confirmed' WHERE id=$1`, [id])
+      await client.query(`INSERT INTO fuzequality.review_decisions (suggestion_id,actor,tenant_id,decision,original_payload) VALUES ($1,$2,$3,'confirm',$4)`, [id, input.actorId, input.tenantId, JSON.stringify(row.payload)])
+      await client.query('COMMIT')
+    } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+    return (await this.portfolio(input.tenantId)).suggestions.find(item => item.id === id)
+  }
+
+  async excludeExpectation(id: string, tenantId: string, input: ExpectationExclusionInput) {
+    const visible = (await this.portfolio(tenantId)).expectations.some(item => item.id === id)
+    if (!visible) return false
+    await this.pool.query(
+      `INSERT INTO fuzequality.expectation_exclusions (expectation_id,tenant_id,owner,reason,expires_at)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (expectation_id,tenant_id) WHERE revoked_at IS NULL
+       DO UPDATE SET owner=EXCLUDED.owner, reason=EXCLUDED.reason, expires_at=EXCLUDED.expires_at`,
+      [id, tenantId, input.owner, input.reason, input.expiresAt],
+    )
+    return true
   }
 
   async suggestionDecisions(id: string, tenantId: string): Promise<SuggestionDecision[]> {

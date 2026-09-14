@@ -1,14 +1,22 @@
-@import '@fuzefront/design-system/styles.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-}
+/* Tokens from the base design system — imported individually rather than via
+ * the bundled '@fuzefront/design-system/styles.css' to skip ONLY
+ * tokens/fonts.css's `@import url(https://fonts.googleapis.com/…)`. That file
+ * is nothing but the external webfont fetch (Space Grotesk/Inter/JetBrains
+ * Mono) — no tokens are defined there. Every `--font-*` variable already
+ * carries a full system-font fallback chain (typography.css: `--font-sans:
+ * 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif`), so skipping it
+ * costs only the specific webfont download, never a broken/undefined token —
+ * this is consuming fewer of the base's own files verbatim, not forking or
+ * redefining any of them (design-system-inheritance). Avoids depending on
+ * live third-party network reachability for baseline rendering: this portal
+ * runs behind restrictive egress in some environments (this repo's own CI
+ * sandbox included — confirmed via a blocked fonts.googleapis.com console
+ * error during this PR's own Playwright run), and per CLAUDE.md's
+ * ui-runtime-validation gate a console error from an unreachable external
+ * host is exactly the class of runtime failure that gate exists to catch.
+ */
+@import '@fuzefront/design-system/tokens/colors.css';
+@import '@fuzefront/design-system/tokens/typography.css';
+@import '@fuzefront/design-system/tokens/spacing.css';
+@import '@fuzefront/design-system/tokens/base.css';
+@import './styles/devportal.css';
