@@ -40,6 +40,7 @@ import type {
   Portfolio,
   OrganizationQualitySummary,
   Repository,
+  RepositoryScanHistoryEntry,
   StorybookStory,
   TestExpectation,
   TestImplementationRequest,
@@ -311,6 +312,7 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [history, setHistory] = useState<Record<string, RepositoryScanHistoryEntry[]>>({})
   const [form, setForm] = useState({
     owner: 'izzywdev',
     name: '',
@@ -334,6 +336,10 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
     setBusy(true)
     try { await api.scanRepository(id, localPath); await reload() } finally { setBusy(false) }
   }
+  async function loadHistory(id: string) {
+    if (history[id]) return
+    try { setHistory(current => ({ ...current, [id]: await api.repositoryScanHistory(id) })) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Scan history could not be loaded') }
+  }
   return (
     <>
       <PageHeading eyebrow="Source control" title="Repository inventory" detail="Onboard read-only sources and inspect their latest deterministic scan." action={<button className="primary-button" onClick={() => setOpen(true)}><Plus size={16} /> Add repository</button>} />
@@ -345,6 +351,7 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
             <h3>{repository.name}</h3><p>{repository.canonicalUrl}</p>
             <dl><div><dt>Branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Kind</dt><dd>{repository.kind}</dd></div><div><dt>Revision</dt><dd title={repository.lastScanRevision}>{repository.lastScanRevision?.slice(0, 12) ?? 'Not scanned'}</dd></div><div><dt>Last scan</dt><dd>{repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'Never'}</dd></div></dl>
             {diagnostics.length > 0 && <details className="scan-diagnostics"><summary><AlertTriangle size={14} /> {diagnostics.length} scan {diagnostics.length === 1 ? 'diagnostic' : 'diagnostics'}</summary><div>{diagnostics.map(item => <article key={`${item.sourcePath}:${item.code}`}><span className={`diagnostic-severity diagnostic-${item.severity}`}>{item.severity}</span><code>{item.sourcePath}</code><strong>{item.code}</strong><p>{item.message}</p></article>)}</div></details>}
+            <details className="scan-diagnostics" onToggle={event => { if ((event.currentTarget as HTMLDetailsElement).open) void loadHistory(repository.id) }}><summary><GitBranch size={14} /> Scan history</summary><div>{history[repository.id] ? history[repository.id].length ? history[repository.id].map(entry => <article key={`${entry.revision}:${entry.scannedAt}`}><span className={`scan-status scan-${entry.status}`}>{entry.status}</span><code>{entry.revision.slice(0, 12)} · {entry.branch}</code><strong>{entry.counts.operations} API · {entry.counts.surfaces} surfaces · {entry.counts.tests} tests</strong><p>{entry.scannedAt ? new Date(entry.scannedAt).toLocaleString() : 'Scan queued'}</p></article>) : <p>No scan runs recorded yet.</p> : <p>Loading scan history…</p>}</div></details>
             <button className="secondary-button" disabled={busy} onClick={() => scan(repository.id, repository.localPath)}><RefreshCw size={15} /> Scan now</button>
           </article>
         })}

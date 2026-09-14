@@ -325,6 +325,12 @@ app.get('/api/v1/repositories/:id', mayReadRepositories, async (request, respons
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
 })
+app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.repositoryScanHistory(repositoryId, tenantId))
+})
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

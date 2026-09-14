@@ -51,6 +51,15 @@ export type Repository = RepositoryInput & {
   lastScanDetails?: RepositoryScanDetails
 }
 
+export type RepositoryScanHistoryEntry = {
+  revision: string
+  branch: string
+  status: Repository['lastScanStatus']
+  scannedAt?: string
+  trigger: 'manual' | 'push' | 'reconcile'
+  counts: { operations: number; surfaces: number; tests: number; diagnostics: number }
+}
+
 export type RepositoryScanCandidate = {
   sourcePath: string
   kind: 'openapi-document' | 'openapi-config' | 'test' | 'storybook' | 'package'
