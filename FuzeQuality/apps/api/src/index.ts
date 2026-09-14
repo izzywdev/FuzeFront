@@ -214,6 +214,12 @@ app.get('/metrics', async (_request, response) => {
       '# HELP fuzequality_open_findings Number of open catalog findings',
       '# TYPE fuzequality_open_findings gauge',
       `fuzequality_open_findings ${portfolio.findings.filter(item => item.status === 'open').length}`,
+      '# HELP fuzequality_flow_gap_findings Number of open deterministic flow-gap findings',
+      '# TYPE fuzequality_flow_gap_findings gauge',
+      `fuzequality_flow_gap_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'flow-orphans-v1').length}`,
+      '# HELP fuzequality_requirement_review_findings Number of open conflicting or incomplete requirement findings',
+      '# TYPE fuzequality_requirement_review_findings gauge',
+      `fuzequality_requirement_review_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'requirement-review-v1').length}`,
     ].join('\n')
   )
 })
@@ -573,19 +579,35 @@ app.post('/api/v1/internal/scans/results', async (request, response) => {
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/intelligence/results', async (request, response) => {
-  await store.saveIntelligence(request.body.results ?? [])
+  await store.saveIntelligence(request.body.results ?? [], request.body.sync)
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
-  response.status(202).json({ accepted: true, rebuiltAt: new Date().toISOString() })
+  try {
+    const projection = await store.rebuildCoverage()
+    console.info(JSON.stringify({
+      event: 'coverage_projection_rebuilt',
+      policyVersion: projection.policyVersion,
+      schemaVersion: projection.schemaVersion,
+      findings: projection.metrics.total,
+      byType: projection.metrics.byType,
+    }))
+    response.status(200).json(projection)
+  } catch {
+    console.error(JSON.stringify({ event: 'coverage_projection_failed', code: 'QUALITY_PROJECTION_FAILED', retryable: true }))
+    response.status(503).json({ error: 'Coverage projection failed; the previous snapshot remains active', code: 'QUALITY_PROJECTION_FAILED' })
+  }
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
+  const scopeId = request.body?.scopeId ?? 'default'
+  const cursor = await store.syncCursor('jira', scopeId)
   await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
-    scopeId: request.body?.scopeId ?? 'default',
+    scopeId,
     jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
+    ...(cursor?.cursor ? { since: cursor.cursor } : {}),
   })
-  response.status(202).json({ status: 'queued' })
+  response.status(202).json({ status: 'queued', scopeId, incrementalFrom: cursor?.cursor })
 })
 
 app.post('/api/v1/webhooks/github', async (request, response) => {
