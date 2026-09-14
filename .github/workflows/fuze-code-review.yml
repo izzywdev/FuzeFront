@@ -269,6 +269,9 @@ jobs:
           FUZE_RESULT_TEXT: ${{ steps.review.outputs.result-text }}
           FUZE_VERDICT_NONCE: ${{ steps.prompt.outputs.nonce }}
           FUZE_ACTION_MODE: ${{ steps.review.outputs.mode }}
+          # classify.sh exit 1 = availability. Without this the verdict script cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both.
+          FUZE_ACTION_AVAILABILITY: ${{ steps.review.outputs.availability }}
           FUZE_ACTION_VENDOR: ${{ steps.review.outputs.vendor }}
           FUZE_SENSITIVE_FILES: ${{ steps.context.outputs.sensitive_files }}
         run: python3 scripts/fuze_code_review_verdict.py
@@ -294,6 +297,13 @@ jobs:
               ;;
             comment)
               gh pr review "$PR_NUMBER" --comment --body-file "$BODY_FILE"
+              ;;
+            outage)
+              # The owner's credit-outage exception: a vendor credit/quota exhaustion or an
+              # unreachable provider is not a defect in this PR, so the check PASSES with a
+              # notice. Kept distinct from abstain so the auto-fix loop never fires on it.
+              gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              echo "::notice title=fuze-code-review::review skipped on a provider availability/credit outage -- passing per the owner's exception. Re-run once a provider recovers."
               ;;
             abstain)
               gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
