@@ -58,6 +58,33 @@ export const FLAG_KEYS = {
    * 100% of admins.
    */
   PORTALS_DIRECTORY: 'fuzefront.platform.portals-directory',
+  /**
+   * FF-EPIC-17-S4 (#656).
+   * Gates the reconciled ContextSwitcher (Personal + org/sub-org tree) and
+   * the My orgs and sub-orgs view. Default OFF. Release flag.
+   * Owner: frontend-engineer (identity).
+   * Removal criterion: delete OrganizationPage.tsx select branch once GA
+   * and enabled for 100% of users.
+   */
+  IDENTITY_PERSONAL_CONTEXT: 'fuzefront.identity.personal-context',
+  /**
+   * FF-EPIC-17-S5 (#671/#672).
+   * Gates GET /api/organizations/:id/directory and its directory UI.
+   * Default OFF. Release flag. Owner: backend-engineer (identity).
+   * Removal criterion: delete flag-OFF path once rolled out to 100%.
+   */
+  IDENTITY_MEMBER_DIRECTORY: 'fuzefront.identity.member-directory',
+  /**
+   * FF-EPIC-17-S8/S9 (#655/#673).
+   * Gates the explicit employee-marker grant trigger, role-catalog entry,
+   * and /staff cross-org console. Rollout convenience only — authorization
+   * still comes from Permit (org-admin-on-root ReBAC grant). Default OFF.
+   * Release flag. Owner: backend-engineer (identity).
+   * Removal criterion: delete flag-OFF path once rolled out to 100%.
+   * Note: enable in Unleash only after FF-EPIC-17-S9 cross-org listing
+   * endpoint ships (CONTRACT GAP in EmployeeConsolePage.tsx).
+   */
+  IDENTITY_EMPLOYEE_CONSOLE: 'fuzefront.identity.employee-console',
 } as const;
 
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
@@ -69,4 +96,7 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
     default: false,
   },
   { key: FLAG_KEYS.PORTALS_DIRECTORY, type: 'release', default: false },
+  { key: FLAG_KEYS.IDENTITY_PERSONAL_CONTEXT, type: 'release', default: false },
+  { key: FLAG_KEYS.IDENTITY_MEMBER_DIRECTORY, type: 'release', default: false },
+  { key: FLAG_KEYS.IDENTITY_EMPLOYEE_CONSOLE, type: 'release', default: false },
 ] as const;
