@@ -428,7 +428,9 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
 }
 
 function Requirements({ data }: { data: Portfolio }) {
-  return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." /><div className="requirements-grid">{data.requirements.map(requirement => {
+  const [freshness, setFreshness] = useState<'unknown' | 'fresh' | 'stale' | 'failed'>('unknown')
+  useEffect(() => { api.requirementFreshness().then(value => setFreshness(value.freshnessStatus)).catch(() => setFreshness('failed')) }, [])
+  return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." action={<div className={`header-badge freshness-${freshness}`}><Database /> Jira {freshness}</div>} /><div className="requirements-grid">{data.requirements.map(requirement => {
     const flows = data.flows.filter(flow => flow.requirementId === requirement.id)
     const suggestions = data.suggestions.filter(item => item.requirementId === requirement.id && item.state === 'proposed')
     const findings = data.findings.filter(item => item.subjectId === requirement.id || item.sourceRevision?.startsWith(`${requirement.jiraKey}@`))

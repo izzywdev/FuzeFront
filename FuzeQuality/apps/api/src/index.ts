@@ -66,6 +66,11 @@ const invitationSchema = z.object({
   role: organizationRoleSchema,
 }).strict()
 const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
+const intelligenceFailureSchema = z.object({
+  sourceType: z.literal('jira'),
+  sourceKey: z.string().trim().min(1).max(200),
+  code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'SEMANTIC_INDEX_UNAVAILABLE']),
+}).strict()
 const repositoryAdministrationSchema = z.object({
   ownership: z.object({
     team: z.string().trim().min(1).max(100),
@@ -206,6 +211,7 @@ app.get('/health/ready', async (_request, response) => {
 })
 app.get('/metrics', async (_request, response) => {
   const portfolio = await store.portfolio()
+  const jiraFreshness = await store.syncCursor('jira', 'default')
   response.type('text/plain').send(
     [
       '# HELP fuzequality_repositories Number of onboarded repositories',
@@ -220,6 +226,9 @@ app.get('/metrics', async (_request, response) => {
       '# HELP fuzequality_requirement_review_findings Number of open conflicting or incomplete requirement findings',
       '# TYPE fuzequality_requirement_review_findings gauge',
       `fuzequality_requirement_review_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'requirement-review-v1').length}`,
+      '# HELP fuzequality_jira_sync_freshness Jira requirement synchronization freshness: 1 fresh, 0 otherwise',
+      '# TYPE fuzequality_jira_sync_freshness gauge',
+      `fuzequality_jira_sync_freshness ${jiraFreshness?.freshnessStatus === 'fresh' ? 1 : 0}`,
     ].join('\n')
   )
 })
@@ -582,6 +591,15 @@ app.post('/api/v1/internal/intelligence/results', async (request, response) => {
   await store.saveIntelligence(request.body.results ?? [], request.body.sync)
   response.status(202).json({ accepted: true })
 })
+app.post('/api/v1/internal/intelligence/failure', async (request, response) => {
+  const failure = intelligenceFailureSchema.parse(request.body)
+  await store.markSyncFailed(failure.sourceType, failure.sourceKey)
+  console.error(JSON.stringify({ event: 'intelligence_sync_failed', sourceType: failure.sourceType, sourceKey: failure.sourceKey, code: failure.code, retryable: true }))
+  response.status(202).json({ accepted: true })
+})
+app.get('/api/v1/requirements/freshness', mayReadRequirements, async (_request, response) =>
+  response.json(await store.syncCursor('jira', 'default') ?? { sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'unknown' })
+)
 app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
   try {
     const projection = await store.rebuildCoverage()

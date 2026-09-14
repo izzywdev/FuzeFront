@@ -51,6 +51,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       ...fixture,
       suggestions: suggestionConfirmed ? [] : fixture.suggestions,
     })
+    if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
     if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
@@ -130,6 +131,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('heading', { name: 'Protect app access' })).toBeVisible()
     await expect(page.getByText('1 confirmed flows')).toBeVisible()
     await expect(page.getByText('1 proposals')).toBeVisible()
+    await expect(page.getByText('Jira fresh')).toBeVisible()
     await expect(page.getByText('2 quality findings')).toBeVisible()
     await page.getByText('FQ-1 has no confirmed user flow').click()
     await expect(page.getByText(/deterministic evidence · policy flow-orphans-v1 · schema 1.0/)).toBeVisible()

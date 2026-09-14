@@ -30,6 +30,7 @@ export interface CatalogStore {
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   saveScan(result: ScanResult): Promise<void>
   syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
+  markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<void>
   saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
     sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
@@ -188,6 +189,19 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
     return this.syncCursors.find(item => item.sourceType === sourceType && item.sourceKey === sourceKey)
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    const existing = await this.syncCursor(sourceType, sourceKey)
+    const value: SyncCursor = {
+      sourceType,
+      sourceKey,
+      cursor: existing?.cursor,
+      lastSuccessAt: existing?.lastSuccessAt,
+      freshnessStatus: 'failed',
+    }
+    if (existing) Object.assign(existing, value)
+    else this.syncCursors.push(value)
   }
 
   async saveIntelligence(
@@ -394,6 +408,15 @@ export class PostgresCatalogStore implements CatalogStore {
       lastSuccessAt: row.last_success_at?.toISOString(),
       freshnessStatus: row.freshness_status,
     } as SyncCursor
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    await this.pool.query(
+      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,freshness_status)
+       VALUES ($1,$2,'failed')
+       ON CONFLICT (source_type,source_key) DO UPDATE SET freshness_status='failed'`,
+      [sourceType, sourceKey],
+    )
   }
 
   async saveIntelligence(
