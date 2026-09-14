@@ -25,8 +25,7 @@ def main():
     ids = {}
 
     for path in sorted(glob.glob(os.path.join(MEM_DIR, "*.json"))):
-        with open(path, encoding="utf-8") as fh:
-            tmpl = json.load(fh)
+        tmpl = json.load(open(path, encoding="utf-8"))
         name = tmpl["name"]
         if name in existing:
             sid = existing[name]

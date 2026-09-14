@@ -21,8 +21,6 @@ Concept mapping (Managed Agents -> OpenAI):
 
 Until implemented, every method raises NotImplementedError with this guidance.
 """
-from typing import ClassVar
-
 from providers.base import AgentProvider
 
 _MSG = ("OpenAI provider is a stub — implement providers/openai/adapter.py "
@@ -31,7 +29,7 @@ _MSG = ("OpenAI provider is a stub — implement providers/openai/adapter.py "
 
 class OpenAIProvider(AgentProvider):
     name = "openai"
-    capabilities: ClassVar[dict[str, bool]] = {"self_hosted": True, "vaults": False, "memory": True, "multiagent": True}
+    capabilities = {"self_hosted": True, "vaults": False, "memory": True, "multiagent": True}
 
     def ensure_environment(self, manifest): raise NotImplementedError(_MSG)
     def ensure_agent(self, manifest, multiagent=None): raise NotImplementedError(_MSG)

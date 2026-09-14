@@ -69,7 +69,7 @@ class TestRunBlocksParse(unittest.TestCase):
                     with os.fdopen(fd, "w") as fh:
                         fh.write(script)
                     proc = subprocess.run(
-                        ["bash", "-n", path], capture_output=True, text=True, check=False
+                        ["bash", "-n", path], capture_output=True, text=True
                     )
                 finally:
                     os.unlink(path)

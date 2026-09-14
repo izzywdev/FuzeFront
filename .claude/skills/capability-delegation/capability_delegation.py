@@ -36,8 +36,9 @@ import os
 import re
 import sys
 import uuid
-from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Iterable, Optional
+
 
 # --------------------------------------------------------------------------------------
 # Registry (repo-specific data, not hardcoded here).
@@ -57,7 +58,7 @@ REGISTRY_PATHS = (
 )
 
 
-def load_registry(repo_root: str | None = None, path: str | None = None) -> dict:
+def load_registry(repo_root: Optional[str] = None, path: Optional[str] = None) -> dict:
     """Load the repo's capability→environment registry, or {} if none is declared.
 
     Returns {} (not an error) when no registry file exists — a caller MUST treat an unknown
@@ -74,7 +75,7 @@ def load_registry(repo_root: str | None = None, path: str | None = None) -> dict
     return {}
 
 
-def capability_environment(cap: str, registry: dict) -> str | None:
+def capability_environment(cap: str, registry: dict) -> Optional[str]:
     """The environment_id that owns `cap`, or None if unknown/not-wired.
 
     None is returned both for an unknown capability and for a known-but-unwired one
@@ -110,7 +111,7 @@ class Envelope:
     cap: str
     body: str
     corr: str = field(default_factory=lambda: str(uuid.uuid4()))
-    reply_to: str | None = None
+    reply_to: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.reply_to is None:  # the callee fires its reply back at `from`
@@ -127,8 +128,8 @@ def build_envelope(
     frm: str,
     cap: str,
     body: str,
-    corr: str | None = None,
-    reply_to: str | None = None,
+    corr: Optional[str] = None,
+    reply_to: Optional[str] = None,
 ) -> str:
     """Render the envelope line for a delegated turn. `corr` is generated if omitted."""
     if not frm or not cap:
@@ -139,7 +140,7 @@ def build_envelope(
     return env.render()
 
 
-def parse_envelope(text: str) -> Envelope | None:
+def parse_envelope(text: str) -> Optional[Envelope]:
     """Parse a delegated turn's opening envelope. Returns None if it isn't one.
 
     Order-independent for the header keys, and tolerant of a body that itself contains a
@@ -172,7 +173,7 @@ class Decision:
 
 
 def authorize(
-    envelope: Envelope | None,
+    envelope: Optional[Envelope],
     provides_to: Iterable[str],
     allowed_caps: Iterable[str],
 ) -> Decision:
@@ -236,7 +237,7 @@ def select_path(caller_is_local: bool) -> dict:
 # --------------------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------------------
-def _main(argv: list | None = None) -> int:
+def _main(argv: Optional[list] = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 

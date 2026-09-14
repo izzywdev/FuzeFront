@@ -21,8 +21,6 @@ Concept mapping (Managed Agents -> Hermes runtime):
 
 Until implemented, every method raises NotImplementedError with this guidance.
 """
-from typing import ClassVar
-
 from providers.base import AgentProvider
 
 _MSG = ("Hermes provider is a stub — implement providers/hermes/adapter.py "
@@ -31,7 +29,7 @@ _MSG = ("Hermes provider is a stub — implement providers/hermes/adapter.py "
 
 class HermesProvider(AgentProvider):
     name = "hermes"
-    capabilities: ClassVar[dict[str, bool]] = {"self_hosted": True, "vaults": False, "memory": False, "multiagent": False}
+    capabilities = {"self_hosted": True, "vaults": False, "memory": False, "multiagent": False}
 
     def ensure_environment(self, manifest): raise NotImplementedError(_MSG)
     def ensure_agent(self, manifest, multiagent=None): raise NotImplementedError(_MSG)
