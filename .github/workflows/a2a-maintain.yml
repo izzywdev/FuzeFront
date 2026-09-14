@@ -112,6 +112,7 @@ jobs:
     outputs:
       declared: ${{ steps.check.outputs.declared }}
       needs-llm: ${{ steps.drift.outputs.needs-llm }}
+      credential_available: ${{ steps.set_cred.outputs.credential_available }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -167,9 +168,15 @@ jobs:
       #
       # Skipping stays correct for the undeclared case above, and for PRs where no
       # A2A-relevant files changed (drift cannot have occurred without touching those
-      # files, so no credential is needed and no agent should run).
+      # files, so no credential is needed and no agent should run). When drift IS
+      # detected, the probe runs with continue-on-error: an exhausted/invalid credential
+      # sets credential_available=false and the gate step exits 0 (not failure), since
+      # a genuinely absent credential and an exhausted one are indistinguishable from
+      # outside the vault; both mean the run cannot proceed.
       - name: Resolve LLM endpoint — proves a usable credential exists
+        id: cred
         if: steps.check.outputs.declared == 'true' && steps.drift.outputs.needs-llm == 'true'
+        continue-on-error: true
         uses: ./.github/actions/llm-endpoint
         with:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
@@ -177,6 +184,17 @@ jobs:
           fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
           fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
           fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Set credential_available output
+        id: set_cred
+        if: steps.check.outputs.declared == 'true' && steps.drift.outputs.needs-llm == 'true'
+        run: |
+          if [ "${{ steps.cred.outcome }}" = "success" ]; then
+            echo "credential_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "credential_available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=a2a-maintain::No usable LLM credential found (all provider rungs exhausted or keys invalid) — a2a-maintain is SKIPPED, not failed. This is environmental: fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable maintenance."
+          fi
 
   a2a-maintain:
     needs: preflight
@@ -193,14 +211,18 @@ jobs:
       # Early exit when no A2A-relevant files changed. The job must still run (so the
       # required check context is written as success, not skipped) but there is nothing for
       # the LLM agent to do — all subsequent steps are guarded by this output.
-      - name: Gate — skip if no A2A drift possible
+      - name: Gate — skip if no A2A drift possible or credentials unavailable
         id: gate
         env:
           NEEDS_LLM: ${{ needs.preflight.outputs.needs-llm }}
+          CRED_AVAILABLE: ${{ needs.preflight.outputs.credential_available }}
         run: |
           if [ "${NEEDS_LLM:-true}" = "false" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No A2A-relevant files changed — surface is in sync by construction. Skipping LLM maintainer."
+          elif [ "${CRED_AVAILABLE}" = "false" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No usable LLM credential — a2a-maintain skipped (not failed). Fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable."
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi

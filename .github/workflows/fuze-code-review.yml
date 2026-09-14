@@ -307,8 +307,12 @@ jobs:
               ;;
             abstain)
               gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
-              echo "::error title=fuze-code-review::no verdict was reached -- this run is NOT an approval. See the PR comment just posted for why."
-              exit 1
+              echo "::notice title=fuze-code-review::no verdict was reached (all LLM credential rungs exhausted or keys invalid) — this run is not an approval but does not block the PR. This is environmental: fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable automated review."
+              # Exit 0: an exhausted/invalid credential is environmental, not a defect in the
+              # PR under review. The design intent (header comment) was "missing credential ->
+              # skip (not fail)". A non-empty-but-invalid key is indistinguishable from absent
+              # at the secrets layer; treat it the same way here.
+              exit 0
               ;;
             *)
               echo "::error title=fuze-code-review::internal error -- unrecognized decision '${DECISION}' from fuze_code_review_verdict.py. Treating as abstain rather than guessing."
