@@ -2,9 +2,18 @@ name: Harden Gate
 
 # Unified protection gate shared verbatim across all hardened repos.
 # Emits canonical status-check contexts: lint, test, build, sast, secret-scan, dependency-scan.
-# First-pass policy: lint/test/build/sast/dependency-scan are REPORT-ONLY (never fail the job;
-# findings are surfaced to the Security tab via SARIF). secret-scan (gitleaks) DOES gate new
-# secrets in a PR. Flip a job to enforcing later by removing its "|| true" / setting exit-code.
+# ENFORCING: lint, secret-scan (gitleaks).
+# REPORT-ONLY still: test, build, sast, dependency-scan (never fail the job; findings are
+# surfaced to the Security tab via SARIF).
+#
+# Every one of those report-only jobs is ALSO a REQUIRED status context on master, so each
+# is a check that can only pass — which is worse than no check, because a required context
+# that cannot fail is indistinguishable from one that has not reported yet. De-vacuuming
+# them is Stage 0 in governance/required-checks.json (`stages.stage_0`), taken ONE GATE AT
+# A TIME so a first-run red is attributable. gate-lint is done; its action item names the
+# exact change ("remove `set +e` / terminal `exit 0`"). gate-test is explicitly flagged
+# "Do not flip with gate-lint" — it needs its pytest scoping fixed first.
+# Flip a job by removing its "|| true" / `set +e` / terminal `exit 0` / exit-code: '0'.
 
 on:
   push:
@@ -30,20 +39,55 @@ jobs:
         with: { node-version: '24.x' }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
-      - name: Lint (adaptive, report-only)
+      # ENFORCING as of Stage 0 (governance/required-checks.json → stages.stage_0,
+      # action "gate-lint: remove `set +e` / terminal `exit 0`"). `gate-lint` is a
+      # REQUIRED context on master, and before this it ran every lint and then threw
+      # the result away — a required check that could only ever pass. The lints below
+      # are unchanged; only the disposal of their exit codes is.
+      #
+      # Deliberately NOT `set -e`: every sub-lint still runs, so one push surfaces
+      # every failure at once instead of fixing ruff only to discover node --check on
+      # the next round. Failures accumulate in `rc` and the step exits non-zero. That
+      # is the whole difference from the old `set +e … exit 0`.
+      - name: Lint (adaptive)
         shell: bash
         run: |
-          set +e
+          rc=0
           if [ -f package.json ] && grep -q '"lint"' package.json; then
-            echo "::group::npm run lint"; (npm ci || npm install) >/dev/null 2>&1; npm run lint; echo "::endgroup::"
+            echo "::group::npm run lint"
+            (npm ci || npm install) >/dev/null 2>&1
+            npm run lint || rc=1
+            echo "::endgroup::"
           fi
           if git ls-files '*.py' | grep -q .; then
-            echo "::group::ruff"; pipx run ruff check . ; echo "::endgroup::"
+            echo "::group::ruff"
+            pipx run ruff check . || rc=1
+            echo "::endgroup::"
           fi
           if git ls-files '*.js' '*.cjs' '*.mjs' | grep -q .; then
-            echo "::group::node --check"; git ls-files '*.js' '*.cjs' '*.mjs' | while read -r f; do node --check "$f" || echo "syntax error: $f"; done; echo "::endgroup::"
+            echo "::group::node --check"
+            # Process substitution, NOT `git ls-files | while read`: a pipeline puts the
+            # loop in a subshell, so an `rc=1` set inside it is discarded when the
+            # subshell exits. That is how the original swallowed syntax errors a SECOND
+            # time, independently of the errexit disable — it also only echoed them.
+            #
+            # Comments inside a `run:` block are part of the job body that
+            # scripts/gate_required_checks.py scans for vacuity markers (it parses YAML,
+            # so YAML-level comments are dropped, but shell comments survive). Its
+            # docstring says false positives get fixed by classifying honestly, not by
+            # loosening the pattern — so the prose here deliberately avoids spelling the
+            # markers, rather than the auditor learning to skip comments.
+            while read -r f; do
+              node --check "$f" || { echo "::error file=$f::JavaScript syntax error"; rc=1; }
+            done < <(git ls-files '*.js' '*.cjs' '*.mjs')
+            echo "::endgroup::"
           fi
-          echo "lint complete (report-only)"; exit 0
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=gate-lint::lint failed — see the groups above"
+          else
+            echo "lint clean"
+          fi
+          exit $rc
 
   gate-test:
     runs-on: ubuntu-latest

@@ -205,7 +205,7 @@ def main():
     print("= password policy attached to sign-up prompt")
 
     # --- Initial FuzeFront admin user ---
-    user = first(f"/core/users/?username=fuzefront-admin")
+    user = first("/core/users/?username=fuzefront-admin")
     if not user:
         user = api("POST", "/core/users/", {
             "username": "fuzefront-admin", "name": "FuzeFront Admin",

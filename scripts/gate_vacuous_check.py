@@ -148,7 +148,7 @@ def _is_inline_substitution(line: str) -> bool:
 
 
 def _last_effective_line(run_text: str) -> str | None:
-    lines = [l for l in run_text.splitlines() if l.strip() and not l.strip().startswith("#")]
+    lines = [ln for ln in run_text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
     return lines[-1] if lines else None
 
 
@@ -346,14 +346,13 @@ def _extract_run_blocks_fallback(text: str) -> list[dict]:
         step_coe = bool(COE_RE.search(header))
         # continue-on-error can also trail the run block within the same step.
         tail_scan_end = min(end + 6, len(lines))
-        trailer = "\n".join(lines[end:tail_scan_end])
         if not step_coe:
             # only counts if still inside the same step (no new "- " at <= indent before it)
-            for l in lines[end:tail_scan_end]:
-                sm = STEP_MARKER_RE.match(l)
+            for ln in lines[end:tail_scan_end]:
+                sm = STEP_MARKER_RE.match(ln)
                 if sm and len(sm.group(1)) <= indent - 2:
                     break
-                if COE_RE.search(l):
+                if COE_RE.search(ln):
                     step_coe = True
                     break
 
@@ -463,7 +462,6 @@ def _allowlisted(finding: dict, root: str, policy: dict) -> dict | None:
 
 def main(argv: list[str]) -> int:
     args = [a for a in argv[1:] if not a.startswith("--")]
-    flags = dict()
     rest = argv[1:]
     i = 0
     policy_override = None

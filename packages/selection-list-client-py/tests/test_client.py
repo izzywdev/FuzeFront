@@ -26,7 +26,6 @@ import pytest
 from fuzefront_selection_list_client import (
     SelectionListApiError,
     SelectionListClient,
-    paginate,
 )
 from fuzefront_selection_list_client.types import LifecycleStatus
 

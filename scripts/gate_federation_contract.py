@@ -618,7 +618,7 @@ def parse_nginx(text: str):
         body = _block(text, text.index("{", m.end() - 1))
         locations.append({"pat": m.group("pat"), "mod": m.group("mod") or "", "body": body})
     # A server-level `root` is any root directive that is not inside a location body.
-    bodies = "".join(l["body"] for l in locations)
+    bodies = "".join(loc["body"] for loc in locations)
     for m in _ROOT_RE.finditer(text):
         if m.group(0) not in bodies:
             server_root = norm_fs_dir(m.group("v"))
@@ -1129,7 +1129,9 @@ def check_layer4(root, serve_root, cfg, findings):
     before = len(findings)
     serve_dir = resolve_nginx_dir(nginx_texts, serve_root, findings)
     dialect_failed = len(findings) > before
-    orphans_of = lambda: orphan_mounts(nginx_texts, serve_root)
+    def orphans_of():
+        return orphan_mounts(nginx_texts, serve_root)
+
     dialect = "nginx"
     server_rel = ""
 
@@ -1143,11 +1145,13 @@ def check_layer4(root, serve_root, cfg, findings):
             serve_dir = node_dir
             dialect = "node"
             server_rel = next((r for r, _t in node_texts), "")
-            orphans_of = lambda: node_orphan_mounts(node_texts, env, serve_root)
+            def orphans_of():
+                return node_orphan_mounts(node_texts, env, serve_root)
         elif not dialect_failed:
             node_orphans = node_orphan_mounts(node_texts, env, serve_root)
             if node_orphans:
-                orphans_of = lambda: node_orphans
+                def orphans_of():
+                    return node_orphans
 
     if serve_dir is None and not dialect_failed:
         findings.append(Finding(

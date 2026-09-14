@@ -8,7 +8,6 @@ proves that.
 import asyncio
 import json
 
-import pytest
 
 from fuzefront_identity import GraphCreateMiddleware, entity_type_of
 
@@ -144,8 +143,9 @@ def test_passes_reads_straight_through():
 
 
 def test_leaves_non_json_bodies_alone():
+    # No `make_app` wrapper here: this test drives a bespoke ASGI app (below) so it can
+    # feed a non-JSON body straight through the middleware.
     record = {}
-    middleware = GraphCreateMiddleware(make_app(record), aggregate=AGGREGATE)
 
     scope = {"type": "http", "method": "POST", "headers": [], "state": {}}
     sent = []

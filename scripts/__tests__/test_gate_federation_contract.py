@@ -371,8 +371,8 @@ class TestVendoredCopyOwnershipIsPositional(unittest.TestCase):
             result = run_gate(r.root)
         self.assertIn("https://fuzeagent.prod.fuzefront.com/remoteEntry.js", result.stdout)
         self.assertGreaterEqual(
-            sum(1 for l in result.stdout.splitlines()
-                if "::error" in l and "[L1 manifest]" in l), 2, result.stdout)
+            sum(1 for line in result.stdout.splitlines()
+                if "::error" in line and "[L1 manifest]" in line), 2, result.stdout)
 
     def test_a_matching_vendored_copy_is_still_clean(self):
         with self.fuzeagent_shape(vendored_slug="fuzeagent") as r:

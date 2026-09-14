@@ -295,7 +295,7 @@ def detect_extraction_candidates(root: str, threshold: int) -> dict[str, dict]:
     for norm, locs in buckets.items():
         uniq = sorted(set(locs))
         # recurring AND across >1 file = an extraction signal
-        if len(uniq) >= threshold and len({l.split(":")[0] for l in uniq}) >= 2:
+        if len(uniq) >= threshold and len({loc.split(":")[0] for loc in uniq}) >= 2:
             # sha256, not sha1: this is a non-cryptographic fingerprint used only to
             # GROUP recurring literals, and it is truncated to 12 chars regardless --
             # so the stronger digest is free, and it stops every consuming repo
@@ -337,7 +337,7 @@ def open_extraction_issue(repo: str, cand: dict) -> str | None:
         print(f"gate-ds-conformance: extraction issue for ds-fp:{fp} already exists — skipping (idempotent)")
         return None
     ensure_label(repo)
-    locs = "\n".join(f"- `{l}`" for l in cand["locations"][:20])
+    locs = "\n".join(f"- `{loc}`" for loc in cand["locations"][:20])
     title = f"DS extraction: recurring UI pattern (ds-fp:{fp})"
     body = f"""@claude — `gate-ds-conformance` detected a UI pattern duplicated across the codebase that **should be extracted into a design-system primitive** (CLAUDE.baseline.md §6).
 

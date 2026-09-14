@@ -99,7 +99,7 @@ class GateWorkflowYaml(unittest.TestCase):
         self.write("a.yml", "a: b: c\n")
         code, out = run(self.dir)
         self.assertEqual(code, 1, out)
-        annotation = [l for l in out.splitlines() if l.startswith("::error")][0]
+        annotation = [line for line in out.splitlines() if line.startswith("::error")][0]
         self.assertIn("not parseable YAML", annotation)
 
 

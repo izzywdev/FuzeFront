@@ -18,7 +18,7 @@ without a deferred second write.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, Set, Tuple
 
 from .ids import mint_id
 from .registry import is_entity_type

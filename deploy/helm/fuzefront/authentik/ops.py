@@ -8,7 +8,12 @@ file-based discovery — blueprint files carry the
 worker on startup (the deployments roll on blueprint changes via a checksum
 annotation).
 """
-import json, os, sys, time, urllib.request, urllib.error
+import json
+import os
+import sys
+import time
+import urllib.request
+import urllib.error
 
 AK = os.environ['AK_URL'].rstrip('/')
 TOK = os.environ['AK_TOKEN']

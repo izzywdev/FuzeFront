@@ -29,10 +29,7 @@ from ._paginator import paginate as _paginate
 from .errors import SelectionListApiError, _code_from_status
 from .types import (
     AccessEntry,
-    AutofillRequest,
     AutofillResult,
-    CreateItemRequest,
-    CreateListRequest,
     Page,
     PagedResponse,
     QuotaInfo,
@@ -41,15 +38,10 @@ from .types import (
     ResolveResult,
     SelectionList,
     SelectionListAccessRole,
-    SelectionListErrorCode,
     SelectionListItem,
     SelectionListItemTranslation,
     SelectionListQuotaStatus,
     Translation,
-    UpdateItemRequest,
-    UpdateListRequest,
-    UpsertItemTranslationRequest,
-    UpsertListTranslationRequest,
     LifecycleStatus,
 )
 

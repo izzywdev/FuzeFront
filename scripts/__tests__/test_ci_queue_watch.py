@@ -11,7 +11,6 @@ which asserts the script REFUSES rather than shrugs. A test that only confirmed
 it reports correctly on a healthy fleet would pass just as happily against a
 watchdog wired to nothing.
 """
-import json
 import os
 import subprocess
 import sys

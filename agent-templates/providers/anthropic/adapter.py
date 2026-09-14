@@ -5,7 +5,6 @@ Additive: delegates to the existing `sync/` modules (`common`, `driver`,
 standalone sync scripts keep working. The idempotent create/update logic mirrors
 `sync/sync_{environments,agents,vaults,memory}.py`.
 """
-import glob
 import json
 import os
 import sys

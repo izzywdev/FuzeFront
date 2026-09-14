@@ -510,8 +510,8 @@ def check_authz(repo):
     impl = auth_impl_dirs(repo)
     is_authz_service = serves_authz_api(repo)
     mutating = [(rel, i) for rel in source_files(repo)
-                for i, l in enumerate(read(repo, rel).splitlines(), 1)
-                if MUTATING_ROUTE.search(l)]
+                for i, line in enumerate(read(repo, rel).splitlines(), 1)
+                if MUTATING_ROUTE.search(line)]
     has_authz = False
     for rel in source_files(repo):
         if _under(rel, impl):
@@ -578,8 +578,8 @@ def check_adoption(repo):
     a service with no auth at all, which is exactly the state that shipped.
     """
     routed = [(rel, i) for rel in source_files(repo)
-              for i, l in enumerate(read(repo, rel).splitlines(), 1)
-              if ANY_ROUTE.search(l)]
+              for i, line in enumerate(read(repo, rel).splitlines(), 1)
+              if ANY_ROUTE.search(line)]
     if not routed:
         return []
     if declares_auth(repo) or imports_auth(repo):
