@@ -129,7 +129,7 @@ jobs:
           HTTP_PID=$!
           sleep 1
           # bubblewrap update reads twa-manifest.json and scaffolds the Android Gradle project
-          bubblewrap update --skipPwaValidation
+          bubblewrap update --skipPwaValidation --skipVersionUpgrade
           kill $HTTP_PID || true
 
       - name: Build APK
