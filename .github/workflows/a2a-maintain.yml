@@ -371,10 +371,33 @@ jobs:
         env:
           MAINTAINER_OUTCOME: ${{ steps.maintainer.outcome }}
           MAINTAINER_CONCLUSION: ${{ steps.maintainer.outputs.conclusion }}
+          MAINTAINER_AVAILABILITY: ${{ steps.maintainer.outputs.availability }}
           RESULT_IS_ERROR: ${{ steps.result.outputs.is_error }}
           RESULT_MSG: ${{ steps.result.outputs.msg }}
         run: |
           set -uo pipefail
+          # THE OWNER'S CREDIT-OUTAGE EXCEPTION, ported from fuze-code-review.yml (#1046).
+          # classify.sh exit 1 = availability. Without consuming it this verdict cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both --
+          # which is exactly what #1046 fixed for fuze-code-review after a provider outage
+          # failed it on every open PR in this repo while the same check on FuzeSDLC#360
+          # passed with a notice, minutes apart. That fix wired the signal into
+          # fuze-code-review only; these maintainer workflows were left on the old behaviour.
+          #
+          # This MUST be checked before the failure branch below: on an outage the action's
+          # outcome IS `failure`. And it must NOT swallow a real task failure -- availability
+          # is false there, so it falls through and still reds. That pair is the load-bearing
+          # property #1046 pinned with `task_failure_without_availability_still_abstains`.
+          if [ "${MAINTAINER_AVAILABILITY:-}" = "true" ]; then
+            echo "::notice::a2a-maintainer skipped on a provider availability/credit outage -- passing per the owner's exception. The A2A surface was NOT checked for drift here. Re-run once a provider recovers."
+            {
+              echo "### ⚪ a2a-maintainer skipped -- provider availability/credit outage"
+              echo ""
+              echo "This is NOT a defect in this PR and NOT an approval of the A2A surface;"
+              echo "the run could not reach a provider. Re-run once one recovers."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ "${MAINTAINER_OUTCOME:-}" = "failure" ] || [ "${RESULT_IS_ERROR:-}" = "true" ]; then
             echo "::error::a2a-maintainer did not complete: ${RESULT_MSG:-no error message surfaced}"
             {
