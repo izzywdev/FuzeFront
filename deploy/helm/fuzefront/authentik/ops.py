@@ -12,8 +12,8 @@ import json
 import os
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 AK = os.environ['AK_URL'].rstrip('/')
 TOK = os.environ['AK_TOKEN']
@@ -65,7 +65,8 @@ else:
         for name in wanted:
             path = f'{BLUEPRINT_DIR}/{name}.yaml'
             try:
-                content = open(path).read()
+                with open(path, encoding="utf-8") as fh:
+                    content = fh.read()
             except FileNotFoundError:
                 failed = True
                 report.append(f'- {name}: MISSING FILE {path}')
@@ -210,7 +211,8 @@ else:
     else:
         report.append(f'- blueprint instances: HTTP {st_m}')
 
-open('report.md', 'w').write('\n'.join(report) + '\n')
+with open('report.md', 'w', encoding='utf-8') as fh:
+    fh.write('\n'.join(report) + '\n')
 print('\n'.join(report))
 # Non-zero exit when anything went wrong so BOTH callers fail loudly (red
 # workflow run / failed in-cluster Job visible in Argo) instead of green-lying.

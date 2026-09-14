@@ -40,9 +40,9 @@ Run (in-cluster, where the token is accepted):
 import json
 import os
 import sys
-import urllib.request
 import urllib.error
 import urllib.parse
+import urllib.request
 
 BASE = os.environ.get("AUTHENTIK_URL", "http://localhost:9000").rstrip("/") + "/api/v3"
 TOKEN = os.environ.get("AUTHENTIK_TOKEN", "")

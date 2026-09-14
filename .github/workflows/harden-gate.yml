@@ -61,7 +61,25 @@ jobs:
           fi
           if git ls-files '*.py' | grep -q .; then
             echo "::group::ruff"
-            pipx run ruff check . || rc=1
+            # PINNED, and that is the load-bearing part of this line.
+            #
+            # This was a bare `pipx run ruff`, which resolves the LATEST release from
+            # PyPI on every run. Measured 2026-09-14 on this very PR: locally installed
+            # ruff 0.15.8 reported 32 findings and CI reported 563, because 0.16 widened
+            # ruff's DEFAULT rule set from E4/E7/E9/F to roughly ten more families
+            # (UP, FURB, BLE, SIM, S, RUF, PLW, PYI, I, EXE...). Nothing in the repo
+            # changed between those two numbers.
+            #
+            # For a REQUIRED context on a deploy-on-push branch that is not a nuisance,
+            # it is a fleet-wide outage waiting for a release day: a new ruff can red
+            # master everywhere at once, for a rule nobody adopted, and no one can
+            # reproduce the failure locally. A gate whose verdict is fetched from the
+            # internet at run time does not have a specification.
+            #
+            # So the version is pinned and bumped deliberately, like any other
+            # dependency. Bumping it is a PR that carries whatever new findings the new
+            # default set surfaces — which is exactly how 0.16.7's arrived here.
+            pipx run ruff==0.16.7 check . || rc=1
             echo "::endgroup::"
           fi
           if git ls-files '*.js' '*.cjs' '*.mjs' | grep -q .; then

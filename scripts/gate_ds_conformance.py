@@ -29,6 +29,7 @@ Env: GATE_BASE_REF (changed-only base ref, default origin/master);
 Exit 0 = conforms (extraction issues are non-fatal); exit 1 = hard violation.
 """
 from __future__ import annotations
+
 import fnmatch
 import hashlib
 import json
@@ -37,6 +38,8 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
+
+_FALLBACK_NOTE = "git ls-files unavailable; the caller will fall back"
 
 UI_EXT = (".tsx", ".jsx", ".ts", ".js", ".vue", ".svelte", ".css", ".scss", ".less")
 # "fuzefront-website/frontend" is a compound (multi-segment) entry: the public
@@ -89,19 +92,19 @@ SKIP_FEATURE_GLOBS = (
 )
 
 HEX_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")
-RGB_RE = re.compile(r"\brgba?\(", re.I)
-HSL_RE = re.compile(r"\bhsla?\(", re.I)
+RGB_RE = re.compile(r"\brgba?\(", re.IGNORECASE)
+HSL_RE = re.compile(r"\bhsla?\(", re.IGNORECASE)
 # spacing/sizing px literals on layout properties (allow 0px / 1px hairline)
 PX_PROP_RE = re.compile(
     r"\b(padding|margin|gap|width|height|top|left|right|bottom|font-size|line-height|border-radius)"
     r"[^\n;{}]*?:\s*(\d{2,})px",
-    re.I,
+    re.IGNORECASE,
 )
 # raw font-family string (not a var/token)
-FONT_FAMILY_RE = re.compile(r"font-family\s*:\s*[\"']?[A-Za-z]", re.I)
+FONT_FAMILY_RE = re.compile(r"font-family\s*:\s*[\"']?[A-Za-z]", re.IGNORECASE)
 # allow lines that clearly use a token/var
-TOKEN_HINT_RE = re.compile(r"(var\(--|tokens?\.|theme\.|\$[a-z]|@apply|colors?\.|spacing\.|--ds-)", re.I)
-DISABLE_RE = re.compile(r"ds-conformance[- ]?(disable|ignore|allow)", re.I)
+TOKEN_HINT_RE = re.compile(r"(var\(--|tokens?\.|theme\.|\$[a-z]|@apply|colors?\.|spacing\.|--ds-)", re.IGNORECASE)
+DISABLE_RE = re.compile(r"ds-conformance[- ]?(disable|ignore|allow)", re.IGNORECASE)
 
 # @@ -a,b +c,d @@  — capture the +c[,d] added-line range
 HUNK_RE = re.compile(r"^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@")
@@ -129,12 +132,15 @@ def _git_ui_files(root: str) -> list[str] | None:
     try:
         res = subprocess.run(
             ["git", "-C", root, "ls-files"] + [f"*{e}" for e in UI_EXT] + [f"**/*{e}" for e in UI_EXT],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0:
             return [p for p in res.stdout.splitlines() if p.strip()]
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError) as exc:
+        # Narrow: only a missing/failing git binary belongs here. Returning None makes
+        # the caller fall back; logging keeps a real bug in the try block visible
+        # instead of silently degrading the gate (S110).
+        print(f"{_FALLBACK_NOTE} ({type(exc).__name__}: {exc})", file=sys.stderr)
     return None
 
 
@@ -144,9 +150,9 @@ def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
     try:
         res = subprocess.run(
             ["git", "-C", root, "diff", "--unified=0", f"{base_ref}...HEAD"],
-            capture_output=True, text=True, timeout=90,
+            capture_output=True, text=True, timeout=90, check=False,
         )
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"::warning title=gate-ds-conformance::changed-only diff failed to run: {e}")
         return None
     if res.returncode != 0:
@@ -161,7 +167,7 @@ def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
             if p == "/dev/null":
                 cur = None
             else:
-                cur = p[2:] if (p.startswith("a/") or p.startswith("b/")) else p
+                cur = p[2:] if p.startswith(("a/", "b/")) else p
             continue
         if line.startswith("@@") and cur is not None:
             m = HUNK_RE.match(line)
@@ -180,7 +186,7 @@ def _is_ds_package_segment(seg: str) -> bool:
     `*-design_system` segment, e.g. "vendor-design-system")."""
     if seg in DS_EXCLUDE_SEGMENTS:
         return True
-    return seg.endswith("-design-system") or seg.endswith("-design_system")
+    return seg.endswith(("-design-system", "-design_system"))
 
 
 def _under_scan_dir(reln: str) -> bool:
@@ -264,7 +270,7 @@ def scan_violations(root: str, changed: dict[str, set[int]] | None = None) -> li
 
 # ---- extraction-candidate detection (duplicate styled blocks) -------------------------
 
-STYLED_BLOCK_RE = re.compile(r"(className=\{?[\"'`][^\"'`]{8,}[\"'`]|styled\.\w+`[^`]{20,}`)", re.S)
+STYLED_BLOCK_RE = re.compile(r"(className=\{?[\"'`][^\"'`]{8,}[\"'`]|styled\.\w+`[^`]{20,}`)", re.DOTALL)
 
 
 def normalize(block: str) -> str:
@@ -312,13 +318,14 @@ def gh_issue_exists(repo: str, fp: str) -> bool:
         res = subprocess.run(
             ["gh", "issue", "list", "-R", repo, "--label", "ds-extraction",
              "--state", "all", "--search", marker, "--json", "number", "--limit", "50"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode != 0:
             print(f"::warning title=gate-ds-conformance::gh issue list failed: {res.stderr.strip()}")
             return True  # fail safe: do NOT create a dup if we can't verify
         return bool(json.loads(res.stdout or "[]"))
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        # ValueError covers `json.loads` on a non-JSON `gh` response.
         print(f"::warning title=gate-ds-conformance::issue-search error: {e}")
         return True
 
@@ -327,7 +334,7 @@ def ensure_label(repo: str):
     subprocess.run(
         ["gh", "label", "create", "ds-extraction", "-R", repo,
          "--color", "5319e7", "--description", "Candidate UI pattern to extract into the design system"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, check=False,
     )
 
 
@@ -371,14 +378,14 @@ _Filed automatically; owner is `frontend-engineer`. Extraction is design work, n
         res = subprocess.run(
             ["gh", "issue", "create", "-R", repo, "--title", title,
              "--body", body, "--label", "ds-extraction"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0:
             url = res.stdout.strip().splitlines()[-1] if res.stdout.strip() else "(created)"
             print(f"gate-ds-conformance: opened extraction issue {url}")
             return url
         print(f"::warning title=gate-ds-conformance::gh issue create failed: {res.stderr.strip()}")
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"::warning title=gate-ds-conformance::issue-create error: {e}")
     return None
 

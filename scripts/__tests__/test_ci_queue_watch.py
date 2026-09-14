@@ -31,7 +31,7 @@ def run(args, token=None):
     # network or depends on the real fleet's current state.
     env["CI_QUEUE_WATCH_API"] = "http://127.0.0.1:9"
     return subprocess.run([sys.executable, SCRIPT] + args,
-                          capture_output=True, text=True, env=env, timeout=120)
+                          capture_output=True, text=True, env=env, timeout=120, check=False)
 
 
 class BlindWatchdogMustNotLookHealthy(unittest.TestCase):
@@ -88,7 +88,7 @@ class VerdictLogic(unittest.TestCase):
         """A four-day wait on a pool that started a job a minute ago is healthy.
         This is the exact case a wait-time threshold gets wrong, and it was
         observed live: ubuntu-latest, 5698m oldest wait, serving normally."""
-        v, stall = self.v(queued=6, running=1, oldest=5698, last=1)
+        _v, stall = self.v(queued=6, running=1, oldest=5698, last=1)
         self.assertFalse(stall)
 
     def test_queued_with_no_recent_start_is_stalled(self):
@@ -105,7 +105,7 @@ class VerdictLogic(unittest.TestCase):
     def test_no_history_and_a_long_wait_does_stall(self):
         """A `runs-on` naming a scale set that never existed has no history and
         never will. That must page — it is the original bug."""
-        v, stall = self.v(queued=1, running=0, oldest=600, last=None)
+        _v, stall = self.v(queued=1, running=0, oldest=600, last=None)
         self.assertTrue(stall)
 
     def test_empty_queue_with_running_jobs_is_healthy_not_idle(self):
@@ -142,7 +142,7 @@ class RequestSurface(unittest.TestCase):
     def test_file_scheme_never_reaches_urlopen(self):
         env = dict(os.environ, CI_QUEUE_WATCH_API="file:///etc", GITHUB_TOKEN="x")
         r = subprocess.run([sys.executable, SCRIPT, "--repos", "izzywdev/FuzeFront"],
-                           capture_output=True, text=True, env=env, timeout=120)
+                           capture_output=True, text=True, env=env, timeout=120, check=False)
         self.assertIn("refusing non-HTTP scheme", r.stderr + r.stdout)
 
     def test_repo_name_shape_is_enforced(self):

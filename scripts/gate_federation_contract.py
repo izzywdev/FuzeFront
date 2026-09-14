@@ -442,7 +442,7 @@ def pick_build_config(configs, manifest, entry_path):
         for c in configs:
             if c.entry_path == entry_path:
                 return c
-    return sorted(configs, key=lambda c: (c.rel.count("/"), c.rel))[0]
+    return min(configs, key=lambda c: (c.rel.count("/"), c.rel))
 
 
 def check_build_config(cfg, configs, entry_path, findings):
@@ -483,7 +483,7 @@ def check_build_config(cfg, configs, entry_path, findings):
 # Layer 3 -- the chart's Ingress
 # --------------------------------------------------------------------------------------
 
-_INGRESS_PATH_RE = re.compile(r"^\s*-?\s*path:\s*(?P<v>\S.*?)\s*$", re.M)
+_INGRESS_PATH_RE = re.compile(r"^\s*-?\s*path:\s*(?P<v>\S.*?)\s*$", re.MULTILINE)
 _HELM_DEFAULT_RE = re.compile(r"""default\s+(['"])(?P<v>/[^'"]*)\1""")
 
 
@@ -568,9 +568,9 @@ def check_ingress(root, entry_path, serve_root, findings):
 
 _LOCATION_RE = re.compile(
     r"""location\s+(?:(?P<mod>=|\^~|~\*|~)\s*)?(?P<pat>\S+)\s*\{""")
-_ROOT_RE = re.compile(r"^\s*root\s+(?P<v>[^;]+);", re.M)
-_ALIAS_RE = re.compile(r"^\s*alias\s+(?P<v>[^;]+);", re.M)
-_PROXY_RE = re.compile(r"^\s*(proxy_pass|return|deny)\b", re.M)
+_ROOT_RE = re.compile(r"^\s*root\s+(?P<v>[^;]+);", re.MULTILINE)
+_ALIAS_RE = re.compile(r"^\s*alias\s+(?P<v>[^;]+);", re.MULTILINE)
+_PROXY_RE = re.compile(r"^\s*(proxy_pass|return|deny)\b", re.MULTILINE)
 
 #: An nginx conf lives either as a file in the image or as a chart ConfigMap. Both are
 #: the same dialect; a check that reads only one of them misses half the fleet
@@ -794,7 +794,7 @@ NODE_SERVER_HINT = ("express(", "express.static", "createServer", "http.createSe
 
 #: `ENV KEY=value` / `ENV KEY value`, after line-continuations are joined.
 _DOCKER_ENV_RE = re.compile(r"(?:^|\s)([A-Z_][A-Z0-9_]*)=([^\s\\]+)")
-_DOCKER_ENV_LINE_RE = re.compile(r"^\s*ENV\s+(?P<rest>.+?)\s*$", re.M | re.I)
+_DOCKER_ENV_LINE_RE = re.compile(r"^\s*ENV\s+(?P<rest>.+?)\s*$", re.MULTILINE | re.IGNORECASE)
 
 #: `const NAME = ... process.env.X ... 'literal' ...` — a static-root variable.
 _ROOT_VAR_RE = re.compile(
@@ -805,7 +805,7 @@ _ABS_LITERAL_RE = re.compile(r"""['"](?P<v>/[^'"]*)['"]""")
 #: A mount-prefix constant: `const WEBAPP_MOUNT_PREFIX = '/apps/fuzex/'`.
 _MOUNT_CONST_RE = re.compile(
     r"""(?:const|let|var)\s+\w*(?:MOUNT|PREFIX|BASE_?PATH|PUBLIC_?PATH)\w*\s*=\s*"""
-    r"""['"](?P<v>/[^'"]*)['"]""", re.I)
+    r"""['"](?P<v>/[^'"]*)['"]""", re.IGNORECASE)
 
 #: `app.use('/prefix', express.static(root))` and the bare `app.use(express.static(root))`.
 _EXPRESS_PREFIXED_RE = re.compile(
@@ -814,7 +814,7 @@ _EXPRESS_BARE_RE = re.compile(r"""\.use\(\s*express\.static\(\s*(?P<root>[^)]*)\
 
 #: A name that plausibly holds a STATIC root, used only to choose between several
 #: resolved candidates -- never to admit one that is not otherwise a mount.
-_STATIC_NAME_RE = re.compile(r"STATIC|ROOT|PUBLIC|WEB|SITE|DIST|ASSET", re.I)
+_STATIC_NAME_RE = re.compile(r"STATIC|ROOT|PUBLIC|WEB|SITE|DIST|ASSET", re.IGNORECASE)
 
 
 def dockerfile_env(dockerfiles):
@@ -868,7 +868,11 @@ def node_static_mounts(texts, env):
             elif _STATIC_NAME_RE.search(m.group("name")):
                 unresolved_vars[m.group("name")] = line
 
-        def root_of(expr):
+        # `var_literals` is rebound on every iteration of the enclosing loop, so a bare
+        # closure over it is late-binding (B023). It happens to be called only within the
+        # same iteration today, which is why this was never wrong -- it was one stored
+        # callback away from being wrong. Bound explicitly as a default instead.
+        def root_of(expr, var_literals=var_literals):
             expr = expr.strip()
             if expr in var_literals:
                 return var_literals[expr]
@@ -906,7 +910,7 @@ def node_static_mounts(texts, env):
                 line = text[:text.index(name)].count("\n") + 1 if name in text else 1
                 out.append((rel, line, as_dir(consts[0]) if consts else "/", rootdir))
         elif unresolved_vars and not found_explicit:
-            name, line = sorted(unresolved_vars.items(), key=lambda kv: kv[1])[0]
+            name, line = min(unresolved_vars.items(), key=lambda kv: kv[1])
             out.append((rel, line, as_dir(consts[0]) if consts else "/", None))
     return out
 
@@ -981,8 +985,8 @@ def node_orphan_mounts(texts, env, serve_root):
 # Layer 4b -- where the Dockerfile actually puts the build
 # --------------------------------------------------------------------------------------
 
-_COPY_RE = re.compile(r"^\s*COPY\s+(?P<rest>.+?)\s*$", re.M | re.I)
-_WORKDIR_RE = re.compile(r"^\s*WORKDIR\s+(?P<v>\S+)", re.M | re.I)
+_COPY_RE = re.compile(r"^\s*COPY\s+(?P<rest>.+?)\s*$", re.MULTILINE | re.IGNORECASE)
+_WORKDIR_RE = re.compile(r"^\s*WORKDIR\s+(?P<v>\S+)", re.MULTILINE | re.IGNORECASE)
 
 
 def find_dockerfiles(root: str):
@@ -994,7 +998,7 @@ def find_dockerfiles(root: str):
     return out
 
 
-_FROM_RE = re.compile(r"^\s*FROM\s+", re.M | re.I)
+_FROM_RE = re.compile(r"^\s*FROM\s+", re.MULTILINE | re.IGNORECASE)
 
 
 def final_stage(text: str) -> str:
@@ -1024,7 +1028,7 @@ def copy_pairs(text: str):
 
 
 #: Web-server bases whose final stage means "this image serves static files".
-_WEBSERVER_BASE_RE = re.compile(r"^\s*FROM\s+\S*(nginx|caddy|httpd|apache)", re.M | re.I)
+_WEBSERVER_BASE_RE = re.compile(r"^\s*FROM\s+\S*(nginx|caddy|httpd|apache)", re.MULTILINE | re.IGNORECASE)
 
 
 def serving_dockerfiles(dockerfiles, dialect, server_rel):

@@ -8,7 +8,6 @@ proves that.
 import asyncio
 import json
 
-
 from fuzefront_identity import GraphCreateMiddleware, entity_type_of
 
 AGGREGATE = {"customer", "invoice"}

@@ -13,12 +13,12 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from typing import Any, Tuple
+from typing import Any
 
 HttpPost = Any  # Callable[[str, dict, float], Tuple[int, str]]
 
 
-def default_http_post(url: str, payload: dict, timeout: float) -> Tuple[int, str]:
+def default_http_post(url: str, payload: dict, timeout: float) -> tuple[int, str]:
     """POST JSON `payload` to `url`; return (status_code, raw_body_text).
 
     Returns the HTTP status even for 4xx/5xx (via `urllib.error.HTTPError`)

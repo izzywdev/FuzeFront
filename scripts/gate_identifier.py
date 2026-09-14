@@ -66,10 +66,19 @@ import sys
 
 try:
     import yaml  # type: ignore
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     yaml = None
 
-SPEC_NAME_RE = re.compile(r"(openapi|swagger).*\.(ya?ml|json)$", re.I)
+#: What a malformed spec can raise. `yaml` is optional, so the tuple is built from what
+#: is importable. NOTE: yaml.YAMLError does NOT subclass ValueError, so narrowing to
+#: ValueError alone would stop catching YAML syntax errors entirely.
+_SPEC_PARSE_ERRORS: tuple[type[BaseException], ...] = (
+    (OSError, ValueError, yaml.YAMLError) if yaml is not None else (OSError, ValueError)
+)
+
+_FALLBACK_NOTE = "git ls-files unavailable; falling back to a filesystem walk"
+
+SPEC_NAME_RE = re.compile(r"(openapi|swagger).*\.(ya?ml|json)$", re.IGNORECASE)
 ALLOWLIST_PATHS = [
     "governance/identifier-allowlist.txt",
     ".fuze/identifier-allowlist.txt",
@@ -93,12 +102,12 @@ PATH_PARAM_TAIL_RE = re.compile(r"\{[^}]+\}/?$")
 # Properties naming the resource being created. `organizationId`/`userId` and
 # friends are REFERENCES to entities that already exist, so they are legitimate
 # create-body fields and must not be flagged here.
-SELF_ID_RE = re.compile(r"^(id|uuid|_id)$", re.I)
+SELF_ID_RE = re.compile(r"^(id|uuid|_id)$", re.IGNORECASE)
 
 # A reference that can point at more than one entity type. These are the
 # dangerous ones: without a sibling discriminator the id alone decides which
 # table is consulted.
-POLYMORPHIC_ID_RE = re.compile(r"^(entity|owner|subject|target|parent|resource)Id$", re.I)
+POLYMORPHIC_ID_RE = re.compile(r"^(entity|owner|subject|target|parent|resource)Id$", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +121,7 @@ def _candidate_files(root: str, patterns: list[str]) -> list[str]:
     try:
         res = subprocess.run(
             ["git", "-C", root, "ls-files", "--", *patterns],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0 and res.stdout.strip():
             files = [os.path.join(root, p) for p in res.stdout.splitlines() if p.strip()]
@@ -120,8 +129,12 @@ def _candidate_files(root: str, patterns: list[str]) -> list[str]:
                 f for f in files
                 if not any(seg in PRUNE_DIRS for seg in f.replace("\\", "/").split("/"))
             ]
-    except Exception:
-        pass
+    except (OSError, subprocess.SubprocessError) as exc:
+        # The git fast path is an optimisation; the slow filesystem walk below is the
+        # real answer. Narrow, because ONLY a missing/failing git binary belongs here —
+        # a bug inside the try block must surface, not silently downgrade the gate to
+        # its fallback forever. Logged for the same reason (S110).
+        print(f"{_FALLBACK_NOTE} ({type(exc).__name__}: {exc})", file=sys.stderr)
     suffixes = tuple(p.lstrip("*") for p in patterns)
     out = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -296,7 +309,7 @@ def check_contracts(root: str) -> list[str]:
     for spec_path in specs:
         try:
             spec = load_spec(spec_path)
-        except Exception as exc:
+        except _SPEC_PARSE_ERRORS as exc:
             print(f"  ! skipping unparseable spec {spec_path}: {exc}", file=sys.stderr)
             continue
         if not isinstance(spec, dict):
@@ -377,7 +390,7 @@ def check_contracts(root: str) -> list[str]:
                 for prop in props:
                     if not POLYMORPHIC_ID_RE.match(str(prop)):
                         continue
-                    discriminator = re.sub(r"Id$", "Type", str(prop), flags=re.I)
+                    discriminator = re.sub(r"Id$", "Type", str(prop), flags=re.IGNORECASE)
                     if discriminator not in props:
                         violations.append(
                             f"{rel}: components.schemas.{name} — polymorphic reference "
@@ -409,7 +422,7 @@ NON_ENTITY_ID_RE = re.compile(
     r"^(request|correlation|trace|span|nonce|state|token|idempotency|event|"
     r"delivery|job|run|batch|transaction|tx|challenge|client|secret|key|salt|"
     r"verifier|code)",
-    re.I,
+    re.IGNORECASE,
 )
 
 # `id` alone, or `<noun>Id` — the shapes that name a persisted entity.
@@ -497,13 +510,13 @@ def check_registry_parity(root: str) -> list[str]:
     with open(py_path, encoding="utf-8") as f:
         py_text = f.read()
 
-    ts_block = re.search(r"ENTITY_PREFIXES = \{(.*?)\n\} as const", ts_text, re.S)
-    py_block = re.search(r"ENTITY_PREFIXES[^=]*=\s*MappingProxyType\(\s*\{(.*?)\n\s*\}\s*\)", py_text, re.S)
+    ts_block = re.search(r"ENTITY_PREFIXES = \{(.*?)\n\} as const", ts_text, re.DOTALL)
+    py_block = re.search(r"ENTITY_PREFIXES[^=]*=\s*MappingProxyType\(\s*\{(.*?)\n\s*\}\s*\)", py_text, re.DOTALL)
     if not ts_block or not py_block:
         return ["registry parity — could not locate ENTITY_PREFIXES in one of the registries"]
 
-    ts_pairs = dict(re.findall(r"^\s*(\w+):\s*'([a-z_]+)',", ts_block.group(1), re.M))
-    py_pairs = dict(re.findall(r'^\s*"(\w+)":\s*"([a-z_]+)",', py_block.group(1), re.M))
+    ts_pairs = dict(re.findall(r"^\s*(\w+):\s*'([a-z_]+)',", ts_block.group(1), re.MULTILINE))
+    py_pairs = dict(re.findall(r'^\s*"(\w+)":\s*"([a-z_]+)",', py_block.group(1), re.MULTILINE))
 
     if ts_pairs == py_pairs:
         return []
@@ -567,8 +580,8 @@ SPINE_PREFIXES = {
     "cvh": "FuzeFront",
 }
 
-TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.M)
-PY_PREFIX_RE = re.compile(r'^\s*"(\w+)":\s*"([a-z][a-z_]*)",', re.M)
+TS_PREFIX_RE = re.compile(r"^\s*(\w+):\s*'([a-z][a-z_]*)',", re.MULTILINE)
+PY_PREFIX_RE = re.compile(r'^\s*"(\w+)":\s*"([a-z][a-z_]*)",', re.MULTILINE)
 
 
 def load_manifest(root: str) -> dict:
@@ -578,7 +591,9 @@ def load_manifest(root: str) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except (OSError, ValueError):
+        # Unreadable or not JSON. An empty registry is the documented "nothing declared"
+        # answer, so this stays non-fatal.
         return {}
 
 
@@ -608,7 +623,7 @@ def find_registries(root: str) -> dict[str, dict[str, str]]:
             continue
         if "ENTITY_PREFIXES" not in text:
             continue
-        block = re.search(r"ENTITY_PREFIXES[^{]*\{(.*?)\n\s*\}", text, re.S)
+        block = re.search(r"ENTITY_PREFIXES[^{]*\{(.*?)\n\s*\}", text, re.DOTALL)
         if not block:
             continue
         pairs = dict(TS_PREFIX_RE.findall(block.group(1))) or dict(
@@ -648,14 +663,14 @@ def check_namespace(root: str) -> list[str]:
     # obvious cause.
     if not namespace:
         return [
-            f"namespace — .fuze/manifest.json declares no 'identity.namespace', but "
+            (f"namespace — .fuze/manifest.json declares no 'identity.namespace', but "
             f"{', '.join(sorted(registries))} mints entity prefixes; declare it "
-            f"explicitly (identifier-standard.md 2)"
+            f"explicitly (identifier-standard.md 2)")
         ]
     if not re.fullmatch(r"[a-z][a-z0-9]*", namespace):
         return [
-            f"namespace — 'identity.namespace' is {namespace!r}; must match "
-            f"^[a-z][a-z0-9]*$ so `<namespace>_<type>` stays a valid TypeID prefix"
+            (f"namespace — 'identity.namespace' is {namespace!r}; must match "
+            f"^[a-z][a-z0-9]*$ so `<namespace>_<type>` stays a valid TypeID prefix")
         ]
 
     violations: list[str] = []
@@ -711,7 +726,8 @@ def _declares_identity_dependency(root: str) -> bool:
         if rel.endswith("package.json"):
             try:
                 data = json.loads(text)
-            except Exception:
+            except ValueError as exc:
+                print(f"  ! skipping unparseable {rel}: {exc}", file=sys.stderr)
                 continue
             for section in ("dependencies", "devDependencies", "peerDependencies"):
                 for name in (data.get(section) or {}):
@@ -734,7 +750,8 @@ def _has_entity_work(root: str) -> tuple[int, int]:
     for spec_path in find_specs(root):
         try:
             spec = load_spec(spec_path)
-        except Exception:
+        except _SPEC_PARSE_ERRORS as exc:
+            print(f"  ! skipping unparseable spec {spec_path}: {exc}", file=sys.stderr)
             continue
         if not isinstance(spec, dict):
             continue
@@ -818,10 +835,10 @@ def check_adoption(root: str) -> list[str]:
 
     if not declared:
         return [
-            f"adoption — this repo has {' and '.join(evidence)} but declares no "
+            (f"adoption — this repo has {' and '.join(evidence)} but declares no "
             f"dependency on an identity package (@izzywdev/fuzefront-identity or "
             f"fuzefront-identity); the standard cannot be enforced by a package the "
-            f"repo does not have (identifier-standard.md 9)"
+            f"repo does not have (identifier-standard.md 9)")
         ]
 
     if _imports_identity_package(root):

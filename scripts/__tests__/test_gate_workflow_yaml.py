@@ -17,7 +17,7 @@ GOOD = "name: demo\non: [push]\njobs:\n  j:\n    runs-on: ubuntu-latest\n    ste
 
 def run(directory):
     proc = subprocess.run(
-        [sys.executable, GATE, directory], capture_output=True, text=True
+        [sys.executable, GATE, directory], capture_output=True, text=True, check=False
     )
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -99,7 +99,7 @@ class GateWorkflowYaml(unittest.TestCase):
         self.write("a.yml", "a: b: c\n")
         code, out = run(self.dir)
         self.assertEqual(code, 1, out)
-        annotation = [line for line in out.splitlines() if line.startswith("::error")][0]
+        annotation = next(line for line in out.splitlines() if line.startswith("::error"))
         self.assertIn("not parseable YAML", annotation)
 
 

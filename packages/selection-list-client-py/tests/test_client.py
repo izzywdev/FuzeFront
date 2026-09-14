@@ -15,20 +15,23 @@ Tests cover:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from typing import Self
+
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-
 from fuzefront_selection_list_client import (
     SelectionListApiError,
     SelectionListClient,
 )
 from fuzefront_selection_list_client.types import LifecycleStatus
-
 
 # ---------------------------------------------------------------------------
 # Stub HTTP server helpers
@@ -39,7 +42,7 @@ class _Handler(BaseHTTPRequestHandler):
     """Minimal stub handler. Routes are registered on the class before use."""
 
     # class-level registry: (method, path_prefix) -> callable(handler) -> None
-    routes: Dict[tuple, Any] = {}
+    routes: ClassVar[dict[tuple, Any]] = {}
 
     def log_message(self, *args: Any) -> None:  # silence access log in tests
         pass
@@ -97,16 +100,16 @@ class _Handler(BaseHTTPRequestHandler):
 class StubServer:
     """Context manager that starts a stub HTTP server in a background thread."""
 
-    def __init__(self, routes: Dict[tuple, Any]) -> None:
+    def __init__(self, routes: dict[tuple, Any]) -> None:
         _Handler.routes = routes
         self._server = HTTPServer(("127.0.0.1", 0), _Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
-    def __enter__(self) -> "StubServer":
+    def __enter__(self) -> Self:
         self._thread.start()
         return self
 
-    def __exit__(self, *_: Any) -> None:
+    def __exit__(self, *_: object) -> None:
         self._server.shutdown()
 
     @property
@@ -121,7 +124,7 @@ class StubServer:
 
 _NOW = "2026-08-10T12:00:00Z"
 
-_LIST_FIXTURE: Dict[str, Any] = {
+_LIST_FIXTURE: dict[str, Any] = {
     "id": "sl_01h455vb4pex5vsknk084sn02q",
     "organization_id": "org_01h455vb4pex5vsknk084sn02q",
     "key": "countries",
@@ -136,7 +139,7 @@ _LIST_FIXTURE: Dict[str, Any] = {
     "updated_at": _NOW,
 }
 
-_ITEM_FIXTURE: Dict[str, Any] = {
+_ITEM_FIXTURE: dict[str, Any] = {
     "id": "sli_01h455vb4pex5vsknk084sn02q",
     "list_id": "sl_01h455vb4pex5vsknk084sn02q",
     "code": "US",
@@ -151,7 +154,7 @@ _ITEM_FIXTURE: Dict[str, Any] = {
 }
 
 
-def _page(items: List[Any], next_cursor: Optional[str] = None, has_more: bool = False) -> dict:
+def _page(items: list[Any], next_cursor: str | None = None, has_more: bool = False) -> dict:
     return {
         "items": items,
         "page": {
@@ -169,7 +172,7 @@ def _page(items: List[Any], next_cursor: Optional[str] = None, has_more: bool = 
 
 class TestUrlAndToken:
     def test_bearer_token_injected(self) -> None:
-        received_headers: List[dict] = []
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
@@ -185,7 +188,7 @@ class TestUrlAndToken:
 
     def test_callable_token_called_per_request(self) -> None:
         call_count = 0
-        received_auth: List[str] = []
+        received_auth: list[str] = []
 
         def token_fn() -> str:
             nonlocal call_count
@@ -242,7 +245,7 @@ class TestUrlAndToken:
         assert received_paths[0] == "/v1/selection-lists"
 
     def test_no_token_no_auth_header(self) -> None:
-        received_headers: List[dict] = []
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
@@ -269,7 +272,7 @@ class TestCursorWalk:
         page2_item = dict(_ITEM_FIXTURE, id="sli_page2_item")
 
         page1_cursor = "cursor-page-2"
-        call_log: List[Optional[str]] = []
+        call_log: list[str | None] = []
 
         def handle_items(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             cursor = qs.get("cursor", [None])[0]

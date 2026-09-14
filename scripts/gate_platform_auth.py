@@ -129,17 +129,17 @@ SKIP_FILE = re.compile(r"\.(test|spec|d)\.[tj]sx?$|^test_|_test\.py$")
 # A route that changes state. Used by Z1 and A1 to decide whether a repo is a
 # service at all — a library with no routes is legitimately out of scope.
 MUTATING_ROUTE = re.compile(
-    r"\b(?:app|router|api|server)\s*\.\s*(post|put|patch|delete)\s*\(", re.I)
+    r"\b(?:app|router|api|server)\s*\.\s*(post|put|patch|delete)\s*\(", re.IGNORECASE)
 ANY_ROUTE = re.compile(
     r"\b(?:app|router|api|server)\s*\.\s*(get|post|put|patch|delete)\s*\(|"
-    r"@(?:app|router|bp)\.route\(|@(?:app|router)\.(get|post|put|patch|delete)\(", re.I)
+    r"@(?:app|router|bp)\.route\(|@(?:app|router)\.(get|post|put|patch|delete)\(", re.IGNORECASE)
 
 PERMISSIVE = re.compile(
     r"\broles\s*[:=]\s*\[|"          # a fabricated role list
     r"\bnext\s*\(\s*\)|"             # unconditional pass-through
     r"\breq\s*\.\s*identity\s*=|"    # forged identity
     r"\breturn\s+True\b",            # python guard that always allows
-    re.I)
+    re.IGNORECASE)
 
 
 class Finding:
@@ -395,7 +395,7 @@ def check_permissive_guard(repo):
     out = []
     guard_def = re.compile(
         r"\b(?:const|let|var|function|def)\s+"
-        r"(require\w*|auth\w*|ensure\w*|verify\w*|guard\w*)\b", re.I)
+        r"(require\w*|auth\w*|ensure\w*|verify\w*|guard\w*)\b", re.IGNORECASE)
     denial = re.compile(
         r"\b(401|403|throw\b|raise\b|reject\(|abort\(|"
         r"status\s*\(\s*4\d\d|sendStatus\s*\(\s*4\d\d)")
@@ -458,16 +458,14 @@ def _is_real_secret_literal(line, value):
     ident = line.split("=")[0].split(":")[0].strip().strip("'\"")
     if value.strip().lower() == ident.strip().lower():
         return False
-    if len(value) < 8:
-        return False
-    return True
+    return len(value) >= 8
 
 
 def check_secrets(repo):
     out = []
     impl = auth_impl_dirs(repo)
     lit_secret = re.compile(
-        r"\b(?:secret|legacySecret|jwtSecret|signingKey)\s*[:=]\s*['\"]([^'\"]{4,})['\"]", re.I)
+        r"\b(?:secret|legacySecret|jwtSecret|signingKey)\s*[:=]\s*['\"]([^'\"]{4,})['\"]", re.IGNORECASE)
     saw_legacy = saw_jwks = False
     for rel in source_files(repo):
         if _under(rel, impl):
@@ -475,7 +473,7 @@ def check_secrets(repo):
         body = read(repo, rel)
         if "legacy-hs256" in body:
             saw_legacy = True
-        if re.search(r"jwks|federated-jwks|oidc-jwks|createRemoteJWKSet", body, re.I):
+        if re.search(r"jwks|federated-jwks|oidc-jwks|createRemoteJWKSet", body, re.IGNORECASE):
             saw_jwks = True
         for i, line in enumerate(body.splitlines(), 1):
             m = lit_secret.search(line)
@@ -522,7 +520,7 @@ def check_authz(repo):
         for i, line in enumerate(body.splitlines(), 1):
             if is_authz_service:
                 break  # this repo IS the Security API; see serves_authz_api()
-            if re.search(r"permit\.check|permitio|from\s+['\"]permitio", line, re.I):
+            if re.search(r"permit\.check|permitio|from\s+['\"]permitio", line, re.IGNORECASE):
                 out.append(Finding(
                     "Z3", rel, i,
                     "calls the Permit SDK directly. Products must not: they know exactly "
@@ -532,8 +530,8 @@ def check_authz(repo):
         for i, line in enumerate(body.splitlines(), 1):
             if "DECISION_UNAVAILABLE" in line:
                 window = "\n".join(body.splitlines()[i - 1:i + 5])
-                if re.search(r"\bnext\s*\(\s*\)|allow|true|200", window, re.I) and not \
-                        re.search(r"403|deny|reject|throw|raise", window, re.I):
+                if re.search(r"\bnext\s*\(\s*\)|allow|true|200", window, re.IGNORECASE) and not \
+                        re.search(r"403|deny|reject|throw|raise", window, re.IGNORECASE):
                     out.append(Finding(
                         "Z2", rel, i,
                         "DECISION_UNAVAILABLE appears to be handled by allowing the "
@@ -556,7 +554,7 @@ def check_authz(repo):
 def check_rate_limit(repo):
     limiter = re.compile(
         r"rate[-_]?limit|rateLimit|express-rate-limit|slowDown|"
-        r"@fastify/rate-limit|flask_limiter|slowapi", re.I)
+        r"@fastify/rate-limit|flask_limiter|slowapi", re.IGNORECASE)
     routed = any(ANY_ROUTE.search(read(repo, rel)) for rel in source_files(repo))
     if not routed:
         return []
@@ -963,7 +961,7 @@ def changed_lines(repo, base_ref):
     try:
         res = subprocess.run(
             ["git", "-C", repo, "diff", "--unified=0", f"{base_ref}...HEAD"],
-            capture_output=True, text=True, timeout=90)
+            capture_output=True, text=True, timeout=90, check=False)
     except (OSError, subprocess.SubprocessError):
         return None
     if res.returncode != 0:
