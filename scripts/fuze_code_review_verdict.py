@@ -71,7 +71,7 @@ import secrets as _secrets_mod  # nonce generation; unrelated to GitHub Secrets
 import sys
 
 VALID_VERDICTS = ("approve", "request_changes", "comment")
-DECISIONS = ("approve", "request_changes", "comment", "abstain")
+DECISIONS = ("approve", "request_changes", "comment", "abstain", "outage")
 
 
 def make_nonce() -> str:
@@ -141,7 +141,8 @@ def extract_verdict_json(result_text: str, nonce: str) -> tuple[dict | None, str
 
 
 def decide(action_conclusion: str, result_text: str, nonce: str,
-           sensitive_files: list[str], mode: str = "") -> dict:
+           sensitive_files: list[str], mode: str = "",
+           availability: bool = False) -> dict:
     """The single decision point. Returns a dict with keys: decision, reason, verdict,
     summary, findings, downgraded (bool: true iff a model "approve" was overridden by the
     sensitive-files rule), deferred (bool: true iff the review was legitimately deferred by
@@ -180,6 +181,37 @@ def decide(action_conclusion: str, result_text: str, nonce: str,
                 "verdict": None, "summary": "", "findings": [], "downgraded": False,
                 "deferred": True,
             }
+        # THE OWNER'S CREDIT-OUTAGE EXCEPTION — "UNLESS the failure is a credit outage."
+        #
+        # A vendor credit/quota exhaustion, a 429, or a provider that could not be reached is
+        # not a defect in this PR, and failing the required check on one teaches everyone to
+        # ignore a red review tick. classify.sh already separates the two cases — exit 1 means
+        # availability — and fuze-code-action surfaces that as its `availability` output. It is
+        # the ONLY reliable signal: a genuine task failure and an availability exhaustion BOTH
+        # report conclusion=failure, so the conclusion alone cannot tell them apart.
+        #
+        # An outage PASSES the check and is kept DISTINCT from an abstain, so the auto-fix loop
+        # never fires on it — there is nothing to fix.
+        #
+        # Ported from the canonical scripts/fuze_code_review_verdict.py in izzywdev/FuzeSDLC,
+        # which has carried this since the owner's ruling. This repo's copy predated it, so
+        # every PR here went red on an outage while FuzeSDLC's passed with a notice — observed
+        # on FuzeFront #1039/#1040/#1041 and FuzeSDLC#360 on the same day, same outage.
+        if availability:
+            return {
+                "decision": "outage",
+                "reason": (
+                    "fuze-code-action reported an AVAILABILITY failure (vendor credit/quota "
+                    "exhausted, rate-limited, or the provider could not be reached) — its "
+                    "`availability` output was true. Per the owner's explicit exception the "
+                    "required review check does NOT fail on a credit outage: it is not a defect "
+                    "in this PR. This is a non-blocking notice; re-run once a provider recovers. "
+                    "The auto-fix loop is deliberately NOT triggered (there is nothing to fix)."
+                ),
+                "verdict": None, "summary": "", "findings": [], "downgraded": False,
+                "deferred": False, "outage": True,
+            }
+
         return {
             "decision": "abstain",
             "reason": (
@@ -227,6 +259,18 @@ def decide(action_conclusion: str, result_text: str, nonce: str,
 def render_body(result: dict, mode: str, vendor: str) -> str:
     """Human-readable GitHub review body for the decision `result` from decide()."""
     lines = ["## fuze-code-review — automated verdict", ""]
+
+    if result.get("outage"):
+        lines.append("**Review skipped on a credit/availability outage — this is not a failure.**")
+        lines.append("")
+        lines.append(result["reason"])
+        lines.append("")
+        lines.append(
+            "_The required check PASSES per the owner's explicit credit-outage exception. "
+            "The required gates and human review still gate this PR. Re-run this workflow "
+            "once a provider recovers to get a real review verdict._"
+        )
+        return "\n".join(lines)
 
     if result["decision"] == "abstain":
         lines.append("**No verdict was reached — this run is NOT an approval.**")
@@ -299,10 +343,15 @@ def main() -> int:
     nonce = os.environ.get("FUZE_VERDICT_NONCE", "")
     mode = os.environ.get("FUZE_ACTION_MODE", "")
     vendor = os.environ.get("FUZE_ACTION_VENDOR", "")
+    # fuze-code-action's boolean output derived from classify.sh's exit code (1 =
+    # availability). Absent or anything but "true" means NOT an outage — so an older action
+    # that does not emit it fails closed to the previous behaviour rather than passing.
+    availability = os.environ.get("FUZE_ACTION_AVAILABILITY", "").strip().lower() == "true"
     sensitive_raw = os.environ.get("FUZE_SENSITIVE_FILES", "")
     sensitive_files = [line for line in sensitive_raw.splitlines() if line.strip()]
 
-    result = decide(action_conclusion, result_text, nonce, sensitive_files, mode)
+    result = decide(action_conclusion, result_text, nonce, sensitive_files, mode,
+                    availability)
     body = render_body(result, mode, vendor)
 
     print(f"::notice title=fuze-code-review::decision={result['decision']} reason={result['reason']}")
