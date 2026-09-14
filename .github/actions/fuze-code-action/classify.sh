@@ -54,7 +54,22 @@ fi
 # exit-0-with-no-conclusion, which classify.sh used to read as a benign "declined"
 # — hiding a real, actionable auth failure behind "the chain did no work". These
 # patterns make that shape fall over (and name the error) instead.
-AVAILABILITY_PATTERNS='credit balance is too low|insufficient_quota|insufficient quota|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|authentication_failed|key not allowed to access model|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|connection reset|"status":[[:space:]]*5[0-9][0-9]|"status":[[:space:]]*40[13]|"code":[[:space:]]*5[0-9][0-9]|"api_error_status":[[:space:]]*40[13]|"status_code":[[:space:]]*40[13]|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
+#
+# The credit/quota-exhaustion and 429 signatures below were added after the SAME
+# shape recurred on the two secondary rungs (runs 34380696573 / 34267619335): the
+# OpenAI codex rung failed with "You have no credits remaining. Add credits to
+# continue using the API" and the Gemini rung with a 429 "Your prepayment credits
+# are depleted ... RESOURCE_EXHAUSTED". Both are textbook availability conditions —
+# the SAME class the list already covers for Anthropic ("credit balance is too
+# low", insufficient_quota, "rate limit exceeded", "HTTP 429") — but each vendor
+# phrases it differently and NONE of the existing patterns matched, so an
+# out-of-credit fallback vendor was being reported as "indeterminate" (or, once
+# fed to the classifier, as a "task" failure) rather than named as availability.
+# These entries close that gap; they do NOT widen the CLASS. They are narrow,
+# vendor-literal quota/credit signals that will not appear in a genuine code-review
+# finding or build break, so they cannot turn an honest red into a wrongful
+# failover — the specific risk this list is otherwise kept small to avoid.
+AVAILABILITY_PATTERNS='credit balance is too low|insufficient_quota|insufficient quota|no credits remaining|credits are depleted|prepayment credits|RESOURCE_EXHAUSTED|quota exceeded|quota_exceeded|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|authentication_failed|key not allowed to access model|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|connection reset|"status":[[:space:]]*5[0-9][0-9]|"status":[[:space:]]*40[13]|"status":[[:space:]]*429|"code":[[:space:]]*5[0-9][0-9]|"code":[[:space:]]*429|"api_error_status":[[:space:]]*40[13]|"status_code":[[:space:]]*40[13]|"status_code":[[:space:]]*429|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
 
 # No conclusion reported, but the STEP ITSELF SUCCEEDED. Two very different things
 # produce this identical shape, and telling them apart is the whole point:

@@ -467,8 +467,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/a2a-maintain.yml",
-      "sourceSha256": "35d9e4cf7b06623fa892cfc36fd440c4b19d633dacfc9d61c0362cb0383ce77b",
-      "renderedSha256": "35d9e4cf7b06623fa892cfc36fd440c4b19d633dacfc9d61c0362cb0383ce77b",
+      "sourceSha256": "684c100ffe796edbd561c6b9bb6912ac9d14d8386fa30083f84abb4f110f1889",
+      "renderedSha256": "14b385592149b138d123e873e79fac2b5ca2bce6676f778eb002d44ef4282d19",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -540,7 +540,7 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/fuze-ci-autofix.yml",
-      "sourceSha256": "a95d17e5045acf7e01a7848b89f831f037b64554b2d8e5c73151ff9682ea78bc",
+      "sourceSha256": "6b346a752716fca7bafa70d49a2bbc267a7f2d93cdefdd4038e606094a5d7b1d",
       "renderedSha256": "a95d17e5045acf7e01a7848b89f831f037b64554b2d8e5c73151ff9682ea78bc",
       "renderVars": {
         "defaultBranch": "master",
@@ -598,7 +598,7 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/gate-workflow-drift.yml",
-      "sourceSha256": "0224aeeb692bfb7873f9815e3d0f4af3b42acaf54649b2564a81e27b73320a57",
+      "sourceSha256": "85362f869dc924f4d4e842f8399a708dcdb8b3cd51be2b048d369e30f8664925",
       "renderedSha256": "0224aeeb692bfb7873f9815e3d0f4af3b42acaf54649b2564a81e27b73320a57",
       "renderVars": {
         "defaultBranch": "master",

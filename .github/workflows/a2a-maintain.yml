@@ -1,4 +1,3 @@
-# fuze:managed template=a2a-maintain.yml baseline=v1 digest=sha256:684c100ffe796edbd561c6b9bb6912ac9d14d8386fa30083f84abb4f110f1889
 name: A2A Maintain
 
 # Keeps this repo's agent-to-agent (A2A) surface current, as part of CI. On every PR it
@@ -108,7 +107,7 @@ jobs:
   # runner placement.
   preflight:
     name: a2a-maintain preflight
-    runs-on: fuzefront
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       declared: ${{ steps.check.outputs.declared }}
@@ -164,7 +163,7 @@ jobs:
     if: >-
       needs.preflight.outputs.declared == 'true' &&
       !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/')
-    runs-on: fuzefront
+    runs-on: ubuntu-latest
     steps:
       # Agent-PR identity (governance/hardening-convention.md §8): mint the fuze-agent App
       # token BEFORE checking out the (untrusted) PR head, so the maintainer's commit-back
@@ -255,6 +254,7 @@ jobs:
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # allowed_bots: scoped to `claude`, deliberately NOT `*`.
           #
           # The gate exists because claude-code-action hard-fails a Bot actor:
