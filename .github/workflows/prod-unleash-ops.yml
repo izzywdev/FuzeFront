@@ -84,11 +84,15 @@ jobs:
 
             # 3. Add 100% flexibleRollout only if one does not already exist.
             #    (Re-POSTing creates a duplicate strategy; PATCH the existing one instead.)
-            EXISTING=$(curl -sf \
+            curl -sf \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
-              -H "Authorization: $TOKEN" | python3 -c "
+              -H "Authorization: $TOKEN" -o /tmp/strats.json 2>/dev/null || true
+            EXISTING=$(python3 -c "
           import sys,json
-          strats = json.load(sys.stdin)
+          try:
+            strats = json.load(open('/tmp/strats.json'))
+          except Exception:
+            strats = []
           fr = [s for s in strats if s.get('name')=='flexibleRollout'
                 and s.get('parameters',{}).get('rollout')=='100']
           print('exists' if fr else 'missing')
@@ -134,11 +138,17 @@ jobs:
           echo "=== Verification ==="
           check_flag() {
             local FLAG="$1"
-            ENABLED=$(curl -sf \
+            curl -sf \
               "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT" \
-              -H "Authorization: $TOKEN" \
-              | python3 -c "import sys,json;d=json.load(sys.stdin);print('ON' if d.get('enabled') else 'OFF')" 2>/dev/null \
-              || echo "ERROR")
+              -H "Authorization: $TOKEN" -o /tmp/flag_state.json 2>/dev/null || true
+            ENABLED=$(python3 -c "
+          import json
+          try:
+            d=json.load(open('/tmp/flag_state.json'))
+            print('ON' if d.get('enabled') else 'OFF')
+          except Exception:
+            print('ERROR')
+          " 2>/dev/null || echo "ERROR")
             echo "  $FLAG: $ENABLED"
           }
 
