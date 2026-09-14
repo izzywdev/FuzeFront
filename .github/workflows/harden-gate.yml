@@ -79,7 +79,17 @@ jobs:
             # So the version is pinned and bumped deliberately, like any other
             # dependency. Bumping it is a PR that carries whatever new findings the new
             # default set surfaces — which is exactly how 0.16.7's arrived here.
-            pipx run ruff==0.16.7 check . || rc=1
+            #
+            # `python3 -m pip install`, not `pipx run`, following FuzeSDLC's canonical
+            # harden-gate: pipx is preinstalled on ubuntu-latest, which is where this job
+            # runs TODAY, but this is the one job in this file that can block a merge, and
+            # the policy already contemplates moving required jobs onto the budget-fallback
+            # runner chooser. A self-hosted pool need not carry pipx — the same
+            # availability failure gate-actionlint documents for the ARC scale set that
+            # carries no npm. The other two `pipx run` uses in this workflow are
+            # report-only, so they can afford the assumption; this one cannot.
+            python3 -m pip install -q ruff==0.16.7
+            ruff check . || rc=1
             echo "::endgroup::"
           fi
           if git ls-files '*.js' '*.cjs' '*.mjs' | grep -q .; then
