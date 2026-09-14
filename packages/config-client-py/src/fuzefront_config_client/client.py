@@ -223,6 +223,7 @@ class ConfigClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the exact attack this rule names (a `file://` base) is rejected in __init__: any non-empty scheme outside _ALLOWED_SCHEMES raises ValueError, and tests/test_client.py::TestConstructorAndUrl::test_rejects_non_http_scheme pins it with `file:///etc/passwd`. `path` cannot reintroduce a scheme either, because _build_url is plain concatenation and NEVER urllib.parse.urljoin -- urljoin is what would let an absolute `file://` path override the base, and that file's own comment says so.
             with urllib.request.urlopen(req) as resp:
                 return resp.status, _parse_body(resp.read())
         except urllib.error.HTTPError as exc:

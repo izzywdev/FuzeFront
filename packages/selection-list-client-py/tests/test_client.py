@@ -226,6 +226,19 @@ class TestUrlAndToken:
         assert qs.get("status") == ["active"]
         assert qs.get("locale") == ["fr"]
 
+    def test_rejects_non_http_scheme(self) -> None:
+        """The `file://` case semgrep's dynamic-urllib rule warns about.
+
+        The config-client package has had this test since it was written; this
+        client carries the same `_ALLOWED_SCHEMES` guard and had NO test for it,
+        so the guard was an assertion rather than a fact. Added while confirming
+        the equivalent semgrep finding on the sibling package was a false
+        positive — the suppression there cites its test, so this one should have
+        a test to cite too.
+        """
+        with pytest.raises(ValueError, match="http or https"):
+            SelectionListClient(base_url="file:///etc/passwd")
+
     def test_base_url_trailing_slash_stripped(self) -> None:
         """A base_url with trailing slash must not produce double slashes."""
         received_paths: list = []
