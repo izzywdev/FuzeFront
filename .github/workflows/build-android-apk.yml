@@ -61,6 +61,17 @@ jobs:
           mkdir -p android/keystore
           printf '%s' "$KEYSTORE_B64" | base64 -d > android/keystore/product-release.keystore
 
+      - name: Create ephemeral keystore for test build
+        if: env.RELEASE_BUILD != 'true'
+        run: |
+          mkdir -p android/keystore
+          ALIAS=$(node -p "require('./android/twa-manifest.json').signingKey.alias")
+          keytool -genkeypair -noprompt \
+            -keystore android/keystore/product-release.keystore \
+            -storepass android -keypass android -alias "$ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 30 \
+            -dname "CN=CI Test Build, OU=FuzeOne, O=FuzeFront, C=IL"
+
       - name: Set version code from input or run number
         id: version
         env:
@@ -95,6 +106,10 @@ jobs:
           KEYSTORE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_STORE_PASSWORD }}
           KEYSTORE_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_KEY_PASSWORD }}
         run: |
+          if [[ "$RELEASE_BUILD" != "true" ]]; then
+            export KEYSTORE_STORE_PASSWORD=android
+            export KEYSTORE_KEY_PASSWORD=android
+          fi
           # Patch passwords from secrets and redirect icon URLs to a local HTTP server.
           # bubblewrap downloads icons during project generation; the prod URL may not be
           # live yet, so we serve the committed icons from frontend/public locally instead.
