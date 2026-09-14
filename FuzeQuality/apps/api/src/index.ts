@@ -593,6 +593,14 @@ app.post('/api/v1/suggestions/:id/decision', async (request, response, next) => 
   response.json(suggestion)
   })
 })
+app.post('/api/v1/suggestions/:id/approve-expected-test', mayReviewSuggestions, async (request, response) => {
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const identity = requestIdentity(request)!
+  const suggestion = await store.approveExpectedTest(suggestionId, { actorId: identity.userId, tenantId: identity.tenantId, action: 'confirm' })
+  if (!suggestion) return response.status(404).json({ error: 'Expected-test suggestion not found' })
+  await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: 'approve-expected-test' }, suggestion.id)
+  response.json(suggestion)
+})
 app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).findings)
 )
