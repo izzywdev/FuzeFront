@@ -5,6 +5,7 @@ import type {
   AdminContextAudit,
   Portfolio,
   Repository,
+  RepositoryScanHistoryEntry,
   RepositoryInput,
   ScanResult,
   Suggestion,
@@ -23,6 +24,7 @@ import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
+  repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
     id: string,
@@ -67,6 +69,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private decisions: SuggestionDecision[] = []
   private adminContextAudits: AdminContextAudit[] = []
   private syncCursors: SyncCursor[] = []
+  private scanHistory: Array<{ repositoryId: string; item: RepositoryScanHistoryEntry }> = []
   private exclusions = new Map<string, ExpectationExclusionInput>()
 
   constructor(seed?: Partial<Portfolio>) {
@@ -104,6 +107,11 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async repository(id: string, tenantId?: string) {
     return this.data.repositories.find(repository => repository.id === id && (!tenantId || repository.tenantId === tenantId))
+  }
+
+  async repositoryScanHistory(id: string, tenantId: string) {
+    if (!await this.repository(id, tenantId)) return []
+    return this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -173,6 +181,7 @@ export class MemoryCatalogStore implements CatalogStore {
       ...this.data.diagnostics.filter(item => item.repositoryId !== result.repository.id),
       ...result.diagnostics.map(item => ({ ...item, repositoryId: result.repository.id, revision: result.revision })),
     ]
+    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
   }
 
   async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
@@ -370,6 +379,12 @@ export class PostgresCatalogStore implements CatalogStore {
     return (await this.portfolio(tenantId)).repositories.find(item => item.id === id)
   }
 
+  async repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]> {
+    if (!await this.repository(id, tenantId)) return []
+    const result = await this.pool.query(`SELECT r.commit_sha, r.branch, r.status AS revision_status, r.scanned_at, s.trigger, s.counts FROM fuzequality.repository_revisions r LEFT JOIN LATERAL (SELECT * FROM fuzequality.scan_runs WHERE revision_id=r.id ORDER BY started_at DESC LIMIT 1) s ON true WHERE r.repository_id=$1 ORDER BY r.scanned_at DESC NULLS LAST LIMIT 25`, [id])
+    return result.rows.map(row => ({ revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
+  }
+
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
     const canonicalUrl = `https://github.com/${input.owner}/${input.name}`
     const result = await this.pool.query(
@@ -406,6 +421,8 @@ export class PostgresCatalogStore implements CatalogStore {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
+      const revision = await client.query(`INSERT INTO fuzequality.repository_revisions (repository_id,commit_sha,branch,scanner_version,config_version,status,scanned_at) VALUES ($1,$2,$3,'v1','v1','complete',$4) ON CONFLICT (repository_id,commit_sha,scanner_version,config_version) DO UPDATE SET status='complete', scanned_at=EXCLUDED.scanned_at RETURNING id`, [result.repository.id, result.revision, result.repository.defaultBranch, result.scannedAt])
+      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,finished_at) VALUES ($1,$2,'manual','complete',$3,now())`, [result.repository.id, revision.rows[0].id, JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length })])
       await client.query(
         `UPDATE fuzequality.test_expectations
          SET active=false, updated_at=now()
