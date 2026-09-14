@@ -338,7 +338,10 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
   }
   async function loadHistory(id: string) {
     if (history[id]) return
-    try { setHistory(current => ({ ...current, [id]: await api.repositoryScanHistory(id) })) } catch (cause) { setError(cause instanceof Error ? cause.message : 'Scan history could not be loaded') }
+    try {
+      const entries = await api.repositoryScanHistory(id)
+      setHistory(current => ({ ...current, [id]: entries }))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Scan history could not be loaded') }
   }
   return (
     <>
