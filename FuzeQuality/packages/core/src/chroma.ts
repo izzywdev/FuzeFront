@@ -2,6 +2,13 @@ import { randomUUID } from 'node:crypto'
 
 export type ChromaCollection = { id: string; name: string }
 
+export type ChromaQueryResult = {
+  ids: string[][]
+  documents: Array<Array<string | null>>
+  metadatas: Array<Array<Record<string, string> | null>>
+  distances: number[][]
+}
+
 export type ChromaConfig = {
   url: string
   token: string
@@ -13,7 +20,7 @@ export type ChromaConfig = {
 export class ChromaClient {
   private readonly baseUrl: string
 
-  constructor(private readonly config: ChromaConfig) {
+  constructor(private readonly config: ChromaConfig, private readonly fetchImpl: typeof fetch = fetch) {
     this.baseUrl = config.url.replace(/\/$/, '')
     if (!config.token.trim()) throw new Error('CHROMA_TOKEN is required')
     if (!config.tenant.trim()) throw new Error('CHROMA_TENANT is required')
@@ -33,7 +40,7 @@ export class ChromaClient {
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const separator = path.includes('?') ? '&' : '?'
     const scope = `tenant=${encodeURIComponent(this.config.tenant)}&database=${encodeURIComponent(this.config.database)}`
-    const response = await fetch(`${this.baseUrl}${path}${separator}${scope}`, {
+    const response = await this.fetchImpl(`${this.baseUrl}${path}${separator}${scope}`, {
       ...init,
       headers: {
         authorization: `Bearer ${this.config.token.trim()}`,
@@ -61,10 +68,10 @@ export class ChromaClient {
     }
   }
 
-  createCollection(name: string) {
+  createCollection(name: string, getOrCreate = false) {
     return this.request<ChromaCollection>('/api/v1/collections', {
       method: 'POST',
-      body: JSON.stringify({ name, get_or_create: false }),
+      body: JSON.stringify({ name, get_or_create: getOrCreate }),
     })
   }
 
@@ -73,13 +80,31 @@ export class ChromaClient {
   }
 
   upsert(collectionId: string, input: { id: string; document: string; embedding: number[]; metadata?: Record<string, string> }) {
+    return this.upsertMany(collectionId, [input])
+  }
+
+  upsertMany(collectionId: string, inputs: Array<{ id: string; document: string; embedding: number[]; metadata?: Record<string, string> }>) {
+    if (!inputs.length) return Promise.resolve()
     return this.request<void>(`/api/v1/collections/${encodeURIComponent(collectionId)}/upsert`, {
       method: 'POST',
       body: JSON.stringify({
-        ids: [input.id],
-        documents: [input.document],
-        embeddings: [input.embedding],
-        metadatas: [input.metadata ?? {}],
+        ids: inputs.map(input => input.id),
+        documents: inputs.map(input => input.document),
+        embeddings: inputs.map(input => input.embedding),
+        metadatas: inputs.map(input => input.metadata ?? {}),
+      }),
+    })
+  }
+
+  query(collectionId: string, embedding: number[], topK: number, where?: Record<string, unknown>) {
+    const boundedTopK = Math.min(40, Math.max(1, Math.trunc(topK)))
+    return this.request<ChromaQueryResult>(`/api/v1/collections/${encodeURIComponent(collectionId)}/query`, {
+      method: 'POST',
+      body: JSON.stringify({
+        query_embeddings: [embedding],
+        n_results: boundedTopK,
+        include: ['documents', 'metadatas', 'distances'],
+        ...(where ? { where } : {}),
       }),
     })
   }
