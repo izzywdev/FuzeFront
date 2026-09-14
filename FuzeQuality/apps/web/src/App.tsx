@@ -493,10 +493,30 @@ function FlowReviewDetail({ data, requirement, payload, evidence }: { data: Port
   </div>
 }
 
+function SuggestionActions({ id, payload, onComplete }: { id: string; payload: Record<string, unknown>; onComplete: () => Promise<void> }) {
+  const [reason, setReason] = useState('')
+  const [owner, setOwner] = useState('')
+  const [expiresAt, setExpiresAt] = useState('')
+  const [mergeIntoSuggestionId, setMergeIntoSuggestionId] = useState('')
+  const [editedPayload, setEditedPayload] = useState(JSON.stringify(payload, null, 2))
+  const [error, setError] = useState('')
+  async function submit(decision: 'confirm' | 'edit' | 'reject' | 'merge' | 'suppress') {
+    setError('')
+    try {
+      const value: Record<string, unknown> = { decision, reason: reason || undefined }
+      if (decision === 'edit') value.editedPayload = JSON.parse(editedPayload)
+      if (decision === 'merge') value.mergeIntoSuggestionId = mergeIntoSuggestionId
+      if (decision === 'suppress') Object.assign(value, { owner, expiresAt })
+      await api.decideSuggestion(id, value)
+      await onComplete()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+  }
+  return <div className="suggestion-actions"><div className="review-actions"><button className="reject-button" onClick={() => submit('reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => submit('confirm')}><Check size={16} /> Confirm</button></div><details><summary>Govern this proposal</summary><label>Reason<input value={reason} onChange={event => setReason(event.target.value)} placeholder="Required for suppression" /></label><label>Edited payload<textarea value={editedPayload} onChange={event => setEditedPayload(event.target.value)} /></label><button className="secondary-button" onClick={() => submit('edit')}>Save edit for review</button><label>Merge into suggestion ID<input value={mergeIntoSuggestionId} onChange={event => setMergeIntoSuggestionId(event.target.value)} placeholder="Target proposal UUID" /></label><button className="secondary-button" onClick={() => submit('merge')}>Merge and confirm</button><label>Suppression owner<input value={owner} onChange={event => setOwner(event.target.value)} placeholder="Owning team" /></label><label>Suppression expiry<input type="datetime-local" value={expiresAt} onChange={event => setExpiresAt(event.target.value ? new Date(event.target.value).toISOString() : '')} /></label><button className="reject-button" onClick={() => submit('suppress')}>Suppress with expiry</button>{error && <p className="form-error">{error}</p>}</details></div>
+}
+
 function ReviewQueue({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
   const proposals = data.suggestions.filter(item => item.state === 'proposed')
-  async function decide(id: string, decision: 'confirm' | 'reject') { await api.decideSuggestion(id, decision); await reload() }
-  return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Review Jira source, the proposed graph, candidates, and provenance before a semantic proposal can affect coverage." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); const payload = item.payload ?? {}; return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3>{item.type === 'flow' ? <FlowReviewDetail data={data} requirement={requirement} payload={payload} evidence={item.evidence} /> : <><div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div><small className="review-source-revision">Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small></>}</div><div className="review-actions"><button className="reject-button" onClick={() => decide(item.id, 'reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => decide(item.id, 'confirm')}><Check size={16} /> Confirm</button></div></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
+  return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Review Jira source, the proposed graph, candidates, and provenance before a semantic proposal can affect coverage." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); const payload = item.payload ?? {}; return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3>{item.type === 'flow' ? <FlowReviewDetail data={data} requirement={requirement} payload={payload} evidence={item.evidence} /> : <><div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div><small className="review-source-revision">Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small></>}</div><SuggestionActions id={item.id} payload={payload} onComplete={reload} /></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
 }
 
 function RepositoryAdministrationCard({ repository, reload }: { repository: Repository; reload: () => Promise<void> }) {
