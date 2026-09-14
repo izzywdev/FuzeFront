@@ -948,10 +948,20 @@ billingService:
   # per-service billing-secrets SealedSecret.
   dbUser: billing_svc
   # Per-service secret (billing-only keys: STRIPE_*, BILLING_INTERNAL_TOKEN,
-  # BILLING_DB_PASSWORD). Shared creds (PERMIT_API_KEY) stay in fuzefront-secrets.
+  # BILLING_DB_PASSWORD, AUTHENTIK_CLIENT_ID/SECRET for the Security API S2S
+  # sync below). billing-service's authorization sync is routed through
+  # FuzeFront's own Security API (SECURITY_SERVICE_URL — plain in-cluster
+  # Service DNS, set in templates/billing-service.yaml) rather than an
+  # embedded Permit.io SDK, so there is no PERMIT_API_KEY/permitPdpUrl to seal
+  # here (step 3 of the 3-step migration — config-service was step 1,
+  # selection-list-service step 2). AUTHENTIK_CLIENT_ID/SECRET authenticate
+  # billing's Stripe-webhook-triggered plan sync as a machine
+  # (client_credentials) caller — see docs/runbooks/s2s-client-credentials.md
+  # — and are `optional: true` in the Deployment template until they are
+  # provisioned + sealed (billing is LIVE; the flag
+  # fuzefront.billing.authz-enabled defaults OFF regardless).
   secretName: billing-secrets
   meterFlushIntervalSec: 60
-  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
   payment: {}
   # Pre-install Job that creates the billing_svc role + `billing` schema + grants.
   dbBootstrap:
