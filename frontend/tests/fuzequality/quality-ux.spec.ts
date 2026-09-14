@@ -14,15 +14,17 @@ const portfolio = {
     { id: 'flow-finding-1', subjectId: 'req-1', type: 'story-without-flow', title: 'FQ-1 has no confirmed user flow', detail: 'The active story has no accepted flow.', severity: 'high', status: 'open', sourceRevision: 'FQ-1@2026-09-11T00:00:00.000Z', policyVersion: 'flow-orphans-v1', schemaVersion: '1.0', evidenceStrength: 'deterministic', evidence: ['FQ-1'], generatedAt: '2026-09-11T00:01:00.000Z' },
     { id: 'requirement-finding-1', subjectId: 'req-1', type: 'conflicting-requirement-outcome', title: 'FQ-1 contains conflicting outcomes', detail: 'Criteria 1 and 2 express opposite results.', severity: 'high', status: 'open', sourceRevision: 'FQ-1@2026-09-11T00:00:00.000Z', policyVersion: 'requirement-review-v1', schemaVersion: '1.0', evidenceStrength: 'deterministic', sourcePassages: ['Administrators can suspend an app.', 'Administrators cannot suspend an app.'], affectedFlowIds: ['flow-1'], affectedTargetIds: ['api-1'], remediation: 'Resolve the contradiction in Jira.', remediationOptions: ['Keep criterion 1', 'Keep criterion 2', 'Rewrite both criteria in Jira'], generatedAt: '2026-09-11T00:01:00.000Z' },
   ],
-  requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do' }],
+  requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do', updatedAt: '2026-09-14T05:00:00.000Z', acceptanceCriteria: [{ fingerprint: 'admin-suspend', position: 1, text: 'An administrator can suspend an app in the active organization.' }] }],
   flows: [{ id: 'flow-1', requirementId: 'req-1', title: 'Suspend application' }],
   suggestions: [{
     id: 'suggestion-1', requirementId: 'req-1', type: 'flow', title: 'Confirm authorization boundary',
     confidence: 0.91, evidence: ['Only administrators may suspend an app.'], state: 'proposed',
     payload: {
       actors: ['administrator'], trigger: 'Suspend an app',
+      preconditions: ['The application exists'],
       authorizationBoundaries: ['Administrator role is required'],
       tenantBoundaries: ['App belongs to the active organization'],
+      steps: [{ id: 'flow-1:step:1', position: 1, actor: 'administrator', action: 'submits suspension', expectedOutcome: 'the app is suspended', variant: 'main', targetIds: ['api-1', 'criterion:admin-suspend'] }],
       analysis: { promptVersion: 'fuzequality-flow-v1', schemaVersion: '1.0', model: 'quality-analysis' },
     },
   }],
@@ -163,7 +165,10 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('No Storybook visual reference found')).toBeVisible()
     await page.getByRole('button', { name: 'Close component preview' }).click()
     await page.getByRole('button', { name: 'AI review queue' }).click()
-    await expect(page.getByText('Authorization boundaries')).toBeVisible()
+    await expect(page.getByLabel('Jira source')).toContainText('An administrator can suspend an app in the active organization.')
+    await expect(page.getByLabel('Proposed flow graph')).toContainText('submits suspension')
+    await expect(page.getByLabel('Proposed flow graph')).toContainText('POST /apps/{slug}/suspend')
+    await expect(page.getByLabel('Jira source')).toContainText('Source revision: FQ-1@2026-09-14T05:00:00.000Z')
     await expect(page.getByText('Administrator role is required')).toBeVisible()
     await expect(page.getByText(/Prompt fuzequality-flow-v1/)).toBeVisible()
     await page.getByRole('button', { name: 'Confirm' }).click()

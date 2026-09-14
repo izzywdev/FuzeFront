@@ -35,6 +35,7 @@ import type {
   ApiOperation,
   AdminTenantContext,
   CoverageState,
+  Flow,
   FrontendSurface,
   Portfolio,
   OrganizationQualitySummary,
@@ -450,10 +451,50 @@ function Requirements({ data }: { data: Portfolio }) {
   })}</div></>
 }
 
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function FlowReviewDetail({ data, requirement, payload, evidence }: { data: Portfolio; requirement: Portfolio['requirements'][number] | undefined; payload: Record<string, unknown>; evidence: string[] }) {
+  const flow = payload as unknown as Partial<Flow>
+  const steps = Array.isArray(flow.steps) ? flow.steps : []
+  const targetName = (targetId: string) => {
+    const operation = data.operations.find(item => item.id === targetId)
+    if (operation) return `${operation.method.toUpperCase()} ${operation.path}`
+    const surface = data.surfaces.find(item => item.id === targetId)
+    if (surface) return `${surface.kind}: ${surface.name}`
+    return targetId.startsWith('criterion:') ? `Jira criterion: ${targetId.slice('criterion:'.length)}` : targetId
+  }
+  const suggestedTests = requirement ? data.suggestions.filter(item => item.requirementId === requirement.id && item.type === 'expected-test') : []
+  const analysis = payload.analysis && typeof payload.analysis === 'object' ? payload.analysis as Record<string, unknown> : undefined
+  return <div className="flow-review-detail">
+    <section className="jira-source-panel" aria-label="Jira source">
+      <div className="flow-panel-label"><BookOpen size={14} /> Jira source</div>
+      <strong>{requirement?.jiraKey ?? 'Source unavailable'} · {requirement?.updatedAt ? new Date(requirement.updatedAt).toLocaleString() : 'revision unavailable'}</strong>
+      <p>{requirement?.description || 'No Jira description was synchronized.'}</p>
+      <ol>{requirement?.acceptanceCriteria?.map(criterion => <li key={criterion.fingerprint}>{criterion.text}</li>) ?? <li>No acceptance criteria were synchronized.</li>}</ol>
+      <small>Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small>
+    </section>
+    <section className="flow-graph-panel" aria-label="Proposed flow graph">
+      <div className="flow-panel-label"><Network size={14} /> Proposed flow graph</div>
+      <div className="flow-context"><span>Actors: {stringList(flow.actors).join(' · ') || 'not inferred'}</span>{typeof flow.trigger === 'string' && <span>Trigger: {flow.trigger}</span>}</div>
+      <ol className="flow-steps">{steps.map((step, index) => <li key={step.id ?? index} className={`flow-step-${step.variant}`}><b>{step.position ?? index + 1}</b><div><strong>{step.actor}</strong><span>{step.action}</span><small>Expected: {step.expectedOutcome}</small>{step.targetIds.length > 0 && <div className="flow-targets">{step.targetIds.map(target => <code key={target}>{targetName(target)}</code>)}</div>}</div></li>)}</ol>
+      {!steps.length && <p className="flow-empty">No structured steps were proposed.</p>}
+    </section>
+    <section className="flow-provenance-panel" aria-label="Review evidence and provenance">
+      <div className="flow-panel-label"><Sparkles size={14} /> Evidence & provenance</div>
+      <div className="flow-boundaries">{stringList(flow.preconditions).map(item => <span key={`pre:${item}`}>Precondition: {item}</span>)}{stringList(flow.authorizationBoundaries).map(item => <span key={`auth:${item}`}>Authorization: {item}</span>)}{stringList(flow.tenantBoundaries).map(item => <span key={`tenant:${item}`}>Tenant: {item}</span>)}</div>
+      <div className="evidence-list">{evidence.map(item => <blockquote key={item}>“{item}”</blockquote>)}</div>
+      <div className="suggested-test-list"><b>Suggested tests</b>{suggestedTests.length ? suggestedTests.map(item => <span key={item.id}>{item.title}</span>) : <span>No test proposals were generated for this revision.</span>}</div>
+      <small>Prompt {String(analysis?.promptVersion ?? 'unknown')} · schema {String(analysis?.schemaVersion ?? 'unknown')} · model {String(analysis?.model ?? 'unknown')} · unreviewed semantic evidence</small>
+    </section>
+  </div>
+}
+
 function ReviewQueue({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
   const proposals = data.suggestions.filter(item => item.state === 'proposed')
   async function decide(id: string, decision: 'confirm' | 'reject') { await api.decideSuggestion(id, decision); await reload() }
-  return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Evidence-backed proposals never affect authoritative coverage until you decide." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); const payload = item.payload ?? {}; const list = (key: string) => Array.isArray(payload[key]) ? payload[key].filter(value => typeof value === 'string') as string[] : []; const analysis = payload.analysis && typeof payload.analysis === 'object' ? payload.analysis as Record<string, unknown> : undefined; return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3>{item.type === 'flow' && <div className="analysis-details">{list('actors').length > 0 && <p><b>Actors</b><span>{list('actors').join(' · ')}</span></p>}{typeof payload.trigger === 'string' && <p><b>Trigger</b><span>{payload.trigger}</span></p>}{list('authorizationBoundaries').length > 0 && <p><b>Authorization boundaries</b><span>{list('authorizationBoundaries').join(' · ')}</span></p>}{list('tenantBoundaries').length > 0 && <p><b>Tenant boundaries</b><span>{list('tenantBoundaries').join(' · ')}</span></p>}{analysis && <small>Prompt {String(analysis.promptVersion ?? 'unknown')} · schema {String(analysis.schemaVersion ?? 'unknown')} · model {String(analysis.model ?? 'unknown')}</small>}</div>}<div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div></div><div className="review-actions"><button className="reject-button" onClick={() => decide(item.id, 'reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => decide(item.id, 'confirm')}><Check size={16} /> Confirm</button></div></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
+  return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Review Jira source, the proposed graph, candidates, and provenance before a semantic proposal can affect coverage." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); const payload = item.payload ?? {}; return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3>{item.type === 'flow' ? <FlowReviewDetail data={data} requirement={requirement} payload={payload} evidence={item.evidence} /> : <><div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div><small className="review-source-revision">Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small></>}</div><div className="review-actions"><button className="reject-button" onClick={() => decide(item.id, 'reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => decide(item.id, 'confirm')}><Check size={16} /> Confirm</button></div></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
 }
 
 function RepositoryAdministrationCard({ repository, reload }: { repository: Repository; reload: () => Promise<void> }) {
