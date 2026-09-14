@@ -69,7 +69,7 @@ await runConsumer(
       method: 'POST',
       body: JSON.stringify({
         results,
-        sync: { sourceType: 'jira', sourceKey: command.scopeId, cursor: sync.cursor },
+        sync: { sourceType: 'jira', sourceKey: command.scopeId, cursor: sync.cursor, tenantId: command.tenantId },
       }),
     })
     } catch (error) {

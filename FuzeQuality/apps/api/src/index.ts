@@ -569,7 +569,7 @@ app.get('/api/v1/suggestions', mayReadSuggestions, async (request, response) =>
 )
 app.get('/api/v1/suggestions/:id/decisions', mayReadSuggestions, async (request, response) => {
   const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
-  response.json(await store.suggestionDecisions(suggestionId))
+  response.json(await store.suggestionDecisions(suggestionId, requestIdentity(request)!.tenantId))
 })
 app.post('/api/v1/suggestions/:id/decision', async (request, response, next) => {
   const parsed = reviewDecisionSchema.safeParse(request.body)
@@ -640,6 +640,7 @@ app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => 
   const scopeId = request.body?.scopeId ?? 'default'
   const cursor = await store.syncCursor('jira', scopeId)
   await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
+    tenantId: requestIdentity(request)!.tenantId,
     scopeId,
     jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
     ...(cursor?.cursor ? { since: cursor.cursor } : {}),
