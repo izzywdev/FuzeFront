@@ -1,0 +1,56 @@
+name: Design Partner
+description: Test FuzeFront/Fuze Software Factory against a real workload
+title: "[Design Partner] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form if your team wants to test the platform against a real product, internal platform, or software-delivery use case.
+  - type: dropdown
+    id: org_type
+    attributes:
+      label: Organization type
+      options:
+        - Startup
+        - Scale-up
+        - Enterprise engineering team
+        - Platform engineering team
+        - Agency / software studio
+        - Independent founder
+        - Open-source project
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: workload
+    attributes:
+      label: What would you like to run on Fuze?
+      placeholder: Describe the product, internal application, platform workload, or delivery flow.
+    validations:
+      required: true
+  - type: textarea
+    id: stack
+    attributes:
+      label: Current stack
+      placeholder: Languages, frameworks, CI/CD, Kubernetes/cloud, identity, databases, observability, etc.
+  - type: textarea
+    id: pain
+    attributes:
+      label: What are you trying to improve?
+      placeholder: Delivery speed, standardization, infra reuse, AI-assisted development, governance, deployment, app integration, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: What would success look like?
+      placeholder: Define the outcome or proof you would need to consider the experiment useful.
+    validations:
+      required: true
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Public learning
+      options:
+        - label: I am open to sharing non-sensitive lessons from the experiment publicly.
