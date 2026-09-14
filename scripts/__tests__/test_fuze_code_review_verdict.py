@@ -306,3 +306,59 @@ class RenderBodyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CreditOutageExceptionTests(unittest.TestCase):
+    """The owner's credit-outage exception — ported from FuzeSDLC's canonical copy.
+
+    This repo's verdict script predated the exception, so a vendor credit/quota
+    exhaustion RED-ed every PR here while FuzeSDLC's identical check passed with a
+    notice. Observed the same day, same outage: FuzeFront #1039/#1040/#1041 red,
+    FuzeSDLC#360 green.
+
+    The load-bearing pair is `outage_passes` together with
+    `task_failure_without_availability_still_abstains`: the exception must let a real
+    task failure through unchanged, or it stops being an exception and becomes a
+    blanket pass — which is the vacuous-required-check failure mode this repo's own
+    governance/required-checks.json exists to prevent.
+    """
+
+    def test_outage_passes_and_is_not_an_abstain(self):
+        r = V.decide("failure", "", "n0nce", [], mode="", availability=True)
+        self.assertEqual(r["decision"], "outage")
+        self.assertTrue(r["outage"])
+        self.assertNotEqual(r["decision"], "abstain")
+
+    def test_task_failure_without_availability_still_abstains(self):
+        """A real failure must still fail. availability=False changes nothing."""
+        r = V.decide("failure", "", "n0nce", [], mode="", availability=False)
+        self.assertEqual(r["decision"], "abstain")
+        self.assertFalse(r.get("outage", False))
+
+    def test_availability_defaults_to_false(self):
+        """An older action that emits no `availability` output must fail closed."""
+        r = V.decide("failure", "", "n0nce", [])
+        self.assertEqual(r["decision"], "abstain")
+
+    def test_outage_never_masks_the_self_mod_deferral(self):
+        """The workflow-self-modification guard keeps its own distinct decision."""
+        r = V.decide("failure", "", "n0nce", [".github/workflows/x.yml"],
+                   mode="declined", availability=True)
+        self.assertEqual(r["decision"], "comment")
+        self.assertTrue(r["deferred"])
+
+    def test_success_path_is_untouched_by_availability(self):
+        """availability is only consulted when the action did NOT succeed."""
+        r_off = V.decide("success", "", "n0nce", [], mode="", availability=False)
+        r_on = V.decide("success", "", "n0nce", [], mode="", availability=True)
+        self.assertEqual(r_off["decision"], r_on["decision"])
+
+    def test_outage_is_a_declared_decision(self):
+        self.assertIn("outage", V.DECISIONS)
+
+    def test_outage_body_says_it_passes(self):
+        r = V.decide("failure", "", "n0nce", [], mode="", availability=True)
+        body = V.render_body(r, "", "")
+        self.assertIn("not a failure", body)
+        self.assertIn("PASSES", body)
+

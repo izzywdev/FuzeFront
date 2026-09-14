@@ -14,6 +14,7 @@
 import { createApp } from './app';
 import { db } from './db';
 import { run as runMigrations } from './db/migrate';
+import { startLifecycleConsumers } from './events/consumer';
 
 async function main(): Promise<void> {
   const jwtSecret = process.env.JWT_SECRET;
@@ -48,9 +49,28 @@ async function main(): Promise<void> {
     console.log('[selection-list-service] Listening on port %d', port);
   });
 
+  // Start Kafka lifecycle consumers (fire-and-forget; errors are logged but do
+  // not kill the HTTP server — a Kafka outage must not bring the API down).
+  let disconnectConsumers: (() => Promise<void>) | null = null;
+  if (process.env.KAFKA_BROKERS || process.env.NODE_ENV === 'production') {
+    startLifecycleConsumers()
+      .then(({ disconnect }) => {
+        disconnectConsumers = disconnect;
+        // eslint-disable-next-line no-console
+        console.log('[selection-list-service] Kafka lifecycle consumers started.');
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('[selection-list-service] Failed to start Kafka consumers (non-fatal):', err);
+      });
+  }
+
   const shutdown = async (): Promise<void> => {
     // eslint-disable-next-line no-console
     console.log('[selection-list-service] Shutting down...');
+    if (disconnectConsumers) {
+      await disconnectConsumers().catch(() => {});
+    }
     server.close(async () => {
       await db.destroy().catch(() => {});
       process.exit(0);

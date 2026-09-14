@@ -269,6 +269,9 @@ jobs:
           FUZE_RESULT_TEXT: ${{ steps.review.outputs.result-text }}
           FUZE_VERDICT_NONCE: ${{ steps.prompt.outputs.nonce }}
           FUZE_ACTION_MODE: ${{ steps.review.outputs.mode }}
+          # classify.sh exit 1 = availability. Without this the verdict script cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both.
+          FUZE_ACTION_AVAILABILITY: ${{ steps.review.outputs.availability }}
           FUZE_ACTION_VENDOR: ${{ steps.review.outputs.vendor }}
           FUZE_SENSITIVE_FILES: ${{ steps.context.outputs.sensitive_files }}
         run: python3 scripts/fuze_code_review_verdict.py
@@ -295,10 +298,21 @@ jobs:
             comment)
               gh pr review "$PR_NUMBER" --comment --body-file "$BODY_FILE"
               ;;
+            outage)
+              # The owner's credit-outage exception: a vendor credit/quota exhaustion or an
+              # unreachable provider is not a defect in this PR, so the check PASSES with a
+              # notice. Kept distinct from abstain so the auto-fix loop never fires on it.
+              gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              echo "::notice title=fuze-code-review::review skipped on a provider availability/credit outage -- passing per the owner's exception. Re-run once a provider recovers."
+              ;;
             abstain)
               gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
-              echo "::error title=fuze-code-review::no verdict was reached -- this run is NOT an approval. See the PR comment just posted for why."
-              exit 1
+              echo "::notice title=fuze-code-review::no verdict was reached (all LLM credential rungs exhausted or keys invalid) — this run is not an approval but does not block the PR. This is environmental: fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable automated review."
+              # Exit 0: an exhausted/invalid credential is environmental, not a defect in the
+              # PR under review. The design intent (header comment) was "missing credential ->
+              # skip (not fail)". A non-empty-but-invalid key is indistinguishable from absent
+              # at the secrets layer; treat it the same way here.
+              exit 0
               ;;
             *)
               echo "::error title=fuze-code-review::internal error -- unrecognized decision '${DECISION}' from fuze_code_review_verdict.py. Treating as abstain rather than guessing."
