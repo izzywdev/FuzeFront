@@ -1,0 +1,130 @@
+{{- if and .Values.selectionListService.enabled .Values.selectionListsMcp.enabled }}
+{{/*
+MCP SSE gateway for the selection-list-service.
+
+Exposes the selection-list API surface as MCP tools so AI agents in the Fuze
+family can look up, create, and manage selection-list data programmatically.
+The gateway uses the same shared `ghcr.io/izzywdev/fuze-mcp-gateway` image as
+the app-registry gateway (mcp-gateway.yaml) — nothing service-specific lives in
+that image. What makes this pod "the selection-list gateway" is the two mounted
+files: the selection-list OpenAPI spec (a copy of
+services/selection-list-service/openapi.yaml — run
+scripts/check-mcp-spec-drift.sh to verify no drift) and the tool overrides that
+correct archive-vs-purge reversibility classification.
+
+UPSTREAM: the in-cluster ClusterIP of the selection-list-service pod. The base
+URL uses the /v1 prefix because every operation path in the spec starts there.
+The gateway forwards the CALLER'S bearer token, so per-user Permit checks in the
+service still apply — the gateway holds no credential of its own.
+
+Ships dark by default (selectionListsMcp.enabled: false) because the service
+itself ships dark (selectionListService.enabled: false). Both must be true to
+deploy this pod.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: selection-list-mcp-spec
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: selection-list-mcp-gateway
+data:
+  openapi.yaml: |-
+{{ .Files.Get "files/selection-list-service-openapi.yaml" | indent 4 }}
+  tools.overrides.yaml: |-
+{{ .Files.Get "files/mcp-tools-selection-lists.overrides.yaml" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selection-list-mcp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: selection-list-mcp-gateway
+spec:
+  replicas: {{ .Values.selectionListsMcp.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: selection-list-mcp-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: selection-list-mcp-gateway
+      annotations:
+        checksum/spec: {{ .Files.Get "files/selection-list-service-openapi.yaml" | sha256sum }}
+        checksum/overrides: {{ .Files.Get "files/mcp-tools-selection-lists.overrides.yaml" | sha256sum }}
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.selectionListsMcp "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp-gateway
+          image: "{{ .Values.selectionListsMcp.image.repository }}:{{ .Values.selectionListsMcp.image.tag }}"
+          imagePullPolicy: {{ .Values.selectionListsMcp.image.pullPolicy | default .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.selectionListsMcp.port }}
+          env:
+            - name: MCP_PRODUCT
+              value: fuzefront-selection-lists
+            - name: MCP_UPSTREAM_BASE_URL
+              value: {{ printf "http://selection-list-service:%v/v1" .Values.selectionListService.port | quote }}
+            - name: MCP_OPENAPI_SPEC
+              value: /spec/openapi.yaml
+            - name: MCP_TOOL_OVERRIDES
+              value: /spec/tools.overrides.yaml
+            - name: PORT
+              value: {{ .Values.selectionListsMcp.port | quote }}
+          # No credential env var — the gateway forwards the caller's identity.
+          # It refuses to start if MCP_UPSTREAM_TOKEN / MCP_SERVICE_TOKEN /
+          # MCP_API_KEY is present (packages/mcp-gateway/src/config.ts).
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.selectionListsMcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: spec
+              mountPath: /spec
+              readOnly: true
+      volumes:
+        - name: spec
+          configMap:
+            name: selection-list-mcp-spec
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selection-list-mcp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: selection-list-mcp-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: selection-list-mcp-gateway
+  ports:
+    - name: http
+      port: {{ .Values.selectionListsMcp.port }}
+      targetPort: http
+{{- end }}
