@@ -1,0 +1,145 @@
+name: Prod Unleash ops (enable feature flags)
+
+# Applies pending feature-flag enablement to the production Unleash instance
+# via its admin API. Mirrors the prod-authentik-ops.yml pattern.
+#
+# The workflow runs on the `fuzefront` self-hosted in-cluster runner so it can
+# reach http://fuzefront-unleash.fuzefront.svc.cluster.local:4242 without
+# needing CF-Access authentication (the admin UI host is Access-gated; the
+# in-cluster service is not).
+#
+# PREREQUISITE — mirror the Unleash admin token as a repo secret ONCE:
+#   kubectl -n fuzefront get secret unleash-secrets \
+#     -o jsonpath='{.data.INIT_ADMIN_API_TOKENS}' | base64 -d \
+#     | gh secret set UNLEASH_ADMIN_TOKEN --repo izzywdev/FuzeFront
+#
+# Then trigger this workflow via GitHub Actions → "Run workflow".
+# The `flags` input controls which pre-defined flag set to apply.
+
+on:
+  workflow_dispatch:
+    inputs:
+      flags:
+        description: |
+          Which flag set to apply:
+            billing-portal  — fuzefront.billing.invoice-history (100%)
+        required: true
+        default: billing-portal
+        type: choice
+        options:
+          - billing-portal
+
+permissions:
+  contents: read
+
+jobs:
+  apply-flags:
+    name: Apply Unleash flags (${{ inputs.flags }})
+    runs-on: fuzefront
+    timeout-minutes: 5
+    steps:
+      - name: Apply flags
+        env:
+          TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
+          FLAGS_SET: ${{ inputs.flags }}
+          UNLEASH: http://fuzefront-unleash.fuzefront.svc.cluster.local:4242
+          PROJECT: default
+          ENVIRONMENT: production
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error title=prod-unleash-ops::UNLEASH_ADMIN_TOKEN secret is not set."
+            echo ""
+            echo "Mirror the admin token from the cluster once:"
+            echo "  kubectl -n fuzefront get secret unleash-secrets \\"
+            echo "    -o jsonpath='{.data.INIT_ADMIN_API_TOKENS}' | base64 -d \\"
+            echo "    | gh secret set UNLEASH_ADMIN_TOKEN --repo izzywdev/FuzeFront"
+            exit 1
+          fi
+
+          # Idempotent helper: creates the flag if absent (409 = already exists),
+          # enables the production environment, and upserts a 100% flexibleRollout
+          # strategy (skips adding a duplicate if one already exists).
+          enable_ga() {
+            local FLAG="$1" DESC="$2"
+            echo "=== $FLAG ==="
+
+            # 1. Create (idempotent — 409 is fine)
+            STATUS=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features" \
+              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}")
+            if echo "$STATUS" | grep -qE '^(201|409)$'; then
+              echo "  create: ok ($STATUS)"
+            else
+              echo "  create: FAILED ($STATUS)"; cat /tmp/resp.json; return 1
+            fi
+
+            # 2. Enable the production environment
+            curl -sfX POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/on" \
+              -H "Authorization: $TOKEN" \
+              && echo "  environment on: ok"
+
+            # 3. Add 100% flexibleRollout only if one does not already exist.
+            #    (Re-POSTing creates a duplicate strategy; PATCH the existing one instead.)
+            EXISTING=$(curl -sf \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
+              -H "Authorization: $TOKEN" | python3 -c "
+          import sys,json
+          strats = json.load(sys.stdin)
+          fr = [s for s in strats if s.get('name')=='flexibleRollout'
+                and s.get('parameters',{}).get('rollout')=='100']
+          print('exists' if fr else 'missing')
+          " 2>/dev/null || echo "missing")
+
+            if [ "$EXISTING" = "exists" ]; then
+              echo "  100% strategy: already present, skipping"
+            else
+              curl -sfX POST \
+                "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
+                -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+                -d "{\"name\":\"flexibleRollout\",\"parameters\":{\"rollout\":\"100\",\"stickiness\":\"default\",\"groupId\":\"$FLAG\"}}" \
+                && echo "  100% strategy added: ok"
+            fi
+            echo ""
+          }
+
+          # ── Billing portal flags ───────────────────────────────────────────
+          apply_billing() {
+            enable_ga "fuzefront.billing.invoice-history" \
+              "Release flag. Gates the Invoices tab in the billing portal (PR #1044). GA per billing portal deploy 2026-09-14. Owner: platform team. Removal: once invoice history is GA for >= 2 sprints."
+          }
+
+          # ── Dispatch ──────────────────────────────────────────────────────
+          case "$FLAGS_SET" in
+            billing-portal) apply_billing ;;
+            *)              echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
+          esac
+
+          echo "All requested flags applied."
+
+      - name: Verify
+        if: always()
+        env:
+          TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
+          UNLEASH: http://fuzefront-unleash.fuzefront.svc.cluster.local:4242
+          PROJECT: default
+          ENVIRONMENT: production
+          FLAGS_SET: ${{ inputs.flags }}
+        run: |
+          if [ -z "${TOKEN:-}" ]; then exit 0; fi
+
+          echo "=== Verification ==="
+          check_flag() {
+            local FLAG="$1"
+            ENABLED=$(curl -sf \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT" \
+              -H "Authorization: $TOKEN" \
+              | python3 -c "import sys,json;d=json.load(sys.stdin);print('ON' if d.get('enabled') else 'OFF')" 2>/dev/null \
+              || echo "ERROR")
+            echo "  $FLAG: $ENABLED"
+          }
+
+          check_flag "fuzefront.billing.invoice-history"
