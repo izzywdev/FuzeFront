@@ -111,6 +111,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       declared: ${{ steps.check.outputs.declared }}
+      credential_available: ${{ steps.set_cred.outputs.credential_available }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -143,8 +144,15 @@ jobs:
       #
       # Skipping stays correct for the undeclared case above, because there the
       # absence of a surface is the truth, not a gap.
+      #
+      # A non-empty-but-exhausted/invalid key is treated the same as absent: if the
+      # probe fails, credential_available=false and the maintainer job is skipped
+      # (warning, not error). A genuinely absent credential and an exhausted one are
+      # indistinguishable from outside the vault; both mean the run cannot proceed.
       - name: Resolve LLM endpoint — proves a usable credential exists
+        id: cred
         if: steps.check.outputs.declared == 'true'
+        continue-on-error: true
         uses: ./.github/actions/llm-endpoint
         with:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
@@ -152,6 +160,17 @@ jobs:
           fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
           fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
           fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Set credential_available output
+        id: set_cred
+        if: steps.check.outputs.declared == 'true'
+        run: |
+          if [ "${{ steps.cred.outcome }}" = "success" ]; then
+            echo "credential_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "credential_available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=a2a-maintain::No usable LLM credential found (all provider rungs exhausted or keys invalid) — a2a-maintain is SKIPPED, not failed. This is environmental: fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable maintenance."
+          fi
 
   a2a-maintain:
     needs: preflight
@@ -162,6 +181,7 @@ jobs:
     #   - not our own follow-up branch, or the maintainer re-triggers on its own push.
     if: >-
       needs.preflight.outputs.declared == 'true' &&
+      needs.preflight.outputs.credential_available == 'true' &&
       !startsWith(github.event.pull_request.head.ref, 'a2a-maintain/')
     runs-on: ubuntu-latest
     steps:
