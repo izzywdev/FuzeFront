@@ -162,6 +162,19 @@ export type TestExpectation = {
   rule: string
   coverage: CoverageState
   evidenceIds: string[]
+  exclusion?: {
+    owner: string
+    reason: string
+    expiresAt: string
+    expiresSoon: boolean
+  }
+}
+
+export type ExpectationExclusionInput = {
+  owner: string
+  reason: string
+  expiresAt: string
+  actorId: string
 }
 
 export type CatalogFinding = {
@@ -458,6 +471,12 @@ export const reviewDecisionSchema = z.object({
   mergeIntoSuggestionId: z.string().uuid().optional(),
   owner: z.string().trim().min(1).max(200).optional(),
   expiresAt: z.string().datetime().optional(),
+})
+
+export const expectationExclusionSchema = z.object({
+  owner: z.string().trim().min(1).max(200),
+  reason: z.string().trim().min(1).max(2000),
+  expiresAt: z.string().datetime().refine(value => new Date(value).getTime() > Date.now(), 'Expiry must be in the future'),
 })
 
 export const TOPICS = {
