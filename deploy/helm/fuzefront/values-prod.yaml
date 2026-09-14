@@ -298,7 +298,7 @@ mcp:
   replicas: 1
   image:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
-    tag: "12cb4f787248"
+    tag: "1abe510f5981"
     pullPolicy: IfNotPresent
 
 # FuzeFront's per-product A2A pod (owner decision: one pod per product, not a
