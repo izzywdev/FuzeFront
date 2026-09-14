@@ -19,7 +19,9 @@ import { PgRefIndexRepository } from './repositories/ref-index.repository';
 import { CustomerService } from './services/customer.service';
 import { PlanService } from './services/plan.service';
 import { SubscriptionService } from './services/subscription.service';
-import { PermitSyncService, PermitClientLike } from './services/permit.service';
+import { PermitSyncService } from './services/permit.service';
+import { getAuthzClient } from './services/authz';
+import { getMachineToken, machineTokenConfigFromEnv } from './services/machineToken';
 import { MeteringService } from './services/metering.service';
 import { KafkaBillingEmitter } from './kafka/producer';
 import { startUsageConsumer } from './kafka/consumer';
@@ -82,8 +84,7 @@ async function main() {
   const subscriptionService = new SubscriptionService(stripe, customers, plans, subscriptionRepo);
   const metering = new MeteringService(stripe, usageRepo);
 
-  const permitClient = await loadPermitClient(config);
-  const permit = new PermitSyncService(permitClient);
+  const permit = new PermitSyncService(getAuthzClient(), () => getMachineToken(machineTokenConfigFromEnv()));
 
   const consumer = new TypedConsumer(kafka, config.kafka.groupId);
   // The usage consumer runs in the background; failures dead-letter via producer.
@@ -185,21 +186,6 @@ function startHttp(app: ReturnType<typeof createApp>, port: number) {
   return app.listen(port, () => {
     console.log(`[billing-service] Listening on port ${port}`);
   });
-}
-
-/** Lazily load the permitio SDK so unit tests / degraded mode don't require it. */
-async function loadPermitClient(config: ReturnType<typeof loadConfig>): Promise<PermitClientLike> {
-  const apiKey = process.env.PERMIT_API_KEY;
-  const pdp = process.env.PERMIT_PDP_URL || 'http://localhost:7766';
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { Permit } = require('permitio');
-    return new Permit({ token: apiKey, pdp, throwOnError: false }) as PermitClientLike;
-  } catch (err) {
-    console.warn('[billing-service] permitio unavailable — plan sync will be a no-op');
-    const noop = async () => undefined;
-    return { api: { users: { update: noop }, tenants: { update: noop } } };
-  }
 }
 
 // Entrypoint. Without this the module just defines main() and never runs it, so
