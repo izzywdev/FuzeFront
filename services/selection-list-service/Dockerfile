@@ -95,10 +95,19 @@ COPY services/devportal-service/package.json ./services/devportal-service/
 RUN npm ci --workspace=services/selection-list-service --ignore-scripts
 
 # Copy source
+COPY packages/identity/ ./packages/identity/
 COPY packages/auth/ ./packages/auth/
 COPY services/selection-list-service/ ./services/selection-list-service/
 
-# Build @fuzefront/auth first (src/middleware/authz.ts -- authorization
+# Build @izzywdev/fuzefront-identity first: it ships only TypeScript sources
+# in-repo, and routes/items.ts + routes/lists.ts import it, so `tsc` needs its
+# BUILT dist + .d.ts or the service build dies on TS2307 "Cannot find module".
+# The manifest COPY in the list above is not enough -- that makes the workspace
+# LINK resolve, not the types exist. Mirrors services/config-service/Dockerfile's
+# identical treatment of the identical package.
+RUN cd packages/identity && npm install --ignore-scripts && npm run build
+
+# Then @fuzefront/auth (src/middleware/authz.ts -- authorization
 # routed through FuzeFront's Security API instead of an embedded Permit.io
 # SDK -- imports it at module load; createAuthzClient() is constructed at
 # authz.ts's module scope), then selection-list-service. packages/auth IS a
@@ -126,6 +135,13 @@ COPY --from=build /app/services/selection-list-service/dist ./services/selection
 # the built output (mirrors services/config-service/Dockerfile's identical
 # treatment of the same package -- the "Cannot find module '@fuzefront/auth'"
 # crashloop it documents hitting first for @izzywdev/fuzefront-identity).
+# @izzywdev/fuzefront-identity is a `file:` dependency, so npm LINKS it --
+# node_modules/@izzywdev/fuzefront-identity is a symlink to /app/packages/identity.
+# The base stage ships its package.json so the link resolves instead of dangling;
+# here we populate its target with the built output. It declares NO runtime
+# dependencies, so unlike packages/auth it needs no node_modules COPY.
+COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
 COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # ...AND packages/auth's own runtime dependencies, which nothing else puts in

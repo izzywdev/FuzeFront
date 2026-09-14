@@ -164,7 +164,14 @@ jobs:
           # Pinned + checksummed. A security gate that curls an unverified binary is worse
           # than the problem it is solving; the digest is the upstream one from
           # gitleaks_${VERSION}_checksums.txt.
-          curl -sSfL -o "$TARBALL" \
+          #
+          # --retry covers a transient release-CDN failure. Without it a single HTTP 504
+          # from the downloads host fails this gate with curl exit 22 BEFORE gitleaks is
+          # installed — so the scan never runs and the red check reads as if a secret was
+          # found. Seen on PR #1052. curl retries 408/429/5xx, which is exactly this case;
+          # the checksum verification below is untouched, so a retry can never widen what
+          # is accepted.
+          curl -sSfL --retry 3 --retry-delay 2 --retry-max-time 120 -o "$TARBALL" \
             "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${TARBALL}"
           echo "${SHA256}  ${TARBALL}" | sha256sum -c -
           tar -xzf "$TARBALL" gitleaks
