@@ -89,14 +89,10 @@ bearer) — **sealed**, committed under `deploy/sealed-secrets/`, never a plain
 
 Then set `registration.enabled: true` in `values-prod.yaml`.
 
-## A pre-existing mismatch, deliberately not changed here
+## Policy keys and API authorization
 
-`apps/api/src/index.ts` asks the platform for permissions on resource types
-spelled `fuzequality.Repository`, `fuzequality.Evidence`, and so on. The platform
-namespaces a product's **bare** policy keys as `<slug>_<BareKey>` — so this
-policy's `Repository` becomes `quality_Repository`, which matches neither the old
-`fuzequality.Repository` nor a renamed `quality.Repository`.
-
-That mismatch predates the slug change and is not introduced by it. Reconciling
-the two is an authorization change on a live service and belongs in its own PR,
-with `appsec-reviewer` on it — not folded into a registration fix.
+The API asks the platform for the same keys emitted by FuzeFront's ProductPolicy
+registry: `<slug>_<BareKey>`. For this policy, `Repository` is
+`quality_Repository`, `Evidence` is `quality_Evidence`, and so on. The constants
+in `apps/api/src/platform-permissions.ts` make this relationship explicit and
+prevent a hand-written key from silently producing a permanent 403.
