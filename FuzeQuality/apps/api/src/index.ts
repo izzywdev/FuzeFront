@@ -26,6 +26,7 @@ import {
 import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
+import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import {
@@ -40,15 +41,15 @@ const store = createCatalogStore()
 const events = createEventBus()
 const port = Number(process.env.PORT ?? 4180)
 const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
-const mayReadRepositories = requirePlatformPermission('fuzequality.Repository', 'read')
-const mayManageRepositories = requirePlatformPermission('fuzequality.Repository', 'onboard')
-const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 'scan')
-const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReadSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'read')
-const mayReviewSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'review')
-const maySuppressSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'suppress')
-const maySyncRequirementsAsHuman = requirePlatformPermission('fuzequality.Evidence', 'export')
+const mayReadRepositories = requirePlatformPermission(qualityResources.repository, 'read')
+const mayManageRepositories = requirePlatformPermission(qualityResources.repository, 'onboard')
+const mayScanRepositories = requirePlatformPermission(qualityResources.repository, 'scan')
+const mayReadCatalog = requirePlatformPermission(qualityResources.evidence, 'read')
+const mayReadRequirements = requirePlatformPermission(qualityResources.evidence, 'read')
+const mayReadSuggestions = requirePlatformPermission(qualityResources.suggestion, 'read')
+const mayReviewSuggestions = requirePlatformPermission(qualityResources.suggestion, 'review')
+const maySuppressSuggestions = requirePlatformPermission(qualityResources.suggestion, 'suppress')
+const maySyncRequirementsAsHuman = requirePlatformPermission(qualityResources.evidence, 'export')
 // The reconciler is a workload, not a portal user. It authenticates with the
 // FuzeQuality service token injected from the cluster Secret; a human caller
 // still has to pass the FuzeFront Security permission check below.
@@ -56,12 +57,12 @@ const maySyncRequirements: express.RequestHandler = (request, response, next) =>
   if (isFuzeQualityServiceRequest(request)) return next()
   return maySyncRequirementsAsHuman(request, response, next)
 }
-const mayCreateTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'create')
-const mayReadTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'read')
-const mayReadOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'read')
-const mayManageOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'manage')
-const mayManageRepositoryAdministration = requirePlatformPermission('fuzequality.RepositoryAdministration', 'manage')
-const mayAdministerPlatform = requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')
+const mayCreateTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'create')
+const mayReadTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'read')
+const mayReadOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'read')
+const mayManageOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'manage')
+const mayManageRepositoryAdministration = requirePlatformPermission(qualityResources.repositoryAdministration, 'manage')
+const mayAdministerPlatform = requirePlatformAdminPermission(qualityResources.platformAdministration, 'read')
 const adminContextSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict()
 const organizationRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
 const invitationSchema = z.object({
