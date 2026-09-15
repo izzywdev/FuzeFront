@@ -929,20 +929,20 @@ selectionListService:
     tag: ce9c6809cc69
 
 # devportal-service / devportal-frontend (docs/planning/developers-portal.md).
-# Dark by default behind fuzefront.devportal.enabled — same two-step go-live
-# as selectionListService above: (1) let release.yml build+push the images
-# and bump these tags, (2) flip `enabled` to true here via GitOps in a
-# dedicated deploy window, internal-staff rollout first. `tag: pending` until
-# release.yml's first devportal build rewrites it — see the tag: placement
-# rule above.
+# Step 2 of the two-step go-live executed here: workloads are now deployed.
+# This does NOT make the feature live on its own — the capability is still
+# gated behind the `fuzefront.devportal.enabled` Unleash flag (default OFF,
+# packages/feature-flags/flag-registry.yaml), which is a live-instance toggle
+# at unleash.prod.fuzefront.com, outside this repo's config-as-code. See
+# docs/runbooks/unleash-launcher-and-developer-flags.md to flip it.
 devportalService:
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-service
     tag: cfdef234835e
 
 devportalFrontend:
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
     tag: cfdef234835e
