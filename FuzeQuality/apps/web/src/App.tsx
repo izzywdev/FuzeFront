@@ -40,6 +40,7 @@ import type {
   Portfolio,
   OrganizationQualitySummary,
   Repository,
+  RepositoryScanHistoryEntry,
   StorybookStory,
   TestExpectation,
   TestImplementationRequest,
@@ -48,7 +49,7 @@ import { api, configurePlatformSecurity, type OrganizationMember, type Organizat
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 
-type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review' | 'organization' | 'administration'
+type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review' | 'operations' | 'organization' | 'administration'
 
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
@@ -57,6 +58,7 @@ const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'frontend', label: 'Frontend inventory', icon: Layers3 },
   { id: 'requirements', label: 'Requirements & flows', icon: Network },
   { id: 'review', label: 'AI review queue', icon: Sparkles },
+  { id: 'operations', label: 'Operations', icon: Activity },
   { id: 'organization', label: 'Organization', icon: Users },
   { id: 'administration', label: 'Organizations', icon: Building2 },
 ]
@@ -311,6 +313,7 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [history, setHistory] = useState<Record<string, RepositoryScanHistoryEntry[]>>({})
   const [form, setForm] = useState({
     owner: 'izzywdev',
     name: '',
@@ -334,6 +337,13 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
     setBusy(true)
     try { await api.scanRepository(id, localPath); await reload() } finally { setBusy(false) }
   }
+  async function loadHistory(id: string) {
+    if (history[id]) return
+    try {
+      const entries = await api.repositoryScanHistory(id)
+      setHistory(current => ({ ...current, [id]: entries }))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Scan history could not be loaded') }
+  }
   return (
     <>
       <PageHeading eyebrow="Source control" title="Repository inventory" detail="Onboard read-only sources and inspect their latest deterministic scan." action={<button className="primary-button" onClick={() => setOpen(true)}><Plus size={16} /> Add repository</button>} />
@@ -345,6 +355,7 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
             <h3>{repository.name}</h3><p>{repository.canonicalUrl}</p>
             <dl><div><dt>Branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Kind</dt><dd>{repository.kind}</dd></div><div><dt>Revision</dt><dd title={repository.lastScanRevision}>{repository.lastScanRevision?.slice(0, 12) ?? 'Not scanned'}</dd></div><div><dt>Last scan</dt><dd>{repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'Never'}</dd></div></dl>
             {diagnostics.length > 0 && <details className="scan-diagnostics"><summary><AlertTriangle size={14} /> {diagnostics.length} scan {diagnostics.length === 1 ? 'diagnostic' : 'diagnostics'}</summary><div>{diagnostics.map(item => <article key={`${item.sourcePath}:${item.code}`}><span className={`diagnostic-severity diagnostic-${item.severity}`}>{item.severity}</span><code>{item.sourcePath}</code><strong>{item.code}</strong><p>{item.message}</p></article>)}</div></details>}
+            <details className="scan-diagnostics" onToggle={event => { if ((event.currentTarget as HTMLDetailsElement).open) void loadHistory(repository.id) }}><summary><GitBranch size={14} /> Scan history</summary><div>{history[repository.id] ? history[repository.id].length ? history[repository.id].map(entry => <article key={`${entry.revision}:${entry.scannedAt}`}><span className={`scan-status scan-${entry.status}`}>{entry.status}</span><code>{entry.revision.slice(0, 12)} · {entry.branch}</code><strong>{entry.counts.operations} API · {entry.counts.surfaces} surfaces · {entry.counts.tests} tests</strong><p>{entry.scannedAt ? new Date(entry.scannedAt).toLocaleString() : 'Scan queued'}</p></article>) : <p>No scan runs recorded yet.</p> : <p>Loading scan history…</p>}</div></details>
             <button className="secondary-button" disabled={busy} onClick={() => scan(repository.id, repository.localPath)}><RefreshCw size={15} /> Scan now</button>
           </article>
         })}
@@ -374,10 +385,15 @@ function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio
   return <><PageHeading eyebrow={isApi ? 'Contract inventory' : 'Implemented surface'} title={isApi ? 'API coverage matrix' : 'Frontend coverage matrix'} detail={isApi ? 'Every operation measured against schema-derived test expectations.' : 'Routes, pages, components, states, Storybook documentation, and test evidence.'} action={<div className="header-badge">{isApi ? <Braces /> : <Code2 />} {items.length} indexed</div>} /><CoverageRail expectations={expectations} /><Matrix items={items} expectations={expectations} kind={type} repositories={data.repositories} /></>
 }
 
+function FindingDetail({ finding, onClose }: { finding: Portfolio['findings'][number]; onClose: () => void }) {
+  return <div className="modal-backdrop" role="presentation"><aside className="modal finding-detail" role="dialog" aria-modal="true" aria-labelledby="finding-detail-title"><div className="modal-title"><div><p className="eyebrow">Coverage finding</p><h2 id="finding-detail-title">{finding.title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close finding detail"><X /></button></div><p>{finding.detail}</p><dl className="finding-detail-grid"><div><dt>Severity</dt><dd>{finding.severity}</dd></div><div><dt>Rule / policy</dt><dd>{finding.policyVersion ?? finding.type ?? 'catalog policy'}</dd></div><div><dt>Evidence strength</dt><dd>{finding.evidenceStrength ?? 'unknown'}</dd></div><div><dt>Source revision</dt><dd>{finding.sourceRevision ?? 'catalog'}</dd></div><div><dt>Owner</dt><dd>{finding.owner ?? 'Unassigned'}</dd></div><div><dt>Status</dt><dd>{finding.status}</dd></div></dl>{(finding.evidence?.length ?? 0) > 0 && <section><b>Evidence</b><div className="evidence-list">{finding.evidence?.map(item => <blockquote key={item}>“{item}”</blockquote>)}</div></section>}{(finding.affectedTargetIds?.length ?? 0) > 0 && <section><b>Related targets</b><div className="finding-impact">{finding.affectedTargetIds?.map(item => <code key={item}>{item}</code>)}</div></section>}{finding.remediation && <section><b>Remediation</b><p>{finding.remediation}</p></section>}<small>Generated {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'} · schema {finding.schemaVersion ?? 'unknown'}</small></aside></div>
+}
+
 function ApiCatalogPage({ data }: { data: Portfolio }) {
   const [repositoryId, setRepositoryId] = useState('')
   const [tag, setTag] = useState('')
   const [coverage, setCoverage] = useState<CoverageState | ''>('')
+  const [selectedFinding, setSelectedFinding] = useState<Portfolio['findings'][number]>()
   const apiExpectations = data.expectations.filter(item => item.subjectType === 'api-operation')
   const tags = [...new Set(data.operations.flatMap(operation => operation.tags))].sort()
   const operations = data.operations.filter(operation => {
@@ -417,14 +433,15 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
     <section className="panel catalog-findings">
       <div className="panel-heading"><div><p className="eyebrow">Remediation queue</p><h2>OpenAPI quality and coverage findings</h2></div><span className="header-badge"><AlertTriangle /> {findings.length}</span></div>
       <div className="finding-list">
-        {findings.map(finding => <article className="finding-row finding-action" key={finding.id}>
+        {findings.map(finding => <button className="finding-row finding-action" key={finding.id} onClick={() => setSelectedFinding(finding)}>
           <AlertTriangle size={17} />
           <div><strong>{finding.title}</strong><small>{finding.detail}</small>{finding.remediation && <p><b>Next:</b> {finding.remediation}</p>}</div>
           <div className="finding-owner"><span className={`severity severity-${finding.severity}`}>{finding.severity}</span><small>{finding.owner ?? 'Unassigned'}</small></div>
-        </article>)}
+        </button>)}
         {!findings.length && <div className="empty-state"><ShieldCheck /><strong>No findings in this view</strong><span>Adjust filters or scan another repository.</span></div>}
       </div>
     </section>
+    {selectedFinding && <FindingDetail finding={selectedFinding} onClose={() => setSelectedFinding(undefined)} />}
   </>
 }
 
@@ -439,6 +456,7 @@ function Requirements({ data }: { data: Portfolio }) {
       <div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span>
       <h3>{requirement.summary}</h3><p>{requirement.description}</p>
       <div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span><span className={findings.length ? 'requirement-gap-count' : ''}><AlertTriangle /> {findings.length} quality findings</span></div>
+      <details className="requirement-flows"><summary><Network size={14} /> Confirmed actor-step flows</summary>{flows.length ? flows.map(flow => { const steps = flow.steps ?? []; return <section className="requirement-flow" key={flow.id}><strong>{flow.title}</strong><small>{flow.origin ?? 'confirmed'} · {steps.length} steps</small><ol className="flow-steps">{steps.map(step => <li key={step.id} className={`flow-step-${step.variant}`}><b>{step.position}</b><div><strong>{step.actor}</strong><span>{step.action}</span><small>Expected: {step.expectedOutcome}</small>{(step.targetIds ?? []).length > 0 && <div className="flow-targets">{step.targetIds.map(target => <code key={target}>{target}</code>)}</div>}</div></li>)}</ol>{!steps.length && <p className="flow-empty">This reviewed flow has no stored steps yet.</p>}</section> }) : <p className="flow-empty">No reviewed flow is attached to this requirement yet. AI proposals remain in the review queue until confirmed.</p>}</details>
       {findings.length > 0 && <div className="requirement-findings">{findings.map(finding => <details key={finding.id}>
         <summary><span className={`severity severity-${finding.severity}`}>{finding.severity}</span>{finding.title}</summary>
         <p>{finding.detail}</p>
@@ -451,6 +469,13 @@ function Requirements({ data }: { data: Portfolio }) {
       </details>)}</div>}
     </article>
   })}</div></>
+}
+
+function Operations({ data }: { data: Portfolio }) {
+  const failed = data.repositories.filter(item => item.lastScanStatus === 'failed')
+  const active = data.repositories.filter(item => item.lastScanStatus === 'queued' || item.lastScanStatus === 'running')
+  const parserErrors = data.diagnostics.filter(item => item.severity === 'error')
+  return <><PageHeading eyebrow="Runtime control" title="Operations" detail="Inspect scan freshness, parser failures, and asynchronous workflow recovery signals." action={<div className="header-badge"><Activity /> live catalog</div>} /><section className="stats-grid compact-stats"><Stat label="Active scans" value={active.length} detail="queued or running" /><Stat label="Failed scans" value={failed.length} detail="safe retry from repository inventory" tone={failed.length ? 'danger' : 'neutral'} /><Stat label="Parser errors" value={parserErrors.length} detail="from the latest revision" tone={parserErrors.length ? 'danger' : 'neutral'} /><Stat label="Jira sources" value={data.requirements.length} detail="requirements currently indexed" /></section><section className="panel"><div className="panel-heading"><div><p className="eyebrow">Workflow health</p><h2>Source and parser diagnostics</h2></div></div>{data.repositories.map(repository => { const diagnostics = data.diagnostics.filter(item => item.repositoryId === repository.id); return <article className="finding-row" key={repository.id}><GitBranch size={17} /><div><strong>{repository.name} · {repository.lastScanStatus}</strong><small>{repository.lastScanRevision?.slice(0, 12) ?? 'No completed revision'} · {repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'not scanned'}</small>{diagnostics.length ? <p>{diagnostics.length} parser diagnostics: {diagnostics.map(item => item.code).join(', ')}</p> : <p>No parser diagnostics in the latest scan.</p>}</div></article>})}</section></>
 }
 
 function stringList(value: unknown): string[] {
@@ -683,5 +708,5 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   useEffect(() => { void reload() }, [])
   const visibleNavigation = useMemo(() => navigation.filter(item => item.id !== 'administration' || organizations), [organizations])
   const active = useMemo(() => visibleNavigation.find(item => item.id === view), [view, visibleNavigation])
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'operations' && <Operations data={data} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
 }

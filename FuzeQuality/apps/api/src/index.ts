@@ -5,6 +5,7 @@ import {
   TOPICS,
   repositoryInputSchema,
   reviewDecisionSchema,
+  expectationExclusionSchema,
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
@@ -324,6 +325,12 @@ app.get('/api/v1/repositories/:id', mayReadRepositories, async (request, respons
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
 })
+app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.repositoryScanHistory(repositoryId, tenantId))
+})
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
@@ -600,6 +607,16 @@ app.post('/api/v1/suggestions/:id/approve-expected-test', mayReviewSuggestions, 
   if (!suggestion) return response.status(404).json({ error: 'Expected-test suggestion not found' })
   await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: 'approve-expected-test' }, suggestion.id)
   response.json(suggestion)
+})
+app.post('/api/v1/expectations/:id/exclusion', maySuppressSuggestions, async (request, response) => {
+  const parsed = expectationExclusionSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const expectationId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const identity = requestIdentity(request)!
+  const excluded = await store.excludeExpectation(expectationId, identity.tenantId, { ...parsed.data, actorId: identity.userId })
+  if (!excluded) return response.status(404).json({ error: 'Expectation not found' })
+  await events.publish(TOPICS.COVERAGE_REBUILD_REQUESTED, { scopeId: `expectation:${expectationId}` }, expectationId)
+  response.status(202).json({ accepted: true })
 })
 app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).findings)
