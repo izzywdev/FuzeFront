@@ -26,7 +26,7 @@ paths = [
   # The FuzeInfra credential-handoff publisher creates this scoped SealedSecret
   # for the FuzeFront registration client. Its token is ciphertext generated
   # with the target cluster's public key, not a plaintext credential.
-  '''FuzeQuality/deploy/helm/fuzequality/templates/fuzefront-registration-sealed-secret\.yaml''',
+  '''FuzeQuality/deploy/helm/fuzequality/templates/fuzefront-registration-sealed\.yaml''',
   # Historical prod values file that had a Cloudflare CF SealedSecret inlined at
   # commit 7cfe0429; the kubesealed blob is asymmetrically encrypted and safe to commit.
   '''deploy/helm/fuzefront/values-prod\.yaml''',
