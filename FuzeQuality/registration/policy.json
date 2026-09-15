@@ -30,6 +30,21 @@
       }
     },
     {
+      "key": "Suggestion",
+      "name": "Suggestion",
+      "actions": {
+        "read": {
+          "name": "Read"
+        },
+        "review": {
+          "name": "Review"
+        },
+        "suppress": {
+          "name": "Suppress"
+        }
+      }
+    },
+    {
       "key": "TestImplementation",
       "name": "Test implementation",
       "actions": {
@@ -79,6 +94,7 @@
       "permissions": [
         "Repository:read",
         "Evidence:read",
+        "Suggestion:read",
         "OrganizationAccess:read"
       ]
     },
@@ -90,6 +106,7 @@
         "Repository:scan",
         "Evidence:read",
         "Evidence:export",
+        "Suggestion:read",
         "TestImplementation:read",
         "TestImplementation:create",
         "OrganizationAccess:read"
@@ -104,6 +121,9 @@
         "Repository:scan",
         "Evidence:read",
         "Evidence:export",
+        "Suggestion:read",
+        "Suggestion:review",
+        "Suggestion:suppress",
         "TestImplementation:read",
         "TestImplementation:create",
         "OrganizationAccess:read",
