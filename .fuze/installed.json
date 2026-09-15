@@ -657,11 +657,12 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/governance-sync.yml",
-      "sourceSha256": "8fbd260435ddeb153996c0d73abcadb6459a08106b193862a9ff3821547055ba",
-      "renderedSha256": "8fbd260435ddeb153996c0d73abcadb6459a08106b193862a9ff3821547055ba",
+      "sourceSha256": "ad95d02840290f03265d7f540d7b6a2e7974521b5c6046def08895836acd2d02",
+      "renderedSha256": "f0a5922c1d742d7922ff7d2d8e8e41380c3dba09b859687bff6fe768e5c8a841",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1"
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
       }
     },
     ".github/workflows/harden-gate.yml": {
