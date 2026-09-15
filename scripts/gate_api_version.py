@@ -269,6 +269,15 @@ def _tracked_files(root: str, patterns: list[str]) -> list[str]:
                 f for f in files
                 if not any(seg in PRUNE_DIRS for seg in f.replace("\\", "/").split("/"))
             ]
+        if res.returncode != 0:
+            # `check=False` means a nonzero exit does NOT raise, so without this the
+            # fallback is taken in SILENCE -- the diagnostic below only covers the
+            # exception path. That gap is not hypothetical: a `git archive` extract
+            # (not a repo) exits nonzero here, every gate quietly switched to os.walk,
+            # and the different file set produced a phantom regression during this
+            # PR's own verification. Caught in review (Copilot, 2026-09-15).
+            print(f"{_FALLBACK_NOTE} (git exit {res.returncode}: "
+                  f"{res.stderr.strip()[:200]})", file=sys.stderr)
     except (OSError, subprocess.SubprocessError) as exc:
         # The git fast path is an optimisation; the slow filesystem walk below is the
         # real answer. Narrow, because ONLY a missing/failing git binary belongs here —

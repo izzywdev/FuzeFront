@@ -136,6 +136,14 @@ def _git_ui_files(root: str) -> list[str] | None:
         )
         if res.returncode == 0:
             return [p for p in res.stdout.splitlines() if p.strip()]
+        if res.returncode != 0:
+            # `check=False` means a nonzero exit does NOT raise, so without this the
+            # downgrade happens in SILENCE -- the handler below only covers the
+            # exception path. A `git archive` extract (not a repo) exits nonzero here
+            # and produced a phantom regression during this PR's own verification.
+            # Caught in review (Copilot, 2026-09-15).
+            print(f"{_FALLBACK_NOTE} (git exit {res.returncode}: "
+                  f"{res.stderr.strip()[:200]})", file=sys.stderr)
     except (OSError, subprocess.SubprocessError) as exc:
         # Narrow: only a missing/failing git binary belongs here. Returning None makes
         # the caller fall back; logging keeps a real bug in the try block visible

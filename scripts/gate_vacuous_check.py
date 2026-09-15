@@ -171,6 +171,14 @@ def _workflow_files(root: str) -> list[str]:
         )
         if res.returncode == 0 and res.stdout.strip():
             return sorted(os.path.join(root, p) for p in res.stdout.splitlines() if p.strip())
+        if res.returncode != 0:
+            # `check=False` means a nonzero exit does NOT raise, so without this the
+            # downgrade happens in SILENCE -- the handler below only covers the
+            # exception path. A `git archive` extract (not a repo) exits nonzero here
+            # and produced a phantom regression during this PR's own verification.
+            # Caught in review (Copilot, 2026-09-15).
+            print(f"{_FALLBACK_NOTE} (git exit {res.returncode}: "
+                  f"{res.stderr.strip()[:200]})", file=sys.stderr)
     except (OSError, subprocess.SubprocessError) as exc:
         # The git fast path is an optimisation; the slow filesystem walk below is the
         # real answer. Narrow, because ONLY a missing/failing git binary belongs here —

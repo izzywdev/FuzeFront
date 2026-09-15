@@ -59,7 +59,23 @@ jobs:
             npm run lint || rc=1
             echo "::endgroup::"
           fi
-          if git ls-files '*.py' | grep -q .; then
+          # ENUMERATION FAILURE IS A GATE FAILURE, NOT AN EMPTY REPO.
+          #
+          # This was `if git ls-files '*.py' | grep -q .; then`. If git fails for any
+          # reason — not a checkout, binary missing, index corrupt — the pipeline emits
+          # nothing, `grep -q` returns 1, the branch is SKIPPED, and `rc` stays 0. The
+          # gate then reports green having linted nothing at all: exactly the vacuity
+          # this job was rewritten to remove, re-entering through a different door.
+          # Caught in review on this PR (Copilot, 2026-09-15) after the rest of the
+          # de-vacuuming had landed.
+          #
+          # So: capture the list, check git's own exit status, and fail closed. An
+          # empty-but-successful list is the only case that legitimately skips.
+          py_files=""
+          if ! py_files=$(git ls-files '*.py'); then
+            echo "::error title=gate-lint::could not enumerate Python files (git ls-files failed). Refusing to report a lint result for a file set this job could not read."
+            rc=1
+          elif [ -n "$py_files" ]; then
             echo "::group::ruff"
             # PINNED, and that is the load-bearing part of this line.
             #
@@ -88,11 +104,31 @@ jobs:
             # availability failure gate-actionlint documents for the ARC scale set that
             # carries no npm. The other two `pipx run` uses in this workflow are
             # report-only, so they can afford the assumption; this one cannot.
-            python3 -m pip install -q ruff==0.16.7
-            ruff check . || rc=1
+            #
+            # The install is CHECKED, and the version is ASSERTED. Ignoring the install
+            # result would let a green check mean "some ruff ran" rather than "ruff
+            # 0.16.7 ran" — if the install fails and any other ruff is on PATH, the pin
+            # is silently defeated, which is the precise failure this pin exists to stop.
+            if ! python3 -m pip install -q ruff==0.16.7; then
+              echo "::error title=gate-lint::could not install the pinned ruff==0.16.7. Failing closed rather than linting with whatever version happens to be on PATH."
+              rc=1
+            else
+              got=$(ruff --version 2>/dev/null || echo "none")
+              case "$got" in
+                "ruff 0.16.7") ruff check . || rc=1 ;;
+                *) echo "::error title=gate-lint::expected 'ruff 0.16.7' on PATH after install, got '$got'. Failing closed: a lint result from an unpinned version is not the result this gate promises."
+                   rc=1 ;;
+              esac
+            fi
             echo "::endgroup::"
           fi
-          if git ls-files '*.js' '*.cjs' '*.mjs' | grep -q .; then
+          # Same enumeration-failure rule as the Python branch above: a git failure
+          # must fail the gate, not quietly mean "this repo has no JavaScript".
+          js_files=""
+          if ! js_files=$(git ls-files '*.js' '*.cjs' '*.mjs'); then
+            echo "::error title=gate-lint::could not enumerate JavaScript files (git ls-files failed). Refusing to report a lint result for a file set this job could not read."
+            rc=1
+          elif [ -n "$js_files" ]; then
             echo "::group::node --check"
             # Process substitution, NOT `git ls-files | while read`: a pipeline puts the
             # loop in a subshell, so an `rc=1` set inside it is discarded when the
@@ -107,7 +143,7 @@ jobs:
             # markers, rather than the auditor learning to skip comments.
             while read -r f; do
               node --check "$f" || { echo "::error file=$f::JavaScript syntax error"; rc=1; }
-            done < <(git ls-files '*.js' '*.cjs' '*.mjs')
+            done <<< "$js_files"
             echo "::endgroup::"
           fi
           if [ "$rc" -ne 0 ]; then

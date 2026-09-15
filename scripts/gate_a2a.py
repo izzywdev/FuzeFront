@@ -102,9 +102,13 @@ def _read_yaml(path: str) -> Any:
 #: so the tuple is built from what is actually importable rather than naming
 #: `yaml.YAMLError` unconditionally. NOTE: YAMLError does not subclass ValueError —
 #: narrowing to ValueError alone would silently stop catching YAML syntax errors.
+#: `_HAVE_YAML`, NOT `yaml is not None`: this module's import guard sets the flag but
+#: never binds the NAME, so `yaml is not None` raises NameError at import time on any
+#: machine without PyYAML -- i.e. exactly the path the guard exists to support. Caught
+#: in review (Copilot, 2026-09-15) and reproduced by blocking the import.
 _PARSE_ERRORS: tuple[type[BaseException], ...] = (
     (OSError, ValueError, AttributeError, TypeError, RuntimeError, yaml.YAMLError)
-    if yaml is not None
+    if _HAVE_YAML
     else (OSError, ValueError, AttributeError, TypeError, RuntimeError)
 )
 
