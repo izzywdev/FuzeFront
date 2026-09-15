@@ -384,10 +384,15 @@ function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio
   return <><PageHeading eyebrow={isApi ? 'Contract inventory' : 'Implemented surface'} title={isApi ? 'API coverage matrix' : 'Frontend coverage matrix'} detail={isApi ? 'Every operation measured against schema-derived test expectations.' : 'Routes, pages, components, states, Storybook documentation, and test evidence.'} action={<div className="header-badge">{isApi ? <Braces /> : <Code2 />} {items.length} indexed</div>} /><CoverageRail expectations={expectations} /><Matrix items={items} expectations={expectations} kind={type} repositories={data.repositories} /></>
 }
 
+function FindingDetail({ finding, onClose }: { finding: Portfolio['findings'][number]; onClose: () => void }) {
+  return <div className="modal-backdrop" role="presentation"><aside className="modal finding-detail" role="dialog" aria-modal="true" aria-labelledby="finding-detail-title"><div className="modal-title"><div><p className="eyebrow">Coverage finding</p><h2 id="finding-detail-title">{finding.title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close finding detail"><X /></button></div><p>{finding.detail}</p><dl className="finding-detail-grid"><div><dt>Severity</dt><dd>{finding.severity}</dd></div><div><dt>Rule / policy</dt><dd>{finding.policyVersion ?? finding.type ?? 'catalog policy'}</dd></div><div><dt>Evidence strength</dt><dd>{finding.evidenceStrength ?? 'unknown'}</dd></div><div><dt>Source revision</dt><dd>{finding.sourceRevision ?? 'catalog'}</dd></div><div><dt>Owner</dt><dd>{finding.owner ?? 'Unassigned'}</dd></div><div><dt>Status</dt><dd>{finding.status}</dd></div></dl>{(finding.evidence?.length ?? 0) > 0 && <section><b>Evidence</b><div className="evidence-list">{finding.evidence?.map(item => <blockquote key={item}>“{item}”</blockquote>)}</div></section>}{(finding.affectedTargetIds?.length ?? 0) > 0 && <section><b>Related targets</b><div className="finding-impact">{finding.affectedTargetIds?.map(item => <code key={item}>{item}</code>)}</div></section>}{finding.remediation && <section><b>Remediation</b><p>{finding.remediation}</p></section>}<small>Generated {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'} · schema {finding.schemaVersion ?? 'unknown'}</small></aside></div>
+}
+
 function ApiCatalogPage({ data }: { data: Portfolio }) {
   const [repositoryId, setRepositoryId] = useState('')
   const [tag, setTag] = useState('')
   const [coverage, setCoverage] = useState<CoverageState | ''>('')
+  const [selectedFinding, setSelectedFinding] = useState<Portfolio['findings'][number]>()
   const apiExpectations = data.expectations.filter(item => item.subjectType === 'api-operation')
   const tags = [...new Set(data.operations.flatMap(operation => operation.tags))].sort()
   const operations = data.operations.filter(operation => {
@@ -427,14 +432,15 @@ function ApiCatalogPage({ data }: { data: Portfolio }) {
     <section className="panel catalog-findings">
       <div className="panel-heading"><div><p className="eyebrow">Remediation queue</p><h2>OpenAPI quality and coverage findings</h2></div><span className="header-badge"><AlertTriangle /> {findings.length}</span></div>
       <div className="finding-list">
-        {findings.map(finding => <article className="finding-row finding-action" key={finding.id}>
+        {findings.map(finding => <button className="finding-row finding-action" key={finding.id} onClick={() => setSelectedFinding(finding)}>
           <AlertTriangle size={17} />
           <div><strong>{finding.title}</strong><small>{finding.detail}</small>{finding.remediation && <p><b>Next:</b> {finding.remediation}</p>}</div>
           <div className="finding-owner"><span className={`severity severity-${finding.severity}`}>{finding.severity}</span><small>{finding.owner ?? 'Unassigned'}</small></div>
-        </article>)}
+        </button>)}
         {!findings.length && <div className="empty-state"><ShieldCheck /><strong>No findings in this view</strong><span>Adjust filters or scan another repository.</span></div>}
       </div>
     </section>
+    {selectedFinding && <FindingDetail finding={selectedFinding} onClose={() => setSelectedFinding(undefined)} />}
   </>
 }
 
