@@ -62,7 +62,7 @@ billing-service's no-deps `createApp()`).
 | `PORT` | `3007` | HTTP port |
 | `PAYMENT_PROVIDER` | `stripe` | active vendor adapter (the swap knob) |
 | `STRIPE_SECRET_KEY` | — (optional in scaffold) | vendor secret; absent → degraded mode |
-| `PAYMENT_INTERNAL_TOKEN` | — | Bearer token guarding the neutral API (fail-closed when set) |
+| `SECURITY_SERVICE_URL` | — | Origin of FuzeFront's Security API (e.g. `http://fuzefront-security:3002`). The internal API verifies incoming **managed service tokens** against its `/api/v1/security/tokens/introspect` contract via `@fuzefront/service-auth` (fail-closed). Required whenever the neutral API is mounted (a vendor key is set); its absence fails the app closed at startup. Replaces the retired `PAYMENT_INTERNAL_TOKEN`. |
 
 ## Neutral API surface (`openapi.yaml`)
 
@@ -81,10 +81,16 @@ No vendor names appear in any path or schema. Neutral schema names: `Customer`,
 ## Develop / test
 
 ```bash
+# @fuzefront/service-auth is a file:-linked package; build its dist first so the
+# production typecheck (tsc) can resolve it. jest needs no dist — it maps the
+# package to TS source (see jest.config.js), mirroring billing-service.
+npm --prefix ../../packages/security install --ignore-scripts && npm --prefix ../../packages/security run build
+npm --prefix ../../packages/service-auth install --ignore-scripts && npm --prefix ../../packages/service-auth run build
+
 cd services/payment-service
 npm install
-npm run typecheck   # tsc --noEmit
-npm test            # jest — asserts /health
+npm run typecheck   # tsc --noEmit  (needs service-auth dist, per above)
+npm test            # jest — /health + neutral-API auth (managed service token)
 npm run dev         # ts-node, live reload
 ```
 
@@ -100,9 +106,11 @@ Wired the same way as billing-service:
   second Argo app on the same chart path would double-claim the Deployment; a
   dedicated app is only correct once the service is extracted into its own chart).
 - **Secrets:** per-service `payment-secrets` SealedSecret scaffold
-  (`deploy/contabo/sealed/payment-secrets.yaml`) — `STRIPE_SECRET_KEY`,
-  `PAYMENT_INTERNAL_TOKEN`. Seal real values with
-  `deploy/scripts/seal-secret.sh <KEY> --scope fuzefront/payment-secrets`.
+  (`deploy/contabo/sealed/payment-secrets.yaml`) — now only `STRIPE_SECRET_KEY`
+  (the internal-auth secret is gone: callers present a FuzeFront-issued managed
+  service token, verified against security-service via `SECURITY_SERVICE_URL`).
+  Seal the real value with
+  `deploy/scripts/seal-secret.sh STRIPE_SECRET_KEY --scope fuzefront/payment-secrets`.
 - **CI image build** must be added to `.github/workflows/release.yml` — see
   `deploy/PENDING-WORKFLOW-CHANGES-payment-service.md` (the bot cannot edit
   workflows).

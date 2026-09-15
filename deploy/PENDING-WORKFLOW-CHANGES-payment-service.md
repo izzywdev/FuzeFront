@@ -1,12 +1,21 @@
 # Pending workflow changes — payment-service in the release image matrix
 
-The bot that opened this PR **cannot edit `.github/workflows/`** (no `workflows`
-permission — the push is rejected), and workflow files are outside this slice's
-allowed paths. The deploy/CI slice for the vendor-neutral **payment-service**
-gateway needs ONE workflow change a human (or an admin/App identity) must apply:
-add the **payment-service** image to the `release.yml` build matrix + its path
-trigger, so its container is built + pushed to GHCR and the prod tag is bumped by
-GitOps.
+> **STATUS (superseded):** the `release.yml` path trigger AND the payment-service
+> build step described below are **already wired**. The build now uses a
+> **repo-root context** (`context: .`), NOT the self-contained
+> `services/payment-service` context this doc originally assumed — the
+> managed-service-token migration added a `file:../../packages/service-auth`
+> dependency the service-scoped context could not see, so the Dockerfile vendors
+> the built `@fuzefront/service-auth` from the repo like billing-service. The
+> diffs below are kept only as the historical record of the change. The only
+> live item left is **go-live** at the bottom.
+
+The bot that opened the ORIGINAL PR could not edit `.github/workflows/`; that
+constraint is lifted (`can_approve_pull_request_reviews` / workflow edits are now
+permitted — see the branch-lifecycle section of `CLAUDE.md`). The deploy/CI slice
+for the vendor-neutral **payment-service** gateway added the **payment-service**
+image to the `release.yml` build matrix + its path trigger, so its container is
+built + pushed to GHCR and the prod tag is bumped by GitOps.
 
 Everything else in the slice (Helm template + values + Argo umbrella wiring +
 SealedSecret scaffold + observability alerts + docker-compose) is already in this
@@ -92,10 +101,13 @@ existing sed bumps it to the built SHA automatically — no extra bump step. Bec
 
 1. Apply Changes 1 + 2 to `.github/workflows/release.yml` and merge in the deploy
    window (`master` is deploy-on-push; commits to `master` must be signed).
-2. Seal the real `STRIPE_SECRET_KEY` + `PAYMENT_INTERNAL_TOKEN` into
-   `payment-secrets` (`deploy/scripts/seal-secret.sh <KEY> --scope
+2. Seal the real `STRIPE_SECRET_KEY` into `payment-secrets`
+   (`deploy/scripts/seal-secret.sh STRIPE_SECRET_KEY --scope
    fuzefront/payment-secrets`; scaffold placeholder in
-   `deploy/contabo/sealed/payment-secrets.yaml`).
+   `deploy/contabo/sealed/payment-secrets.yaml`). The internal-API shared bearer
+   (`PAYMENT_INTERNAL_TOKEN`) is retired — callers now present a FuzeFront-issued
+   managed service token, verified against security-service via
+   `SECURITY_SERVICE_URL` (a plain env, already set in the Deployment).
 3. Flip `paymentService.enabled: true` in `values-prod.yaml` in a deploy window.
    Argo rolls out the gateway; the neutral Payment Provider API returns 501 for
    the still-unwired calls until the money path is absorbed from billing-service.
