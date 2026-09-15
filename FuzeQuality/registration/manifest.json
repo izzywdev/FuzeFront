@@ -9,13 +9,15 @@
   "modes": ["portal", "standalone"],
   "builtin": false,
   "integration": {
-    "type": "iframe",
-    "url": "https://quality.prod.fuzefront.com"
+    "type": "module-federation",
+    "remoteEntry": "/apps/fuzequality/assets/remoteEntry.js",
+    "scope": "fuzequality",
+    "module": "./App"
   },
   "nav": { "section": "build", "order": 30 },
   "chrome": { "menu": "host", "topbar": "host" },
   "routing": {
-    "path": "/app/quality",
+    "path": "/app/fuzequality",
     "host": "quality.prod.fuzefront.com"
   },
   "visibility": "organization",
