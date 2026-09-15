@@ -23,9 +23,10 @@ for _p in (TEMPLATES_ROOT, SYNC):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from providers import get_provider  # noqa: E402
-import common                       # noqa: E402  (state_dir)
-import role_loader as rl            # noqa: E402
+import common
+import role_loader as rl
+
+from providers import get_provider
 
 ENV_DIR = os.path.join(TEMPLATES_ROOT, "environments")
 VAULT_DIR = os.path.join(TEMPLATES_ROOT, "vaults")

@@ -60,6 +60,8 @@ try:
 except ImportError:
     yaml = None
 
+_FALLBACK_NOTE = "git ls-files unavailable; falling back to a directory listing"
+
 PRUNE_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
 POLICY_REL = os.path.join("governance", "vacuous-check-policy.json")
 WORKFLOW_DIR = os.path.join(".github", "workflows")
@@ -148,7 +150,7 @@ def _is_inline_substitution(line: str) -> bool:
 
 
 def _last_effective_line(run_text: str) -> str | None:
-    lines = [l for l in run_text.splitlines() if l.strip() and not l.strip().startswith("#")]
+    lines = [ln for ln in run_text.splitlines() if ln.strip() and not ln.strip().startswith("#")]
     return lines[-1] if lines else None
 
 
@@ -165,12 +167,24 @@ def _workflow_files(root: str) -> list[str]:
         res = subprocess.run(
             ["git", "-C", root, "ls-files", "--", os.path.join(WORKFLOW_DIR, "*.yml"),
              os.path.join(WORKFLOW_DIR, "*.yaml")],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0 and res.stdout.strip():
             return sorted(os.path.join(root, p) for p in res.stdout.splitlines() if p.strip())
-    except Exception:
-        pass
+        if res.returncode != 0:
+            # `check=False` means a nonzero exit does NOT raise, so without this the
+            # downgrade happens in SILENCE -- the handler below only covers the
+            # exception path. A `git archive` extract (not a repo) exits nonzero here
+            # and produced a phantom regression during this PR's own verification.
+            # Caught in review (Copilot, 2026-09-15).
+            print(f"{_FALLBACK_NOTE} (git exit {res.returncode}: "
+                  f"{res.stderr.strip()[:200]})", file=sys.stderr)
+    except (OSError, subprocess.SubprocessError) as exc:
+        # The git fast path is an optimisation; the slow filesystem walk below is the
+        # real answer. Narrow, because ONLY a missing/failing git binary belongs here —
+        # a bug inside the try block must surface, not silently downgrade the gate to
+        # its fallback forever. Logged for the same reason (S110).
+        print(f"{_FALLBACK_NOTE} ({type(exc).__name__}: {exc})", file=sys.stderr)
     if not os.path.isdir(wf_dir):
         return []
     return sorted(
@@ -200,7 +214,7 @@ def _analyze_yaml(path: str, text: str) -> list[dict]:
     findings: list[dict] = []
     try:
         doc = yaml.safe_load(text)
-    except Exception as err:  # malformed YAML — report, don't crash the whole gate
+    except yaml.YAMLError as err:  # malformed YAML — report, don't crash the whole gate
         findings.append({
             "file": path, "kind": "parse-error", "detail": str(err),
             "match": "", "fatal": False,
@@ -235,17 +249,18 @@ def _analyze_yaml(path: str, text: str) -> list[dict]:
 
             if isinstance(run, str):
                 last = _last_effective_line(run)
-                if last and TRAILING_TRUE_RE.search(last) and not _is_inline_substitution(last):
-                    if not _is_diagnostic_or_teardown(last):
-                        tool = _tool_token(last)
-                        if tool:
-                            if _has_later_bare_invocation(all_runs, run, tool):
-                                continue
-                            findings.append({
-                                "file": path, "kind": "trailing-or-true", "job": job_id,
-                                "step": name, "tool": tool, "match": last.strip(),
-                                "fatal": True,
-                            })
+                if (last and TRAILING_TRUE_RE.search(last)
+                        and not _is_inline_substitution(last)
+                        and not _is_diagnostic_or_teardown(last)):
+                    tool = _tool_token(last)
+                    if tool:
+                        if _has_later_bare_invocation(all_runs, run, tool):
+                            continue
+                        findings.append({
+                            "file": path, "kind": "trailing-or-true", "job": job_id,
+                            "step": name, "tool": tool, "match": last.strip(),
+                            "fatal": True,
+                        })
 
             # continue-on-error on a step/job whose run text is itself a gating check.
             if step_coe and isinstance(run, str):
@@ -346,14 +361,13 @@ def _extract_run_blocks_fallback(text: str) -> list[dict]:
         step_coe = bool(COE_RE.search(header))
         # continue-on-error can also trail the run block within the same step.
         tail_scan_end = min(end + 6, len(lines))
-        trailer = "\n".join(lines[end:tail_scan_end])
         if not step_coe:
             # only counts if still inside the same step (no new "- " at <= indent before it)
-            for l in lines[end:tail_scan_end]:
-                sm = STEP_MARKER_RE.match(l)
+            for ln in lines[end:tail_scan_end]:
+                sm = STEP_MARKER_RE.match(ln)
                 if sm and len(sm.group(1)) <= indent - 2:
                     break
-                if COE_RE.search(l):
+                if COE_RE.search(ln):
                     step_coe = True
                     break
 
@@ -375,31 +389,32 @@ def _analyze_fallback(path: str, text: str) -> list[dict]:
     for b in blocks:
         run = b["run"]
         last = _last_effective_line(run)
-        if last and TRAILING_TRUE_RE.search(last) and not _is_inline_substitution(last):
-            if not _is_diagnostic_or_teardown(last):
-                tool = _tool_token(last)
-                if tool:
-                    bare_re = _tool_phrase_re(tool)
-                    later_bare = False
-                    for other in all_run_texts:
-                        if other is run:
+        if (last and TRAILING_TRUE_RE.search(last)
+                and not _is_inline_substitution(last)
+                and not _is_diagnostic_or_teardown(last)):
+            tool = _tool_token(last)
+            if tool:
+                bare_re = _tool_phrase_re(tool)
+                later_bare = False
+                for other in all_run_texts:
+                    if other is run:
+                        continue
+                    for line in other.splitlines():
+                        if INSTALL_LINE_RE.search(line):
                             continue
-                        for line in other.splitlines():
-                            if INSTALL_LINE_RE.search(line):
-                                continue
-                            if bare_re.search(line) and not (
-                                TRAILING_TRUE_RE.search(line) and not _is_inline_substitution(line)
-                            ):
-                                later_bare = True
-                                break
-                        if later_bare:
+                        if bare_re.search(line) and not (
+                            TRAILING_TRUE_RE.search(line) and not _is_inline_substitution(line)
+                        ):
+                            later_bare = True
                             break
-                    if not later_bare:
-                        findings.append({
-                            "file": path, "kind": "trailing-or-true", "job": "?",
-                            "step": b["name"], "tool": tool, "match": last.strip(),
-                            "fatal": True,
-                        })
+                    if later_bare:
+                        break
+                if not later_bare:
+                    findings.append({
+                        "file": path, "kind": "trailing-or-true", "job": "?",
+                        "step": b["name"], "tool": tool, "match": last.strip(),
+                        "fatal": True,
+                    })
 
         if b["continue_on_error"]:
             tool = None
@@ -463,7 +478,6 @@ def _allowlisted(finding: dict, root: str, policy: dict) -> dict | None:
 
 def main(argv: list[str]) -> int:
     args = [a for a in argv[1:] if not a.startswith("--")]
-    flags = dict()
     rest = argv[1:]
     i = 0
     policy_override = None

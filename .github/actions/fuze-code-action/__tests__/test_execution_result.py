@@ -157,7 +157,7 @@ class TestScriptContract(unittest.TestCase):
             env = dict(os.environ, GITHUB_OUTPUT=out_path)
             proc = subprocess.run(
                 [sys.executable, SCRIPT, path],
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, env=env, check=False,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             with open(out_path, encoding="utf-8") as fh:
@@ -173,7 +173,7 @@ class TestScriptContract(unittest.TestCase):
     def test_exits_zero_even_on_missing_file(self):
         proc = subprocess.run(
             [sys.executable, SCRIPT, "/no/such/file.json"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
