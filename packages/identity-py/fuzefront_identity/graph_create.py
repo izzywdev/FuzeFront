@@ -18,7 +18,8 @@ without a deferred second write.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, Optional, Set, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 from .ids import mint_id
 from .registry import is_entity_type
@@ -46,7 +47,7 @@ class GraphCreateError(ValueError):
         self.code = code
         self.path = path
 
-    def as_response(self) -> Dict[str, Any]:
+    def as_response(self) -> dict[str, Any]:
         """The canonical 422 body, identical to the Node middleware's."""
         return {
             "error": "unprocessable_entity",
@@ -61,7 +62,7 @@ def resolve_graph(
     aggregate: Iterable[str],
     max_nodes: int = DEFAULT_MAX_NODES,
     max_depth: int = DEFAULT_MAX_DEPTH,
-) -> Tuple[Any, Dict[str, str]]:
+) -> tuple[Any, dict[str, str]]:
     """Validate a create graph, mint an id per ``lid`` node, resolve references.
 
     ``aggregate`` is the set of entity types this service OWNS. A ``lid`` node
@@ -71,8 +72,8 @@ def resolve_graph(
 
     Returns ``(rewritten_body, id_map)``. Mutates nothing.
     """
-    owned: Set[str] = set(aggregate)
-    id_map: Dict[str, str] = {}
+    owned: set[str] = set(aggregate)
+    id_map: dict[str, str] = {}
     node_count = 0
 
     def collect(value: Any, path: str, depth: int) -> None:
@@ -142,7 +143,7 @@ def resolve_graph(
         if not isinstance(value, dict):
             return value
 
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         for key, child in value.items():
             if key == "lid":
                 continue  # document-scoped; never persisted
@@ -186,7 +187,7 @@ class GraphCreateMiddleware:
         self.max_nodes = max_nodes
         self.max_depth = max_depth
 
-    async def __call__(self, scope: Dict[str, Any], receive: Any, send: Any) -> None:
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         import json
 
         if scope.get("type") != "http" or scope.get("method", "").upper() not in MUTATING_METHODS:
@@ -241,7 +242,7 @@ def _replay(body: bytes) -> Any:
     """A ``receive`` callable that replays ``body`` to the downstream app."""
     sent = False
 
-    async def receive() -> Dict[str, Any]:
+    async def receive() -> dict[str, Any]:
         nonlocal sent
         if sent:
             return {"type": "http.disconnect"}
@@ -257,7 +258,7 @@ def _with_content_length(headers: Any, length: int) -> list:
     return out
 
 
-def _decorating_send(send: Any, id_map: Dict[str, str]) -> Any:
+def _decorating_send(send: Any, id_map: dict[str, str]) -> Any:
     """Wrap ``send`` so a JSON object response gains ``idMap``.
 
     The rewritten payload changes length, so the buffered body is emitted with a
@@ -265,9 +266,9 @@ def _decorating_send(send: Any, id_map: Dict[str, str]) -> Any:
     """
     import json
 
-    state: Dict[str, Any] = {"start": None, "chunks": [], "json": False}
+    state: dict[str, Any] = {"start": None, "chunks": [], "json": False}
 
-    async def send_wrapper(message: Dict[str, Any]) -> None:
+    async def send_wrapper(message: dict[str, Any]) -> None:
         if message["type"] == "http.response.start":
             headers = message.get("headers", [])
             state["json"] = any(
@@ -305,7 +306,7 @@ def _decorating_send(send: Any, id_map: Dict[str, str]) -> Any:
     return send_wrapper
 
 
-async def _send_json(send: Any, status: int, payload: Dict[str, Any]) -> None:
+async def _send_json(send: Any, status: int, payload: dict[str, Any]) -> None:
     import json
 
     body = json.dumps(payload).encode()

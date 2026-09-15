@@ -28,7 +28,8 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Callable, Dict, Generator, Optional, Union
+from collections.abc import Callable, Generator
+from typing import Any
 
 from ._paginator import paginate as _paginate
 from .errors import ConfigApiError
@@ -54,7 +55,7 @@ from .types import (
     scope_to_wire,
 )
 
-TokenProvider = Union[str, Callable[[], Optional[str]]]
+TokenProvider = str | Callable[[], str | None]
 
 _ALLOWED_SCHEMES = frozenset(("http", "https"))
 
@@ -83,7 +84,7 @@ class NotModified:
 
 NOT_MODIFIED = NotModified()
 
-ConditionalEffectiveConfig = Union[EffectiveConfig, NotModified]
+ConditionalEffectiveConfig = EffectiveConfig | NotModified
 """A conditional read either returns the config or reports it unchanged."""
 
 
@@ -121,9 +122,9 @@ class ConfigClient:
     def __init__(
         self,
         base_url: str,
-        token: Optional[TokenProvider] = None,
+        token: TokenProvider | None = None,
         *,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("ConfigClient: base_url is required")
@@ -146,7 +147,7 @@ class ConfigClient:
     # Token resolution
     # ------------------------------------------------------------------
 
-    def _resolve_token(self) -> Optional[str]:
+    def _resolve_token(self) -> str | None:
         if callable(self._token):
             return self._token()
         return self._token  # type: ignore[return-value]
@@ -155,7 +156,7 @@ class ConfigClient:
     # URL construction
     # ------------------------------------------------------------------
 
-    def _build_url(self, path: str, query: Optional[Dict[str, Any]] = None) -> str:
+    def _build_url(self, path: str, query: dict[str, Any] | None = None) -> str:
         # Plain concatenation -- NEVER urllib.parse.urljoin. urljoin silently
         # drops any path segment already present in base_url (e.g. a
         # same-origin '/api/config' prefix, or an ingress path rewrite like
@@ -181,10 +182,10 @@ class ConfigClient:
         method: str,
         path: str,
         *,
-        query: Optional[Dict[str, Any]] = None,
-        body: Optional[dict] = None,
-        extra_headers: Optional[Dict[str, str]] = None,
-    ) -> "tuple[int, Optional[dict]]":
+        query: dict[str, Any] | None = None,
+        body: dict | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict | None]:
         """
         Make an HTTP request. Returns ``(status, parsed_body_or_None)``.
         Never raises on a non-2xx status -- callers decide what a given
@@ -205,7 +206,7 @@ class ConfigClient:
             )
 
         url = self._build_url(path, query)
-        headers: Dict[str, str] = {
+        headers: dict[str, str] = {
             "Accept": "application/json",
             **self._headers,
             **(extra_headers or {}),
@@ -214,7 +215,7 @@ class ConfigClient:
         if token:
             headers["Authorization"] = f"Bearer {token}"
 
-        data: Optional[bytes] = None
+        data: bytes | None = None
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
@@ -222,7 +223,8 @@ class ConfigClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
-            with urllib.request.urlopen(req) as resp:  # noqa: S310 -- scheme is validated above
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the exact attack this rule names (a `file://` base) is rejected in __init__: any non-empty scheme outside _ALLOWED_SCHEMES raises ValueError, and tests/test_client.py::TestConstructorAndUrl::test_rejects_non_http_scheme pins it with `file:///etc/passwd`. `path` cannot reintroduce a scheme either, because _build_url is plain concatenation and NEVER urllib.parse.urljoin -- urljoin is what would let an absolute `file://` path override the base, and that file's own comment says so.
+            with urllib.request.urlopen(req) as resp:
                 return resp.status, _parse_body(resp.read())
         except urllib.error.HTTPError as exc:
             # urllib raises HTTPError for EVERY non-2xx status, including 304
@@ -235,8 +237,8 @@ class ConfigClient:
         method: str,
         path: str,
         *,
-        query: Optional[Dict[str, Any]] = None,
-        body: Optional[dict] = None,
+        query: dict[str, Any] | None = None,
+        body: dict | None = None,
     ) -> dict:
         status, parsed = self._do_request(method, path, query=query, body=body)
         if not (200 <= status < 300):
@@ -252,8 +254,8 @@ class ConfigClient:
     # ------------------------------------------------------------------
 
     def list_namespaces(
-        self, *, cursor: Optional[str] = None, limit: Optional[int] = None
-    ) -> "Paged[Namespace]":
+        self, *, cursor: str | None = None, limit: int | None = None
+    ) -> Paged[Namespace]:
         """``GET /v1/namespaces`` -- the namespaces the caller may see, newest first."""
         raw = self._request(
             "GET", "/v1/namespaces", query={"cursor": cursor, "limit": limit}
@@ -268,8 +270,8 @@ class ConfigClient:
         namespace: str,
         display_name: str,
         *,
-        description: Optional[str] = None,
-        owner_app_id: Optional[str] = None,
+        description: str | None = None,
+        owner_app_id: str | None = None,
     ) -> Namespace:
         """
         ``POST /v1/namespaces`` -- register a namespace.
@@ -294,12 +296,12 @@ class ConfigClient:
         self,
         namespace: str,
         *,
-        cursor: Optional[str] = None,
-        limit: Optional[int] = None,
-        search: Optional[str] = None,
-        category: Optional[str] = None,
-        include_hidden: Optional[bool] = None,
-    ) -> "Paged[KeyDefinition]":
+        cursor: str | None = None,
+        limit: int | None = None,
+        search: str | None = None,
+        category: str | None = None,
+        include_hidden: bool | None = None,
+    ) -> Paged[KeyDefinition]:
         """
         ``GET /v1/namespaces/{namespace}/keys`` -- the catalog view.
 
@@ -307,7 +309,7 @@ class ConfigClient:
         this client does no filtering of its own, because a hidden key that
         reached the caller would already have failed to be hidden.
         """
-        query: Dict[str, Any] = {
+        query: dict[str, Any] = {
             "cursor": cursor,
             "limit": limit,
             "search": search,
@@ -366,7 +368,7 @@ class ConfigClient:
         namespace: str,
         scope: Scope,
         *,
-        if_none_match: Optional[str] = None,
+        if_none_match: str | None = None,
     ) -> ConditionalEffectiveConfig:
         """
         ``GET /v1/config`` -- read a scope's fully-resolved configuration.
@@ -378,7 +380,7 @@ class ConfigClient:
         an ancestor scope invalidates it too.
         """
         scope_type = enum_value(scope.scope_type)
-        query: Dict[str, Any] = {
+        query: dict[str, Any] = {
             "namespace": namespace,
             "scopeType": scope_type,
             "scopeId": scope.scope_id,
@@ -428,10 +430,10 @@ class ConfigClient:
 
     def paginate(
         self,
-        method: Callable[..., "Paged[Any]"],
+        method: Callable[..., Paged[Any]],
         *,
-        cursor: Optional[str] = None,
-        limit: Optional[int] = None,
+        cursor: str | None = None,
+        limit: int | None = None,
         **kwargs: object,
     ) -> Generator[Any, None, None]:
         """
@@ -446,7 +448,7 @@ class ConfigClient:
 # ---------------------------------------------------------------------------
 
 
-def _parse_body(raw: bytes) -> Optional[dict]:
+def _parse_body(raw: bytes) -> dict | None:
     if not raw:
         return None
     try:
@@ -458,7 +460,7 @@ def _parse_body(raw: bytes) -> Optional[dict]:
         return None
 
 
-def _raise_api_error(status: int, parsed: Optional[dict]) -> None:
+def _raise_api_error(status: int, parsed: dict | None) -> None:
     if parsed and isinstance(parsed.get("code"), str) and isinstance(parsed.get("message"), str):
         raise ConfigApiError(status, parsed["code"], parsed["message"], body=parsed)
     raise ConfigApiError(

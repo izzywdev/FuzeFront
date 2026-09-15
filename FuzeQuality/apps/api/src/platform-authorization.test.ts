@@ -11,7 +11,7 @@ function responseDouble() {
   return response as unknown as Response
 }
 
-describe('FQ-18 platform authorization', () => {
+describe('FQ-69 platform authorization', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     delete process.env.FUZEFRONT_SECURITY_URL
@@ -27,12 +27,12 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('fuzequality.Repository', 'onboard')(request, response, next)
+    await requirePlatformPermission('quality_Repository', 'onboard')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.tenantId).toBe('tenant-1')
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
-      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'fuzequality.Repository' }, action: 'onboard',
+      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'quality_Repository' }, action: 'onboard',
     })
   })
 
@@ -43,11 +43,92 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('fuzequality.Repository', 'onboard')(request, response, next)
+    await requirePlatformPermission('quality_Repository', 'onboard')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(503)
     expect(response.json).toHaveBeenCalledWith({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+  })
+
+  it('rejects a request that does not carry a bearer session', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const request = { header: vi.fn().mockReturnValue(undefined) } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(response.status).toHaveBeenCalledWith(401)
+    expect(response.json).toHaveBeenCalledWith({ error: 'Authentication required', code: 'IDENTITY_MISSING' })
+  })
+
+  it('rejects an expired or revoked platform session before requesting an authorization decision', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = { header: vi.fn().mockReturnValue('Bearer revoked-session') } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(response.status).toHaveBeenCalledWith(401)
+    expect(response.json).toHaveBeenCalledWith({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
+  })
+
+  it('uses the tenant resolved by FuzeFront and never a caller-supplied tenant header', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: 'tenant-from-session' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization' ? 'Bearer caller-token' : undefined),
+      get: vi.fn((name: string) => name === 'x-tenant-id' ? 'other-tenant' : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ tenant: 'tenant-from-session' })
+    expect(JSON.stringify(fetchMock.mock.calls[1][1].body)).not.toContain('other-tenant')
+  })
+
+  it('denies a session with no resolved tenant before calling the policy decision point', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ identity: { userId: 'user-without-tenant' } }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(response.status).toHaveBeenCalledWith(403)
+    expect(response.json).toHaveBeenCalledWith({ error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED' })
+  })
+
+  it('fails closed when FuzeFront cannot provide a policy decision', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: 'tenant-1' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 })))
+    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(response.status).toHaveBeenCalledWith(403)
+    expect(response.json).toHaveBeenCalledWith({ error: 'Authorization decision unavailable; denying', code: 'DECISION_UNAVAILABLE' })
   })
 
   it('allows an authorized FuzeFront platform administrator', async () => {
@@ -59,7 +140,7 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('quality_PlatformAdministration', 'read')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.roles).toContain('admin')
@@ -74,7 +155,7 @@ describe('FQ-18 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('quality_PlatformAdministration', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(403)

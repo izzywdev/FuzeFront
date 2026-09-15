@@ -28,15 +28,15 @@ from .exceptions import (
 from .verifier import MachineIdentity, MachineTokenVerifier
 
 __all__ = [
-    "CachedToken",
-    "ServiceAuthClient",
     "AuthorizationError",
     "AuthorizationHook",
+    "CachedToken",
+    "MachineIdentity",
+    "MachineTokenVerifier",
+    "ServiceAuthClient",
     "ServiceAuthError",
     "TokenRequestError",
     "TokenVerificationError",
-    "MachineIdentity",
-    "MachineTokenVerifier",
 ]
 
 __version__ = "1.0.0"
