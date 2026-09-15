@@ -49,7 +49,7 @@ import { api, configurePlatformSecurity, type OrganizationMember, type Organizat
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 
-type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review' | 'organization' | 'administration'
+type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review' | 'operations' | 'organization' | 'administration'
 
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
@@ -58,6 +58,7 @@ const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'frontend', label: 'Frontend inventory', icon: Layers3 },
   { id: 'requirements', label: 'Requirements & flows', icon: Network },
   { id: 'review', label: 'AI review queue', icon: Sparkles },
+  { id: 'operations', label: 'Operations', icon: Activity },
   { id: 'organization', label: 'Organization', icon: Users },
   { id: 'administration', label: 'Organizations', icon: Building2 },
 ]
@@ -470,6 +471,13 @@ function Requirements({ data }: { data: Portfolio }) {
   })}</div></>
 }
 
+function Operations({ data }: { data: Portfolio }) {
+  const failed = data.repositories.filter(item => item.lastScanStatus === 'failed')
+  const active = data.repositories.filter(item => item.lastScanStatus === 'queued' || item.lastScanStatus === 'running')
+  const parserErrors = data.diagnostics.filter(item => item.severity === 'error')
+  return <><PageHeading eyebrow="Runtime control" title="Operations" detail="Inspect scan freshness, parser failures, and asynchronous workflow recovery signals." action={<div className="header-badge"><Activity /> live catalog</div>} /><section className="stats-grid compact-stats"><Stat label="Active scans" value={active.length} detail="queued or running" /><Stat label="Failed scans" value={failed.length} detail="safe retry from repository inventory" tone={failed.length ? 'danger' : 'neutral'} /><Stat label="Parser errors" value={parserErrors.length} detail="from the latest revision" tone={parserErrors.length ? 'danger' : 'neutral'} /><Stat label="Jira sources" value={data.requirements.length} detail="requirements currently indexed" /></section><section className="panel"><div className="panel-heading"><div><p className="eyebrow">Workflow health</p><h2>Source and parser diagnostics</h2></div></div>{data.repositories.map(repository => { const diagnostics = data.diagnostics.filter(item => item.repositoryId === repository.id); return <article className="finding-row" key={repository.id}><GitBranch size={17} /><div><strong>{repository.name} · {repository.lastScanStatus}</strong><small>{repository.lastScanRevision?.slice(0, 12) ?? 'No completed revision'} · {repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'not scanned'}</small>{diagnostics.length ? <p>{diagnostics.length} parser diagnostics: {diagnostics.map(item => item.code).join(', ')}</p> : <p>No parser diagnostics in the latest scan.</p>}</div></article>})}</section></>
+}
+
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
@@ -700,5 +708,5 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   useEffect(() => { void reload() }, [])
   const visibleNavigation = useMemo(() => navigation.filter(item => item.id !== 'administration' || organizations), [organizations])
   const active = useMemo(() => visibleNavigation.find(item => item.id === view), [view, visibleNavigation])
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'operations' && <Operations data={data} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
 }
