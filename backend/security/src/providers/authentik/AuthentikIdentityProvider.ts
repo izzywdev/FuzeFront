@@ -22,6 +22,7 @@ import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db as defaultDb } from '../../config/database'
+import { logger } from '../../lib/logger'
 import { getOidcService, type OIDCServiceLike } from '../../services/oidc'
 import { currentTenant } from './tenants'
 import { assertAmbientTenant, sessionTenantId } from '../../middleware/tenant-context'
@@ -344,6 +345,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     // from one directory is indistinguishable from one from another (same
     // signing secret, same shape), leaving only the request host — which the
     // token holder chooses — between the two account directories.
+    //
+    // This IS FuzeFront's identity service — the issuer of platform tokens (the
+    // same mint as routes/auth.ts /login and the OIDC callback), not a product
+    // self-minting its own user token. See governance/architecture-guidelines.md
+    // §1 (auth via FuzeFront).
+    // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
     const token = jwt.sign({ userId: user.id, sessionId, tid: sessionTenantId() }, jwtSecret(), {
       expiresIn: '24h',
     })
@@ -361,7 +368,12 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     })
     // Self-heal provisioning in the background — never blocks/fails the response.
     runInternalProvision(user.id).catch(err =>
-      console.error(`Login self-heal provisioning failed for ${user.id}:`, err)
+      // Constant message + bound fields: the user id never becomes part of the
+      // format string (log-injection / unsafe-formatstring).
+      logger.error(
+        { userId: user.id, err },
+        'authentik: login self-heal provisioning failed'
+      )
     )
     return { token, sessionId, user }
   }
@@ -1012,9 +1024,9 @@ export class AuthentikIdentityProvider implements IdentityProvider {
       await this.db('password_resets')
         .where({ token_hash: sha256(resetToken) })
         .update({ consumed: true })
-      console.error(
-        `[security] password reset dispatch failed for ${maskContact(user.email)}:`,
-        err
+      logger.error(
+        { contact: maskContact(user.email), err },
+        'authentik: password reset dispatch failed'
       )
     }
   }

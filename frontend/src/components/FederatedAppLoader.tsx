@@ -183,7 +183,9 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
           throw new Error(`Unsupported integration type: ${integration.type}`)
         }
       } catch (err) {
-        console.error(`Failed to load app "${app?.manifest.name}":`, err)
+        // Constant format string — the app name comes from the registry
+        // manifest and must not be interpolated into the message itself.
+        console.error('Failed to load app "%s":', app?.manifest.name, err)
         if (mounted) {
           setError(err instanceof Error ? err.message : 'Unknown error occurred')
         }

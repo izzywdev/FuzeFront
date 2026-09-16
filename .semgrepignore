@@ -43,3 +43,21 @@ deploy/contabo/sealed/
 # the whole file is excluded here instead — it is three lines of static reverse-
 # proxy config, not application logic, and carries no other scan-worthy surface.
 devportal-frontend/nginx.conf
+
+# Compiled build output (`dist/`). These are GENERATED artifacts, not source.
+# Every finding Semgrep raises in them is a duplicate of the same finding in the
+# corresponding source file — e.g. backend/dist/routes/auth.js mirrors
+# backend/src/routes/auth.ts, and backend/security/dist/utils/permit/*.js mirror
+# backend/security/src/utils/permit/*.ts. Fixing a dist file is meaningless: the
+# next `npm run build` overwrites it. The fix belongs in source, which is scanned.
+#
+# This aligns the Semgrep scan with CodeQL, which ALREADY excludes these via
+# .github/codeql/codeql-config.yml `paths-ignore: **/dist/**`. Semgrep was the
+# only engine still scanning them, which is why 131 of the 568 open alerts —
+# 130 unsafe-formatstring + 1 insecure-object-assign — were duplicate findings
+# against build output.
+#
+# NOTE some dist/ dirs are deliberately TRACKED (see .gitignore: shared/dist,
+# packages/identity/dist). Tracked or not, they are still generated output and
+# the source they are generated from is scanned.
+dist/

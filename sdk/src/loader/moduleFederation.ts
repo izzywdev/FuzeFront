@@ -56,7 +56,7 @@ async function loadRemoteEntry(remoteUrl: string): Promise<void> {
     }
 
     script.onerror = error => {
-      console.error(`❌ Failed to load remote entry: ${remoteUrl}`, error)
+      console.error('❌ Failed to load remote entry: %s', remoteUrl, error)
       document.head.removeChild(script)
       reject(new Error(`Failed to load remote entry: ${remoteUrl}`))
     }
@@ -146,7 +146,10 @@ export async function loadApp(
     } catch (error) {
       lastError = error as Error
       console.error(
-        `❌ Failed to load federated module '${config.scope}/${config.module}' (attempt ${attempt}):`,
+        "❌ Failed to load federated module '%s/%s' (attempt %d):",
+        config.scope,
+        config.module,
+        attempt,
         error
       )
 

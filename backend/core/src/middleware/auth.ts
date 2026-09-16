@@ -3,6 +3,17 @@ import jwt from 'jsonwebtoken'
 import { db } from '../config/database'
 import { User } from '../types/shared'
 
+// Strips CR/LF before a value reaches a log line — an embedded newline in a
+// request-derived value (the request id, a JWT claim resolved from the
+// client-supplied Authorization header, an upstream error message) could
+// otherwise forge whole additional log entries. Companion to the
+// constant-format-string rule every console.* call below follows (semgrep
+// javascript.lang.security.audit.unsafe-formatstring): the constant format
+// string stops an injected %s/%d from forging log CONTENT, oneLine stops an
+// injected newline from forging log LINES. Same idiom as the sibling
+// backend/src/middleware/auth.ts.
+const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 /**
  * JWT auth middleware shared by every FuzeFront backend service. Depends only on
  * `db` (the @fuzefront/core knex singleton, configured by the consuming service)
@@ -19,7 +30,7 @@ export const authenticateToken = async (
   const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
 
   if (!token) {
-    console.log(`❌ [${requestId}] No token provided`)
+    console.log('❌ [%s] No token provided', oneLine(requestId))
     return res.status(401).json({ error: 'Access denied. No token provided.' })
   }
 
@@ -58,20 +69,30 @@ export const authenticateToken = async (
     ])
 
     if (!userRow) {
-      console.log(`❌ [${requestId}] User not found in database:`, {
-        userId: decoded.userId,
-      })
+      console.log(
+        '❌ [%s] User not found in database: userId=%s',
+        oneLine(requestId),
+        oneLine(decoded.userId)
+      )
       return res.status(401).json({ error: 'User not found' })
     }
 
     if (decoded.sessionId) {
       if (!session) {
         // Signed-out, device-revoked, or reaped. Deny.
-        console.log(`❌ [${requestId}] Session revoked`, { sessionId: decoded.sessionId })
+        console.log(
+          '❌ [%s] Session revoked: sessionId=%s',
+          oneLine(requestId),
+          oneLine(decoded.sessionId)
+        )
         return res.status(401).json({ error: 'Session revoked' })
       }
       if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
-        console.log(`❌ [${requestId}] Session expired`, { sessionId: decoded.sessionId })
+        console.log(
+          '❌ [%s] Session expired: sessionId=%s',
+          oneLine(requestId),
+          oneLine(decoded.sessionId)
+        )
         return res.status(401).json({ error: 'Session expired' })
       }
     } else {
@@ -81,7 +102,10 @@ export const authenticateToken = async (
       // weakness — an attacker cannot strip the claim without the signing key,
       // and holding that key lets them mint anything anyway.
       // TODO: once a release has fully rolled (>24h), make this branch a 401.
-      console.warn(`⚠️ [${requestId}] Session token has no sessionId — pre-rollout token, revocation cannot be enforced`)
+      console.warn(
+        '⚠️ [%s] Session token has no sessionId — pre-rollout token, revocation cannot be enforced',
+        oneLine(requestId)
+      )
     }
 
     const user: User = {
@@ -98,9 +122,11 @@ export const authenticateToken = async (
     req.user = user
     next()
   } catch (error) {
-    console.log(`❌ [${requestId}] Token verification failed:`, {
-      error: error instanceof Error ? error.message : String(error),
-    })
+    console.log(
+      '❌ [%s] Token verification failed: error=%s',
+      oneLine(requestId),
+      oneLine(error instanceof Error ? error.message : String(error))
+    )
     return res.status(401).json({ error: 'Invalid token.' })
   }
 }
