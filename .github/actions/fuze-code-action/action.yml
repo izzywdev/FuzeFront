@@ -99,6 +99,25 @@ inputs:
     description: 'LiteLLM virtual key. Forwarded to ./llm-endpoint as litellm-key.'
     required: false
     default: ''
+  cf-access-client-id:
+    description: >-
+      Cloudflare Access service-token client id, forwarded verbatim to
+      ./llm-endpoint as `cf-access-client-id`. Needed only when
+      `litellm-base-url` is the PUBLIC gateway host behind Cloudflare Access;
+      empty (default) is correct for the in-cluster path. When the resolved
+      endpoint IS the gateway, ./llm-endpoint returns these as its
+      `custom-headers` output, which this action sets as ANTHROPIC_CUSTOM_HEADERS
+      on the claude rung so the model requests also clear Access. Callers pass
+      `secrets.CF_ACCESS_CLIENT_ID`.
+    required: false
+    default: ''
+  cf-access-client-secret:
+    description: >-
+      Cloudflare Access service-token client secret, forwarded to
+      ./llm-endpoint as `cf-access-client-secret` (pairs with
+      `cf-access-client-id`). Callers pass `secrets.CF_ACCESS_CLIENT_SECRET`.
+    required: false
+    default: ''
   anthropic-api-key:
     description: 'Direct Anthropic API key. Forwarded to ./llm-endpoint as fallback-anthropic-key.'
     required: false
@@ -218,9 +237,11 @@ inputs:
       success. So the values are passed explicitly and exported here, which
       behaves identically under either semantics.
       .
-      Do NOT pass ANTHROPIC_BASE_URL or ANTHROPIC_AUTH_TOKEN: this action resolves
-      the endpoint itself via ./llm-endpoint and sets both on the rung it runs.
-      Passing them would override a probed, working endpoint with a stale literal.
+      Do NOT pass ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN or
+      ANTHROPIC_CUSTOM_HEADERS: this action resolves the endpoint AND any
+      Cloudflare Access headers itself via ./llm-endpoint and sets all three on
+      the rung it runs. Passing them would override a probed, working endpoint
+      (and its CF-Access headers) with a stale literal.
       .
       SCOPE: exported via $GITHUB_ENV, so unlike a step-scoped `env:` these are
       visible to later steps in the same job. Values are never echoed.
@@ -309,8 +330,8 @@ runs:
           esac
           key="${line%%=*}"
           case "$key" in
-            ANTHROPIC_BASE_URL|ANTHROPIC_AUTH_TOKEN)
-              echo "::error title=fuze-code-action::extra-env must not set ${key}. This action resolves the endpoint itself via ./llm-endpoint; overriding it with a literal would defeat the LiteLLM probe and its Anthropic fallback."
+            ANTHROPIC_BASE_URL|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_CUSTOM_HEADERS)
+              echo "::error title=fuze-code-action::extra-env must not set ${key}. This action resolves the endpoint AND any Cloudflare Access headers itself via ./llm-endpoint (ANTHROPIC_CUSTOM_HEADERS is set on the claude rung from its custom-headers output); overriding it with a literal would defeat the LiteLLM probe, its Anthropic fallback, and the CF-Access header wiring."
               exit 1 ;;
           esac
           printf '%s\n' "$line" >> "$GITHUB_ENV"
@@ -422,6 +443,12 @@ runs:
       with:
         litellm-base-url: ${{ inputs.litellm-base-url }}
         litellm-key: ${{ inputs.litellm-key }}
+        # CF-Access service-token creds, needed only when litellm-base-url is
+        # the public gateway behind Access. ./llm-endpoint puts them on its own
+        # readiness probe and echoes them back as `custom-headers` for the
+        # claude rung below. Empty on the in-cluster path, and harmless there.
+        cf-access-client-id: ${{ inputs.cf-access-client-id }}
+        cf-access-client-secret: ${{ inputs.cf-access-client-secret }}
         # ALL THREE keys, not just anthropic. ./llm-endpoint filters its
         # fallback-chain down to the vendors whose key is actually non-empty, so
         # a key this action accepts but does not forward removes that vendor from
@@ -455,6 +482,14 @@ runs:
       env:
         ANTHROPIC_BASE_URL: ${{ steps.llm.outputs.base-url }}
         ANTHROPIC_AUTH_TOKEN: ${{ steps.llm.outputs.auth-token }}
+        # Cloudflare Access service-token headers when ./llm-endpoint resolved
+        # the public gateway (mode=litellm behind Access); EMPTY on every other
+        # path. Without it the probe passes but claude-code-action's own
+        # requests get a 302 to the CF Access login page. Claude Code v2.1.227+
+        # parses this as newline-separated `Name: Value` and sends them
+        # alongside ANTHROPIC_AUTH_TOKEN on every request. An empty value is a
+        # no-op, so this is safe on the in-cluster / direct-vendor paths.
+        ANTHROPIC_CUSTOM_HEADERS: ${{ steps.llm.outputs.custom-headers }}
       with:
         anthropic_api_key: ${{ steps.llm.outputs.auth-token }}
         github_token: ${{ inputs.github-token }}
