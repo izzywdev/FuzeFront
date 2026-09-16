@@ -9,6 +9,7 @@
   "description": "FuzeFront corporate website frontend",
   "type": "module",
   "scripts": {
+    "sync:ds": "node scripts/sync-design-system.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "build:check": "tsc && vite build",
@@ -18,9 +19,13 @@
     "lint:fix": "eslint . --fix",
     "test": "jest",
     "test:react-serving": "jest tests/react-serving-simple.test.js",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:post-prod": "playwright test --config playwright.post-prod.config.ts"
   },
   "dependencies": {
+    "@fuzefront/design-system": "file:./vendor-design-system",
     "axios": "^1.19.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.15.0",
@@ -35,8 +40,10 @@
   "devDependencies": {
     "@babel/core": "^7.26.0",
     "@babel/preset-env": "^7.26.0",
+    "@playwright/test": "^1.53.1",
     "@types/jest": "^29.5.14",
     "@types/node": "^24.13.3",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
@@ -49,6 +56,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "jest": "^29.7.0",
     "jsdom": "^25.0.1",
+    "pngjs": "^7.0.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.0",
     "typescript": "~5.3.3",

@@ -58,3 +58,12 @@ backend/src/routes/organizations.ts text eol=lf
 backend/security/src/routes/security.ts text eol=lf
 backend/security/src/providers/authentik/tenants.ts text eol=lf
 backend/security/tests/tenant-registry.test.ts text eol=lf
+backend/src/utils/permit/bulk-operations.ts text eol=lf
+backend/src/utils/permit/role-assignment.ts text eol=lf
+backend/src/utils/permit/sync-existing-data.ts text eol=lf
+
+# devportal-frontend/ is a brand-new app (docs/planning/developers-portal.md)
+# copied from a couple of fuzefront-website/frontend files that were already
+# stored as CRLF — pin the whole new tree to LF up front rather than letting
+# gate-line-endings catch it piecemeal on future PRs.
+devportal-frontend/** text eol=lf

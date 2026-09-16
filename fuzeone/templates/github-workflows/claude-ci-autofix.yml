@@ -1,7 +1,22 @@
 # Managed by fuzeone — on a CI failure, delegate the fix to Claude (loop-guarded by branch prefix).
-# Delegates to the family reusable workflow in izzywdev/AITools (central logic; fixes propagate).
 # EDIT the workflows: list below to match THIS repo's CI workflow name(s) exactly.
 # Requires repo secret: ANTHROPIC_API_KEY (inherited).
+#
+# SELF-CONTAINED (inlined), not a `uses:` call into izzywdev/AITools. AITools is being
+# retired (izzywdev/FuzeSDLC governance/reusable-workflows.md); this template is now
+# the last thing generating a live reference to it, so the logic is inlined here
+# instead of pointed at izzywdev/FuzeSDLC's own reusable-claude-ci-autofix.yml —
+# that one depends on `./.github/actions/fuze-code-action`, a composite action this
+# scaffolding system does not vendor into a new product's repo, which would leave a
+# freshly-bootstrapped product's copy of this workflow broken at the first CI
+# failure. Calling `anthropics/claude-code-action` directly, as AITools' own hosted
+# copy did, keeps this template genuinely self-contained.
+#
+# Also carries forward a fix already landed everywhere else this workflow exists
+# (izzywdev/FuzeSDLC#29 / FuzeFront#159): `pull_requests[0]` as a truthiness GATE
+# silently drops every dispatch-triggered run, since `workflow_run.pull_requests` is
+# an empty array outside a pull_request-headed run. Not gated on here; `pr_number`
+# below tolerates an absent PR via `|| ''` instead.
 name: Claude Auto-Fix CI
 on:
   workflow_run:
@@ -17,13 +32,111 @@ jobs:
   call-autofix:
     if: >-
       ${{ github.event.workflow_run.conclusion == 'failure' &&
-          github.event.workflow_run.pull_requests[0] &&
           !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-') }}
-    uses: izzywdev/AITools/.github/workflows/claude-ci-autofix.yml@main
-    with:
-      run_id: ${{ github.event.workflow_run.id }}
-      head_branch: ${{ github.event.workflow_run.head_branch }}
-      pr_number: ${{ github.event.workflow_run.pull_requests[0].number }}
-      run_url: ${{ github.event.workflow_run.html_url }}
-      repository: ${{ github.repository }}
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "claude[bot]@users.noreply.github.com"
+          git config --global user.name "claude[bot]"
+
+      - name: Create fix branch
+        id: branch
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          SAFE_BRANCH=$(printf '%s' "$HEAD_BRANCH" | tr -cd 'a-zA-Z0-9/_.-')
+          BRANCH_NAME="claude-auto-fix-ci-${SAFE_BRANCH}-${RUN_ID}"
+          git checkout -b "$BRANCH_NAME"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Gather CI failure logs
+        id: failure_details
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          # Passed through env, NOT interpolated into the script body — see the
+          # matching note in izzywdev/FuzeSDLC's fuze-ci-autofix.yml (FuzeSDLC#98
+          # class of fix): `${{ ... }}` substitutes as raw text before the JS is
+          # parsed, so an input carrying a quote would escape the string literal.
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        with:
+          script: |
+            const run_id = Number(process.env.RUN_ID);
+            if (!Number.isInteger(run_id)) {
+              core.setFailed(`run_id is not an integer: ${process.env.RUN_ID}`);
+              return;
+            }
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id,
+            });
+            const failed = jobs.data.jobs.filter(j => j.conclusion === 'failure');
+            let combined = "";
+            for (const job of failed) {
+              try {
+                const res = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  job_id: job.id,
+                });
+                const text = typeof res.data === 'string' ? res.data : String(res.data);
+                // Keep the tail of each job log where failures usually surface.
+                const tail = text.slice(-4000);
+                combined += `\n===== Job: ${job.name} =====\n${tail}\n`;
+              } catch (e) {
+                combined += `\n===== Job: ${job.name} (log download failed: ${e.message}) =====\n`;
+              }
+            }
+            return {
+              failedJobs: failed.map(j => j.name),
+              logs: combined.slice(-12000),
+            };
+
+      # NOTE ON PROMPT INJECTION: the CI logs below are attacker-influenceable —
+      # anyone who can open a PR can make a build print arbitrary text into them.
+      # Bounded rather than eliminated: --allowedTools is an explicit allow-list
+      # with no arbitrary Bash, the work happens on a throwaway
+      # claude-auto-fix-ci-* branch, and the result is a PR a human reviews.
+      - name: Fix CI failures with Claude
+        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --model claude-sonnet-4-6
+            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*),Bash(yarn:*),Bash(pnpm:*),Bash(python:*),Bash(pip:*),Bash(php:*),Bash(composer:*)'
+          prompt: |
+            A CI run failed on a pull request in this repository. You are checked out on a
+            fresh branch created from the PR's head branch. Investigate and fix the failures.
+
+            Repository: ${{ github.repository }}
+            Failing pull request: #${{ github.event.workflow_run.pull_requests[0].number || '' }}
+            Original PR head branch: ${{ github.event.workflow_run.head_branch }}
+            Your working branch (already checked out): ${{ steps.branch.outputs.branch_name }}
+            Failed CI run: ${{ github.event.workflow_run.html_url }}
+            Failed jobs: ${{ join(fromJSON(steps.failure_details.outputs.result).failedJobs, ', ') }}
+
+            Error logs (tail, truncated):
+            ${{ fromJSON(steps.failure_details.outputs.result).logs }}
+
+            Instructions:
+            1. Diagnose the root cause of the CI failure from the logs above and the code.
+            2. Make the minimal, targeted changes needed to make CI pass. Do not touch
+               unrelated code, CI secrets, or workflow files unless that is the actual cause.
+            3. Commit your changes to the current branch
+               (${{ steps.branch.outputs.branch_name }}) and push it with `git push -u origin HEAD`.
+            4. Open a pull request from your branch targeting "${{ github.event.workflow_run.head_branch }}"
+               using `gh pr create`, summarizing the root cause and the fix, and reference
+               PR #${{ github.event.workflow_run.pull_requests[0].number || '' }} in the body.
+            If you cannot determine a safe fix, push nothing and instead leave a comment on
+            PR #${{ github.event.workflow_run.pull_requests[0].number || '' }} explaining what you found.

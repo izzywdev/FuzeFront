@@ -132,6 +132,26 @@ export const permitSchema: PermitSchema = {
         manage: action('Manage'),
       },
     },
+    // docs/planning/developers-portal.md §5.3 — developers.fuzefront.com.
+    // Deliberately separate from Organization/App/etc.: a `developer`
+    // root-org sign-in grants ONLY these two resources, never
+    // Organization:read/App:read/UserManagement:* — see the `developer`
+    // role below, which does not inherit anything from viewer/editor/admin.
+    {
+      key: 'DevPortalCatalog',
+      name: 'Developer Portal Catalog',
+      actions: {
+        read: action('Read'),
+      },
+    },
+    {
+      key: 'DevPortalPlayground',
+      name: 'Developer Portal Playground',
+      actions: {
+        use: action('Use'),
+        view_history: action('View History'),
+      },
+    },
   ],
   roles: [
     {
@@ -168,6 +188,15 @@ export const permitSchema: PermitSchema = {
         'Docs:read',
         'Chat:stream',
       ],
+    },
+    {
+      key: 'developer',
+      name: 'Developer',
+      // docs/planning/developers-portal.md §5.3 — deliberately narrower than
+      // `viewer`: catalog + sandbox access only, nothing about the rest of
+      // the platform's tenant data. A root-org `developer` membership must
+      // NOT be able to read Organization/App/UserManagement/Docs/Chat.
+      permissions: ['DevPortalCatalog:read', 'DevPortalPlayground:use', 'DevPortalPlayground:view_history'],
     },
   ],
 }

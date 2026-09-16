@@ -8,7 +8,11 @@ metadata:
     # CreateNamespace is processed before the Sync phase. A PreSync hook can
     # otherwise race the first deployment because its target namespace does
     # not exist yet.
-    argocd.argoproj.io/hook: Sync
+    # Schema migrations must finish before Argo rolls any workload. The
+    # bootstrap init containers remain the additive, restart-safe guard for
+    # missed schema/topic setup; this hook makes an intentional release wait
+    # for the forward-only migration step first.
+    argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/sync-wave: "-1"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 spec:
@@ -49,24 +53,19 @@ spec:
           containers:
             - name: reconcile
               image: curlimages/curl:8.12.1
+              # Kubernetes passes args directly to the container: it does not
+              # expand $(FUZEQUALITY_API_TOKEN).  Use the image's POSIX shell
+              # so the credential from the Secret is sent to the protected
+              # internal endpoint rather than the literal placeholder.
+              command: ["/bin/sh", "-ec"]
               args:
-                - -fsS
-                - --retry
-                - "5"
-                - --retry-connrefused
-                - --retry-delay
-                - "2"
-                - --max-time
-                - "30"
-                - -X
-                - POST
-                - -H
-                - "Authorization: Bearer $(FUZEQUALITY_API_TOKEN)"
-                - -H
-                - "Content-Type: application/json"
-                - -d
-                - {{ printf "{\"scopeId\":\"default\",\"jql\":%q}" .Values.config.jiraJql | quote }}
-                - http://fuzequality-backend:{{ .Values.backend.port }}/api/v1/jira/sync
+                - >-
+                  exec curl -fsS --retry 5 --retry-connrefused --retry-delay 2 --max-time 30
+                  -X POST
+                  -H "Authorization: Bearer ${FUZEQUALITY_API_TOKEN}"
+                  -H "Content-Type: application/json"
+                  -d {{ printf "{\"scopeId\":\"default\",\"jql\":%q}" .Values.config.jiraJql | quote }}
+                  http://fuzequality-backend:{{ .Values.backend.port }}/api/v1/jira/sync
               env:
                 - name: FUZEQUALITY_API_TOKEN
                   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: FUZEQUALITY_API_TOKEN } }

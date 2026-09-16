@@ -159,7 +159,7 @@ export async function setupOrganizationWithRoles(
   organization: Organization,
   membershipData: Array<{
     userId: string
-    role: 'owner' | 'admin' | 'member' | 'viewer'
+    role: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
   }>
 ): Promise<boolean> {
   try {
@@ -220,7 +220,7 @@ export async function initialDataSync(data: {
   memberships: Array<{
     userId: string
     organizationId: string
-    role: 'owner' | 'admin' | 'member' | 'viewer'
+    role: 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
   }>
 }): Promise<{
   users: { success: number; failed: number }

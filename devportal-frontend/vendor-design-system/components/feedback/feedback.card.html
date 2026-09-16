@@ -1,0 +1,186 @@
+<!-- @dsCard group="Components" viewport="720x420" name="Feedback — Toasts & status" subtitle="Toast notifications and inline service status" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body {
+    margin: 0;
+    padding: 28px 32px;
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .lbl {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin: 0 0 12px;
+    font-weight: var(--weight-medium);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 26px;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+  }
+
+  /* ---- Toast ---- */
+  .toast {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    max-width: 360px;
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    font-family: var(--font-sans);
+  }
+  .toast--success { border-left: 4px solid var(--success-color); }
+  .toast--warning { border-left: 4px solid var(--warning-color); }
+  .toast--error   { border-left: 4px solid var(--error-color); }
+  .toast--info    { border-left: 4px solid var(--accent-2); }
+
+  .toast__body { flex: 1; min-width: 0; }
+  .toast__title {
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+  }
+  .toast__msg {
+    font-size: var(--text-sm);
+    line-height: 1.4;
+    color: var(--text-secondary);
+    word-break: break-word;
+  }
+  .toast__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    margin-top: -2px;
+    margin-right: -4px;
+    background: transparent;
+    color: var(--text-tertiary);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-standard),
+                color var(--duration-fast) var(--ease-standard);
+  }
+  .toast__close:hover {
+    background: var(--bg-quaternary);
+    color: var(--text-primary);
+  }
+
+  /* ---- StatusPill ---- */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    background: var(--bg-quaternary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-pill);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .pill__dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-pill);
+  }
+  .pill--online .pill__dot {
+    background: var(--success-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--success-color) 22%, transparent);
+  }
+  .pill--degraded .pill__dot {
+    background: var(--warning-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning-color) 22%, transparent);
+  }
+  .pill--offline .pill__dot {
+    background: var(--error-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--error-color) 22%, transparent);
+  }
+</style>
+</head>
+<body>
+  <p class="lbl">Toasts</p>
+  <div class="grid">
+    <div class="toast toast--success" role="status">
+      <div class="toast__body">
+        <div class="toast__title">Module deployed</div>
+        <div class="toast__msg">FuzeClock is now live on the runtime fabric.</div>
+      </div>
+      <button class="toast__close" type="button" title="Dismiss" aria-label="Dismiss">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="toast toast--warning" role="status">
+      <div class="toast__body">
+        <div class="toast__title">Slow remote</div>
+        <div class="toast__msg">A federated remote took over 2s to resolve.</div>
+      </div>
+      <button class="toast__close" type="button" title="Dismiss" aria-label="Dismiss">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="toast toast--error" role="status">
+      <div class="toast__body">
+        <div class="toast__title">Load failed</div>
+        <div class="toast__msg">Could not fetch remoteEntry.js for the module.</div>
+      </div>
+      <button class="toast__close" type="button" title="Dismiss" aria-label="Dismiss">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="toast toast--info" role="status">
+      <div class="toast__body">
+        <div class="toast__title">Update available</div>
+        <div class="toast__msg">A new shell version is ready to install.</div>
+      </div>
+      <button class="toast__close" type="button" title="Dismiss" aria-label="Dismiss">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <p class="lbl">Status pills</p>
+  <div class="row">
+    <span class="pill pill--online" role="status" aria-label="Online">
+      <span class="pill__dot" aria-hidden="true"></span>Online
+    </span>
+    <span class="pill pill--degraded" role="status" aria-label="Degraded">
+      <span class="pill__dot" aria-hidden="true"></span>Degraded
+    </span>
+    <span class="pill pill--offline" role="status" aria-label="Offline">
+      <span class="pill__dot" aria-hidden="true"></span>Offline
+    </span>
+  </div>
+</body>
+</html>

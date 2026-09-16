@@ -5,6 +5,7 @@ import {
   TOPICS,
   repositoryInputSchema,
   reviewDecisionSchema,
+  expectationExclusionSchema,
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
@@ -25,6 +26,7 @@ import {
 import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
+import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import {
@@ -39,19 +41,28 @@ const store = createCatalogStore()
 const events = createEventBus()
 const port = Number(process.env.PORT ?? 4180)
 const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
-const mayReadRepositories = requirePlatformPermission('fuzequality.Repository', 'read')
-const mayManageRepositories = requirePlatformPermission('fuzequality.Repository', 'onboard')
-const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 'scan')
-const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReviewSuggestions = requirePlatformPermission('fuzequality.Evidence', 'export')
-const maySyncRequirements = requirePlatformPermission('fuzequality.Evidence', 'export')
-const mayCreateTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'create')
-const mayReadTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'read')
-const mayReadOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'read')
-const mayManageOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'manage')
-const mayManageRepositoryAdministration = requirePlatformPermission('fuzequality.RepositoryAdministration', 'manage')
-const mayAdministerPlatform = requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')
+const mayReadRepositories = requirePlatformPermission(qualityResources.repository, 'read')
+const mayManageRepositories = requirePlatformPermission(qualityResources.repository, 'onboard')
+const mayScanRepositories = requirePlatformPermission(qualityResources.repository, 'scan')
+const mayReadCatalog = requirePlatformPermission(qualityResources.evidence, 'read')
+const mayReadRequirements = requirePlatformPermission(qualityResources.evidence, 'read')
+const mayReadSuggestions = requirePlatformPermission(qualityResources.suggestion, 'read')
+const mayReviewSuggestions = requirePlatformPermission(qualityResources.suggestion, 'review')
+const maySuppressSuggestions = requirePlatformPermission(qualityResources.suggestion, 'suppress')
+const maySyncRequirementsAsHuman = requirePlatformPermission(qualityResources.evidence, 'export')
+// The reconciler is a workload, not a portal user. It authenticates with the
+// FuzeQuality service token injected from the cluster Secret; a human caller
+// still has to pass the FuzeFront Security permission check below.
+const maySyncRequirements: express.RequestHandler = (request, response, next) => {
+  if (isFuzeQualityServiceRequest(request)) return next()
+  return maySyncRequirementsAsHuman(request, response, next)
+}
+const mayCreateTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'create')
+const mayReadTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'read')
+const mayReadOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'read')
+const mayManageOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'manage')
+const mayManageRepositoryAdministration = requirePlatformPermission(qualityResources.repositoryAdministration, 'manage')
+const mayAdministerPlatform = requirePlatformAdminPermission(qualityResources.platformAdministration, 'read')
 const adminContextSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict()
 const organizationRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
 const invitationSchema = z.object({
@@ -59,6 +70,11 @@ const invitationSchema = z.object({
   role: organizationRoleSchema,
 }).strict()
 const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
+const intelligenceFailureSchema = z.object({
+  sourceType: z.literal('jira'),
+  sourceKey: z.string().trim().min(1).max(200),
+  code: z.enum(['JIRA_UNAVAILABLE', 'INTELLIGENCE_UNAVAILABLE', 'SEMANTIC_INDEX_UNAVAILABLE']),
+}).strict()
 const repositoryAdministrationSchema = z.object({
   ownership: z.object({
     team: z.string().trim().min(1).max(100),
@@ -130,6 +146,11 @@ function organizationSummaries(portfolio: Portfolio): OrganizationQualitySummary
   }).sort((left, right) => right.gaps - left.gaps || left.organizationId.localeCompare(right.organizationId))
 }
 
+function isFuzeQualityServiceRequest(request: express.Request) {
+  const configuredToken = process.env.FUZEQUALITY_API_TOKEN
+  return Boolean(configuredToken && request.header('authorization') === `Bearer ${configuredToken}`)
+}
+
 app.use(express.json({
   // A normalized inventory for the current FuzeFront repository is ~2.4 MB.
   // Keep this above the scanner's bounded payload while still rejecting
@@ -141,12 +162,11 @@ app.use(express.json({
 }))
 
 app.use((request, response, next) => {
-  const configuredToken = process.env.FUZEQUALITY_API_TOKEN
   const authorization = request.headers.authorization
   if (
-    !configuredToken ||
+    !process.env.FUZEQUALITY_API_TOKEN ||
     isPublicRequest(request.method, request.path) ||
-    authorization === `Bearer ${configuredToken}` ||
+    isFuzeQualityServiceRequest(request) ||
     (
       request.path.startsWith('/api/v1/internal/test-implementations/') &&
       process.env.FUZEQUALITY_CLOUD_CALLBACK_TOKEN &&
@@ -195,6 +215,7 @@ app.get('/health/ready', async (_request, response) => {
 })
 app.get('/metrics', async (_request, response) => {
   const portfolio = await store.portfolio()
+  const jiraFreshness = await store.syncCursor('jira', 'default')
   response.type('text/plain').send(
     [
       '# HELP fuzequality_repositories Number of onboarded repositories',
@@ -203,6 +224,15 @@ app.get('/metrics', async (_request, response) => {
       '# HELP fuzequality_open_findings Number of open catalog findings',
       '# TYPE fuzequality_open_findings gauge',
       `fuzequality_open_findings ${portfolio.findings.filter(item => item.status === 'open').length}`,
+      '# HELP fuzequality_flow_gap_findings Number of open deterministic flow-gap findings',
+      '# TYPE fuzequality_flow_gap_findings gauge',
+      `fuzequality_flow_gap_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'flow-orphans-v1').length}`,
+      '# HELP fuzequality_requirement_review_findings Number of open conflicting or incomplete requirement findings',
+      '# TYPE fuzequality_requirement_review_findings gauge',
+      `fuzequality_requirement_review_findings ${portfolio.findings.filter(item => item.status === 'open' && item.policyVersion === 'requirement-review-v1').length}`,
+      '# HELP fuzequality_jira_sync_freshness Jira requirement synchronization freshness: 1 fresh, 0 otherwise',
+      '# TYPE fuzequality_jira_sync_freshness gauge',
+      `fuzequality_jira_sync_freshness ${jiraFreshness?.freshnessStatus === 'fresh' ? 1 : 0}`,
     ].join('\n')
   )
 })
@@ -295,6 +325,12 @@ app.get('/api/v1/repositories/:id', mayReadRepositories, async (request, respons
   const repository = await store.repository(repositoryId, requestIdentity(request)!.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
+})
+app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.repositoryScanHistory(repositoryId, tenantId))
 })
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
@@ -536,17 +572,52 @@ app.get('/api/v1/requirements', mayReadRequirements, async (request, response) =
 app.get('/api/v1/flows', mayReadRequirements, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).flows)
 )
-app.get('/api/v1/suggestions', mayReadRequirements, async (request, response) =>
+app.get('/api/v1/suggestions', mayReadSuggestions, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).suggestions)
 )
-app.post('/api/v1/suggestions/:id/decision', mayReviewSuggestions, async (request, response) => {
+app.get('/api/v1/suggestions/:id/decisions', mayReadSuggestions, async (request, response) => {
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  response.json(await store.suggestionDecisions(suggestionId, requestIdentity(request)!.tenantId))
+})
+app.post('/api/v1/suggestions/:id/decision', async (request, response, next) => {
   const parsed = reviewDecisionSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
   const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
-  const suggestion = await store.decideSuggestion(suggestionId, parsed.data.decision)
+  const authorize = parsed.data.decision === 'suppress' ? maySuppressSuggestions : mayReviewSuggestions
+  return authorize(request, response, async () => {
+    const identity = requestIdentity(request)!
+    const suggestion = await store.reviewSuggestion(suggestionId, {
+      actorId: identity.userId,
+      tenantId: identity.tenantId,
+      action: parsed.data.decision,
+      editedPayload: parsed.data.editedPayload,
+      reason: parsed.data.reason,
+      owner: parsed.data.owner,
+      expiresAt: parsed.data.expiresAt,
+      targetSuggestionId: parsed.data.mergeIntoSuggestionId,
+    })
   if (!suggestion) return response.status(404).json({ error: 'Suggestion not found' })
-  await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
+    await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
   response.json(suggestion)
+  })
+})
+app.post('/api/v1/suggestions/:id/approve-expected-test', mayReviewSuggestions, async (request, response) => {
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const identity = requestIdentity(request)!
+  const suggestion = await store.approveExpectedTest(suggestionId, { actorId: identity.userId, tenantId: identity.tenantId, action: 'confirm' })
+  if (!suggestion) return response.status(404).json({ error: 'Expected-test suggestion not found' })
+  await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: 'approve-expected-test' }, suggestion.id)
+  response.json(suggestion)
+})
+app.post('/api/v1/expectations/:id/exclusion', maySuppressSuggestions, async (request, response) => {
+  const parsed = expectationExclusionSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const expectationId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const identity = requestIdentity(request)!
+  const excluded = await store.excludeExpectation(expectationId, identity.tenantId, { ...parsed.data, actorId: identity.userId })
+  if (!excluded) return response.status(404).json({ error: 'Expectation not found' })
+  await events.publish(TOPICS.COVERAGE_REBUILD_REQUESTED, { scopeId: `expectation:${expectationId}` }, expectationId)
+  response.status(202).json({ accepted: true })
 })
 app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).findings)
@@ -562,19 +633,45 @@ app.post('/api/v1/internal/scans/results', async (request, response) => {
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/intelligence/results', async (request, response) => {
-  await store.saveIntelligence(request.body.results ?? [])
+  await store.saveIntelligence(request.body.results ?? [], request.body.sync)
   response.status(202).json({ accepted: true })
 })
+app.post('/api/v1/internal/intelligence/failure', async (request, response) => {
+  const failure = intelligenceFailureSchema.parse(request.body)
+  await store.markSyncFailed(failure.sourceType, failure.sourceKey)
+  console.error(JSON.stringify({ event: 'intelligence_sync_failed', sourceType: failure.sourceType, sourceKey: failure.sourceKey, code: failure.code, retryable: true }))
+  response.status(202).json({ accepted: true })
+})
+app.get('/api/v1/requirements/freshness', mayReadRequirements, async (_request, response) =>
+  response.json(await store.syncCursor('jira', 'default') ?? { sourceType: 'jira', sourceKey: 'default', freshnessStatus: 'unknown' })
+)
 app.post('/api/v1/internal/coverage/rebuild', async (_request, response) => {
-  response.status(202).json({ accepted: true, rebuiltAt: new Date().toISOString() })
+  try {
+    const projection = await store.rebuildCoverage()
+    console.info(JSON.stringify({
+      event: 'coverage_projection_rebuilt',
+      policyVersion: projection.policyVersion,
+      schemaVersion: projection.schemaVersion,
+      findings: projection.metrics.total,
+      byType: projection.metrics.byType,
+    }))
+    response.status(200).json(projection)
+  } catch {
+    console.error(JSON.stringify({ event: 'coverage_projection_failed', code: 'QUALITY_PROJECTION_FAILED', retryable: true }))
+    response.status(503).json({ error: 'Coverage projection failed; the previous snapshot remains active', code: 'QUALITY_PROJECTION_FAILED' })
+  }
 })
 
 app.post('/api/v1/jira/sync', maySyncRequirements, async (request, response) => {
+  const scopeId = request.body?.scopeId ?? 'default'
+  const cursor = await store.syncCursor('jira', scopeId)
   await events.publish(TOPICS.REQUIREMENT_SYNC_REQUESTED, {
-    scopeId: request.body?.scopeId ?? 'default',
+    tenantId: requestIdentity(request)!.tenantId,
+    scopeId,
     jql: request.body?.jql ?? process.env.JIRA_JQL ?? 'project = FUZE',
+    ...(cursor?.cursor ? { since: cursor.cursor } : {}),
   })
-  response.status(202).json({ status: 'queued' })
+  response.status(202).json({ status: 'queued', scopeId, incrementalFrom: cursor?.cursor })
 })
 
 app.post('/api/v1/webhooks/github', async (request, response) => {

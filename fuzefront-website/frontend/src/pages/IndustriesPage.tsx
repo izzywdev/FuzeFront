@@ -167,10 +167,10 @@ function IndustrySection({ industry }: { industry: Industry }) {
           </div>
         </div>
 
-        <p className="text-gray-500 text-sm leading-relaxed mb-6">{industry.description}</p>
+        <p className="text-gray-600 text-sm leading-relaxed mb-6">{industry.description}</p>
 
         <div className="mb-6">
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Key challenges addressed</h4>
+          <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Key challenges addressed</h4>
           <ul className="space-y-2">
             {industry.challenges.map((challenge) => (
               <li key={challenge} className="flex items-start gap-2 text-sm text-gray-600">
@@ -182,7 +182,7 @@ function IndustrySection({ industry }: { industry: Industry }) {
         </div>
 
         <div>
-          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Recommended products</h4>
+          <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Recommended products</h4>
           <div className="flex flex-wrap gap-2">
             {industry.products.map((product) => (
               <span key={product} className="px-3 py-1 bg-secondary-100 text-secondary-700 rounded-full text-xs font-medium">
@@ -245,7 +245,7 @@ export const IndustriesPage: React.FC = () => {
           <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
             Don't see your industry?
           </h2>
-          <p className="text-gray-500 mb-8">
+          <p className="text-gray-600 mb-8">
             Every business has unique requirements. Talk to our team — we'll help you map FuzeOne to your specific needs.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">

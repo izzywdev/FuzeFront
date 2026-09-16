@@ -1,6 +1,10 @@
 import crypto from 'crypto'
 import express from 'express'
-import { runInternalProvision } from '../services/organizationProvisioning'
+import {
+  runInternalProvision,
+  ensureDeveloperMembership,
+} from '../services/organizationProvisioning'
+import { isDevportalEnabled } from '../utils/devportalFlag'
 
 const router = express.Router()
 
@@ -48,6 +52,58 @@ router.post('/provision', async (req, res) => {
     return res.status(200).json({ ok: true, ...result })
   } catch (error: any) {
     console.error('Internal provision failed:', error)
+    return res
+      .status(500)
+      .json({ error: 'Provisioning failed', detail: String(error?.message ?? error) })
+  }
+})
+
+/**
+ * Internal, service-to-service devportal-provisioning endpoint.
+ *
+ * docs/planning/developers-portal.md §5.2 — devportal-service calls this
+ * (never the public ingress) right after a user's FIRST successful OIDC
+ * sign-in at developers.fuzefront.com, so root-org `developer` membership is
+ * single-sourced here rather than duplicated into devportal-service's own DB.
+ * Same shared-secret auth as /provision. Fails closed (404) while
+ * `fuzefront.devportal.enabled` is OFF — the whole capability is dark.
+ *
+ *   POST /internal/devportal-provision
+ *   Headers: x-internal-secret: <INTERNAL_PROVISION_SECRET>
+ *   Body:    { "userId": "<uuid>" }
+ *   200 { ok: true }
+ *   400 { error } missing userId
+ *   401 { error } bad/missing secret
+ *   404 { error } devportal flag is OFF
+ *
+ * Idempotent; safe to retry.
+ */
+router.post('/devportal-provision', async (req, res) => {
+  const expected = process.env.INTERNAL_PROVISION_SECRET
+  const provided = req.header('x-internal-secret')
+
+  const a = Buffer.from(provided || '')
+  const b = Buffer.from(expected || '')
+  const unauthorised =
+    !expected || !provided || a.length !== b.length || !crypto.timingSafeEqual(a, b)
+  if (unauthorised) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const { userId } = req.body || {}
+  if (!userId || typeof userId !== 'string') {
+    return res.status(400).json({ error: 'userId is required' })
+  }
+
+  if (!(await isDevportalEnabled({ userId }))) {
+    return res.status(404).json({ error: 'Not found' })
+  }
+
+  try {
+    await ensureDeveloperMembership(userId)
+    return res.status(200).json({ ok: true })
+  } catch (error: any) {
+    console.error('Internal devportal-provision failed:', error)
     return res
       .status(500)
       .json({ error: 'Provisioning failed', detail: String(error?.message ?? error) })

@@ -7,7 +7,8 @@ whichever language evaluates it.
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional, Set
+from collections.abc import Iterable
+from typing import Any
 
 from .codec import (
     bytes_to_uuid,
@@ -35,7 +36,7 @@ class IdentityError(ValueError):
 # parse_id on an existing surface must widen this explicitly for types it has
 # not yet backfilled. Defaulting the other way would let a service keep
 # accepting untyped ids simply by forgetting to configure anything.
-_legacy_uuid_types: Set[str] = set()
+_legacy_uuid_types: set[str] = set()
 
 
 def configure_identity(legacy_uuid_types: Iterable[str] = ()) -> None:
@@ -44,11 +45,11 @@ def configure_identity(legacy_uuid_types: Iterable[str] = ()) -> None:
     _legacy_uuid_types = set(legacy_uuid_types)
 
 
-def get_legacy_uuid_types() -> Set[str]:
+def get_legacy_uuid_types() -> set[str]:
     return set(_legacy_uuid_types)
 
 
-def _split(raw: str) -> Optional[tuple[str, str]]:
+def _split(raw: str) -> tuple[str, str] | None:
     separator = raw.rfind("_")
     if separator <= 0 or separator == len(raw) - 1:
         return None
@@ -114,7 +115,7 @@ def assert_ref(entity_type: str, raw: Any) -> str:
     return parse_id(entity_type, raw)
 
 
-def try_parse_id(entity_type: str, raw: Any) -> Optional[str]:
+def try_parse_id(entity_type: str, raw: Any) -> str | None:
     try:
         return parse_id(entity_type, raw)
     except IdentityError:
@@ -138,7 +139,7 @@ def from_uuid(entity_type: str, value: str) -> str:
     return f"{prefix_for(entity_type)}_{encode_suffix(uuid_to_bytes(value))}"
 
 
-def entity_type_of(raw: str) -> Optional[str]:
+def entity_type_of(raw: str) -> str | None:
     """The entity type ``raw`` declares itself to be.
 
     For generic plumbing (audit logs, tracing) — never for authorization, which

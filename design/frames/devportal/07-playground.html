@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Playground</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 07 · flow `playground` · route /playground -->
+<div class="dp-wrap" data-frame="07-playground">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 07 · flow <b>playground</b> ·
+    route <code>/playground</code></div>
+  <h1 class="dp-h1">Playground — request builder, response, quota</h1>
+  <p class="dp-lead">The "Try it" panel. Three things are <b>always visible and never dismissible</b>: the target this
+    request will actually hit, the statement that it is not production, and the remaining quota. A developer must
+    never have to guess which system they are about to touch.</p>
+
+  <div class="dp-topbar" data-panel="portal-topbar" data-auth="authenticated">
+    <span class="dp-wordmark">Fuze <span class="seamtext">Developers</span></span>
+    <nav class="dp-topnav">
+      <a href="02-home-signed-in.html">Home</a>
+      <a href="03-catalog.html">Catalog</a>
+      <a href="#" class="active">Playground</a>
+      <a href="09-my-access.html">My access</a>
+    </nav>
+    <span class="dp-spacer"></span>
+    <span class="dp-badge ok" data-membership-status="active"><span class="dp-dot"></span>Developer</span>
+    <span class="dp-avatar" data-user="dana.okafor">DO</span>
+  </div>
+
+  <div class="dp-appframe">
+
+    <!-- ============ the safety notice — permanent ============ -->
+    <div class="dp-callout info" data-safety-notice="sandbox-only">
+      <span class="glyph">🛡</span>
+      <div>
+        <p class="ct">This never touches production.</p>
+        <p class="cb">Requests are brokered by <code>devportal-service</code> to a <b>mock generated from this spec</b>
+          (Prism), or to a sandbox URL the owning repo explicitly opted in. A production <code>servers:</code> entry is
+          never called. Your Fuze session token is <b>not forwarded</b> — the proxy mints a synthetic sandbox identity
+          scoped to that target only, so a bug in a mock can't be tricked into treating you as a real principal.</p>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--space-5);
+                align-items:start; margin-top: var(--space-5)">
+
+      <!-- ============ request builder ============ -->
+      <section class="dp-card seamed" data-panel="request-builder">
+        <div class="dp-inline" style="justify-content:space-between; margin-bottom: var(--space-4)">
+          <span class="dp-inline">
+            <span class="dp-method post">POST</span>
+            <code class="dp-mono" style="font-size:var(--text-md)">/api/v1/apps</code>
+          </span>
+          <span class="dp-badge neutral" data-operation="registerApp">registerApp</span>
+        </div>
+
+        <div class="dp-field">
+          <label class="dp-label" for="pg-target">Sandbox target</label>
+          <select class="dp-select" id="pg-target" data-select="sandbox-target" data-sandbox-mode="mock">
+            <option selected>Prism mock — generated from app-registry-service v1.4.0 (default)</option>
+            <option>Declared sandbox URL — not offered (repo has not opted in)</option>
+          </select>
+          <p class="dp-sub" style="margin: var(--space-2) 0 0">Resolved base:
+            <code class="dp-mono" data-resolved-target="mock://app-registry-service@v1.4.0">mock://app-registry-service@v1.4.0</code>
+            · <span class="dp-badge ok"><span class="dp-dot"></span>reachable</span></p>
+        </div>
+
+        <div class="dp-field" data-panel="path-params">
+          <label class="dp-label">Path parameters</label>
+          <p class="dp-sub" style="margin:0">None for this operation.</p>
+        </div>
+
+        <div class="dp-field" data-panel="query-params">
+          <label class="dp-label" for="pg-q-dry">Query parameters</label>
+          <table class="dp-table">
+            <thead><tr><th>Name</th><th>Value</th><th>Type</th></tr></thead>
+            <tbody>
+              <tr><td><code>dryRun</code></td>
+                  <td><input class="dp-input" id="pg-q-dry" data-input="query-dryRun" value="true" /></td>
+                  <td class="dp-muted">boolean</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="dp-field" data-panel="headers">
+          <label class="dp-label">Headers</label>
+          <table class="dp-table">
+            <thead><tr><th>Name</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td><code>content-type</code></td><td class="dp-mono">application/json</td></tr>
+              <tr><td><code>authorization</code></td>
+                  <td><span class="dp-badge info" data-security-note="synthetic-identity">injected by the sandbox proxy</span></td></tr>
+              <tr><td><code>x-fuzefront-sandbox</code></td><td class="dp-mono">true</td></tr>
+            </tbody>
+          </table>
+          <p class="dp-sub" style="margin: var(--space-2) 0 0">The authorization header is <b>not editable</b> — a
+            developer cannot paste a real production token into a sandbox call.</p>
+        </div>
+
+        <div class="dp-field">
+          <label class="dp-label" for="pg-body">Request body · <code>AppRegistration</code></label>
+          <textarea class="dp-codefield" id="pg-body" data-input="request-body" rows="8">{
+  "slug": "fuzepicker",
+  "name": "Picker",
+  "routing": { "path": "/app/fuzepicker" }
+}</textarea>
+          <p class="dp-sub" style="margin: var(--space-2) 0 0">Prefilled from the spec's example. Validated against
+            the operation's schema <b>before</b> the request leaves the browser.</p>
+        </div>
+
+        <div class="dp-inline" style="justify-content:space-between">
+          <button class="dp-btn primary" data-action="send-request">Send request</button>
+          <span class="dp-inline">
+            <button class="dp-btn ghost" data-action="copy-as-curl">Copy as curl</button>
+            <button class="dp-btn ghost" data-action="reset-request">Reset</button>
+          </span>
+        </div>
+      </section>
+
+      <!-- ============ response + quota ============ -->
+      <div class="dp-stack">
+        <section class="dp-card seamed" data-panel="response" data-state="ready">
+          <div class="dp-inline" style="justify-content:space-between; margin-bottom: var(--space-4)">
+            <span class="dp-inline">
+              <span class="dp-badge ok" data-response-status="201"><span class="dp-dot"></span>201 Created</span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)" data-response-time="84">84 ms</span>
+              <span class="dp-muted dp-mono" style="font-size:var(--text-2xs)">312 B</span>
+            </span>
+            <span class="dp-badge info" data-sandbox-mode="mock">from mock</span>
+          </div>
+          <div class="dp-inline" style="margin-bottom: var(--space-3)">
+            <span class="dp-badge info" data-response-tab="body">Body</span>
+            <span class="dp-badge neutral" data-response-tab="headers">Headers</span>
+            <span class="dp-badge neutral" data-response-tab="trace">Trace</span>
+          </div>
+          <div class="dp-code-head"><span>response body · application/json</span>
+            <button class="dp-btn ghost" data-action="copy-response" style="padding:0 var(--space-2)">Copy</button></div>
+<pre class="dp-code" data-code="response-body">{
+  <span class="k">"id"</span>: <span class="s">"app_01j9k2xq7ne3ta6yb1m4v0dzcw"</span>,
+  <span class="k">"slug"</span>: <span class="s">"fuzepicker"</span>,
+  <span class="k">"name"</span>: <span class="s">"Picker"</span>,
+  <span class="k">"routing"</span>: { <span class="k">"path"</span>: <span class="s">"/app/fuzepicker"</span> },
+  <span class="k">"createdAt"</span>: <span class="s">"2026-09-08T10:42:11Z"</span>
+}</pre>
+          <p class="dp-sub" style="margin-top: var(--space-3)">Values are <b>generated from the schema</b>, not from a
+            real database. Nothing was created anywhere.</p>
+        </section>
+
+        <section class="dp-card" data-panel="quota" data-quota-state="ok">
+          <div class="dp-meter-head">
+            <span>Sandbox requests today</span>
+            <span class="val" data-quota-used="138" data-quota-limit="500">138 / 500</span>
+          </div>
+          <div class="dp-meter"><div class="fill" style="width: 28%"></div></div>
+          <p class="dp-meter-foot">Resets <b class="dp-mono" data-quota-reset="2026-09-09T00:00:00Z">in 6h 12m</b> ·
+            counted against <code>DevPortalPlayground:use</code> ·
+            <a href="09-my-access.html" style="color:var(--cyan-400)">see your quota</a></p>
+        </section>
+
+        <section class="dp-card" data-panel="request-history">
+          <h3 class="dp-h3">Your recent calls</h3>
+          <div class="dp-row"><span class="dp-inline"><span class="dp-method post">POST</span>
+            <code class="dp-mono" style="font-size:var(--text-xs)">/api/v1/apps</code></span>
+            <span class="dp-badge ok">201</span></div>
+          <div class="dp-row"><span class="dp-inline"><span class="dp-method get">GET</span>
+            <code class="dp-mono" style="font-size:var(--text-xs)">/api/v1/apps</code></span>
+            <span class="dp-badge ok">200</span></div>
+          <div class="dp-row"><span class="dp-inline"><span class="dp-method delete">DELETE</span>
+            <code class="dp-mono" style="font-size:var(--text-xs)">/api/v1/apps/{slug}</code></span>
+            <span class="dp-badge err">403</span></div>
+          <p class="dp-sub" style="margin: var(--space-3) 0 0">Only your own calls
+            (<code>DevPortalPlayground:view_history</code>).</p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='07-playground']</code> · <code>[data-safety-notice='sandbox-only']</code> ·
+    <code>[data-panel='request-builder']</code> · <code>[data-select='sandbox-target']</code> ·
+    <code>[data-sandbox-mode='mock']</code> · <code>[data-input='request-body']</code> ·
+    <code>[data-security-note='synthetic-identity']</code> · <code>[data-action='send-request']</code> ·
+    <code>[data-panel='response']</code> · <code>[data-response-status='201']</code> ·
+    <code>[data-panel='quota']</code> · <code>[data-quota-used='138']</code>.<br />
+    Contract: <code>POST /api/v1/devportal/sandbox/requests</code>,
+    <code>GET /api/v1/devportal/sandbox/quota</code>, <code>GET /api/v1/devportal/sandbox/history</code>.
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>07 / 09</b> · flow <b>playground</b> · <code class="dp-mono">/playground</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="06-spec-viewer-states.html">← Prev</a>
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="08-playground-states.html">Next → Playground states</a>
+  </span>
+</nav>
+</body>
+</html>

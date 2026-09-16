@@ -1,0 +1,39 @@
+{{- /*
+  Ingress NetworkPolicy for fuzefront-devportal-service (port 3012). Mirrors
+  templates/selection-list-service-networkpolicy.yaml — see that file's
+  header comment for the full rationale on why the port is declared
+  explicitly in values.yaml and never coerced here (FuzeInfra#501).
+*/}}
+{{- if .Values.devportalService.enabled }}
+{{- $np := .Values.devportalService.networkPolicy }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fuzefront-devportal-service-ingress
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: devportal-service
+spec:
+  podSelector:
+    matchLabels:
+      app: fuzefront-devportal-service
+  policyTypes:
+    - Ingress
+  ingress:
+    # Traefik (k3s ingress controller) — devportal-frontend's Ingress path to
+    # this service (templates/devportal-frontend.yaml).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+    # Intra-fuzefront: any pod in this namespace (devportal-frontend, backend,
+    # security-service, etc.).
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ $np.port }}
+{{- end }}

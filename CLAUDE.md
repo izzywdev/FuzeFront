@@ -259,9 +259,20 @@ match a path. Fix the path.
   now caused **five** wrong changes.
 
 Also unconsumed, and inconsistent with `builtins.ts`: `services/app-registry-service/seed/*.manifest.json`
-is a documentation fixture (grep finds only comments referencing it). Only the four entries
+is a documentation fixture (grep finds only comments referencing it). Only the **three** entries
 in `BUILTIN_MANIFESTS` take their slug from FuzeFront's seed — `fuzesocial`, `fuzeagent`,
-`clock`, `fuzequality`. Every other product self-registers and owns its own slug.
+`clock`. Every other product self-registers and owns its own slug.
+
+> This said "four … `fuzequality`" until 2026-09-08. `builtins.ts` **removed** the
+> `fuzequality` built-in on 2026-08-25 as a phantom tile (it seeded an activated,
+> menu-visible app for a bundle nothing served), and applications migration 011
+> suspended the row it had seeded — so `fuzequality` has not been a built-in for
+> two weeks. It is still in the portal, and still in
+> `scripts/expected-portal-apps.json`, because the **live registry** returns it
+> (census 34261472714): that is a measurement of a self-registered app, not a seed.
+> Note the vendored `FuzeQuality/registration/manifest.json` declares
+> `"slug": "quality"`, which the registry does not serve; per the immutable-slug
+> rule above, the registry wins and neither slug gets "reconciled".
 
 ### Where else this is referenced
 

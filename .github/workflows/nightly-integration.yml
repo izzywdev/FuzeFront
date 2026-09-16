@@ -40,7 +40,7 @@ jobs:
     outputs:
       ran: ${{ steps.detect.outputs.ran }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
           fetch-depth: 0
@@ -153,7 +153,7 @@ jobs:
     # past a real deadline either.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
@@ -169,6 +169,11 @@ jobs:
       - name: Auto-fix → DRAFT PR (never auto-merge)
         uses: ./.github/actions/fuze-code-action
         with:
+          # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
+          # path. Omitting it does not fail loudly -- the rung is skipped by name
+          # and the chain silently falls through to per-token billing, which is
+          # what every run here was doing until 2026-09-16.
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
           task-prompt: |
             The **nightly integration suite** for ${{ github.repository }} FAILED

@@ -1,0 +1,424 @@
+{
+  "name": "Developer Portal (developers.fuzefront.com) — approval frames",
+  "description": "Design-first UX contract for the standalone Fuze developer portal: home (signed-out + personalized signed-in), the aggregated OpenAPI catalog, the spec viewer with its embedded OpenAPI render, the sandboxed 'Try it' playground, and My access. States are contract here, not decoration — the catalog's nothing-harvested-yet and harvest-failed cases, the viewer's invalid-spec fail-closed case, and the playground's 429 quota-exceeded, sandbox-target-unavailable (with an explicit no-production-fallback statement) and 403 cases each have a frame. Approving a flow approves its slice of the build inventory, so implementation cannot invent a different component/package layout. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "plan": "docs/planning/developers-portal.md",
+  "entry": "index.html",
+  "implementation": {
+    "paths": [
+      "devportal-frontend/src/**",
+      "packages/devportal-ui/src/**"
+    ]
+  },
+  "contract": {
+    "openapi": "services/devportal-service/openapi.yaml",
+    "client": "@fuzefront/devportal-client",
+    "schemas": [
+      "components.schemas.CatalogEntry",
+      "components.schemas.CatalogResponse",
+      "components.schemas.SpecDocument",
+      "components.schemas.SpecValidation",
+      "components.schemas.SandboxTarget",
+      "components.schemas.SandboxRequest",
+      "components.schemas.SandboxResponse",
+      "components.schemas.SandboxQuota",
+      "components.schemas.SandboxKey",
+      "components.schemas.DeveloperAccess",
+      "components.schemas.ErrorBody"
+    ],
+    "endpoints": [
+      "GET /api/v1/devportal/catalog",
+      "GET /api/v1/devportal/specs/{specId}",
+      "GET /api/v1/devportal/me/access",
+      "GET /api/v1/devportal/me/activity",
+      "POST /api/v1/devportal/me/sandbox-keys",
+      "DELETE /api/v1/devportal/me/sandbox-keys/{keyId}",
+      "POST /api/v1/devportal/sandbox/requests",
+      "GET /api/v1/devportal/sandbox/quota",
+      "GET /api/v1/devportal/sandbox/history"
+    ],
+    "component": "@fuzefront/devportal-ui → DevPortalHomeFlow | SpecCatalogFlow | SpecViewerFlow | PlaygroundFlow | MyAccessFlow",
+    "featureFlag": "fuzefront.devportal.enabled"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "home",
+        "orchestrator": "DevPortalHomeFlow",
+        "route": "/",
+        "implementation": {
+          "paths": [
+            "devportal-frontend/src/pages/home/**",
+            "packages/devportal-ui/src/home/**"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "catalog",
+        "orchestrator": "SpecCatalogFlow",
+        "route": "/catalog",
+        "implementation": {
+          "paths": [
+            "devportal-frontend/src/pages/catalog/**",
+            "packages/devportal-ui/src/catalog/**"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "spec-viewer",
+        "orchestrator": "SpecViewerFlow",
+        "route": "/catalog/:product/:service",
+        "implementation": {
+          "paths": [
+            "devportal-frontend/src/pages/spec/**",
+            "packages/devportal-ui/src/spec-viewer/**"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "playground",
+        "orchestrator": "PlaygroundFlow",
+        "route": "/playground",
+        "implementation": {
+          "paths": [
+            "devportal-frontend/src/pages/playground/**",
+            "packages/devportal-ui/src/playground/**"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "my-access",
+        "orchestrator": "MyAccessFlow",
+        "route": "/access",
+        "implementation": {
+          "paths": [
+            "devportal-frontend/src/pages/access/**",
+            "packages/devportal-ui/src/access/**"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    ],
+    "components": [
+      "DevPortalShell",
+      "PortalTopBar",
+      "HomeHero",
+      "QuickLinkGrid",
+      "ProductDirectory",
+      "SignInCta",
+      "RecentSpecsPanel",
+      "SandboxActivityPanel",
+      "CatalogTree",
+      "CatalogFilters",
+      "CatalogResultList",
+      "SpecResultCard",
+      "SandboxModeBadge",
+      "SpecHeader",
+      "SpecOverviewPanel",
+      "EndpointList",
+      "OperationPanel",
+      "SchemaTable",
+      "SpecRendererEmbed",
+      "CodeSamplePanel",
+      "TryItButton",
+      "PlaygroundPanel",
+      "SandboxTargetSelector",
+      "RequestBuilder",
+      "ParamTable",
+      "ResponsePanel",
+      "QuotaMeter",
+      "SandboxSafetyNotice",
+      "RequestHistoryPanel",
+      "MembershipPanel",
+      "RoleScopeSummary",
+      "SandboxKeyTable",
+      "RevealOnceKey"
+    ],
+    "packages": [
+      "@fuzefront/devportal-ui",
+      "@fuzefront/devportal-client"
+    ],
+    "designSystemAdditions": [
+      "CodeBlock — read-only, copyable monospace surface with an optional header bar and language/tone spans, for request/response bodies, validator output and code samples. NOT in @fuzefront/design-system today; forms/CodeField is an editable input, not this. frontend-engineer adds it as a foundation PR before the spec-viewer and playground flows are implemented.",
+      "TreeNav — collapsible hierarchical navigation (product → service → spec, and tag → operation). navigation/ currently has only Breadcrumb and Pagination; shell/MenuItem is a flat item. Foundation PR, never one-offed.",
+      "Badge — HTTP method tone map (GET/POST/PUT/PATCH/DELETE → the existing cyan/success/warning/error semantic tokens). The colors already exist; the method→tone mapping is the addition, so every Fuze surface that renders an HTTP method renders it identically.",
+      "Already in the base and reused as-is, NOT re-invented: ProgressMeter (composed into QuotaMeter), StatusCallout, EmptyState, Skeleton, Spinner, StatusPill, Badge, Button, IconButton, ExternalLink, SearchField, Select, Input, Textarea, CodeField (multiline → request body), DataTable, Tabs, Breadcrumb, TopBar, UserMenu, Avatar."
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-home-signed-out",
+      "file": "01-home-signed-out.html",
+      "label": "01 · Home (signed out)",
+      "route": "/",
+      "flow": "home",
+      "summary": "Anonymous landing: hero, quick links with the Playground shown locked, the providesTo product directory, and the sandbox-safety promise stated before sign-in.",
+      "acceptanceNotes": "Renders with data-auth='anonymous'. Catalog is reachable read-only; Playground and My access quick links carry data-locked='true' and are shown DISABLED, never hidden — the developer must learn the capability exists and that it needs sign-in. data-action='sign-in' starts the Authentik OIDC redirect; data-action='browse-catalog' routes to /catalog without auth. The product directory renders one [data-product] card per .fuze/manifest.json providesTo entry that has at least one published spec. [data-safety-notice='sandbox-only'] is present on the signed-out page too — the no-production promise is not gated behind sign-in.",
+      "testHooks": [
+        "[data-frame='01-home-signed-out']",
+        "[data-auth='anonymous']",
+        "[data-action='sign-in']",
+        "[data-action='browse-catalog']",
+        "[data-panel='home-hero']",
+        "[data-panel='quick-links']",
+        "[data-quick-link='playground'][data-locked='true']",
+        "[data-panel='product-directory']",
+        "[data-product='fuzefront']",
+        "[data-safety-notice='sandbox-only']"
+      ]
+    },
+    {
+      "id": "02-home-signed-in",
+      "file": "02-home-signed-in.html",
+      "label": "02 · Home (signed in, + empty first sign-in)",
+      "route": "/",
+      "flow": "home",
+      "summary": "Personalized home: quota strip, 'your recent specs', 'your sandbox activity', and both panels' empty variant for a developer's very first sign-in.",
+      "acceptanceNotes": "data-auth='authenticated' and [data-membership-status='active'] render from GET /me/access. [data-panel='quota-summary'] shows used/limit from GET /sandbox/quota with data-quota-used and data-quota-limit; the meter fill tone escalates to warning >80% and danger at 100%. [data-panel='recent-specs'] and [data-panel='sandbox-activity'] come from GET /me/activity and show ONLY the signed-in developer's own data (DevPortalPlayground:view_history never returns another developer's calls). With zero history each renders its empty variant ([data-empty='no-recent-specs'], [data-empty='no-sandbox-activity']) which must onboard with a CTA, not merely state emptiness. Activity rows render the HTTP method via the method-tone Badge and the target's real status code, including non-2xx.",
+      "testHooks": [
+        "[data-frame='02-home-signed-in']",
+        "[data-auth='authenticated']",
+        "[data-membership-status='active']",
+        "[data-panel='quota-summary']",
+        "[data-quota-used='137']",
+        "[data-panel='recent-specs']",
+        "[data-recent-spec='fuzefront/app-registry-service']",
+        "[data-panel='sandbox-activity']",
+        "[data-panel='recent-specs-empty'][data-state='empty']",
+        "[data-empty='no-recent-specs']",
+        "[data-empty='no-sandbox-activity']",
+        "[data-action='open-playground']"
+      ]
+    },
+    {
+      "id": "03-catalog",
+      "file": "03-catalog.html",
+      "label": "03 · Catalog (populated)",
+      "route": "/catalog",
+      "flow": "catalog",
+      "summary": "Product → service → spec TreeNav rail, search and product/tag/sandbox-mode filters, and result cards carrying version, operation count, harvest age and sandbox mode.",
+      "acceptanceNotes": "GET /catalog with q/product/tag/sandboxMode. [data-panel='catalog-tree'] renders collapsible nodes with data-tree-node='<product>' and '<product>/<service>' and data-expanded true/false; selecting a node filters the result list without a full page load. Every result card carries data-spec='<product>/<service>', data-spec-version, data-harvested-at and exactly one [data-sandbox-mode] of mock|sandbox|unavailable — a developer must be able to see, before opening a spec, whether Try-it will work. A spec whose last harvest failed validation still appears, badged data-sandbox-mode='unavailable', and links to the invalid-spec state rather than being hidden. [data-result-count] reflects the filtered count; [data-action='clear-filters'] resets every filter and the search box.",
+      "testHooks": [
+        "[data-frame='03-catalog']",
+        "[data-panel='catalog-tree']",
+        "[data-tree-node='fuzefront']",
+        "[data-tree-node='fuzefront/app-registry-service']",
+        "[data-panel='catalog-filters']",
+        "[data-input='catalog-search']",
+        "[data-filter='product']",
+        "[data-filter='tag']",
+        "[data-filter='sandbox-mode']",
+        "[data-panel='catalog-results']",
+        "[data-spec='fuzefront/app-registry-service']",
+        "[data-sandbox-mode='mock']",
+        "[data-sandbox-mode='sandbox']",
+        "[data-sandbox-mode='unavailable']",
+        "[data-result-count]",
+        "[data-action='clear-filters']"
+      ]
+    },
+    {
+      "id": "04-catalog-states",
+      "file": "04-catalog-states.html",
+      "label": "04 · Catalog states (loading / empty / error / 403)",
+      "route": "/catalog",
+      "flow": "catalog",
+      "summary": "Loading skeletons, cold-start empty (nothing harvested yet), filtered-empty, harvest-failed error degrading to a badged stale catalog, and the 403 not-a-Developer fail-closed case.",
+      "acceptanceNotes": "Five distinct states, each independently addressable by data-state. (a) loading: skeletons preserve the populated layout, results region aria-busy='true'; no spinner-only screen. (b) empty [data-empty='no-specs']: zero specs in the registry is a COLD START, not an error — copy links to the publish-spec CI guide rather than dead-ending. (c) empty-filtered [data-empty='no-results']: specs exist but the query matches none; states the total and offers data-action='clear-filters'. (d) error [data-error='harvest-failed']: the catalog serves the last known-good snapshot, and EVERY row plus a page-level chip carries [data-catalog='stale'] with the snapshot timestamp — cached data is never presented as fresh. With no cache at all the list is replaced by [data-empty='catalog-unavailable'] and no stale rows are shown. (e) forbidden [data-http='403']: Permit denied DevPortalCatalog:read; fails closed with no partial catalog, and routes to /access.",
+      "testHooks": [
+        "[data-frame='04-catalog-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-empty='no-specs']",
+        "[data-action='view-publish-guide']",
+        "[data-state='empty-filtered']",
+        "[data-empty='no-results']",
+        "[data-action='clear-filters']",
+        "[data-state='error']",
+        "[data-error='harvest-failed']",
+        "[data-catalog='stale']",
+        "[data-action='retry']",
+        "[data-state='forbidden']",
+        "[data-http='403']",
+        "[data-error='not-a-developer']",
+        "[data-action='view-my-access']"
+      ]
+    },
+    {
+      "id": "05-spec-viewer",
+      "file": "05-spec-viewer.html",
+      "label": "05 · Spec viewer (overview + OpenAPI render)",
+      "route": "/catalog/:product/:service",
+      "flow": "spec-viewer",
+      "summary": "Three panes: operations grouped by tag, our aggregated overview plus the selected operation (parameters, request/response schemas, example), and copy-paste code samples.",
+      "acceptanceNotes": "GET /specs/{specId}. [data-panel='spec-header'] renders name, version, source repo, spec path, harvest age, OpenAPI version and operation count — provenance is always visible so a developer knows which commit's contract they are reading. [data-panel='endpoint-list'] groups operations by tag with method-tone badges and data-operation='<operationId>'. [data-panel='operation'] renders parameters and request schema ([data-panel='request-schema']) and every declared response ([data-panel='response-schema']) including 4xx/5xx — not just the 2xx. The OSS renderer embed (Stoplight Elements / Swagger UI per plan §3) is themed with fuse-seam tokens; the chrome around it is ours. data-action='try-it' and data-action='try-it-operation' carry the current operation into the Playground prefilled. Code samples substitute the SANDBOX base, never a production host.",
+      "testHooks": [
+        "[data-frame='05-spec-viewer']",
+        "[data-panel='spec-header']",
+        "[data-spec='fuzefront/app-registry-service']",
+        "[data-spec-version='v1.4.0']",
+        "[data-source-repo='izzywdev/FuzeFront']",
+        "[data-panel='spec-overview']",
+        "[data-panel='endpoint-list']",
+        "[data-operation='registerApp']",
+        "[data-panel='operation']",
+        "[data-panel='request-schema']",
+        "[data-panel='response-schema']",
+        "[data-panel='code-sample']",
+        "[data-action='try-it']",
+        "[data-action='try-it-operation']",
+        "[data-action='download-spec']",
+        "[data-action='open-in-playground']"
+      ]
+    },
+    {
+      "id": "06-spec-viewer-states",
+      "file": "06-spec-viewer-states.html",
+      "label": "06 · Spec viewer states (loading / fetch failed / invalid / 404 / stale)",
+      "route": "/catalog/:product/:service",
+      "flow": "spec-viewer",
+      "summary": "Loading skeletons, 502 spec-fetch failure, the invalid-spec fail-closed case with validator output and Try-it disabled, 404 not found, and the stale-spec badge.",
+      "acceptanceNotes": "(a) loading: the header renders from catalog data already held, so only the panes awaiting the blob show skeletons and nothing reflows on arrival. (b) [data-error='spec-fetch-failed'] with data-http='502': the catalog entry exists but the document could not be retrieved; offers retry, back-to-catalog and a raw download, and explicitly states it is not an account problem. (c) [data-state='invalid-spec'] is the load-bearing case: a document that parses but is not valid OpenAPI must NOT render a partial doc page. The renderer is replaced by the validator output ([data-code='validation-errors']), the source repo is named for the report action, the last valid version is offered, and [data-action='try-it'][data-try-it='disabled'] is DISABLED-and-visible rather than hidden — a request builder generated from a half-parsed spec would produce calls for operations that do not exist. (d) [data-empty='spec-not-found'] with data-http='404' for a removed/renamed spec. (e) [data-state='stale']: renders normally but badges the age; we mark staleness rather than hiding it.",
+      "testHooks": [
+        "[data-frame='06-spec-viewer-states']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-error='spec-fetch-failed']",
+        "[data-http='502']",
+        "[data-state='invalid-spec']",
+        "[data-error='spec-invalid']",
+        "[data-spec-validity='invalid']",
+        "[data-code='validation-errors']",
+        "[data-try-it='disabled']",
+        "[data-action='report-to-source-repo']",
+        "[data-action='view-last-valid']",
+        "[data-state='not-found']",
+        "[data-empty='spec-not-found']",
+        "[data-http='404']",
+        "[data-state='stale']",
+        "[data-catalog='stale']",
+        "[data-action='retry']",
+        "[data-action='back-to-catalog']"
+      ]
+    },
+    {
+      "id": "07-playground",
+      "file": "07-playground.html",
+      "label": "07 · Playground (request builder / response / quota)",
+      "route": "/playground",
+      "flow": "playground",
+      "summary": "The 'Try it' panel: sandbox target selector, request builder, response panel, quota meter, own-call history, and the permanent never-touches-production notice.",
+      "acceptanceNotes": "Three things are ALWAYS visible and non-dismissible: [data-safety-notice='sandbox-only'], the resolved target ([data-resolved-target] + [data-sandbox-mode]), and [data-panel='quota']. The authorization header row is NOT editable and is marked [data-security-note='synthetic-identity'] — a developer must be unable to paste a real production token into a sandbox call, and the proxy mints a synthetic identity scoped to the target. [data-input='request-body'] is prefilled from the spec example and validated against the operation schema before send. data-action='send-request' POSTs /sandbox/requests. [data-panel='response'] shows status ([data-response-status]), duration ([data-response-time]), size, body/headers/trace tabs and states that values are schema-generated, not from a real database. [data-panel='request-history'] shows only the signed-in developer's calls.",
+      "testHooks": [
+        "[data-frame='07-playground']",
+        "[data-safety-notice='sandbox-only']",
+        "[data-panel='request-builder']",
+        "[data-select='sandbox-target']",
+        "[data-sandbox-mode='mock']",
+        "[data-resolved-target]",
+        "[data-panel='query-params']",
+        "[data-panel='headers']",
+        "[data-security-note='synthetic-identity']",
+        "[data-input='request-body']",
+        "[data-action='send-request']",
+        "[data-action='copy-as-curl']",
+        "[data-panel='response']",
+        "[data-response-status='201']",
+        "[data-code='response-body']",
+        "[data-panel='quota']",
+        "[data-quota-used='138']",
+        "[data-quota-limit='500']",
+        "[data-panel='request-history']"
+      ]
+    },
+    {
+      "id": "08-playground-states",
+      "file": "08-playground-states.html",
+      "label": "08 · Playground fail-closed states (429 / target down / 403 / 5xx)",
+      "route": "/playground",
+      "flow": "playground",
+      "summary": "Sending, locally-blocked invalid request, 429 quota exceeded, sandbox target unavailable with an explicit no-production-fallback statement, no-sandbox-available, 403, proxy 5xx, and target 4xx rendered as data rather than as a portal error.",
+      "acceptanceNotes": "Every state here shares one non-negotiable property: the portal NEVER falls back to a production servers: entry. (a) sending: send disabled for the duration, no double-submit and no second quota unit. (b) [data-error='request-invalid']: the body is schema-checked locally, the request never leaves the browser and the quota meter does not move. (c) [data-http='429'][data-error='quota-exceeded']: the meter reads limit/limit with the danger fill, Retry-After and the reset time are shown, send stays DISABLED until reset with the reason on its accessible description, and catalog/spec reading is explicitly unaffected. (d) [data-error='sandbox-target-unavailable'] with data-http='503': carries [data-safety-note='no-prod-fallback'] stating the request was not sent anywhere else; the target selector shows [data-sandbox-health='down'] so the condition is visible BEFORE pressing send. (e) [data-error='sandbox-not-available']: no mock can be generated and the repo declared no x-fuzefront-sandbox-url — absence of opt-in means mock-only, never production; send is disabled and explained. (f) [data-http='403'][data-error='playground-forbidden']: Permit denied DevPortalPlayground:use while catalog reading keeps working. (g) [data-error='proxy-error']: 5xx from devportal-service itself, surfaces a copyable [data-request-id] and states no quota was consumed. (h) [data-state='target-error-response']: a 4xx/5xx FROM THE TARGET is a successful sandbox call and renders in the response panel as data — only the portal's own failures use StatusCallout. Conflating the two trains developers to ignore errors.",
+      "testHooks": [
+        "[data-frame='08-playground-states']",
+        "[data-state='sending']",
+        "[data-state='request-invalid']",
+        "[data-error='request-invalid']",
+        "[data-state='quota-exceeded']",
+        "[data-http='429']",
+        "[data-error='quota-exceeded']",
+        "[data-quota-state='exceeded']",
+        "[data-quota-reset]",
+        "[data-state='target-unavailable']",
+        "[data-http='503']",
+        "[data-error='sandbox-target-unavailable']",
+        "[data-safety-note='no-prod-fallback']",
+        "[data-sandbox-health='down']",
+        "[data-state='no-sandbox']",
+        "[data-error='sandbox-not-available']",
+        "[data-try-it='disabled']",
+        "[data-state='forbidden']",
+        "[data-http='403']",
+        "[data-error='playground-forbidden']",
+        "[data-state='error']",
+        "[data-error='proxy-error']",
+        "[data-request-id]",
+        "[data-state='target-error-response']",
+        "[data-response-status='409']",
+        "[data-action='retry']"
+      ]
+    },
+    {
+      "id": "09-my-access",
+      "file": "09-my-access.html",
+      "label": "09 · My access (membership / quota / sandbox keys + states)",
+      "route": "/access",
+      "flow": "my-access",
+      "summary": "Root-org Developer membership with an explicit grants / does-not-grant split, sandbox quota with per-target breakdown, sandbox keys with reveal-once and revoke, plus provisioning, denied (403), empty, error and revoke-confirm states.",
+      "acceptanceNotes": "GET /me/access. [data-panel='membership'] states the organization (platform root), [data-membership-role='developer'], how and when it was granted, and the signing identity. [data-scope='developer'] renders BOTH halves: [data-scope-grants='allowed'] (DevPortalCatalog:read, DevPortalPlayground:use, DevPortalPlayground:view_history) and [data-scope-grants='denied'] (no tenant data, no administration, no other developer's history) — showing only what a role grants is how people assume it grants more. [data-panel='quota'] repeats the meter with a per-target breakdown. [data-panel='sandbox-keys'] lists masked keys with created/last-used and per-row [data-action='revoke-key']; creation surfaces [data-reveal='once'] whose copy states the value is shown exactly once and is stored hashed. Revoke is confirmed explicitly ([data-state='revoke-confirm']), never one-click. Three account states are contract: [data-membership-status='provisioning'] on a very first sign-in — catalog and playground stay disabled until the grant lands rather than appearing to work and then 403-ing; [data-membership-status='denied'] with data-http='403' when provisioning failed or the flag audience excludes the account, failing closed as a whole rather than exposing a subset; and [data-error='access-load-failed'], where nothing is rendered from a default or cached assumption.",
+      "testHooks": [
+        "[data-frame='09-my-access']",
+        "[data-panel='membership']",
+        "[data-membership-role='developer']",
+        "[data-membership-status='active']",
+        "[data-scope='developer']",
+        "[data-scope-grants='allowed']",
+        "[data-scope-grants='denied']",
+        "[data-panel='quota']",
+        "[data-panel='sandbox-keys']",
+        "[data-key='sbk_01j8q']",
+        "[data-action='create-key']",
+        "[data-action='revoke-key']",
+        "[data-reveal='once']",
+        "[data-action='copy-key']",
+        "[data-state='empty']",
+        "[data-empty='no-sandbox-keys']",
+        "[data-state='provisioning']",
+        "[data-membership-status='provisioning']",
+        "[data-state='denied']",
+        "[data-membership-status='denied']",
+        "[data-http='403']",
+        "[data-state='error']",
+        "[data-error='access-load-failed']",
+        "[data-state='revoke-confirm']",
+        "[data-action='confirm-revoke-key']",
+        "[data-action='retry']"
+      ]
+    }
+  ],
+  "stamp": "496e19a1b1842469b79f03efd25c1a066e8512b2884352094693c4d49b4fab90"
+}

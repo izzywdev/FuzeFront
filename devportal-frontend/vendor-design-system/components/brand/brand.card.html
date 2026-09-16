@@ -1,0 +1,123 @@
+<!-- @dsCard group="Components" viewport="720x260" name="Brand — Wordmark & Seam" subtitle="The FuzeFront wordmark and the signature fuse seam" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../styles.css" />
+<style>
+  body {
+    margin: 0;
+    padding: var(--space-7) var(--space-8);
+    font-family: var(--font-sans);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .grid {
+    display: flex;
+    gap: var(--space-10);
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .col { display: flex; flex-direction: column; gap: var(--space-5); }
+  .lbl {
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-wide);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin: 0 0 var(--space-3);
+    font-weight: var(--weight-semibold);
+  }
+  .specimen { display: flex; flex-direction: column; gap: var(--space-2); }
+  .specimen .caption {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-tertiary);
+  }
+
+  /* ---- BrandMark ---------------------------------------- */
+  .brandmark {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-family: var(--font-display);
+    font-weight: var(--weight-bold);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--text-primary);
+    white-space: nowrap;
+    user-select: none;
+  }
+  .brandmark.sm { font-size: var(--text-base); }
+  .brandmark.md { font-size: var(--text-lg); }
+  .brandmark.lg { font-size: var(--text-2xl); }
+  .brandmark .fuze {
+    background: var(--seam);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* ---- SeamDivider ------------------------------------- */
+  .seampanel {
+    width: 320px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+  .seam-divider {
+    flex: none;
+    height: 2px;
+    width: 100%;
+    border-radius: var(--radius-pill);
+    background: var(--seam);
+  }
+  .seam-divider.glow {
+    box-shadow: 0 0 8px var(--accent-color), 0 0 16px var(--accent-soft);
+  }
+  .seam-divider.thick { height: 4px; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="col">
+      <p class="lbl">BrandMark</p>
+      <div class="specimen">
+        <span class="brandmark lg"><span class="fuze">Fuze</span>Front</span>
+        <span class="caption">size="lg"</span>
+      </div>
+      <div class="specimen">
+        <span class="brandmark md"><span class="fuze">Fuze</span>Front</span>
+        <span class="caption">size="md" (default)</span>
+      </div>
+      <div class="specimen">
+        <span class="brandmark sm"><span class="fuze">Fuze</span>Front</span>
+        <span class="caption">size="sm"</span>
+      </div>
+    </div>
+
+    <div class="col">
+      <p class="lbl">SeamDivider</p>
+      <div class="seampanel">
+        <div class="specimen">
+          <div class="seam-divider"></div>
+          <span class="caption">horizontal</span>
+        </div>
+        <div class="specimen">
+          <div class="seam-divider glow"></div>
+          <span class="caption">glow</span>
+        </div>
+        <div class="specimen">
+          <div class="seam-divider thick glow"></div>
+          <span class="caption">thickness=4 · glow</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

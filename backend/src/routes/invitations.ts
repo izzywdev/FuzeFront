@@ -297,7 +297,7 @@ router.post('/:token/accept', invitationsRateLimiter, async (req: any, res) => {
       await assignOrganizationRole(
         user.id,
         invitation.organization_id,
-        invitation.role as 'owner' | 'admin' | 'member' | 'viewer'
+        invitation.role as 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
       )
     } catch (permitErr) {
       // Constant format string + %s args (Semgrep unsafe-formatstring): a

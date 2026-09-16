@@ -1,0 +1,116 @@
+{{- if .Values.devportalFrontend.enabled }}
+# =============================================================================
+# devportal-frontend — the Fuze family developer portal at
+# developers.fuzefront.com (docs/planning/developers-portal.md). Standalone
+# app, NOT a Module-Federation remote — structurally modeled on
+# templates/website.yaml's websiteFrontend (own nginx, own host, own Ingress).
+#
+# Frontend: nginx serving the React SPA (devportal-frontend/Dockerfile),
+#           port 3000, proxies /api/* to devportal-service internally
+#           (nginx.conf) — the Ingress below ALSO splits /api/* directly to
+#           devportal-service, same belt-and-suspenders pattern website.yaml
+#           uses for its own frontend/backend split.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devportal-frontend
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: devportal-frontend
+spec:
+  replicas: {{ .Values.devportalFrontend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: devportal-frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: devportal-frontend
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.devportalFrontend "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: devportal-frontend
+          image: "{{ .Values.devportalFrontend.image.repository }}:{{ .Values.devportalFrontend.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.devportalFrontend.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.devportalFrontend.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devportal-frontend
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: devportal-frontend
+spec:
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: devportal-frontend
+  ports:
+    - name: http
+      port: {{ .Values.devportalFrontend.port }}
+      targetPort: http
+{{- if and .Values.ingress.enabled .Values.devportalFrontend.host }}
+---
+# Separate Ingress for developers.fuzefront.com — a DIFFERENT host from both
+# the main app.fuzefront.com Ingress (ingress.yaml) and fuzefront-website's
+# own Ingress (website.yaml). Never edit ingress.yaml's wildcard rule for
+# this — a distinct exact-host Ingress object avoids the Traefik
+# HostRegexp-priority trap documented there.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-devportal
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.devportalFrontend.host | quote }}
+      http:
+        paths:
+          {{- if .Values.devportalService.enabled }}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-devportal-service
+                port:
+                  number: {{ .Values.devportalService.port }}
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: devportal-frontend
+                port:
+                  number: {{ .Values.devportalFrontend.port }}
+{{- end }}
+{{- end }}

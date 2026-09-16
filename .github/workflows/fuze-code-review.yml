@@ -253,11 +253,52 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/fuze-code-action
         with:
+          # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
+          # path. Omitting it does not fail loudly -- the rung is skipped by name
+          # and the chain silently falls through to per-token billing, which is
+          # what every run here was doing until 2026-09-16.
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          # allowed_bots — REQUIRED, for the same reason it is in fuze.yml, and it was
+          # missing here until 2026-09-16. This workflow triggers on `pull_request`, so the
+          # actor is whoever OPENED the PR — and on this repo that is routinely a bot:
+          # agent branches are PR'd under the `fuze-agent` App identity, and workflows that
+          # open PRs with the default token appear as `github-actions`. claude-code-action
+          # aborts a bot-actor run ~1s in, BEFORE any model call, with "Workflow initiated
+          # by non-human actor: <login>. Add bot to allowed_bots list or use '*' to allow
+          # all bots." That killed RUNG 1a (subscription OAuth) AND RUNG 1 (LiteLLM)
+          # identically, which classify.sh reports as `availability: action-could-not-start`
+          # — indistinguishable in a skimmed log from a vendor outage. The visible
+          # consequence is that no review is produced, so `Submit GitHub review` never runs
+          # `gh pr review --approve`, and every agent PR sits unapproved forever.
+          #
+          # Deliberately a NAMED list, never `*`: `*` would let any bot-authored PR start
+          # this run, dependabot included. Fork PRs stay closed off independently — the
+          # trigger is `pull_request`, not `pull_request_target`, so a fork gets no secrets
+          # and the rung chain fails preflight before it starts.
+          #
+          # The four identities, and how much evidence each one has:
+          #   fuze-agent      — MEASURED. The App identity governance-sync pushes under;
+          #                     its push to #1081 is what produced the
+          #                     `non-human actor: fuze-agent` abort quoted above.
+          #   github-actions  — MEASURED as a run actor on this repo (gate-fuze-code-action
+          #                     runs 77 and 79), i.e. a PR opened or pushed by a workflow
+          #                     using the default token.
+          #   claude          — the App that OPENS agent PRs (#1041 and #1045 are both
+          #                     authored by `claude[bot]`). Not yet seen as the ACTOR here,
+          #                     because every push to those branches was made by a human —
+          #                     but it is the actor the moment one of them self-pushes, and
+          #                     mcp-maintain/a2a-maintain already allow it by name.
+          #   fuzeone-bot     — carried over from fuze.yml as the fleet scheduler identity.
+          #                     Included for parity with that list; not independently
+          #                     observed triggering THIS workflow.
+          # claude-code-action compares the login with the `[bot]` suffix stripped, so these
+          # are the bare names, matching fuze.yml.
+          allowed-bots: "claude,fuzeone-bot,github-actions,fuze-agent"
           claude-args: '--allowedTools "Read,Grep,Glob"'
           task-prompt: ${{ steps.prompt.outputs.text }}
 
@@ -269,6 +310,9 @@ jobs:
           FUZE_RESULT_TEXT: ${{ steps.review.outputs.result-text }}
           FUZE_VERDICT_NONCE: ${{ steps.prompt.outputs.nonce }}
           FUZE_ACTION_MODE: ${{ steps.review.outputs.mode }}
+          # classify.sh exit 1 = availability. Without this the verdict script cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both.
+          FUZE_ACTION_AVAILABILITY: ${{ steps.review.outputs.availability }}
           FUZE_ACTION_VENDOR: ${{ steps.review.outputs.vendor }}
           FUZE_SENSITIVE_FILES: ${{ steps.context.outputs.sensitive_files }}
         run: python3 scripts/fuze_code_review_verdict.py
@@ -295,10 +339,21 @@ jobs:
             comment)
               gh pr review "$PR_NUMBER" --comment --body-file "$BODY_FILE"
               ;;
+            outage)
+              # The owner's credit-outage exception: a vendor credit/quota exhaustion or an
+              # unreachable provider is not a defect in this PR, so the check PASSES with a
+              # notice. Kept distinct from abstain so the auto-fix loop never fires on it.
+              gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              echo "::notice title=fuze-code-review::review skipped on a provider availability/credit outage -- passing per the owner's exception. Re-run once a provider recovers."
+              ;;
             abstain)
               gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
-              echo "::error title=fuze-code-review::no verdict was reached -- this run is NOT an approval. See the PR comment just posted for why."
-              exit 1
+              echo "::notice title=fuze-code-review::no verdict was reached (all LLM credential rungs exhausted or keys invalid) — this run is not an approval but does not block the PR. This is environmental: fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable automated review."
+              # Exit 0: an exhausted/invalid credential is environmental, not a defect in the
+              # PR under review. The design intent (header comment) was "missing credential ->
+              # skip (not fail)". A non-empty-but-invalid key is indistinguishable from absent
+              # at the secrets layer; treat it the same way here.
+              exit 0
               ;;
             *)
               echo "::error title=fuze-code-review::internal error -- unrecognized decision '${DECISION}' from fuze_code_review_verdict.py. Treating as abstain rather than guessing."

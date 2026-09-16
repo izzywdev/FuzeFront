@@ -1,0 +1,120 @@
+{{- if .Values.devportalService.enabled }}
+# devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
+# "Try it" playground proxy backing developers.fuzefront.com. See
+# docs/planning/developers-portal.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fuzefront-devportal-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: devportal-service
+spec:
+  replicas: {{ .Values.devportalService.replicas }}
+  selector:
+    matchLabels:
+      app: fuzefront-devportal-service
+  template:
+    metadata:
+      labels:
+        app: fuzefront-devportal-service
+        {{- include "fuzefront.labels" . | nindent 8 }}
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.devportalService "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: devportal-service
+          image: "{{ .Values.devportalService.image.repository }}:{{ .Values.devportalService.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.devportalService.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: {{ .Values.devportalService.port | quote }}
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              # Dedicated DB (see devportalService.dbName) so knex_migrations
+              # never collides with the backend's ledger in fuzefront_platform.
+              value: {{ .Values.devportalService.dbName | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: DB_PASSWORD
+            - name: JWT_SECRET
+              # governance/architecture-guidelines.md §1 — devportal-service
+              # VERIFIES the same platform-issued session token every other
+              # service does (middleware/auth.ts); it never mints its own.
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: JWT_SECRET
+            - name: INTERNAL_PROVISION_SECRET
+              # Same shared secret backend/security's /internal/* routes check —
+              # devportal-service calls /internal/oidc-sync,
+              # /internal/devportal-provision and /internal/mint-session with
+              # it (services/internalClient.ts).
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: INTERNAL_PROVISION_SECRET
+            - name: SECURITY_SERVICE_URL
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            - name: AUTHENTIK_ISSUER_URL
+              value: {{ .Values.authentik.oidc.issuerUrl | quote }}
+            - name: AUTHENTIK_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_CLIENT_ID
+            - name: AUTHENTIK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: AUTHENTIK_CLIENT_SECRET
+            - name: DEVPORTAL_OIDC_REDIRECT_URI
+              value: {{ .Values.devportalService.oidcRedirectUri | quote }}
+            - name: DEVPORTAL_FRONTEND_URL
+              value: {{ .Values.devportalService.frontendUrl | quote }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.devportalService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.devportalService.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.devportalService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fuzefront-devportal-service
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: devportal-service
+spec:
+  selector:
+    app: fuzefront-devportal-service
+  ports:
+    - port: {{ .Values.devportalService.port }}
+      targetPort: {{ .Values.devportalService.port }}
+      protocol: TCP
+      name: http
+{{- end }}

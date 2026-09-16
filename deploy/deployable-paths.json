@@ -120,7 +120,40 @@
       "path": "services/config-service/**"
     },
     {
+      "path": "services/devportal-service/**",
+      "why": [
+        "docs/planning/developers-portal.md — devportal-service's own Dockerfile",
+        "also COPYs scripts/collect-devportal-specs.mjs and every services/*/openapi.yaml",
+        "it bundles (see that Dockerfile's `specs` build stage), so a change confined to",
+        "this dir alone still needs the SAME silent-ship protection every other service",
+        "path above exists for."
+      ]
+    },
+    {
+      "path": "devportal-frontend/**",
+      "why": [
+        "Top-level, sibling to fuzefront-website/ — same self-contained-Dockerfile shape,",
+        "same silent-ship gap if this path were absent."
+      ]
+    },
+    {
+      "path": "scripts/collect-devportal-specs.mjs",
+      "why": [
+        "Consumed by services/devportal-service/Dockerfile's `specs` build stage. A change",
+        "here changes what devportal-service bakes in without touching services/devportal-service/**",
+        "itself."
+      ]
+    },
+    {
       "path": "clock-app/**"
+    },
+    {
+      "path": "fuzefront-website/**",
+      "why": [
+        "fuzefront-website/frontend and fuzefront-website/backend each have their own",
+        "self-contained Dockerfile and are built into separate GHCR images. Without this",
+        "path a change confined to the public website would merge green and never ship."
+      ]
     },
     {
       "path": "deploy/helm/fuzefront/**"

@@ -13,13 +13,18 @@ single source of truth lives here, in the hub.
 | `CLAUDE.md` `<!-- FUZEONE -->` region | The committed family SDLC (so the team + GitHub-runner `@claude` + this repo all see it) | synced (region merge) |
 | `.npmrc` | `@fuzefront/*` resolve privately from GitHub Packages | synced (template) |
 | `.github/workflows/claude.yml`, `claude-auto-pr.yml`, `auto-merge.yml` | `@claude` handler, issue→draft-PR autonomy, merge-on-green | synced, self-contained |
-| `.github/workflows/claude-ci-autofix.yml`, `telegram-pr-merged.yml` | CI-failure→Claude autofix, merge notifications | **reusable** — call `izzywdev/AITools` (central fixes propagate) |
+| `.github/workflows/claude-ci-autofix.yml`, `telegram-pr-merged.yml` | CI-failure→Claude autofix, merge notifications | synced, self-contained |
 | `.github/workflows/helm-validate.yml` | helm lint + kubeconform | synced, only if `deploy/helm/` exists |
 | `.github/workflows/infra-dispatch.yml` | declare infra → FuzeInfra reconciles (repository_dispatch) | synced, only if `deploy/terraform/` or `deploy/argocd/` exists |
 
-This is the **hybrid** model: workflows whose logic benefits from central updates are thin callers of
-the family reusable workflows in `izzywdev/AITools`; everything else is a local file `fuzeone sync`
-re-stamps. Re-run sync to pick up new standard versions.
+Every generated workflow is a self-contained local file `fuzeone sync` re-stamps — there is no
+`uses:` call into a shared reusable-workflow repo anymore. `claude-ci-autofix.yml` and
+`telegram-pr-merged.yml` used to be thin callers of `izzywdev/AITools`'s reusable workflows
+(central fixes propagate); AITools is retired, so their logic is inlined into the template
+here instead, matching the fix already landed fleet-wide for the same reason
+(`izzywdev/FuzeSDLC` `governance/reusable-workflows.md`: a public repo cannot resolve a
+reusable workflow hosted in a private one, and inlining survives either repo's own
+visibility or existence). Re-run sync to pick up new standard versions.
 
 ## Installing the agents — two independent dimensions
 

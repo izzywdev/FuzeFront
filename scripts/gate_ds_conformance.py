@@ -29,6 +29,7 @@ Env: GATE_BASE_REF (changed-only base ref, default origin/master);
 Exit 0 = conforms (extraction issues are non-fatal); exit 1 = hard violation.
 """
 from __future__ import annotations
+
 import fnmatch
 import hashlib
 import json
@@ -38,10 +39,24 @@ import subprocess
 import sys
 from collections import defaultdict
 
+_FALLBACK_NOTE = "git ls-files unavailable; the caller will fall back"
+
 UI_EXT = (".tsx", ".jsx", ".ts", ".js", ".vue", ".svelte", ".css", ".scss", ".less")
-SCAN_DIRS = ["frontend", "apps", "src", "packages"]
+# "fuzefront-website/frontend" is a compound (multi-segment) entry: the public
+# marketing/product site lives in its own top-level dir (fuzefront-website/),
+# not under one of the plain top-level names below, so a bare first-segment
+# match would silently skip it entirely — it shipped a hand-rolled Tailwind
+# palette with real contrast bugs (invisible nav text over its own hero) for
+# a full release cycle with this gate reporting green throughout, because
+# green meant "not scanned", not "conforms". See _under_scan_dir.
+SCAN_DIRS = ["frontend", "apps", "src", "packages", "fuzefront-website/frontend"]
 # Any path containing one of these segments is the DS package itself — exclude from feature checks.
 DS_EXCLUDE_SEGMENTS = ("design-system", "design_system", "ds-tokens", "tokens")
+# A *-design-system segment (e.g. "vendor-design-system") is a vendored, synced-from-source copy
+# of the real design-system/ package — see fuzefront-website/frontend/scripts/sync-design-system.mjs
+# for why a consumer with an isolated build context vendors it via a `file:` dependency instead of
+# a registry package. It's a snapshot of the same source DS_EXCLUDE_SEGMENTS already exempts, not
+# feature code, so it gets the same exemption rather than being re-scanned as if hand-authored.
 SKIP_DIRS = {".git", "node_modules", "dist", "build", ".venv", "vendor",
              "__pycache__", "coverage", ".next", "storybook-static", "__snapshots__"}
 # Feature-path globs that are NOT hand-authored feature UI: config, type decls, contract-frozen
@@ -64,22 +79,32 @@ SKIP_FEATURE_GLOBS = (
     "packages/*-client-py/src/*",
     "*.test.*",
     "*/__tests__/*",
+    # Playwright's naming convention (*.test.* above is Jest/Vitest's) and its
+    # conventional suite directory. e2e/ specs assert against RENDERED
+    # feature UI, they don't implement it — and their helper code often needs
+    # to construct/compare raw rgb()/hex strings from real pixels (e.g. a
+    # screenshot-based contrast checker), which is legitimate there in a way
+    # it never is in a component that ships raw colors to users. Caught here
+    # via fuzefront-website/frontend/e2e/utils/contrast.ts, which builds an
+    # `rgb(...)` string purely for a test-failure diagnostic message.
+    "*.spec.*",
+    "*/e2e/*",
 )
 
 HEX_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b")
-RGB_RE = re.compile(r"\brgba?\(", re.I)
-HSL_RE = re.compile(r"\bhsla?\(", re.I)
+RGB_RE = re.compile(r"\brgba?\(", re.IGNORECASE)
+HSL_RE = re.compile(r"\bhsla?\(", re.IGNORECASE)
 # spacing/sizing px literals on layout properties (allow 0px / 1px hairline)
 PX_PROP_RE = re.compile(
     r"\b(padding|margin|gap|width|height|top|left|right|bottom|font-size|line-height|border-radius)"
     r"[^\n;{}]*?:\s*(\d{2,})px",
-    re.I,
+    re.IGNORECASE,
 )
 # raw font-family string (not a var/token)
-FONT_FAMILY_RE = re.compile(r"font-family\s*:\s*[\"']?[A-Za-z]", re.I)
+FONT_FAMILY_RE = re.compile(r"font-family\s*:\s*[\"']?[A-Za-z]", re.IGNORECASE)
 # allow lines that clearly use a token/var
-TOKEN_HINT_RE = re.compile(r"(var\(--|tokens?\.|theme\.|\$[a-z]|@apply|colors?\.|spacing\.|--ds-)", re.I)
-DISABLE_RE = re.compile(r"ds-conformance[- ]?(disable|ignore|allow)", re.I)
+TOKEN_HINT_RE = re.compile(r"(var\(--|tokens?\.|theme\.|\$[a-z]|@apply|colors?\.|spacing\.|--ds-)", re.IGNORECASE)
+DISABLE_RE = re.compile(r"ds-conformance[- ]?(disable|ignore|allow)", re.IGNORECASE)
 
 # @@ -a,b +c,d @@  — capture the +c[,d] added-line range
 HUNK_RE = re.compile(r"^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@")
@@ -107,12 +132,23 @@ def _git_ui_files(root: str) -> list[str] | None:
     try:
         res = subprocess.run(
             ["git", "-C", root, "ls-files"] + [f"*{e}" for e in UI_EXT] + [f"**/*{e}" for e in UI_EXT],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0:
             return [p for p in res.stdout.splitlines() if p.strip()]
-    except Exception:
-        pass
+        if res.returncode != 0:
+            # `check=False` means a nonzero exit does NOT raise, so without this the
+            # downgrade happens in SILENCE -- the handler below only covers the
+            # exception path. A `git archive` extract (not a repo) exits nonzero here
+            # and produced a phantom regression during this PR's own verification.
+            # Caught in review (Copilot, 2026-09-15).
+            print(f"{_FALLBACK_NOTE} (git exit {res.returncode}: "
+                  f"{res.stderr.strip()[:200]})", file=sys.stderr)
+    except (OSError, subprocess.SubprocessError) as exc:
+        # Narrow: only a missing/failing git binary belongs here. Returning None makes
+        # the caller fall back; logging keeps a real bug in the try block visible
+        # instead of silently degrading the gate (S110).
+        print(f"{_FALLBACK_NOTE} ({type(exc).__name__}: {exc})", file=sys.stderr)
     return None
 
 
@@ -122,9 +158,9 @@ def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
     try:
         res = subprocess.run(
             ["git", "-C", root, "diff", "--unified=0", f"{base_ref}...HEAD"],
-            capture_output=True, text=True, timeout=90,
+            capture_output=True, text=True, timeout=90, check=False,
         )
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"::warning title=gate-ds-conformance::changed-only diff failed to run: {e}")
         return None
     if res.returncode != 0:
@@ -139,7 +175,7 @@ def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
             if p == "/dev/null":
                 cur = None
             else:
-                cur = p[2:] if (p.startswith("a/") or p.startswith("b/")) else p
+                cur = p[2:] if p.startswith(("a/", "b/")) else p
             continue
         if line.startswith("@@") and cur is not None:
             m = HUNK_RE.match(line)
@@ -152,17 +188,36 @@ def changed_lines(root: str, base_ref: str) -> dict[str, set[int]] | None:
     return dict(out)
 
 
+def _is_ds_package_segment(seg: str) -> bool:
+    """True for `seg` naming the DS package itself, either at its canonical location
+    (an exact DS_EXCLUDE_SEGMENTS match) or a vendored copy of it (a `*-design-system` /
+    `*-design_system` segment, e.g. "vendor-design-system")."""
+    if seg in DS_EXCLUDE_SEGMENTS:
+        return True
+    return seg.endswith(("-design-system", "-design_system"))
+
+
+def _under_scan_dir(reln: str) -> bool:
+    """True if `reln` (forward-slash repo-relative path) falls under one of
+    SCAN_DIRS. Entries may be a single top-level segment ("frontend") or a
+    compound path ("fuzefront-website/frontend") for an app that doesn't live
+    at a recognized top-level name."""
+    for base in SCAN_DIRS:
+        if reln == base or reln.startswith(base + "/"):
+            return True
+    return False
+
+
 def iter_ui_files(root: str):
     tracked = _git_ui_files(root)
     if tracked is not None:
         for rel in tracked:
             reln = rel.replace("\\", "/")
-            top = reln.split("/", 1)[0]
-            if SCAN_DIRS and top not in SCAN_DIRS:
+            if SCAN_DIRS and not _under_scan_dir(reln):
                 continue
             segs = reln.lower().split("/")
-            if any(seg in DS_EXCLUDE_SEGMENTS for seg in segs):
-                continue  # DS package — tokens defined here
+            if any(_is_ds_package_segment(seg) for seg in segs):
+                continue  # DS package (or a vendored copy of it) — tokens defined here
             if any(seg in SKIP_DIRS for seg in segs):
                 continue
             yield os.path.join(root, *reln.split("/"))
@@ -174,8 +229,8 @@ def iter_ui_files(root: str):
         for dirpath, dirnames, filenames in os.walk(start):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             rel = os.path.relpath(dirpath, root).replace("\\", "/").lower()
-            if any(seg in rel.split("/") for seg in DS_EXCLUDE_SEGMENTS):
-                continue  # inside the DS package — tokens are defined here
+            if any(_is_ds_package_segment(seg) for seg in rel.split("/")):
+                continue  # inside the DS package (or a vendored copy) — tokens are defined here
             for fn in filenames:
                 if fn.endswith(UI_EXT):
                     yield os.path.join(dirpath, fn)
@@ -223,7 +278,7 @@ def scan_violations(root: str, changed: dict[str, set[int]] | None = None) -> li
 
 # ---- extraction-candidate detection (duplicate styled blocks) -------------------------
 
-STYLED_BLOCK_RE = re.compile(r"(className=\{?[\"'`][^\"'`]{8,}[\"'`]|styled\.\w+`[^`]{20,}`)", re.S)
+STYLED_BLOCK_RE = re.compile(r"(className=\{?[\"'`][^\"'`]{8,}[\"'`]|styled\.\w+`[^`]{20,}`)", re.DOTALL)
 
 
 def normalize(block: str) -> str:
@@ -254,7 +309,7 @@ def detect_extraction_candidates(root: str, threshold: int) -> dict[str, dict]:
     for norm, locs in buckets.items():
         uniq = sorted(set(locs))
         # recurring AND across >1 file = an extraction signal
-        if len(uniq) >= threshold and len({l.split(":")[0] for l in uniq}) >= 2:
+        if len(uniq) >= threshold and len({loc.split(":")[0] for loc in uniq}) >= 2:
             # sha256, not sha1: this is a non-cryptographic fingerprint used only to
             # GROUP recurring literals, and it is truncated to 12 chars regardless --
             # so the stronger digest is free, and it stops every consuming repo
@@ -271,13 +326,14 @@ def gh_issue_exists(repo: str, fp: str) -> bool:
         res = subprocess.run(
             ["gh", "issue", "list", "-R", repo, "--label", "ds-extraction",
              "--state", "all", "--search", marker, "--json", "number", "--limit", "50"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode != 0:
             print(f"::warning title=gate-ds-conformance::gh issue list failed: {res.stderr.strip()}")
             return True  # fail safe: do NOT create a dup if we can't verify
         return bool(json.loads(res.stdout or "[]"))
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError, ValueError) as e:
+        # ValueError covers `json.loads` on a non-JSON `gh` response.
         print(f"::warning title=gate-ds-conformance::issue-search error: {e}")
         return True
 
@@ -286,7 +342,7 @@ def ensure_label(repo: str):
     subprocess.run(
         ["gh", "label", "create", "ds-extraction", "-R", repo,
          "--color", "5319e7", "--description", "Candidate UI pattern to extract into the design system"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, check=False,
     )
 
 
@@ -296,7 +352,7 @@ def open_extraction_issue(repo: str, cand: dict) -> str | None:
         print(f"gate-ds-conformance: extraction issue for ds-fp:{fp} already exists — skipping (idempotent)")
         return None
     ensure_label(repo)
-    locs = "\n".join(f"- `{l}`" for l in cand["locations"][:20])
+    locs = "\n".join(f"- `{loc}`" for loc in cand["locations"][:20])
     title = f"DS extraction: recurring UI pattern (ds-fp:{fp})"
     body = f"""@claude — `gate-ds-conformance` detected a UI pattern duplicated across the codebase that **should be extracted into a design-system primitive** (CLAUDE.baseline.md §6).
 
@@ -330,14 +386,14 @@ _Filed automatically; owner is `frontend-engineer`. Extraction is design work, n
         res = subprocess.run(
             ["gh", "issue", "create", "-R", repo, "--title", title,
              "--body", body, "--label", "ds-extraction"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0:
             url = res.stdout.strip().splitlines()[-1] if res.stdout.strip() else "(created)"
             print(f"gate-ds-conformance: opened extraction issue {url}")
             return url
         print(f"::warning title=gate-ds-conformance::gh issue create failed: {res.stderr.strip()}")
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"::warning title=gate-ds-conformance::issue-create error: {e}")
     return None
 

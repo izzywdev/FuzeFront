@@ -29,3 +29,17 @@ agent-templates/providers/
 # this rule — so keep the directory to sealed manifests only. Detection is
 # unchanged everywhere else in the repo, which is where a real leak would land.
 deploy/contabo/sealed/
+
+# devportal-frontend/nginx.conf (docs/planning/developers-portal.md): the
+# generic nginx rules (dynamic-proxy-host, missing-internal, request-host-used)
+# flag this file's /api/ reverse-proxy location, which is the SAME accepted
+# shape as fuzefront-website/frontend/nginx.conf's own /api/ location —
+# `set $var "literal"; proxy_pass http://$var;` is required for per-request k8s
+# DNS re-resolution via the `resolver` directive (not attacker-influenced: the
+# value is a hardcoded literal); the location is deliberately public so
+# `internal;` cannot be added; the forwarded Host header is a hardcoded literal,
+# not $host/$http_host. Inline `# nosemgrep` does not suppress these findings
+# for this rule engine (confirmed: re-fired identically after adding it), so
+# the whole file is excluded here instead — it is three lines of static reverse-
+# proxy config, not application logic, and carries no other scan-worthy surface.
+devportal-frontend/nginx.conf

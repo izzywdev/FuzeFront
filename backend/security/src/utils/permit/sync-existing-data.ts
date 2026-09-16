@@ -63,7 +63,7 @@ export async function syncExistingDataToPermit(): Promise<void> {
     const memberships = membershipsFromDb.map(membership => ({
       userId: membership.user_id,
       organizationId: membership.organization_id,
-      role: membership.role as 'owner' | 'admin' | 'member' | 'viewer',
+      role: membership.role as 'owner' | 'admin' | 'member' | 'viewer' | 'developer',
     }))
 
     console.log(`Found ${memberships.length} active memberships`)

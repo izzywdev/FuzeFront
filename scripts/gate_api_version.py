@@ -54,10 +54,12 @@ import sys
 
 try:
     import yaml  # type: ignore
-except Exception:  # pragma: no cover - exercised via the missing-yaml path
+except ImportError:  # pragma: no cover - exercised via the missing-yaml path
     yaml = None
 
-SPEC_NAME_RE = re.compile(r"(openapi|swagger).*\.(ya?ml|json)$", re.I)
+_FALLBACK_NOTE = "git ls-files unavailable; falling back to a filesystem walk"
+
+SPEC_NAME_RE = re.compile(r"(openapi|swagger).*\.(ya?ml|json)$", re.IGNORECASE)
 
 # The rule. `/api/v1`, `/api/v2/...` pass; `/api/accounts`, `/apiv1/x` do not.
 #
@@ -259,7 +261,7 @@ def _tracked_files(root: str, patterns: list[str]) -> list[str]:
     try:
         res = subprocess.run(
             ["git", "-C", root, "ls-files", "--"] + patterns,
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0 and res.stdout.strip():
             files = [os.path.join(root, p) for p in res.stdout.splitlines() if p.strip()]
@@ -267,8 +269,21 @@ def _tracked_files(root: str, patterns: list[str]) -> list[str]:
                 f for f in files
                 if not any(seg in PRUNE_DIRS for seg in f.replace("\\", "/").split("/"))
             ]
-    except Exception:
-        pass
+        if res.returncode != 0:
+            # `check=False` means a nonzero exit does NOT raise, so without this the
+            # fallback is taken in SILENCE -- the diagnostic below only covers the
+            # exception path. That gap is not hypothetical: a `git archive` extract
+            # (not a repo) exits nonzero here, every gate quietly switched to os.walk,
+            # and the different file set produced a phantom regression during this
+            # PR's own verification. Caught in review (Copilot, 2026-09-15).
+            print(f"{_FALLBACK_NOTE} (git exit {res.returncode}: "
+                  f"{res.stderr.strip()[:200]})", file=sys.stderr)
+    except (OSError, subprocess.SubprocessError) as exc:
+        # The git fast path is an optimisation; the slow filesystem walk below is the
+        # real answer. Narrow, because ONLY a missing/failing git binary belongs here —
+        # a bug inside the try block must surface, not silently downgrade the gate to
+        # its fallback forever. Logged for the same reason (S110).
+        print(f"{_FALLBACK_NOTE} ({type(exc).__name__}: {exc})", file=sys.stderr)
     out: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in PRUNE_DIRS]
@@ -313,7 +328,7 @@ def _load_spec(path: str) -> dict:
     if path.lower().endswith(".json"):
         try:
             return json.loads(text)
-        except Exception as exc:
+        except ValueError as exc:
             raise GateError(f"{path}: is not parseable JSON: {exc}")
 
     if yaml is None:
@@ -323,7 +338,7 @@ def _load_spec(path: str) -> dict:
         )
     try:
         return yaml.safe_load(text)
-    except Exception as exc:
+    except yaml.YAMLError as exc:
         raise GateError(f"{path}: is not parseable YAML: {exc}")
 
 

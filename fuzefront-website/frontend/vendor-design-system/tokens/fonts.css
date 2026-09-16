@@ -1,0 +1,10 @@
+/* ============================================================
+   FuzeFront — Webfonts (all free, Google Fonts)
+   ------------------------------------------------------------
+   Display:  Space Grotesk   — headings, brand, the wordmark
+   Body/UI:  Inter           — everything you read
+   Mono:     JetBrains Mono  — the machine's voice (IDs, scopes,
+                               remoteEntry URLs — technical data)
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');

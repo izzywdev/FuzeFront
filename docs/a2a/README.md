@@ -1,5 +1,30 @@
 # FuzeFront's A2A surface — current state and what's left
 
+> **Status update 2026-09-02 (a2a-maintainer verification pass).** Section 2
+> below ("Deployment — devops-engineer") is **done**, not still open:
+> `deploy/helm/fuzefront/templates/a2a.yaml` + the `a2a:` block in
+> `values.yaml`/`values-prod.yaml` exist, `helm lint`/`helm template` clean,
+> and `gate-a2a` passes except for two already-flagged, known-stale findings
+> (see below). Also corrected in this pass: every reference below to
+> `ghcr.io/izzywdev/fuzeagent-a2a` names a now-**abandoned** image (last
+> pushed 2026-08-24, still anonymously pullable but no longer built by
+> anything); the chart now correctly points at `ghcr.io/izzywdev/fuze-a2a`,
+> which is what `izzywdev/FuzeAgent`'s `release.yml` actually builds and
+> publishes today, and what its own `a2a-shared/values-prod.yaml` uses. Left
+> the historical narrative below as written (it was accurate when this
+> document was authored) rather than rewriting it.
+>
+> **Open cross-repo question, not resolved here (out of this agent's scope —
+> single-repo, no cross-repo architecture calls):** `izzywdev/FuzeAgent`'s
+> `deploy/helm/a2a-shared/values-prod.yaml` also lists a `FuzeFront` tenant
+> entry (currently behind that file's own "STILL DO NOT MERGE" GO-LIVE gate).
+> If that shared-server rollout proceeds while this repo's own per-product
+> pod stays `enabled: true`, the same tenant name would be served by two
+> different pods — the exact ambiguity `a2a-runtime-standard.md` §2 exists to
+> prevent. Whoever runs that GO-LIVE needs to either drop the `FuzeFront`
+> tenant entry from `a2a-shared` or disable this repo's own pod first;
+> flagged for `platform-governance`/`devops-engineer`, not decided here.
+
 **There is no A2A server in this repo, and there should not be one.** The shared
 A2A runtime (Claude-driven, one image, zero product logic — system prompt,
 skills, and tool access all arrive as mounted/env configuration) already

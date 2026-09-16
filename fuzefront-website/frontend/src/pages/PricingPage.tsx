@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Check, X, ArrowRight, Zap, Building2, Rocket, Crown } from 'lucide-react'
+import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Plan {
@@ -21,6 +21,25 @@ interface Plan {
 
 const plans: Plan[] = [
   {
+    name: 'Free',
+    icon: Sparkles,
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    description: 'Get started at no cost, forever',
+    members: 'Up to 2 members',
+    popular: false,
+    ctaText: 'Sign up free',
+    ctaHref: 'https://app.fuzefront.com/signup?plan=free',
+    features: [
+      'Up to 2 team members',
+      'Core auth & billing',
+      'FuzeFront Platform access',
+      '1 GB storage',
+      'Community support',
+    ],
+    notIncluded: ['Advanced analytics', 'SSO / SAML', 'Custom integrations', 'API access', 'Priority support'],
+  },
+  {
     name: 'Starter',
     icon: Rocket,
     monthlyPrice: 29,
@@ -29,7 +48,7 @@ const plans: Plan[] = [
     members: 'Up to 5 members',
     popular: false,
     ctaText: 'Start free trial',
-    ctaHref: 'https://app.fuzefront.com/auth/register?plan=starter',
+    ctaHref: 'https://app.fuzefront.com/signup?plan=starter',
     features: [
       'Up to 5 team members',
       'Core auth & billing',
@@ -42,7 +61,7 @@ const plans: Plan[] = [
     notIncluded: ['SSO / SAML', 'Advanced analytics', 'Custom integrations', 'API access'],
   },
   {
-    name: 'Professional',
+    name: 'Growth',
     icon: Zap,
     monthlyPrice: 99,
     yearlyPrice: 990,
@@ -50,7 +69,7 @@ const plans: Plan[] = [
     members: 'Up to 25 members',
     popular: true,
     ctaText: 'Start free trial',
-    ctaHref: 'https://app.fuzefront.com/auth/register?plan=professional',
+    ctaHref: 'https://app.fuzefront.com/signup?plan=growth',
     features: [
       'Up to 25 team members',
       'Advanced auth & SSO',
@@ -62,30 +81,6 @@ const plans: Plan[] = [
       'All core products included',
       '50 GB storage',
       '99.9% uptime SLA',
-    ],
-  },
-  {
-    name: 'Scale',
-    icon: Building2,
-    monthlyPrice: 299,
-    yearlyPrice: 2990,
-    description: 'For scaling teams and growing businesses',
-    members: 'Up to 100 members',
-    popular: false,
-    ctaText: 'Start free trial',
-    ctaHref: 'https://app.fuzefront.com/auth/register?plan=scale',
-    features: [
-      'Up to 100 team members',
-      'Unlimited API calls',
-      'Dedicated support',
-      'Custom domain',
-      'All 10 products included',
-      'Advanced security controls',
-      'Custom integrations',
-      'Audit logs',
-      '500 GB storage',
-      'SSO/SAML',
-      '99.99% uptime SLA',
     ],
   },
   {
@@ -115,21 +110,21 @@ const plans: Plan[] = [
 ]
 
 const featureComparison = [
-  { feature: 'Team members', starter: '5', professional: '25', scale: '100', enterprise: 'Unlimited' },
-  { feature: 'Core auth & billing', starter: true, professional: true, scale: true, enterprise: true },
-  { feature: 'SSO / SAML', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Advanced analytics', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'API access', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Module Federation hosting', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'All 10 products', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Custom integrations', starter: false, professional: true, scale: true, enterprise: true },
-  { feature: 'Dedicated support', starter: false, professional: false, scale: true, enterprise: true },
-  { feature: 'Custom domain', starter: false, professional: false, scale: true, enterprise: true },
-  { feature: 'Audit logs', starter: false, professional: false, scale: true, enterprise: true },
-  { feature: 'On-premise deployment', starter: false, professional: false, scale: false, enterprise: true },
-  { feature: 'Dedicated CSM', starter: false, professional: false, scale: false, enterprise: true },
-  { feature: 'Custom SLA', starter: false, professional: false, scale: false, enterprise: true },
-  { feature: 'Uptime SLA', starter: '99.9%', professional: '99.9%', scale: '99.99%', enterprise: 'Custom' },
+  { feature: 'Team members', free: '2', starter: '5', growth: '25', enterprise: 'Unlimited' },
+  { feature: 'Core auth & billing', free: true, starter: true, growth: true, enterprise: true },
+  { feature: 'SSO / SAML', free: false, starter: false, growth: true, enterprise: true },
+  { feature: 'Advanced analytics', free: false, starter: false, growth: true, enterprise: true },
+  { feature: 'API access', free: false, starter: false, growth: true, enterprise: true },
+  { feature: 'Module Federation hosting', free: false, starter: false, growth: true, enterprise: true },
+  { feature: 'All 10 products', free: false, starter: false, growth: true, enterprise: true },
+  { feature: 'Custom integrations', free: false, starter: false, growth: true, enterprise: true },
+  { feature: 'Dedicated support', free: false, starter: false, growth: false, enterprise: true },
+  { feature: 'Custom domain', free: false, starter: false, growth: false, enterprise: true },
+  { feature: 'Audit logs', free: false, starter: false, growth: false, enterprise: true },
+  { feature: 'On-premise deployment', free: false, starter: false, growth: false, enterprise: true },
+  { feature: 'Dedicated CSM', free: false, starter: false, growth: false, enterprise: true },
+  { feature: 'Custom SLA', free: false, starter: false, growth: false, enterprise: true },
+  { feature: 'Uptime SLA', free: 'Best effort', starter: '99.9%', growth: '99.9%', enterprise: 'Custom' },
 ]
 
 type FeatureValue = boolean | string
@@ -172,7 +167,9 @@ export const PricingPage: React.FC = () => {
                 className={`px-5 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${yearly ? 'bg-white text-gray-900' : 'text-secondary-300 hover:text-white'}`}
               >
                 Yearly
-                <span className="bg-success-500 text-white text-xs px-2 py-0.5 rounded-full">Save 17%</span>
+                {/* success-500 is too light for white text at this size (2.4:1,
+                    needs 4.5:1) — caught by e2e/contrast.spec.ts. */}
+                <span className="bg-success-700 text-white text-xs px-2 py-0.5 rounded-full">Save 17%</span>
               </button>
             </div>
           </motion.div>
@@ -213,11 +210,11 @@ export const PricingPage: React.FC = () => {
                       </div>
                       <div>
                         <h3 className="font-bold text-gray-900">{plan.name}</h3>
-                        <p className="text-xs text-gray-500">{plan.members}</p>
+                        <p className="text-xs text-gray-600">{plan.members}</p>
                       </div>
                     </div>
 
-                    <p className="text-sm text-gray-500 mb-5 leading-relaxed">{plan.description}</p>
+                    <p className="text-sm text-gray-600 mb-5 leading-relaxed">{plan.description}</p>
 
                     <div className="mb-6">
                       {isEnterprise ? (
@@ -226,7 +223,7 @@ export const PricingPage: React.FC = () => {
                         <>
                           <div className="flex items-end gap-1">
                             <span className="text-4xl font-extrabold text-gray-900">${price}</span>
-                            <span className="text-gray-400 text-sm mb-1">/{yearly ? 'year' : 'mo'}</span>
+                            <span className="text-gray-600 text-sm mb-1">/{yearly ? 'year' : 'mo'}</span>
                           </div>
                           {yearly && (
                             <p className="text-xs text-success-600 mt-1">
@@ -269,7 +266,7 @@ export const PricingPage: React.FC = () => {
                       {plan.notIncluded?.map((feature) => (
                         <li key={feature} className="flex items-start gap-2 text-sm">
                           <X size={14} className="text-gray-300 flex-shrink-0 mt-0.5" />
-                          <span className="text-gray-400">{feature}</span>
+                          <span className="text-gray-600">{feature}</span>
                         </li>
                       ))}
                     </ul>
@@ -304,9 +301,16 @@ export const PricingPage: React.FC = () => {
                 {featureComparison.map((row, i) => (
                   <tr key={row.feature} className={i % 2 === 0 ? 'bg-white' : 'bg-secondary-50/50'}>
                     <td className="py-3 px-5 text-sm text-gray-700">{row.feature}</td>
+                    {/* This table previously rendered 4 value cells (starter,
+                        professional, scale, enterprise) under 5 headers
+                        (Feature + free/starter/professional/scale/enterprise)
+                        — Free's column had a header but no value cells,
+                        shifting every other column left by one. Fixed by
+                        rendering all 4 plans' values, matching the header
+                        count exactly. */}
+                    <td className="py-3 px-3 text-center"><FeatureCell value={row.free} /></td>
                     <td className="py-3 px-3 text-center"><FeatureCell value={row.starter} /></td>
-                    <td className="py-3 px-3 text-center"><FeatureCell value={row.professional} /></td>
-                    <td className="py-3 px-3 text-center"><FeatureCell value={row.scale} /></td>
+                    <td className="py-3 px-3 text-center"><FeatureCell value={row.growth} /></td>
                     <td className="py-3 px-3 text-center"><FeatureCell value={row.enterprise} /></td>
                   </tr>
                 ))}

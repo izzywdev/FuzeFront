@@ -1,0 +1,182 @@
+{{- if .Values.websiteFrontend.enabled }}
+# =============================================================================
+# fuzefront-website — public marketing/product site at fuzefront.com.
+# Separate from the app shell (app.fuzefront.com): distinct host, distinct
+# Ingress, no Module-Federation involvement.
+#
+# Frontend: nginx serving the React SPA (fuzefront-website/frontend/Dockerfile),
+#           port 3000, handles all routes except /api/*.
+# Backend:  Node.js API   (fuzefront-website/backend/Dockerfile),
+#           port 3001, handles /api/* routes.
+#
+# Cloudflare Tunnel routing fuzefront.com to the cluster is FuzeInfra-owned;
+# the Ingress here routes that traffic inside the cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: website-frontend
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: website-frontend
+spec:
+  replicas: {{ .Values.websiteFrontend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: website-frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: website-frontend
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.websiteFrontend "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: website-frontend
+          image: "{{ .Values.websiteFrontend.image.repository }}:{{ .Values.websiteFrontend.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.websiteFrontend.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.websiteFrontend.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: website-frontend
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: website-frontend
+spec:
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: website-frontend
+  ports:
+    - name: http
+      port: {{ .Values.websiteFrontend.port }}
+      targetPort: http
+{{- if .Values.websiteBackend.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: website-backend
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: website-backend
+spec:
+  replicas: {{ .Values.websiteBackend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: website-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: website-backend
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.websiteBackend "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: website-backend
+          image: "{{ .Values.websiteBackend.image.repository }}:{{ .Values.websiteBackend.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.websiteBackend.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.websiteBackend.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: website-backend
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: website-backend
+spec:
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: website-backend
+  ports:
+    - name: http
+      port: {{ .Values.websiteBackend.port }}
+      targetPort: http
+{{- end }}
+{{- if and .Values.ingress.enabled .Values.websiteFrontend.host }}
+---
+# Separate Ingress for fuzefront.com — NOT the same object as the main
+# app.fuzefront.com Ingress in ingress.yaml. These are different hosts with
+# different routing rules; merging them into one Ingress object would require
+# duplicating the fanout paths for the app host or risking cross-contamination.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-website
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.websiteFrontend.host | quote }}
+      http:
+        paths:
+          {{- if .Values.websiteBackend.enabled }}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: website-backend
+                port:
+                  number: {{ .Values.websiteBackend.port }}
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: website-frontend
+                port:
+                  number: {{ .Values.websiteFrontend.port }}
+{{- end }}
+{{- end }}

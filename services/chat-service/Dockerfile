@@ -49,6 +49,7 @@ COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
+COPY services/devportal-service/package.json ./services/devportal-service/
 
 # Install only production deps for chat-service
 RUN npm ci --workspace=services/chat-service --omit=dev --ignore-scripts
@@ -104,6 +105,7 @@ COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
 COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
+COPY services/devportal-service/package.json ./services/devportal-service/
 
 RUN npm ci --workspace=services/chat-service --ignore-scripts
 

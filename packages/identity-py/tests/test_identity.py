@@ -6,7 +6,6 @@ claim rather than an assumption.
 """
 
 import pytest
-
 from fuzefront_identity import (
     ENTITY_PREFIXES,
     ENTITY_TYPES,
@@ -276,7 +275,7 @@ class TestCrossLanguageParity:
             / "src"
             / "registry.ts"
         ).read_text()
-        block = re.search(r"ENTITY_PREFIXES = \{(.*?)\n\} as const", ts, re.S)
+        block = re.search(r"ENTITY_PREFIXES = \{(.*?)\n\} as const", ts, re.DOTALL)
         assert block, "could not locate ENTITY_PREFIXES in registry.ts"
-        ts_pairs = dict(re.findall(r"^\s*(\w+):\s*'([a-z_]+)',", block.group(1), re.M))
+        ts_pairs = dict(re.findall(r"^\s*(\w+):\s*'([a-z_]+)',", block.group(1), re.MULTILINE))
         assert ts_pairs == dict(ENTITY_PREFIXES)

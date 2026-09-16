@@ -5,17 +5,26 @@ import type {
   AdminContextAudit,
   Portfolio,
   Repository,
+  RepositoryScanHistoryEntry,
   RepositoryInput,
   ScanResult,
   Suggestion,
+  SuggestionDecision,
   Requirement,
+  SyncCursor,
   TestImplementationRequest,
+  ExpectationExclusionInput,
+  CoverageProjection,
 } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
+import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
+import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
+import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
 
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
+  repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
     id: string,
@@ -24,8 +33,17 @@ export interface CatalogStore {
   ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   saveScan(result: ScanResult): Promise<void>
-  saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>): Promise<void>
-  decideSuggestion(id: string, decision: 'confirm' | 'reject'): Promise<Suggestion | undefined>
+  syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
+  markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<void>
+  saveIntelligence(
+    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+  ): Promise<void>
+  rebuildCoverage(): Promise<CoverageProjection>
+  reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
+  approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>): Promise<Suggestion | undefined>
+  excludeExpectation(id: string, tenantId: string, input: ExpectationExclusionInput): Promise<boolean>
+  suggestionDecisions(id: string, tenantId: string): Promise<SuggestionDecision[]>
   createTestImplementation(request: TestImplementationRequest, idempotencyKey: string): Promise<TestImplementationRequest>
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
@@ -48,7 +66,11 @@ const emptyPortfolio = (): Portfolio => ({
 export class MemoryCatalogStore implements CatalogStore {
   private data = emptyPortfolio()
   private implementations: Array<TestImplementationRequest & { idempotencyKey: string }> = []
+  private decisions: SuggestionDecision[] = []
   private adminContextAudits: AdminContextAudit[] = []
+  private syncCursors: SyncCursor[] = []
+  private scanHistory: Array<{ repositoryId: string; item: RepositoryScanHistoryEntry }> = []
+  private exclusions = new Map<string, ExpectationExclusionInput>()
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -62,25 +84,34 @@ export class MemoryCatalogStore implements CatalogStore {
     const operations = result.operations.filter(item => repositoryIds.has(item.repositoryId))
     const surfaces = result.surfaces.filter(item => repositoryIds.has(item.repositoryId))
     const subjectIds = new Set([...operations.map(item => item.id), ...surfaces.map(item => item.id)])
+    const requirementIds = new Set(result.requirements.filter(item => item.tenantId === tenantId).map(item => item.id))
     return {
       ...result,
       repositories,
       operations,
       surfaces,
       tests: result.tests.filter(item => repositoryIds.has(item.repositoryId)),
-      expectations: result.expectations.filter(item => subjectIds.has(item.subjectId)),
+      expectations: result.expectations.filter(item => subjectIds.has(item.subjectId) || (item.subjectType === 'flow-step' && requirementIds.has(item.subjectId.replace(/^requirement:/, '')))).map(item => {
+        const exclusion = this.exclusions.get(`${tenantId}:${item.id}`)
+        if (!exclusion || new Date(exclusion.expiresAt).getTime() <= Date.now()) return item
+        const expiresSoon = new Date(exclusion.expiresAt).getTime() - Date.now() <= 7 * 24 * 60 * 60 * 1000
+        return { ...item, coverage: 'excluded' as const, exclusion: { ...exclusion, expiresSoon } }
+      }),
       findings: result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId)),
       diagnostics: result.diagnostics.filter(item => repositoryIds.has(item.repositoryId)),
-      // Requirement intelligence predates tenant ownership. Fail closed until
-      // FQ-182 migrates Jira scopes and their graph to an organization.
-      requirements: [],
-      flows: [],
-      suggestions: [],
+    requirements: result.requirements.filter(item => item.tenantId === tenantId),
+    flows: result.flows.filter(item => result.requirements.some(requirement => requirement.tenantId === tenantId && requirement.id === item.requirementId)),
+    suggestions: result.suggestions.filter(item => result.requirements.some(requirement => requirement.tenantId === tenantId && requirement.id === item.requirementId)),
     }
   }
 
   async repository(id: string, tenantId?: string) {
     return this.data.repositories.find(repository => repository.id === id && (!tenantId || repository.tenantId === tenantId))
+  }
+
+  async repositoryScanHistory(id: string, tenantId: string) {
+    if (!await this.repository(id, tenantId)) return []
+    return this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -150,28 +181,99 @@ export class MemoryCatalogStore implements CatalogStore {
       ...this.data.diagnostics.filter(item => item.repositoryId !== result.repository.id),
       ...result.diagnostics.map(item => ({ ...item, repositoryId: result.repository.id, revision: result.revision })),
     ]
+    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
   }
 
-  async decideSuggestion(id: string, decision: 'confirm' | 'reject') {
-    const suggestion = this.data.suggestions.find(item => item.id === id)
-    if (!suggestion) return undefined
-    suggestion.state = decision === 'confirm' ? 'confirmed' : 'rejected'
-    if (decision === 'confirm' && suggestion.type === 'flow') {
-      const flow = suggestion.payload as unknown as Flow
-      this.data.flows.push({ ...flow, status: 'confirmed', origin: 'confirmed' })
+  async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const suggestion = this.data.suggestions.find(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
+    if (!suggestion || suggestion.state !== 'proposed') return undefined
+    const payload = input.editedPayload ?? suggestion.payload
+    const action = input.action
+    suggestion.state = action === 'confirm' || action === 'merge' ? 'confirmed' : action === 'suppress' ? 'suppressed' : action === 'reject' ? 'rejected' : 'proposed'
+    if ((action === 'confirm' || action === 'merge') && suggestion.type === 'flow') {
+      const flow = payload as unknown as Flow
+      const confirmed = { ...flow, status: 'confirmed' as const, origin: 'confirmed' as const }
+      const existing = this.data.flows.findIndex(item => item.id === flow.id)
+      if (existing >= 0) this.data.flows[existing] = confirmed
+      else this.data.flows.push(confirmed)
     }
+    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input })
+    if (action === 'edit') suggestion.payload = payload
     return suggestion
   }
 
-  async saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>) {
+  async approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const suggestion = this.data.suggestions.find(item => item.id === id && item.type === 'expected-test' && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
+    if (!suggestion || suggestion.state !== 'proposed') return undefined
+    const priority = suggestion.payload.priority === 'required' ? 'required' : 'recommended'
+    this.data.expectations.push({ id: `expectation:ai:${id}`, subjectType: 'flow-step', subjectId: `requirement:${suggestion.requirementId}`, kind: 'ai-approved', label: suggestion.title, priority, rule: `ai-reviewed:${id}`, coverage: 'gap', evidenceIds: [] })
+    suggestion.state = 'confirmed'
+    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' })
+    return suggestion
+  }
+
+  async excludeExpectation(id: string, tenantId: string, input: ExpectationExclusionInput) {
+    const visible = (await this.portfolio(tenantId)).expectations.some(item => item.id === id)
+    if (!visible) return false
+    this.exclusions.set(`${tenantId}:${id}`, input)
+    return true
+  }
+
+  async suggestionDecisions(id: string, tenantId: string) {
+    const visible = this.data.suggestions.some(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === tenantId))
+    return visible ? this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId) : []
+  }
+
+  async rebuildCoverage() {
+    const projection = buildQualityIntelligenceProjection(this.data)
+    this.data.findings = [
+      ...this.data.findings.filter(item => !isQualityIntelligenceFinding(item.type)),
+      ...projection.findings,
+    ]
+    return projection
+  }
+
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    return this.syncCursors.find(item => item.sourceType === sourceType && item.sourceKey === sourceKey)
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    const existing = await this.syncCursor(sourceType, sourceKey)
+    const value: SyncCursor = {
+      sourceType,
+      sourceKey,
+      cursor: existing?.cursor,
+      lastSuccessAt: existing?.lastSuccessAt,
+      freshnessStatus: 'failed',
+    }
+    if (existing) Object.assign(existing, value)
+    else this.syncCursors.push(value)
+  }
+
+  async saveIntelligence(
+    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
+  ) {
     for (const result of results) {
-      const existing = this.data.requirements.find(item => item.jiraKey === result.requirement.jiraKey)
-      if (existing) Object.assign(existing, result.requirement)
-      else this.data.requirements.push(result.requirement)
+      const requirement = { ...result.requirement, tenantId: sync?.tenantId }
+      const existing = this.data.requirements.find(item => item.jiraKey === requirement.jiraKey && item.tenantId === requirement.tenantId)
+      if (existing) Object.assign(existing, requirement)
+      else this.data.requirements.push(requirement)
       this.data.suggestions = [
-        ...this.data.suggestions.filter(item => item.requirementId !== result.requirement.id || item.state !== 'proposed'),
+        ...this.data.suggestions.filter(item => item.requirementId !== requirement.id || item.state !== 'proposed'),
         ...result.suggestions,
       ]
+    }
+    if (sync) {
+      const existing = await this.syncCursor(sync.sourceType, sync.sourceKey)
+      const value: SyncCursor = {
+        ...sync,
+        cursor: sync.cursor,
+        lastSuccessAt: new Date().toISOString(),
+        freshnessStatus: 'fresh',
+      }
+      if (existing) Object.assign(existing, value)
+      else this.syncCursors.push(value)
     }
   }
 
@@ -206,7 +308,7 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async portfolio(tenantId?: string): Promise<Portfolio> {
-    const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, flows, steps, suggestions] = await Promise.all([
+    const [repositories, operations, surfaces, tests, expectations, findings, diagnostics, requirements, criteria, flows, steps, suggestions, exclusions] = await Promise.all([
       this.pool.query('SELECT * FROM fuzequality.repositories WHERE enabled = true ORDER BY name'),
       this.pool.query('SELECT * FROM fuzequality.api_operations WHERE active = true ORDER BY path, method'),
       this.pool.query('SELECT * FROM fuzequality.frontend_surfaces WHERE active = true ORDER BY package_name, name'),
@@ -214,10 +316,12 @@ export class PostgresCatalogStore implements CatalogStore {
       this.pool.query('SELECT * FROM fuzequality.test_expectations WHERE active = true ORDER BY subject_id, kind'),
       this.pool.query('SELECT * FROM fuzequality.findings ORDER BY severity, title'),
       this.pool.query('SELECT * FROM fuzequality.scan_diagnostics ORDER BY source_path, code'),
-      this.pool.query('SELECT * FROM fuzequality.requirements WHERE active = true ORDER BY jira_key'),
-      this.pool.query('SELECT * FROM fuzequality.flows WHERE status <> \'rejected\' ORDER BY updated_at DESC'),
+      this.pool.query(`SELECT * FROM fuzequality.requirements WHERE active = true${tenantId ? ' AND tenant_id=$1' : ''} ORDER BY jira_key`, tenantId ? [tenantId] : []),
+      this.pool.query('SELECT * FROM fuzequality.acceptance_criteria WHERE active = true ORDER BY requirement_id, position'),
+      this.pool.query(`SELECT f.* FROM fuzequality.flows f JOIN fuzequality.requirements r ON r.id=f.requirement_id WHERE f.status <> 'rejected'${tenantId ? ' AND r.tenant_id=$1' : ''} ORDER BY f.updated_at DESC`, tenantId ? [tenantId] : []),
       this.pool.query('SELECT * FROM fuzequality.flow_steps ORDER BY flow_id, position'),
-      this.pool.query('SELECT * FROM fuzequality.suggestions ORDER BY created_at DESC'),
+      this.pool.query(`SELECT s.* FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id${tenantId ? ' WHERE r.tenant_id=$1' : ''} ORDER BY s.created_at DESC`, tenantId ? [tenantId] : []),
+      tenantId ? this.pool.query(`SELECT expectation_id, owner, reason, expires_at FROM fuzequality.expectation_exclusions WHERE tenant_id=$1 AND revoked_at IS NULL AND expires_at > now()`, [tenantId]) : Promise.resolve({ rows: [] }),
     ])
     const result = {
       repositories: repositories.rows.filter(row => !tenantId || row.tenant_id === tenantId).map(row => ({
@@ -246,10 +350,10 @@ export class PostgresCatalogStore implements CatalogStore {
       surfaces: surfaces.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, packageName: row.package_name, kind: row.kind, name: row.name, sourcePath: row.source_path, routePath: row.route_path ?? undefined, public: row.is_public, states: row.states, hasStory: row.has_story, stories: row.stories ?? [] })),
       tests: tests.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, framework: row.framework, level: row.test_level, title: row.title, sourcePath: row.source_path, assertionCount: row.assertion_count, targets: row.targets })),
       expectations: expectations.rows.map(row => ({ id: row.id, subjectType: row.subject_type, subjectId: row.subject_id, kind: row.kind, label: row.label, priority: row.priority, rule: row.rule, coverage: row.coverage, evidenceIds: row.evidence_ids })),
-      findings: findings.rows.map(row => ({ id: row.id, repositoryId: row.repository_id ?? undefined, subjectId: row.subject_id ?? undefined, type: row.type, severity: row.severity, title: row.title, detail: row.detail, owner: row.owner ?? undefined, remediation: row.remediation ?? undefined, sourceRevision: row.source_revision ?? undefined, status: row.status })),
+      findings: findings.rows.map(row => ({ id: row.id, repositoryId: row.repository_id ?? undefined, subjectId: row.subject_id ?? undefined, type: row.type, severity: row.severity, title: row.title, detail: row.detail, owner: row.owner ?? undefined, remediation: row.remediation ?? undefined, sourceRevision: row.source_revision ?? undefined, policyVersion: row.policy_version ?? undefined, schemaVersion: row.schema_version ?? undefined, evidenceStrength: row.evidence_strength ?? undefined, evidence: row.evidence ?? undefined, confidence: row.confidence === null ? undefined : Number(row.confidence), sourcePassages: row.source_passages ?? undefined, affectedFlowIds: row.affected_flow_ids ?? undefined, affectedTargetIds: row.affected_target_ids ?? undefined, remediationOptions: row.remediation_options ?? undefined, generatedAt: row.generated_at?.toISOString(), auditHistory: row.audit_history ?? undefined, status: row.status })),
       diagnostics: diagnostics.rows.map(row => ({ repositoryId: row.repository_id, revision: row.revision, sourcePath: row.source_path, category: row.category, severity: row.severity, code: row.code, message: row.message })),
-      requirements: requirements.rows.map(row => ({ id: row.id, jiraKey: row.jira_key, issueType: row.issue_type, parentKey: row.parent_key ?? undefined, summary: row.summary, description: row.normalized_description, status: row.status, project: row.project, updatedAt: row.source_updated_at.toISOString() })),
-      flows: flows.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, title: row.title, owner: row.owner ?? undefined, origin: row.origin, status: row.status, steps: steps.rows.filter(step => step.flow_id === row.id).map(step => ({ id: step.id, position: step.position, actor: step.actor, action: step.action, expectedOutcome: step.expected_outcome, variant: step.variant, targetIds: step.target_ids })) })),
+      requirements: requirements.rows.map(row => ({ id: row.id, jiraKey: row.jira_key, issueType: row.issue_type, parentKey: row.parent_key ?? undefined, summary: row.summary, description: row.normalized_description, status: row.status, project: row.project, updatedAt: row.source_updated_at.toISOString(), acceptanceCriteria: criteria.rows.filter(item => item.requirement_id === row.id).map(item => ({ fingerprint: item.fingerprint, position: item.position, text: item.normalized_text })) })),
+      flows: flows.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, title: row.title, owner: row.owner ?? undefined, origin: row.origin, status: row.status, actors: row.details?.actors ?? [], preconditions: row.details?.preconditions ?? [], trigger: row.details?.trigger, authorizationBoundaries: row.details?.authorizationBoundaries ?? [], tenantBoundaries: row.details?.tenantBoundaries ?? [], steps: steps.rows.filter(step => step.flow_id === row.id).map(step => ({ id: step.id, position: step.position, actor: step.actor, action: step.action, expectedOutcome: step.expected_outcome, variant: step.variant, targetIds: step.target_ids })) })),
       suggestions: suggestions.rows.map(row => ({ id: row.id, requirementId: row.requirement_id, type: row.type, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, payload: row.payload, state: row.state, createdAt: row.created_at.toISOString() })),
     } as Portfolio
     const repositoryIds = new Set(result.repositories.map(repository => repository.id))
@@ -258,19 +362,27 @@ export class PostgresCatalogStore implements CatalogStore {
     result.surfaces = result.surfaces.filter(item => repositoryIds.has(item.repositoryId))
     result.tests = result.tests.filter(item => repositoryIds.has(item.repositoryId))
     const subjectIds = new Set([...result.operations.map(item => item.id), ...result.surfaces.map(item => item.id)])
-    result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId))
+    const requirementIds = new Set(result.requirements.map(item => item.id))
+    const exclusionByExpectation = new Map(exclusions.rows.map(row => [row.expectation_id, row]))
+    result.expectations = result.expectations.filter(item => subjectIds.has(item.subjectId) || (item.subjectType === 'flow-step' && requirementIds.has(item.subjectId.replace(/^requirement:/, '')))).map(item => {
+      const exclusion = exclusionByExpectation.get(item.id)
+      if (!exclusion) return item
+      const expiresAt = exclusion.expires_at.toISOString()
+      return { ...item, coverage: 'excluded' as const, exclusion: { owner: exclusion.owner, reason: exclusion.reason, expiresAt, expiresSoon: exclusion.expires_at.getTime() - Date.now() <= 7 * 24 * 60 * 60 * 1000 } }
+    })
     result.findings = result.findings.filter(item => !item.repositoryId || repositoryIds.has(item.repositoryId))
     result.diagnostics = result.diagnostics.filter(item => repositoryIds.has(item.repositoryId))
-    // Requirement intelligence predates tenant ownership. Never expose the
-    // legacy global graph through an organization-scoped portfolio.
-    result.requirements = []
-    result.flows = []
-    result.suggestions = []
     return result
   }
 
   async repository(id: string, tenantId?: string) {
     return (await this.portfolio(tenantId)).repositories.find(item => item.id === id)
+  }
+
+  async repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]> {
+    if (!await this.repository(id, tenantId)) return []
+    const result = await this.pool.query(`SELECT r.commit_sha, r.branch, r.status AS revision_status, r.scanned_at, s.trigger, s.counts FROM fuzequality.repository_revisions r LEFT JOIN LATERAL (SELECT * FROM fuzequality.scan_runs WHERE revision_id=r.id ORDER BY started_at DESC LIMIT 1) s ON true WHERE r.repository_id=$1 ORDER BY r.scanned_at DESC NULLS LAST LIMIT 25`, [id])
+    return result.rows.map(row => ({ revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -309,6 +421,8 @@ export class PostgresCatalogStore implements CatalogStore {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
+      const revision = await client.query(`INSERT INTO fuzequality.repository_revisions (repository_id,commit_sha,branch,scanner_version,config_version,status,scanned_at) VALUES ($1,$2,$3,'v1','v1','complete',$4) ON CONFLICT (repository_id,commit_sha,scanner_version,config_version) DO UPDATE SET status='complete', scanned_at=EXCLUDED.scanned_at RETURNING id`, [result.repository.id, result.revision, result.repository.defaultBranch, result.scannedAt])
+      await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,finished_at) VALUES ($1,$2,'manual','complete',$3,now())`, [result.repository.id, revision.rows[0].id, JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length })])
       await client.query(
         `UPDATE fuzequality.test_expectations
          SET active=false, updated_at=now()
@@ -338,18 +452,177 @@ export class PostgresCatalogStore implements CatalogStore {
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
 
-  async saveIntelligence(results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>) {
-    for (const { requirement, suggestions } of results) {
-      const saved = await this.pool.query(`INSERT INTO fuzequality.requirements (jira_key,issue_type,parent_key,summary,normalized_description,project,status,source_updated_at,source_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (jira_key) DO UPDATE SET issue_type=EXCLUDED.issue_type,parent_key=EXCLUDED.parent_key,summary=EXCLUDED.summary,normalized_description=EXCLUDED.normalized_description,project=EXCLUDED.project,status=EXCLUDED.status,source_updated_at=EXCLUDED.source_updated_at,source_payload=EXCLUDED.source_payload,active=true RETURNING id`, [requirement.jiraKey,requirement.issueType,requirement.parentKey,requirement.summary,requirement.description,requirement.project,requirement.status,requirement.updatedAt,JSON.stringify(requirement)])
-      const requirementId = saved.rows[0].id
-      for (const suggestion of suggestions) await this.pool.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+  async syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    const result = await this.pool.query(
+      'SELECT * FROM fuzequality.sync_cursors WHERE source_type=$1 AND source_key=$2',
+      [sourceType, sourceKey],
+    )
+    const row = result.rows[0]
+    if (!row) return undefined
+    return {
+      sourceType: row.source_type,
+      sourceKey: row.source_key,
+      cursor: row.cursor ?? undefined,
+      lastSuccessAt: row.last_success_at?.toISOString(),
+      freshnessStatus: row.freshness_status,
+    } as SyncCursor
+  }
+
+  async markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string) {
+    await this.pool.query(
+      `INSERT INTO fuzequality.sync_cursors (source_type,source_key,freshness_status)
+       VALUES ($1,$2,'failed')
+       ON CONFLICT (source_type,source_key) DO UPDATE SET freshness_status='failed'`,
+      [sourceType, sourceKey],
+    )
+  }
+
+  async saveIntelligence(
+    results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
+  ) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      if (!sync?.tenantId) throw new Error('Tenant-scoped Jira intelligence is required')
+      for (const { requirement, suggestions } of results) {
+        const saved = await client.query(`INSERT INTO fuzequality.requirements (tenant_id,jira_key,issue_type,parent_key,summary,normalized_description,project,status,source_updated_at,source_payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (tenant_id,jira_key) WHERE tenant_id IS NOT NULL DO UPDATE SET issue_type=EXCLUDED.issue_type,parent_key=EXCLUDED.parent_key,summary=EXCLUDED.summary,normalized_description=EXCLUDED.normalized_description,project=EXCLUDED.project,status=EXCLUDED.status,source_updated_at=EXCLUDED.source_updated_at,source_payload=EXCLUDED.source_payload,active=true RETURNING id`, [sync.tenantId,requirement.jiraKey,requirement.issueType,requirement.parentKey,requirement.summary,requirement.description,requirement.project,requirement.status,requirement.updatedAt,JSON.stringify(requirement)])
+        const requirementId = saved.rows[0].id
+        await client.query('UPDATE fuzequality.acceptance_criteria SET active=false WHERE requirement_id=$1', [requirementId])
+        for (const criterion of requirement.acceptanceCriteria ?? []) {
+          await client.query(
+            `INSERT INTO fuzequality.acceptance_criteria (requirement_id,fingerprint,position,normalized_text,active)
+             VALUES ($1,$2,$3,$4,true)
+             ON CONFLICT (requirement_id,fingerprint) DO UPDATE SET
+               position=EXCLUDED.position,normalized_text=EXCLUDED.normalized_text,active=true`,
+            [requirementId, criterion.fingerprint, criterion.position, criterion.text],
+          )
+        }
+        for (const suggestion of suggestions) await client.query(`INSERT INTO fuzequality.suggestions (id,requirement_id,type,title,confidence,evidence,payload,state,source_fingerprint) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`, [suggestion.id,requirementId,suggestion.type,suggestion.title,suggestion.confidence,JSON.stringify(suggestion.evidence),JSON.stringify(suggestion.payload),suggestion.state,requirement.updatedAt])
+      }
+      if (sync) {
+        await client.query(
+          `INSERT INTO fuzequality.sync_cursors (source_type,source_key,cursor,last_success_at,freshness_status)
+           VALUES ($1,$2,$3,now(),'fresh')
+           ON CONFLICT (source_type,source_key) DO UPDATE SET
+             cursor=EXCLUDED.cursor,last_success_at=EXCLUDED.last_success_at,freshness_status='fresh'`,
+          [sync.sourceType, sync.sourceKey, sync.cursor],
+        )
+      }
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
     }
   }
 
-  async decideSuggestion(id: string, decision: 'confirm' | 'reject') {
-    const state = decision === 'confirm' ? 'confirmed' : 'rejected'
-    await this.pool.query('UPDATE fuzequality.suggestions SET state=$2 WHERE id=$1', [id, state])
-    return (await this.portfolio()).suggestions.find(item => item.id === id)
+  async rebuildCoverage() {
+    const portfolio = await this.portfolio()
+    const projection = buildQualityIntelligenceProjection(portfolio)
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query('DELETE FROM fuzequality.findings WHERE policy_version = ANY($1::text[])', [[FLOW_COVERAGE_POLICY_VERSION, REQUIREMENT_REVIEW_POLICY_VERSION]])
+      for (const item of projection.findings) {
+        await client.query(
+          `INSERT INTO fuzequality.findings
+           (id,repository_id,subject_id,type,severity,title,detail,status,source_revision,policy_version,schema_version,evidence_strength,evidence,confidence,source_passages,affected_flow_ids,affected_target_ids,remediation_options,generated_at,audit_history)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+          [item.id,item.repositoryId,item.subjectId,item.type,item.severity,item.title,item.detail,item.status,item.sourceRevision,item.policyVersion,item.schemaVersion,item.evidenceStrength,JSON.stringify(item.evidence ?? []),item.confidence,JSON.stringify(item.sourcePassages ?? []),JSON.stringify(item.affectedFlowIds ?? []),JSON.stringify(item.affectedTargetIds ?? []),JSON.stringify(item.remediationOptions ?? []),item.generatedAt,JSON.stringify(item.auditHistory ?? [])],
+        )
+      }
+      await client.query(
+        `INSERT INTO fuzequality.coverage_snapshots (scope,revision_set,policy_version,totals)
+         VALUES ('flows',$1,$2,$3)`,
+        [JSON.stringify(portfolio.requirements.map(item => ({ requirementId: item.id, revision: item.updatedAt }))), projection.policyVersion, JSON.stringify(projection.metrics)],
+      )
+      await client.query('COMMIT')
+      return projection
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const state = input.action === 'confirm' || input.action === 'merge' ? 'confirmed' : input.action === 'suppress' ? 'suppressed' : input.action === 'reject' ? 'rejected' : 'proposed'
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const original = await client.query(`SELECT s.* FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id WHERE s.id=$1 AND s.state='proposed' AND r.tenant_id=$2 FOR UPDATE`, [id, input.tenantId])
+      const originalRow = original.rows[0]
+      if (!originalRow) { await client.query('ROLLBACK'); return undefined }
+      const result = await client.query('UPDATE fuzequality.suggestions SET state=$2, payload=COALESCE($3,payload) WHERE id=$1 RETURNING *', [id, state, input.editedPayload ? JSON.stringify(input.editedPayload) : null])
+      const row = result.rows[0]
+      await client.query(
+        `INSERT INTO fuzequality.review_decisions
+         (id,suggestion_id,actor,tenant_id,decision,original_payload,edited_payload,reason,owner,expires_at,target_suggestion_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [randomUUID(), id, input.actorId, input.tenantId, input.action, JSON.stringify(originalRow.payload), input.editedPayload ? JSON.stringify(input.editedPayload) : null, input.reason ?? null, input.owner ?? null, input.expiresAt ?? null, input.targetSuggestionId ?? null],
+      )
+      if (row && (input.action === 'confirm' || input.action === 'merge') && row.type === 'flow') {
+        const flow = (input.editedPayload ?? row.payload) as Flow
+        await client.query(
+          `INSERT INTO fuzequality.flows (id,requirement_id,title,owner,origin,status,confirmed_revision,details)
+           VALUES ($1,$2,$3,$4,'confirmed','confirmed',1,$5)
+           ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,owner=EXCLUDED.owner,origin='confirmed',status='confirmed',details=EXCLUDED.details,confirmed_revision=fuzequality.flows.confirmed_revision+1,updated_at=now()`,
+          [flow.id, row.requirement_id, flow.title, flow.owner, JSON.stringify({ actors: flow.actors, preconditions: flow.preconditions, trigger: flow.trigger, authorizationBoundaries: flow.authorizationBoundaries, tenantBoundaries: flow.tenantBoundaries })],
+        )
+        await client.query('DELETE FROM fuzequality.flow_steps WHERE flow_id=$1', [flow.id])
+        for (const step of flow.steps) {
+          await client.query(
+            `INSERT INTO fuzequality.flow_steps (id,flow_id,position,actor,action,expected_outcome,variant,target_ids)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [step.id,flow.id,step.position,step.actor,step.action,step.expectedOutcome,step.variant,JSON.stringify(step.targetIds)],
+          )
+        }
+      }
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+    return (await this.portfolio(input.tenantId)).suggestions.find(item => item.id === id)
+  }
+
+  async approveExpectedTest(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const source = await client.query(`SELECT s.*, r.tenant_id FROM fuzequality.suggestions s JOIN fuzequality.requirements r ON r.id=s.requirement_id WHERE s.id=$1 AND s.type='expected-test' AND s.state='proposed' AND r.tenant_id=$2 FOR UPDATE`, [id, input.tenantId])
+      const row = source.rows[0]
+      if (!row) { await client.query('ROLLBACK'); return undefined }
+      const expectationId = `expectation:ai:${id}`
+      await client.query(`INSERT INTO fuzequality.test_expectations (id,subject_type,subject_id,kind,label,priority,rule,coverage,evidence_ids) VALUES ($1,'flow-step',$2,'ai-approved',$3,$4,$5,'gap','[]') ON CONFLICT (id) DO NOTHING`, [expectationId, `requirement:${row.requirement_id}`, row.title, row.payload?.priority === 'required' ? 'required' : 'recommended', `ai-reviewed:${id}`])
+      await client.query(`UPDATE fuzequality.suggestions SET state='confirmed' WHERE id=$1`, [id])
+      await client.query(`INSERT INTO fuzequality.review_decisions (suggestion_id,actor,tenant_id,decision,original_payload) VALUES ($1,$2,$3,'confirm',$4)`, [id, input.actorId, input.tenantId, JSON.stringify(row.payload)])
+      await client.query('COMMIT')
+    } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
+    return (await this.portfolio(input.tenantId)).suggestions.find(item => item.id === id)
+  }
+
+  async excludeExpectation(id: string, tenantId: string, input: ExpectationExclusionInput) {
+    const visible = (await this.portfolio(tenantId)).expectations.some(item => item.id === id)
+    if (!visible) return false
+    await this.pool.query(
+      `INSERT INTO fuzequality.expectation_exclusions (expectation_id,tenant_id,owner,reason,expires_at)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (expectation_id,tenant_id) WHERE revoked_at IS NULL
+       DO UPDATE SET owner=EXCLUDED.owner, reason=EXCLUDED.reason, expires_at=EXCLUDED.expires_at`,
+      [id, tenantId, input.owner, input.reason, input.expiresAt],
+    )
+    return true
+  }
+
+  async suggestionDecisions(id: string, tenantId: string): Promise<SuggestionDecision[]> {
+    const result = await this.pool.query(`SELECT d.* FROM fuzequality.review_decisions d JOIN fuzequality.suggestions s ON s.id=d.suggestion_id JOIN fuzequality.requirements r ON r.id=s.requirement_id WHERE d.suggestion_id=$1 AND r.tenant_id=$2 AND d.tenant_id=$2 ORDER BY d.decided_at DESC`, [id, tenantId])
+    return result.rows.map(row => ({ id: row.id, suggestionId: row.suggestion_id, actorId: row.actor, tenantId: row.tenant_id, action: row.decision, originalPayload: row.original_payload, editedPayload: row.edited_payload ?? undefined, reason: row.reason ?? undefined, owner: row.owner ?? undefined, expiresAt: row.expires_at?.toISOString(), targetSuggestionId: row.target_suggestion_id ?? undefined, decidedAt: row.decided_at.toISOString() }))
   }
 
   async createTestImplementation(request: TestImplementationRequest, idempotencyKey: string) {

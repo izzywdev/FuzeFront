@@ -7,6 +7,15 @@ import {
 import { BackendUser } from './user-sync'
 import { Organization } from '../../types/shared'
 
+// Neutralizes CR/LF before a value reaches a log line (CodeQL js/log-injection
+// — an embedded newline could forge additional fake log lines). A manual
+// `.replace(/[\r\n]+/g, ' ')` is NOT recognized as a sanitizer by CodeQL's
+// log-injection query (confirmed: re-fired identically on role-assignment.ts
+// after trying that) — `encodeURIComponent` is the remediation CodeQL's own
+// query-help documents, and is a no-op for the UUID values actually passed
+// through it here.
+const oneLine = (v: unknown) => encodeURIComponent(String(v))
+
 /**
  * Syncs all existing database data to Permit.io
  * This should be run once after Permit.io setup is complete
@@ -30,7 +39,7 @@ export async function syncExistingDataToPermit(): Promise<void> {
       updated_at: user.updated_at,
     }))
 
-    console.log(`Found ${users.length} users`)
+    console.log('Found %d users', users.length)
 
     // 2. Fetch all organizations from database
     console.log('📥 Fetching organizations from database...')
@@ -52,7 +61,7 @@ export async function syncExistingDataToPermit(): Promise<void> {
       updated_at: org.updated_at,
     }))
 
-    console.log(`Found ${organizations.length} organizations`)
+    console.log('Found %d organizations', organizations.length)
 
     // 3. Fetch all memberships from database
     console.log('📥 Fetching organization memberships from database...')
@@ -63,10 +72,10 @@ export async function syncExistingDataToPermit(): Promise<void> {
     const memberships = membershipsFromDb.map(membership => ({
       userId: membership.user_id,
       organizationId: membership.organization_id,
-      role: membership.role as 'owner' | 'admin' | 'member' | 'viewer',
+      role: membership.role as 'owner' | 'admin' | 'member' | 'viewer' | 'developer',
     }))
 
-    console.log(`Found ${memberships.length} active memberships`)
+    console.log('Found %d active memberships', memberships.length)
 
     // 4. Perform the sync
     const results = await initialDataSync({
@@ -78,27 +87,23 @@ export async function syncExistingDataToPermit(): Promise<void> {
     // 5. Report results
     console.log('\n✅ Data sync completed!')
     console.log('📊 Results:')
+    console.log('  Users: %d synced, %d failed', results.users.success, results.users.failed)
+    console.log('  Tenants: %d synced, %d failed', results.tenants.success, results.tenants.failed)
     console.log(
-      `  Users: ${results.users.success} synced, ${results.users.failed} failed`
-    )
-    console.log(
-      `  Tenants: ${results.tenants.success} synced, ${results.tenants.failed} failed`
-    )
-    console.log(
-      `  Role Assignments: ${results.roles.success} synced, ${results.roles.failed} failed`
+      '  Role Assignments: %d synced, %d failed',
+      results.roles.success,
+      results.roles.failed
     )
 
-    const totalSuccess =
-      results.users.success + results.tenants.success + results.roles.success
+    // Unused-variable finding (CodeQL): totalSuccess was computed but never
+    // read — only totalFailed drives the branch below.
     const totalFailed =
       results.users.failed + results.tenants.failed + results.roles.failed
 
     if (totalFailed === 0) {
       console.log('🎉 All data synced successfully!')
     } else {
-      console.log(
-        `⚠️  ${totalFailed} operations failed. Check logs above for details.`
-      )
+      console.log('⚠️  %d operations failed. Check logs above for details.', totalFailed)
     }
   } catch (error) {
     console.error('❌ Error during data sync:', error)
@@ -111,12 +116,12 @@ export async function syncExistingDataToPermit(): Promise<void> {
  */
 export async function syncSingleUserToPermit(userId: string): Promise<boolean> {
   try {
-    console.log(`🔄 Syncing user ${userId} to Permit.io...`)
+    console.log('🔄 Syncing user %s to Permit.io...', oneLine(userId))
 
     // Fetch user data
     const userFromDb = await db('users').where('id', userId).first()
     if (!userFromDb) {
-      console.error(`User ${userId} not found in database`)
+      console.error('User %s not found in database', oneLine(userId))
       return false
     }
 
@@ -135,14 +140,14 @@ export async function syncSingleUserToPermit(userId: string): Promise<boolean> {
     const results = await bulkSyncUsers([user])
 
     if (results.success === 1) {
-      console.log(`✅ User ${userId} synced successfully`)
+      console.log('✅ User %s synced successfully', oneLine(userId))
       return true
     } else {
-      console.error(`❌ Failed to sync user ${userId}`)
+      console.error('❌ Failed to sync user %s', oneLine(userId))
       return false
     }
   } catch (error) {
-    console.error(`Error syncing user ${userId}:`, error)
+    console.error('Error syncing user %s:', oneLine(userId), error)
     return false
   }
 }
@@ -154,14 +159,14 @@ export async function syncSingleOrganizationToPermit(
   organizationId: string
 ): Promise<boolean> {
   try {
-    console.log(`🔄 Syncing organization ${organizationId} to Permit.io...`)
+    console.log('🔄 Syncing organization %s to Permit.io...', oneLine(organizationId))
 
     // Fetch organization data
     const orgFromDb = await db('organizations')
       .where('id', organizationId)
       .first()
     if (!orgFromDb) {
-      console.error(`Organization ${organizationId} not found in database`)
+      console.error('Organization %s not found in database', oneLine(organizationId))
       return false
     }
 
@@ -183,14 +188,14 @@ export async function syncSingleOrganizationToPermit(
     const results = await bulkSyncTenants([organization])
 
     if (results.success === 1) {
-      console.log(`✅ Organization ${organizationId} synced successfully`)
+      console.log('✅ Organization %s synced successfully', oneLine(organizationId))
       return true
     } else {
-      console.error(`❌ Failed to sync organization ${organizationId}`)
+      console.error('❌ Failed to sync organization %s', oneLine(organizationId))
       return false
     }
   } catch (error) {
-    console.error(`Error syncing organization ${organizationId}:`, error)
+    console.error('Error syncing organization %s:', oneLine(organizationId), error)
     return false
   }
 }

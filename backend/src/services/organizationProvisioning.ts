@@ -526,6 +526,80 @@ export async function ensureRootMembership(
     .ignore()
 }
 
+/**
+ * docs/planning/developers-portal.md §5.2 — idempotently provisions a user as
+ * a `developer` on the root platform org on their first sign-in AT
+ * developers.fuzefront.com. Deliberately separate from `ensureRootMembership`
+ * above (FF-EPIC-17's general root-membership rollout): that path defaults
+ * every signed-in FuzeFront user to `member`, this one is devportal-specific
+ * and must never fire outside a devportal sign-in.
+ *
+ * A user may already hold a root-org membership row (via
+ * `ensureRootMembership`, or as an `owner`/`admin`) — the `role` column is a
+ * single enum value per (user_id, organization_id) row, and downgrading an
+ * existing owner/admin/member to `developer` would strip real authority they
+ * already have. So this only sets `role='developer'` when NO root-org
+ * membership exists yet; otherwise it leaves the existing row's role alone
+ * and only marks `metadata.developer = true` for "My access" to read. Either
+ * way it grants the `developer` Permit role at the root tenant — Permit role
+ * assignments are additive per (user, role, tenant) tuple, so this never
+ * revokes whatever tenant role the user already holds there.
+ *
+ * Mirrors `backend/security/src/services/organizationProvisioning.ts`'s copy
+ * — security-service is the LIVE/authoritative provisioning path.
+ */
+export async function ensureDeveloperMembership(
+  userId: string,
+  overrides?: Partial<Pick<ProvisioningDeps, 'db'>>
+): Promise<void> {
+  const db = overrides?.db ?? defaultDb
+
+  const rootOrg = await db('organizations').where({ id: ROOT_ORG_ID }).first()
+  if (!rootOrg) {
+    console.error(
+      'ensureDeveloperMembership: root organization does not exist — skipping ' +
+        'developer membership. See migration 015.',
+      JSON.stringify({ rootOrgId: ROOT_ORG_ID, userId })
+    )
+    return
+  }
+
+  const existing = await db('organization_memberships')
+    .where({ user_id: userId, organization_id: ROOT_ORG_ID })
+    .first()
+
+  if (!existing) {
+    await db('organization_memberships')
+      .insert({
+        id: toUuid(mintId('membership')),
+        user_id: userId,
+        organization_id: ROOT_ORG_ID,
+        role: 'developer',
+        status: 'active',
+        joined_at: new Date(),
+        permissions: JSON.stringify({}),
+        metadata: JSON.stringify({ developer: true }),
+      })
+      .onConflict(['user_id', 'organization_id'])
+      .ignore()
+  } else {
+    const metadata =
+      typeof existing.metadata === 'string'
+        ? JSON.parse(existing.metadata || '{}')
+        : existing.metadata || {}
+    await db('organization_memberships')
+      .where({ user_id: userId, organization_id: ROOT_ORG_ID })
+      .update({
+        metadata: JSON.stringify({ ...metadata, developer: true }),
+        updated_at: new Date(),
+      })
+  }
+
+  // Additive at the Permit tenant: grants DevPortalCatalog/DevPortalPlayground
+  // access without touching whatever tenant role the row above carries.
+  await assignOrganizationRole(userId, ROOT_ORG_ID, 'developer')
+}
+
 export async function runInternalProvision(
   userId: string,
   overrides?: Partial<ProvisioningDeps>

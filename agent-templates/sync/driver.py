@@ -57,7 +57,11 @@ def _stream_thread(session_id, q):
                         q.put(json.loads(payload))
                     except json.JSONDecodeError:
                         pass
-    except Exception as e:  # noqa: BLE001
+    except (OSError, ValueError) as e:
+        # The stream reader: a dropped connection (OSError) or an undecodable frame
+        # (ValueError). Reported onto the queue, which is the consumer's error channel —
+        # narrow so a genuine bug in the loop raises instead of arriving as a fake
+        # "stream closed".
         q.put({"type": "session.error", "error": {"message": f"stream closed: {e}"}})
     finally:
         q.put(None)

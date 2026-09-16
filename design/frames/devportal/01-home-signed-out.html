@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev Portal — Home (signed out)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<!-- Frame 01 · flow `home` · route / · developers.fuzefront.com
+     data-* hooks below are the CONTRACT Playwright drives; they must match
+     manifest.json -> frames[id=01-home-signed-out].testHooks exactly. -->
+<div class="dp-wrap" data-frame="01-home-signed-out">
+  <div class="dp-crumbline"><a href="index.html">← All frames</a> · Frame 01 · flow <b>home</b> · route <code>/</code></div>
+  <h1 class="dp-h1">Home — anonymous visitor</h1>
+  <p class="dp-lead">The first thing anyone lands on at <b>developers.fuzefront.com</b>. It explains what the
+    portal is, lets an anonymous visitor <b>browse the catalog read-only</b>, and makes clear that
+    <b>trying an endpoint requires signing in</b> — the Playground is gated on the root-org
+    <code>Developer</code> grant, so it is shown locked rather than hidden.</p>
+
+  <!-- ============ app chrome (signed out) ============ -->
+  <div class="dp-topbar" data-panel="portal-topbar" data-auth="anonymous">
+    <span class="dp-wordmark">Fuze <span class="seamtext">Developers</span></span>
+    <nav class="dp-topnav">
+      <a href="#" class="active">Home</a>
+      <a href="03-catalog.html">Catalog</a>
+      <a href="07-playground.html">Playground</a>
+    </nav>
+    <span class="dp-spacer"></span>
+    <button class="dp-btn primary" data-action="sign-in">Sign in</button>
+  </div>
+
+  <div class="dp-appframe">
+
+    <!-- ============ hero ============ -->
+    <section data-panel="home-hero">
+      <span class="dp-badge info"><span class="dp-dot"></span>Fuze family</span>
+      <h2 class="dp-h1" style="margin-top: var(--space-4)">Every Fuze API, in one place.</h2>
+      <p class="dp-lead">Browse the OpenAPI contract of every service across FuzeFront, FuzeAgent, FuzeBI,
+        FuzeX and the rest of the family — then exercise any endpoint in a sandbox that
+        <b>never touches production</b>.</p>
+      <div class="dp-inline">
+        <a class="dp-btn primary" href="03-catalog.html" data-action="browse-catalog">Browse the catalog</a>
+        <button class="dp-btn ghost" data-action="sign-in">Sign in to try endpoints</button>
+      </div>
+      <p class="dp-sub" style="margin-top: var(--space-4)">Signs in with your existing Fuze identity — no separate
+        account. First sign-in provisions you as a <code>Developer</code> on the platform root organization.</p>
+    </section>
+
+    <!-- ============ quick links ============ -->
+    <h3 class="dp-h2">Quick links</h3>
+    <div class="dp-grid-4" data-panel="quick-links">
+      <a class="dp-card seamed" href="03-catalog.html" data-quick-link="catalog" style="text-decoration:none;color:inherit">
+        <h4 class="dp-h3">📚 API catalog</h4>
+        <p class="dp-sub" style="margin:0">Every harvested <code>openapi.yaml</code>, grouped product → service → spec.</p>
+      </a>
+      <a class="dp-card seamed" href="07-playground.html" data-quick-link="playground" data-locked="true" style="text-decoration:none;color:inherit">
+        <h4 class="dp-h3">🧪 Playground <span class="dp-badge warn">sign-in required</span></h4>
+        <p class="dp-sub" style="margin:0">Send a real request to a sandbox target. Never to production.</p>
+      </a>
+      <a class="dp-card seamed" href="#" data-quick-link="getting-started" style="text-decoration:none;color:inherit">
+        <h4 class="dp-h3">🚀 Getting started</h4>
+        <p class="dp-sub" style="margin:0">Publish your repo's spec to the catalog with one CI step.</p>
+      </a>
+      <a class="dp-card seamed" href="09-my-access.html" data-quick-link="my-access" data-locked="true" style="text-decoration:none;color:inherit">
+        <h4 class="dp-h3">🔑 My access <span class="dp-badge warn">sign-in required</span></h4>
+        <p class="dp-sub" style="margin:0">Your <code>Developer</code> membership, sandbox quota and keys.</p>
+      </a>
+    </div>
+
+    <!-- ============ product directory ============ -->
+    <h3 class="dp-h2">Participating products</h3>
+    <p class="dp-sub">Sourced from <code>.fuze/manifest.json</code> → <code>providesTo</code>. A product appears here as
+      soon as one of its repos publishes a spec.</p>
+    <div class="dp-grid-3" data-panel="product-directory">
+      <div class="dp-card" data-product="fuzefront">
+        <div class="dp-inline"><h4 class="dp-h3" style="margin:0">FuzeFront</h4><span class="dp-badge info">host</span></div>
+        <p class="dp-sub" style="margin:var(--space-2) 0 0">12 services · 8 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzeagent">
+        <h4 class="dp-h3">FuzeAgent</h4>
+        <p class="dp-sub" style="margin:0">3 services · 3 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzebi">
+        <h4 class="dp-h3">FuzeBI</h4>
+        <p class="dp-sub" style="margin:0">2 services · 2 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzex">
+        <h4 class="dp-h3">FuzeX</h4>
+        <p class="dp-sub" style="margin:0">4 services · 4 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzequality">
+        <h4 class="dp-h3">Quality</h4>
+        <p class="dp-sub" style="margin:0">1 service · 1 spec</p>
+      </div>
+      <div class="dp-card" data-product="mendysrobotics">
+        <h4 class="dp-h3">MendysRobotics</h4>
+        <p class="dp-sub" style="margin:0">2 services · 2 specs</p>
+      </div>
+    </div>
+
+    <!-- ============ the sandbox promise, stated up front ============ -->
+    <div class="dp-callout info" data-safety-notice="sandbox-only" style="margin-top: var(--space-8)">
+      <span class="glyph">🛡</span>
+      <div>
+        <p class="ct">The Playground never touches production.</p>
+        <p class="cb">Every "Try it" call is brokered by <code>devportal-service</code> to a spec-generated mock
+          server, or to a sandbox URL a repo has explicitly opted into. Your real session token is never
+          forwarded — the proxy mints a synthetic sandbox identity scoped only to that target.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="dp-notes">
+    Test hooks: <code>[data-frame='01-home-signed-out']</code> · <code>[data-auth='anonymous']</code> ·
+    <code>[data-action='sign-in']</code> · <code>[data-action='browse-catalog']</code> ·
+    <code>[data-panel='quick-links']</code> · <code>[data-quick-link='playground'][data-locked='true']</code> ·
+    <code>[data-panel='product-directory']</code> · <code>[data-safety-notice='sandbox-only']</code>.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+  </p>
+</div>
+
+<nav class="dp-nav">
+  <span class="caption">Frame <b>01 / 09</b> · flow <b>home</b> · <code class="dp-mono">/</code></span>
+  <span class="dp-inline">
+    <a class="dp-btn ghost" href="index.html">All frames</a>
+    <a class="dp-btn primary" href="02-home-signed-in.html">Next → Home (signed in)</a>
+  </span>
+</nav>
+</body>
+</html>

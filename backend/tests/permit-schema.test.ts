@@ -34,9 +34,9 @@ function makeFakeClient(existing: { resources: string[]; roles: string[] }) {
 describe('permit schema IaC', () => {
   it('defines exactly the resources and roles the code references', () => {
     expect(permitSchema.resources.map(r => r.key).sort()).toEqual(
-      ['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement']
+      ['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement']
     )
-    expect(permitSchema.roles.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
+    expect(permitSchema.roles.map(r => r.key).sort()).toEqual(['admin', 'developer', 'editor', 'viewer'])
 
     const org = permitSchema.resources.find(r => r.key === 'Organization')!
     expect(Object.keys(org.actions).sort()).toEqual(
@@ -58,6 +58,20 @@ describe('permit schema IaC', () => {
 
     const serviceEndpoint = permitSchema.resources.find(r => r.key === 'ServiceEndpoint')!
     expect(Object.keys(serviceEndpoint.actions).sort()).toEqual(['invoke'])
+
+    const devPortalCatalog = permitSchema.resources.find(r => r.key === 'DevPortalCatalog')!
+    expect(Object.keys(devPortalCatalog.actions).sort()).toEqual(['read'])
+
+    const devPortalPlayground = permitSchema.resources.find(r => r.key === 'DevPortalPlayground')!
+    expect(Object.keys(devPortalPlayground.actions).sort()).toEqual(['use', 'view_history'])
+  })
+
+  it('developer role is scoped to the dev portal only, with no inherited platform access', () => {
+    const developer = permitSchema.roles.find(r => r.key === 'developer')!
+    expect(developer.permissions.sort()).toEqual(
+      ['DevPortalCatalog:read', 'DevPortalPlayground:use', 'DevPortalPlayground:view_history']
+    )
+    expect(developer.permissions.some(p => /^(Organization|App|UserManagement|Docs|Chat):/.test(p))).toBe(false)
   })
 
   it('ServiceEndpoint declares a direct (non-derived) s2s-caller instance role scoped to invoke only', () => {
@@ -115,21 +129,21 @@ describe('permit schema IaC', () => {
   it('creates resources and roles when none exist (idempotent: create path)', async () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client)
-    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
-    expect(calls.roleCreate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
+    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
+    expect(calls.roleCreate.map(r => r.key).sort()).toEqual(['admin', 'developer', 'editor', 'viewer'])
     expect(calls.resourceUpdate).toHaveLength(0)
     expect(calls.roleUpdate).toHaveLength(0)
   })
 
   it('updates resources and roles when they already exist (idempotent: update path)', async () => {
     const { client, calls } = makeFakeClient({
-      resources: ['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'],
-      roles: ['admin', 'editor', 'viewer'],
+      resources: ['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'],
+      roles: ['admin', 'developer', 'editor', 'viewer'],
     })
     await syncPermitSchema(client)
     expect(calls.resourceCreate).toHaveLength(0)
     expect(calls.roleCreate).toHaveLength(0)
-    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
-    expect(calls.roleUpdate.map(r => r.key).sort()).toEqual(['admin', 'editor', 'viewer'])
+    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
+    expect(calls.roleUpdate.map(r => r.key).sort()).toEqual(['admin', 'developer', 'editor', 'viewer'])
   })
 })

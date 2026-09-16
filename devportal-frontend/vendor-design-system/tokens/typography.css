@@ -1,0 +1,67 @@
+/* ============================================================
+   FuzeFront — Typography tokens
+   Space Grotesk carries the personality; Inter does the reading;
+   JetBrains Mono speaks for the machine.
+   ============================================================ */
+
+:root {
+  /* ---- Families ------------------------------------------ */
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* ---- Weights ------------------------------------------- */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- Type scale (rem) ---------------------------------- */
+  --text-2xs: 0.7rem;     /* 11px — mono meta, badges */
+  --text-xs: 0.75rem;     /* 12px */
+  --text-sm: 0.8125rem;   /* 13px */
+  --text-base: 0.9375rem; /* 15px — UI default */
+  --text-md: 1rem;        /* 16px — body */
+  --text-lg: 1.1rem;      /* h3 */
+  --text-xl: 1.35rem;     /* h2 */
+  --text-2xl: 1.75rem;    /* h1 */
+  --text-3xl: 2.25rem;    /* page hero */
+
+  /* ---- Line heights -------------------------------------- */
+  --leading-tight: 1.15;
+  --leading-snug: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+
+  /* ---- Tracking ------------------------------------------ */
+  --tracking-display: -0.02em;  /* headings & wordmark */
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+
+  /* ---- Semantic roles ------------------------------------ */
+  --role-hero-font: var(--font-display);
+  --role-hero-size: var(--text-3xl);
+  --role-hero-weight: var(--weight-semibold);
+  --role-hero-leading: var(--leading-tight);
+
+  --role-heading-font: var(--font-display);
+  --role-heading-size: var(--text-2xl);
+  --role-heading-weight: var(--weight-semibold);
+
+  --role-section-font: var(--font-display);
+  --role-section-size: var(--text-lg);
+  --role-section-weight: var(--weight-semibold);
+
+  --role-body-font: var(--font-sans);
+  --role-body-size: var(--text-md);
+  --role-body-weight: var(--weight-regular);
+  --role-body-leading: var(--leading-normal);
+
+  --role-label-font: var(--font-sans);
+  --role-label-size: var(--text-base);
+  --role-label-weight: var(--weight-medium);
+
+  --role-data-font: var(--font-mono);   /* IDs, scopes, remote URLs */
+  --role-data-size: var(--text-2xs);
+  --role-data-weight: var(--weight-medium);
+}
