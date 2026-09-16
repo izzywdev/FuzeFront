@@ -47,7 +47,7 @@ def make_repo(files):
 
 def run(repo, *flags):
     r = subprocess.run([sys.executable, GATE, repo, *flags],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, check=False)
     return r.returncode, r.stdout + r.stderr
 
 

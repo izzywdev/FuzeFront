@@ -536,6 +536,18 @@
       "sourceSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71",
       "renderedSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71"
     },
+    ".github/workflows/fuze-auto-pr.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze-auto-pr.yml",
+      "sourceSha256": "daa3f14efc31aca7d3efa3fdcf4ac1b389641d78959297ec3bf68b72c8c98246",
+      "renderedSha256": "daa3f14efc31aca7d3efa3fdcf4ac1b389641d78959297ec3bf68b72c8c98246",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
+      }
+    },
     ".github/workflows/fuze-ci-autofix.yml": {
       "capability": "workflows",
       "mode": "stamped",
@@ -554,6 +566,18 @@
       "sourcePath": "workflow-templates/fuze-code-review.yml",
       "sourceSha256": "940d1ea7a9408a3ee766a98c1ff29ab7a073f21b6b0667eddde17273403251b6",
       "renderedSha256": "940d1ea7a9408a3ee766a98c1ff29ab7a073f21b6b0667eddde17273403251b6",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
+      }
+    },
+    ".github/workflows/fuze.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze.yml",
+      "sourceSha256": "f60055d3b6e3d053d21176b2a0a9b9b998df77cf8c5b6527ced72707990f1dde",
+      "renderedSha256": "f60055d3b6e3d053d21176b2a0a9b9b998df77cf8c5b6527ced72707990f1dde",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1",
@@ -606,6 +630,18 @@
         "repoName": "izzywdev/FuzeFront"
       }
     },
+    ".github/workflows/gate-workflow-policy.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/gate-workflow-policy.yml",
+      "sourceSha256": "75327f97b97230c08c0063903ebded2398809676dfed5051214f75ca111cced5",
+      "renderedSha256": "75327f97b97230c08c0063903ebded2398809676dfed5051214f75ca111cced5",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
+      }
+    },
     ".github/workflows/governance-nightly.yml": {
       "capability": "workflows",
       "mode": "stamped",
@@ -621,11 +657,12 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/governance-sync.yml",
-      "sourceSha256": "8fbd260435ddeb153996c0d73abcadb6459a08106b193862a9ff3821547055ba",
-      "renderedSha256": "8fbd260435ddeb153996c0d73abcadb6459a08106b193862a9ff3821547055ba",
+      "sourceSha256": "ad95d02840290f03265d7f540d7b6a2e7974521b5c6046def08895836acd2d02",
+      "renderedSha256": "f0a5922c1d742d7922ff7d2d8e8e41380c3dba09b859687bff6fe768e5c8a841",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1"
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
       }
     },
     ".github/workflows/harden-gate.yml": {
@@ -681,6 +718,18 @@
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/nightly-security-triage.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/nightly-security-triage.yml",
+      "sourceSha256": "3960f9c11d6d1d5099eed5f1e6cc6e5bc6a208e7b66be399a474bbd88bcab26b",
+      "renderedSha256": "3960f9c11d6d1d5099eed5f1e6cc6e5bc6a208e7b66be399a474bbd88bcab26b",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1",
+        "repoName": "izzywdev/FuzeFront"
       }
     },
     ".github/workflows/pages-frames.yml": {
@@ -1458,6 +1507,12 @@
       "sourceSha256": "e77128e69431a108f64482ab48802b2abe1d39ed58669b4eda091c692e30be8d",
       "renderedSha256": "e77128e69431a108f64482ab48802b2abe1d39ed58669b4eda091c692e30be8d"
     },
+    "scripts/__tests__/test_gate_platform_auth.py": {
+      "capability": "platform-auth",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_platform_auth.py",
+      "sourceSha256": "f2dcdf6a0ccbceb0ef8cfecf436ba2c98e6494a50c345e07fab821c3d55720fc"
+    },
     "scripts/__tests__/test_gate_required_checks.py": {
       "capability": "harden-gate-scripts",
       "mode": "managed",
@@ -1542,6 +1597,12 @@
       "sourceSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35",
       "renderedSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35"
     },
+    "scripts/gate_platform_auth.py": {
+      "capability": "platform-auth",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_platform_auth.py",
+      "sourceSha256": "b2b643073efee75483274ad110c328960d83ecc8105ade3012d7a176500a1b63"
+    },
     "scripts/gate_required_checks.py": {
       "capability": "harden-gate-scripts",
       "mode": "managed",
@@ -1555,6 +1616,13 @@
       "sourcePath": "scripts/gate_vacuous_check.py",
       "sourceSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0",
       "renderedSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0"
+    },
+    "scripts/gate_workflow_policy.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_workflow_policy.py",
+      "sourceSha256": "a097f3546efe2fbe98305dfe40e2d7e6a1c88dc6bcfb321e67d95bb932b49330",
+      "renderedSha256": "a097f3546efe2fbe98305dfe40e2d7e6a1c88dc6bcfb321e67d95bb932b49330"
     },
     "scripts/stamp-frames.mjs": {
       "capability": "workflows",
@@ -1765,18 +1833,6 @@
       "sourcePath": "",
       "sourceSha256": "45672c1f91889a84d3a34c499bb2d75c43f3c09b3e05236d752a5c3b7b7737c4",
       "renderedSha256": "45672c1f91889a84d3a34c499bb2d75c43f3c09b3e05236d752a5c3b7b7737c4"
-    },
-    "scripts/gate_platform_auth.py": {
-      "capability": "platform-auth",
-      "mode": "managed",
-      "sourcePath": "scripts/gate_platform_auth.py",
-      "sourceSha256": "b2b643073efee75483274ad110c328960d83ecc8105ade3012d7a176500a1b63"
-    },
-    "scripts/__tests__/test_gate_platform_auth.py": {
-      "capability": "platform-auth",
-      "mode": "managed",
-      "sourcePath": "scripts/__tests__/test_gate_platform_auth.py",
-      "sourceSha256": "f2dcdf6a0ccbceb0ef8cfecf436ba2c98e6494a50c345e07fab821c3d55720fc"
     }
   },
   "workflows": {

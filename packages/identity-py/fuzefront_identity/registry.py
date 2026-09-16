@@ -10,8 +10,8 @@ files on every CI run for exactly this reason.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Mapping, Optional
 
 #: Wire prefixes, keyed by entity type. Prefix must match ``^[a-z][a-z_]{1,62}$``.
 ENTITY_PREFIXES: Mapping[str, str] = MappingProxyType(
@@ -75,7 +75,7 @@ def prefix_for(entity_type: str) -> str:
         raise KeyError(f"unregistered entity type {entity_type!r}") from None
 
 
-def type_for_prefix(prefix: str) -> Optional[str]:
+def type_for_prefix(prefix: str) -> str | None:
     """The entity type owning ``prefix``, or ``None`` when unregistered."""
     return _TYPE_BY_PREFIX.get(prefix)
 

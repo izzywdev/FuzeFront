@@ -56,6 +56,12 @@ spec:
               # just the internal DNS name of another Service in the same
               # namespace.
               value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            - name: KAFKA_BROKERS
+              # Shared FuzeInfra Kafka cluster (fuzeinfra namespace). Not a secret —
+              # it is a plain cluster-internal DNS address. The consumer group IDs
+              # are derived at runtime from the KAFKA_GROUP_ID env var (or the
+              # default in src/events/consumer.ts).
+              value: {{ .Values.selectionListService.kafkaBrokers | default "kafka.fuzeinfra.svc.cluster.local:9092" | quote }}
           readinessProbe:
             httpGet:
               path: /health
