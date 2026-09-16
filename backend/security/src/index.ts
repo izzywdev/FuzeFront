@@ -20,6 +20,7 @@ import authzRoutes from './routes/authz'
 import portalsRoutes from './routes/portals'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
+import meRoutes from './routes/me'
 import internalRoutes from './routes/internal'
 import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
 import { tokenAuthRateLimiter } from './middleware/api-token-auth'
@@ -85,6 +86,9 @@ app.use('/api/auth', authRoutes)
 app.use('/api/organizations', tokenAuthRateLimiter, orgTokensRouter)
 app.use('/api/organizations', organizationsRoutes)
 app.use('/api/invitations', invitationsRoutes)
+// Self-service account management (profile edit / deactivate) for the
+// authenticated user — emits identity.user.updated / identity.user.deleted.
+app.use('/api/me', meRoutes)
 // API token CRUD — rate limiter applied to all /api/tokens/* routes
 app.use('/api/tokens', tokenAuthRateLimiter, apiTokensRoutes)
 // Cluster-internal only — NEVER exposed through the public ingress.
