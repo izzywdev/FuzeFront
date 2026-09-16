@@ -101,6 +101,8 @@ POST /api/auth/oidc/password  # backend: OIDC password set; auth flow, not REST 
 POST /api/auth/token-exchange  # backend: token exchange; auth flow, not REST API
 GET /api/invitations/{}  # backend: invitation detail; backend/src lacks openapi.yaml
 POST /api/invitations/{}/accept  # backend: accept invitation; backend/src lacks openapi.yaml
+PATCH /api/me  # backend/security: self-service profile edit on the legacy /api/* domain surface (frozen spec is /api/v1/security only), parity with the /api/organizations/* domain routes above — FFRNT-172
+DELETE /api/me  # backend/security: self-service account deactivation on the legacy /api/* domain surface (frozen spec is /api/v1/security only) — FFRNT-172
 GET /api/v1/security/admin/reset-password  # N/A — this is POST not GET; gate scanner artefact
 POST /api/v1/security/admin/reset-password  # backend: admin password reset; internal admin route
 POST /internal/provision  # backend/security: Authentik lifecycle hook; internal, not REST API
