@@ -1,0 +1,406 @@
+# fuze:managed template=nightly-security-triage.yml baseline=v1 digest=sha256:755ade48fa3561ceb4906064c1e80cb1870a6406760db499693fddc824a3b98e
+name: Nightly Security Triage
+
+# Nightly triage of GitHub Advanced Security "Security and Quality" reports.
+#
+# WHAT IT TRIAGES. GitHub CODE SCANNING alerts (CodeQL / Semgrep etc.) are the target:
+# a single code-scanning alert carries BOTH the "security" and "quality" dimensions —
+# `rule.security_severity_level` for the security half and `rule.tags` (which include
+# `quality`, `maintainability`, `correctness`, `security`, `external/cwe/...`) for the
+# quality half — so the one REST surface
+# `GET /repos/{owner}/{repo}/code-scanning/alerts?state=open` is exactly "the Security and
+# Quality reports". This workflow's scope is OPEN code-scanning alerts (security + quality).
+#
+# WHAT IT DELIBERATELY DOES NOT TRIAGE, and why (documented so the scope is a decision,
+# not an omission):
+#   - Secret-scanning alerts (`/secret-scanning/alerts`): NEVER auto-fixed here. Handing a
+#     leaked-secret alert to an LLM risks the model echoing the secret value into a prompt,
+#     a log, a commit message, or a PR body. A secret leak is a rotate-and-revoke incident
+#     for the security agent, not a code edit — so it is out of this loop entirely. If a
+#     future revision includes them it must ONLY file an issue, never open a fix PR, and
+#     never read the secret value.
+#   - Dependabot alerts (`/dependabot/alerts`): out of scope. Dependency bumps are already
+#     owned by Dependabot's own PR stream (`.github/dependabot.yml`) and by the fleet's
+#     dependency-scan gate; routing them through an LLM would duplicate that with a less
+#     reliable, more expensive path. Kept out so this workflow does one thing well.
+#
+# HOW IT LOOPS. `enumerate` lists the open code-scanning alerts, drops any that already have
+# an `autotriage/codeql-<n>` branch (idempotency — a re-run never opens a duplicate PR),
+# caps the remainder at `max_alerts`, and emits them as a JSON array. `triage` fans that
+# array out as a matrix with `max-parallel: 1` (a real sequential LOOP, so a night's run
+# cannot spawn unbounded concurrent LLM sessions) and `fail-fast: false` (one alert's
+# outcome never cancels the others). Each matrix cell runs ONE `./.github/actions/
+# fuze-code-action` invocation for its alert — the fleet's canonical multi-provider LLM
+# wrapper, reused verbatim, not reinvented.
+#
+# FAIL-CLOSED / NO MANUFACTURED GREENS. The fuze-code-action step is NOT `|| true`-ed. That
+# action already encodes the fleet rule (see its own header): it exits non-zero ONLY on a
+# real failure (all rungs exhausted / an honest task failure) and exits 0 with
+# `conclusion=neutral mode=declined` when the agent legitimately declines to change code.
+# So a per-alert genuine failure reds THAT matrix cell (surfaced, never swallowed), while a
+# "no safe fix" is reported as a green no-fix. The workflow's own success therefore means
+# "triage ran", not "every alert was fixed".
+#
+# NAMING GOTCHA: every `name:` that contains a colon is quoted — an unquoted colon in a
+# step name is parsed as a YAML mapping and silently skips the step (a known fleet gotcha).
+#
+# REPO-AGNOSTIC: nothing here hardcodes a repository, path, or service. It reads
+# `github.repository` and the repo's own default branch, so the same file is the FuzeInfra
+# copy and the FuzeSDLC canonical template that governance-sync vendors fleet-wide.
+
+on:
+  schedule:
+    # 04:23 UTC — off-peak for the fleet; staggered minute so onboarded repos do not all
+    # fire at :00. Quoted (contains a colon-free cron but quoted for consistency/safety).
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List and plan only — do NOT create branches, call the LLM, or open PRs.'
+        type: boolean
+        default: true
+      max_alerts:
+        description: 'Maximum alerts to attempt in one run (cost/fan-out cap).'
+        type: number
+        default: 5
+
+# Least privilege at the top; each job elevates only what it needs.
+permissions:
+  contents: read
+
+concurrency:
+  # One triage run at a time per ref — a scheduled run and a manual dispatch must not
+  # race to open branches for the same alerts. Do NOT cancel in progress: a half-finished
+  # triage that gets cancelled could leave a pushed branch with no PR.
+  group: nightly-security-triage-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  enumerate:
+    name: Enumerate open code-scanning alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read          # checkout + git ls-remote
+      security-events: read   # read code-scanning alerts
+      pull-requests: read      # (reserved) inspect existing PRs
+    outputs:
+      alerts: ${{ steps.plan.outputs.alerts }}
+      count: ${{ steps.plan.outputs.count }}
+      dry_run: ${{ steps.plan.outputs.dry_run }}
+      has_llm_key: ${{ steps.keys.outputs.present }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: 'Preflight: is any LLM key configured?'
+        id: keys
+        env:
+          ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+          LITELLM: ${{ secrets.LITELLM_FUZE_KEY }}
+          OPENAI: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -n "${ANTHROPIC:-}" ] || [ -n "${LITELLM:-}" ] || [ -n "${OPENAI:-}" ] || [ -n "${GEMINI:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=nightly-security-triage::No LLM key (ANTHROPIC_API_KEY / LITELLM_FUZE_KEY / OPENAI_API_KEY / GEMINI_API_KEY) configured on ${{ github.repository }} — alerts will be listed but no fix PRs opened (not a failure)."
+          fi
+
+      - name: Enumerate and plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # inputs.* are empty on a schedule trigger; the shell applies the real defaults.
+          RAW_DRY_RUN: ${{ inputs.dry_run }}
+          RAW_MAX: ${{ inputs.max_alerts }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+
+          # Scheduled runs carry no inputs and MUST do real work; only a manual dispatch
+          # can request a dry run. Default the manual cap to 5 when unset/blank.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] && [ "${RAW_DRY_RUN}" = "true" ]; then
+            DRY_RUN=true
+          else
+            DRY_RUN=false
+          fi
+          MAX="${RAW_MAX:-5}"
+          case "$MAX" in
+            ''|*[!0-9]*) echo "::warning title=nightly-security-triage::max_alerts '${MAX}' is not a positive integer — falling back to 5."; MAX=5 ;;
+          esac
+          [ "$MAX" -lt 1 ] && MAX=1
+          echo "dry_run=${DRY_RUN}" >> "$GITHUB_OUTPUT"
+
+          # Fetch open code-scanning alerts. A 403/404 here is the "GitHub Advanced Security
+          # / code scanning not enabled (or no analysis yet)" case — a repo-config gap that
+          # needs a human, NOT a workflow failure. Distinguish it from a genuine API error.
+          if ! gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPO}/code-scanning/alerts?state=open&per_page=100" \
+              > alerts.json 2> api_err.txt; then
+            if grep -qiE 'Advanced Security|code scanning|not enabled|no analysis|Resource not accessible|404|403' api_err.txt; then
+              echo "::warning title=nightly-security-triage::Could not read code-scanning alerts for ${REPO} — GitHub Advanced Security / code scanning may not be enabled, or no analysis has run yet. NEEDS A HUMAN: enable code scanning to activate nightly triage. Treating as 'nothing to triage' (not a failure)."
+              {
+                echo "## Nightly Security Triage"
+                echo ""
+                echo "**Code scanning unavailable** for \`${REPO}\`. GitHub Advanced Security / code scanning is likely not enabled, or no analysis has run yet."
+                echo ""
+                echo "_Needs a human: enable code scanning (Settings → Code security) to activate nightly triage._"
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo 'alerts=[]' >> "$GITHUB_OUTPUT"
+              echo 'count=0' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error title=nightly-security-triage::Failed to read code-scanning alerts (not a known 'GHAS disabled' signature)."
+            cat api_err.txt
+            exit 1
+          fi
+
+          # `gh api --paginate` on an array endpoint concatenates pages into one JSON array.
+          TOTAL=$(jq 'length' alerts.json)
+          echo "Open code-scanning alerts: ${TOTAL}"
+
+          # Normalize each alert to just what the fix agent needs, truncating the
+          # description so a pathological rule text cannot bloat the matrix payload.
+          jq -c '[.[] | {
+            number: .number,
+            rule_id: (.rule.id // .rule.name // "unknown"),
+            severity: (.rule.security_severity_level // .rule.severity // "unknown"),
+            tags: ((.rule.tags // []) | join(",")),
+            path: (.most_recent_instance.location.path // "unknown"),
+            start_line: (.most_recent_instance.location.start_line // 0),
+            end_line: (.most_recent_instance.location.end_line // 0),
+            title: (.rule.name // .rule.id // "code-scanning alert"),
+            description: (((.rule.full_description // .rule.description // .most_recent_instance.message.text) // "") | tostring | .[0:600]),
+            html_url: (.html_url // "")
+          }]' alerts.json > norm.json
+
+          # Partition into skipped (branch already exists) / actionable (capped) / deferred
+          # (over the cap this run). Idempotency key is the deterministic branch name.
+          actionable='[]'
+          skipped=""
+          deferred=""
+          count=0
+          while IFS= read -r n; do
+            [ -z "$n" ] && continue
+            branch="autotriage/codeql-${n}"
+            if git ls-remote --heads origin "$branch" 2>/dev/null | grep -q .; then
+              skipped="${skipped} #${n}"
+              continue
+            fi
+            if [ "$count" -ge "$MAX" ]; then
+              deferred="${deferred} #${n}"
+              continue
+            fi
+            obj=$(jq -c --argjson n "$n" 'map(select(.number==$n)) | .[0]' norm.json)
+            actionable=$(jq -c --argjson o "$obj" '. + [$o]' <<< "$actionable")
+            count=$((count + 1))
+          done < <(jq -r '.[].number' norm.json)
+
+          echo "alerts=${actionable}" >> "$GITHUB_OUTPUT"
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+
+          # Run summary for the enumerate phase (inventory + what was skipped/deferred/planned).
+          {
+            echo "## Nightly Security Triage — enumerate"
+            echo ""
+            echo "- Repository: \`${REPO}\`"
+            echo "- Open code-scanning alerts: **${TOTAL}**"
+            echo "- Actionable this run (cap ${MAX}): **${count}**"
+            echo "- Dry run: \`${DRY_RUN}\`"
+            [ -n "$skipped" ] && echo "- Skipped (fix branch already exists): ${skipped}"
+            [ -n "$deferred" ] && echo "- Deferred (over cap, will be picked up next run): ${deferred}"
+            echo ""
+            if [ "$count" -gt 0 ]; then
+              if [ "$DRY_RUN" = "true" ]; then
+                echo "**Dry run** — the following alerts WOULD be triaged (no branch/LLM/PR):"
+              else
+                echo "The following alerts will be triaged (one fuze-code-action invocation each):"
+              fi
+              echo ""
+              jq -r '.[] | "- #\(.number) `\(.rule_id)` (severity: \(.severity)) — \(.path):\(.start_line)"' <<< "$actionable"
+            else
+              echo "_Nothing actionable this run._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  triage:
+    name: Triage alert
+    needs: enumerate
+    # Only run when there is actionable work, a key to do it with, and this is not a dry run.
+    if: >-
+      needs.enumerate.outputs.count != '0' &&
+      needs.enumerate.outputs.dry_run != 'true' &&
+      needs.enumerate.outputs.has_llm_key == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write        # push the per-alert fix branch
+      pull-requests: write   # open the fix PR
+    strategy:
+      fail-fast: false       # one alert's failure must not cancel the others
+      max-parallel: 1        # a real sequential loop — no unbounded concurrent LLM sessions
+      matrix:
+        alert: ${{ fromJSON(needs.enumerate.outputs.alerts) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      # Agent-PR identity (governance/hardening-convention.md §8): open the fix PR under a
+      # collaborator-backed identity so its head actually gets CI. A PR opened by the default
+      # GITHUB_TOKEN is frozen as action_required (public) or gets no runs at all (private).
+      # The canonical, already-vendored ./.github/actions/fuze-push-identity resolves
+      # App -> GH_RELEASE_PAT -> GITHUB_TOKEN, masks the token, configures git push auth, and
+      # warns when only GITHUB_TOKEN is left. Using the local action (rather than minting the
+      # App token inline via a `@v1` tag) also keeps every external action ref in this file
+      # pinned by SHA — no mutable-tag supply-chain surface.
+      - name: Resolve agent-PR push identity
+        id: identity
+        uses: ./.github/actions/fuze-push-identity
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+          fallback-pat: ${{ secrets.GH_RELEASE_PAT }}
+          configure-git: 'true'
+
+      - name: Ensure a git commit identity exists
+        run: |
+          set -uo pipefail
+          # fuze-push-identity sets a --local committer identity only on the App rung; set a
+          # --global default so the agent's commit cannot fail for lack of one on any rung.
+          # A --global default never overrides the action's --local App identity.
+          git config --global user.name "fuze-agent[bot]"
+          git config --global user.email "fuze-agent[bot]@users.noreply.github.com"
+
+      - name: Create per-alert fix branch
+        id: branch
+        env:
+          ALERT_NUMBER: ${{ matrix.alert.number }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+          # Validate the alert number is an integer before it ever reaches a branch name.
+          case "$ALERT_NUMBER" in
+            ''|*[!0-9]*) echo "::error title=nightly-security-triage::alert number '${ALERT_NUMBER}' is not an integer"; exit 1 ;;
+          esac
+          BRANCH="autotriage/codeql-${ALERT_NUMBER}"
+          git checkout -B "$BRANCH" "origin/${BASE}"
+          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+      # NOTE ON PROMPT INJECTION: a code-scanning alert's rule text / file path is
+      # attacker-influenceable (anyone who can land code can shape what a rule reports).
+      # That is inherent to triaging findings, so it is bounded rather than eliminated:
+      # --allowedTools is an explicit allow-list with no arbitrary Bash, the work happens on
+      # a throwaway autotriage/codeql-* branch, and the result is a PR a human reviews.
+      - name: Attempt minimal fix with fuze-code-action
+        id: fca
+        uses: ./.github/actions/fuze-code-action
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # rung 1a (subscription OAuth): engaged when CLAUDE_CODE_OAUTH_TOKEN is present,
+          # falls through to the metered vendor rungs when empty (no regression). Parity with
+          # every other fuze-code-action caller (fuze-code-review, fuze, governance-nightly …).
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          github-token: ${{ steps.identity.outputs.token }}
+          # GH_TOKEN so the agent's `gh pr create` runs under the resolved agent identity
+          # (so the PR head gets CI). Passed via extra-env because a caller step `env:` does
+          # not reliably reach a composite action's inner steps (see the action's own docs).
+          extra-env: |
+            GH_TOKEN=${{ steps.identity.outputs.token }}
+          claude-args: >-
+            --model claude-sonnet-4-6
+            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(python:*),Bash(python3:*),Bash(pip:*),Bash(node:*),Bash(npm:*),Bash(npx:*),Bash(yarn:*),Bash(pnpm:*)'
+          task-prompt: |
+            You are triaging ONE open GitHub code-scanning (CodeQL/Semgrep) alert in this
+            repository and attempting a MINIMAL, correct fix. You are checked out on a fresh
+            branch created from the default branch.
+
+            Repository: ${{ github.repository }}
+            Working branch (already checked out): ${{ steps.branch.outputs.name }}
+            Default branch (PR target): ${{ github.event.repository.default_branch }}
+
+            Alert:
+            - Number: ${{ matrix.alert.number }}
+            - Rule: ${{ matrix.alert.rule_id }}
+            - Title: ${{ matrix.alert.title }}
+            - Security severity: ${{ matrix.alert.severity }}
+            - Tags: ${{ matrix.alert.tags }}
+            - Location: ${{ matrix.alert.path }}:${{ matrix.alert.start_line }}-${{ matrix.alert.end_line }}
+            - Details URL: ${{ matrix.alert.html_url }}
+            - Description: ${{ matrix.alert.description }}
+
+            Instructions:
+            1. Read the flagged file and understand the finding at the given location.
+            2. Make the MINIMAL, targeted change that resolves the finding without altering
+               unrelated behavior. Do NOT touch unrelated code, CI/workflow files, secrets,
+               or configuration unless the finding is genuinely in one of those.
+            3. Validate your change with the repo's own fast checks where they exist (lint,
+               typecheck, the relevant unit tests). Do not weaken, disable, suppress, or
+               add an inline-ignore for the rule to make the alert disappear — fix the code.
+            4. If — and only if — you produced a real fix: commit it to the current branch
+               (${{ steps.branch.outputs.name }}), push with `git push -u origin HEAD`, and
+               open a NON-draft pull request targeting
+               "${{ github.event.repository.default_branch }}" with `gh pr create`. The PR
+               title must reference the rule and alert number, e.g.
+               "fix(security): resolve ${{ matrix.alert.rule_id }} (code-scanning #${{ matrix.alert.number }})".
+               The body must summarize the finding, the root cause, and exactly what you
+               changed, cite the alert URL above, and END with this exact footer on its own
+               lines:
+
+               ---
+               _Generated by [Claude Code](https://claude.ai/code)_
+
+            5. FAIL CLOSED: if you cannot determine a safe, minimal fix, push NOTHING and
+               open NO PR. Do not guess, do not partially edit, and do not suppress the rule.
+               Simply explain what you found and why you are not fixing it — that is a valid
+               outcome, not a failure.
+
+      - name: Report per-alert outcome
+        id: report
+        if: always()
+        env:
+          ALERT_NUMBER: ${{ matrix.alert.number }}
+          RULE_ID: ${{ matrix.alert.rule_id }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          FCA_OUTCOME: ${{ steps.fca.outcome }}
+          FCA_MODE: ${{ steps.fca.outputs.mode }}
+          FCA_CONCLUSION: ${{ steps.fca.outputs.conclusion }}
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
+        run: |
+          set -uo pipefail
+          # Verify what actually happened rather than trusting the agent's word: does an
+          # open PR now exist for this alert's branch?
+          PR_URL=""
+          if [ -n "${BRANCH:-}" ]; then
+            PR_URL=$(gh pr list --repo "${{ github.repository }}" --head "$BRANCH" --state open --json url --jq '.[0].url' 2>/dev/null || true)
+          fi
+
+          if [ "${FCA_OUTCOME:-}" = "failure" ] || [ "${FCA_CONCLUSION:-}" = "failure" ]; then
+            STATUS="FAILED"
+            DETAIL="fuze-code-action failed (outcome=${FCA_OUTCOME:-?}, conclusion=${FCA_CONCLUSION:-?}) — see the step log. Not masked."
+          elif [ -n "$PR_URL" ]; then
+            STATUS="fix-PR-opened"
+            DETAIL="[$PR_URL]($PR_URL)"
+          else
+            STATUS="no-fix"
+            DETAIL="agent declined / found no safe minimal fix (mode=${FCA_MODE:-declined}, conclusion=${FCA_CONCLUSION:-neutral}). No PR opened."
+          fi
+
+          {
+            echo "### Alert #${ALERT_NUMBER} \`${RULE_ID}\` — ${STATUS}"
+            echo ""
+            echo "${DETAIL}"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=nightly-security-triage::alert #${ALERT_NUMBER} ${RULE_ID}: ${STATUS}"
