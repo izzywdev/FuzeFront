@@ -21,6 +21,7 @@
 
 import permit from '../../config/permit'
 import { MachineIdentity } from '../../services/machine-identity'
+import { describePermitError } from './describe-error'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,7 +89,7 @@ export async function syncMachineIdentityToPermit(
     console.log(`[machine-roles] Synced service account to Permit: ${permitKey}`)
     return true
   } catch (error) {
-    console.error('[machine-roles] Error syncing service account to Permit:', permitKey, error)
+    console.error('[machine-roles] Error syncing service account to Permit:', permitKey, describePermitError(error))
     return false
   }
 }
@@ -132,7 +133,7 @@ export async function createDelegateRelationship(
       )
       return true
     }
-    console.error(`[machine-roles] Error creating delegate_of relationship:`, error)
+    console.error(`[machine-roles] Error creating delegate_of relationship:`, describePermitError(error))
     return false
   }
 }
@@ -163,7 +164,7 @@ export async function removeDelegateRelationship(
     )
     return true
   } catch (error) {
-    console.error(`[machine-roles] Error removing delegate_of relationship:`, error)
+    console.error(`[machine-roles] Error removing delegate_of relationship:`, describePermitError(error))
     return false
   }
 }
@@ -194,7 +195,7 @@ export async function checkMachinePermission(
     )
     return !!result
   } catch (error) {
-    console.error('[machine-roles] Error checking machine permission:', error)
+    console.error('[machine-roles] Error checking machine permission:', describePermitError(error))
     return false // Fail safe — deny on error
   }
 }

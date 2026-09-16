@@ -1,5 +1,6 @@
 import permit from '../../config/permit'
 import { Organization } from '../../types/shared'
+import { describePermitError } from './describe-error'
 
 export interface PermitTenant {
   key: string
@@ -147,7 +148,7 @@ export async function listTenantsFromPermit() {
     const tenants = await permit.api.tenants.list()
     return tenants
   } catch (error) {
-    console.error('Error listing tenants from Permit.io:', error)
+    console.error('Error listing tenants from Permit.io:', describePermitError(error))
     return []
   }
 }

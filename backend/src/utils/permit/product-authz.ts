@@ -1,5 +1,6 @@
 import permit from '../../config/permit'
 import { namespaceKey } from '../../permit/product-policy'
+import { describePermitError } from './describe-error'
 
 // Neutralizes a value before it reaches a log line (CodeQL js/log-injection,
 // javascript.lang.security.audit.unsafe-formatstring). Every console.* call
@@ -175,7 +176,7 @@ export function requireProductPermission(
       }
       next()
     } catch (error) {
-      console.error('Product permission middleware error:', error)
+      console.error('Product permission middleware error:', describePermitError(error))
       return res.status(500).json({ error: 'Permission check failed' })
     }
   }

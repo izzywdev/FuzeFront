@@ -20,10 +20,14 @@ const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
  * carry no `password_hash`: they are OIDC/token identities, and local login
  * against them is impossible by construction.
  *
- * This previously hashed two hard-coded literals (`admin123` / `demo123`) into
+ * This previously bcrypt-hashed two hard-coded password literals into
  * `password_hash`, which meant a single unset `NODE_ENV` between this code and
- * a live database would have planted a known-password `admin` account.  That is
- * a backdoor, not a fixture — see the production guard below.
+ * a live database would have planted an `admin`-role account whose password is
+ * published in the repository.  That is a backdoor, not a fixture — hence the
+ * removal here and the production guard below.  (Those literals are still in
+ * this file's git history and in sibling dev tooling; they were never a real
+ * credential, but treat any environment where this seed actually ran as having
+ * a known admin password until the row is re-provisioned.)
  *
  * If you need an administrator you can log into locally, use the env-driven,
  * non-destructive bootstrap instead: `src/scripts/seed-admin.ts`, which reads

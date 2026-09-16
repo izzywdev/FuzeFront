@@ -6,6 +6,7 @@ import {
 } from './bulk-operations'
 import { BackendUser } from './user-sync'
 import { Organization } from '../../types/shared'
+import { describePermitError } from './describe-error'
 
 /**
  * Syncs all existing database data to Permit.io
@@ -101,7 +102,7 @@ export async function syncExistingDataToPermit(): Promise<void> {
       )
     }
   } catch (error) {
-    console.error('❌ Error during data sync:', error)
+    console.error('❌ Error during data sync:', describePermitError(error))
     throw error
   }
 }
@@ -142,7 +143,7 @@ export async function syncSingleUserToPermit(userId: string): Promise<boolean> {
       return false
     }
   } catch (error) {
-    console.error('Error syncing user %s:', userId, error)
+    console.error('Error syncing user %s:', userId, describePermitError(error))
     return false
   }
 }
@@ -190,7 +191,7 @@ export async function syncSingleOrganizationToPermit(
       return false
     }
   } catch (error) {
-    console.error('Error syncing organization %s:', organizationId, error)
+    console.error('Error syncing organization %s:', organizationId, describePermitError(error))
     return false
   }
 }
@@ -208,7 +209,7 @@ export async function checkPermitConnection(): Promise<boolean> {
     console.log('✅ Permit.io connection successful')
     return true
   } catch (error) {
-    console.error('❌ Permit.io connection failed:', error)
+    console.error('❌ Permit.io connection failed:', describePermitError(error))
     return false
   }
 }

@@ -1,5 +1,6 @@
 import permit from '../../config/permit'
 import { User } from '../../types/shared'
+import { describePermitError } from './describe-error'
 
 export interface PermitUser {
   key: string
@@ -41,7 +42,7 @@ export async function syncUserToPermit(user: BackendUser): Promise<boolean> {
     console.log('User %s synced to Permit.io successfully', user.id)
     return true
   } catch (error) {
-    console.error('Error syncing user %s to Permit.io:', user.id, error)
+    console.error('Error syncing user %s to Permit.io:', user.id, describePermitError(error))
     return false
   }
 }
@@ -55,7 +56,7 @@ export async function deleteUserFromPermit(userId: string): Promise<boolean> {
     console.log('User %s deleted from Permit.io successfully', userId)
     return true
   } catch (error) {
-    console.error('Error deleting user %s from Permit.io:', userId, error)
+    console.error('Error deleting user %s from Permit.io:', userId, describePermitError(error))
     return false
   }
 }
@@ -68,7 +69,7 @@ export async function getUserFromPermit(userId: string) {
     const user = await permit.api.users.get(userId)
     return user
   } catch (error) {
-    console.error('Error getting user %s from Permit.io:', userId, error)
+    console.error('Error getting user %s from Permit.io:', userId, describePermitError(error))
     return null
   }
 }
@@ -85,7 +86,7 @@ export async function updateUserInPermit(
     console.log('User %s updated in Permit.io successfully', userId)
     return true
   } catch (error) {
-    console.error('Error updating user %s in Permit.io:', userId, error)
+    console.error('Error updating user %s in Permit.io:', userId, describePermitError(error))
     return false
   }
 }

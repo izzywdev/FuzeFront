@@ -64,12 +64,12 @@ function regionMerge(existing, block, marker) {
   const end = `<!-- ${marker}:END -->`;
   const wrapped = `${start}\n${block.trim()}\n${end}`;
   if (existing == null) return wrapped + '\n';
-  // Plain string search, not `new RegExp(...)`: the marker comes from
-  // manifest.json, so building a pattern out of it would both mis-parse any
+  // Plain string search, not a dynamically built pattern: the marker comes
+  // from manifest.json, so compiling it as a regex would both mis-parse any
   // regex metacharacter in a marker name and hand an editor of that file a
   // ReDoS surface over every managed file's contents. indexOf is exact and
-  // linear, and matches the old lazy `[\s\S]*?` semantics (first END that
-  // follows the START).
+  // linear, and matches the old lazy match semantics (first END that follows
+  // the START).
   const startIdx = existing.indexOf(start);
   const endIdx = startIdx === -1 ? -1 : existing.indexOf(end, startIdx + start.length);
   if (startIdx !== -1 && endIdx !== -1) {
