@@ -81,6 +81,10 @@ def run_gate(root: str, policy: str, *extra):
         [sys.executable, GATE, "--repo", root, "--policy", policy, *extra],
         capture_output=True,
         text=True,
+        # check=False is the EXISTING behaviour made explicit, not a change: every
+        # caller below asserts on .returncode, and several deliberately exercise the
+        # gate's non-zero exit paths. check=True would raise instead and break them.
+        check=False,
     )
 
 
