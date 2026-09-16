@@ -92,6 +92,11 @@ jobs:
       - name: Run Claude Code autofix
         uses: ./.github/actions/fuze-code-action
         with:
+          # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
+          # path. Omitting it does not fail loudly -- the rung is skipped by name
+          # and the chain silently falls through to per-token billing, which is
+          # what every run here was doing until 2026-09-16.
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
