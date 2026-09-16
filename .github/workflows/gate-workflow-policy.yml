@@ -1,0 +1,90 @@
+# fuze:managed template=gate-workflow-policy.yml baseline=v1 digest=sha256:e7880598b537ed1d1efe1686cf1aeb8ade9a653ac3441bb5114382c72d9d7ab3
+name: gate-workflow-policy
+
+# Lints every repo's OWN GitHub Actions workflows for the runner-hygiene policy knobs.
+# Part of the standard workflow stack (STACK in scripts/bootstrap/caps/workflows.py;
+# STANDARD_STACK in scripts/governance_sync.py).
+#
+# WHY THIS EXISTS (a production failure the whole fleet just shared — do not weaken it):
+# Fuze self-hosted ARC runners jammed for HOURS because product-owned workflows
+# (ci-cd.yml, release.yml) shipped with NO `timeout-minutes`. A hung job never ends on
+# its own, so its runner pod never frees its maxRunners slot — one zombie per hung job,
+# pinning slots on a shared node until a human drains the pool by hand.
+#
+# The CONTENT of those workflows is product-specific and repo-owned, so it is NOT
+# canonical and this gate does not touch it. But three POLICY KNOBS inside any workflow
+# are a family concern that nothing else enforces, and this gate closes that seam:
+#   1. every job sets `timeout-minutes`  — a hung job must die on a clock, not a human.
+#   2. `runs-on` is present, non-empty, and NOT bare `self-hosted` / a `[self-hosted, ...]`
+#      label array — neither matches an ARC scale set, so such a job QUEUES FOREVER
+#      (FuzeInfra runners/arc/runner-scale-set-values.yaml). Address a scale set by its
+#      single name label.
+#   3. a `pull_request`-triggered workflow declares a top-level `concurrency` group with
+#      `cancel-in-progress: true` — so rapid pushes cancel superseded runs instead of
+#      stacking N of them onto the shared pool.
+#
+# COMPLEMENTS, does not replace: the cluster-side reaper that kills zombie pods, and the
+# per-repo / canonical PRs that add `timeout-minutes` to specific workflows. This gate is
+# the standing check that stops the seam reopening.
+#
+# SCOPE — REPORT-ONLY FIRST PASS (deliberate, same convention as harden-gate's first-pass
+# gates — gate-pagination, the semgrep scans):
+# The scanner emits `::warning::` for every finding and ALWAYS exits 0 (`|| true` below).
+# The fleet carries a large pre-existing backlog (measured >100 findings on FuzeInfra
+# alone at authoring time), so failing on it would red every repo on day one and get the
+# gate switched off within a week — a gate nobody keeps enabled protects nothing. So it
+# lands fleet-wide as visibility now, and each repo RATCHETS IT TO ENFORCING later, once
+# its own workflows are clean: remove the `|| true` on the scanner line below.
+
+on:
+  # Manual trigger — deliberate, not decoration: when GitHub stops delivering
+  # pull_request events a PR sits with zero checks and no way to force them onto its head;
+  # a workflow_dispatch run completes in under a minute and unblocks it. (Same rationale
+  # gate-line-endings.yml documents.)
+  workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-workflow-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate-workflow-policy:
+    # `runs-on: ubuntu-latest` is stamped to the repo's declared ci.runner at install time
+    # (scripts/bootstrap/lib/render.py). Left as ubuntu-latest here so a repo with no scale
+    # set still runs it.
+    runs-on: ubuntu-latest
+    # This gate obeys its own policy: a bounded clock so it can never itself become a
+    # zombie runner pod.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # The ARC runner image has no preinstalled Python — set it up explicitly, same
+      # precedent as harden-gate's gate-pagination / gate-manifest jobs.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with: { python-version: '3.12' }
+
+      - name: Workflow policy scan (report-only)
+        shell: bash
+        run: |
+          set -uo pipefail
+          pip install -q pyyaml
+          SCRIPT=""
+          for c in scripts/gate_workflow_policy.py .fuze/gate_workflow_policy.py .github/scripts/gate_workflow_policy.py; do
+            [ -f "$c" ] && SCRIPT="$c" && break
+          done
+          if [ -z "$SCRIPT" ]; then
+            echo "::warning title=gate-workflow-policy::no gate_workflow_policy.py found in repo — skipping (re-run sdlc-bootstrap to install it)"
+            exit 0
+          fi
+          # REPORT-ONLY first pass: the `|| true` keeps this green while the fleet still
+          # carries a backlog. Remove it to ratchet this repo to enforcing once its own
+          # workflows all pass.
+          python "$SCRIPT" . || true

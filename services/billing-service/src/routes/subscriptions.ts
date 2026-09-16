@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import type Stripe from 'stripe';
 import { z } from 'zod';
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionRepository } from '../repositories/subscription.repository';
@@ -27,6 +28,7 @@ export function createSubscriptionsRouter(
   service: SubscriptionService,
   repo: SubscriptionRepository,
   customerRepo: CustomerRepository,
+  stripe?: Pick<Stripe, 'customers'>,
 ): Router {
   const router = Router();
 
@@ -158,6 +160,31 @@ export function createSubscriptionsRouter(
       return res.status(502).json({ error: 'stripe error', message: errMsg(err) });
     }
   });
+
+  // GET /balance — Stripe customer credit balance for the actor entity.
+  // Returns { customerBalance: number | null }. Negative = available credit
+  // (Stripe convention). Gracefully returns null when no customer or Stripe
+  // client is available so the UI degrades cleanly.
+  router.get(
+    '/balance',
+    requireActorContext(),
+    async (req: BillingRequest, res: Response) => {
+      const actor = req.actor!;
+      const customer = await customerRepo.findByEntity(actor.entityType, actor.entityId);
+      if (!customer || !stripe) {
+        return res.json({ customerBalance: null });
+      }
+      try {
+        const sc = await stripe.customers.retrieve(customer.stripeCustomerId);
+        if ((sc as { deleted?: boolean }).deleted) {
+          return res.json({ customerBalance: null });
+        }
+        return res.json({ customerBalance: (sc as Stripe.Customer).balance ?? null });
+      } catch {
+        return res.json({ customerBalance: null });
+      }
+    },
+  );
 
   return router;
 }
