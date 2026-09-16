@@ -57,7 +57,7 @@ export async function bulkCheckPermissions(
     // ready (e.g. OPA returning 502). Fall back to individual checks so the
     // caller always receives exactly one boolean per input.
     if (results.length === checks.length) {
-      console.log(`Bulk permission check completed for ${checks.length} checks`)
+      console.log('Bulk permission check completed for %s checks', checks.length)
       return results
     }
 
@@ -169,7 +169,7 @@ export async function getUserPermissions(
     ])
     return permissions
   } catch (error) {
-    console.error(`Error getting user permissions for ${userId}:`, error)
+    console.error('Error getting user permissions for user %s:', userId, error)
     return {}
   }
 }

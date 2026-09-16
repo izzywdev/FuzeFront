@@ -1,6 +1,17 @@
 import permit from '../../config/permit'
 import { namespaceKey } from '../../permit/product-policy'
 
+// Neutralizes a value before it reaches a log line (CodeQL js/log-injection,
+// javascript.lang.security.audit.unsafe-formatstring). Every console.* call
+// below uses a CONSTANT format string with %s arguments — product/role/user ids
+// are never interpolated into the format string itself, so a stray %s/%d in one
+// of them cannot forge the rest of the line — and oneLine percent-encodes CR/LF
+// so an embedded newline cannot fabricate a whole extra log entry. These are
+// role-assignment audit lines, exactly what an investigator reads after a
+// privilege-escalation incident, so they must not be forgeable. Same
+// helper/convention as ./role-assignment.ts and ./bulk-operations.ts.
+const oneLine = (v: unknown) => encodeURIComponent(String(v))
+
 // Runtime authz path for CONSUMER-PRODUCT resources (e.g. FuzeMarket).
 //
 // Product resources/roles are namespaced (<product>.<Resource>, <product>.<role>)
@@ -43,7 +54,10 @@ export async function checkProductPermission(
     return result
   } catch (error) {
     console.error(
-      `Error checking product permission (${product}.${resource}:${action}):`,
+      'Error checking product permission (%s.%s:%s):',
+      oneLine(product),
+      oneLine(resource),
+      oneLine(action),
       error
     )
     return false // Fail safe — deny on error.
@@ -68,12 +82,19 @@ export async function assignProductRole(
       tenant,
     })
     console.log(
-      `Product role ${product}.${role} assigned to user ${userId} in tenant ${tenant}`
+      'Product role %s.%s assigned to user %s in tenant %s',
+      oneLine(product),
+      oneLine(role),
+      oneLine(userId),
+      oneLine(tenant)
     )
     return true
   } catch (error) {
     console.error(
-      `Error assigning product role ${product}.${role} to user ${userId}:`,
+      'Error assigning product role %s.%s to user %s:',
+      oneLine(product),
+      oneLine(role),
+      oneLine(userId),
       error
     )
     return false
@@ -94,12 +115,19 @@ export async function unassignProductRole(
       tenant,
     })
     console.log(
-      `Product role ${product}.${role} unassigned from user ${userId} in tenant ${tenant}`
+      'Product role %s.%s unassigned from user %s in tenant %s',
+      oneLine(product),
+      oneLine(role),
+      oneLine(userId),
+      oneLine(tenant)
     )
     return true
   } catch (error) {
     console.error(
-      `Error unassigning product role ${product}.${role} from user ${userId}:`,
+      'Error unassigning product role %s.%s from user %s:',
+      oneLine(product),
+      oneLine(role),
+      oneLine(userId),
       error
     )
     return false

@@ -142,7 +142,7 @@ export async function syncSingleUserToPermit(userId: string): Promise<boolean> {
       return false
     }
   } catch (error) {
-    console.error(`Error syncing user ${userId}:`, error)
+    console.error('Error syncing user %s:', userId, error)
     return false
   }
 }
@@ -190,7 +190,7 @@ export async function syncSingleOrganizationToPermit(
       return false
     }
   } catch (error) {
-    console.error(`Error syncing organization ${organizationId}:`, error)
+    console.error('Error syncing organization %s:', organizationId, error)
     return false
   }
 }

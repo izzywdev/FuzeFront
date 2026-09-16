@@ -433,7 +433,9 @@ export function requireAnyPermission(permissions: PermissionConfig[]) {
           }
         } catch (error) {
           console.error(
-            `Permission check failed for ${config.resource}:${config.action}:`,
+            'Permission check failed for %s:%s:',
+            config.resource,
+            config.action,
             error
           )
           continue

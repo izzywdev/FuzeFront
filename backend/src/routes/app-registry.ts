@@ -25,6 +25,16 @@ import axios, { AxiosError, AxiosRequestConfig, Method } from 'axios'
 
 const router = express.Router()
 
+// Neutralizes a value before it reaches a log line (CodeQL js/log-injection,
+// js/tainted-format-string). `req.url` / `req.method` are caller-controlled, so
+// the console.error below uses a CONSTANT format string with %s arguments — an
+// injected %s/%d cannot forge the rest of the line — and oneLine percent-encodes
+// CR/LF so an embedded newline cannot fabricate a whole extra log entry. Same
+// helper/convention as src/middleware/auth.ts and src/utils/permit/*.
+// NOTE: the caller's Authorization header is forwarded but deliberately never
+// logged.
+const oneLine = (v: unknown) => encodeURIComponent(String(v))
+
 // Cluster-internal base URL of the applications-service. Overridable via env so
 // the same code works locally (compose / port-forward) and in-cluster.
 const APPLICATIONS_SERVICE_URL = (
@@ -110,8 +120,10 @@ async function forward(req: Request, res: Response): Promise<void> {
     const ax = err as AxiosError
     // Connection refused / DNS / timeout — the service is unreachable.
     console.error(
-      `[app-registry-proxy] upstream error for ${req.method} ${req.url}:`,
-      ax.code || ax.message
+      '[app-registry-proxy] upstream error for %s %s: %s',
+      oneLine(req.method),
+      oneLine(req.url),
+      oneLine(ax.code || ax.message)
     )
     res.status(502).json({
       error: 'app_registry_unavailable',

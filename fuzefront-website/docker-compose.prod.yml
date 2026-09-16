@@ -18,6 +18,8 @@ services:
     networks:
       - fuzefront-website
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
@@ -38,6 +40,8 @@ services:
     networks:
       - fuzefront-website
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
@@ -62,6 +66,29 @@ services:
     networks:
       - fuzefront-website
     restart: unless-stopped
+    # Hardening (semgrep yaml.docker-compose.security.no-new-privileges /
+    # writable-filesystem-service). `no-new-privileges` stops a setuid/setgid
+    # binary in the image from gaining rights the container was not started
+    # with; `read_only` stops an attacker dropping a payload on disk.
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    # A read-only root filesystem WILL break nginx unless the paths it genuinely
+    # writes are tmpfs. For the official nginx:alpine image those are:
+    #   /var/cache/nginx - the compiled-in {client_body,proxy,fastcgi,uwsgi,scgi}
+    #                      _temp paths; nginx creates them at startup and this
+    #                      service is a reverse proxy, so proxy_temp is live.
+    #   /var/run         - default pid file (/var/run/nginx.pid; /var/run is a
+    #                      symlink to /run on alpine, which Docker resolves).
+    #   /tmp             - scratch for the image's shell entrypoint.
+    # Nothing else is written: /var/log/nginx/{access,error}.log are symlinks to
+    # /dev/stdout and /dev/stderr in this image, and the /docker-entrypoint.d
+    # scripts test writability of /etc/nginx before touching it and exit 0 when
+    # it is read-only, so startup is unaffected.
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "https://localhost/health"]
       interval: 30s

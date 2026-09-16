@@ -58,7 +58,14 @@ curl http://fuzefront.dev.local:8008/
 | **Frontend** | `http://fuzefront.dev.local:8008/` | ✅ Working |
 | **Backend API** | `http://fuzefront.dev.local:8008/api/` | ✅ Working |
 | **Health Check** | `http://fuzefront.dev.local:8008/health` | ✅ Working |
-| **WebSocket** | `ws://fuzefront.dev.local:8008/socket.io/` | ✅ Available |
+| **WebSocket** | `/socket.io/` (same origin — `wss://` wherever the page is HTTPS) | ✅ Available |
+
+> The WebSocket endpoint is addressed **same-origin and relative**, never as an
+> absolute `ws://` URL. The scheme follows the page: plain WebSocket only on the
+> plain-HTTP local host above, `wss://` under local TLS and in production. An
+> absolute `ws://` URL is both a cleartext transport and a mixed-content block on
+> any HTTPS page, so it must not be copied into client config — see the
+> same-origin API-base rule in `CLAUDE.md`.
 
 ## 🔧 nginx Configuration Details
 

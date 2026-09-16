@@ -62,17 +62,19 @@ export async function createTenantInPermit(
 
   try {
     await permit.api.tenants.create(tenant)
-    console.log(`Tenant ${organization.id} created in Permit.io successfully`)
+    console.log('Tenant %s created in Permit.io successfully', organization.id)
     return true
   } catch (error) {
     if (isAlreadyExistsError(error)) {
       console.log(
-        `Tenant ${organization.id} already exists in Permit.io (benign 409)`
+        'Tenant %s already exists in Permit.io (benign 409)',
+        organization.id
       )
       return true
     }
     console.error(
-      `Error creating tenant ${organization.id} in Permit.io:`,
+      'Error creating tenant %s in Permit.io:',
+      organization.id,
       error
     )
     throw error
@@ -88,11 +90,12 @@ export async function updateTenantInPermit(
 ): Promise<boolean> {
   try {
     await permit.api.tenants.update(organizationId, updates)
-    console.log(`Tenant ${organizationId} updated in Permit.io successfully`)
+    console.log('Tenant %s updated in Permit.io successfully', organizationId)
     return true
   } catch (error) {
     console.error(
-      `Error updating tenant ${organizationId} in Permit.io:`,
+      'Error updating tenant %s in Permit.io:',
+      organizationId,
       error
     )
     return false
@@ -107,11 +110,12 @@ export async function deleteTenantFromPermit(
 ): Promise<boolean> {
   try {
     await permit.api.tenants.delete(organizationId)
-    console.log(`Tenant ${organizationId} deleted from Permit.io successfully`)
+    console.log('Tenant %s deleted from Permit.io successfully', organizationId)
     return true
   } catch (error) {
     console.error(
-      `Error deleting tenant ${organizationId} from Permit.io:`,
+      'Error deleting tenant %s from Permit.io:',
+      organizationId,
       error
     )
     return false
@@ -127,7 +131,8 @@ export async function getTenantFromPermit(organizationId: string) {
     return tenant
   } catch (error) {
     console.error(
-      `Error getting tenant ${organizationId} from Permit.io:`,
+      'Error getting tenant %s from Permit.io:',
+      organizationId,
       error
     )
     return null

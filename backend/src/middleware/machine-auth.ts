@@ -40,6 +40,26 @@ declare global {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Neutralise a request-derived value before it reaches a log line.
+ *
+ * `req.requestId` can originate from an inbound `x-request-id` header, so it
+ * is attacker-controlled on a public request path: unsanitised it could
+ * inject CR/LF and forge whole log entries. Control characters are escaped
+ * (content preserved) and the result is length-capped.
+ */
+function sanitizeForLog(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .slice(0, 200)
+}
+
+// ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
 
@@ -59,7 +79,7 @@ export const authenticateMachineToken = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const requestId = (req as any).requestId || 'unknown'
+  const requestId = sanitizeForLog((req as any).requestId || 'unknown')
 
   const authHeader = req.headers['authorization']
   const token = authHeader?.startsWith('Bearer ')
@@ -67,12 +87,12 @@ export const authenticateMachineToken = async (
     : null
 
   if (!token) {
-    console.log(`[machine-auth] [${requestId}] No Bearer token provided`)
+    console.log('[machine-auth] [%s] No Bearer token provided', requestId)
     res.status(401).json({ error: 'Access denied. No machine token provided.' })
     return
   }
 
-  console.log(`[machine-auth] [${requestId}] Introspecting machine token...`)
+  console.log('[machine-auth] [%s] Introspecting machine token...', requestId)
 
   const introspection = await introspectMachineToken(token)
 
@@ -80,19 +100,28 @@ export const authenticateMachineToken = async (
     // Introspection returned active:false — either the token is genuinely
     // invalid/revoked, OR Authentik was unreachable (returns active:false).
     // Either way we fail closed.
-    console.log(`[machine-auth] [${requestId}] Token inactive or Authentik unreachable`)
+    console.log(
+      '[machine-auth] [%s] Token inactive or Authentik unreachable',
+      requestId
+    )
     res.status(401).json({ error: 'Invalid or expired machine token.' })
     return
   }
 
   const identity = buildMachineIdentity(introspection)
   if (!identity) {
-    console.log(`[machine-auth] [${requestId}] Could not build machine identity from introspection result`)
+    console.log(
+      '[machine-auth] [%s] Could not build machine identity from introspection result',
+      requestId
+    )
     res.status(401).json({ error: 'Invalid machine token claims.' })
     return
   }
 
-  console.log(`[machine-auth] [${requestId}] Machine token accepted:`, {
+  // Constant format string; identity fields are passed as arguments so they
+  // can never be read as format specifiers. The bearer token itself is never
+  // logged — only the non-secret claims derived from introspection.
+  console.log('[machine-auth] [%s] Machine token accepted:', requestId, {
     clientId: identity.clientId,
     scopes: identity.scopes,
     delegateUserId: identity.delegateUserId,

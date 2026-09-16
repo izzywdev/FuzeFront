@@ -3,6 +3,14 @@ import { db } from '../config/database';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
 
+// Neutralizes a value before it reaches a log line (CodeQL js/log-injection,
+// js/tainted-format-string). Every console.* call below uses a CONSTANT format
+// string with %s arguments, so an injected %s/%d can never forge the rest of
+// the line; oneLine additionally percent-encodes CR/LF so an embedded newline
+// cannot fabricate a whole extra log entry. Same helper/convention as
+// src/middleware/auth.ts and src/utils/permit/*.
+const oneLine = (v: unknown) => encodeURIComponent(String(v));
+
 interface OIDCConfig {
   issuerUrl: string;
   clientId: string;
@@ -36,7 +44,7 @@ class OIDCService {
       
       // Discover the issuer
       const issuer = await Issuer.discover(this.config.issuerUrl);
-      console.log('✅ Discovered issuer:', issuer.metadata.issuer);
+      console.log('✅ Discovered issuer: %s', oneLine(issuer.metadata.issuer));
 
       // Create the client
       this.client = new issuer.Client({
@@ -92,7 +100,12 @@ class OIDCService {
       // Step 1: look up PKCE code verifier stored at login time
       const stateKey = state || 'default';
       const codeVerifier = global.codeVerifiers?.get(stateKey);
-      console.log(`🔄 [oidc] code verifier lookup: state=${stateKey?.substring(0,8)}… found=${!!codeVerifier} mapSize=${global.codeVerifiers?.size ?? 0}`);
+      console.log(
+        '🔄 [oidc] code verifier lookup: state=%s… found=%s mapSize=%s',
+        oneLine(stateKey?.substring(0, 8)),
+        !!codeVerifier,
+        global.codeVerifiers?.size ?? 0
+      );
       if (!codeVerifier) {
         throw new Error(`Code verifier not found for state=${stateKey}`);
       }
@@ -109,7 +122,11 @@ class OIDCService {
       // Step 3: fetch user profile from userinfo endpoint
       console.log('🔄 [oidc] fetching userinfo...');
       const userinfo = await this.client.userinfo(tokenSet.access_token!);
-      console.log('✅ [oidc] userinfo OK — email:', userinfo.email, 'sub:', userinfo.sub);
+      console.log(
+        '✅ [oidc] userinfo OK — email: %s sub: %s',
+        oneLine(userinfo.email),
+        oneLine(userinfo.sub)
+      );
 
       // Step 4: upsert into local database
       console.log('🔄 [oidc] syncing user to database...');
@@ -121,7 +138,11 @@ class OIDCService {
 
       return user;
     } catch (error) {
-      console.error('❌ [oidc] handleCallback FAILED:', (error as Error).message, (error as any).error_description ?? '');
+      console.error(
+        '❌ [oidc] handleCallback FAILED: %s %s',
+        oneLine((error as Error).message),
+        oneLine((error as any).error_description ?? '')
+      );
       throw error;
     }
   }
@@ -145,7 +166,7 @@ class OIDCService {
             updated_at: new Date(),
           });
 
-        console.log(`✅ Updated existing user: ${email}`);
+        console.log('✅ Updated existing user: %s', oneLine(email));
       } else {
         // Create new user
         const newUser = {
@@ -163,7 +184,7 @@ class OIDCService {
         await db('users').insert(newUser);
         userRow = newUser;
 
-        console.log(`✅ Created new user: ${email}`);
+        console.log('✅ Created new user: %s', oneLine(email));
 
         // Best-effort outbox insert — failure must NOT block authentication.
         // jsonb payload requires an explicit ::jsonb cast because Postgres rejects
@@ -184,7 +205,10 @@ class OIDCService {
             attempts: 0,
           });
         } catch (outboxErr) {
-          console.warn('⚠️ event_outbox insert skipped (non-fatal, reconcile-on-login applies):', (outboxErr as Error).message);
+          console.warn(
+            '⚠️ event_outbox insert skipped (non-fatal, reconcile-on-login applies): %s',
+            oneLine((outboxErr as Error).message)
+          );
         }
 
         // Best-effort publish; failure leaves the outbox row 'pending' for replay.

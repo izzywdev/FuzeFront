@@ -8,6 +8,23 @@ import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
 
+/**
+ * Neutralise a request-derived value before it reaches a log line.
+ *
+ * The self-registration and heartbeat routes log values taken straight from
+ * the request body (`name`, `status`), so unsanitised they could inject CR/LF
+ * and forge whole log entries (log injection). Control characters are escaped
+ * rather than dropped so the information content is preserved, and the result
+ * is length-capped so one request cannot flood the log.
+ */
+function sanitizeForLog(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .slice(0, 256)
+}
+
 // Database row interface for apps
 interface AppRow {
   id: string
@@ -54,7 +71,9 @@ async function checkAppHealth(app: AppRow): Promise<boolean> {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
     console.log(
-      `Health check failed for ${app.name} (${app.url}):`,
+      'Health check failed for %s (%s): %s',
+      app.name,
+      app.url,
       errorMessage
     )
     return false
@@ -547,7 +566,12 @@ router.post('/:id/heartbeat', async (req: any, res) => {
       })
     }
 
-    console.log(`💓 Heartbeat received from ${app.name} (${id}): ${status}`)
+    console.log(
+      '💓 Heartbeat received from %s (%s): %s',
+      sanitizeForLog(app.name),
+      sanitizeForLog(id),
+      sanitizeForLog(status)
+    )
 
     res.json({
       success: true,
@@ -639,7 +663,7 @@ router.post('/register', async (req: any, res) => {
       })
     }
 
-    console.log(`🚀 App "${name}" self-registered successfully`)
+    console.log('🚀 App "%s" self-registered successfully', sanitizeForLog(name))
 
     const flagCtx = {}
     const prefixed = await isPrefixedIdsEnabled(flagCtx)

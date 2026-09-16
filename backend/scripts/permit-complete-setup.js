@@ -38,6 +38,28 @@ const permitApi = axios.create({
   },
 })
 
+/**
+ * Summarise an error for logging.
+ *
+ * NEVER log a raw axios error object: `AxiosError` carries `config` as an own
+ * enumerable property, and `config.headers.Authorization` holds
+ * `Bearer <PERMIT_API_KEY>`. `console.error(err)` uses util.inspect (not
+ * `toJSON`), so the raw object prints the API key straight into CI logs.
+ * This returns only the non-secret fields.
+ */
+function describeError(error) {
+  if (!error || typeof error !== 'object') return { message: String(error) }
+  return {
+    message: error.message,
+    code: error.code,
+    status: error.response?.status,
+    method: error.config?.method,
+    url: error.config?.url,
+    data: error.response?.data,
+    stack: error.stack,
+  }
+}
+
 // Add request/response logging
 permitApi.interceptors.request.use(request => {
   console.log(`🌐 API Request: ${request.method?.toUpperCase()} ${request.url}`)
@@ -56,7 +78,7 @@ permitApi.interceptors.response.use(
       `❌ API Error: ${error.response?.status} ${error.config?.method?.toUpperCase()} ${error.config?.url}`
     )
     if (error.response?.data) {
-      console.log(`   Error details:`, error.response.data)
+      console.log('   Error details: %j', error.response.data)
     }
     return Promise.reject(error)
   }
@@ -148,7 +170,8 @@ async function setupEnvironments(context, force = false) {
         console.log(`ℹ️  Environment already exists: ${env.name}`)
       } else {
         console.error(
-          `❌ Failed to create environment ${env.name}:`,
+          '❌ Failed to create environment %s: %s',
+          env.name,
           error.message
         )
       }
@@ -226,7 +249,8 @@ async function setupResources(context, force = false) {
         console.log(`ℹ️  Resource already exists: ${resource.name}`)
       } else {
         console.error(
-          `❌ Failed to create resource ${resource.name}:`,
+          '❌ Failed to create resource %s: %s',
+          resource.name,
           error.message
         )
       }
@@ -337,8 +361,9 @@ async function setupRoles(context, force = false) {
             )
             console.log(`✅ Role '${role.name}' updated successfully`)
           } catch (updateError) {
-            console.log(
-              `⚠️  Could not update role '${role.name}':`,
+            console.warn(
+              "⚠️  Could not update role '%s': %s",
+              role.name,
               updateError.response?.data?.message || updateError.message
             )
           }
@@ -347,7 +372,8 @@ async function setupRoles(context, force = false) {
         }
       } else {
         console.error(
-          `❌ Failed to create role '${role.name}':`,
+          "❌ Failed to create role '%s': %s",
+          role.name,
           error.response?.data?.message || error.message
         )
       }
@@ -365,7 +391,7 @@ async function syncExistingData() {
     await syncExistingDataToPermit()
     console.log('✅ Data sync completed successfully')
   } catch (error) {
-    console.error('❌ Data sync failed:', error)
+    console.error('❌ Data sync failed: %j', describeError(error))
     throw error
   }
 }
@@ -493,16 +519,16 @@ async function main() {
 
 // Handle errors gracefully
 process.on('unhandledRejection', error => {
-  console.error('❌ Unhandled rejection:', error)
+  console.error('❌ Unhandled rejection: %j', describeError(error))
   process.exit(1)
 })
 
 process.on('uncaughtException', error => {
-  console.error('❌ Uncaught exception:', error)
+  console.error('❌ Uncaught exception: %j', describeError(error))
   process.exit(1)
 })
 
 main().catch(error => {
-  console.error('❌ Main function failed:', error)
+  console.error('❌ Main function failed: %j', describeError(error))
   process.exit(1)
 })

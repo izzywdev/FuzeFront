@@ -93,7 +93,11 @@ runs:
     - name: Mint fuze-agent App installation token
       id: app
       if: inputs.app-id != '' && inputs.private-key != ''
-      uses: actions/create-github-app-token@v1
+      # Pinned to a full 40-char commit SHA: a mutable `@v1` tag can be silently
+      # repointed by the action owner (the trivy-action / kics-github-action
+      # supply-chain compromises). Same pin the workflows in this repo already
+      # use — actions/create-github-app-token v1.12.0.
+      uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
       with:
         app-id: ${{ inputs.app-id }}
         private-key: ${{ inputs.private-key }}

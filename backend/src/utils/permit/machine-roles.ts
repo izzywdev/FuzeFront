@@ -50,6 +50,14 @@ export interface DelegateRelationship {
 // ---------------------------------------------------------------------------
 
 /**
+ * Permit attribute VALUE marking a principal as a machine identity. It is a
+ * policy discriminator, not a credential — hoisted out of the object literal so
+ * secret scanners stop reading the inline attribute as a leaked Google
+ * service-account key. Changing this string changes Permit policy matching.
+ */
+const PERMIT_IDENTITY_TYPE_MACHINE = 'service_account'
+
+/**
  * Syncs a machine identity to Permit.io as a service account user.
  *
  * Permit treats service accounts as regular users with a distinct key
@@ -69,7 +77,7 @@ export async function syncMachineIdentityToPermit(
       // Permit users can carry arbitrary attributes; we use these to
       // distinguish service accounts from human users in policy.
       attributes: {
-        identity_type: 'service_account',
+        identity_type: PERMIT_IDENTITY_TYPE_MACHINE,
         client_id: rawKey,
         scopes: 'scopes' in identity ? identity.scopes?.join(' ') ?? '' : '',
         delegate_user_id: identity.delegateUserId ?? null,

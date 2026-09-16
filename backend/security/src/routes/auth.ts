@@ -192,9 +192,13 @@ router.post('/login', async (req, res) => {
       { expiresIn: '24h' }
     )
 
+    // Shape only — NEVER any bytes of the token itself. A `tokenPreview`
+    // here previously put the first 20 characters of a live session JWT into
+    // stdout on every successful login, which means Loki, log backups, and any
+    // screenshot of a pod log. Log that a token was minted and how long it is;
+    // the sessionId below is the correlation handle for support/debug.
     console.log(`🎫 [${requestId}] JWT token generated:`, {
       tokenLength: token.length,
-      tokenPreview: token.substring(0, 20) + '...',
     })
 
     console.log(`💾 [${requestId}] Creating session:`, {
