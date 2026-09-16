@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.8.0
+  version: 0.9.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -110,7 +110,10 @@ tags:
   - name: capabilities
     description: Neutral capability descriptor for the auth surface.
   - name: authz
-    description: Authorization decisions (check / bulk-check / permissions) + grants (write-side).
+    description: >-
+      Authorization decisions (check / bulk-check / permissions) + grants
+      (write-side) + subject ABAC attribute writes (write-side data the
+      provider's own policies read, distinct from a role/permission grant).
   - name: tenants
     description: Tenant, membership, and role management (neutralized authz primitives).
   - name: organizations
@@ -1076,6 +1079,93 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  # ───────────────────────── AuthZ: subject attributes (ABAC) ───────────────
+  /v1/security/authz/subjects/{subjectType}/{subjectKey}/attributes:
+    patch:
+      tags: [authz]
+      summary: Merge ABAC attributes onto a subject
+      operationId: setSubjectAttributes
+      description: >-
+        Merges scalar attributes (string, number, boolean) onto the named
+        subject's record in the authorization provider's own store, so
+        provider-side policies can gate decisions on them (ABAC) alongside
+        RBAC/ReBAC grants. Distinct from `POST /authz/grants`: a grant assigns
+        a role/permission; this writes plain data the provider's policies
+        read directly (e.g. a billing plan tier gating feature access by
+        `plan_tier`/`seat_limit` rather than by role).
+
+
+        **Merge, not replace.** Only the attribute keys present in the request
+        body are written; attributes already on the subject that this request
+        does not name are left untouched. Chosen because the first consumer
+        (billing service `syncPlanToPermit`) only ever sends its own partial
+        subset (`plan_tier`/`plan_status`/`seat_limit`) and never the
+        subject's full attribute set, and the underlying provider write
+        (Permit `users.update` / `tenants.update`) is itself a merge —
+        replace semantics here would silently diverge from what actually
+        happens provider-side and could wipe attributes this caller does not
+        own.
+
+
+        **This is a WRITE, not a decision — failure must never look like
+        success.** A provider outage, timeout, or rejection returns `502`
+        (`code: PROVIDER_UNAVAILABLE`), never a fail-open/fail-silent `200`.
+        This is deliberately the OPPOSITE of `authz/check`'s
+        fail-closed-returns-`false` contract: there is no safe "assume it
+        worked" default for a write whose caller (billing entitlement sync)
+        needs to know whether the data actually reached the provider, so it
+        can retry rather than believe a stale or absent attribute state.
+
+
+        `subjectType` names which of the provider's two subject kinds this
+        write targets (`user` → `permit.api.users.update`, `tenant` →
+        `permit.api.tenants.update` in the first, Permit-backed
+        implementation — vendor name confined to the adapter, never this
+        contract) — the type is load-bearing, not decoration, so no lookup
+        ever resolves a bare subject id (identifier-standard.md, rule 2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: subjectType
+          in: path
+          required: true
+          description: >-
+            Which of the provider's subject kinds this attribute write
+            targets. Sibling type discriminator for `subjectKey` — required
+            so the write never resolves a bare id.
+          schema:
+            $ref: '#/components/schemas/SubjectType'
+        - name: subjectKey
+          in: path
+          required: true
+          description: The subject's id within its `subjectType`. Opaque past its prefix.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubjectAttributesWriteRequest'
+      responses:
+        '200':
+          description: >-
+            Attributes merged. Returns the subject reference and the
+            attribute keys/values THIS call wrote — not necessarily the
+            subject's full attribute set, since this endpoint confirms the
+            write and is not a read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectAttributesWriteResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation on one subject's attribute record.
   # ─────────────────────────── AuthZ: tenants/members/roles ─────────────────
   /v1/security/tenants:
     get:
@@ -2544,6 +2634,72 @@ components:
         page:
           $ref: '#/components/schemas/PageInfo'
       required: [items, page]
+    # ── AuthZ: subject attributes (ABAC write) ──
+    SubjectType:
+      type: string
+      description: >-
+        The authorization provider's subject kinds this contract currently
+        supports for attribute writes. `user` maps to a per-user ABAC record,
+        `tenant` to a per-tenant/org one (first impl: Permit `users.update` /
+        `tenants.update` respectively — vendor name confined to the adapter,
+        never this contract). Closed/enum, unlike `ResourceRef.type` which is
+        open (any resource kind a policy names).
+      enum: [user, tenant]
+    SubjectRef:
+      type: object
+      description: >-
+        A typed subject reference. Mirrors `ResourceRef`'s `type`+`key` shape
+        but is a separate schema because `type` here is closed (`SubjectType`)
+        rather than an open string.
+      properties:
+        type:
+          $ref: '#/components/schemas/SubjectType'
+        key:
+          type: string
+      required: [type, key]
+    AttributeValue:
+      description: A scalar ABAC attribute value. No nested objects/arrays.
+      oneOf:
+        - type: string
+        - type: number
+        - type: boolean
+    SubjectAttributesWriteRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Attribute keys to MERGE onto the subject addressed by
+        `{subjectType}/{subjectKey}` in the URL. Only the named keys are
+        written; attributes already on the subject that this request does not
+        name are left untouched (merge, not replace — see the operation
+        description for why).
+      properties:
+        attributes:
+          type: object
+          description: >-
+            Merge patch of attribute name → scalar value (string, number, or
+            boolean). At least one key required.
+          minProperties: 1
+          additionalProperties:
+            $ref: '#/components/schemas/AttributeValue'
+      required: [attributes]
+    SubjectAttributesWriteResult:
+      type: object
+      description: >-
+        Confirms the write succeeded. Echoes the subject and the keys/values
+        THIS call wrote — NOT a read of the subject's full attribute set (this
+        endpoint is a write, not a decision or a query).
+      properties:
+        subject:
+          $ref: '#/components/schemas/SubjectRef'
+        attributes:
+          type: object
+          description: Echo of the keys/values merged by this call.
+          additionalProperties:
+            $ref: '#/components/schemas/AttributeValue'
+        updatedAt:
+          type: integer
+          description: Epoch milliseconds this write was applied.
+      required: [subject, attributes, updatedAt]
     Tenant:
       type: object
       properties:
