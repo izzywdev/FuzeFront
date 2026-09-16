@@ -161,7 +161,7 @@ jobs:
         id: app_token
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -186,7 +186,7 @@ jobs:
         id: app_token_workflows
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -511,7 +511,7 @@ jobs:
         id: app_token
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -520,7 +520,7 @@ jobs:
         id: app_token_workflows
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
