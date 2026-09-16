@@ -22,6 +22,7 @@ import portalRoutes from './routes/portal'
 import adminPortalRoutes from './routes/adminPortals'
 import { resolvePortalContext } from './middleware/portalContext'
 import { ensureRootPortal } from './repositories/portalRepository'
+import { ensureMendysPortal } from './services/ensureMendysPortal'
 import {
   syncPermitSchemaFromRegistry,
   loadLegacyProductPolicies,
@@ -667,6 +668,21 @@ async function startServer() {
       )
     } catch (error) {
       console.error('⚠️  ensureRootPortal failed (non-fatal):', error)
+    }
+
+    // Portals Directory — idempotently ensure the MendysRobotics tenant portal
+    // exists so the master-admin directory shows it alongside the root portal.
+    // Gated on MENDYS_PORTAL_PROVISION (set only where the Mendys Authentik silo
+    // is deployed — see backend.yaml / .Values.authentikMendys.enabled), so it
+    // is a no-op locally, in CI, and in any deployment without that silo.
+    // Non-fatal, self-healing on a later boot — same contract as ensureRootPortal.
+    try {
+      const mendys = await ensureMendysPortal()
+      if (mendys) {
+        console.log(`✅ MendysRobotics portal ensured (${mendys.id})`)
+      }
+    } catch (error) {
+      console.error('⚠️  ensureMendysPortal failed (non-fatal):', error)
     }
 
     // Push the environment-level Permit policy (resources/actions/roles from
