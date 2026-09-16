@@ -23,7 +23,13 @@ const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_REFRESH_MARGIN_SECONDS = 30;
 
 export interface ServiceAuthClientOptions {
-  /** FuzeFront's same-origin API base, e.g. `https://app.fuzefront.com/api` or `http://backend:3001/api`. */
+  /**
+   * ORIGIN ONLY — e.g. `https://app.fuzefront.com` or `http://backend:3001`.
+   * This package appends the fixed `/api/v1/security/tokens` path itself; a
+   * `baseUrl` that already includes an `/api` suffix produces a double
+   * `/api/api/v1/...` path, which 404s and (correctly, but silently) fails
+   * token issuance. Do not include `/api` or any other suffix.
+   */
   baseUrl: string;
   clientId: string;
   clientSecret: string;

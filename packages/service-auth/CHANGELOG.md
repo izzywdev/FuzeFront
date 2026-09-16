@@ -4,6 +4,40 @@ All notable changes to this package are documented here. Versioned
 independently; bump on every interface change (SemVer — the major is the
 contract-stability guarantee consumers may assert on).
 
+## 0.1.3 — `baseUrl` is documented and tested as origin-only
+
+### Fixed
+
+- Every `baseUrl` example across `verifier.ts`, `client.ts`, and `README.md`
+  showed a trailing `/api` (e.g. `https://app.fuzefront.com/api`), even though
+  `TOKEN_PATH` (`/api/v1/security/tokens`) and `INTROSPECT_PATH`
+  (`/api/v1/security/tokens/introspect`) are FIXED constants this package
+  appends to `baseUrl` itself. A caller that followed the documented example
+  produced a double `/api/api/v1/...` path, which 404s — and because every
+  ambiguity in this package is a denial (by design), that 404 surfaced as a
+  silent, indistinguishable-from-normal `TOKEN_REQUEST_FAILED` /
+  `INTROSPECTION_UNAVAILABLE`, not a loud misconfiguration error. No shipped
+  runtime code was wrong (the fixed-path-append logic was always correct);
+  only the docs described the wrong input, and the test suite's own fixtures
+  (`baseUrl: 'http://security.local/api'`) reproduced the same mistake
+  without ever asserting the URL `fetch` was actually called with, so this
+  was invisible to CI.
+- `verifier.ts` / `client.ts` JSDoc now states **"ORIGIN ONLY — no `/api`
+  suffix"** with the double-`/api` failure mode spelled out; `README.md`'s
+  two usage examples now read from `SECURITY_SERVICE_URL` (matching the env
+  var name payment-service and other in-cluster consumers actually use)
+  instead of the never-defined `FUZEFRONT_API_URL`.
+- `tests/verifier.test.ts` / `tests/client.test.ts`: fixtures switched to
+  origin-only `baseUrl`s, plus new tests asserting the FULL constructed URL
+  `fetch` is called with (both packages), and that a trailing slash on
+  `baseUrl` is stripped rather than producing a double slash. This closes the
+  blind spot — a regression to a `/api`-suffixed `baseUrl` example, or to
+  broken trailing-slash handling, now fails the suite instead of passing
+  silently.
+
+No behavior change: the URL-construction logic (`base.replace(/\/+$/, '')` +
+fixed path) was already correct before this release.
+
 ## 0.1.2 — `@fuzefront/security-client` is a devDependency, not a runtime dependency
 
 ### Fixed
