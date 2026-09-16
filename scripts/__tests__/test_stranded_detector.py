@@ -41,7 +41,7 @@ def extract_resolved() -> str:
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf8"))
     steps = doc["jobs"]["open-pr"]["steps"]
     run = next(s["run"] for s in steps if s.get("name", "").startswith("Detect"))
-    m = re.search(r"^(\s*)resolved\(\) \{$", run, re.M)
+    m = re.search(r"^(\s*)resolved\(\) \{$", run, re.MULTILINE)
     if not m:
         raise AssertionError(
             "resolved() not found in claude-auto-pr.yml — if it was renamed or "
@@ -110,7 +110,7 @@ def run_resolved(branch_exists: bool = True, open_pr: str = "", merged_pr: str =
             ["bash", "-c", script],
             capture_output=True,
             text=True,
-            env={"PATH": f"{bindir}:/usr/bin:/bin"},
+            env={"PATH": f"{bindir}:/usr/bin:/bin"}, check=False,
         )
         return p.returncode, p.stdout + p.stderr
 

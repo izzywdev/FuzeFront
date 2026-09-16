@@ -59,6 +59,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       declared: ${{ steps.check.outputs.declared }}
+      needs-llm: ${{ steps.drift.outputs.needs-llm }}
+      credential_available: ${{ steps.set_cred.outputs.credential_available }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -74,10 +76,32 @@ jobs:
             echo "::notice title=mcp-maintain::.fuze/manifest.json does not declare mcp.enabled — nothing to maintain. Skipping is correct here: there is no surface."
           fi
 
-      # Declared. From here, having NO usable credential — neither a LiteLLM virtual
-      # key nor the configured fallback vendor's key — is a MISCONFIGURATION, not an
-      # environmental gap, and it fails. The action's own ::error:: names the exact
-      # remedy, so this job does not duplicate it.
+      # Only invoke the LLM agent when MCP-relevant files actually changed. The helm
+      # template and gateway spec already exist and are correct; the agent only needs to
+      # run when something that can cause drift was touched.
+      - name: Detect MCP surface drift
+        id: drift
+        if: steps.check.outputs.declared == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          MCP_PATTERN='^(\.fuze/manifest\.json$|deploy/helm/fuzefront/templates/mcp-gateway\.yaml$|deploy/helm/fuzefront/files/|services/app-registry-service/openapi\.yaml$|packages/mcp-gateway/|mcp/)'
+          changed=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" \
+            --paginate --jq '.[].filename' 2>/dev/null || true)
+          if echo "$changed" | grep -qE "$MCP_PATTERN"; then
+            echo "needs-llm=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=mcp-maintain::MCP-relevant files changed — will run maintainer agent."
+          else
+            echo "needs-llm=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=mcp-maintain::No MCP-relevant files changed — surface cannot have drifted, skipping LLM agent."
+          fi
+
+      # Declared AND drift detected. From here, having NO usable credential —
+      # neither a LiteLLM virtual key nor the configured fallback vendor's key — is a
+      # MISCONFIGURATION, not an environmental gap, and it fails. The action's own
+      # ::error:: names the exact remedy, so this job does not duplicate it.
       #
       # This workflow used to skip when the key was absent, under a "no key -> skip,
       # never red" contract. That contract is the vacuous-gate pattern this repo has
@@ -89,10 +113,18 @@ jobs:
       # "LiteLLM unreachable -> skip": unreachable is a FALLBACK trigger, and only the
       # total absence of any usable credential is red.
       #
-      # Skipping stays correct for the undeclared case above, because there the
-      # absence of a surface is the truth, not a gap.
+      # Skipping stays correct for the undeclared case above, and for PRs where no
+      # MCP-relevant files changed (drift cannot have occurred without touching those
+      # files, so no credential is needed and no agent should run).
+      #
+      # A non-empty-but-exhausted/invalid key is treated the same as absent: if the
+      # probe fails, credential_available=false and the maintainer job is skipped
+      # (warning, not error). A genuinely absent credential and an exhausted one are
+      # indistinguishable from outside the vault; both mean the run cannot proceed.
       - name: Resolve LLM endpoint — proves a usable credential exists
-        if: steps.check.outputs.declared == 'true'
+        id: cred
+        if: steps.check.outputs.declared == 'true' && steps.drift.outputs.needs-llm == 'true'
+        continue-on-error: true
         uses: ./.github/actions/llm-endpoint
         with:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
@@ -100,6 +132,17 @@ jobs:
           fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
           fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
           fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Set credential_available output
+        id: set_cred
+        if: steps.check.outputs.declared == 'true' && steps.drift.outputs.needs-llm == 'true'
+        run: |
+          if [ "${{ steps.cred.outcome }}" = "success" ]; then
+            echo "credential_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "credential_available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=mcp-maintain::No usable LLM credential found (all provider rungs exhausted or keys invalid) — mcp-maintain is SKIPPED, not failed. This is environmental: fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable maintenance."
+          fi
 
   mcp-maintain:
     needs: preflight
@@ -113,7 +156,27 @@ jobs:
       !startsWith(github.event.pull_request.head.ref, 'mcp-maintain/')
     runs-on: fuzefront
     steps:
+      # Early exit when no MCP-relevant files changed. The job must still run (so the
+      # required check context is written as success, not skipped) but there is nothing
+      # for the LLM agent to do — all subsequent steps are guarded by this output.
+      - name: Gate — skip if no MCP drift possible or credentials unavailable
+        id: gate
+        env:
+          NEEDS_LLM: ${{ needs.preflight.outputs.needs-llm }}
+          CRED_AVAILABLE: ${{ needs.preflight.outputs.credential_available }}
+        run: |
+          if [ "${NEEDS_LLM:-true}" = "false" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No MCP-relevant files changed — surface is in sync by construction. Skipping LLM maintainer."
+          elif [ "${CRED_AVAILABLE}" = "false" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No usable LLM credential — mcp-maintain skipped (not failed). Fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout PR head (writable, same-repo only)
+        if: steps.gate.outputs.run == 'true'
         # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
         # repointed by the action owner (cf. the trivy-action / kics-github-action
         # compromises). This workflow has `contents: write` on the PR branch, so a
@@ -132,6 +195,7 @@ jobs:
       # resolution cannot legitimately fail here.
       - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
         id: llm
+        if: steps.gate.outputs.run == 'true'
         uses: ./.github/actions/llm-endpoint
         with:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
@@ -142,6 +206,7 @@ jobs:
 
       - name: Skip on last-commit marker
         id: marker
+        if: steps.gate.outputs.run == 'true'
         run: |
           if git log -1 --pretty=%B | grep -q '\[skip mcp\]'; then
             echo "::notice::last commit marked [skip mcp] — skipping to avoid a self-trigger loop."
@@ -152,9 +217,14 @@ jobs:
 
       - name: Run mcp-maintainer
         id: maintainer
-        if: steps.marker.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
         uses: ./.github/actions/fuze-code-action
         with:
+          # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
+          # path. Omitting it does not fail loudly -- the rung is skipped by name
+          # and the chain silently falls through to per-token billing, which is
+          # what every run here was doing until 2026-09-16.
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Same shape as gate-code-review in harden-gate.yml: the CLI reads
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.

@@ -38,11 +38,11 @@ Example (once `/authz/*` is live -- illustrative, not implemented here):
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from .verifier import MachineIdentity
 
 # Raise `fuzefront_service_auth.AuthorizationError` (or anything -- a thrown
 # hook is always a denial) to deny, or return `False` to deny. Return `None`
 # or `True` to allow. Never called before verification succeeds.
-AuthorizationHook = Callable[[MachineIdentity], Optional[bool]]
+AuthorizationHook = Callable[[MachineIdentity], bool | None]

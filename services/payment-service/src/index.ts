@@ -36,7 +36,7 @@ function main() {
   }
 
   const provider = selectProvider(config);
-  const deps: AppDeps = { provider, internalToken: config.internalToken };
+  const deps: AppDeps = { provider, securityServiceUrl: config.securityServiceUrl };
   const app = createApp(deps);
   startHttp(app, config.port);
 }

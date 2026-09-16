@@ -11,8 +11,6 @@ a contract version bump.
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class SelectionListApiError(Exception):
     """
@@ -32,10 +30,10 @@ class SelectionListApiError(Exception):
         super().__init__(message)
         self.code: str = code
         self.status: int = status
-        self.scope: Optional[str] = extra.get("scope")  # type: ignore[assignment]
-        self.limit: Optional[int] = extra.get("limit")  # type: ignore[assignment]
-        self.current: Optional[int] = extra.get("current")  # type: ignore[assignment]
-        self.details: Optional[list] = extra.get("details")  # type: ignore[assignment]
+        self.scope: str | None = extra.get("scope")  # type: ignore[assignment]
+        self.limit: int | None = extra.get("limit")  # type: ignore[assignment]
+        self.current: int | None = extra.get("current")  # type: ignore[assignment]
+        self.details: list | None = extra.get("details")  # type: ignore[assignment]
 
     @property
     def is_quota_exceeded(self) -> bool:

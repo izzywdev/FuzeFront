@@ -29,7 +29,9 @@ def load_sessions(path: str):
 def repo_of(session: dict) -> str:
     try:
         return session["session_context"]["sources"][0]["git_repository"]["url"]
-    except Exception:
+    except (KeyError, IndexError, TypeError):
+        # A session with no sources, or a shape this key path does not fit. Those are
+        # the only ways this lookup fails; anything else is a bug and should surface.
         return ""
 
 
