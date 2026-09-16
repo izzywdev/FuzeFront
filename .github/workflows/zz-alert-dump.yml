@@ -4,18 +4,21 @@ on:
     branches: [claude/trusting-ritchie-ecep0e]
 permissions:
   security-events: read
-  contents: read
+  contents: write
 jobs:
   dump:
     runs-on: ubuntu-latest
     steps:
-      - name: Dump open code-scanning alerts
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/trusting-ritchie-ecep0e
+      - name: Dump open code-scanning alerts to a data ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?state=open&per_page=100" --paginate \
-            > alerts-raw.json
+          gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?state=open&per_page=100" --paginate > raw.json
+          mkdir -p .alertdump
           jq '[.[] | {
                 number, state,
                 rule_id: .rule.id,
@@ -28,26 +31,13 @@ jobs:
                 start_line: .most_recent_instance.location.start_line,
                 end_line: .most_recent_instance.location.end_line,
                 message: .most_recent_instance.message.text,
-                ref: .most_recent_instance.ref,
                 created_at, updated_at,
                 url: .html_url
-              }]' alerts-raw.json > alerts.json
-          echo "TOTAL: $(jq 'length' alerts.json)"
-          {
-            echo '## Open code-scanning alerts'
-            echo
-            echo "Total: $(jq 'length' alerts.json)"
-            echo
-            echo '### By rule'
-            echo '```'
-            jq -r 'group_by(.rule_id)|map({r:.[0].rule_id,sev:.[0].severity,n:length})|sort_by(-.n)[]|"\(.n)\t\(.sev//"-")\t\(.r)"' alerts.json
-            echo '```'
-            echo '### By path'
-            echo '```'
-            jq -r 'group_by(.path)|map({p:.[0].path,n:length})|sort_by(-.n)[]|"\(.n)\t\(.p)"' alerts.json
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: alerts
-          path: alerts.json
+              }]' raw.json > .alertdump/alerts.json
+          echo "TOTAL: $(jq 'length' .alertdump/alerts.json)"
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git checkout -B alertdump-data
+          git add -f .alertdump/alerts.json
+          git commit -q -m "chore: code-scanning alert snapshot"
+          git push -f origin alertdump-data
