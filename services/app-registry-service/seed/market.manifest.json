@@ -1,0 +1,37 @@
+{
+  "manifestVersion": "1",
+  "slug": "market",
+  "name": "Market",
+  "menuLabel": "Market",
+  "description": "Multi-tenant marketing & growth control center — goals, AI competitor analysis, brands & products, brochures & marketing assets, audience prospects, personalized outreach, and campaign execution.",
+  "icon": {
+    "kind": "emoji",
+    "value": "🛍️"
+  },
+  "mode": "portal",
+  "modes": [
+    "portal",
+    "standalone"
+  ],
+  "builtin": false,
+  "integration": {
+    "type": "module-federation",
+    "remoteEntry": "/apps/market/remoteEntry.js",
+    "scope": "market",
+    "module": "./App"
+  },
+  "nav": {
+    "section": "revenue",
+    "order": 10
+  },
+  "chrome": {
+    "menu": "host",
+    "topbar": "host"
+  },
+  "routing": {
+    "path": "/app/market",
+    "host": "fuzemarket.fuzefront.com"
+  },
+  "visibility": "organization",
+  "roles": []
+}
