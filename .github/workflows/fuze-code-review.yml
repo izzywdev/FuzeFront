@@ -281,13 +281,21 @@ jobs:
           # trigger is `pull_request`, not `pull_request_target`, so a fork gets no secrets
           # and the rung chain fails preflight before it starts.
           #
-          # All four identities are load-bearing, and each was observed on a real run:
-          #   claude          — the App that OPENS agent PRs (#1041 is authored by
-          #                     `claude[bot]`); already allowed by mcp-maintain/a2a-maintain
-          #   fuze-agent      — the App identity governance-sync pushes under, which is what
-          #                     produced the `non-human actor: fuze-agent` abort on #1081
-          #   github-actions  — a PR opened or pushed by a workflow using the default token
-          #   fuzeone-bot     — the fleet scheduler/automation identity
+          # The four identities, and how much evidence each one has:
+          #   fuze-agent      — MEASURED. The App identity governance-sync pushes under;
+          #                     its push to #1081 is what produced the
+          #                     `non-human actor: fuze-agent` abort quoted above.
+          #   github-actions  — MEASURED as a run actor on this repo (gate-fuze-code-action
+          #                     runs 77 and 79), i.e. a PR opened or pushed by a workflow
+          #                     using the default token.
+          #   claude          — the App that OPENS agent PRs (#1041 and #1045 are both
+          #                     authored by `claude[bot]`). Not yet seen as the ACTOR here,
+          #                     because every push to those branches was made by a human —
+          #                     but it is the actor the moment one of them self-pushes, and
+          #                     mcp-maintain/a2a-maintain already allow it by name.
+          #   fuzeone-bot     — carried over from fuze.yml as the fleet scheduler identity.
+          #                     Included for parity with that list; not independently
+          #                     observed triggering THIS workflow.
           # claude-code-action compares the login with the `[bot]` suffix stripped, so these
           # are the bare names, matching fuze.yml.
           allowed-bots: "claude,fuzeone-bot,github-actions,fuze-agent"
