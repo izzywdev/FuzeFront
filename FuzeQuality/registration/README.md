@@ -15,7 +15,15 @@ node packages/onboarding-kit/bin/validate-registration.mjs FuzeQuality/registrat
 node packages/onboarding-kit/bin/validate-policy.mjs --slug quality FuzeQuality/registration/policy.json
 ```
 
-## What was wrong before, and why none of it produced an error
+The registered product is a same-origin Module Federation remote. Its registry
+entry must keep the `fuzequality` slug, `/apps/fuzequality/assets/remoteEntry.js`
+entry point, `fuzequality` scope, and `./App` exposed module in lock-step with
+`apps/web/vite.config.ts` and the chart's `federatedMount` settings. Replacing
+this with the standalone host or an iframe makes the portal either load a
+Cloudflare Access HTML response or render a second application shell instead of
+the shared-host remote.
+
+## Registration history and invariant checks
 
 The manifest was valid against every schema and would have registered cleanly.
 It was also, in three separate ways, a product that could never work properly —
@@ -42,16 +50,14 @@ FuzeQuality could never ship a mobile app, because a TWA can only wrap a
 `modes: ["portal", "standalone"]`, with a real `routing.host`. A `standalone`
 mode with no host is the same failure wearing a disguise.
 
-**3. `integration.type: "module-federation"` pointing at a `remoteEntry.js` that
-is never built.**
-`apps/web/vite.config.ts` is a plain Vite SPA build — no `@originjs/vite-plugin-federation`,
-no `exposes`, output `dist/web`. There is no `remoteEntry.js` and no
-`./FuzeQualityApp` module anywhere in this tree, so the portal would have fetched
-a 404 and rendered an empty tile. Corrected to `iframe` against
-`https://quality.prod.fuzefront.com`, which is the host
-`deploy/helm/fuzequality/values-prod.yaml` actually serves. When a federated
-remote is genuinely built, this flips back — but the manifest should describe
-what exists, not what was intended.
+**3. The remote must describe the built federation artifact, not a fallback
+standalone page.** The application now builds `remoteEntry.js` and exposes
+`./App` through `apps/web/vite.config.ts`; the production ingress mounts that
+artifact below `/apps/fuzequality/` on the portal origin. The manifest therefore
+uses `module-federation` rather than an iframe against the standalone host.
+Changing either side without the other can still produce a schema-valid but
+unloadable app, so validate the manifest and exercise the portal route before
+enabling registration.
 
 ## Turning registration on
 
@@ -68,35 +74,27 @@ the default ON would CrashLoopBackOff the **running** frontend on the next sync
 if the Secret were absent. Cluster state cannot be inspected from this repo, so
 the default is the one that cannot break what is already serving.
 
-Provision both prerequisites, then flip the flag in the same change:
+Provision all three prerequisites through their GitOps resources, then flip the
+flag in the same reviewed change:
 
-```bash
-# 1. the manifest + policy, as a ConfigMap the Job mounts
-kubectl -n fuzequality create configmap fuzequality-registration \
-  --from-file=manifest.json=FuzeQuality/registration/manifest.json \
-  --from-file=policy.json=FuzeQuality/registration/policy.json \
-  --dry-run=client -o yaml | kubectl apply -f -
+1. `fuzequality-registration` ConfigMap from this directory's manifest and
+   policy;
+2. `fuzefront-onboarding-kit` ConfigMap carrying the versioned `register.sh`;
+3. `fuzefront-registration` Secret (key `token`, an `apps:register` bearer)
+   delivered by the FuzeInfra credential-handoff workflow — **sealed** and
+   Argo-managed for the `fuzequality` namespace, never a plain `Secret` and
+   never a literal in a values file.
 
-# 2. register.sh itself, from the onboarding kit
-kubectl -n fuzequality create configmap fuzefront-onboarding-kit \
-  --from-file=register.sh=packages/onboarding-kit/bin/register.sh \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-…plus the `fuzefront-registration` Secret (key `token`, an `apps:register`
-bearer) — **sealed**, committed under `deploy/sealed-secrets/`, never a plain
-`Secret` and never a literal in a values file.
+Do not apply any of those resources imperatively to a chart-managed cluster.
+FuzeInfra #988 establishes the secret hand-off; the FuzeQuality chart then owns
+the non-secret ConfigMaps and the idempotent registration Job.
 
 Then set `registration.enabled: true` in `values-prod.yaml`.
 
-## A pre-existing mismatch, deliberately not changed here
+## Policy keys and API authorization
 
-`apps/api/src/index.ts` asks the platform for permissions on resource types
-spelled `fuzequality.Repository`, `fuzequality.Evidence`, and so on. The platform
-namespaces a product's **bare** policy keys as `<slug>_<BareKey>` — so this
-policy's `Repository` becomes `quality_Repository`, which matches neither the old
-`fuzequality.Repository` nor a renamed `quality.Repository`.
-
-That mismatch predates the slug change and is not introduced by it. Reconciling
-the two is an authorization change on a live service and belongs in its own PR,
-with `appsec-reviewer` on it — not folded into a registration fix.
+The API asks the platform for the same keys emitted by FuzeFront's ProductPolicy
+registry: `<slug>_<BareKey>`. For this policy, `Repository` is
+`quality_Repository`, `Evidence` is `quality_Evidence`, and so on. The constants
+in `apps/api/src/platform-permissions.ts` make this relationship explicit and
+prevent a hand-written key from silently producing a permanent 403.

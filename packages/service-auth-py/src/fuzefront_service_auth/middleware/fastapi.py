@@ -5,8 +5,6 @@ Requires the `fastapi` extra: `pip install "fuzefront-service-auth[fastapi]"`.
 
 from __future__ import annotations
 
-from typing import Optional
-
 try:
     from fastapi import Depends, HTTPException, Request
     from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -23,7 +21,7 @@ from ..verifier import MachineIdentity, MachineTokenVerifier
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def _deny(error: ServiceAuthError) -> "HTTPException":
+def _deny(error: ServiceAuthError) -> HTTPException:
     """Build the HTTPException for a `ServiceAuthError`, matching the
     `{error, code}` JSON body shape of the TypeScript sibling's
     `MachineAuthErrorBody` (`packages/service-auth/src/middleware.ts`).
@@ -34,7 +32,7 @@ def _deny(error: ServiceAuthError) -> "HTTPException":
 def machine_identity_dependency(
     verifier: MachineTokenVerifier,
     *,
-    authorize: Optional[AuthorizationHook] = None,
+    authorize: AuthorizationHook | None = None,
 ):
     """Build a FastAPI dependency that authenticates the caller as a machine identity.
 
@@ -53,7 +51,7 @@ def machine_identity_dependency(
 
     async def dependency(
         request: Request,
-        credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+        credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),  # noqa: B008 - FastAPI DI: the call in the default IS the mechanism
     ) -> MachineIdentity:
         if credentials is None or not credentials.credentials:
             raise _deny(ServiceAuthError("no bearer token presented", code="NO_TOKEN", status=401))
@@ -68,7 +66,7 @@ def machine_identity_dependency(
                 allowed = authorize(identity)
             except AuthorizationError as error:
                 raise _deny(error)
-            except Exception as error:  # noqa: BLE001 - an authz hook that throws is a denial, never a pass
+            except Exception as error:
                 raise _deny(
                     AuthorizationError(f"authorization decision unavailable; denying: {error}")
                 ) from error

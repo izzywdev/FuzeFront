@@ -10,13 +10,14 @@ approver contract and the {status: idle|blocked|error, pending} shape are shared
 verbatim with the existing driver so no orchestration logic changes.
 """
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 
 class AgentProvider(ABC):
     #: short id used by the registry / AGENT_PROVIDER env
     name = "base"
     #: what the backend supports; provisioning skips unsupported resource kinds
-    capabilities = {"self_hosted": False, "vaults": False, "memory": False, "multiagent": False}
+    capabilities: ClassVar[dict] = {"self_hosted": False, "vaults": False, "memory": False, "multiagent": False}
 
     # ---- provisioning (manifest in -> {name, id[, version]} out) -------------
     @abstractmethod

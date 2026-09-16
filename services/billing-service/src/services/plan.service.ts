@@ -5,6 +5,71 @@ import { PlanRepository } from '../repositories/plan.repository';
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes per spec
 
 /**
+ * Static plan catalog returned when the Stripe catalogue has not been synced
+ * yet (no rows in billing.plans). Keeps the UI functional before STRIPE_PRICE_*
+ * env vars and a catalogue sync are configured. Prices/features from
+ * https://fuzefront.com/pricing.
+ */
+export const STATIC_DEFAULT_PLANS: Plan[] = [
+  {
+    priceId: 'price_starter_monthly_placeholder',
+    productId: 'prod_starter',
+    tierName: 'starter',
+    displayName: 'Starter',
+    billingInterval: 'month',
+    unitAmount: 2900,
+    currency: 'usd',
+    seatBased: false,
+    meteredMeterName: null,
+    features: ['Core features', 'Up to 5 users', '1 workspace', 'Email support'],
+    isActive: true,
+    sortOrder: 1,
+  },
+  {
+    priceId: 'price_professional_monthly_placeholder',
+    productId: 'prod_professional',
+    tierName: 'professional',
+    displayName: 'Professional',
+    billingInterval: 'month',
+    unitAmount: 9900,
+    currency: 'usd',
+    seatBased: false,
+    meteredMeterName: null,
+    features: ['Everything in Starter', 'Up to 25 users', '3 workspaces', 'API access', 'Priority support'],
+    isActive: true,
+    sortOrder: 2,
+  },
+  {
+    priceId: 'price_scale_monthly_placeholder',
+    productId: 'prod_scale',
+    tierName: 'scale',
+    displayName: 'Scale',
+    billingInterval: 'month',
+    unitAmount: 29900,
+    currency: 'usd',
+    seatBased: false,
+    meteredMeterName: null,
+    features: ['Everything in Professional', 'Unlimited users', 'Unlimited workspaces', 'Advanced analytics', 'Dedicated support'],
+    isActive: true,
+    sortOrder: 3,
+  },
+  {
+    priceId: 'contact_sales',
+    productId: 'prod_enterprise',
+    tierName: 'enterprise',
+    displayName: 'Enterprise',
+    billingInterval: 'month',
+    unitAmount: 0,
+    currency: 'usd',
+    seatBased: true,
+    meteredMeterName: null,
+    features: ['Everything in Scale', 'Custom SLAs', 'SSO / SAML', 'Compliance exports', 'Dedicated CSM', 'Custom contracts'],
+    isActive: true,
+    sortOrder: 4,
+  },
+];
+
+/**
  * Static plan-id → Stripe price mapping for the hosted-Checkout flow.
  *
  * The Stripe catalogue (synced into billing.plans) is keyed by price id /
@@ -99,14 +164,16 @@ export class PlanService {
     return count;
   }
 
-  /** Returns active plans from the local cache, refreshing from the repo on TTL miss. */
+  /** Returns active plans from the local cache, refreshing from the repo on TTL miss.
+   *  Falls back to STATIC_DEFAULT_PLANS when the catalogue has not been synced yet. */
   async getActivePlans(): Promise<Plan[]> {
     if (this.cache && this.now() - this.cache.at < this.ttlMs) {
       return this.cache.plans;
     }
     const plans = await this.repo.listActive();
-    this.cache = { at: this.now(), plans };
-    return plans;
+    const resolved = plans.length > 0 ? plans : STATIC_DEFAULT_PLANS;
+    this.cache = { at: this.now(), plans: resolved };
+    return resolved;
   }
 
   /**
