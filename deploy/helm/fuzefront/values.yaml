@@ -745,6 +745,9 @@ selectionListService:
   enabled: false
   replicas: 1
   port: 3008
+  # Shared FuzeInfra Kafka brokers for the lifecycle event consumer.
+  # Must equal selectionListService.port in the networkPolicy block below.
+  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
   image:
     repository: fuzefront/selection-list-service
     tag: local
@@ -765,6 +768,34 @@ selectionListService:
     # services calling the selection-list API). The Traefik rule below covers
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
+
+# MCP SSE gateway for the selection-list-service. Ships dark by default alongside
+# the service itself. Both selectionListService.enabled AND selectionListsMcp.enabled
+# must be true for the pod to deploy (gated by template condition).
+# Port 8082: 8081=app-registry MCP gateway. 8082 was verified free at the time
+# it was added.
+# NOTE: selectionListsMcp.port MUST be declared explicitly — do not use | int /
+# | default / | toString in the template (FuzeInfra#501 precedent).
+selectionListsMcp:
+  enabled: false
+  replicas: 1
+  port: 8082
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    # Same image as the app-registry MCP gateway. Version must be kept in sync
+    # with mcp.image.tag above whenever the gateway image is bumped.
+    tag: "12cb4f787248"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
 # "Try it" playground proxy backing developers.fuzefront.com (docs/planning/

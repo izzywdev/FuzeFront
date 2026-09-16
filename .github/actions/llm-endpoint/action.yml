@@ -51,6 +51,27 @@ inputs:
       with FuzeInfra `scripts/mint-litellm-fuze-key.sh`.
     required: false
     default: ''
+  cf-access-client-id:
+    description: >-
+      Cloudflare Access service-token client id. When `litellm-base-url` is the
+      PUBLIC gateway host (`litellm.<prod>`), it sits behind Cloudflare Access,
+      so a GitHub-hosted runner reaches it ONLY by presenting a service token as
+      the `CF-Access-Client-Id` / `CF-Access-Client-Secret` request headers.
+      Empty (the default) sends no CF-Access headers — correct for the
+      in-cluster service-DNS default, which is not behind Access. Callers pass
+      `secrets.CF_ACCESS_CLIENT_ID`. The token is FuzeInfra terraform
+      `cloudflare_zero_trust_access_service_token.litellm_ci`, bound to the
+      `litellm_service` Access app by the `litellm_service_ci_token` policy.
+    required: false
+    default: ''
+  cf-access-client-secret:
+    description: >-
+      Cloudflare Access service-token client secret, paired with
+      `cf-access-client-id`. Callers pass `secrets.CF_ACCESS_CLIENT_SECRET`.
+      Masked on entry; only ever leaves this action inside the pre-masked
+      `custom-headers` output, never echoed.
+    required: false
+    default: ''
   probe-timeout-seconds:
     description: >-
       Bounded timeout for the LiteLLM readiness probe. Kept short deliberately
@@ -133,6 +154,17 @@ outputs:
       Resolved credential, pre-masked. Feed to `anthropic_api_key:` /
       ANTHROPIC_AUTH_TOKEN on the very next step; never echo it.
     value: ${{ steps.resolve.outputs.auth-token }}
+  custom-headers:
+    description: >-
+      ANTHROPIC_CUSTOM_HEADERS value (newline-separated `Name: Value`) the
+      caller MUST set on the claude-code-action step so its OWN model requests
+      carry the SAME Cloudflare Access service-token headers this action's
+      readiness probe used — otherwise Access 302s those requests to a login
+      page even though the probe passed. Non-empty ONLY on `mode=litellm` when
+      CF-Access creds were supplied (the public-gateway-behind-Access case);
+      empty on every fallback path (direct Anthropic / runner-local LiteLLM),
+      which needs no CF headers. Pre-masked; never echoed.
+    value: ${{ steps.resolve.outputs.custom-headers }}
 
 runs:
   using: composite
@@ -143,6 +175,8 @@ runs:
       env:
         LITELLM_BASE_URL: ${{ inputs.litellm-base-url }}
         LITELLM_KEY: ${{ inputs.litellm-key }}
+        CF_ACCESS_CLIENT_ID: ${{ inputs.cf-access-client-id }}
+        CF_ACCESS_CLIENT_SECRET: ${{ inputs.cf-access-client-secret }}
         PROBE_TIMEOUT: ${{ inputs.probe-timeout-seconds }}
         FALLBACK_CHAIN: ${{ inputs.fallback-chain }}
         FALLBACK_ANTHROPIC_KEY: ${{ inputs.fallback-anthropic-key }}
@@ -164,6 +198,27 @@ runs:
           [ -n "$k" ] && echo "::add-mask::$k"
         done
 
+        # The CF-Access service-token SECRET is a credential — mask it before any
+        # branch can echo it, same as the vendor keys above. The client id is
+        # not itself sensitive, so it is left unmasked (masking a value that ends
+        # up in a header the probe URL does not carry only produces noisy `***`).
+        [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ] && echo "::add-mask::$CF_ACCESS_CLIENT_SECRET"
+
+        # Build the CF-Access header set ONCE, reused in two places: as `curl -H`
+        # args on the readiness probe below, and as the ANTHROPIC_CUSTOM_HEADERS
+        # value emitted on the litellm path so claude-code-action's OWN requests
+        # carry them too. BOTH id and secret must be present — a half-pair sends
+        # nothing rather than a malformed header. When the target is the
+        # in-cluster DNS name (no Access in front) these are simply empty.
+        CF_CURL_ARGS=()
+        CF_CUSTOM_HEADERS=""
+        if [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ]; then
+          CF_CURL_ARGS=(-H "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}" -H "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET}")
+          # Newline-separated `Name: Value` — the exact ANTHROPIC_CUSTOM_HEADERS
+          # format Claude Code parses (v2.1.227+).
+          CF_CUSTOM_HEADERS=$'CF-Access-Client-Id: '"${CF_ACCESS_CLIENT_ID}"$'\nCF-Access-Client-Secret: '"${CF_ACCESS_CLIENT_SECRET}"
+        fi
+
         reachable=false
         if [ -n "${LITELLM_BASE_URL:-}" ]; then
           # A REAL READINESS PATH, NOT A TCP CONNECT. /health/readiness is
@@ -173,7 +228,12 @@ runs:
           # Bounded timeout: a hung probe on every job that consumes this
           # action would be a new failure mode, worse than the one routed
           # around here.
+          # CF_CURL_ARGS is empty on the in-cluster path; the runner's bash is
+          # 5.x, where "${arr[@]}" on an empty array under `set -u` expands to
+          # zero words (the 4.4+ fix), so this stays a bare probe there and gains
+          # the two CF-Access headers only when a service token was supplied.
           if curl -fsS --max-time "${PROBE_TIMEOUT:-3}" -o /dev/null \
+               "${CF_CURL_ARGS[@]}" \
                "${LITELLM_BASE_URL%/}/health/readiness" 2>/dev/null; then
             reachable=true
           fi
@@ -186,6 +246,17 @@ runs:
             echo "vendor=litellm"
             echo "base-url=${LITELLM_BASE_URL}"
             echo "auth-token=${LITELLM_KEY}"
+          } >> "$GITHUB_OUTPUT"
+          # Emit the CF-Access headers (if any) as a MULTILINE output so the
+          # caller can set ANTHROPIC_CUSTOM_HEADERS on the claude-code-action
+          # step. Empty when no CF creds were supplied (e.g. the in-cluster
+          # path) — an empty value is harmless as an env var. Only this
+          # (litellm) branch emits it; the fallback branches reach a direct
+          # api.anthropic.com or a runner-local proxy, neither behind CF Access.
+          {
+            echo "custom-headers<<FUZE_CH_EOF"
+            printf '%s\n' "${CF_CUSTOM_HEADERS}"
+            echo "FUZE_CH_EOF"
           } >> "$GITHUB_OUTPUT"
           exit 0
         fi

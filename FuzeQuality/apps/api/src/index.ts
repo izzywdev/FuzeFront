@@ -5,6 +5,7 @@ import {
   TOPICS,
   repositoryInputSchema,
   reviewDecisionSchema,
+  expectationExclusionSchema,
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
@@ -25,6 +26,7 @@ import {
 import { githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
+import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import {
@@ -39,15 +41,15 @@ const store = createCatalogStore()
 const events = createEventBus()
 const port = Number(process.env.PORT ?? 4180)
 const repositoryAccess = createGitHubAccessVerifier(githubInstallationToken)
-const mayReadRepositories = requirePlatformPermission('fuzequality.Repository', 'read')
-const mayManageRepositories = requirePlatformPermission('fuzequality.Repository', 'onboard')
-const mayScanRepositories = requirePlatformPermission('fuzequality.Repository', 'scan')
-const mayReadCatalog = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReadRequirements = requirePlatformPermission('fuzequality.Evidence', 'read')
-const mayReadSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'read')
-const mayReviewSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'review')
-const maySuppressSuggestions = requirePlatformPermission('fuzequality.Suggestion', 'suppress')
-const maySyncRequirementsAsHuman = requirePlatformPermission('fuzequality.Evidence', 'export')
+const mayReadRepositories = requirePlatformPermission(qualityResources.repository, 'read')
+const mayManageRepositories = requirePlatformPermission(qualityResources.repository, 'onboard')
+const mayScanRepositories = requirePlatformPermission(qualityResources.repository, 'scan')
+const mayReadCatalog = requirePlatformPermission(qualityResources.evidence, 'read')
+const mayReadRequirements = requirePlatformPermission(qualityResources.evidence, 'read')
+const mayReadSuggestions = requirePlatformPermission(qualityResources.suggestion, 'read')
+const mayReviewSuggestions = requirePlatformPermission(qualityResources.suggestion, 'review')
+const maySuppressSuggestions = requirePlatformPermission(qualityResources.suggestion, 'suppress')
+const maySyncRequirementsAsHuman = requirePlatformPermission(qualityResources.evidence, 'export')
 // The reconciler is a workload, not a portal user. It authenticates with the
 // FuzeQuality service token injected from the cluster Secret; a human caller
 // still has to pass the FuzeFront Security permission check below.
@@ -55,12 +57,12 @@ const maySyncRequirements: express.RequestHandler = (request, response, next) =>
   if (isFuzeQualityServiceRequest(request)) return next()
   return maySyncRequirementsAsHuman(request, response, next)
 }
-const mayCreateTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'create')
-const mayReadTestImplementation = requirePlatformPermission('fuzequality.TestImplementation', 'read')
-const mayReadOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'read')
-const mayManageOrganizationAccess = requirePlatformPermission('fuzequality.OrganizationAccess', 'manage')
-const mayManageRepositoryAdministration = requirePlatformPermission('fuzequality.RepositoryAdministration', 'manage')
-const mayAdministerPlatform = requirePlatformAdminPermission('fuzequality.PlatformAdministration', 'read')
+const mayCreateTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'create')
+const mayReadTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'read')
+const mayReadOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'read')
+const mayManageOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'manage')
+const mayManageRepositoryAdministration = requirePlatformPermission(qualityResources.repositoryAdministration, 'manage')
+const mayAdministerPlatform = requirePlatformAdminPermission(qualityResources.platformAdministration, 'read')
 const adminContextSchema = z.object({ reason: z.string().trim().min(3).max(500) }).strict()
 const organizationRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer'])
 const invitationSchema = z.object({
@@ -323,6 +325,12 @@ app.get('/api/v1/repositories/:id', mayReadRepositories, async (request, respons
   const repository = await store.repository(repositoryId, requestIdentity(request)!.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
+})
+app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.repositoryScanHistory(repositoryId, tenantId))
 })
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
@@ -592,6 +600,24 @@ app.post('/api/v1/suggestions/:id/decision', async (request, response, next) => 
     await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: parsed.data.decision }, suggestion.id)
   response.json(suggestion)
   })
+})
+app.post('/api/v1/suggestions/:id/approve-expected-test', mayReviewSuggestions, async (request, response) => {
+  const suggestionId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const identity = requestIdentity(request)!
+  const suggestion = await store.approveExpectedTest(suggestionId, { actorId: identity.userId, tenantId: identity.tenantId, action: 'confirm' })
+  if (!suggestion) return response.status(404).json({ error: 'Expected-test suggestion not found' })
+  await events.publish(TOPICS.MAPPING_REVIEWED, { suggestionId: suggestion.id, decision: 'approve-expected-test' }, suggestion.id)
+  response.json(suggestion)
+})
+app.post('/api/v1/expectations/:id/exclusion', maySuppressSuggestions, async (request, response) => {
+  const parsed = expectationExclusionSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const expectationId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const identity = requestIdentity(request)!
+  const excluded = await store.excludeExpectation(expectationId, identity.tenantId, { ...parsed.data, actorId: identity.userId })
+  if (!excluded) return response.status(404).json({ error: 'Expectation not found' })
+  await events.publish(TOPICS.COVERAGE_REBUILD_REQUESTED, { scopeId: `expectation:${expectationId}` }, expectationId)
+  response.status(202).json({ accepted: true })
 })
 app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).findings)
