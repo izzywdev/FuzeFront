@@ -37,7 +37,7 @@
     },
     {
       "file": ".github/workflows/ci.yml",
-      "match": "selection-list-service-e2e",
+      "match": "selection-list red specs",
       "reason": "TDD red specs — the selection-lists UI (@fuzeone/selection-lists-ui, /settings/selection-lists) does not exist yet. The Playwright specs are intentionally RED to drive implementation (EPIC-17 / FFRNT-188). continue-on-error: true at the job level is the correct posture so CI does not block while the implementation is pending. Retirement trigger: once the UI lands and all 4 red specs pass consistently, remove continue-on-error and add the job to the notify success/failure conditions.",
       "owner": "frontend-engineer / EPIC-17 implementation owner (tracked by izzywdev)"
     }
