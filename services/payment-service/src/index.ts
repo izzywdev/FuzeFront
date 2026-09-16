@@ -1,3 +1,4 @@
+import { createMachineTokenVerifier } from '@fuzefront/service-auth';
 import { loadConfig } from './config';
 import { createApp, AppDeps } from './app';
 import { StripePaymentProvider } from './providers/stripe/stripe-payment-provider';
@@ -36,7 +37,13 @@ function main() {
   }
 
   const provider = selectProvider(config);
-  const deps: AppDeps = { provider, securityServiceUrl: config.securityServiceUrl };
+  // Absent SECURITY_SERVICE_URL -> no verifier -> createApp mounts a deny-all
+  // 503 guard on the neutral API (fail CLOSED). It does NOT fall back to an
+  // open/unauthenticated surface, unlike the retired PAYMENT_INTERNAL_TOKEN.
+  const verifier = config.securityServiceUrl
+    ? createMachineTokenVerifier({ baseUrl: config.securityServiceUrl })
+    : undefined;
+  const deps: AppDeps = { provider, verifier };
   const app = createApp(deps);
   startHttp(app, config.port);
 }

@@ -25,10 +25,12 @@ export interface Config {
   stripeSecretKey?: string;
   /**
    * Origin of FuzeFront's Security API (e.g. `http://fuzefront-security:3002`).
-   * The internal API verifies incoming managed service tokens against its
-   * `/api/v1/security/tokens/introspect` contract. Required whenever the neutral
-   * API is mounted (i.e. a vendor key is set) — its absence fails the app closed
-   * at startup, never open. Replaces the retired `PAYMENT_INTERNAL_TOKEN`.
+   * The neutral Payment Provider API verifies incoming managed service tokens
+   * against its `/api/v1/security/tokens/introspect` contract (origin only — the
+   * verifier appends that path itself). When unset, `index.ts` builds no
+   * verifier and the neutral API is mounted behind a deny-all 503 guard instead
+   * — fail CLOSED, never the old open-when-unset `PAYMENT_INTERNAL_TOKEN`
+   * behaviour. `/health` and the webhook route are unaffected either way.
    */
   securityServiceUrl?: string;
 }

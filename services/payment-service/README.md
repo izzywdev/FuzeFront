@@ -62,7 +62,7 @@ billing-service's no-deps `createApp()`).
 | `PORT` | `3007` | HTTP port |
 | `PAYMENT_PROVIDER` | `stripe` | active vendor adapter (the swap knob) |
 | `STRIPE_SECRET_KEY` | — (optional in scaffold) | vendor secret; absent → degraded mode |
-| `SECURITY_SERVICE_URL` | — | Origin of FuzeFront's Security API (e.g. `http://fuzefront-security:3002`). The internal API verifies incoming **managed service tokens** against its `/api/v1/security/tokens/introspect` contract via `@fuzefront/service-auth` (fail-closed). Required whenever the neutral API is mounted (a vendor key is set); its absence fails the app closed at startup. Replaces the retired `PAYMENT_INTERNAL_TOKEN`. |
+| `SECURITY_SERVICE_URL` | — | Origin of FuzeFront's Security API (e.g. `http://fuzefront-security:3002`). The neutral Payment Provider API verifies incoming **managed service tokens** against its `/api/v1/security/tokens/introspect` contract via `@fuzefront/service-auth` (fail-closed). When unset, the neutral API is mounted behind a deny-all `503 { error: "machine auth not configured" }` guard instead of running open — replaces the retired `PAYMENT_INTERNAL_TOKEN`, which was open when unset. `/health` and the webhook route are unaffected either way. |
 
 ## Neutral API surface (`openapi.yaml`)
 

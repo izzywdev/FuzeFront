@@ -258,3 +258,47 @@ describe('POST /api/v1/payments/webhooks/:provider', () => {
       .expect(404);
   });
 });
+
+describe('machine auth left unconfigured (no verifier, SECURITY_SERVICE_URL unset)', () => {
+  // This is the security point of the migration off PAYMENT_INTERNAL_TOKEN: the
+  // OLD static-bearer guard was a NO-OP (open) when its token env var was unset.
+  // The new guard flips that — an absent `verifier` dep (mirroring an unset
+  // `SECURITY_SERVICE_URL` in `index.ts`) denies EVERY request on the neutral
+  // API with 503, even one carrying what would otherwise be a valid token.
+  function appWithNoVerifier(provider: any) {
+    return createApp({ provider }); // no `verifier` -> deny-all guard
+  }
+
+  it('returns 503 with a machine-auth-not-configured body, never reaching the provider', async () => {
+    const provider = fakeProvider();
+    const res = await request(appWithNoVerifier(provider))
+      .post('/api/v1/payments/customers')
+      .send({ externalId: 'organization-1' })
+      .expect(503);
+
+    expect(res.type).toMatch(/json/);
+    expect(res.body).toEqual({ error: 'machine auth not configured' });
+    expect(provider.createCustomer).not.toHaveBeenCalled();
+  });
+
+  it('still denies with 503 even when a bearer token is presented (no verifier to check it against)', async () => {
+    const res = await request(appWithNoVerifier(fakeProvider()))
+      .get('/api/v1/payments/customers/customer-1')
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
+      .expect(503);
+
+    expect(res.body).toEqual({ error: 'machine auth not configured' });
+  });
+
+  it('leaves the public webhook route reachable — machine auth only guards the neutral API', async () => {
+    const provider = fakeProvider();
+    const res = await request(appWithNoVerifier(provider))
+      .post('/api/v1/payments/webhooks/stripe')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', 'valid-signature')
+      .send(JSON.stringify({ id: 'event-1', type: 'invoice.paid' }))
+      .expect(200);
+
+    expect(res.body).toEqual({ received: true, handled: true });
+  });
+});
