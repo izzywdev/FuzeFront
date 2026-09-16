@@ -20,28 +20,38 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-SRC="services/app-registry-service/openapi.yaml"
-DST="deploy/helm/fuzefront/files/app-registry-openapi.yaml"
+# Each entry is "source:destination". Add a new pair when a new MCP gateway
+# gets its own spec copy in deploy/helm/fuzefront/files/.
+PAIRS=(
+  "services/app-registry-service/openapi.yaml:deploy/helm/fuzefront/files/app-registry-openapi.yaml"
+  "services/selection-list-service/openapi.yaml:deploy/helm/fuzefront/files/selection-list-service-openapi.yaml"
+)
 
-for f in "$SRC" "$DST"; do
-  if [ ! -f "$f" ]; then
-    echo "ERROR: missing $f" >&2
-    exit 2
+fix_mode="${1:-}"
+overall=0
+
+for pair in "${PAIRS[@]}"; do
+  SRC="${pair%%:*}"
+  DST="${pair##*:}"
+
+  for f in "$SRC" "$DST"; do
+    if [ ! -f "$f" ]; then
+      echo "ERROR: missing $f" >&2
+      overall=2
+      continue 2
+    fi
+  done
+
+  if [ "$fix_mode" = "--fix" ]; then
+    cp "$SRC" "$DST"
+    echo "Copied $SRC -> $DST"
+    continue
   fi
-done
 
-if [ "${1:-}" = "--fix" ]; then
-  cp "$SRC" "$DST"
-  echo "Copied $SRC -> $DST"
-  exit 0
-fi
-
-if diff -q "$SRC" "$DST" >/dev/null 2>&1; then
-  echo "OK: $DST matches $SRC ($(sha256sum "$SRC" | cut -c1-12))"
-  exit 0
-fi
-
-cat >&2 <<EOF
+  if diff -q "$SRC" "$DST" >/dev/null 2>&1; then
+    echo "OK: $DST matches $SRC ($(sha256sum "$SRC" | cut -c1-12))"
+  else
+    cat >&2 <<EOF
 DRIFT: the MCP gateway's mounted contract does not match the source of truth.
 
   source of truth : $SRC
@@ -52,7 +62,11 @@ served in-cluster is not the contract this repo claims to expose.
 
 Diff (source -> chart copy):
 EOF
-diff -u "$SRC" "$DST" >&2 || true
-echo >&2
-echo "Fix with: ./scripts/check-mcp-spec-drift.sh --fix" >&2
-exit 1
+    diff -u "$SRC" "$DST" >&2 || true
+    echo >&2
+    echo "Fix with: ./scripts/check-mcp-spec-drift.sh --fix" >&2
+    overall=1
+  fi
+done
+
+exit $overall

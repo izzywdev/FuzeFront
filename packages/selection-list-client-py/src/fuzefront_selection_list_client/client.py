@@ -23,16 +23,14 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Callable, Dict, Generator, List, Optional, Union
+from collections.abc import Callable, Generator
 
 from ._paginator import paginate as _paginate
 from .errors import SelectionListApiError, _code_from_status
 from .types import (
     AccessEntry,
-    AutofillRequest,
     AutofillResult,
-    CreateItemRequest,
-    CreateListRequest,
+    LifecycleStatus,
     Page,
     PagedResponse,
     QuotaInfo,
@@ -41,19 +39,13 @@ from .types import (
     ResolveResult,
     SelectionList,
     SelectionListAccessRole,
-    SelectionListErrorCode,
     SelectionListItem,
     SelectionListItemTranslation,
     SelectionListQuotaStatus,
     Translation,
-    UpdateItemRequest,
-    UpdateListRequest,
-    UpsertItemTranslationRequest,
-    UpsertListTranslationRequest,
-    LifecycleStatus,
 )
 
-TokenProvider = Union[str, Callable[[], str]]
+TokenProvider = str | Callable[[], str]
 
 _ALLOWED_SCHEMES = frozenset(("http", "https"))
 
@@ -209,9 +201,9 @@ class SelectionListClient:
     def __init__(
         self,
         base_url: str,
-        token: Optional[TokenProvider] = None,
+        token: TokenProvider | None = None,
         *,
-        default_locale: Optional[str] = None,
+        default_locale: str | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("SelectionListClient: base_url is required")
@@ -231,7 +223,7 @@ class SelectionListClient:
     # Token resolution
     # ------------------------------------------------------------------
 
-    def _resolve_token(self) -> Optional[str]:
+    def _resolve_token(self) -> str | None:
         if callable(self._token):
             return self._token()
         return self._token
@@ -240,7 +232,7 @@ class SelectionListClient:
     # HTTP transport (urllib.request -- stdlib only, zero deps)
     # ------------------------------------------------------------------
 
-    def _build_url(self, path: str, query: Optional[Dict[str, str]] = None) -> str:
+    def _build_url(self, path: str, query: dict[str, str] | None = None) -> str:
         url = f"{self._base_url}{path}"
         if query:
             qs = urllib.parse.urlencode({k: v for k, v in query.items() if v is not None})
@@ -253,10 +245,10 @@ class SelectionListClient:
         method: str,
         path: str,
         *,
-        query: Optional[Dict[str, str]] = None,
-        body: Optional[dict] = None,
+        query: dict[str, str] | None = None,
+        body: dict | None = None,
         allow_empty: bool = False,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """
         Make an HTTP request. Returns the parsed JSON body, or ``None`` on
         ``204`` when ``allow_empty=True``. Raises ``SelectionListApiError`` on
@@ -264,12 +256,12 @@ class SelectionListClient:
         """
         url = self._build_url(path, query)
 
-        headers: Dict[str, str] = {"Accept": "application/json"}
+        headers: dict[str, str] = {"Accept": "application/json"}
         tok = self._resolve_token()
         if tok:
             headers["Authorization"] = f"Bearer {tok}"
 
-        data: Optional[bytes] = None
+        data: bytes | None = None
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
@@ -283,7 +275,7 @@ class SelectionListClient:
         except urllib.error.HTTPError as exc:
             status = exc.code
             raw_body = exc.read()
-            parsed_error: Optional[dict] = None
+            parsed_error: dict | None = None
             if raw_body:
                 try:
                     parsed_error = json.loads(raw_body.decode("utf-8", errors="replace"))
@@ -301,7 +293,7 @@ class SelectionListClient:
                 status=status,
             )
 
-        parsed: Optional[dict] = None
+        parsed: dict | None = None
         if raw_body:
             try:
                 parsed = json.loads(raw_body.decode("utf-8", errors="replace"))
@@ -329,11 +321,11 @@ class SelectionListClient:
     def get_lists(
         self,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
-        status: Optional[str] = None,
-        locale: Optional[str] = None,
-        key: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        status: str | None = None,
+        locale: str | None = None,
+        key: str | None = None,
     ) -> PagedResponse[SelectionList]:
         """``GET /v1/selection-lists`` -- a page of lists in the caller's org."""
         query = _build_query(
@@ -355,8 +347,8 @@ class SelectionListClient:
         key: str,
         name: str,
         *,
-        source_locale: Optional[str] = None,
-        description: Optional[str] = None,
+        source_locale: str | None = None,
+        description: str | None = None,
     ) -> SelectionList:
         """``POST /v1/selection-lists`` -- create a list. The service mints the id."""
         body: dict = {"key": key, "name": name}
@@ -372,7 +364,7 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        locale: Optional[str] = None,
+        locale: str | None = None,
     ) -> SelectionList:
         """``GET /v1/selection-lists/{listId}`` -- one list, text resolved for locale."""
         query = _build_query(locale=locale or self._default_locale)
@@ -388,11 +380,11 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        key: Optional[str] = None,
-        source_locale: Optional[str] = None,
-        status: Optional[str] = None,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        key: str | None = None,
+        source_locale: str | None = None,
+        status: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
     ) -> SelectionList:
         """``PATCH /v1/selection-lists/{listId}`` -- partial update."""
         body = _omit_none(
@@ -424,7 +416,7 @@ class SelectionListClient:
         list_id: str,
         *,
         purge: bool = False,
-    ) -> Optional[SelectionList]:
+    ) -> SelectionList | None:
         """
         ``DELETE /v1/selection-lists/{listId}`` -- archives by default.
 
@@ -452,10 +444,10 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
-        status: Optional[str] = None,
-        locale: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        status: str | None = None,
+        locale: str | None = None,
     ) -> PagedResponse[SelectionListItem]:
         """``GET /v1/selection-lists/{listId}/items`` -- a page of items, in sort_order."""
         query = _build_query(
@@ -481,8 +473,8 @@ class SelectionListClient:
         code: str,
         label: str,
         *,
-        description: Optional[str] = None,
-        sort_order: Optional[int] = None,
+        description: str | None = None,
+        sort_order: int | None = None,
     ) -> SelectionListItem:
         """``POST /v1/selection-lists/{listId}/items`` -- add an item."""
         body: dict = {"code": code, "label": label}
@@ -503,10 +495,10 @@ class SelectionListClient:
         list_id: str,
         item_id: str,
         *,
-        label: Optional[str] = None,
-        description: Optional[str] = None,
-        sort_order: Optional[int] = None,
-        status: Optional[str] = None,
+        label: str | None = None,
+        description: str | None = None,
+        sort_order: int | None = None,
+        status: str | None = None,
     ) -> SelectionListItem:
         """``PATCH /v1/selection-lists/{listId}/items/{itemId}`` -- partial update."""
         body = _omit_none(
@@ -544,7 +536,7 @@ class SelectionListClient:
         item_id: str,
         *,
         purge: bool = False,
-    ) -> Optional[SelectionListItem]:
+    ) -> SelectionListItem | None:
         """
         ``DELETE /v1/selection-lists/{listId}/items/{itemId}`` -- archives by default.
 
@@ -564,7 +556,7 @@ class SelectionListClient:
             return None
         return _parse_item(raw)
 
-    def reorder_items(self, list_id: str, item_ids: List[str]) -> List[SelectionListItem]:
+    def reorder_items(self, list_id: str, item_ids: list[str]) -> list[SelectionListItem]:
         """
         ``PUT /v1/selection-lists/{listId}/items/reorder`` -- set the whole order.
 
@@ -588,7 +580,7 @@ class SelectionListClient:
         locale: str,
         name: str,
         *,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> Translation:
         """``PUT /v1/selection-lists/{listId}/translations/{locale}`` -- human list text."""
         body: dict = {"name": name}
@@ -612,7 +604,7 @@ class SelectionListClient:
         locale: str,
         label: str,
         *,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> SelectionListItemTranslation:
         """
         ``PUT /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}``
@@ -639,7 +631,7 @@ class SelectionListClient:
         locale: str,
         *,
         overwrite_machine: bool = False,
-        item_ids: Optional[List[str]] = None,
+        item_ids: list[str] | None = None,
     ) -> AutofillResult:
         """
         ``POST /v1/selection-lists/{listId}/translations/{locale}/autofill``
@@ -668,8 +660,8 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
     ) -> PagedResponse[AccessEntry]:
         """``GET /v1/selection-lists/{listId}/access`` -- a page of grants."""
         query = _build_query(limit=limit, cursor=cursor)
@@ -741,9 +733,9 @@ class SelectionListClient:
 
     def resolve_ids(
         self,
-        ids: List[str],
+        ids: list[str],
         *,
-        locale: Optional[str] = None,
+        locale: str | None = None,
     ) -> ResolveResponse:
         """
         ``POST /v1/resolve`` -- turn persisted item ids back into labels in one call.
@@ -769,8 +761,8 @@ class SelectionListClient:
         self,
         method: Callable,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
         **kwargs: object,
     ) -> Generator:
         """
@@ -794,7 +786,7 @@ class SelectionListClient:
 # ---------------------------------------------------------------------------
 
 
-def _build_query(**kwargs: object) -> Dict[str, str]:
+def _build_query(**kwargs: object) -> dict[str, str]:
     """Build a query dict, omitting ``None`` values and converting to strings."""
     return {k: str(v) for k, v in kwargs.items() if v is not None}
 
@@ -804,7 +796,7 @@ def _omit_none(**kwargs: object) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
-def _raise_api_error(status: int, body: Optional[dict]) -> None:
+def _raise_api_error(status: int, body: dict | None) -> None:
     """Parse a contract error body (if present) and raise ``SelectionListApiError``."""
     if body and isinstance(body.get("code"), str) and isinstance(body.get("message"), str):
         raise SelectionListApiError(
