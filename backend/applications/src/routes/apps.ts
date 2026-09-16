@@ -21,7 +21,7 @@ function sanitizeForLog(value: unknown): string {
   return String(value ?? '')
     .replace(/\r/g, '\\r')
     .replace(/\n/g, '\\n')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\p{Cc}/gu, ' ')
     .slice(0, 256)
 }
 

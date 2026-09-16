@@ -60,8 +60,7 @@ function safeForLog(value: unknown): string {
       .replace(/\r/g, ' ')
       .replace(/\n/g, ' ')
       // Remaining control characters -> no forged log lines.
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x1f\x7f]/g, ' ')
+      .replace(/\p{Cc}/gu, ' ')
       // Format specifiers -> printed literally instead of consumed by console.
       .replace(/%/g, '%%')
       .slice(0, 200)
