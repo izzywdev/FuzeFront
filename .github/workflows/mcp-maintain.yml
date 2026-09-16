@@ -219,6 +219,11 @@ jobs:
         if: steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
         uses: ./.github/actions/fuze-code-action
         with:
+          # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
+          # path. Omitting it does not fail loudly -- the rung is skipped by name
+          # and the chain silently falls through to per-token billing, which is
+          # what every run here was doing until 2026-09-16.
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Same shape as gate-code-review in harden-gate.yml: the CLI reads
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.
