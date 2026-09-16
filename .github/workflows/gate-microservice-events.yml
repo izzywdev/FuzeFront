@@ -1,0 +1,64 @@
+name: gate-microservice-events
+
+# Every microservice must handle the identity lifecycle it depends on.
+#
+# A service that never learns a user or an organization was created cannot seed
+# its own rows for them. Nothing breaks at deploy time and nothing turns red —
+# the symptom shows up later in production as "my org exists everywhere except
+# here", indistinguishable from a bug in whatever feature the user was actually
+# trying to use.
+#
+# The family already publishes the events (shared/src/kafka/types.ts) and
+# already has a typed consumer. What was missing was any check that a service
+# SUBSCRIBES. Measured when this gate was written: 12 structurally-real
+# microservices, 5 consuming identity lifecycle events, 7 not.
+#
+# NO `paths:` FILTER, deliberately. Two reasons, both learned the hard way in
+# this repo:
+#   - a path-filtered workflow that never runs reports no status at all, so it
+#     can never become a required context;
+#   - the thing this gate catches is a NEW service directory appearing. A
+#     filter listing today's service paths cannot match a path that does not
+#     exist yet, which is precisely the case it must not miss.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate-microservice-events:
+    name: Microservices handle identity lifecycle events
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+
+      # The gate's own tests run FIRST, in the same job, mirroring
+      # gate-workflow-yaml.yml and gate-required-checks.yml. A gate whose
+      # proof-of-failure lives in some other job can rot into a vacuous pass
+      # unnoticed. If the proof that it goes red on a new unhandled service
+      # stops working, this job fails BEFORE it ever judges the repo.
+      - name: Self-test the gate (asserts it FAILS on a new unhandled service)
+        shell: bash
+        run: |
+          if [ ! -f scripts/__tests__/test_gate_microservice_events.py ]; then
+            echo "::error title=gate-microservice-events::self-test file is missing — refusing to run a gate whose proof-of-failure is absent"
+            exit 1
+          fi
+          python3 -m unittest discover -s scripts/__tests__ -p 'test_gate_microservice_events.py' -v
+
+      # Printed before the verdict so a failing run shows WHICH services were
+      # discovered and what each one subscribes to, without a second run.
+      - name: Classification report
+        shell: bash
+        run: python3 scripts/gate_microservice_events.py --report
+
+      - name: Every microservice handles the identity lifecycle
+        shell: bash
+        run: python3 scripts/gate_microservice_events.py
