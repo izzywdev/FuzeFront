@@ -216,7 +216,17 @@ jobs:
           fi
 
       - name: Run mcp-maintainer
+        id: maintainer
         if: steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
+        # continue-on-error so the Verdict step BELOW owns the outcome, mirroring
+        # a2a-maintain.yml. fuze-code-action exits non-zero when every rung is
+        # exhausted, which is correct — but the runner would end the job here and the
+        # job could not tell a vendor outage from a real maintainer failure.
+        #
+        # This does NOT make failures green: the Verdict step re-fails the job on
+        # anything that is not a classified availability outage. Adding this flag
+        # WITHOUT that step would silence every failure, so the two belong together.
+        continue-on-error: true
         uses: ./.github/actions/fuze-code-action
         with:
           # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
@@ -289,3 +299,54 @@ jobs:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+
+      # THE VERDICT. mcp-maintain previously let fuze-code-action's exit code fail the
+      # job directly, which conflated two different things: a maintainer that ran and
+      # failed (a real defect, RED) and a chain where every rung was out of credit or
+      # unreachable (a vendor outage, which says nothing about this PR). fuze-code-review
+      # already distinguishes them via the action's `availability` output under the
+      # owner's explicit credit-outage exception; this applies the same rule here.
+      - name: Verdict
+        if: always() && steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
+        env:
+          MAINTAINER_OUTCOME: ${{ steps.maintainer.outcome }}
+          MAINTAINER_CONCLUSION: ${{ steps.maintainer.outputs.conclusion }}
+          MAINTAINER_AVAILABILITY: ${{ steps.maintainer.outputs.availability }}
+          MAINTAINER_RESULT: ${{ steps.maintainer.outputs.result-text }}
+        run: |
+          set -uo pipefail
+          # AVAILABILITY OUTAGE — the owner's explicit exception. Narrow by construction:
+          # it requires the action's OWN availability=true alongside conclusion=failure,
+          # so a rung that ran and genuinely failed still reds below.
+          if [ "${MAINTAINER_CONCLUSION:-}" = "failure" ] && [ "${MAINTAINER_AVAILABILITY:-}" = "true" ]; then
+            echo "::warning title=mcp-maintain::Skipped on a vendor credit/availability outage — every fuze-code-action rung was exhausted or unreachable, so the MCP surface was NOT checked for drift here. This is not a defect in this PR; re-run once a provider recovers."
+            {
+              echo "### ⚪ mcp-maintainer skipped — vendor availability outage"
+              echo ""
+              echo "Every LLM rung was exhausted or unreachable (\`availability=true\`), so no drift check ran."
+              echo "Per the owner's credit-outage exception this is **not** a failure of this PR."
+              echo "Re-run this workflow once a provider recovers to get a real drift verdict."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # A rung RAN and declined to do any work. Not a failure, but not a drift check
+          # either — say so rather than printing a clean line the run has not earned.
+          if [ "${MAINTAINER_CONCLUSION:-}" = "neutral" ]; then
+            echo "::notice::mcp-maintainer performed no work on this commit (conclusion=neutral — the rung declined). The MCP surface was NOT checked for drift here."
+            echo "### ⚪ mcp-maintainer declined — no work performed" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Everything else that failed is this PR's to answer for.
+          if [ "${MAINTAINER_OUTCOME:-}" = "failure" ] || [ "${MAINTAINER_CONCLUSION:-}" = "failure" ]; then
+            echo "::error::mcp-maintainer did not complete: ${MAINTAINER_RESULT:-no error message surfaced}"
+            {
+              echo "### ❌ mcp-maintainer failed"
+              echo ""
+              echo '```'
+              echo "${MAINTAINER_RESULT:-no error message surfaced}"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "::notice::mcp-maintainer completed."
+          echo "### ✅ mcp-maintainer completed" >> "$GITHUB_STEP_SUMMARY"
