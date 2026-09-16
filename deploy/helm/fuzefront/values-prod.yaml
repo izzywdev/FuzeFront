@@ -585,9 +585,10 @@ paymentService:
   # gateway adds ZERO freeze surface to the umbrella sync (no InvalidImageName even
   # though its release image build step is still pending — see
   # deploy/PENDING-WORKFLOW-CHANGES-payment-service.md). GO-LIVE for the gateway is
-  # a deliberate later step: add the release.yml build, flip this to true, seal the
-  # real STRIPE_SECRET_KEY / PAYMENT_INTERNAL_TOKEN. It is a SCAFFOLD, not the
-  # money path — billing-service remains the live path until the migration.
+  # a deliberate later step: flip this to true and seal the real STRIPE_SECRET_KEY
+  # (internal-API auth now uses a managed service token via SECURITY_SERVICE_URL,
+  # not a sealed shared bearer). It is a SCAFFOLD, not the money path — billing-
+  # service remains the live path until the migration.
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
