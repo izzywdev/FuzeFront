@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:5455c280a383f74ac673719ef44a4ed5b3c4568a33cd5c0d0783413fca8cca1f
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:3c31119ef24f9d62bf4a1cf34e59578e780367451de8db86942fb15fa3218127
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -186,23 +186,33 @@ jobs:
           # llm-endpoint falls back to the direct vendor key — degraded but working, and the
           # reason this template does not hardcode the base URL the way FuzeInfra's did.
           #
-          # THE GATEWAY *IS* PUBLICLY REACHABLE, and pointing at it is the intended fix rather
-          # than a hypothetical: helm/litellm/values-contabo.yaml enables an ingress on
-          # `litellm.prod.fuzefront.com`. What blocks it today is Cloudflare Access, verified
-          # rather than assumed — `GET https://litellm.prod.fuzefront.com/v1/models` returns
-          # 302 to fuzefront.cloudflareaccess.com with `"service_token_status": false` and
-          # `"auth_status": "NONE"`. A hosted runner therefore gets a login page, not the API.
-          #
-          # Making the public host work needs TWO things this template cannot supply:
-          #   1. a Cloudflare Access SERVICE TOKEN — none exists (no `cloudflare_access_service_token`
-          #      declared in FuzeInfra's IaC). Minting it is a human step;
-          #   2. `CF-Access-Client-Id` / `CF-Access-Client-Secret` support in
-          #      ./.github/actions/llm-endpoint, which has no such inputs today.
-          # Until both land, setting this variable to the public host makes things WORSE, not
-          # better: the probe would get a 302 instead of a connection error and still fall
-          # back, with a configuration that looks deliberate. Leave it unset until then.
+          # THE GATEWAY *IS* PUBLICLY REACHABLE at `litellm.prod.fuzefront.com`
+          # (helm/litellm/values-contabo.yaml enables the ingress), behind Cloudflare Access.
+          # Routing a hosted runner through it now works end to end, because BOTH prerequisites
+          # that used to block it have landed:
+          #   1. a Cloudflare Access SERVICE TOKEN exists — FuzeInfra terraform
+          #      `cloudflare_zero_trust_access_service_token.litellm_ci`, bound to the
+          #      `litellm_service` Access app by the `litellm_service_ci_token` policy;
+          #   2. ./.github/actions/llm-endpoint accepts `cf-access-client-id` /
+          #      `cf-access-client-secret`, masks the secret (`::add-mask::`) on entry, uses
+          #      them on its readiness probe, and returns them ONLY through its pre-masked
+          #      `custom-headers` output — the SAME masked-output channel as `auth-token`,
+          #      never printed, logged, or written to a file. fuze-code-action sets that
+          #      output as ANTHROPIC_CUSTOM_HEADERS on the claude rung so the model requests
+          #      carry the same CF-Access headers and clear Access too (the probe passing is
+          #      not enough on its own).
+          # TO TURN IT ON (human steps, deliberately not automated): set the two
+          # CF_ACCESS_CLIENT_* secrets — client id/secret extracted from `terraform output`,
+          # a local-terminal step, never a PR/chat/log — and point `vars.FUZE_LITELLM_BASE_URL`
+          # at `https://litellm.prod.fuzefront.com`. With the secrets UNSET, `cf-access-client-*`
+          # below are empty and no CF headers are sent, so leaving the var unset keeps the exact
+          # prior behaviour (in-cluster probe → vendor fallback). Do NOT point the var at the
+          # public host WITHOUT setting the secrets: the probe would 302 and still fall back, a
+          # config that looks deliberate but is not.
           litellm-base-url: ${{ vars.FUZE_LITELLM_BASE_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000' }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Inert on this path — see MENTION MODE in the header. Passed for shape-parity
