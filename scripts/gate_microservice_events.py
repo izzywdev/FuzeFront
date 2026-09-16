@@ -70,7 +70,7 @@ REQUIRED_EVENTS = {
 # A topic named in a comment is not a subscription. These are the call shapes
 # that actually bind a handler in this codebase (shared/src/kafka/consumer.ts).
 SUBSCRIBE_CALL = re.compile(
-    r"\b(?:subscribe|on|addHandler|handle|consume)\s*(?:<[^>]*>)?\s*\(", re.I
+    r"\b(?:subscribe|on|addHandler|handle|consume)\s*(?:<[^>]*>)?\s*\(", re.IGNORECASE
 )
 
 # Topic-set ALIASES. A service may never name a topic at all and still subscribe
@@ -131,7 +131,7 @@ EFFECT_CALL = re.compile(
     # outbound mutating HTTP — the stateless-service shape
     r"\bmethod\s*:\s*['\"](?:POST|PUT|PATCH|DELETE)['\"]|"
     r"\b(?:axios|http|client)\.(?:post|put|patch|delete)\s*\(",
-    re.I,
+    re.IGNORECASE,
 )
 
 
