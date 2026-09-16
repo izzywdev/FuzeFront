@@ -1,0 +1,53 @@
+name: zz alert dump
+on:
+  push:
+    branches: [claude/trusting-ritchie-ecep0e]
+permissions:
+  security-events: read
+  contents: read
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump open code-scanning alerts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/code-scanning/alerts?state=open&per_page=100" --paginate \
+            > alerts-raw.json
+          jq '[.[] | {
+                number, state,
+                rule_id: .rule.id,
+                severity: .rule.security_severity_level,
+                rule_severity: .rule.severity,
+                tags: .rule.tags,
+                desc: .rule.description,
+                tool: .tool.name,
+                path: .most_recent_instance.location.path,
+                start_line: .most_recent_instance.location.start_line,
+                end_line: .most_recent_instance.location.end_line,
+                message: .most_recent_instance.message.text,
+                ref: .most_recent_instance.ref,
+                created_at, updated_at,
+                url: .html_url
+              }]' alerts-raw.json > alerts.json
+          echo "TOTAL: $(jq 'length' alerts.json)"
+          {
+            echo '## Open code-scanning alerts'
+            echo
+            echo "Total: $(jq 'length' alerts.json)"
+            echo
+            echo '### By rule'
+            echo '```'
+            jq -r 'group_by(.rule_id)|map({r:.[0].rule_id,sev:.[0].severity,n:length})|sort_by(-.n)[]|"\(.n)\t\(.sev//"-")\t\(.r)"' alerts.json
+            echo '```'
+            echo '### By path'
+            echo '```'
+            jq -r 'group_by(.path)|map({p:.[0].path,n:length})|sort_by(-.n)[]|"\(.n)\t\(.p)"' alerts.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alerts
+          path: alerts.json
