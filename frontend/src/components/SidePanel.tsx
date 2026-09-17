@@ -119,7 +119,7 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
               color: 'var(--text-primary)',
               cursor: 'pointer',
               fontSize: 'var(--text-sm)',
-              border: '1px solid rgba(110,92,255,0.3)',
+              border: '1px solid var(--border-strong)',
             }}
           >
             <span>←</span>
@@ -245,10 +245,10 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
                             style={{
                               fontSize: '0.65rem',
                               padding: '1px 5px',
-                              borderRadius: '999px',
-                              backgroundColor: 'rgba(245, 158, 11, 0.18)',
-                              color: 'var(--warning-color, #f59e0b)',
-                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                              borderRadius: 'var(--radius-full)',
+                              backgroundColor: 'var(--accent-soft)',
+                              color: 'var(--warning-color)',
+                              border: '1px solid var(--border-strong)',
                               textTransform: 'uppercase',
                               fontWeight: 600
                             }}
@@ -323,7 +323,7 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
                           transition: 'all 0.15s ease'
                         }}
                         onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)'
+                          e.currentTarget.style.backgroundColor = 'var(--hover-bg)'
                           e.currentTarget.style.color = 'var(--text-primary)'
                         }}
                         onMouseLeave={(e) => {
