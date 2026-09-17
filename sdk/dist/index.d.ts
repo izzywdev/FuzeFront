@@ -1,3 +1,4 @@
+import * as react_jsx_runtime from 'react/jsx-runtime';
 import React$1, { ReactNode } from 'react';
 
 interface User {
@@ -25,6 +26,7 @@ interface App {
     scope?: string;
     module?: string;
     description?: string;
+    requiresOrgContext?: boolean;
 }
 interface MenuItem {
     id: string;
@@ -67,6 +69,10 @@ interface PlatformContext {
     apps: App[];
     activeApp: App | null;
     menuItems: MenuItem[];
+    activeOrganization?: {
+        id: string;
+        name: string;
+    } | null;
     isLoading: boolean;
     isPlatformMode: boolean;
 }
@@ -150,7 +156,7 @@ interface PlatformProviderProps {
     config: AppConfig;
     fallbackMode?: boolean;
 }
-declare function PlatformProvider({ children, config, fallbackMode, }: PlatformProviderProps): React$1.JSX.Element;
+declare function PlatformProvider({ children, config, fallbackMode, }: PlatformProviderProps): react_jsx_runtime.JSX.Element;
 declare function usePlatformContext(): {
     state: PlatformState;
     dispatch: React$1.Dispatch<PlatformAction>;
@@ -255,6 +261,10 @@ interface PlatformSnapshot {
         name: string;
     }>;
     activeApp: {
+        id: string;
+        name: string;
+    } | null;
+    activeOrganization?: {
         id: string;
         name: string;
     } | null;
