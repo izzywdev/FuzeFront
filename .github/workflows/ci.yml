@@ -390,6 +390,204 @@ jobs:
         # Tests mock the DB and the feature-flag client — no external services.
         run: npm run -w selection-list-service test
 
+  selection-list-service-e2e:
+    name: Selection list E2E red specs (TDD — expected to fail until UI lands)
+    runs-on: ubuntu-latest
+    needs: build
+    # continue-on-error: true — these 4 specs are RED-by-design TDD specs written
+    # before @fuzeone/selection-lists-ui and the /settings/selection-lists route
+    # exist (EPIC-17 / FFRNT-188). They are expected to fail until frontend-engineer
+    # lands the UI. Running them in CI now means:
+    #   (a) they are visible in every PR's check list, not silently skipped;
+    #   (b) they will automatically turn GREEN once the UI is implemented.
+    # Remove `continue-on-error` once the specs are consistently GREEN.
+    # Specs: frontend/tests/selection-lists-{list-management,picker,access-control,
+    #        translation-workbench}.red.spec.ts
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd frontend && npm ci
+
+      # chat-ui is bundled into the host frontend from its dist (no vite source
+      # alias), and depends on chat-client — build both before `vite build`.
+      # (Mirrors the `build` job — esbuild/vite does not type-check, so the full
+      # d.ts-producing steps from lint-and-test are not needed here.)
+      - name: Build @fuzefront/chat-client + chat-ui (for frontend bundle)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+
+      # selection-lists-ui's exports field points to dist/ so vite cannot
+      # resolve the package entry until it has been built.
+      - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
+        run: npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Serve frontend (vite preview on :4173)
+        # Starts the preview server in the background. The loop polls until the
+        # server answers so subsequent steps don't race the startup.
+        run: |
+          cd frontend
+          npx vite preview --port 4173 --host 0.0.0.0 > /tmp/vite-preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:4173 >/dev/null 2>&1; then
+              echo "frontend up at http://localhost:4173"; break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::frontend preview did not become accessible after 60s"
+              cat /tmp/vite-preview.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install Playwright chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run selection-list red specs (expected to fail — UI not yet implemented)
+        # These 4 specs will fail until frontend-engineer implements
+        # @fuzeone/selection-lists-ui and wires /settings/selection-lists.
+        # The job is continue-on-error: true so failure here does NOT block
+        # the notify gate or any other job.
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:4173
+          CI: 'true'
+        run: |
+          npx playwright test \
+            tests/selection-lists-list-management.red.spec.ts \
+            tests/selection-lists-picker.red.spec.ts \
+            tests/selection-lists-access-control.red.spec.ts \
+            tests/selection-lists-translation-workbench.red.spec.ts \
+            --project=chromium --reporter=list,html
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: selection-lists-red-spec-report
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Dump vite preview logs on failure
+        if: failure()
+        run: cat /tmp/vite-preview.log || true
+
+  selection-list-service-integration-tests:
+    name: Selection list service (integration/acceptance)
+    runs-on: ubuntu-latest
+    needs: build
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: selection_list_service_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+      - name: Install workspace
+        run: npm ci
+      - name: Build @fuzefront/auth (d.ts for selection-list-service type-check)
+        run: npm run -w @fuzefront/auth build
+      - name: Build @fuzefront/shared (d.ts for Kafka consumer type-check)
+        run: npm run -w @fuzefront/shared build
+      - name: Build selection-list-service
+        run: npm run -w selection-list-service build
+      - name: Run DB migrations
+        env:
+          NODE_ENV: production
+          DB_SSL: 'false'
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: node services/selection-list-service/dist/db/migrate.js
+      - name: Start selection-list-service
+        env:
+          NODE_ENV: production
+          DB_SSL: 'false'
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          JWT_SECRET: test-jwt-secret-for-selection-list-service
+          PORT: '3011'
+          TEST_QUOTA_ORG_LISTS: '3'
+          TEST_QUOTA_LIST_ITEMS: '5'
+        run: |
+          node services/selection-list-service/dist/index.js >/tmp/sls.log 2>&1 &
+          echo "SLS_PID=$!" >> "$GITHUB_ENV"
+      - name: Wait for selection-list-service health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3011/health >/dev/null 2>&1; then
+              echo "selection-list-service is up"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: selection-list-service did not become healthy after 60s" >&2
+              cat /tmp/sls.log
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Install integration test suite
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cd tests/selection-list-service && npm ci
+      - name: Type-check integration tests
+        run: cd tests/selection-list-service && npm run type-check
+      - name: Run integration/acceptance tests
+        env:
+          SERVICE_BASE_URL: http://localhost:3011
+          JWT_SECRET: test-jwt-secret-for-selection-list-service
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: cd tests/selection-list-service && npm test
+      - name: Dump service logs on failure
+        if: failure()
+        run: cat /tmp/sls.log
+      - name: Stop selection-list-service
+        if: always()
+        run: |
+          if [ -n "$SLS_PID" ]; then
+            kill "$SLS_PID" 2>/dev/null || true
+          fi
+
   applications-service-tests:
     name: Applications service (unit + integration)
     runs-on: ubuntu-latest
@@ -783,7 +981,11 @@ jobs:
   notify:
     name: Notify Team
     runs-on: ubuntu-latest
-    needs: [lint-and-test, build, integration-tests, email-integration, selection-list-service-tests]
+    # selection-list-service-e2e and selection-list-service-integration-tests are
+    # listed in needs so notify waits for them. Both have continue-on-error: true
+    # and are TDD-red by design. They are excluded from the success/failure
+    # conditions below — failures there must not block the gate.
+    needs: [lint-and-test, build, integration-tests, email-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests]
     if: always()
 
     steps:

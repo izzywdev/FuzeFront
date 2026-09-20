@@ -1,5 +1,5 @@
 {
-  "fuzeoneVersion": "1",
+  "fuzeoneVersion": "2",
   "description": "Canonical FuzeOne family standard: the files an app-layer repo needs to be a member of the FuzeFront system and work in the proper SDLC.",
   "hub": "izzywdev/FuzeFront",
   "hubRef": "v1",
@@ -34,6 +34,9 @@
     { "src": "fuzeone/templates/github-workflows/telegram-pr-merged.yml","dest": ".github/workflows/telegram-pr-merged.yml","mode": "template" },
     { "src": "fuzeone/templates/github-workflows/auto-merge.yml",        "dest": ".github/workflows/auto-merge.yml",        "mode": "template" },
 
+    { "src": "fuzeone/templates/github-workflows/build-android-apk.yml", "dest": ".github/workflows/build-android-apk.yml", "mode": "template", "when": "has-mobile-android" },
+    { "src": "fuzeone/templates/scripts/check-mobile-release.mjs",       "dest": "scripts/check-mobile-release.mjs",       "mode": "copy",     "when": "has-mobile-android" },
+
     { "src": "fuzeone/templates/github-workflows/helm-validate.yml",     "dest": ".github/workflows/helm-validate.yml",     "mode": "template", "when": "has-helm" },
     { "src": "fuzeone/templates/github-workflows/infra-dispatch.yml",    "dest": ".github/workflows/infra-dispatch.yml",    "mode": "template", "when": "has-infra" },
 
@@ -44,10 +47,14 @@
     { "name": "ANTHROPIC_API_KEY",       "why": "@claude interactive handler + CI autofix" },
     { "name": "TELEGRAM_BOT_TOKEN",      "why": "PR-merged notifications", "optional": true },
     { "name": "TELEGRAM_CHAT_ID",        "why": "PR-merged notifications", "optional": true },
-    { "name": "FUZEINFRA_DISPATCH_TOKEN","why": "infra-request -> FuzeInfra repository_dispatch", "when": "has-infra" }
+    { "name": "FUZEINFRA_DISPATCH_TOKEN","why": "infra-request -> FuzeInfra repository_dispatch", "when": "has-infra" },
+    { "name": "ANDROID_KEYSTORE_B64",          "why": "base64-encoded product signing keystore", "when": "has-mobile-android" },
+    { "name": "ANDROID_KEYSTORE_STORE_PASSWORD","why": "product signing keystore password", "when": "has-mobile-android" },
+    { "name": "ANDROID_KEYSTORE_KEY_PASSWORD", "why": "product signing key password", "when": "has-mobile-android" }
   ],
   "conditions": {
     "has-helm": "target has deploy/helm/",
-    "has-infra": "target has deploy/terraform/ or deploy/argocd/"
+    "has-infra": "target has deploy/terraform/ or deploy/argocd/",
+    "has-mobile-android": "target .fuze/manifest.json declares mobile.required=true and targets includes android"
   }
 }

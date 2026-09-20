@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, TypeVar
 
 # ---------------------------------------------------------------------------
 # Identifier prefix constants (opaque past the prefix)
@@ -96,11 +96,11 @@ class Page:
     (``governance/pagination-standard.md`` S1).
     """
 
-    next_cursor: Optional[str]
+    next_cursor: str | None
     """Opaque cursor for the next page; ``None`` on the last page."""
     has_more: bool
     """Whether a further page exists."""
-    total: Optional[int] = None
+    total: int | None = None
     """Total rows matching the filter, when cheap enough to compute."""
 
 
@@ -111,7 +111,7 @@ T = TypeVar("T")
 class PagedResponse(Generic[T]):
     """A page of ``T`` plus its cursor envelope."""
 
-    items: List[T]
+    items: list[T]
     page: Page
 
 
@@ -135,8 +135,8 @@ class SelectionList:
     created_by: str
     created_at: str
     updated_at: str
-    description: Optional[str] = None
-    item_count: Optional[int] = None
+    description: str | None = None
+    item_count: int | None = None
 
 
 @dataclass
@@ -145,19 +145,19 @@ class CreateListRequest:
 
     key: str
     name: str
-    source_locale: Optional[str] = None
-    description: Optional[str] = None
+    source_locale: str | None = None
+    description: str | None = None
 
 
 @dataclass
 class UpdateListRequest:
     """Partial update of a list. Every field is optional; at least one must be set."""
 
-    key: Optional[str] = None
-    source_locale: Optional[str] = None
-    status: Optional[LifecycleStatus] = None
-    name: Optional[str] = None
-    description: Optional[str] = None
+    key: str | None = None
+    source_locale: str | None = None
+    status: LifecycleStatus | None = None
+    name: str | None = None
+    description: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ class SelectionListItem:
     created_by: str
     created_at: str
     updated_at: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
@@ -189,8 +189,8 @@ class CreateItemRequest:
 
     code: str
     label: str
-    description: Optional[str] = None
-    sort_order: Optional[int] = None
+    description: str | None = None
+    sort_order: int | None = None
 
 
 @dataclass
@@ -200,10 +200,10 @@ class UpdateItemRequest:
     after create.
     """
 
-    label: Optional[str] = None
-    description: Optional[str] = None
-    sort_order: Optional[int] = None
-    status: Optional[LifecycleStatus] = None
+    label: str | None = None
+    description: str | None = None
+    sort_order: int | None = None
+    status: LifecycleStatus | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +220,8 @@ class Translation:
     name: str
     is_machine: bool
     updated_at: str
-    description: Optional[str] = None
-    source_hash: Optional[str] = None
+    description: str | None = None
+    source_hash: str | None = None
 
 
 @dataclass
@@ -233,8 +233,8 @@ class SelectionListItemTranslation:
     label: str
     is_machine: bool
     updated_at: str
-    description: Optional[str] = None
-    source_hash: Optional[str] = None
+    description: str | None = None
+    source_hash: str | None = None
 
 
 @dataclass
@@ -242,7 +242,7 @@ class UpsertListTranslationRequest:
     """Human-authored list text for one locale."""
 
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
@@ -250,7 +250,7 @@ class UpsertItemTranslationRequest:
     """Human-authored item text for one locale."""
 
     label: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
@@ -258,7 +258,7 @@ class AutofillRequest:
     """Optional scoping for a machine-translation run."""
 
     overwrite_machine: bool = False
-    item_ids: Optional[List[str]] = None
+    item_ids: list[str] | None = None
 
 
 @dataclass
@@ -301,7 +301,7 @@ class QuotaInfo:
     scope: QuotaScope
     applies_to: str
     limit: int
-    current: Optional[int]
+    current: int | None
 
 
 @dataclass
@@ -309,7 +309,7 @@ class SelectionListQuotaStatus:
     """Quota ceilings and usage for the caller's organisation."""
 
     organization_id: str
-    quotas: List[QuotaInfo]
+    quotas: list[QuotaInfo]
 
 
 # ---------------------------------------------------------------------------
@@ -335,4 +335,4 @@ class ResolveResponse:
     """
 
     results: dict
-    missing: List[str]
+    missing: list[str]

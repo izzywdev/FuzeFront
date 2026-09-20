@@ -149,6 +149,13 @@ spec:
                   key: {{ .Values.customHostnameApi.secret.key }}
                   optional: true
             {{- end }}
+            {{- if .Values.authentikMendys.enabled }}
+            # Portals Directory — provision the MendysRobotics tenant portal row
+            # (identity_mode 'hard') at boot, ONLY where its Authentik silo is
+            # deployed. Read by backend/src/services/ensureMendysPortal.ts.
+            - name: MENDYS_PORTAL_PROVISION
+              value: "true"
+            {{- end }}
             {{- if .Values.authentik.oidc.enabled }}
             # Authentik OIDC (SSO). client_id/secret come from the Secret (set
             # deterministically by blueprints); issuer/redirect from values.
