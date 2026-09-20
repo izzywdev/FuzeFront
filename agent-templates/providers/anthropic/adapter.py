@@ -16,11 +16,11 @@ _SYNC = os.environ.get("HANDOFF_SYNC_DIR") or os.path.join(_TEMPLATES_ROOT, "syn
 if _SYNC not in sys.path:
     sys.path.insert(0, _SYNC)
 
-from typing import ClassVar
+from typing import ClassVar  # noqa: E402 - must follow the sys.path.insert above
 
-import common
-import driver
-import role_loader as rl
+import common  # noqa: E402 - resolves only after the sys.path.insert above
+import driver  # noqa: E402 - resolves only after the sys.path.insert above
+import role_loader as rl  # noqa: E402 - resolves only after the sys.path.insert above
 
 # Agent fields we compare to decide whether an update is needed.
 _COMPARE = ("model", "system", "description", "tools", "mcp_servers", "skills", "multiagent")

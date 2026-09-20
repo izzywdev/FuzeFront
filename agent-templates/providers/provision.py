@@ -23,10 +23,10 @@ for _p in (TEMPLATES_ROOT, SYNC):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import common
-import role_loader as rl
+import common  # noqa: E402 - resolves only after the sys.path.insert above
+import role_loader as rl  # noqa: E402 - resolves only after the sys.path.insert above
 
-from providers import get_provider
+from providers import get_provider  # noqa: E402 - resolves only after the sys.path.insert above
 
 ENV_DIR = os.path.join(TEMPLATES_ROOT, "environments")
 VAULT_DIR = os.path.join(TEMPLATES_ROOT, "vaults")

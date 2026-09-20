@@ -9,12 +9,12 @@ import json
 import pytest
 
 flask = pytest.importorskip("flask")
-from flask import Flask, g
-from fuzefront_service_auth import (
+from flask import Flask, g  # noqa: E402 - must follow the importorskip guard above
+from fuzefront_service_auth import (  # noqa: E402 - must follow the importorskip guard above
     AuthorizationError,
     MachineTokenVerifier,
 )
-from fuzefront_service_auth.middleware.flask import (
+from fuzefront_service_auth.middleware.flask import (  # noqa: E402 - must follow the importorskip guard above
     require_machine_identity,
 )
 
