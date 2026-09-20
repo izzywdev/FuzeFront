@@ -1,13 +1,16 @@
 /**
  * DevPortalHomeFlow — route `/` (design/frames/devportal 01-home-signed-out,
  * 02-home-signed-in). Renders the anonymous landing (hero, quick links with
- * Playground/My access locked, the product directory, the sandbox-only
+ * Playground/My access/the product directory locked, the sandbox-only
  * promise) or the personalized signed-in home (quota strip, recent specs,
- * sandbox activity — each with its own onboarding-empty variant for a
- * developer's very first sign-in).
+ * sandbox activity, the product directory — each with its own onboarding-
+ * empty variant for a developer's very first sign-in).
  *
- * Deliberately makes NO GET /v1/catalog call: home.red.spec.ts's signed-out
- * suite mocks only GET /v1/me, so the product directory is the static list in
+ * The product directory is sign-in-gated (2026-09-16, direct owner
+ * direction — see home.red.spec.ts's signed-out product-directory test):
+ * it previously rendered unconditionally, disclosing the full family
+ * product list to anonymous visitors. Deliberately makes NO GET /v1/catalog
+ * call even when authenticated: the product directory is the static list in
  * ../../data/productDirectory.ts, not a live fetch — see that file's header.
  */
 import { useEffect, useState } from 'react'
@@ -69,7 +72,7 @@ export function DevPortalHomeFlow({ auth }: { auth: UseMyAccess }) {
         </div>
       )}
 
-      <ProductDirectory />
+      {authenticated && <ProductDirectory />}
       <SafetyNotice />
     </div>
   )
