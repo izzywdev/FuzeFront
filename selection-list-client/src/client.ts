@@ -1,5 +1,6 @@
 import { SelectionListApiError } from './errors'
 import type {
+  ItemTranslationLocaleStatus,
   ListSelectionListItemsParams,
   ListSelectionListsParams,
   Locale,
@@ -25,6 +26,7 @@ import type {
   SelectionListTranslation,
   SelectionListTranslationUpsert,
   SelectionListUpdate,
+  TranslationLocaleStatus,
   UserId,
 } from './types'
 
@@ -314,6 +316,25 @@ export class SelectionListClient {
   /* Translations                                                            */
   /* ---------------------------------------------------------------------- */
 
+  /**
+   * `GET /v1/selection-lists/{listId}/translations` — one status entry per
+   * locale that has a list-level translation, including completeness,
+   * machine-translation status, and staleness. The source locale is excluded.
+   *
+   * This is the primary read for the translation workbench UI. The result set
+   * is bounded by the supported locale count (max 11) and is not paginated.
+   */
+  async listTranslations(
+    listId: SelectionListId,
+    signal?: AbortSignal
+  ): Promise<TranslationLocaleStatus[]> {
+    return this.request<TranslationLocaleStatus[]>({
+      method: 'GET',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/translations`,
+      signal,
+    })
+  }
+
   /** `PUT /v1/selection-lists/{listId}/translations/{locale}` — human list text. */
   async upsertListTranslation(
     listId: SelectionListId,
@@ -345,6 +366,65 @@ export class SelectionListClient {
       method: 'PUT',
       path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations/${encodeURIComponent(locale)}`,
       body,
+      signal,
+    })
+  }
+
+  /**
+   * `DELETE /v1/selection-lists/{listId}/translations/{locale}` — remove one
+   * locale's list-level translation. Idempotent: deleting a translation that
+   * does not exist returns `204`. The source locale cannot be deleted — a
+   * `400 VALIDATION_ERROR` is returned instead. Item-level translations in
+   * this locale are not touched.
+   */
+  async deleteListTranslation(
+    listId: SelectionListId,
+    locale: Locale,
+    signal?: AbortSignal
+  ): Promise<void> {
+    await this.request<null>({
+      method: 'DELETE',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/translations/${encodeURIComponent(locale)}`,
+      allowEmpty: true,
+      signal,
+    })
+  }
+
+  /**
+   * `GET /v1/selection-lists/{listId}/items/{itemId}/translations` — one
+   * status entry per locale that has an item-level translation, with
+   * machine-translation status and staleness. The source locale is excluded.
+   *
+   * Bounded by the supported locale count (max 11); not paginated.
+   */
+  async listItemTranslations(
+    listId: SelectionListId,
+    itemId: SelectionListItemId,
+    signal?: AbortSignal
+  ): Promise<ItemTranslationLocaleStatus[]> {
+    return this.request<ItemTranslationLocaleStatus[]>({
+      method: 'GET',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations`,
+      signal,
+    })
+  }
+
+  /**
+   * `DELETE /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}`
+   * — remove one locale's item-level translation. Idempotent: deleting a
+   * translation that does not exist returns `204`. The source locale cannot
+   * be deleted.
+   */
+  async deleteItemTranslation(
+    listId: SelectionListId,
+    itemId: SelectionListItemId,
+    locale: Locale,
+    signal?: AbortSignal
+  ): Promise<void> {
+    await this.request<null>({
+      method: 'DELETE',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations/${encodeURIComponent(locale)}`,
+      allowEmpty: true,
       signal,
     })
   }
