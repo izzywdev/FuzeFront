@@ -19,7 +19,14 @@ let mockApps: Array<{ slug: string; manifest: { icon?: unknown; menuLabel: strin
 vi.mock('../../lib/shared', () => ({
   useCurrentUser: () => ({ user: { roles: ['admin'] } }),
   useAppContext: () => ({ state: { menuItems: [] } }),
-  useOrganizations: () => ({ activeOrganizationId: null, organizations: [], activeOrganization: null, setActiveOrganization: vi.fn() }),
+  // Personal context (no active org) — the real hook's default. Neither
+  // suite's apps are org-only, so this does not gate anything here.
+  useOrganizations: () => ({
+    organizations: [],
+    activeOrganizationId: null,
+    activeOrganization: null,
+    setActiveOrganization: () => {},
+  }),
 }))
 vi.mock('../../platform/appRegistry', () => ({
   useRegisteredApps: () => ({ apps: mockApps }),
