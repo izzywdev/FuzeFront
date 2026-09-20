@@ -9,14 +9,11 @@ import SidePanel from '../SidePanel'
 vi.mock('../../lib/shared', () => ({
   useCurrentUser: () => ({ user: { roles: ['admin'] } }),
   useAppContext: () => ({ state: { menuItems: [] } }),
-  // Added when #1098 introduced org-context gating: SidePanel now calls
-  // useOrganizations(), and a module mock that omits it makes vitest throw
-  // rather than fall through to the real hook. A non-null activeOrganizationId
-  // keeps isPersonalContext false, which is the context these tests were
-  // written against -- they assert app listing, not org gating.
+  // Personal context (no active org) — the real hook's default. Neither
+  // suite's apps are org-only, so this does not gate anything here.
   useOrganizations: () => ({
     organizations: [],
-    activeOrganizationId: 'org-test',
+    activeOrganizationId: null,
     activeOrganization: null,
     setActiveOrganization: () => {},
   }),
