@@ -1,7 +1,33 @@
 import request from 'supertest';
+import { ServiceAuthError, type MachineTokenVerifier } from '@fuzefront/service-auth';
 import { createApp } from '../src/app';
 
-const INTERNAL_TOKEN = 'payment-internal-token';
+// A valid managed service token the stub verifier accepts. With the migration to
+// @fuzefront/service-auth the guard no longer compares a static shared secret —
+// it introspects the presented token against security-service. Tests inject a
+// stub verifier (the `verifier` app dep) so no live security-service is needed.
+const VALID_TOKEN = 'valid-service-token';
+
+/** Stub verifier: `VALID_TOKEN` is an active machine identity; anything else is denied (fail-closed). */
+function stubVerifier(): MachineTokenVerifier {
+  return {
+    verifyMachineToken: jest.fn(async (token: string) => {
+      if (token === VALID_TOKEN) {
+        return {
+          subject: 'svc:billing-service',
+          tenantId: null,
+          scopes: [],
+          raw: { active: true, subject: 'svc:billing-service' } as any,
+        };
+      }
+      throw new ServiceAuthError('TOKEN_INACTIVE', 'Token is not active.', 401);
+    }),
+  };
+}
+
+function appWith(provider: any) {
+  return createApp({ provider, verifier: stubVerifier() });
+}
 
 function fakeProvider() {
   return {
@@ -43,9 +69,9 @@ describe('POST /api/v1/payments/checkout-sessions', () => {
   it('creates a checkout session with the declared 201 application/json response', async () => {
     // @fuzequality api createCheckoutSession
     const provider = fakeProvider();
-    const res = await request(createApp({ provider, internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(provider))
       .post('/api/v1/payments/checkout-sessions')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .send({
         mode: 'subscription',
         customerId: 'customer-1',
@@ -60,13 +86,28 @@ describe('POST /api/v1/payments/checkout-sessions', () => {
 
   it('returns 401 application/json when checkout authentication is missing', async () => {
     // @fuzequality api createCheckoutSession
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .post('/api/v1/payments/checkout-sessions')
       .send({ mode: 'subscription' })
       .expect(401);
 
     expect(res.type).toMatch(/json/);
-    expect(res.body.error).toBe('unauthorized');
+    // Fail-closed: no bearer token -> requireMachineAuth denies with a coded body.
+    expect(res.body.code).toBe('NO_TOKEN');
+    expect(typeof res.body.error).toBe('string');
+  });
+
+  it('returns 401 application/json when the presented service token is invalid', async () => {
+    // @fuzequality api createCheckoutSession
+    const res = await request(appWith(fakeProvider()))
+      .post('/api/v1/payments/checkout-sessions')
+      .set('Authorization', 'Bearer not-a-real-token')
+      .send({ mode: 'subscription' })
+      .expect(401);
+
+    expect(res.type).toMatch(/json/);
+    // Fail-closed: an inactive/invalid token is a denial, never a pass.
+    expect(res.body.code).toBe('TOKEN_INACTIVE');
   });
 });
 
@@ -74,9 +115,9 @@ describe('POST /api/v1/payments/customers', () => {
   it('creates a customer with the declared 201 application/json response', async () => {
     // @fuzequality api createCustomer
     const provider = fakeProvider();
-    const res = await request(createApp({ provider, internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(provider))
       .post('/api/v1/payments/customers')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .send({
         externalId: 'organization-1',
         email: 'owner@example.com',
@@ -90,22 +131,22 @@ describe('POST /api/v1/payments/customers', () => {
 
   it('returns 401 application/json when customer creation authentication is missing', async () => {
     // @fuzequality api createCustomer
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .post('/api/v1/payments/customers')
       .send({ externalId: 'organization-1' })
       .expect(401);
 
     expect(res.type).toMatch(/json/);
-    expect(res.body.error).toBe('unauthorized');
+    expect(res.body.code).toBe('NO_TOKEN');
   });
 });
 
 describe('GET /api/v1/payments/customers/:customerId', () => {
   it('gets a customer with the declared 200 application/json response', async () => {
     // @fuzequality api getCustomer
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .get('/api/v1/payments/customers/customer-1')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .expect(200);
 
     expect(res.type).toMatch(/json/);
@@ -114,19 +155,19 @@ describe('GET /api/v1/payments/customers/:customerId', () => {
 
   it('returns 401 application/json when customer lookup authentication is missing', async () => {
     // @fuzequality api getCustomer
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .get('/api/v1/payments/customers/customer-1')
       .expect(401);
 
     expect(res.type).toMatch(/json/);
-    expect(res.body.error).toBe('unauthorized');
+    expect(res.body.code).toBe('NO_TOKEN');
   });
 
   it('does not perform a lookup when the required customerId path parameter is missing', async () => {
     // @fuzequality api getCustomer
-    await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    await request(appWith(fakeProvider()))
       .get('/api/v1/payments/customers/')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .expect(404);
   });
 });
@@ -134,9 +175,9 @@ describe('GET /api/v1/payments/customers/:customerId', () => {
 describe('GET /api/v1/payments/customers/:customerId/invoices', () => {
   it('lists customer invoices with the declared 200 application/json response', async () => {
     // @fuzequality api listInvoices
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .get('/api/v1/payments/customers/customer-1/invoices')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .expect(200);
 
     expect(res.type).toMatch(/json/);
@@ -145,19 +186,19 @@ describe('GET /api/v1/payments/customers/:customerId/invoices', () => {
 
   it('returns 401 application/json when invoice-list authentication is missing', async () => {
     // @fuzequality api listInvoices
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .get('/api/v1/payments/customers/customer-1/invoices')
       .expect(401);
 
     expect(res.type).toMatch(/json/);
-    expect(res.body.error).toBe('unauthorized');
+    expect(res.body.code).toBe('NO_TOKEN');
   });
 
   it('does not list invoices when the required customerId path parameter is missing', async () => {
     // @fuzequality api listInvoices
-    await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    await request(appWith(fakeProvider()))
       .get('/api/v1/payments/customers//invoices')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .expect(404);
   });
 });
@@ -165,9 +206,9 @@ describe('GET /api/v1/payments/customers/:customerId/invoices', () => {
 describe('POST /api/v1/payments/payment-methods/setup', () => {
   it('creates a payment-method setup with the declared 201 application/json response', async () => {
     // @fuzequality api setupPaymentMethod
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .post('/api/v1/payments/payment-methods/setup')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .send({ customerId: 'customer-1', usage: 'off_session' })
       .expect(201);
 
@@ -177,21 +218,23 @@ describe('POST /api/v1/payments/payment-methods/setup', () => {
 
   it('returns 401 application/json when payment-method setup authentication is missing', async () => {
     // @fuzequality api setupPaymentMethod
-    const res = await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(fakeProvider()))
       .post('/api/v1/payments/payment-methods/setup')
       .send({ customerId: 'customer-1' })
       .expect(401);
 
     expect(res.type).toMatch(/json/);
-    expect(res.body.error).toBe('unauthorized');
+    expect(res.body.code).toBe('NO_TOKEN');
   });
 });
 
 describe('POST /api/v1/payments/webhooks/:provider', () => {
   it('receives a provider webhook with the declared 200 application/json response', async () => {
     // @fuzequality api receiveWebhook
+    // Webhook is PUBLIC (authenticity is the provider signature, not the internal
+    // token) — it must succeed with no Authorization header.
     const provider = fakeProvider();
-    const res = await request(createApp({ provider, internalToken: INTERNAL_TOKEN }))
+    const res = await request(appWith(provider))
       .post('/api/v1/payments/webhooks/stripe')
       .set('Content-Type', 'application/json')
       .set('stripe-signature', 'valid-signature')
@@ -205,9 +248,12 @@ describe('POST /api/v1/payments/webhooks/:provider', () => {
 
   it('does not dispatch a webhook when the required provider path parameter is missing', async () => {
     // @fuzequality api receiveWebhook
-    await request(createApp({ provider: fakeProvider(), internalToken: INTERNAL_TOKEN }))
+    // `/webhooks/` (empty provider) doesn't match the public `/webhooks/:provider`
+    // router, so it falls through to the guarded API; present a valid token so the
+    // assertion isolates the missing-param 404 rather than the guard's 401.
+    await request(appWith(fakeProvider()))
       .post('/api/v1/payments/webhooks/')
-      .set('Authorization', `Bearer ${INTERNAL_TOKEN}`)
+      .set('Authorization', `Bearer ${VALID_TOKEN}`)
       .send('{}')
       .expect(404);
   });
