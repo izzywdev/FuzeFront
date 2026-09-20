@@ -334,6 +334,44 @@ export interface SelectionListAutofillResult {
   items_skipped: number
 }
 
+/**
+ * Translation workbench summary for one locale of a selection list.
+ * Returned by `GET /v1/selection-lists/{listId}/translations`.
+ */
+export interface TranslationLocaleStatus {
+  /** The locale this entry describes. */
+  locale: Locale
+  /**
+   * Percentage of translatable entities (list + active items) that have
+   * a translation in this locale. 0–100.
+   */
+  completeness_pct: number
+  /** Whether the list-level translation in this locale was machine-produced. */
+  machine_translated: boolean
+  /**
+   * Whether the source-locale text has changed since this translation was
+   * written (i.e. the stored `source_hash` no longer matches the current
+   * source). `true` means the translation is stale.
+   */
+  source_changed: boolean
+}
+
+/**
+ * Translation workbench summary for one locale of a selection-list item.
+ * Returned by `GET /v1/selection-lists/{listId}/items/{itemId}/translations`.
+ */
+export interface ItemTranslationLocaleStatus {
+  /** The locale this entry describes. */
+  locale: Locale
+  /** Whether this item's translation in this locale was machine-produced. */
+  machine_translated: boolean
+  /**
+   * Whether the source-locale text for this item has changed since the
+   * translation was written.
+   */
+  source_changed: boolean
+}
+
 /* -------------------------------------------------------------------------- */
 /* Translation locale status                                                   */
 /* -------------------------------------------------------------------------- */

@@ -351,6 +351,26 @@ export class SelectionListClient {
   }
 
   /**
+   * `PUT /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}` —
+   * human item text. Always stored with `is_machine: false`, which is what
+   * protects it from a later autofill.
+   */
+  async upsertItemTranslation(
+    listId: SelectionListId,
+    itemId: SelectionListItemId,
+    locale: Locale,
+    body: SelectionListItemTranslationUpsert,
+    signal?: AbortSignal
+  ): Promise<SelectionListItemTranslation> {
+    return this.request<SelectionListItemTranslation>({
+      method: 'PUT',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations/${encodeURIComponent(locale)}`,
+      body,
+      signal,
+    })
+  }
+
+  /**
    * `DELETE /v1/selection-lists/{listId}/translations/{locale}` — remove one
    * locale's list-level translation. Idempotent: deleting a translation that
    * does not exist returns `204`. The source locale cannot be deleted — a
@@ -385,26 +405,6 @@ export class SelectionListClient {
     return this.request<ItemTranslationLocaleStatus[]>({
       method: 'GET',
       path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations`,
-      signal,
-    })
-  }
-
-  /**
-   * `PUT /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}` —
-   * human item text. Always stored with `is_machine: false`, which is what
-   * protects it from a later autofill.
-   */
-  async upsertItemTranslation(
-    listId: SelectionListId,
-    itemId: SelectionListItemId,
-    locale: Locale,
-    body: SelectionListItemTranslationUpsert,
-    signal?: AbortSignal
-  ): Promise<SelectionListItemTranslation> {
-    return this.request<SelectionListItemTranslation>({
-      method: 'PUT',
-      path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations/${encodeURIComponent(locale)}`,
-      body,
       signal,
     })
   }
