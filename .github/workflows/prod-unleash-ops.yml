@@ -8,9 +8,10 @@ name: Prod Unleash ops (enable feature flags)
 # needing CF-Access authentication (the admin UI host is Access-gated; the
 # in-cluster service is not).
 #
-# The admin token is read directly from the cluster at runtime via kubectl —
-# no GitHub secret required. The runner's service account has read access to
-# the `unleash-secrets` Secret in the `fuzefront` namespace.
+# The admin token is read directly from the cluster at runtime via the k8s API
+# (curl + the runner pod's mounted service account token) — no GitHub secret or
+# kubectl required. The runner's service account has read access to the
+# `unleash-secrets` Secret in the `fuzefront` namespace.
 #
 # Trigger via GitHub Actions → "Run workflow".
 # The `flags` input controls which pre-defined flag set to apply.
@@ -46,10 +47,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Read the admin token directly from the cluster secret. The runner
-          # has in-cluster kubectl access so no GitHub secret is required.
-          TOKEN=$(kubectl -n fuzefront get secret unleash-secrets \
-            -o jsonpath='{.data.INIT_ADMIN_API_TOKENS}' | base64 -d)
+          # Read the admin token via the k8s API using the runner pod's mounted
+          # service account (no kubectl required — ARC runners lack it).
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          _SECRET_JSON=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/unleash-secrets" \
+            2>/dev/null || true)
+          TOKEN=$(echo "$_SECRET_JSON" | python3 -c "
+          import sys, json, base64
+          try:
+            d = json.load(sys.stdin)
+            print(base64.b64decode(d['data']['INIT_ADMIN_API_TOKENS']).decode().strip())
+          except Exception:
+            sys.exit(0)
+          " 2>/dev/null || true)
           if [ -z "${TOKEN:-}" ]; then
             echo "::error title=prod-unleash-ops::Could not read INIT_ADMIN_API_TOKENS from unleash-secrets."
             exit 1
@@ -129,8 +142,20 @@ jobs:
           ENVIRONMENT: production
           FLAGS_SET: ${{ inputs.flags }}
         run: |
-          TOKEN=$(kubectl -n fuzefront get secret unleash-secrets \
-            -o jsonpath='{.data.INIT_ADMIN_API_TOKENS}' | base64 -d 2>/dev/null || true)
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          _SECRET_JSON=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/unleash-secrets" \
+            2>/dev/null || true)
+          TOKEN=$(echo "$_SECRET_JSON" | python3 -c "
+          import sys, json, base64
+          try:
+            d = json.load(sys.stdin)
+            print(base64.b64decode(d['data']['INIT_ADMIN_API_TOKENS']).decode().strip())
+          except Exception:
+            sys.exit(0)
+          " 2>/dev/null || true)
           if [ -z "${TOKEN:-}" ]; then exit 0; fi
 
           echo "=== Verification ==="
