@@ -21,9 +21,9 @@ for _p in (TEMPLATES_ROOT, HERE):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import common  # noqa: E402 - resolves only after the sys.path.insert above
-from providers import get_provider  # noqa: E402 - resolves only after the sys.path.insert above
-from providers.base import auto_approver, interactive_approver  # noqa: E402 - resolves only after the sys.path.insert above
+import common
+from providers import get_provider
+from providers.base import auto_approver, interactive_approver
 
 PROVIDER = get_provider()
 
