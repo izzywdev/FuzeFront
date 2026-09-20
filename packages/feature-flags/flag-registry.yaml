@@ -31,6 +31,33 @@
 
 flags:
   # ---------------------------------------------------------------------------
+  # fuzefront.apps.*
+  # ---------------------------------------------------------------------------
+  - key: fuzefront.apps.org-context-disabled
+    type: release
+    default: true
+    description: >
+      Controls whether federated apps requiring active organization context are
+      rendered in disabled state when the user is in personal context. ON in prod.
+    owner: frontend-engineer
+    removal_criterion: Permanent platform capability.
+    gates:
+      - "FuzeFront host SidePanel & AppSelector org-context gating"
+    web_exposed: true
+
+  - key: fuzefront.apps.org-context-hidden
+    type: release
+    default: false
+    description: >
+      Controls whether federated apps requiring active organization context are
+      completely hidden from navigation and launchers when in personal context.
+    owner: frontend-engineer
+    removal_criterion: Permanent platform capability.
+    gates:
+      - "FuzeFront host SidePanel & AppSelector org-context gating"
+    web_exposed: true
+
+  # ---------------------------------------------------------------------------
   # fuzefront.authz.*
   # ---------------------------------------------------------------------------
   - key: fuzefront.authz.chat-agent-security-api
