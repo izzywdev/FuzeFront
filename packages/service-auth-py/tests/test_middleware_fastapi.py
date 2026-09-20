@@ -9,8 +9,13 @@ import json
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
-from fastapi import Depends, FastAPI
-from fastapi.testclient import TestClient
+from fastapi import (
+    Depends,
+    FastAPI,
+)
+from fastapi.testclient import (
+    TestClient,
+)
 from fuzefront_service_auth import (
     AuthorizationError,
     MachineTokenVerifier,
