@@ -41,7 +41,12 @@ jobs:
         run: node scripts/check-mobile-release.mjs
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        # android-actions/setup-android@v4.0.1 fails: sdkmanager no longer provides
+        # the deprecated 'tools' package. ubuntu-latest ships cmdline-tools already;
+        # accept licences and install only what bubblewrap needs.
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
