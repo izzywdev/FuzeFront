@@ -15,6 +15,14 @@ name: Image reproducibility
 # master, and master is DEPLOY-ON-PUSH — so without a pre-merge build, a broken
 # Dockerfile is discovered by production. It runs only when something that can
 # affect an image build changes.
+#
+# That matrix was hand-maintained against release.yml and silently drifted to
+# covering 8 of 18 released images. The gap WIDENED with each new service —
+# config-service shipped uncovered and crash-looped in prod (#768), and
+# devportal-service/devportal-frontend were added uncovered afterwards. The
+# entries are back in sync, and check-image-build-coverage.mjs now fails the
+# build when release.yml pushes an image this matrix does not build, so the
+# next service cannot repeat it.
 on:
   pull_request:
     paths:
@@ -22,7 +30,12 @@ on:
       - '**/package-lock.json'
       - '**/package.json'
       - 'scripts/check-dockerfile-lockfile.mjs'
+      - 'scripts/check-image-build-coverage.mjs'
       - '.github/workflows/image-reproducibility.yml'
+      # The coverage guard below diffs THIS matrix against release.yml, so a PR
+      # that adds an image there must run it — otherwise the one check that
+      # catches a new uncovered image never fires on the PR that adds it.
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: read
@@ -38,6 +51,8 @@ jobs:
           node-version: '24.x'
       - name: Check Dockerfile lockfile discipline
         run: node scripts/check-dockerfile-lockfile.mjs
+      - name: Check every released image is built pre-merge
+        run: node scripts/check-image-build-coverage.mjs
 
   build-images:
     name: Build ${{ matrix.name }}
@@ -73,6 +88,44 @@ jobs:
           - name: clock-app
             context: clock-app
             file: clock-app/Dockerfile
+          - name: email-service
+            context: .
+            file: services/email-service/Dockerfile
+          - name: sms-service
+            context: .
+            file: services/sms-service/Dockerfile
+          - name: provisioning-service
+            context: .
+            file: services/provisioning-service/Dockerfile
+          - name: selection-list-service
+            context: .
+            file: services/selection-list-service/Dockerfile
+          - name: config-service
+            context: .
+            file: services/config-service/Dockerfile
+          - name: devportal-service
+            context: .
+            file: services/devportal-service/Dockerfile
+          # Self-contained Dockerfiles — context is the subtree, not the repo
+          # root. Mirrors how release.yml builds each of these; a root context
+          # here would not reproduce what actually ships.
+          - name: payment-service
+            # context `.`, NOT the subtree: #1075 gave payment-service a
+            # `file:../../packages/service-auth` dependency, so its Dockerfile
+            # COPYs packages/security/ and packages/service-auth/ from the repo
+            # root. release.yml moved to `context: .` for the same reason; a
+            # subtree context here fails on "package.json not found".
+            context: .
+            file: services/payment-service/Dockerfile
+          - name: fuzefront-website-frontend
+            context: fuzefront-website/frontend
+            file: fuzefront-website/frontend/Dockerfile
+          - name: fuzefront-website-backend
+            context: fuzefront-website/backend
+            file: fuzefront-website/backend/Dockerfile
+          - name: devportal-frontend
+            context: devportal-frontend
+            file: devportal-frontend/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
