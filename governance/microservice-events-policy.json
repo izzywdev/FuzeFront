@@ -1,0 +1,33 @@
+{
+  "$comment": [
+    "Policy for scripts/gate_microservice_events.py.",
+    "",
+    "knownUnhandled is a RATCHET, not an allowlist. A service is only ever REMOVED",
+    "from it. A new service missing the required events fails the gate immediately,",
+    "so the debt below can shrink but never grow. The gate also fails if a listed",
+    "service starts handling its events and is not removed here in the same PR —",
+    "without that, the list rots into a permanent exemption nobody revisits.",
+    "",
+    "The seven entries below were measured on 2026-09-14, when the gate was written:",
+    "12 structurally-real microservices, of which 5 consumed identity lifecycle",
+    "events and 7 did not. Run `python3 scripts/gate_microservice_events.py --report`",
+    "before trusting that count — it drifts as services are fixed."
+  ],
+  "owner": "@izzywdev",
+  "minServices": 10,
+  "knownUnhandled": [
+    "config-service",
+    "devportal-service",
+    "email-service",
+    "notification-service",
+    "payment-service",
+    "selection-list-service",
+    "sms-service"
+  ],
+  "exempt": [
+    {
+      "name": "core",
+      "reason": "Shared library, not a deployable service — it has no Dockerfile, so discovery already rejects it. Listed explicitly so a future Dockerfile does not silently enrol it without a decision."
+    }
+  ]
+}
