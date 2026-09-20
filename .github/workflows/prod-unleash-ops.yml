@@ -22,12 +22,14 @@ on:
       flags:
         description: |
           Which flag set to apply:
-            billing-portal  — fuzefront.billing.invoice-history (100%)
+            billing-portal     — fuzefront.billing.invoice-history (100%)
+            portals-directory  — fuzefront.platform.portals-directory + multi-tenant-portals (100%)
         required: true
         default: billing-portal
         type: choice
         options:
           - billing-portal
+          - portals-directory
 
 permissions:
   contents: read
@@ -126,10 +128,19 @@ jobs:
               "Release flag. Gates the Invoices tab in the billing portal (PR #1044). GA per billing portal deploy 2026-09-14. Owner: platform team. Removal: once invoice history is GA for >= 2 sprints."
           }
 
+          # ── Portals Directory flags ────────────────────────────────────────
+          apply_portals_directory() {
+            enable_ga "fuzefront.platform.portals-directory" \
+              "Release flag. Gates the Portals nav item (SidePanel) + the GET /api/v1/admin/portals master-admin directory. GA per owner decision 2026-09-20 (izzy). Owner: feature-flags-engineer. Removal: once the Portals Directory is GA and the OFF path is unused."
+            enable_ga "fuzefront.platform.multi-tenant-portals" \
+              "Release flag. Gates portal-context resolution (resolvePortalContext) + per-portal branding (PortalBrandingProvider). GA per owner decision 2026-09-20 (izzy). Owner: feature-flags-engineer. Removal: once multi-tenant portals are GA."
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
-            billing-portal) apply_billing ;;
-            *)              echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
+            billing-portal)    apply_billing ;;
+            portals-directory) apply_portals_directory ;;
+            *)                 echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
           echo "All requested flags applied."
@@ -175,4 +186,10 @@ jobs:
             echo "  $FLAG: $ENABLED"
           }
 
-          check_flag "fuzefront.billing.invoice-history"
+          case "$FLAGS_SET" in
+            billing-portal)
+              check_flag "fuzefront.billing.invoice-history" ;;
+            portals-directory)
+              check_flag "fuzefront.platform.portals-directory"
+              check_flag "fuzefront.platform.multi-tenant-portals" ;;
+          esac
