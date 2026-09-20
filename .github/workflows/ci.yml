@@ -978,24 +978,42 @@ jobs:
 
   # Platform image build/push moved to release.yml (GHCR + GitOps tag bump).
 
+  # ── Tier 4: SDK drift gates ───────────────────────────────────────────────
+  gate-selectionlists-client-drift:
+    name: gate-selectionlists-client-drift
+    runs-on: ubuntu-latest
+    # No Postgres, no Node install, no npm ci — pure filesystem/text check.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify SDK client covers every spec operation
+        run: |
+          chmod +x scripts/check-selection-lists-client-drift.sh
+          bash scripts/check-selection-lists-client-drift.sh
+
   notify:
     name: Notify Team
     runs-on: ubuntu-latest
-    # selection-list-service-e2e and selection-list-service-integration-tests are
-    # listed in needs so notify waits for them. Both have continue-on-error: true
-    # and are TDD-red by design. They are excluded from the success/failure
-    # conditions below — failures there must not block the gate.
-    needs: [lint-and-test, build, integration-tests, email-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests]
+    # selection-list-service-e2e and selection-list-service-integration-tests are listed
+    # in needs so notify waits for them to complete. Both are intentionally EXCLUDED from
+    # the success/failure conditions below: they have continue-on-error: true and their
+    # specs/tests are RED-by-design (TDD — implementations not yet landed). Failures there
+    # must never block the gate. Once they go GREEN, add them to the conditions and
+    # remove their continue-on-error flags.
+    needs: [lint-and-test, build, integration-tests, email-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' }}
+
         run: |
           echo "❌ Some checks failed. Please review the logs."
           exit 1
