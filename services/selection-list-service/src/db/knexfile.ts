@@ -50,6 +50,13 @@ const config: { [key: string]: Knex.Config } = {
       tableName: 'knex_migrations',
       directory: path.join(__dirname, '../../dist/db/migrations'),
       extension: 'js',
+      // Only load compiled JS. tsc emits `.d.ts` (and `.d.ts.map`) alongside
+      // each `.js` in the dist dir; knex's default loadExtensions includes
+      // `.ts`, so it would otherwise treat `foo.d.ts` as a migration and fail
+      // validation ("must have both an up and down function"). Restricting to
+      // `.js` ignores the declaration files. `extension` above only governs
+      // stub creation, not which files the migrator loads.
+      loadExtensions: ['.js'],
     },
   },
 };
