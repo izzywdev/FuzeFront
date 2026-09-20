@@ -9,6 +9,12 @@ import SidePanel from '../SidePanel'
 vi.mock('../../lib/shared', () => ({
   useCurrentUser: () => ({ user: { roles: ['admin'] } }),
   useAppContext: () => ({ state: { menuItems: [] } }),
+  useOrganizations: () => ({
+    organizations: [],
+    activeOrganizationId: null,
+    activeOrganization: null,
+    setActiveOrganization: () => {},
+  }),
 }))
 vi.mock('../../platform/appRegistry', () => ({
   useRegisteredApps: () => ({ apps: [] }),
