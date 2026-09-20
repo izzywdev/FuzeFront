@@ -81,6 +81,7 @@ def run_gate(root: str, policy: str, *extra):
         [sys.executable, GATE, "--repo", root, "--policy", policy, *extra],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
