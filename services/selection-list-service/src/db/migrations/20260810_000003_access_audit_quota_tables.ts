@@ -10,7 +10,7 @@
 // selection_list_org_quota: per-org ceiling overrides. NULL means "use platform
 // default". Full resolution (DB override -> platform config ceiling) is in S6.
 
-import { Knex } from 'knex';
+import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
