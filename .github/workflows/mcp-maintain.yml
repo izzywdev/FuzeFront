@@ -218,15 +218,6 @@ jobs:
       - name: Run mcp-maintainer
         id: maintainer
         if: steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
-        # continue-on-error so the Verdict step BELOW owns the outcome, mirroring
-        # a2a-maintain.yml. fuze-code-action exits non-zero when every rung is
-        # exhausted, which is correct — but the runner would end the job here and the
-        # job could not tell a vendor outage from a real maintainer failure.
-        #
-        # This does NOT make failures green: the Verdict step re-fails the job on
-        # anything that is not a classified availability outage. Adding this flag
-        # WITHOUT that step would silence every failure, so the two belong together.
-        continue-on-error: true
         uses: ./.github/actions/fuze-code-action
         with:
           # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
@@ -300,53 +291,126 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
 
-      # THE VERDICT. mcp-maintain previously let fuze-code-action's exit code fail the
-      # job directly, which conflated two different things: a maintainer that ran and
-      # failed (a real defect, RED) and a chain where every rung was out of credit or
-      # unreachable (a vendor outage, which says nothing about this PR). fuze-code-review
-      # already distinguishes them via the action's `availability` output under the
-      # owner's explicit credit-outage exception; this applies the same rule here.
+      # PROMOTED FROM a2a-maintain.yml, unchanged in substance. The wrapper prints only
+      # `is_error:true` and swallows WHY: this workflow had no surfacing at all, so a failing
+      # `Run mcp-maintainer` produced a red check that said nothing actionable, and by the time
+      # anyone looked the job logs had aged out to a 404. Pull the result record out of the
+      # execution log, put the actual error text in the log and the run summary, and keep the
+      # whole log as an artifact — so the next failure is diagnosable from the run page instead
+      # of by re-deriving it from first principles.
+      #
+      # `execution-file` is fuze-code-action passing through claude-code-action's own
+      # `execution_file`; it is empty for any run that did not reach (or get a log out of)
+      # the claude rung, which is exactly the "unknown" case the verdict corroborates on.
+      - name: Surface the real result
+        id: result
+        if: always() && steps.maintainer.outcome != 'skipped'
+        env:
+          EXEC_FILE: ${{ steps.maintainer.outputs.execution-file }}
+        run: |
+          set -uo pipefail
+          if [ -z "${EXEC_FILE:-}" ] || [ ! -f "$EXEC_FILE" ]; then
+            echo "no execution file produced by the action"
+            echo "is_error=unknown" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          res=$(jq -rs '[.[] | .. | objects | select(.type? == "result")] | last' "$EXEC_FILE" 2>/dev/null || echo "null")
+          echo "--- claude result record ---"; echo "$res"
+          is_error=$(printf '%s' "$res" | jq -r '.is_error // false' 2>/dev/null || echo unknown)
+          # `.result`/`.error` carry the human-readable failure when the SDK sets one.
+          msg=$(printf '%s' "$res" | jq -r '(.error // .result // "") | tostring' 2>/dev/null || true)
+          echo "is_error=$is_error" >> "$GITHUB_OUTPUT"
+          # Random per-run delimiter rather than a literal `EOF`. $msg is arbitrary
+          # agent-generated text this workflow does not control, and $GITHUB_OUTPUT's
+          # heredoc form breaks if the body contains a line matching the delimiter
+          # verbatim — the same reason fuze-code-action's own `finish` step randomises its
+          # delimiter.
+          DELIM="MCP_EOF_$(date +%s%N)_$$"
+          {
+            echo "msg<<${DELIM}"
+            echo "${msg:-<no message in result record>}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload agent execution log
+        if: always() && steps.maintainer.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: mcp-maintain-execution-log
+          path: ${{ steps.maintainer.outputs.execution-file }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # THE VERDICT. A real agent failure is RED with the surfaced message; a success is green —
+      # but a success that left no execution log says so out loud rather than claiming more than
+      # it verified. That distinction is the anti-vacuity rule this repo already applied when it
+      # removed `gate-authz`'s `|| true` and `gate-identifier`'s opt-in flag: a check that cannot
+      # fail, or a green that overstates what it checked, is worse than no check.
       - name: Verdict
-        if: always() && steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
+        if: always() && steps.marker.outputs.run == 'true'
         env:
           MAINTAINER_OUTCOME: ${{ steps.maintainer.outcome }}
           MAINTAINER_CONCLUSION: ${{ steps.maintainer.outputs.conclusion }}
           MAINTAINER_AVAILABILITY: ${{ steps.maintainer.outputs.availability }}
-          MAINTAINER_RESULT: ${{ steps.maintainer.outputs.result-text }}
+          RESULT_IS_ERROR: ${{ steps.result.outputs.is_error }}
+          RESULT_MSG: ${{ steps.result.outputs.msg }}
         run: |
           set -uo pipefail
-          # AVAILABILITY OUTAGE — the owner's explicit exception. Narrow by construction:
-          # it requires the action's OWN availability=true alongside conclusion=failure,
-          # so a rung that ran and genuinely failed still reds below.
-          if [ "${MAINTAINER_CONCLUSION:-}" = "failure" ] && [ "${MAINTAINER_AVAILABILITY:-}" = "true" ]; then
-            echo "::warning title=mcp-maintain::Skipped on a vendor credit/availability outage — every fuze-code-action rung was exhausted or unreachable, so the MCP surface was NOT checked for drift here. This is not a defect in this PR; re-run once a provider recovers."
+          # THE OWNER'S CREDIT-OUTAGE EXCEPTION, ported from fuze-code-review.yml (#1046).
+          # classify.sh exit 1 = availability. Without consuming it this verdict cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both --
+          # which is exactly what #1046 fixed for fuze-code-review after a provider outage
+          # failed it on every open PR in this repo while the same check on FuzeSDLC#360
+          # passed with a notice, minutes apart. That fix wired the signal into
+          # fuze-code-review only; these maintainer workflows were left on the old behaviour.
+          #
+          # This MUST be checked before the failure branch below: on an outage the action's
+          # outcome IS `failure`. And it must NOT swallow a real task failure -- availability
+          # is false there, so it falls through and still reds. That pair is the load-bearing
+          # property #1046 pinned with `task_failure_without_availability_still_abstains`.
+          if [ "${MAINTAINER_AVAILABILITY:-}" = "true" ]; then
+            echo "::notice::mcp-maintainer skipped on a provider availability/credit outage -- passing per the owner's exception. The MCP surface was NOT checked for drift here. Re-run once a provider recovers."
             {
-              echo "### ⚪ mcp-maintainer skipped — vendor availability outage"
+              echo "### ⚪ mcp-maintainer skipped -- provider availability/credit outage"
               echo ""
-              echo "Every LLM rung was exhausted or unreachable (\`availability=true\`), so no drift check ran."
-              echo "Per the owner's credit-outage exception this is **not** a failure of this PR."
-              echo "Re-run this workflow once a provider recovers to get a real drift verdict."
+              echo "This is NOT a defect in this PR and NOT an approval of the MCP surface;"
+              echo "the run could not reach a provider. Re-run once one recovers."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # A rung RAN and declined to do any work. Not a failure, but not a drift check
-          # either — say so rather than printing a clean line the run has not earned.
-          if [ "${MAINTAINER_CONCLUSION:-}" = "neutral" ]; then
-            echo "::notice::mcp-maintainer performed no work on this commit (conclusion=neutral — the rung declined). The MCP surface was NOT checked for drift here."
-            echo "### ⚪ mcp-maintainer declined — no work performed" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          # Everything else that failed is this PR's to answer for.
-          if [ "${MAINTAINER_OUTCOME:-}" = "failure" ] || [ "${MAINTAINER_CONCLUSION:-}" = "failure" ]; then
-            echo "::error::mcp-maintainer did not complete: ${MAINTAINER_RESULT:-no error message surfaced}"
+          if [ "${MAINTAINER_OUTCOME:-}" = "failure" ] || [ "${RESULT_IS_ERROR:-}" = "true" ]; then
+            echo "::error::mcp-maintainer did not complete: ${RESULT_MSG:-no error message surfaced}"
             {
               echo "### ❌ mcp-maintainer failed"
               echo ""
               echo '```'
-              echo "${MAINTAINER_RESULT:-no error message surfaced}"
+              echo "${RESULT_MSG:-no error message surfaced}"
               echo '```'
+              echo ""
+              echo "Full execution log is attached as the \`mcp-maintain-execution-log\` artifact."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "::notice::mcp-maintainer completed."
-          echo "### ✅ mcp-maintainer completed" >> "$GITHUB_STEP_SUMMARY"
+          # fuze-code-action's third state. `neutral` means a rung RAN and declined to do any
+          # work (it emits its own ::warning:: saying so and exits 0). It is not a failure and
+          # must not be reported as one — but it is also not a run that maintained anything,
+          # so it does not get the clean "completed" line either.
+          if [ "${MAINTAINER_CONCLUSION:-}" = "neutral" ]; then
+            echo "::notice::mcp-maintainer performed no work on this commit (conclusion=neutral — the rung declined; see the fuze-code-action warning above). The MCP surface was NOT checked for drift here."
+            echo "### ⚪ mcp-maintainer declined — no work performed" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # ANTI-VACUITY. The action reported success. If it also left no execution log there is
+          # no result record to corroborate that, so say so rather than printing a clean
+          # "completed" the run has not actually earned. Still green — the action's own outcome
+          # is real evidence — but a green that overstates what it verified is how a broken
+          # surface hides.
+          if [ "${RESULT_IS_ERROR:-}" = "unknown" ]; then
+            echo "::notice::mcp-maintainer reported success, but produced no execution log — completion could not be corroborated from a result record."
+            {
+              echo "### ✅ mcp-maintainer completed (unverified)"
+              echo ""
+              echo "The action exited successfully but wrote no execution log, so there is no result record to confirm what it did."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "mcp-maintainer completed."

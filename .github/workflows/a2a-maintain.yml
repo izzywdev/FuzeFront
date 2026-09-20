@@ -438,31 +438,30 @@ jobs:
         env:
           MAINTAINER_OUTCOME: ${{ steps.maintainer.outcome }}
           MAINTAINER_CONCLUSION: ${{ steps.maintainer.outputs.conclusion }}
-          # fuze-code-action's own classification: on conclusion == failure, was every
-          # rung exhausted for AVAILABILITY reasons (vendor credit/quota, rate limit,
-          # provider unreachable) rather than the task itself failing? Without reading
-          # it this step cannot tell a billing outage from a real defect and reds the PR
-          # on both — the same reasoning fuze-code-review.yml records at its `Decide
-          # verdict` step, which passes FUZE_ACTION_AVAILABILITY for exactly this.
           MAINTAINER_AVAILABILITY: ${{ steps.maintainer.outputs.availability }}
           RESULT_IS_ERROR: ${{ steps.result.outputs.is_error }}
           RESULT_MSG: ${{ steps.result.outputs.msg }}
         run: |
           set -uo pipefail
-          # AVAILABILITY OUTAGE — the owner's explicit exception, already applied by
-          # fuze-code-review. Every rung was unreachable or out of credit, so NOTHING was
-          # reviewed: there is no defect in this PR to report and no commit that could fix
-          # it. Deliberately narrow — it requires the action's OWN availability=true
-          # alongside conclusion=failure, so a rung that ran and genuinely failed still
-          # reds below. This does not make a real failure green.
-          if [ "${MAINTAINER_CONCLUSION:-}" = "failure" ] && [ "${MAINTAINER_AVAILABILITY:-}" = "true" ]; then
-            echo "::warning title=a2a-maintain::Skipped on a vendor credit/availability outage — every fuze-code-action rung was exhausted or unreachable, so the A2A surface was NOT checked for drift here. This is not a defect in this PR; re-run once a provider recovers."
+          # THE OWNER'S CREDIT-OUTAGE EXCEPTION, ported from fuze-code-review.yml (#1046).
+          # classify.sh exit 1 = availability. Without consuming it this verdict cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both --
+          # which is exactly what #1046 fixed for fuze-code-review after a provider outage
+          # failed it on every open PR in this repo while the same check on FuzeSDLC#360
+          # passed with a notice, minutes apart. That fix wired the signal into
+          # fuze-code-review only; these maintainer workflows were left on the old behaviour.
+          #
+          # This MUST be checked before the failure branch below: on an outage the action's
+          # outcome IS `failure`. And it must NOT swallow a real task failure -- availability
+          # is false there, so it falls through and still reds. That pair is the load-bearing
+          # property #1046 pinned with `task_failure_without_availability_still_abstains`.
+          if [ "${MAINTAINER_AVAILABILITY:-}" = "true" ]; then
+            echo "::notice::a2a-maintainer skipped on a provider availability/credit outage -- passing per the owner's exception. The A2A surface was NOT checked for drift here. Re-run once a provider recovers."
             {
-              echo "### ⚪ a2a-maintainer skipped — vendor availability outage"
+              echo "### ⚪ a2a-maintainer skipped -- provider availability/credit outage"
               echo ""
-              echo "Every LLM rung was exhausted or unreachable (\`availability=true\`), so no drift check ran."
-              echo "Per the owner's credit-outage exception this is **not** a failure of this PR."
-              echo "Re-run this workflow once a provider recovers to get a real drift verdict."
+              echo "This is NOT a defect in this PR and NOT an approval of the A2A surface;"
+              echo "the run could not reach a provider. Re-run once one recovers."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
