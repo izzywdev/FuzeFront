@@ -19,6 +19,7 @@ let mockApps: Array<{ slug: string; manifest: { icon?: unknown; menuLabel: strin
 vi.mock('../../lib/shared', () => ({
   useCurrentUser: () => ({ user: { roles: ['admin'] } }),
   useAppContext: () => ({ state: { menuItems: [] } }),
+  useOrganizations: () => ({ activeOrganizationId: null, activeOrganization: null, organizations: [], setActiveOrganization: () => {} }),
 }))
 vi.mock('../../platform/appRegistry', () => ({
   useRegisteredApps: () => ({ apps: mockApps }),
