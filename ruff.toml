@@ -1,0 +1,17 @@
+# gate-lint (.github/workflows/gate-lint.yml) runs `ruff check .` unconditionally,
+# whole-repo, on every PR's merge-ref. `agent-templates/` is managed/vendored
+# content — its "framework" files (providers/, sync/) are reconciled from the
+# canonical FuzeSDLC template by governance-sync.yml (`fuze:managed` marker) on
+# every PR push, so a local `# noqa` fix here is reverted the next time that
+# workflow runs: confirmed 2026-09-20, noqa comments added to fix E402 findings
+# in adapter.py/provision.py/launch_session.py were silently reverted by
+# governance-sync's very next reconciliation commit on the same PR.
+#
+# This repo does not own that code and cannot durably fix it here — the E402
+# findings (imports placed after a deliberate `sys.path.insert`, which is
+# genuinely order-dependent, not misplaced) need fixing in the canonical
+# FuzeSDLC template itself, then propagate down via the next sync. Until then,
+# exclude the managed framework from this repo's own lint gate rather than
+# report the same reverted "fix" on every future PR.
+[lint]
+exclude = ["agent-templates/providers/**", "agent-templates/sync/**"]
