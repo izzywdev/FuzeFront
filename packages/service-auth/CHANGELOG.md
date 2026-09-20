@@ -4,7 +4,24 @@ All notable changes to this package are documented here. Versioned
 independently; bump on every interface change (SemVer — the major is the
 contract-stability guarantee consumers may assert on).
 
-## 0.1.1 — Dedupe `@fuzefront/security-client`
+## 0.1.2 — `@fuzefront/security-client` is a devDependency, not a runtime dependency
+
+### Fixed
+
+- `@fuzefront/security-client` moved from `dependencies` to `devDependencies`.
+  It is used ONLY as a type-only import (`import type { components }` in
+  `src/types.ts`) to derive the `TokenIntrospection`/`TokenIssue*` types from the
+  frozen contract; nothing in the compiled `dist/*.js` requires it at runtime.
+
+  Declaring it as a runtime `dependency` was actively wrong for consumers: the
+  workspace-internal name `@fuzefront/security-client` is not published, so any
+  consumer installing this package would either fail to resolve it or — for a
+  `file:`-linked consumer that copies only `dist/` — trip
+  `scripts/check-dockerfile-lockfile.mjs` (R3), which correctly flags "declares a
+  runtime dependency that won't reach the image". The type stays available to the
+  package's own `tsup` build (devDependencies are present at build time); the
+  emitted `.d.ts` still references it, so strict-mode type consumers provide the
+  package themselves, exactly as before.
 
 ### Changed
 

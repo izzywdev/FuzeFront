@@ -11,6 +11,11 @@ Run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing import Self
+
 import json
 import os
 import subprocess
@@ -28,7 +33,7 @@ def run_gate(root: str, *flags: str) -> subprocess.CompletedProcess:
         [sys.executable, GATE, root, *flags],
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=180, check=False,
     )
 
 
@@ -64,7 +69,7 @@ class SyntheticRepo:
             check=True,
         )
 
-    def __enter__(self) -> "SyntheticRepo":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc) -> None:

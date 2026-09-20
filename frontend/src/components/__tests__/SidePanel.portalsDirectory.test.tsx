@@ -9,6 +9,14 @@ import SidePanel from '../SidePanel'
 vi.mock('../../lib/shared', () => ({
   useCurrentUser: () => ({ user: { roles: ['admin'] } }),
   useAppContext: () => ({ state: { menuItems: [] } }),
+  // Personal context (no active org) — the real hook's default. This suite
+  // renders no apps at all, so the personal-context branch gates nothing.
+  useOrganizations: () => ({
+    organizations: [],
+    activeOrganizationId: null,
+    activeOrganization: null,
+    setActiveOrganization: () => {},
+  }),
 }))
 vi.mock('../../platform/appRegistry', () => ({
   useRegisteredApps: () => ({ apps: [] }),

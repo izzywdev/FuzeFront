@@ -9,11 +9,15 @@ import json
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
-from fastapi import Depends, FastAPI  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-
-from fuzefront_service_auth import AuthorizationError, MachineTokenVerifier  # noqa: E402
-from fuzefront_service_auth.middleware.fastapi import machine_identity_dependency  # noqa: E402
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+from fuzefront_service_auth import (
+    AuthorizationError,
+    MachineTokenVerifier,
+)
+from fuzefront_service_auth.middleware.fastapi import (
+    machine_identity_dependency,
+)
 
 
 def make_http_post(responses):
@@ -32,7 +36,7 @@ def build_app(verifier, authorize=None):
     require_identity = machine_identity_dependency(verifier, authorize=authorize)
 
     @app.get("/internal/reports")
-    async def reports(identity=Depends(require_identity)):
+    async def reports(identity=Depends(require_identity)):  # noqa: B008 - FastAPI DI, as in the middleware itself
         return {"caller": identity.subject}
 
     return app

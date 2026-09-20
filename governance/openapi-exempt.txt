@@ -234,3 +234,5 @@ GET /auth/oidc/login  # devportal-service: raw path collides with backend/securi
 GET /auth/oidc/callback  # devportal-service: same raw_alias collision as /auth/oidc/login above. Genuinely implemented at services/devportal-service/src/routes/auth.ts.
 POST /auth/logout  # devportal-service: same raw_alias collision as /auth/oidc/login above. Genuinely implemented at services/devportal-service/src/routes/auth.ts.
 POST /api/v1/suggestions/{}/approve-expected-test  # fuzequality: tenant-authorized internal review action; not part of a public OpenAPI contract surface
+POST /api/v1/expectations/{}/exclusion  # Internal reviewed-exclusion action; it is not part of a scanned product API contract.
+GET /api/v1/repositories/{}/scan-history  # Internal catalog administration read model; not a scanned product API contract.

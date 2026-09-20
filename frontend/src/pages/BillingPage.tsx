@@ -7,7 +7,13 @@ import {
   Skeleton,
   Tabs,
 } from '@fuzefront/design-system'
-import { InvoiceHistoryPanel, BillingI18nProvider } from '@fuzefront/billing-ui'
+import {
+  InvoiceHistoryPanel,
+  BillingI18nProvider,
+  SubscriptionManager,
+  UsagePanel,
+  type BillingSubscription,
+} from '@fuzefront/billing-ui'
 // The billing-ui stylesheet (design-system tokens only). Imported from source
 // here because the frontend build resolves @fuzefront/billing-ui from source
 // (see frontend/vite.config.ts) and the published `./styles.css` subpath is not
@@ -20,6 +26,10 @@ import {
   listPlans,
   getSubscription,
   createCheckoutSession,
+  updateSubscription,
+  cancelSubscription,
+  revokeCancellation,
+  getBalance,
   listInvoices,
   createBillingPortalSession,
   formatPlanAmount,
@@ -98,6 +108,25 @@ function isCurrentPlan(
   )
 }
 
+/** Convert our loose BillingSubscriptionView to the strict BillingSubscription billing-ui expects. */
+function toBillingSubscription(s: BillingSubscriptionView): BillingSubscription {
+  return {
+    id: s.id ?? '',
+    customerId: '',
+    subscriptionId: s.subscriptionId ?? s.id ?? '',
+    priceId: s.priceId ?? s.planId ?? '',
+    planTier: (s.planTier ?? 'unknown') as BillingSubscription['planTier'],
+    status: s.status ?? 'active',
+    seatQuantity: s.seatQuantity ?? 1,
+    trialStart: (s.trialStart as string | null) ?? null,
+    trialEnd: (s.trialEnd as string | null) ?? null,
+    currentPeriodStart: (s.currentPeriodStart as string | null) ?? null,
+    currentPeriodEnd: (s.currentPeriodEnd as string | null) ?? null,
+    cancelAtPeriodEnd: s.cancelAtPeriodEnd ?? false,
+    canceledAt: (s.canceledAt as string | null | undefined) ?? null,
+  }
+}
+
 const BillingPage: React.FC = () => {
   const { activeOrganizationId } = useOrganizations()
   const organizationId = activeOrganizationId ?? undefined
@@ -105,25 +134,52 @@ const BillingPage: React.FC = () => {
   const navigate = useNavigate()
   const activeTab = tabFromPath(location.pathname)
 
-  const [subscription, setSubscription] = useState<
-    BillingSubscriptionView | undefined
-  >()
+  const [subscription, setSubscription] = useState<BillingSubscriptionView | undefined>()
+  const [customerBalance, setCustomerBalance] = useState<number | null>(null)
+  const [subBusy, setSubBusy] = useState(false)
 
-  // The current subscription is shared across tabs (summary + current-plan
-  // state). Best-effort: a missing subscription is a normal new-org state.
-  useEffect(() => {
+  const reloadSubscription = useCallback(() => {
     let cancelled = false
     getSubscription(organizationId)
-      .then(s => {
-        if (!cancelled) setSubscription(s)
-      })
-      .catch(() => {
-        if (!cancelled) setSubscription(undefined)
-      })
-    return () => {
-      cancelled = true
-    }
+      .then(s => { if (!cancelled) setSubscription(s) })
+      .catch(() => { if (!cancelled) setSubscription(undefined) })
+    getBalance(organizationId)
+      .then(({ customerBalance: b }) => { if (!cancelled) setCustomerBalance(b) })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [organizationId])
+
+  useEffect(() => {
+    return reloadSubscription()
+  }, [reloadSubscription])
+
+  const handleCancel = async () => {
+    const subId = subscription?.subscriptionId ?? subscription?.id
+    if (!subId) return
+    setSubBusy(true)
+    try {
+      const updated = await cancelSubscription(subId)
+      if (updated) setSubscription(updated)
+    } finally {
+      setSubBusy(false)
+    }
+  }
+
+  const handleResume = async () => {
+    const subId = subscription?.subscriptionId ?? subscription?.id
+    if (!subId) return
+    setSubBusy(true)
+    try {
+      const updated = await revokeCancellation(subId)
+      if (updated) setSubscription(updated)
+    } finally {
+      setSubBusy(false)
+    }
+  }
+
+  const handleChangePlan = () => {
+    navigate(TAB_PATHS.plans)
+  }
 
   return (
     <div className="page">
@@ -132,41 +188,37 @@ const BillingPage: React.FC = () => {
         <p>Manage your plan, invoices, and payment methods.</p>
       </div>
 
-      {subscription && (
-        <section
-          aria-labelledby="cur-sub"
-          style={{ marginBottom: 'var(--space-6)' }}
-        >
-          <h2 id="cur-sub" style={{ marginTop: 0 }}>
-            Your subscription
-          </h2>
-          <div
-            className="card"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-3)',
-              flexWrap: 'wrap',
-            }}
-          >
-            <strong>{subscription.planName || 'Subscription'}</strong>
-            {subscription.status && (
-              <Badge
-                tone={subscription.status === 'active' ? 'success' : 'neutral'}
-                dot
-              >
-                {subscription.status}
-              </Badge>
-            )}
-            {subscription.currentPeriodEnd && (
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {subscription.cancelAtPeriodEnd ? 'Ends' : 'Renews'} on{' '}
-                {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-        </section>
-      )}
+      {/* Subscription management + usage summary */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: subscription ? '1fr auto' : '1fr',
+          gap: 'var(--space-4)',
+          marginBottom: 'var(--space-6)',
+          alignItems: 'start',
+        }}
+      >
+        <BillingI18nProvider>
+          <SubscriptionManager
+            subscription={subscription ? toBillingSubscription(subscription) : null}
+            planName={subscription?.planName}
+            onChangePlan={subscription ? handleChangePlan : undefined}
+            onCancel={subscription && !subscription.cancelAtPeriodEnd ? handleCancel : undefined}
+            onResume={subscription?.cancelAtPeriodEnd ? handleResume : undefined}
+            onPickPlan={!subscription ? handleChangePlan : undefined}
+            busy={subBusy}
+          />
+        </BillingI18nProvider>
+
+        {(customerBalance !== null || (subscription?.seatQuantity ?? 0) > 0) && (
+          <BillingI18nProvider>
+            <UsagePanel
+              customerBalance={customerBalance}
+              seatsInUse={subscription?.seatQuantity ?? undefined}
+            />
+          </BillingI18nProvider>
+        )}
+      </div>
 
       <Tabs
         ariaLabel="Billing sections"
@@ -187,7 +239,11 @@ const BillingPage: React.FC = () => {
         tabIndex={-1}
       >
         {activeTab === 'plans' && (
-          <PlansTab organizationId={organizationId} subscription={subscription} />
+          <PlansTab
+            organizationId={organizationId}
+            subscription={subscription}
+            onSubscriptionChange={s => setSubscription(s)}
+          />
         )}
         {activeTab === 'invoices' && (
           <InvoicesTab organizationId={organizationId} />
@@ -210,10 +266,26 @@ const GRID_STYLE: React.CSSProperties = {
   gap: 'var(--space-4)',
 }
 
+/** Returns 'upgrade', 'downgrade', or 'switch' based on price comparison. */
+function planDirection(
+  current: BillingSubscriptionView | undefined,
+  plan: BillingPlan,
+  allPlans: BillingPlan[],
+): 'upgrade' | 'downgrade' | 'switch' {
+  if (!current) return 'switch'
+  const currentPlan = allPlans.find(p => isCurrentPlan(current, p))
+  const currentCents = currentPlan ? (currentPlan.priceCents ?? currentPlan.unitAmount ?? 0) : 0
+  const newCents = plan.priceCents ?? plan.unitAmount ?? 0
+  if (newCents > currentCents) return 'upgrade'
+  if (newCents < currentCents) return 'downgrade'
+  return 'switch'
+}
+
 const PlansTab: React.FC<{
   organizationId?: string
   subscription?: BillingSubscriptionView
-}> = ({ organizationId, subscription }) => {
+  onSubscriptionChange?: (s: BillingSubscriptionView) => void
+}> = ({ organizationId, subscription, onSubscriptionChange }) => {
   const [plans, setPlans] = useState<BillingPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | undefined>()
@@ -241,39 +313,64 @@ const PlansTab: React.FC<{
   }, [])
 
   // Recommended tier: honor an explicit `highlighted` flag; otherwise fall back
-  // to the highest-priced plan (the common "best value" highlight).
+  // to the Professional plan (middle tier) as the common "best value" pick.
   const recommendedId = (() => {
     const flagged = plans.find(p => p.highlighted)
     if (flagged) return (flagged.id || flagged.stripePriceId) as string | undefined
+    const professional = plans.find(p => (p.displayName || p.name || '').toLowerCase().includes('professional'))
+    if (professional) return (professional.id || professional.stripePriceId || professional.priceId) as string
     if (plans.length < 2) return undefined
+    // Fallback: highest-priced non-enterprise
     let best: BillingPlan | undefined
     for (const p of plans) {
       const cents = p.priceCents ?? p.unitAmount ?? -1
+      if (cents <= 0) continue // skip enterprise / contact-sales
       const bestCents = best ? best.priceCents ?? best.unitAmount ?? -1 : -1
       if (cents > bestCents) best = p
     }
-    return best ? ((best.id || best.stripePriceId) as string) : undefined
+    return best ? ((best.id || best.stripePriceId || best.priceId) as string) : undefined
   })()
 
-  const subscribe = async (plan: BillingPlan) => {
+  const selectPlan = async (plan: BillingPlan) => {
     const planId = (plan.id || plan.stripePriceId || plan.priceId) as string
     if (!planId) return
+
+    // Enterprise: no Stripe price — redirect to contact sales
+    if (planId === 'contact_sales' || plan.tierName === 'enterprise' ||
+        (plan.displayName || plan.name || '').toLowerCase() === 'enterprise') {
+      window.open('mailto:sales@fuzefront.com?subject=Enterprise%20Plan%20Inquiry', '_blank')
+      return
+    }
+
     setBusyPlanId(planId)
     setError(undefined)
+
     try {
-      const session = await createCheckoutSession({
-        planId,
-        organizationId,
-        successUrl: `${window.location.origin}/billing?checkout=success`,
-        cancelUrl: `${window.location.origin}/billing?checkout=cancel`,
-      })
-      if (session.url) {
-        window.location.assign(session.url) // → Stripe-hosted Checkout
-        return
+      const subId = subscription?.subscriptionId ?? subscription?.id
+      if (subId) {
+        // Existing subscription → upgrade / downgrade via PATCH (no new checkout)
+        const updated = await updateSubscription(subId, { priceId: planId })
+        if (updated) {
+          onSubscriptionChange?.(updated)
+          return
+        }
+        setError('Could not change plan. Please try again.')
+      } else {
+        // No subscription → new Stripe hosted Checkout
+        const session = await createCheckoutSession({
+          planId,
+          organizationId,
+          successUrl: `${window.location.origin}/billing?checkout=success`,
+          cancelUrl: `${window.location.origin}/billing?checkout=cancel`,
+        })
+        if (session.url) {
+          window.location.assign(session.url)
+          return
+        }
+        setError('Could not start checkout. Please try again.')
       }
-      setError('Could not start checkout. Please try again.')
     } catch {
-      setError('Could not start checkout. Please try again.')
+      setError('Could not update plan. Please try again.')
     } finally {
       setBusyPlanId(undefined)
     }
@@ -322,24 +419,34 @@ const PlansTab: React.FC<{
       ) : (
         <div style={GRID_STYLE} role="list">
           {plans.map(plan => {
-            const planId = (plan.id ||
-              plan.stripePriceId ||
-              plan.priceId) as string
+            const planId = (plan.id || plan.stripePriceId || plan.priceId) as string
             const current = isCurrentPlan(subscription, plan)
+            const isEnterprise = planId === 'contact_sales' || plan.tierName === 'enterprise'
+            let ctaLabel: string | undefined
+            if (current) {
+              ctaLabel = undefined // PricingCard renders "Current Plan" state
+            } else if (isEnterprise) {
+              ctaLabel = 'Contact Sales'
+            } else if (subscription) {
+              const dir = planDirection(subscription, plan, plans)
+              ctaLabel = dir === 'upgrade' ? 'Upgrade' : dir === 'downgrade' ? 'Downgrade' : 'Switch'
+            } else {
+              ctaLabel = 'Subscribe'
+            }
             return (
               <div role="listitem" key={planId}>
                 <PricingCard
                   tierName={plan.displayName || plan.name || planId}
-                  price={formatPlanAmount(plan)}
-                  interval={planInterval(plan)}
+                  price={isEnterprise ? 'Custom' : formatPlanAmount(plan)}
+                  interval={isEnterprise ? undefined : planInterval(plan)}
                   description={plan.description}
                   features={plan.features || []}
                   recommended={planId === recommendedId}
                   current={current}
-                  ctaLabel={current ? undefined : 'Subscribe'}
+                  ctaLabel={ctaLabel}
                   busy={busyPlanId === planId}
                   disabled={Boolean(busyPlanId) && busyPlanId !== planId}
-                  onSelect={() => subscribe(plan)}
+                  onSelect={() => selectPlan(plan)}
                 />
               </div>
             )
