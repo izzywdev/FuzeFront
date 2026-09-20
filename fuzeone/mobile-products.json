@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "architecture": "pwa-twa",
+  "apiBasePath": "/api",
+  "healthPath": "/api/health",
+  "products": [
+    { "repo": "FuzeAgent", "frontendUrl": "https://fuzeagent.fuzefront.com/" },
+    { "repo": "FuzeDeploy", "frontendUrl": "https://fuzedeploy.fuzefront.com/" },
+    { "repo": "FuzeExecutive", "frontendUrl": "https://fuzeexecutive.fuzefront.com/" },
+    { "repo": "FuzeFinance", "frontendUrl": "https://fuzefinance.fuzefront.com/" },
+    { "repo": "FuzeHub", "frontendUrl": "https://fuzehub.fuzefront.com/" },
+    { "repo": "FuzeKeys", "frontendUrl": "https://fuzekeys.fuzefront.com/" },
+    { "repo": "FuzeMarket", "frontendUrl": "https://fuzemarket.fuzefront.com/" },
+    { "repo": "FuzePlan", "frontendUrl": "https://fuzeplan.fuzefront.com/" },
+    { "repo": "FuzeSales", "frontendUrl": "https://fuzesales.fuzefront.com/" },
+    { "repo": "FuzeService", "frontendUrl": "https://fuzeservice.fuzefront.com/" },
+    { "repo": "FuzeSocial", "frontendUrl": "https://fuzesocial.fuzefront.com/" },
+    { "repo": "FuzeFront", "frontendUrl": "https://app.fuzefront.com/" },
+    { "repo": "MendysRobotics", "frontendUrl": "https://live.mendysrobotics.com/" }
+  ]
+}
