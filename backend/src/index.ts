@@ -622,7 +622,8 @@ async function startServer() {
         'mfaFactor',
         'user',
         'app',
-        'portal',
+        // 'portal' removed: migration 024 backfilled all prt_<hex32> rows to
+        // bare UUIDs; the dual-accept window for portal is now closed.
       ]),
     })
 
