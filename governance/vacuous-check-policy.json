@@ -34,6 +34,18 @@
       "match": "AuthN boundary smoke",
       "reason": "Explicitly time-boxed by the step's own comment (contract PR #243): the AuthN provider-boundary tests self-skip pre-deploy (gated on /api/v1/security/methods == 200), and continue-on-error exists precisely so a pre-deploy run does not turn the job red. The comment states the retirement trigger directly: \"After the deploy, dispatch with run_authn_boundary=true to make it the AuthN gate\" — remove continue-on-error at that point, not before.",
       "owner": "backend-engineer / AuthN deploy owner (tracked by izzywdev)"
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "match": "selection-list red specs",
+      "reason": "TDD red specs — the selection-lists UI (@fuzeone/selection-lists-ui, /settings/selection-lists) does not exist yet. The Playwright specs are intentionally RED to drive implementation (EPIC-17 / FFRNT-188). continue-on-error: true at the job level is the correct posture so CI does not block while the implementation is pending. Retirement trigger: once the UI lands and all 4 red specs pass consistently, remove continue-on-error and add the job to the notify success/failure conditions.",
+      "owner": "frontend-engineer / EPIC-17 implementation owner (tracked by izzywdev)"
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "match": "Type-check integration tests",
+      "reason": "TDD red specs — the selection-list-service integration/acceptance test suite (tests/selection-list-service/) is intentionally RED before the service implementation lands (EPIC-17 / FFRNT-187). continue-on-error: true at the job level is the correct posture so CI does not block while the implementation is pending. Retirement trigger: once all integration tests pass consistently, remove continue-on-error and restore the job to the notify success/failure conditions.",
+      "owner": "backend-engineer / EPIC-17 implementation owner (tracked by izzywdev)"
     }
   ]
 }

@@ -19,10 +19,8 @@ let mockApps: Array<{ slug: string; manifest: { icon?: unknown; menuLabel: strin
 vi.mock('../../lib/shared', () => ({
   useCurrentUser: () => ({ user: { roles: ['admin'] } }),
   useAppContext: () => ({ state: { menuItems: [] } }),
-  // SidePanel calls useOrganizations() at module scope. The real hook derives
-  // from useAppContext, so this mirrors it for the empty state mocked above:
-  // no orgs loaded, none active. vi.mock is NOT partial — every export the
-  // component imports must be listed here or the render throws.
+  // Personal context (no active org) — the real hook's default. Neither
+  // suite's apps are org-only, so this does not gate anything here.
   useOrganizations: () => ({
     organizations: [],
     activeOrganizationId: null,
