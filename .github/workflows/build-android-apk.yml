@@ -42,6 +42,15 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          # The action's DEFAULT is `tools platform-tools`, and Google removed
+          # the obsolete `tools` package from the SDK repository — sdkmanager
+          # now answers "Failed to find package 'tools'" and exits 1, which has
+          # broken every APK build since 2026-09-16. `tools` is superseded by
+          # cmdline-tools (which the action installs itself) and nothing here
+          # uses it; Bubblewrap pulls its own build-tools/platforms. Pin the
+          # list explicitly so a future default change cannot break us again.
+          packages: 'platform-tools'
 
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
