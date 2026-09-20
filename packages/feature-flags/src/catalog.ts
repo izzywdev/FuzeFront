@@ -38,6 +38,16 @@ export const FLAG_KEYS = {
   ACCOUNT_SECURITY_HUB: 'fuzefront.account-security.hub',
   BILLING_INVOICE_HISTORY: 'fuzefront.billing.invoice-history',
   /**
+   * Gates showing org-context required apps as disabled in non-org context.
+   * Default ON in production. Release flag.
+   */
+  APPS_ORG_CONTEXT_DISABLED: 'fuzefront.apps.org-context-disabled',
+  /**
+   * Gates completely hiding org-context required apps in non-org context.
+   * Default OFF in production. Release flag.
+   */
+  APPS_ORG_CONTEXT_HIDDEN: 'fuzefront.apps.org-context-hidden',
+  /**
    * FF-EPIC-17 / FFRNT-201 — S15
    * Gates the selection-list-service and its management UI. Enable per-org
    * as the service rolls out. Default OFF. Release flag.
@@ -202,6 +212,8 @@ export const PLAN_FLAGS = {
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   { key: FLAG_KEYS.ACCOUNT_SECURITY_HUB, type: 'release', default: false },
   { key: FLAG_KEYS.BILLING_INVOICE_HISTORY, type: 'release', default: false },
+  { key: FLAG_KEYS.APPS_ORG_CONTEXT_DISABLED, type: 'release', default: true },
+  { key: FLAG_KEYS.APPS_ORG_CONTEXT_HIDDEN, type: 'release', default: false },
   {
     key: FLAG_KEYS.SELECTION_LISTS_SERVICE,
     type: 'release',
