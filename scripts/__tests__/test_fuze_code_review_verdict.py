@@ -20,7 +20,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
-import fuze_code_review_verdict as V  # noqa: E402 - resolves only after the sys.path.insert above
+import fuze_code_review_verdict as V
 
 NONCE = "deadbeefcafef00d0000000000000001"
 
