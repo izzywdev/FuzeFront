@@ -87,8 +87,11 @@ export async function teardownPortalsForOrg(
         try {
           await deregisterRedirect(d.domain)
         } catch (err) {
+          // Constant format string (domain passed as an argument, not
+          // interpolated) to satisfy the log-injection SAST rule.
           console.error(
-            `[portal-teardown] failed to deregister redirect for ${d.domain}:`,
+            '[portal-teardown] failed to deregister redirect for domain',
+            d.domain,
             err
           )
         }
