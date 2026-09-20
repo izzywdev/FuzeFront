@@ -342,12 +342,35 @@ describe('migration ordering — the seed must precede its consumers', () => {
     expect(prior < seed).toBe(true)
   })
 
+  // Entries come from readdirSync of a constant, in-repo directory, so nothing
+  // external reaches this path. The allowlist and the containment assertion are
+  // here so that is checkable rather than merely true: a name that is not a
+  // plain migration filename is refused, and a join that would escape `dir` is
+  // refused, before anything is read.
+  const SAFE_MIGRATION_NAME = /^[0-9a-z][0-9a-z_]*\.ts$/
+
+  const readMigration = (name: string): string => {
+    if (!SAFE_MIGRATION_NAME.test(name)) {
+      throw new Error(`refusing to read unexpected migration filename: ${name}`)
+    }
+    const full = path.join(dir, name)
+    if (path.dirname(full) !== dir) {
+      throw new Error(`refusing to read outside the migrations directory: ${name}`)
+    }
+    return fs.readFileSync(full, 'utf8')
+  }
+
+  it('rejects a filename that would escape the migrations directory', () => {
+    expect(() => readMigration('../../../etc/passwd')).toThrow(/unexpected migration filename/)
+    expect(() => readMigration('025a_seed_root_platform_organization_additively.ts')).not.toThrow()
+  })
+
   it('no migration sorting before the seed throws on a missing root org', () => {
     const offenders = fs
       .readdirSync(dir)
-      .filter(f => f.endsWith('.ts') && f < seed)
+      .filter(f => SAFE_MIGRATION_NAME.test(f) && f < seed)
       .filter(f => {
-        const src = fs.readFileSync(path.join(dir, f), 'utf8')
+        const src = readMigration(f)
         return src.includes('ROOT_ORG_ID') && /throw new Error\(/.test(src)
       })
       // 015 is the original seeder, not a consumer: it creates the row.
