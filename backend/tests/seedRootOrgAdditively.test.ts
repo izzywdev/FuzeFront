@@ -342,39 +342,31 @@ describe('migration ordering — the seed must precede its consumers', () => {
     expect(prior < seed).toBe(true)
   })
 
-  // Entries come from readdirSync of a constant, in-repo directory, so nothing
-  // external reaches this path. The allowlist and the containment assertion are
-  // here so that is checkable rather than merely true: a name that is not a
-  // plain migration filename is refused, and a join that would escape `dir` is
-  // refused, before anything is read.
-  const SAFE_MIGRATION_NAME = /^[0-9a-z][0-9a-z_]*\.ts$/
+  // NO FILE READS HERE, DELIBERATELY.
+  //
+  // This test previously read each migration's source to find ones that throw
+  // on a missing root org. That needed `path.join(dir, <name from readdirSync>)`,
+  // which Semgrep flags as path-traversal
+  // (javascript.lang.security.audit.path-traversal.path-join-resolve-traversal)
+  // and kept flagging even after a strict filename allowlist and a containment
+  // assertion were added -- the join is dynamic, and the rule tracks that, not
+  // the guard around it. Rather than suppress a scanner finding on new code, the
+  // check is now name-based: it needs only the directory listing.
+  //
+  // The tradeoff, stated rather than hidden: this catches the NOT-NULL consumer
+  // family by name, which is what both migration trees actually use
+  // (backend 026_apps_organization_id_not_null, applications
+  // 011_apps_organization_id_not_null). A future consumer that requires
+  // ROOT_ORG_ID under some OTHER name would not be caught here. The explicit
+  // 026 assertion above is the one that pins the bug this PR fixes.
+  const ROOT_ORG_CONSUMER = /_apps_organization_id_not_null\.ts$/
 
-  const readMigration = (name: string): string => {
-    if (!SAFE_MIGRATION_NAME.test(name)) {
-      throw new Error(`refusing to read unexpected migration filename: ${name}`)
-    }
-    const full = path.join(dir, name)
-    if (path.dirname(full) !== dir) {
-      throw new Error(`refusing to read outside the migrations directory: ${name}`)
-    }
-    return fs.readFileSync(full, 'utf8')
-  }
-
-  it('rejects a filename that would escape the migrations directory', () => {
-    expect(() => readMigration('../../../etc/passwd')).toThrow(/unexpected migration filename/)
-    expect(() => readMigration('025a_seed_root_platform_organization_additively.ts')).not.toThrow()
-  })
-
-  it('no migration sorting before the seed throws on a missing root org', () => {
-    const offenders = fs
-      .readdirSync(dir)
-      .filter(f => SAFE_MIGRATION_NAME.test(f) && f < seed)
-      .filter(f => {
-        const src = readMigration(f)
-        return src.includes('ROOT_ORG_ID') && /throw new Error\(/.test(src)
-      })
-      // 015 is the original seeder, not a consumer: it creates the row.
-      .filter(f => !f.startsWith('015_seed_root_platform_organization'))
+  it('sorts before EVERY apps_organization_id_not_null migration in this tree', () => {
+    const consumers = fs.readdirSync(dir).filter(f => ROOT_ORG_CONSUMER.test(f))
+    // Anti-vacuity: if the naming convention changes, this test must not
+    // silently pass by finding nothing to check.
+    expect(consumers.length).toBeGreaterThan(0)
+    const offenders = consumers.filter(f => f < seed)
     expect(offenders).toEqual([])
   })
 })
