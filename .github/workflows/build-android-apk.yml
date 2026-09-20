@@ -42,11 +42,12 @@ jobs:
 
       - name: Set up Android SDK
         # android-actions/setup-android@v4.0.1 fails: sdkmanager no longer provides
-        # the deprecated 'tools' package. ubuntu-latest ships cmdline-tools already;
-        # accept licences and install only what bubblewrap needs.
+        # the deprecated 'tools' package. ubuntu-latest ships cmdline-tools already
+        # but sdkmanager is not on PATH — use $ANDROID_HOME to locate it.
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
