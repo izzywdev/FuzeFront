@@ -110,7 +110,12 @@ jobs:
           # root. Mirrors how release.yml builds each of these; a root context
           # here would not reproduce what actually ships.
           - name: payment-service
-            context: services/payment-service
+            # context `.`, NOT the subtree: #1075 gave payment-service a
+            # `file:../../packages/service-auth` dependency, so its Dockerfile
+            # COPYs packages/security/ and packages/service-auth/ from the repo
+            # root. release.yml moved to `context: .` for the same reason; a
+            # subtree context here fails on "package.json not found".
+            context: .
             file: services/payment-service/Dockerfile
           - name: fuzefront-website-frontend
             context: fuzefront-website/frontend

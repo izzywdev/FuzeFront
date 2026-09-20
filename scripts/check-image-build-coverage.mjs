@@ -24,25 +24,32 @@ import { readFileSync } from 'node:fs';
 const RELEASE = '.github/workflows/release.yml';
 const REPRO = '.github/workflows/image-reproducibility.yml';
 
-/** `file:` values on docker/build-push-action steps that actually push. */
+/** file -> context for docker/build-push-action steps that actually push. */
 function releasedImages(text) {
-  const out = new Set();
+  const out = new Map();
   const blocks = text.split(/\n(?=      - name: )/);
   for (const b of blocks) {
     if (!/uses:\s*docker\/build-push-action/.test(b)) continue;
     // Only steps that push are images that ship.
     if (!/push:\s*true/.test(b)) continue;
-    const m = b.match(/^\s*file:\s*(\S+)\s*$/m);
-    if (m) out.add(m[1]);
+    const f = b.match(/^\s*file:\s*(\S+)\s*$/m);
+    const c = b.match(/^\s*context:\s*(\S+)\s*$/m);
+    if (f) out.set(f[1], c ? c[1] : null);
   }
   return out;
 }
 
-/** `file:` values in the build-images matrix. */
+/** file -> context for each entry in the build-images matrix. */
 function preMergeImages(text) {
-  const out = new Set();
+  const out = new Map();
   const matrix = text.slice(text.indexOf('matrix:'), text.indexOf('steps:', text.indexOf('matrix:')));
-  for (const m of matrix.matchAll(/^\s*file:\s*(\S+)\s*$/gm)) out.add(m[1]);
+  // Entries are `- name:` records; split on them so context and file pair up
+  // per entry rather than being collected into two independent lists.
+  for (const entry of matrix.split(/\n(?=\s*- name: )/)) {
+    const f = entry.match(/^\s*file:\s*(\S+)\s*$/m);
+    const c = entry.match(/^\s*context:\s*(\S+)\s*$/m);
+    if (f) out.set(f[1], c ? c[1] : null);
+  }
   return out;
 }
 
@@ -54,7 +61,30 @@ if (released.size === 0) {
   process.exit(1);
 }
 
-const missing = [...released].filter((f) => !preMerge.has(f)).sort();
+const missing = [...released.keys()].filter((f) => !preMerge.has(f)).sort();
+
+// A matrix entry that builds a released Dockerfile from a DIFFERENT context is
+// not coverage — it builds something other than what ships, and then either
+// fails for the wrong reason or passes without proving anything. That is not
+// hypothetical: #1075 gave payment-service a `file:../../packages/service-auth`
+// dependency and moved release.yml to `context: .`, while this matrix still
+// said `services/payment-service`. The pre-merge build then died on
+// "/services/payment-service/package.json: not found" — a red that said nothing
+// about the image that actually ships. Coverage-by-path alone did not catch it.
+const mismatched = [...released.entries()]
+  .filter(([f, ctx]) => preMerge.has(f) && preMerge.get(f) !== ctx)
+  .map(([f, ctx]) => `  - ${f}\n      release.yml context: ${ctx}\n      matrix context:     ${preMerge.get(f)}`)
+  .sort();
+
+if (mismatched.length > 0) {
+  console.error(
+    `FAIL: ${mismatched.length} image(s) are built pre-merge from a DIFFERENT context than\n` +
+      `release.yml uses, so the pre-merge build does not reproduce what ships:\n`
+  );
+  for (const m of mismatched) console.error(m);
+  console.error(`\nMake the matrix context match release.yml's for each.`);
+  process.exit(1);
+}
 
 if (missing.length > 0) {
   console.error(
@@ -70,4 +100,4 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log(`OK: all ${released.size} released images have a pre-merge build.`);
+console.log(`OK: all ${released.size} released images have a pre-merge build, each from release.yml's own context.`);
