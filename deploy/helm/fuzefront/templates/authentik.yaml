@@ -143,6 +143,27 @@
       name: {{ include "fuzefront.secretName" . }}
       key: LITELLM_CLIENT_SECRET
       optional: true
+# A2A machine-identity client secrets (FuzeInfra#981). Read by
+# authentik/blueprints/provider-oidc-a2a.yaml via !Env at apply time to stamp
+# each A2A client_credentials provider's client_secret. Sourced from a dedicated
+# SealedSecret `a2a-authentik-clients` (deploy/contabo/sealed/) rather than the
+# main chart Secret, so the A2A credential set is a small, self-contained,
+# separately-rotatable unit. Optional matches the Mendys/FuzeInfra convention (a
+# missing key stamps an empty secret) — BUT note the blueprint honours
+# client_secret only at CREATION time, so the sealed value MUST already exist on
+# the first apply; the SealedSecret carries sync-wave "-1" to guarantee that.
+- name: AUTHENTIK_A2A_FUZEAGENT_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: a2a-authentik-clients
+      key: A2A_FUZEAGENT_CLIENT_SECRET
+      optional: true
+- name: AUTHENTIK_A2A_FUZEFRONT_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: a2a-authentik-clients
+      key: A2A_FUZEFRONT_CLIENT_SECRET
+      optional: true
 {{- if .Values.smsService.enabled }}
 # SMS MFA — the stages-sms blueprint reads these env vars at apply time.
 # AUTHENTIK_SMS_SEND_URL / AUTHENTIK_SMS_VERIFY_URL point at the in-cluster
