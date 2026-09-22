@@ -25,6 +25,26 @@
 > tenant entry from `a2a-shared` or disable this repo's own pod first;
 > flagged for `platform-governance`/`devops-engineer`, not decided here.
 
+> **Status update 2026-09-22 (FuzeInfra#981 — A2A caller identity).** Inbound
+> A2A caller identities are now provisioned **declaratively** via
+> `deploy/helm/fuzefront/authentik/blueprints/provider-oidc-a2a.yaml` (one
+> `client_credentials` provider + `a2a`-scope mapping + application per caller
+> repo — FuzeAgent, FuzeFront — each emitting `{"repo": <Repo>, "aud": "a2a"}`),
+> so Argo/Authentik reconcile them on every sync. This supersedes running the
+> in-cluster imperative CLI `backend/src/authentik/register-a2a-cli.ts`
+> (→ `provision-a2a-clients.ts`) by hand: that CLI created the same resources but
+> left no GitOps source of truth, so prod had **no** provider and every A2A
+> round-trip returned 401 ("delegation fabric blocked"). The imperative path
+> remains valid for ad-hoc registration but is no longer the durable source. The
+> client secrets are sealed ciphertext-only in
+> `deploy/contabo/sealed/a2a-authentik-clients.yaml`. **Paired requirement:** the
+> callee validates `iss` with strict equality, so `a2a.auth.oidcIssuerUrl`
+> (values-prod.yaml) must be the **global** issuer the providers mint under —
+> corrected in the same change; verify the exact string against a minted token
+> before merge (command in the values-prod comment). Still outstanding for the
+> live round-trip: the caller-side token fetch in izzywdev/FuzeAgent's
+> `a2a-shared` runtime, and `providesTo` backfill on the callee (authz.md §3).
+
 **There is no A2A server in this repo, and there should not be one.** The shared
 A2A runtime (Claude-driven, one image, zero product logic — system prompt,
 skills, and tool access all arrive as mounted/env configuration) already
