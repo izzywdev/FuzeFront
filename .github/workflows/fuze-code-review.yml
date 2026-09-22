@@ -129,6 +129,12 @@ jobs:
     # with FuzeInfra scripts/mint-litellm-fuze-key.sh. Without it the job
     # skips (not fails) as documented in the header comment above.
     runs-on: fuzefront
+    # A clock, for the reason gate-workflow-policy's header documents: a hung job
+    # never ends on its own, and on this SELF-HOSTED scale set its runner pod then
+    # pins a maxRunners slot until a human drains the pool. 30 minutes is >8x the
+    # longest observed run of this job (~3.5 min), and generous for an LLM rung
+    # that has to fall through to a later provider.
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -139,6 +145,7 @@ jobs:
         id: context
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
@@ -167,10 +174,18 @@ jobs:
           if [ -z "$DIFF" ]; then
             READY=false
             REASON="no reviewable diff (only excluded lockfiles changed, or no changes)"
-          elif [ "${HAS_LITELLM:-false}" != "true" ] && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
+          # CLAUDE_CODE_OAUTH_TOKEN counts here. It is rung 1a in fuze-code-action --
+          # attempted BEFORE the LiteLLM/API-key path, deliberately, because a
+          # subscription token bills against an existing plan while the metered
+          # rungs bill per token. Omitting it from this gate meant a repo holding
+          # ONLY the subscription token -- the configuration this job is supposed
+          # to prefer -- reported "no LLM credential configured" and skipped the
+          # review outright, with a working credential already wired to line 260.
+          elif [ "${HAS_OAUTH:-false}" != "true" ] && [ "${HAS_LITELLM:-false}" != "true" ] \
+               && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
                && [ "${HAS_OPENAI:-false}" != "true" ] && [ "${HAS_GEMINI:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           {
