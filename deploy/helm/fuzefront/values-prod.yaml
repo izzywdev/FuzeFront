@@ -88,7 +88,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 22807fda8ece
+    tag: 099768a71a45
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -102,7 +102,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 22807fda8ece
+    tag: 099768a71a45
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -130,7 +130,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -256,7 +256,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -351,11 +351,36 @@ a2a:
   # unreachable through its own signed card despite passing every probe.
   inClusterUrl: http://a2a-fuzefront.fuzefront.svc.cluster.local:8080/rpc
   auth:
-    oidcIssuerUrl: https://app.fuzefront.com/application/o/fuzefront/
+    # CORRECTED (FuzeInfra#981): this MUST be the GLOBAL Authentik issuer, not the
+    # per-provider human `.../application/o/fuzefront/` issuer. The A2A caller
+    # providers (authentik/blueprints/provider-oidc-a2a.yaml) use
+    # `issuer_mode: global`, so every A2A token — for any caller repo — carries
+    # `iss = https://app.fuzefront.com/application/o/` (no per-app slug); the
+    # per-caller distinction is the `repo` claim, not the issuer. The callee's
+    # A2A runtime validates `iss == oidcIssuerUrl` with STRICT equality
+    # (izzywdev/FuzeAgent agent-templates/a2a/runtime.py `_build_verifier` →
+    # `verify()`: explicit `claims["iss"] != auth.oidc_issuer_url` reject), so
+    # the previous per-provider value silently rejected every A2A token even once
+    # minting worked — the round-trip would stay 401. The human web-app OIDC
+    # provider (authentik/blueprints/provider-oidc.yaml) is per_provider and is
+    # unaffected: this pod only ever validates A2A (aud=a2a) tokens.
+    #
+    # ⚠ VERIFY BEFORE MERGE (the one value this session could not confirm against
+    # the live instance): mint a token from the a2a-fuzeagent client and read its
+    # `iss`, and confirm the global-issuer string Authentik actually emits —
+    #   TOK=$(curl -s -XPOST https://auth.fuzefront.com/application/o/a2a-fuzeagent/token/ \
+    #        -d grant_type=client_credentials -d scope=a2a \
+    #        -d client_id=a2a-fuzeagent-client -d client_secret=$SECRET | jq -r .access_token)
+    #   python3 -c 'import sys,base64,json;p=sys.argv[1].split(".")[1];print(json.loads(base64.urlsafe_b64decode(p+"=="*(-len(p)%4)))["iss"])' "$TOK"
+    # Set this field to exactly that string (host + trailing slash as emitted).
+    oidcIssuerUrl: https://app.fuzefront.com/application/o/
     # In-cluster discovery avoids the Cloudflare-tunnel hairpin (17-34s
     # timeouts) — see authentik-networkpolicy.yaml, which already allows
     # same-namespace traffic to authentik-server:9000 (this pod lives in the
     # fuzefront namespace, so no NetworkPolicy change was needed for this).
+    # Unchanged: this URL is only the JWKS *locator* (its discovery doc yields
+    # the instance-shared jwks_uri) — `iss` is validated against oidcIssuerUrl
+    # above, never against this path, so any app slug's well-known works here.
     oidcDiscoveryUrl: http://authentik-server.fuzefront.svc.cluster.local:9000/application/o/fuzefront/.well-known/openid-configuration
     audience: a2a
     callerClaim: repo
@@ -429,7 +454,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 22807fda8ece
+    tag: 099768a71a45
 
 # fuzefront-website — public site at fuzefront.com.
 # Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
@@ -438,14 +463,14 @@ websiteFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-frontend
-    tag: 22807fda8ece
+    tag: 099768a71a45
   host: fuzefront.com
 
 websiteBackend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-backend
-    tag: 22807fda8ece
+    tag: 099768a71a45
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -456,7 +481,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -501,7 +526,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -521,7 +546,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   <<: *elasticPlacement
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
@@ -557,7 +582,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -592,7 +617,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   # Same dead node-2 hostname affinity as billingService above (fuzefront-node-2
   # is not a real node label) — replaced with the real elastic-pool placement.
   # Currently disabled (enabled: false) so this has zero live effect yet, but
@@ -858,7 +883,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -906,7 +931,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -927,7 +952,7 @@ selectionListService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
 
 # devportal-service / devportal-frontend (docs/planning/developers-portal.md).
 # Step 2 of the two-step go-live executed here: workloads are now deployed.
@@ -940,13 +965,13 @@ devportalService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
 
 devportalFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
-    tag: 22807fda8ece
+    tag: 099768a71a45
   host: developers.fuzefront.com
 
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
@@ -996,7 +1021,7 @@ configService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
-    tag: 22807fda8ece
+    tag: 099768a71a45
   <<: *elasticPlacement
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo

@@ -1,0 +1,39 @@
+# SealedSecret — A2A machine-identity client secrets (ns fuzefront). FuzeInfra#981.
+#
+# Consumed by the Authentik worker/server (deploy/helm/fuzefront/templates/
+# authentik.yaml → env AUTHENTIK_A2A_FUZEAGENT_CLIENT_SECRET /
+# AUTHENTIK_A2A_FUZEFRONT_CLIENT_SECRET), which the declarative blueprint
+# authentik/blueprints/provider-oidc-a2a.yaml reads via !Env to stamp each A2A
+# client_credentials provider's client_secret at CREATION time.
+#
+# Ciphertext ONLY — sealed offline against
+# https://sealed-secrets.prod.fuzefront.com/v1/cert.pem (strict scope: locked to
+# name `a2a-authentik-clients` + namespace `fuzefront`). No plaintext exists in
+# git or in this session's history; the plaintext was generated, sealed, and
+# shredded in one step. To rotate: generate a new value, re-seal into this file,
+# AND re-seal the SAME value into the caller namespace(s), then bump the
+# `fuzefront.io/blueprint-reapply` marker in provider-oidc-a2a.yaml (Authentik
+# honours client_secret only at provider creation — see that file's header).
+#
+# sync-wave "-1": this Secret must materialise before the Authentik pods restart
+# and apply the blueprint, so the provider is created WITH a real secret rather
+# than an empty one (matches a2a-card-signing.yaml).
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  creationTimestamp: null
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  name: a2a-authentik-clients
+  namespace: fuzefront
+spec:
+  encryptedData:
+    A2A_FUZEAGENT_CLIENT_SECRET: AgAJ/Lujl26aRJkX4aAmfWiEQ2Le3ie2789u+gAO5To0oQSgwcldnoOdMV98N9EeHOo9Pj9qJo6eE5J8e75muDY7UYxluRUXDirHot3YC/JQwxqOhybq8AJgZD3A2F8YGr39JsJJqL9yScIZTgraGQlcZgn5hOkgBNCvnyNWYhcW9QLhN1z3dn99l0+tjQw8kwFzQCBHSVZIASPuTsTiWKKiZyeMIuU1ecD9EEeLzMboWxifThCej6vm1+jMWZ+TVArs0AtZrDsqze0kkj1pGo+6/sLehs0GjUVd1v6m35AlOzYtvdJbW5mMOIxO9/EmLPe9NEYHsBEyVGv44Mb1OqK0JFyNEGSw8pJSUlQ9wWMealSneMuL47V3TPM2hnRoW3i5xF+Tzp9tiZxQkQCm/eJ0RFuzeBDTr9JeENhf+oZgNyBH/nPI4ghd4/hW7OxlIAnuCZcAgRieZ8Y+oNkAEYqIxAddyhJPL6hwoJtBD1wO/1trPJoTONUNZFS1eL16NKzPlhfrUy5SJ3UcDcTNLZPfEwsGdkSliBI1YrOyaKAdUJd9UNXw4rL+esJJX1Z8UmWqV9gyAJ/9z7mdzTdDXKPrzvWLxdR3UCW9DnNwWJL4dEY35bs2BqgXpY6s+XBZIvSzJTJcvNEV2FRs+dPEWwcN4fazxcDWx+M2oFU8g6gtXVv+Utb3Pjb66s3fAietp44SIwEv3xzKPNrxw0wi1MB0P6IEADgOmNaeyO/tm/PTNfKXdjaZK8W8GgNif6kJqsHZ9k3+LwdS7p/W4woBjC4Jo8wScrEAec8GzyzI79GW8A==
+    A2A_FUZEFRONT_CLIENT_SECRET: AgB2AzD1qA+xlP8iEp3FsMJ31eKnmWgMLxtIkgz5fnMRbku9fdWopno0C2TwqrPDVHJ2aHeJRHFPotLBcY6nv2wVkLCG8Stq2Pmzbg9E/069XGUIpE2iFmnSXH6DEdRV09+kNZbbrdLD/Z92Vs9mKCBXoy68YkfsIFJlgd8TAldoupO9TNICRu7SAwcB/VT9cA1rlWXFZSUWB4nLpBEtJTAiF7w5aTOha3vFTzVd9eZnWeIVgKBOpLXWcxqtmdPSyALc2flC/E/aHX1jUgmckn6KdSQop+l5nU1ykSAHpfklt3TNuBBR890K2SO9lt5NDmUoXcl0vm82F9MBYH34gVP7ip/YJTU0QnLTuNZVk5Nd5u/Fl1htvnDxlddeCVD5GLl4XFl7lu6n46O7RDWcLrOLO6Qtvu5nIv/2/AbNQLKkrxtLgaRf5FChpsrTxR6a+iMJhixoABvwrCFNNh9Vw7BRB2kDbz6rk4mq093AJs0PIM3JRKky0nbNoLlHuPlgcOkff4+FIBpPKuCAtWRHZJeQ43xW091g9hbXJxN2vk5d5qFD3vBo/E5St/buwKIJKwtz2HPdRjCXLL+2OgpdChmYQUxVbECftY+gmjx0V0CsjtFW9Ja3w4KLYa1krQj5iptXuFkIh4fwlszmYKmZDaFzFB2VJelOL9C5EjiPaZTfSZnnjYypHdFgK+ncWmUiaj0yCp2k2sqHZmVqyD1qQKpX2mcEnsyUfd7T3ioQ22N+8AdjFYFPlP8vN//V4FZ3Nwoj35/CmgicBJLsDX+v2UF0KWUKvqV0HgvIoAgB/oGARQ==
+  template:
+    metadata:
+      creationTimestamp: null
+      name: a2a-authentik-clients
+      namespace: fuzefront
+    type: Opaque
