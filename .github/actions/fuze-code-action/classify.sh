@@ -69,7 +69,19 @@ fi
 # vendor-literal quota/credit signals that will not appear in a genuine code-review
 # finding or build break, so they cannot turn an honest red into a wrongful
 # failover — the specific risk this list is otherwise kept small to avoid.
-AVAILABILITY_PATTERNS='credit balance is too low|insufficient_quota|insufficient quota|no credits remaining|credits are depleted|prepayment credits|RESOURCE_EXHAUSTED|quota exceeded|quota_exceeded|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|authentication_failed|key not allowed to access model|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|connection reset|"status":[[:space:]]*5[0-9][0-9]|"status":[[:space:]]*40[13]|"status":[[:space:]]*429|"code":[[:space:]]*5[0-9][0-9]|"code":[[:space:]]*429|"api_error_status":[[:space:]]*40[13]|"status_code":[[:space:]]*40[13]|"status_code":[[:space:]]*429|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
+#
+# `Unable to connect to API` / `ConnectionRefused` were added after issue #298: on a
+# self-hosted runner the in-cluster LiteLLM answered `/health/readiness` but refused
+# real inference, and the Claude Code SDK emitted the literal string
+# `API Error: Unable to connect to API (ConnectionRefused)`. That is a textbook
+# availability/transport failure — the SAME class the list already covers via
+# `ECONNREFUSED` / `could not connect` — but the SDK phrases it differently
+# (`ConnectionRefused`, not `ECONNREFUSED`; `Unable to connect`, not `could not
+# connect`), so none of the existing patterns matched and a genuine outage fell
+# through to the `declined` branch instead of `availability`. These two entries are
+# narrow, literal transport signals that will not appear in a real code-review
+# finding or build break, so they do not widen the CLASS.
+AVAILABILITY_PATTERNS='credit balance is too low|insufficient_quota|insufficient quota|no credits remaining|credits are depleted|prepayment credits|RESOURCE_EXHAUSTED|quota exceeded|quota_exceeded|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|authentication_failed|key not allowed to access model|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|Unable to connect to API|ConnectionRefused|connection reset|"status":[[:space:]]*5[0-9][0-9]|"status":[[:space:]]*40[13]|"status":[[:space:]]*429|"code":[[:space:]]*5[0-9][0-9]|"code":[[:space:]]*429|"api_error_status":[[:space:]]*40[13]|"status_code":[[:space:]]*40[13]|"status_code":[[:space:]]*429|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
 
 # No conclusion reported, but the STEP ITSELF SUCCEEDED. Two very different things
 # produce this identical shape, and telling them apart is the whole point:
