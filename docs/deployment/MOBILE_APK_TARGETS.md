@@ -48,3 +48,22 @@ Links, or the initial standalone shell load. User authentication belongs in the
 application's standalone login flow. API endpoints may require authentication,
 but authentication failures must still be API responses rather than redirects
 to an unrelated HTML access portal.
+
+## Repeatable post-production check
+
+Run `node scripts/check-mobile-postprod.mjs --report=mobile-postprod-report.json`
+locally (set `GH_TOKEN` for private GitHub repositories), or manually dispatch
+`Mobile Android post-production acceptance` on the default branch. The command
+uses FuzeFront's existing `GH_RELEASE_PAT` secret in Actions to inspect the
+private MendysRobotics repository without exposing the token in the report. It
+exits unsuccessfully while any of the 13 products lacks an active Android
+workflow, a non-empty APK release targeting its default branch, an HTML
+standalone root, a JSON `/api/health`, public Android Digital Asset Links, or
+an installable standalone PWA manifest. The workflow uploads a structured
+per-product report even when checks fail; it is not a required PR gate while
+the fleet is still being provisioned.
+
+This HTTP check cannot prove that the HTML belongs to the intended product,
+that an APK's signing certificate matches Digital Asset Links, or that the
+authenticated app works on a device. Complete the device and authenticated
+flow checks above before marking a product ready.
