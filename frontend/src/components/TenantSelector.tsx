@@ -196,10 +196,14 @@ export function TenantSelector() {
               padding: 'var(--space-2) 0',
             }}
           >
+            <style>{`
+              .tenant-selector-dropdown [data-section="organizations"] {
+                border-top: none !important;
+              }
+            `}</style>
             <OrganizationSwitcherSection
               open={isOpen}
               onNavigate={() => setIsOpen(false)}
-              borderTop={false}
             />
           </div>
         </>

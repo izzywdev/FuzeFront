@@ -354,11 +354,9 @@ function toContextItems(orgs: Organization[]): OrgContextItem[] {
 export function OrganizationSwitcherSection({
   open,
   onNavigate,
-  borderTop = true,
 }: {
   open: boolean
   onNavigate: () => void
-  borderTop?: boolean
 }) {
   const { t } = useT()
   const navigate = useNavigate()
@@ -433,7 +431,7 @@ export function OrganizationSwitcherSection({
       data-section="organizations"
       data-context={personalContextEnabled ? 'switcher' : undefined}
       data-state={sectionState}
-      style={borderTop ? { borderTop: '1px solid var(--border-color)' } : undefined}
+      style={{ borderTop: '1px solid var(--border-color)' }}
     >
       <SectionLabel
         label={personalContextEnabled ? t('organizations.switcherLabel', { defaultValue: 'Context' }) : t('organizations.label')}
