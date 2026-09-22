@@ -73,6 +73,11 @@ expect 1 "HTTP 401"                 "failure" "HTTP 401"
 expect 1 "5xx status field"         "failure" '{"status": 503}'
 expect 1 "gateway timeout"          "failure" "504 Gateway Timeout"
 expect 1 "connection refused"       "failure" "connect ECONNREFUSED 10.0.0.1:4000"
+# Issue #298: the literal string the Claude Code SDK emits when the primed endpoint
+# (e.g. an in-cluster LiteLLM that passed readiness but refuses inference) is
+# unreachable. `ConnectionRefused` is NOT `ECONNREFUSED` and `Unable to connect` is
+# NOT `could not connect`, so before the fix this fell through to `declined`.
+expect 1 "SDK unable-to-connect ConnectionRefused" "failure" "API Error: Unable to connect to API (ConnectionRefused)"
 expect 1 "dns failure"              "failure" "getaddrinfo EAI_AGAIN litellm.fuzeinfra.svc"
 expect 1 "fetch failed"             "failure" "TypeError: fetch failed"
 expect 1 "case-insensitive match"   "failure" "SERVICE UNAVAILABLE"
@@ -136,6 +141,11 @@ expect_outcome 3 "workflow-guard skip message is a real decline"           "" "s
 # 403 "key not allowed to access model" from the re-scoped LiteLLM key produced.
 expect_outcome 1 "empty+success but log shows swallowed credit exhaustion = availability" "" "success" "Error: Your credit balance is too low to access the API"
 expect_outcome 1 "empty+success but log shows the model-access 403 = availability"        "" "success" '{"error":"authentication_failed","api_error_status":403,"result":"Failed to authenticate. API Error: 403 key not allowed to access model. Tried to access claude-opus-4-8"}'
+# Issue #298, the exact observed shape: an in-cluster LiteLLM passed readiness so the
+# rung ran and exited 0 with no conclusion, but its execution log carries the SDK's
+# ConnectionRefused string. It was misclassified as `declined` (exit 3), producing a
+# benign "no work" verdict instead of falling over. It must classify as availability.
+expect_outcome 1 "empty+success but log shows SDK ConnectionRefused = availability"       "" "success" "API Error: Unable to connect to API (ConnectionRefused)"
 
 # The new availability signatures are recognised on the ordinary failure path too.
 expect 1 "authentication_failed field"    "failure" '{"error":"authentication_failed"}'
