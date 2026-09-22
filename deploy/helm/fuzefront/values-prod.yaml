@@ -351,11 +351,36 @@ a2a:
   # unreachable through its own signed card despite passing every probe.
   inClusterUrl: http://a2a-fuzefront.fuzefront.svc.cluster.local:8080/rpc
   auth:
-    oidcIssuerUrl: https://app.fuzefront.com/application/o/fuzefront/
+    # CORRECTED (FuzeInfra#981): this MUST be the GLOBAL Authentik issuer, not the
+    # per-provider human `.../application/o/fuzefront/` issuer. The A2A caller
+    # providers (authentik/blueprints/provider-oidc-a2a.yaml) use
+    # `issuer_mode: global`, so every A2A token — for any caller repo — carries
+    # `iss = https://app.fuzefront.com/application/o/` (no per-app slug); the
+    # per-caller distinction is the `repo` claim, not the issuer. The callee's
+    # A2A runtime validates `iss == oidcIssuerUrl` with STRICT equality
+    # (izzywdev/FuzeAgent agent-templates/a2a/runtime.py `_build_verifier` →
+    # `verify()`: explicit `claims["iss"] != auth.oidc_issuer_url` reject), so
+    # the previous per-provider value silently rejected every A2A token even once
+    # minting worked — the round-trip would stay 401. The human web-app OIDC
+    # provider (authentik/blueprints/provider-oidc.yaml) is per_provider and is
+    # unaffected: this pod only ever validates A2A (aud=a2a) tokens.
+    #
+    # ⚠ VERIFY BEFORE MERGE (the one value this session could not confirm against
+    # the live instance): mint a token from the a2a-fuzeagent client and read its
+    # `iss`, and confirm the global-issuer string Authentik actually emits —
+    #   TOK=$(curl -s -XPOST https://auth.fuzefront.com/application/o/a2a-fuzeagent/token/ \
+    #        -d grant_type=client_credentials -d scope=a2a \
+    #        -d client_id=a2a-fuzeagent-client -d client_secret=$SECRET | jq -r .access_token)
+    #   python3 -c 'import sys,base64,json;p=sys.argv[1].split(".")[1];print(json.loads(base64.urlsafe_b64decode(p+"=="*(-len(p)%4)))["iss"])' "$TOK"
+    # Set this field to exactly that string (host + trailing slash as emitted).
+    oidcIssuerUrl: https://app.fuzefront.com/application/o/
     # In-cluster discovery avoids the Cloudflare-tunnel hairpin (17-34s
     # timeouts) — see authentik-networkpolicy.yaml, which already allows
     # same-namespace traffic to authentik-server:9000 (this pod lives in the
     # fuzefront namespace, so no NetworkPolicy change was needed for this).
+    # Unchanged: this URL is only the JWKS *locator* (its discovery doc yields
+    # the instance-shared jwks_uri) — `iss` is validated against oidcIssuerUrl
+    # above, never against this path, so any app slug's well-known works here.
     oidcDiscoveryUrl: http://authentik-server.fuzefront.svc.cluster.local:9000/application/o/fuzefront/.well-known/openid-configuration
     audience: a2a
     callerClaim: repo
