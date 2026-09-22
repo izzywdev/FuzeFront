@@ -43,6 +43,14 @@ const portalBrandingUiSrc = fileURLToPath(
 )
 // @fuzefront/portal-admin-ui (master-admin + portal-admin consoles, FF-EPIC-14)
 // — same unbuilt-dist reasoning; resolve from SOURCE, mirroring vite.config.ts.
+// @fuzeone/selection-lists-ui (packages/selection-lists-ui) is an unpublished
+// file: workspace package whose dist/ is not built in CI — resolve from SOURCE,
+// exactly as vite.config.ts already does. App.tsx imports it at module scope, so
+// without this every src/__tests__/App.*.test.tsx fails to COLLECT with
+// "Failed to resolve entry for package" and its tests never run.
+const selectionListsUiSrc = fileURLToPath(
+  new URL('../packages/selection-lists-ui/src/index.ts', import.meta.url)
+)
 const portalAdminUiSrc = fileURLToPath(
   new URL('../packages/portal-admin-ui/src/index.ts', import.meta.url)
 )
@@ -121,6 +129,7 @@ export default defineConfig({
       // package.json main points at a dist/ that CI never builds, so the Config
       // pages fail to resolve them unless aliased to SOURCE here too. vite.config.ts
       // already does this; vitest.config.ts is a SEPARATE config and needs its own.
+      '@fuzeone/selection-lists-ui': selectionListsUiSrc,
       '@fuzefront/config-client': configClientSrc,
       '@fuzefront/config-ui': configUiSrc,
     },
