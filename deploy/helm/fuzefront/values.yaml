@@ -1074,6 +1074,19 @@ unleash:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # RBAC for prod-unleash-ops.yml: the workflow reads the admin token from
+  # `unleash-secrets` via the k8s API using the runner pod's mounted service
+  # account token. The Role below grants `get` on that one secret; the
+  # RoleBinding attaches it to the ARC runner SA.
+  #
+  # For ARC v2 AutoscalingRunnerSet the SA name == runner set name ("fuzefront").
+  # Override serviceAccountNamespace if your runner set lives in a different
+  # namespace (e.g. "arc-runners"). Override serviceAccountName if your runner
+  # set has a different name.
+  ciRunner:
+    enabled: true
+    serviceAccountName: fuzefront
+    serviceAccountNamespace: ""   # defaults to the release namespace (fuzefront)
 
 authentik:
   enabled: true
