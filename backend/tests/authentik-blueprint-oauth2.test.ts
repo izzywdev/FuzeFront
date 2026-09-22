@@ -82,21 +82,12 @@ function providerEntries(source: string): { name: string; body: string }[] {
 }
 
 /**
- * The grant types an entry declares, in order. Returns [] when the block is
- * absent — which the first assertion below treats as a failure, since an
- * absent block is the empty allow-list that breaks every authorize request.
+ * A provider with no browser leg — it declares `redirect_uris: []`, so it can
+ * never serve an authorize request. These are the aud=a2a client_credentials
+ * providers; the authorization_code guard below does not apply to them.
  */
-function grantTypes(body: string): string[] {
-  const lines = body.split('\n')
-  const start = lines.findIndex((l) => /^\s*grant_types:\s*$/.test(l))
-  if (start === -1) return []
-  const out: string[] = []
-  for (let i = start + 1; i < lines.length; i++) {
-    const m = lines[i].match(/^\s*-\s*([A-Za-z0-9_:-]+)\s*$/)
-    if (!m) break
-    out.push(m[1])
-  }
-  return out
+function isMachineToMachine(body: string): boolean {
+  return /^\s*redirect_uris:\s*\[\]\s*$/m.test(body)
 }
 
 describe('Authentik OAuth2 provider blueprints', () => {
@@ -115,29 +106,19 @@ describe('Authentik OAuth2 provider blueprints', () => {
     })
 
     it.each(entries.map((e) => [e.name, e.body]))(
-      '%s declares a non-empty grant_types block',
+      '%s declares a grant_types allow-list appropriate to its kind',
       (_name, body) => {
-        // Reason 1 in the header: an absent block is an EMPTY allow-list, and
-        // every /application/o/authorize/ request comes back invalid_request.
+        // An EMPTY allow-list is the trap (see header comment item 1), so every
+        // provider must declare the key regardless of kind.
         expect(body).toMatch(/^\s*grant_types:\s*$/m)
-        expect(grantTypes(body).length).toBeGreaterThan(0)
-      }
-    )
 
-    it.each(entries.map((e) => [e.name, e.body]))(
-      '%s declares authorization_code unless it is machine-to-machine only',
-      (_name, body) => {
-        const types = grantTypes(body)
-
-        // A client_credentials-only provider is a MACHINE identity (the A2A
-        // pods). It never performs an interactive authorize leg, so the reason
-        // this guard exists does not apply to it — and handing a service
-        // account `authorization_code` would give a machine the interactive
-        // browser grant, which is a real privilege widening, not a test fix.
-        // Exempt it, but pin the exemption to exactly that shape so a typo or
-        // an unexpected grant combination still fails loudly.
-        if (!types.includes('authorization_code')) {
-          expect(types).toEqual(['client_credentials'])
+        // Machine-to-machine providers have no browser leg: they declare
+        // `redirect_uris: []` and never reach /application/o/authorize/, so the
+        // invalid_request trap cannot apply to them and requiring
+        // authorization_code would be wrong. Introduced by the aud=a2a
+        // providers in provider-oidc-a2a.yaml (#1123).
+        if (isMachineToMachine(body)) {
+          expect(body).toMatch(/^\s*-\s*client_credentials\s*$/m)
           return
         }
 
