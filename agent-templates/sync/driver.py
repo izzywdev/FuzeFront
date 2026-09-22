@@ -56,7 +56,7 @@ def _stream_thread(session_id, q):
                     try:
                         q.put(json.loads(payload))
                     except json.JSONDecodeError:
-                        pass
+                        pass  # malformed SSE frame — skip and continue reading the stream
     except (OSError, ValueError) as e:
         # The stream reader: a dropped connection (OSError) or an undecodable frame
         # (ValueError). Reported onto the queue, which is the consumer's error channel —
