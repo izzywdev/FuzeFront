@@ -44,7 +44,12 @@ const PROVIDER_MODEL = '- model: authentik_providers_oauth2.oauth2provider'
 function blueprintFiles(): string[] {
   return fs
     .readdirSync(BLUEPRINT_DIR)
-    .filter((f) => f.endsWith('.yaml'))
+    // `readdirSync` yields bare directory entries, never a path — but assert it
+    // rather than assume it, so the join below can only ever address a direct
+    // child of BLUEPRINT_DIR (which is itself a compile-time constant resolved
+    // from __dirname; nothing here comes from a request, argv or the env).
+    .filter((f) => f.endsWith('.yaml') && path.basename(f) === f)
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     .map((f) => path.join(BLUEPRINT_DIR, f))
     .filter((p) => fs.readFileSync(p, 'utf8').includes(PROVIDER_MODEL))
 }
@@ -97,11 +102,20 @@ describe('Authentik OAuth2 provider blueprints', () => {
     })
 
     it.each(entries.map((e) => [e.name, e.body]))(
-      '%s declares grant_types including authorization_code',
+      '%s declares grant_types (including authorization_code unless client_credentials-only)',
       (_name, body) => {
-        // Without this Authentik 2026.x rejects EVERY authorize request with
-        // error=invalid_request. See the header comment.
+        // Every provider must declare grant_types — without it Authentik 2026.x
+        // rejects EVERY authorize request with error=invalid_request. See the
+        // header comment.
         expect(body).toMatch(/^\s*grant_types:\s*$/m)
+        // Machine-to-machine providers (A2A) use the client_credentials flow,
+        // which has no interactive authorize leg, so they legitimately omit
+        // authorization_code — adding it to a machine identity would be wrong.
+        // Only require authorization_code for providers that are NOT
+        // client_credentials-only.
+        const grantsClientCredentials = /^\s*-\s*client_credentials\s*$/m.test(body)
+        const grantsAuthorizationCode = /^\s*-\s*authorization_code\s*$/m.test(body)
+        if (grantsClientCredentials && !grantsAuthorizationCode) return
         expect(body).toMatch(/^\s*-\s*authorization_code\s*$/m)
       }
     )
