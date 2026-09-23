@@ -216,8 +216,8 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
             const orgRequired = isOrgOnlyApp(app)
             const isGated = isPersonalContext && orgRequired
 
-            // If hidden flag is ON and in personal context, completely omit org-only apps
-            if (isGated && orgContextHidden) {
+            // If in personal context and app requires org context, omit from left side menu
+            if (isGated && (orgContextHidden || app.slug === 'executive')) {
               return null
             }
 

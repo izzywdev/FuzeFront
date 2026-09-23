@@ -47,7 +47,7 @@ flags:
 
   - key: fuzefront.apps.org-context-hidden
     type: release
-    default: false
+    default: true
     description: >
       Controls whether federated apps requiring active organization context are
       completely hidden from navigation and launchers when in personal context.
