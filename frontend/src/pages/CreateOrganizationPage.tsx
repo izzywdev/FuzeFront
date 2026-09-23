@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, Button } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { createOrganization } from '../services/api'
 import { useAppContext } from '../lib/shared'
@@ -73,13 +73,9 @@ function CreateOrganizationPage() {
         <p style={{ color: 'var(--text-secondary)', margin: '0 0 1.5rem' }}>
           {name} {t('createOrganizationDesc')}
         </p>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => (window.location.href = '/dashboard')}
-        >
+        <Button type="button" variant="primary" onClick={() => (window.location.href = '/dashboard')}>
           {t('dashboard')}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -139,14 +135,9 @@ function CreateOrganizationPage() {
           )}
         </div>
 
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={loading || !name.trim()}
-          style={{ width: '100%' }}
-        >
+        <Button type="submit" variant="primary" disabled={loading || !name.trim()} fullWidth>
           {loading ? t('loading') : t('createOrganization')}
-        </button>
+        </Button>
       </form>
 
       <div style={{ marginTop: '1rem', textAlign: 'center' }}>

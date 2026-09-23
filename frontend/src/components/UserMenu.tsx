@@ -669,13 +669,13 @@ function UserMenu({ user }: UserMenuProps) {
   if (!user) {
     return (
       <div>
-        <button
-          className="btn btn-primary"
+        <Button
+          variant="primary"
           data-topbar-control="sign-in"
           onClick={() => (window.location.href = '/login')}
         >
           {t('actions.signIn')}
-        </button>
+        </Button>
       </div>
     )
   }

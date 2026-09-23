@@ -185,8 +185,8 @@ function InstalledAppsSection() {
                   Uninstall
                 </Button>
               ) : (
-                <button
-                  className="btn btn-primary"
+                <Button
+                  variant="primary"
                   data-action="open-install"
                   data-app-id={app.id}
                   onClick={() =>
@@ -194,7 +194,7 @@ function InstalledAppsSection() {
                   }
                 >
                   Install
-                </button>
+                </Button>
               )}
             </div>
           )
