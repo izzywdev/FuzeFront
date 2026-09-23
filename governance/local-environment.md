@@ -49,25 +49,33 @@ order: an npm script `test:integration` or `test:e2e` in `package.json` → a
 `tests/integration/**` tree or files using `pytest.mark.integration` → an
 `integrationTest` command declared in `.fuze/manifest.json`.
 
-## Current state in FuzeFront (measured 2026-08-27)
+## Current state in FuzeFront (measured 2026-09-23, supersedes 2026-08-27)
 
-- **Not present**: `docker-compose.consumer-test.yml`, `versions.env`, and no
-  suite matches the detection order above (root `package.json` has no
-  `test:integration`/`test:e2e` script; `.fuze/manifest.json` has no
-  `integrationTest`; the one `tests/integration/` tree,
-  `services/billing-service/tests/integration/invoices.integration.test.ts`, is
-  a real Jest file but isn't wired to a `test:integration` script anywhere, so
-  the detector correctly does not count it).
-- Both `gate-localup` and `nightly-integration.yml`'s detector therefore
-  correctly no-op (green, not a false failure) and `nightly-integration.yml`
-  files the idempotent `@claude` tracking issue — which is FuzeFront#242.
-- **Present and correct**: the CI machinery itself (detection, bounded-wait
-  hardening with `--wait-timeout` + `timeout-minutes`, diagnostic dump on
-  failure, teardown-always, the autofix loop-guard). Building the actual
-  consumer-test stack + mock matrix + integration suite is unstarted and is
-  the real remaining work on #242 — it needs FuzeInfra vendored as a submodule
-  and a mock-service matrix decision, which is `devops-engineer` +
-  `test-engineer` scope per the issue, not a mechanical follow-up.
+- **Present (test-engineer half, FuzeFront#1096)**: root `package.json` now
+  declares `"test:integration": "node scripts/test-integration.mjs"`, so the
+  npm branch of the detection order above matches. That script orchestrates
+  the real suites that already exist: backend's `auth`/`apps`/`permissions`
+  integration tests (`backend/package.json` `test:integration`, DB-required,
+  same as `ci.yml`'s `integration-tests` job) and billing-service's DB-backed
+  invoice-store + keyset-pagination-walk suite
+  (`services/billing-service/tests/integration/invoices.integration.test.ts`,
+  now wired to its own `test:integration` script; self-skips with a stated
+  reason when `DATABASE_URL` is unreachable).
+- **Still not present (devops-engineer scope)**: `docker-compose.consumer-test.yml`
+  and `versions.env`. Because `nightly-integration.yml`'s detector requires
+  BOTH the compose file AND the suite, it still correctly no-ops green today —
+  the suite alone does not flip it on. The closest wired reference for the
+  compose file is `docker-compose.test.yml` at repo root, which already pins
+  the same base-service versions FuzeInfra runs plus the external-service mock
+  matrix (MailHog, `permit-pdp-test` in offline mode, `stripe-mock`,
+  `mock-llm`) this suite expects — landing `docker-compose.consumer-test.yml`
+  is expected to be an adaptation of that file (container-name addressing
+  instead of host-remapped ports), not a from-scratch build. FuzeInfra is
+  already vendored as a submodule (`.gitmodules`), so that specific piece of
+  #1096's devops task is also already done.
+- **Not covered by this pass**: the no-prod-egress boundary check
+  (`local-env-verifier` scope) — there is no bounded stack yet to verify it
+  against.
 
 ## Ratchet plan
 
