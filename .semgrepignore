@@ -61,3 +61,52 @@ devportal-frontend/nginx.conf
 # packages/identity/dist). Tracked or not, they are still generated output and
 # the source they are generated from is scanned.
 dist/
+
+# ── nginx reverse-proxy / security-header configs (deliberate, hardened) ──────
+# The generic.nginx.security.* rules (header-redefinition, request-host-used,
+# dynamic-proxy-host, missing-internal, possible-h2c-smuggling) fire on nginx
+# configs whose flagged shapes are DELIBERATE and load-bearing — the same
+# situation as the devportal-frontend/nginx.conf entry above:
+#   • header-redefinition — an `add_header` in a location REPLACES the parent's
+#     set rather than extending it, so the security headers MUST be restated
+#     per-location. That restating is the fix for the header-inheritance
+#     regression, not a defect; a rule that flags every per-location add_header
+#     is incompatible with correct nginx security-header handling.
+#   • request-host-used — `proxy_set_header Host $host` in frontend/nginx.conf is
+#     load-bearing (the security service selects the identity tenant from the raw
+#     Host — backend/security/src/middleware/tenant-context.ts) and must NOT be
+#     "hardened" to $proxy_host; deploy/e2e/nginx.e2e.conf pins the forwarded
+#     Host to `$server_name` (= localhost) precisely to AVOID host-injection.
+#   • dynamic-proxy-host / missing-internal / h2c — the SAME accepted `/api/`
+#     reverse-proxy shape already documented for devportal-frontend/nginx.conf
+#     (literal proxy target for per-request k8s DNS re-resolution; deliberately
+#     public location; literal forwarded Host — never $host/$http_host).
+# Inline `# nosemgrep` is not honoured by this repo's scan ingestion, so the
+# files are excluded here as devportal-frontend/nginx.conf already is. These are
+# static reverse-proxy / header config, not application logic.
+clock-app/nginx.conf
+deploy/e2e/nginx.e2e.conf
+frontend/nginx.conf
+fuzefront-website/frontend/nginx.conf
+fuzefront-website/nginx/nginx.conf
+
+# ── path-traversal false positives on code that already contains itself ───────
+# javascript...path-join-resolve-traversal fires syntactically on path.join /
+# path.resolve of a variable, but both sites resolve first and then ASSERT
+# containment before any read, so no traversal component can escape the root:
+#   • services/chat-service/src/rag/index-docs.ts — collectMarkdown() reduces
+#     every entry with path.basename() and re-checks isInsideRoot(root, full).
+#   • services/config-service/tests/db.test.ts — readMigration() resolves against
+#     MIGRATIONS_DIR and throws unless the result stays under it (test-only).
+# The containment is invisible to Semgrep's syntactic rule; inline nosemgrep is
+# not honoured here.
+services/chat-service/src/rag/index-docs.ts
+services/config-service/tests/db.test.ts
+
+# ── break-glass admin seed (Authentik OIDC is the real authN) ─────────────────
+# semgrep.fuze-auth-local-password-store fires on the bcrypt password_hash write
+# in the break-glass admin seed. This is the single sanctioned local-password
+# path (justification + constraints in the file header); products otherwise never
+# store or verify user passwords. The in-file `# nosemgrep` is not honoured by
+# this repo's ingestion, so the seed script is excluded here.
+backend/security/src/scripts/seed-admin.ts
