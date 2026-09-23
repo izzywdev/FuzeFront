@@ -421,7 +421,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload agent execution log
-        if: always() && steps.maintainer.outcome == 'failure'
+        # The path guard is load-bearing, not defensive. On the credit-outage
+        # path the agent never starts, so it emits no execution file and
+        # `execution-file` is the empty string. upload-artifact then aborts with
+        # "Input required and not supplied: path" and FAILS THE JOB -- on
+        # exactly the outage this workflow's Verdict step is written to
+        # tolerate. `if-no-files-found: ignore` does not cover it: that handles
+        # a path which matches nothing, not a `path` input that is absent.
+        if: >-
+          always() && steps.maintainer.outcome == 'failure'
+          && steps.maintainer.outputs.execution-file != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: a2a-maintain-execution-log
