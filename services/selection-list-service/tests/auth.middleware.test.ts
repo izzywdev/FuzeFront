@@ -13,12 +13,19 @@
 // (`userId`, no org claim) and the contract's Authentik token (`sub`,
 // `organization_id`). They fail if either alias is dropped.
 
+import { randomBytes } from 'node:crypto';
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { authMiddleware } from '../src/middleware/auth';
 
-const SECRET = 'auth-middleware-test-secret';
+// Generated per run, not a literal. Nothing here depends on the VALUE — these
+// cases are about which claim names the middleware reads — so a fresh random
+// secret is strictly better than a constant: it proves no assertion is coupled
+// to a particular string, it cannot be copied into anything real, and it does
+// not read as a hard-coded credential to a secret scanner (Semgrep
+// `jwt-hardcode.hardcoded-jwt-secret` flagged the literal this replaces).
+const SECRET = randomBytes(32).toString('hex');
 
 /** Minimal app that echoes back whatever identity the middleware attached. */
 function makeApp() {
@@ -120,7 +127,7 @@ describe('authMiddleware — rejections', () => {
 
   it('401s on a token signed with a different secret', async () => {
     process.env.JWT_SECRET = SECRET;
-    const token = jwt.sign({ userId: 'usr_a', orgId: 'org_a' }, 'not-the-secret');
+    const token = jwt.sign({ userId: 'usr_a', orgId: 'org_a' }, randomBytes(32).toString('hex'));
     expect((await get(token)).status).toBe(401);
   });
 
