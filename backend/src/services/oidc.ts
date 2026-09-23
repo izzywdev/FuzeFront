@@ -122,7 +122,7 @@ class OIDCService {
 
       return user;
     } catch (error) {
-      console.error('❌ [oidc] handleCallback FAILED:', (error as Error).name ?? 'CallbackError');
+      console.error('❌ [oidc] handleCallback FAILED');
       throw error;
     }
   }
