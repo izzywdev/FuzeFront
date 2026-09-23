@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Spinner, Toggle, InfoRow } from '@fuzefront/design-system'
+import { Spinner, Toggle, InfoRow, Text } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { RoleBadge } from './RoleBadge'
 
@@ -231,7 +231,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 ? `${profile.firstName} ${profile.lastName}`
                 : profile.email}
             </h1>
-            <p className="text-gray-600">{profile.email}</p>
+            <Text tone="secondary">{profile.email}</Text>
             <div className="flex items-center space-x-2 mt-2">
               {profile.roles.map(role => (
                 <RoleBadge key={role} role={role} size="sm" variant="subtle" />
@@ -315,9 +315,9 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       placeholder="Enter your first name"
                     />
                   ) : (
-                    <p className="text-gray-900">
+                    <Text tone="primary">
                       {profile.firstName || 'Not set'}
-                    </p>
+                    </Text>
                   )}
                 </div>
 
@@ -336,9 +336,9 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       placeholder="Enter your last name"
                     />
                   ) : (
-                    <p className="text-gray-900">
+                    <Text tone="primary">
                       {profile.lastName || 'Not set'}
-                    </p>
+                    </Text>
                   )}
                 </div>
               </div>
@@ -359,9 +359,9 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                     maxLength={500}
                   />
                 ) : (
-                  <p className="text-gray-900">
+                  <Text tone="primary">
                     {profile.bio || 'No bio available'}
-                  </p>
+                  </Text>
                 )}
               </div>
 
@@ -385,7 +385,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       ))}
                     </select>
                   ) : (
-                    <p className="text-gray-900">{profile.timezone}</p>
+                    <Text tone="primary">{profile.timezone}</Text>
                   )}
                 </div>
 
@@ -408,7 +408,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       <option value="he">Hebrew</option>
                     </select>
                   ) : (
-                    <p className="text-gray-900">
+                    <Text tone="primary">
                       {profile.language === 'en'
                         ? 'English'
                         : profile.language === 'es'
@@ -420,7 +420,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                               : profile.language === 'he'
                                 ? 'Hebrew'
                                 : profile.language}
-                    </p>
+                    </Text>
                   )}
                 </div>
               </div>
