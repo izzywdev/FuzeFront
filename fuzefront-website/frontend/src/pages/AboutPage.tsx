@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
+import { IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -225,9 +226,9 @@ export const AboutPage: React.FC = () => {
                   variants={fadeUp}
                   className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-soft"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
-                    <Icon size={18} className="text-primary-600" />
-                  </div>
+                  <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
+                    <Icon size={18} />
+                  </IconTile>
                   <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
                 </motion.div>
               )

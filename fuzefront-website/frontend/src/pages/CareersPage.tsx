@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
+import { IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Position {
@@ -130,9 +131,9 @@ export const CareersPage: React.FC = () => {
               const Icon = perk.icon
               return (
                 <div key={perk.text} className="text-center">
-                  <div className="w-11 h-11 rounded-xl bg-primary-50 flex items-center justify-center mx-auto mb-3">
-                    <Icon size={20} className="text-primary-700" />
-                  </div>
+                  <IconTile tone="accent" size="md" className="mb-3">
+                    <Icon size={20} />
+                  </IconTile>
                   <p className="text-sm text-gray-600 leading-snug">{perk.text}</p>
                 </div>
               )

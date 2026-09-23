@@ -6,6 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
+import { IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -59,9 +60,9 @@ function FeatureCard({ feature }: { feature: typeof features[0] }) {
       transition={{ duration: 0.45 }}
       className="flex gap-4"
     >
-      <div className="w-11 h-11 rounded-xl bg-secondary-800 flex items-center justify-center flex-shrink-0">
-        <Icon size={20} className="text-primary-400" />
-      </div>
+      <IconTile tone="accent" size="md" variant="surface" style={{ flexShrink: 0 }}>
+        <Icon size={20} />
+      </IconTile>
       <div>
         <h3 className="font-semibold text-white mb-1">{feature.title}</h3>
         <p className="text-secondary-400 text-sm leading-relaxed">{feature.description}</p>
@@ -187,7 +188,9 @@ export const FuzeHubPage: React.FC = () => {
             {useCases.map((useCase) => (
               <div key={useCase.title} className="bg-secondary-900 rounded-xl border border-secondary-700 p-5">
                 <div className="flex items-center gap-2 mb-2">
-                  <Zap size={16} className="text-primary-400" />
+                  <IconTile tone="accent" variant="plain">
+                    <Zap size={16} />
+                  </IconTile>
                   <h3 className="font-semibold text-white text-sm">{useCase.title}</h3>
                 </div>
                 <p className="text-secondary-400 text-sm leading-relaxed">{useCase.description}</p>

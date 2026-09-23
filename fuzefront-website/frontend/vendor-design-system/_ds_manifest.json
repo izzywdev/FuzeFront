@@ -46,6 +46,14 @@
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
+      "name": "IconTile",
+      "sourcePath": "components/core/IconTile.jsx"
+    },
+    {
+      "name": "Text",
+      "sourcePath": "components/core/Text.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },

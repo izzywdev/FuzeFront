@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
+import { IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -62,7 +63,9 @@ export const PressPage: React.FC = () => {
       <section className="py-24 bg-white">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 flex items-center gap-3">
-            <Newspaper size={24} className="text-primary-700" />
+            <IconTile tone="accent" variant="plain">
+              <Newspaper size={24} />
+            </IconTile>
             Latest news
           </h2>
           <div className="space-y-6">
