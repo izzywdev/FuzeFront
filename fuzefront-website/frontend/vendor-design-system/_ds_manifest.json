@@ -46,6 +46,10 @@
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
+      "name": "Text",
+      "sourcePath": "components/core/Text.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
@@ -168,6 +172,10 @@
     {
       "name": "SectionHead",
       "sourcePath": "components/layout/SectionHead.jsx"
+    },
+    {
+      "name": "Wrap",
+      "sourcePath": "components/layout/Wrap.jsx"
     },
     {
       "name": "BottomNav",
