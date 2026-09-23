@@ -125,24 +125,11 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
 
-    // Step 5 (FFRNT-185): configure the dual-accept window so that
-    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
-    // were written before the TypeID wire form was adopted. The flag
-    // `fuzefront.identity.prefixed-ids` (step 4) controls whether RESPONSES
-    // emit TypeID form; these types stay in legacyUuidTypes until the row
-    // backfill is complete and the window is deliberately closed.
-    configureIdentity({
-      legacyUuidTypes: new Set([
-        'organization',
-        'membership',
-        'invitation',
-        'session',
-        'mfaFactor',
-        'user',
-        'app',
-        'portal',
-      ]),
-    })
+    // Step 5 (FFRNT-185): dual-accept windows closed.
+    // All entity types now use mintId() for creation and store bare UUIDs;
+    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
+    // need to be accepted at the request boundary.
+    configureIdentity({ legacyUuidTypes: new Set() })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({

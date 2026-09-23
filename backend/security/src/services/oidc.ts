@@ -2,6 +2,7 @@ import { Issuer, Client, generators, custom } from 'openid-client';
 import { db } from '../config/database';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity';
 import { logger } from '../lib/logger';
 import { AuthentikTenant, allTenants, currentTenant, runWithTenant } from '../providers/authentik/tenants';
 
@@ -470,7 +471,7 @@ export async function syncUserToDatabase(userinfo: any): Promise<User> {
         // which would fail the uuid-typed `id` column. Email is the natural key we
         // match on (above), so a fresh uuid is safe and stable per-account.
         const newUser = {
-          id: require('uuid').v4(),
+          id: toUuid(mintId('user')),
           email: email,
           first_name: firstName,
           last_name: lastName,

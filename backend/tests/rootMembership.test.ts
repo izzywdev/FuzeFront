@@ -14,7 +14,8 @@
 import { v4 as uuidv4 } from 'uuid'
 import { parseId, configureIdentity, EntityId } from '@izzywdev/fuzefront-identity'
 
-configureIdentity({ legacyUuidTypes: new Set(['user', 'organization']) })
+// FFRNT-185: dual-accept windows closed.
+configureIdentity({ legacyUuidTypes: new Set() })
 
 import { db, initializeDatabaseConnection } from '../src/config/database'
 import {

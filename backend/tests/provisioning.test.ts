@@ -1,10 +1,8 @@
 import { v4 as uuidv4 } from 'uuid'
 import { parseId, configureIdentity, EntityId } from '@izzywdev/fuzefront-identity'
 
-// Allow bare UUIDs as EntityId<T> in tests — production rows are not yet
-// backfilled, so the dual-accept window must be open for test helpers to pass
-// plain UUIDs to the typed service functions without converting them.
-configureIdentity({ legacyUuidTypes: new Set(['user', 'organization']) })
+// FFRNT-185: dual-accept windows closed; no legacyUuidTypes needed.
+configureIdentity({ legacyUuidTypes: new Set() })
 
 // Avoid importing the real Permit SDK (which requires PERMIT_API_KEY at import
 // time). These tests inject fake Permit clients, so the default client built on
