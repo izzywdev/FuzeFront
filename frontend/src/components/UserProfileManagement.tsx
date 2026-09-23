@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Spinner, Toggle, InfoRow, Text } from '@fuzefront/design-system'
+import { Spinner, Toggle, InfoRow, Text, FieldLabel } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { RoleBadge } from './RoleBadge'
 
@@ -301,11 +301,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-first-name" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     First Name
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <input
+                      id="profile-first-name"
                       type="text"
                       value={formData.firstName}
                       onChange={e =>
@@ -322,11 +323,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-last-name" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     Last Name
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <input
+                      id="profile-last-name"
                       type="text"
                       value={formData.lastName}
                       onChange={e =>
@@ -344,11 +346,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <FieldLabel htmlFor="profile-bio" style={{ marginBlockEnd: 'var(--space-1)' }}>
                   Bio
-                </label>
+                </FieldLabel>
                 {isEditing ? (
                   <textarea
+                    id="profile-bio"
                     value={formData.bio}
                     onChange={e =>
                       setFormData({ ...formData, bio: e.target.value })
@@ -367,11 +370,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-timezone" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     Timezone
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <select
+                      id="profile-timezone"
                       value={formData.timezone}
                       onChange={e =>
                         setFormData({ ...formData, timezone: e.target.value })
@@ -390,11 +394,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-language" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     Language
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <select
+                      id="profile-language"
                       value={formData.language}
                       onChange={e =>
                         setFormData({ ...formData, language: e.target.value })
