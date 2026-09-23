@@ -110,6 +110,43 @@ const health = async (_req: any, res: any) => {
 app.get('/health', health)
 app.get('/api/health', health)
 
+// ── READINESS: /ready. 503 when a dependency is down. ───────────────────────
+//
+// THE BUG THIS FIXES. deploy/helm/fuzefront/templates/applications.yaml's
+// readinessProbe has pointed at `path: /ready` (not /health) since that
+// template was written, with a comment explaining exactly why: "readiness
+// must reflect dependency state so a degraded backend leaves the Service
+// endpoints AND Argo's built-in Deployment assessment reports Degraded."
+// Correct intent — but this service never implemented the route. Every
+// request to /ready has always 404'd via attachErrorHandlers' catch-all, so
+// the readinessProbe has ALWAYS failed for every pod, on every revision.
+//
+// A pod's readinessProbe path is fixed at pod-template time (a new Deployment
+// revision does not retroactively change an already-Running pod's probe), so
+// this is asymmetric: pods created back when the chart's probe pointed at
+// /health (before that template edit) are still passing their old probe and
+// serving traffic; every pod created SINCE is permanently unready — excluded
+// from the Service endpoints, invisible to any black-box HTTP check, with
+// Argo CD reporting the Application Degraded/Progressing the whole time. A
+// RollingUpdate Deployment never scales down the old ReplicaSet until the new
+// one is Ready, so the old pods just keep serving forever. This is the
+// mechanism behind #1137: migrations 013/014 run to completion during THIS
+// process's own boot (before httpServer.listen() — see startServer() below),
+// so a new pod that reaches this route has already applied them to the
+// shared database; it just never gets traffic to prove it.
+//
+// Same split as backend/src/index.ts's /ready (host backend): liveness (/health)
+// stays 200-always so a DB blip never turns into a restart loop; readiness
+// reflects the real dependency state, matching the chart's own documented intent.
+app.get('/ready', async (_req: any, res: any) => {
+  const dbHealthy = await checkDatabaseHealth().catch(() => false)
+  res.status(dbHealthy ? 200 : 503).json({
+    status: dbHealthy ? 'ok' : 'degraded',
+    service: 'applications-service',
+    database: { status: dbHealthy ? 'connected' : 'disconnected' },
+  })
+})
+
 attachErrorHandlers(app)
 
 function gracefulShutdown(signal: string) {
