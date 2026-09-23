@@ -72,7 +72,8 @@ order: an npm script `test:integration` or `test:e2e` in `package.json` → a
   is expected to be an adaptation of that file (container-name addressing
   instead of host-remapped ports), not a from-scratch build. FuzeInfra is
   already vendored as a submodule (`.gitmodules`), so that specific piece of
-  #1096's devops task is also already done.
+  #1096's devops task is also already done. `nightly-integration.yml` files
+  the idempotent `@fuze` tracking issue for that remaining piece (FuzeFront#1096).
 - **Not covered by this pass**: the no-prod-egress boundary check
   (`local-env-verifier` scope) — there is no bounded stack yet to verify it
   against.
