@@ -22,6 +22,7 @@ import portalRoutes from './routes/portal'
 import adminPortalRoutes from './routes/adminPortals'
 import { resolvePortalContext } from './middleware/portalContext'
 import { ensureRootPortal } from './repositories/portalRepository'
+import { ensureMendysPortal } from './services/ensureMendysPortal'
 import {
   syncPermitSchemaFromRegistry,
   loadLegacyProductPolicies,
@@ -41,6 +42,7 @@ import { oidcService } from './services/oidc'
 import { setupMetrics } from './metrics'
 import { provisionM2MClients } from './authentik/provision-m2m-clients'
 import { startBillingProjection, stopBillingProjection } from './services/billingProjection'
+import { startPortalTeardownConsumer, stopPortalTeardownConsumer } from './services/portalTeardownConsumer'
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
@@ -513,6 +515,13 @@ function gracefulShutdown(signal: string) {
         console.error('❌ Error stopping billing projection consumer:', error)
       }
 
+      // Stop the portal-teardown consumer (no-op if never started)
+      try {
+        await stopPortalTeardownConsumer()
+      } catch (error) {
+        console.error('❌ Error stopping portal-teardown consumer:', error)
+      }
+
       // Stop the ref_index projection consumer (no-op if never started)
       try {
         await stopRefIndexProjection()
@@ -670,6 +679,21 @@ async function startServer() {
       console.error('⚠️  ensureRootPortal failed (non-fatal):', error)
     }
 
+    // Portals Directory — idempotently ensure the MendysRobotics tenant portal
+    // exists so the master-admin directory shows it alongside the root portal.
+    // Gated on MENDYS_PORTAL_PROVISION (set only where the Mendys Authentik silo
+    // is deployed — see backend.yaml / .Values.authentikMendys.enabled), so it
+    // is a no-op locally, in CI, and in any deployment without that silo.
+    // Non-fatal, self-healing on a later boot — same contract as ensureRootPortal.
+    try {
+      const mendys = await ensureMendysPortal()
+      if (mendys) {
+        console.log(`✅ MendysRobotics portal ensured (${mendys.id})`)
+      }
+    } catch (error) {
+      console.error('⚠️  ensureMendysPortal failed (non-fatal):', error)
+    }
+
     // Push the environment-level Permit policy (resources/actions/roles from
     // permit/schema.ts, incl. the ReBAC Organization.parent relation and the
     // derived `org-admin` role). This was previously reachable ONLY via
@@ -721,6 +745,10 @@ async function startServer() {
     // Start consuming billing.subscription.changed to project plan-tier/status
     // onto users/organizations. Non-fatal + no-op when KAFKA_BROKERS is unset.
     await startBillingProjection()
+
+    // Tear down an org's portals on identity.org.deleted (FFRNT-174).
+    // Non-fatal + no-op when KAFKA_BROKERS is unset.
+    await startPortalTeardownConsumer()
 
     // Keeps ref_index current from identity.*.created/deleted + portal.created.
     // Non-fatal + no-op when KAFKA_BROKERS is unset.

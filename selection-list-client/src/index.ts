@@ -26,6 +26,7 @@ export {
 } from './types'
 
 export type {
+  ItemTranslationLocaleStatus,
   LifecycleStatus,
   ListSelectionListItemsParams,
   ListSelectionListsParams,
@@ -62,5 +63,6 @@ export type {
   SelectionListTranslationUpsert,
   SelectionListUpdate,
   StatusFilter,
+  TranslationLocaleStatus,
   UserId,
 } from './types'
