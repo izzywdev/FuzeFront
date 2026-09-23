@@ -20,9 +20,9 @@ import authzRoutes from './routes/authz'
 import portalsRoutes from './routes/portals'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
-import meRoutes from './routes/me'
 import internalRoutes from './routes/internal'
 import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
+import meRoutes from './routes/me'
 import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
@@ -63,6 +63,7 @@ const startTime = Date.now()
 // a no-op for existing deployments.
 app.use('/api/v1/security', tenantContext)
 app.use('/api/auth', tenantContext)
+app.use('/api/me', tenantContext)
 app.use('/api/organizations', tenantContext)
 app.use('/api/invitations', tenantContext)
 app.use('/api/tokens', tenantContext)
@@ -86,8 +87,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/organizations', tokenAuthRateLimiter, orgTokensRouter)
 app.use('/api/organizations', organizationsRoutes)
 app.use('/api/invitations', invitationsRoutes)
-// Self-service account management (profile edit / deactivate) for the
-// authenticated user — emits identity.user.updated / identity.user.deleted.
+// Self-service user profile and account management (FFRNT-172).
 app.use('/api/me', meRoutes)
 // API token CRUD — rate limiter applied to all /api/tokens/* routes
 app.use('/api/tokens', tokenAuthRateLimiter, apiTokensRoutes)
@@ -129,25 +129,11 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
 
-    // Step 5 (FFRNT-185): configure the dual-accept window so that
-    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
-    // were written before the TypeID wire form was adopted. The flag
-    // `fuzefront.identity.prefixed-ids` (step 4) controls whether RESPONSES
-    // emit TypeID form; these types stay in legacyUuidTypes until the row
-    // backfill is complete and the window is deliberately closed.
-    configureIdentity({
-      legacyUuidTypes: new Set([
-        'organization',
-        'membership',
-        'invitation',
-        'session',
-        'mfaFactor',
-        'user',
-        'app',
-        // 'portal' removed: migration 024 backfilled all prt_<hex32> rows to
-        // bare UUIDs; the dual-accept window for portal is now closed.
-      ]),
-    })
+    // Step 5 (FFRNT-185): dual-accept windows closed.
+    // All entity types now use mintId() for creation and store bare UUIDs;
+    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
+    // need to be accepted at the request boundary.
+    configureIdentity({ legacyUuidTypes: new Set() })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({
