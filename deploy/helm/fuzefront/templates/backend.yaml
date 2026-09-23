@@ -241,14 +241,27 @@ spec:
                   optional: true
             {{- end }}
           readinessProbe:
+            # /ready, not /health: backend/src/index.ts implements /ready
+            # specifically so a degraded database removes this pod from the
+            # Service endpoints and Argo's built-in Deployment assessment
+            # reports Degraded (see that route's own doc comment, "THE BUG
+            # THIS FIXES"). This template was pointing readinessProbe at
+            # /health instead — which is always-200 by design (see
+            # applications-service's own /ready fix for the mirrored bug,
+            # issue #1137) — so the code-level fix existed but was never
+            # wired in here; readiness never actually reflected DB health.
             httpGet:
-              path: /health
+              path: /ready
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
           livenessProbe:
+            # Deliberately stays on /health, not /ready: liveness must never
+            # depend on a downstream dependency, or a DB blip turns into a
+            # kubelet restart loop that cannot fix anything (same reasoning
+            # backend/src/index.ts documents for its /health route).
             httpGet:
               path: /health
               port: http

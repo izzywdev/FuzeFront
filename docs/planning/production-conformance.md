@@ -433,7 +433,7 @@ registry is what makes the portal count look like a shortfall rather than a deci
 ## 5. Ownership
 
 Steps 2–4 are per-repo `devops-engineer` work. Step 1 and Step 5b are FuzeInfra
-(`@claude` delegation from this repo, per the overlay). Step 5a is split: the
+(`@fuze` delegation from this repo, per the overlay). Step 5a is split: the
 `federatedApps` Ingress list is FuzeFront's own chart, and each `remoteEntry` rewrite is
 the owning product repo's `registration/manifest.json`. Steps 6–7 need an owner decision
 before any code is written.
