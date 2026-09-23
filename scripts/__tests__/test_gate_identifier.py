@@ -314,6 +314,48 @@ class TestAdoptionUsage(unittest.TestCase):
         self.assertIn("no tracked source file imports it", result.stdout)
 
 
+class TestConfigServiceSpinePrefixesStayRegistered(unittest.TestCase):
+    """Regression for #908.
+
+    config-service (FF-EPIC-17/18) is FuzeFront-hosted for the whole family, so
+    its `namespace`/`keyDefinition`/`configHistory` entity types mint the BARE
+    spine prefixes `cns`/`ckd`/`cvh` in packages/identity/src/registry.ts and
+    packages/identity-py/fuzefront_identity/registry.py — same reasoning as the
+    billing/messaging sets already reserved there. Those two registries got the
+    prefixes first; `gate_identifier.py`'s own `SPINE_PREFIXES` reservation table
+    was updated separately and later, so in between, `--namespace` (correctly,
+    per its own rule) flagged 'cns' as an unregistered bare prefix requiring
+    either a `front_` namespace or a reservation — because as far as the gate
+    could tell, it had neither yet.
+
+    This pins BOTH sides of that gap so they cannot drift apart silently again:
+    the reservation table itself, and the real repo's registries actually
+    passing the gate they are checked against in CI (harden-gate.yml).
+    """
+
+    def test_config_service_prefixes_are_reserved_to_fuzefront(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("gate_identifier", GATE)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        for prefix in ("cns", "ckd", "cvh"):
+            self.assertEqual(
+                module.SPINE_PREFIXES.get(prefix), "FuzeFront",
+                f"{prefix!r} must be a reserved FuzeFront spine prefix "
+                f"(identifier-standard.md 2) — see #908",
+            )
+
+    def test_the_real_repo_registries_pass_the_namespace_gate(self):
+        result = run_gate(REPO_ROOT, "--namespace")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_the_real_repo_registries_stay_in_cross_language_parity(self):
+        result = run_gate(REPO_ROOT, "--registry-parity")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 class TestFlagHandling(unittest.TestCase):
     def test_unknown_flag_is_an_error_not_a_silent_pass(self):
         """A typo'd flag used to run NOTHING and print OK — indistinguishable
