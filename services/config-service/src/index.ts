@@ -2,6 +2,7 @@ import { configureIdentity } from '@izzywdev/fuzefront-identity';
 import { loadConfig } from './config';
 import { createApp } from './app';
 import { createPool, runMigrations } from './db';
+import { startLifecycleConsumers, LifecycleConsumers } from './events/consumer';
 
 // governance/identifier-standard.md §8 ("Migration"): portal/organization/user
 // ids are spine types minted elsewhere in the family that have NOT yet been
@@ -53,10 +54,49 @@ async function main(): Promise<void> {
     console.log(`[config-service] Listening on port ${config.port}`);
   });
 
+  // Identity lifecycle consumers. Without these, a deleted org or user leaves
+  // its config_values overrides behind forever (the gap
+  // governance/microservice-events-policy.json tracked as `knownUnhandled`).
+  //
+  // Started AFTER listen() so a slow/unreachable broker can never delay the
+  // port opening, and non-fatal by design: config-service's job is serving
+  // /v1/config reads and writes, and refusing to start because a broker is
+  // down would turn a cleanup outage into a configuration outage for every
+  // consumer. A failure here is loud in the logs and the events are retained
+  // by Kafka, so a later restart picks them up from the committed offset.
+  let lifecycle: LifecycleConsumers | null = null;
+  if (pool) {
+    try {
+      lifecycle = await startLifecycleConsumers(pool);
+      // eslint-disable-next-line no-console
+      console.log(
+        lifecycle
+          ? '[config-service] identity lifecycle consumers started'
+          : '[config-service] KAFKA_BROKERS unset — identity lifecycle consumers not started',
+      );
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[config-service] failed to start lifecycle consumers (continuing):', err);
+    }
+  }
+
   const shutdown = () => {
     // eslint-disable-next-line no-console
     console.log('[config-service] Shutting down...');
-    server.close(() => process.exit(0));
+    // Disconnect the consumers before closing the server so in-flight handlers
+    // finish against a live pool rather than being cut off mid-transaction.
+    const closeServer = () => server.close(() => process.exit(0));
+    if (lifecycle) {
+      lifecycle
+        .disconnect()
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error('[config-service] lifecycle consumer disconnect failed:', err);
+        })
+        .finally(closeServer);
+    } else {
+      closeServer();
+    }
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

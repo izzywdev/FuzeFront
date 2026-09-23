@@ -893,6 +893,14 @@ configService:
   enabled: false
   replicas: 1
   port: 3011
+  # Shared FuzeInfra Kafka cluster, consumed by src/events/consumer.ts for the
+  # identity lifecycle consumers (org/user deleted -> drop that scope's config
+  # overrides). Declared here EXPLICITLY, not defaulted inside the template:
+  # see config-service-networkpolicy.yaml's header for why a missing value
+  # absorbed at the render site is how FuzeInfra#501 broke every Argo sync.
+  # Set to "" to disable the consumers (the service then serves reads/writes
+  # normally and logs that they were not started).
+  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
   # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
   # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
   # billing-service's billing_svc — no separate database is provisioned.
