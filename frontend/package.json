@@ -21,6 +21,7 @@
     "test:ui": "vitest --ui --config vitest.config.ts",
     "test:coverage": "vitest --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:fuzequality": "playwright test --config playwright.fuzequality.config.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:headed": "playwright test --headed",

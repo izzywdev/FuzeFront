@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@fuzefront/auth": "file:../../packages/auth",
+    "@fuzefront/shared": "file:../../shared",
+    "@izzywdev/fuzefront-identity": "file:../../packages/identity",
     "express": "4.19.2",
     "js-yaml": "^4.3.1",
     "jsonwebtoken": "^9.0.2",

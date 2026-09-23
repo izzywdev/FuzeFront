@@ -1,3 +1,4 @@
+# fuze:managed template=governance-sync.yml baseline=v1 digest=sha256:ad95d02840290f03265d7f540d7b6a2e7974521b5c6046def08895836acd2d02
 name: Governance Sync
 
 # Per-repo, CI-time governance reconciliation (stamped by sdlc-bootstrap).
@@ -10,10 +11,52 @@ name: Governance Sync
 # setting. The RECONCILIATION LOGIC still lives in the hub (scripts/governance_sync.py,
 # fetched below) — only this thin shim is per-repo.
 #
-# Behaviour: fetch the FuzeSDLC canonical at this repo's baselineRef, reconcile the managed
-# files (the manifest's agent subset + the agent-templates FRAMEWORK), commit agent/framework
-# drift back to the PR branch, and fail-with-diff on drift the token cannot push
-# (.github/workflows/** or a fork PR). Concrete role/env/vault defs are never touched.
+# TWO MODES, TWO JOBS. The reconciliation is identical; only WHAT IS RECONCILED and WHERE
+# THE RESULT GOES differ, and they differ so completely that sharing one job would be a bug.
+#
+#   PR mode   (`pull_request`)  -> job `governance-sync`
+#       Reconciles the PR HEAD and commits straight back onto it. Unchanged behaviour, and
+#       the only mode that emits the `governance-sync` check context.
+#
+#   Sweep mode (`schedule` / `workflow_dispatch`) -> job `governance-sweep`
+#       Reconciles the DEFAULT BRANCH and, on drift, opens/updates ONE pull request from the
+#       stable branch `governance-sync/sweep`. It NEVER pushes to the default branch.
+#
+# WHY TWO JOBS AND NOT TWO LINES UNDER `on:`. Every load-bearing input of the PR path is a
+# `github.event.pull_request.*` expression — the checkout `ref`, the checkout `repository`,
+# and `HEAD_REF`, which is the literal push target (`git push origin HEAD:${HEAD_REF}`). On a
+# `schedule` or `workflow_dispatch` event EVERY ONE of those is the empty string. Adding the
+# triggers alone would make this job check out the wrong tree and then push to `HEAD:` with no
+# ref at all. Splitting the modes into two jobs, each gated on `github.event_name`, means the
+# `HEAD_REF` push cannot even be REACHED by a scheduled run — the guarantee is structural
+# rather than a condition someone has to keep getting right.
+#
+# WHY THE SWEEP NEVER PUSHES TO THE DEFAULT BRANCH. It would bypass review, branch protection
+# and every required check, and this fleet's default branches require SIGNED commits — an
+# unsigned bot push is rejected outright on some repos and silently un-reviewed on the rest.
+# The sweep therefore only ever writes `refs/heads/governance-sync/sweep` (asserted at
+# runtime, in the push step, against the resolved default-branch name).
+#
+# SILENCE WHEN IN SYNC. Hourly across ~22 onboarded repos is ~528 runs/day. A sweep that opens
+# a PR, comments, or reds on a no-op run is a sweep everyone mutes within a week — so the
+# no-drift path exits with a single ::notice:: and touches nothing. The drift path reuses the
+# one open sweep PR rather than opening a second, and re-pushes only when the reconciled TREE
+# actually differs from what the sweep branch already carries, so an unchanged drift that
+# survives 24 sweeps produces one PR and one push, not 24.
+#
+# Behaviour common to both: fetch the FuzeSDLC canonical at this repo's baselineRef, reconcile
+# the managed files (the manifest's agent subset + the agent-templates FRAMEWORK), and never
+# touch concrete role/env/vault defs.
+#
+# `.github/workflows/**` is a THIRD class, governed separately (governance/file-ownership.md):
+# a workflow file carrying the `fuze:managed` marker is reconciled, but ONLY when a
+# workflows-scoped fuze-agent App token was actually minted this run — a capability this job
+# DETECTS by trying to mint the token, never one it assumes. That grant now EXISTS (the
+# fuze-agent App carries "Read and write access to code, pull requests, and workflows" on all
+# repositories) and the mint succeeds: FuzeInfra run 33615645019 reconciled 17 governed
+# workflow files, which `governance_sync.py` only ever does when `--write-workflows` was
+# passed, which only ever happens when that mint succeeded. An unmarked workflow (a repo's
+# own, or a marker deliberately removed to fork one) is still never touched.
 #
 # No FUZESDLC_DEPLOY_KEY secret -> SKIPS with a notice (never red). Safe to land before the
 # key is distributed.
@@ -21,15 +64,51 @@ name: Governance Sync
 on:
   pull_request:
 
+  # ─────────────────────────────────────────────────────────────────────────────────────
+  # THE SWEEP CADENCE LIVES HERE AND NOWHERE ELSE. Changing it is a one-line edit.
+  #
+  # COST, stated rather than assumed: hourly x ~22 onboarded repos = ~528 workflow runs/day
+  # fleet-wide. Each run is short (a checkout, a canonical fetch, one Python pass) and exits
+  # in seconds when there is no drift, but they are BILLED MINUTES — and this fleet is
+  # currently burning hosted minutes because its self-hosted pool is starved
+  # (governance/required-checks.json, stage_4). Hourly is what was asked for; it is not
+  # obviously the right number forever.
+  #
+  #   '0  */6 * * *'  ->  4/day/repo   ~88 runs/day   (recommended if the bill bites)
+  #   '0  */3 * * *'  ->  8/day/repo  ~176 runs/day
+  #   '41   * * * *'  -> 24/day/repo  ~528 runs/day   (current)
+  #
+  # NOTE the marker is `fuze:cron-minute-spread`, NOT `fuze:spread-cron`. The latter rewrites
+  # the minute AND THE HOUR at install time, which would silently turn this hourly schedule
+  # into a daily one in every repo it was stamped into. The minute-only variant keeps repos
+  # off a shared minute without touching the cadence. (The two markers are deliberately not
+  # substrings of one another — `fuze:spread-cron` is matched with `.*fuze:spread-cron.*`, so
+  # a name like `fuze:spread-cron-minute` would have matched BOTH rules.)
+  # ─────────────────────────────────────────────────────────────────────────────────────
+  schedule:
+    - cron: '16 * * * *'   # fuze:cron-minute-spread — hourly; minute derived per repo at install time
+
+  workflow_dispatch:
+
+# Deliberately read-only at the workflow level; each job widens to exactly what IT needs.
+# The sweep needs `pull-requests: write` that PR mode has no use for, and granting it to both
+# from here would hand the PR-mode token a capability it never exercises.
 permissions:
-  contents: write   # commit reconciled managed files back to the PR branch
+  contents: read
 
 jobs:
+  # ══ PR MODE ═══════════════════════════════════════════════════════════════════════════
+  # Unchanged. Reconciles the PR head and commits back onto it. The job id is unchanged too,
+  # so the `governance-sync` check context every repo already knows keeps reporting under the
+  # same string — a rename here would silently orphan any ruleset that lists it.
   governance-sync:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # commit reconciled managed files back to the PR branch
     steps:
       - name: Checkout (PR head)
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -59,23 +138,76 @@ jobs:
 
       - name: Fetch FuzeSDLC canonical (read-only key)
         if: steps.guard.outputs.ok == 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: izzywdev/FuzeSDLC
           ref: ${{ steps.ref.outputs.ref }}
           ssh-key: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
           path: .fuzesdlc-canonical
 
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         if: steps.guard.outputs.ok == 'true'
         with:
           python-version: "3.12"
 
+      # Agent-PR identity (governance/hardening-convention.md §8): the commit-back below lands
+      # on a LIVE agent PR head, so it must push under a collaborator-backed identity or the
+      # reconciled head gets no CI. Mint a fuze-agent App token; the push step prefers it, then
+      # the bot PAT, then GITHUB_TOKEN. continue-on-error so a repo without the App secrets
+      # degrades to the PAT rather than failing here. Minted BEFORE "Reconcile managed files"
+      # (it used to run after) so the second, workflows-scoped mint below can gate what flag
+      # that step is invoked with.
+      - name: Mint fuze-agent App token
+        id: app_token
+        if: steps.guard.outputs.ok == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+
+      # A SEPARATE mint, not a reuse of the token above — this is the graceful-degrade
+      # switch itself. Requesting `permission-workflows: write` makes this step FAIL
+      # (swallowed by continue-on-error) unless the fuze-agent App's INSTALLATION was
+      # actually granted the "Workflows" permission in GitHub's App settings — so
+      # availability is something this job DETECTS by trying to mint the scoped token,
+      # never something it infers from the (contents-only) token above existing.
+      #
+      # THE GRANT NOW EXISTS — this mechanism is LIVE, not inert. The fuze-agent App shows
+      # "Read and write access to code, pull requests, and workflows" on All repositories,
+      # and the mint succeeds in practice: FuzeInfra run 33615645019 reported 17 governed
+      # workflow files reconciled, and governance_sync.py only ever populates `reconciled`
+      # when `--write-workflows` was passed, which this step alone gates. Earlier revisions
+      # of this comment (and of governance/workflow-drift-policy.json, still unfixed) say the
+      # opposite; they predate the grant. The graceful degrade below stays anyway — a repo
+      # that has not been given FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY still falls
+      # through to detect-only rather than failing here.
+      - name: Mint fuze-agent App token (workflows-scoped)
+        id: app_token_workflows
+        if: steps.guard.outputs.ok == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+
       - name: Reconcile managed files
         if: steps.guard.outputs.ok == 'true'
+        env:
+          # Presence, not truthiness of some other token, is the gate — see the mint step's
+          # comment above. An empty value here means the flag below is omitted, which is
+          # byte-for-byte today's behaviour.
+          WORKFLOWS_TOKEN: ${{ steps.app_token_workflows.outputs.token }}
         run: |
+          extra_flag=""
+          if [ -n "${WORKFLOWS_TOKEN:-}" ]; then
+            extra_flag="--write-workflows"
+          fi
           python3 .fuzesdlc-canonical/scripts/governance_sync.py \
-            --canonical .fuzesdlc-canonical --repo . --write --report .governance-sync-report.json
+            --canonical .fuzesdlc-canonical --repo . --write $extra_flag \
+            --report .governance-sync-report.json
 
       - name: Commit-back or fail-with-diff
         if: steps.guard.outputs.ok == 'true'
@@ -83,39 +215,142 @@ jobs:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.repository }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          # Push identity decides whether the reconciled head gets CI at all — see the
+          # commit-back block. App token first (triggers CI), then the bot PAT, then the
+          # default GITHUB_TOKEN (whose push is silent — the head then goes UNTESTED).
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          # ONLY a token minted with `permission-workflows: write` may push a commit that
+          # touches `.github/workflows/**` — GitHub rejects that push outright otherwise,
+          # and the rejection is ATOMIC: it fails the whole commit, not just the workflow
+          # files in it, dragging every ordinary committable file down with it. So when
+          # `reconciled != 0` this token is the ONLY one used below, never a fallback.
+          WORKFLOWS_APP_TOKEN: ${{ steps.app_token_workflows.outputs.token }}
+          CI_PUSH_TOKEN: ${{ secrets.GH_RELEASE_PAT }}
         run: |
           report=.governance-sync-report.json
           get() { python3 -c "import json;print(len(json.load(open('$report'))['$1']))"; }
           committable=$(get committable); workflows=$(get workflows); missing=$(get missing)
+          reconciled=$(get reconciled); detached=$(get detached)
           rm -f "$report"
           rm -rf .fuzesdlc-canonical
-          if [ "$committable" != "0" ]; then
+          if [ "$committable" != "0" ] || [ "$reconciled" != "0" ]; then
             if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
-              echo "::error::$committable managed file(s) drifted but this is a fork PR — cannot commit back. Run scripts/sdlc-bootstrap.sh and push."
+              echo "::error::$committable managed file(s) and $reconciled governed workflow file(s) drifted but this is a fork PR — cannot commit back. Run scripts/sdlc-bootstrap.sh and push."
               git --no-pager diff; exit 1
             fi
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
+            # NO `[skip ci]`. This commit CHANGES THE TREE THAT WILL MERGE, so every check
+            # that already ran describes a commit which is no longer the head. The marker
+            # suppressed the one thing that had to happen next.
             git commit -m "chore(governance): reconcile managed files to FuzeSDLC ${{ steps.ref.outputs.ref }}"
-            # Rebase-and-retry, not a bare push. This job commits onto a LIVE PR
-            # branch, so any push the author makes between this job's checkout and
-            # its push wins the race and the push is rejected "(fetch first)" —
-            # observed three times in one afternoon on a fleet-wide migration. The
-            # old bare push turned that ordinary race into a red check that said
-            # nothing about governance. Deliberately NOT `|| true`: if it still
-            # cannot push after the retries, that is a real failure and it fails.
+
+            # A commit pushed with the default GITHUB_TOKEN triggers NO workflow — a
+            # deliberate GitHub loop-guard, not a quirk to opt out of. So `[skip ci]` was
+            # the SECOND suppressor on a push that was already silent, and dropping it
+            # alone changes nothing. The push IDENTITY is the actual mechanism.
+            #
+            # Observed live on FuzeSocial#81: this job reconciled at 21:44:57, pushed, and
+            # the head then carried ZERO check runs while the previous commit's green
+            # checks stayed visible on the PR. A PR that looks tested and is not is
+            # strictly worse than one that is visibly untested.
+            PUSH_TOKEN=""; PUSH_IDENTITY="GITHUB_TOKEN"
+            if [ "$reconciled" != "0" ]; then
+              # This commit touches .github/workflows/** — the workflows-scoped token is
+              # not merely preferred here, it is REQUIRED. governance_sync.py only ever
+              # populates `reconciled` when --write-workflows was passed, and that flag is
+              # only ever passed when this exact mint succeeded, so it should never be
+              # empty here — but fail loudly rather than fall through to a token that would
+              # just get the whole push rejected by GitHub.
+              if [ -z "${WORKFLOWS_APP_TOKEN:-}" ]; then
+                echo "::error::governance_sync.py reconciled $reconciled workflow file(s), but the workflows-scoped fuze-agent App token is not available in this step. This should be impossible (that token gates --write-workflows) — treating it as a bug rather than silently falling back to a token that cannot push .github/workflows/** and would fail the whole commit."
+                exit 1
+              fi
+              PUSH_TOKEN="$WORKFLOWS_APP_TOKEN"; PUSH_IDENTITY="FUZE_AGENT_APP_WORKFLOWS"
+            elif [ -n "${APP_TOKEN:-}" ]; then
+              # App installation token: a push authenticated by the fuze-agent App is a
+              # distinct, collaborator-backed identity, so it triggers CI on the new head
+              # (the whole point of §8).
+              PUSH_TOKEN="$APP_TOKEN"; PUSH_IDENTITY="FUZE_AGENT_APP"
+            elif [ -n "${CI_PUSH_TOKEN:-}" ]; then
+              # The bot PAT works the same way via extraheader. Only the default
+              # GITHUB_TOKEN push is silent — that rung fails the job below.
+              PUSH_TOKEN="$CI_PUSH_TOKEN"; PUSH_IDENTITY="GH_RELEASE_PAT"
+            fi
+            if [ -n "$PUSH_TOKEN" ]; then
+              # extraheader, not a token-in-URL remote: git echoes a remote URL on several
+              # error paths and never echoes a header, and some of these repos are public.
+              AUTH_B64=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)
+              # UNSET FIRST. actions/checkout persists its own Authorization into this same
+              # config key, and this job checks out TWICE. Setting ours on top left the server
+              # receiving two Authorization headers and rejecting the push:
+              #     remote: Duplicate header: "Authorization"
+              # Observed on FuzeInfra run 33615645019: the branch never moved while the job
+              # reported "Reconciled and pushed 3 managed file(s) and 17 governed workflow
+              # file(s) ... using FUZE_AGENT_APP_WORKFLOWS".
+              # UNSET EVERY MATCHING KEY, NOT ONE LITERAL KEY. git sends extraheader from ALL
+              # http.<url>.extraheader sections whose url matches the push target. Unsetting only
+              # the generic "http.https://github.com/.extraheader" leaves any MORE SPECIFIC key
+              # actions/checkout persisted, and ours then matches as a SECOND header -- the
+              # actual cause of the rejection:
+              #     remote: Duplicate header: "Authorization"
+              #     fatal: ... The requested URL returned error: 400
+              # Observed on FuzeSDLC#290 run 33639451072, AFTER the single-key unset was added.
+              # Names only in the notice -- never a value; these repos are public.
+              echo "::notice::extraheader keys present before ours: $(git config --local --name-only --get-regexp '^http\\..*\\.extraheader$' 2>/dev/null | xargs || echo none)"
+              # UNSET EVERY MATCHING extraheader KEY, AND EVERY includeIf.gitdir CONDITIONAL
+              # INCLUDE. Both are real, independent mechanisms actions/checkout uses to inject
+              # credentials, and its OWN post-job cleanup removes both (visible in this exact
+              # job's log under "Removing HTTP extra header" / "Removing includeIf entries").
+              # The first fix here only did the first half. A run against that exact fix STILL
+              # hit the duplicate header:
+              #     remote: Duplicate header: "Authorization"
+              #     fatal: ... The requested URL returned error: 400
+              # (FuzeSDLC#290 run 33727092431, against commit 36a3ac2 -- the single-mechanism fix
+              # itself.) The header was never in THIS repo's local http.*.extraheader at all; it
+              # came from a separate credentials file referenced via includeIf.gitdir, which
+              # `git config --local --unset-all` cannot reach because it edits .git/config
+              # directly and never follows includeIf.
+              # Names only in the notice -- never a value; these repos are public.
+              echo "::notice::extraheader keys present before ours: $(git config --local --name-only --get-regexp '^http\..*\.extraheader$' 2>/dev/null | xargs || echo none)"
+              for k in $(git config --local --name-only --get-regexp '^http\..*\.extraheader$' 2>/dev/null || true); do
+                git config --local --unset-all "$k" || true
+              done
+              for k in $(git config --local --name-only --get-regexp '^includeIf\.gitdir:' 2>/dev/null || true); do
+                for v in $(git config --local --get-all "$k" 2>/dev/null || true); do
+                  git config --local --unset "$k" "$v" || true
+                done
+              done
+              git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic ${AUTH_B64}"
+              unset AUTH_B64
+            fi
+
+            # Rebase-and-retry, not a bare push. This job commits onto a LIVE PR branch, so
+            # any push the author makes between this job's checkout and its push wins the
+            # race and the push is rejected "(fetch first)" — observed three times in one
+            # afternoon on a fleet-wide migration. The old bare push turned that ordinary
+            # race into a red check that said nothing about governance. Deliberately NOT
+            # `|| true`: if it still cannot push after the retries, that is a real failure.
             pushed=false
             for attempt in 1 2 3; do
-              if git push origin "HEAD:${HEAD_REF}" 2>&1 | tee /tmp/gs-push.log; then
+              # `git push | tee` returns TEE's exit status, which is always 0. Every push
+              # therefore "succeeded" regardless of what the server said, `pushed` was set
+              # unconditionally, and the success notice printed over a REJECTED push. That is
+              # why reconciliations were computed, announced, and silently discarded.
+              # PIPESTATUS[0] is git's own status. Not `set -o pipefail`: that would change
+              # unrelated pipelines in this block.
+              git push origin "HEAD:${HEAD_REF}" 2>&1 | tee /tmp/gs-push.log
+              push_rc=${PIPESTATUS[0]}
+              if [ "$push_rc" -eq 0 ]; then
                 pushed=true
                 break
               fi
-              # A 403 is NOT a race, and must not be retried or described as one.
-              # The first version of this loop retried a permission failure three
-              # times while printing "the branch moved under us" — with `Current
-              # branch is up to date` on the very next line contradicting it. A
-              # diagnostic that names the wrong cause is worse than none.
+              # A 403 is NOT a race, and must not be retried or described as one. The first
+              # version of this loop retried a permission failure three times while printing
+              # "the branch moved under us" — with `Current branch is up to date` on the very
+              # next line contradicting it. A diagnostic that names the wrong cause is worse
+              # than none.
               if grep -qE "Write access to repository not granted|Permission to .* denied|error: 403" /tmp/gs-push.log; then
                 echo "::error::Cannot push the governance reconciliation to ${HEAD_REF}: the token has NO WRITE ACCESS (HTTP 403). This is a permission problem, not a race — retrying cannot help. Check this workflow's \`permissions:\` block declares \`contents: write\`; a repo that declares \`contents: read\` here can never commit back, and any reconciliation it computes is silently discarded."
                 exit 1
@@ -126,18 +361,39 @@ jobs:
                 exit 1
               fi
             done
+            for k in $(git config --local --name-only --get-regexp '^http\..*\.extraheader$' 2>/dev/null || true); do
+              git config --local --unset-all "$k" || true
+            done
+            for k in $(git config --local --name-only --get-regexp '^includeIf\.gitdir:' 2>/dev/null || true); do
+              for v in $(git config --local --get-all "$k" 2>/dev/null || true); do
+                git config --local --unset "$k" "$v" || true
+              done
+            done
             if [ "$pushed" != "true" ]; then
               echo "::error::Failed to push the governance reconciliation to ${HEAD_REF} after 3 attempts."
               exit 1
             fi
-            echo "::notice::Reconciled and pushed $committable managed file(s) to ${HEAD_REF}."
+            echo "::notice::Reconciled and pushed $committable managed file(s) and $reconciled governed workflow file(s) to ${HEAD_REF} using ${PUSH_IDENTITY}."
+            if [ "$PUSH_IDENTITY" = "GITHUB_TOKEN" ]; then
+              echo "::error::The reconciliation was pushed with the default GITHUB_TOKEN, which by design triggers NO workflows. ${HEAD_REF} now points at a commit NO check has run against, while the previous commit's green checks remain visible on the PR — merging it would merge an untested tree. Set the fuze-agent App secrets (FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY, the §8 default) or the repo secret GH_RELEASE_PAT (classic PAT, repo scope) so this job's push re-runs CI automatically. Until then, re-run CI on the new head by pushing any commit UNDER A REAL USER IDENTITY (an empty commit is enough). Closing and reopening the PR only works if a human does it in the UI — a reopen performed with a GitHub App installation token is suppressed exactly like a GITHUB_TOKEN push and produces no runs at all; verified on FuzeSocial#81."
+              exit 1
+            fi
           fi
-          # Workflow drift is ADVISORY, not blocking. The default GITHUB_TOKEN cannot push
-          # .github/workflows/**, and repos legitimately customise them (cron stagger, extra
-          # jobs) — so failing here would be permanently red AND unactionable by this workflow.
-          # The nightly governance sweep opens a fix PR for genuine staleness.
+          # Workflow drift is ADVISORY, not blocking. Anything in `workflows` (rather than
+          # `reconciled`) is by definition something THIS run could not push: an unmarked
+          # file, an absent one, or a run with no workflows-scoped token. Repos also
+          # legitimately customise some workflows in ways no render variable captures. So
+          # failing here would be red AND unactionable by this workflow. The hourly sweep
+          # below and the nightly governance sweep open a fix PR for genuine staleness.
           if [ "$workflows" != "0" ]; then
-            echo "::warning::$workflows workflow file(s) differ from the FuzeSDLC canonical (advisory — this job cannot push workflow changes). Run scripts/sdlc-bootstrap.sh if they are genuinely stale."
+            echo "::warning::$workflows managed workflow file(s) differ from the FuzeSDLC canonical (advisory — this run could not push workflow changes). Run scripts/sdlc-bootstrap.sh if they are genuinely stale, or wait for the nightly sweep."
+          fi
+          # `detached` is purely informational: a workflow whose `fuze:managed` marker was
+          # removed is, by design, never touched and never blocks — it is the SUPPORTED way
+          # to fork a governed workflow. Surfaced here only so the fork is visible in the PR
+          # log instead of being indistinguishable from a file that was never managed.
+          if [ "$detached" != "0" ]; then
+            echo "::notice::$detached workflow file(s) look like a canonical template by name but carry no \`fuze:managed\` marker — either a repo-authored workflow that happens to share the name, or a managed workflow that was deliberately detached. Never touched either way; see governance/file-ownership.md."
           fi
           # A manifest-DECLARED agent missing from the repo IS blocking: real breakage, and
           # scripts/sdlc-bootstrap.sh fixes it deterministically.
@@ -146,3 +402,361 @@ jobs:
             exit 1
           fi
           echo "Governance in sync with FuzeSDLC ${{ steps.ref.outputs.ref }} (workflow drift, if any, is advisory)."
+
+  # ══ SWEEP MODE ════════════════════════════════════════════════════════════════════════
+  # Reconciles the DEFAULT BRANCH on a schedule (and on demand), and lands the result as a
+  # pull request from one stable branch. It cannot push to the default branch: the target is
+  # a constant below, and the push step asserts it against the resolved default-branch name
+  # before pushing anything.
+  #
+  # This job never runs on `pull_request`, so it never adds a real check to a PR — with one
+  # wrinkle worth knowing: GitHub renders a job skipped by a job-level `if:` as a "skipped"
+  # check, which every ruleset treats as satisfied. `governance-sweep` is in no repo's
+  # `required_now` (governance/required-checks.json) and must not be added to one: it is
+  # remediation machinery, and requiring the repair as a merge precondition inverts the
+  # dependency exactly as `never_require` describes for call-autofix.
+  governance-sweep:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the sweep branch (never the default branch)
+      pull-requests: write   # open/find the one sweep PR
+    concurrency:
+      # Serialised, never cancelled. Two overlapping sweeps would compute the same
+      # reconciliation and race to update the same branch; `cancel-in-progress` would instead
+      # abort a run mid-push. Hourly runs finish in well under an hour, so the queue is a
+      # safety net rather than a bottleneck.
+      group: governance-sync-sweep-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      # THE ONLY PUSH TARGET THIS JOB HAS, and a literal rather than an expression — nothing
+      # derived from an event payload can steer it. That is what makes "the sweep cannot push
+      # to the default branch" checkable by READING this file, instead of by simulating an
+      # event and hoping the interesting case was covered.
+      SWEEP_BRANCH: governance-sync/sweep
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      # `ref:` is PINNED to the default branch rather than left to default. A
+      # `workflow_dispatch` can be fired from any ref, and without this the sweep would
+      # reconcile whatever branch the operator happened to pick while still reporting that
+      # "the default branch is in sync". The workflow FILE always comes from the default
+      # branch on both `schedule` and `workflow_dispatch`; the CHECKOUT does not.
+      - name: Checkout (default branch — never the dispatched ref)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Skip if not onboarded or key absent
+        id: guard
+        env:
+          KEY: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
+        run: |
+          if [ -z "${DEFAULT_BRANCH:-}" ]; then
+            echo "::warning::could not resolve this repository's default branch from the event payload — skipping rather than guessing a push target."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          elif [ ! -f .fuze/manifest.json ]; then
+            echo "::notice::no .fuze/manifest.json — repo not onboarded; skipping."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$KEY" ]; then
+            echo "::notice::FUZESDLC_DEPLOY_KEY not set — cannot fetch the canonical; skipping (set the read-only key to enable)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve baselineRef
+        id: ref
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          BR=$(python3 -c "import json;print(json.load(open('.fuze/manifest.json')).get('baselineRef','main'))")
+          echo "ref=${BR:-main}" >> "$GITHUB_OUTPUT"
+
+      # Fetched BEFORE the credential swap in the last step, while actions/checkout's own
+      # persisted Authorization header is still the one in git config — on a private repo the
+      # sweep branch is not reachable without it.
+      - name: Fetch the current sweep branch, if any
+        id: sweep
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          git fetch --no-tags origin \
+            "+refs/heads/${SWEEP_BRANCH}:refs/remotes/origin/${SWEEP_BRANCH}" 2>/dev/null || true
+          sha=$(git rev-parse --verify --quiet "refs/remotes/origin/${SWEEP_BRANCH}" || true)
+          tree=""
+          if [ -n "$sha" ]; then
+            tree=$(git rev-parse --verify --quiet "refs/remotes/origin/${SWEEP_BRANCH}^{tree}" || true)
+            echo "::notice::existing sweep branch ${SWEEP_BRANCH} at ${sha}"
+          fi
+          echo "sha=$sha"   >> "$GITHUB_OUTPUT"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch FuzeSDLC canonical (read-only key)
+        if: steps.guard.outputs.ok == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: izzywdev/FuzeSDLC
+          ref: ${{ steps.ref.outputs.ref }}
+          ssh-key: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
+          path: .fuzesdlc-canonical
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        if: steps.guard.outputs.ok == 'true'
+        with:
+          python-version: "3.12"
+
+      # Same identity ladder, same reason, as PR mode: a branch pushed and a PR opened under
+      # the default GITHUB_TOKEN trigger NO workflow runs, so the sweep PR would arrive with
+      # zero checks and could never satisfy branch protection.
+      - name: Mint fuze-agent App token
+        id: app_token
+        if: steps.guard.outputs.ok == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+
+      - name: Mint fuze-agent App token (workflows-scoped)
+        id: app_token_workflows
+        if: steps.guard.outputs.ok == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+
+      - name: Reconcile managed files
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          WORKFLOWS_TOKEN: ${{ steps.app_token_workflows.outputs.token }}
+        run: |
+          extra_flag=""
+          if [ -n "${WORKFLOWS_TOKEN:-}" ]; then
+            extra_flag="--write-workflows"
+          fi
+          python3 .fuzesdlc-canonical/scripts/governance_sync.py \
+            --canonical .fuzesdlc-canonical --repo . --write $extra_flag \
+            --report .governance-sync-report.json
+
+      # Rendered BEFORE anything is deleted and before the tree is committed. INLINE rather
+      # than a helper script in the canonical: a helper would have to be present in whatever
+      # commit each repo's `baselineRef` resolves to, so a repo pinned to an older tag would
+      # fetch a canonical that has the new workflow but not the new script and fail on a
+      # missing file. Inline, the step can only ever be as old as the workflow around it.
+      - name: Render the sweep PR body
+        id: body
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          BASELINE_REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+
+          with open(".governance-sync-report.json", encoding="utf-8") as fh:
+              report = json.load(fh)
+
+          def bullets(key):
+              items = report.get(key) or []
+              return "\n".join("- `%s`" % p for p in items) or "- (none)"
+
+          counts = {k: len(report.get(k) or []) for k in
+                    ("committable", "reconciled", "workflows", "missing", "detached")}
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              for k, v in counts.items():
+                  fh.write("%s=%d\n" % (k, v))
+
+          body = """Opened by the hourly **governance sweep** (`governance-sync.yml`, sweep mode).
+
+          `{branch}` has drifted from the FuzeSDLC canonical at `{ref}`. This branch holds the
+          reconciliation `scripts/governance_sync.py` computes. It is REGENERATED from
+          `{branch}` whenever the reconciled tree changes, so do not hand-edit it — push the
+          fix to the canonical, or to `{branch}`, instead.
+
+          **Managed files reconciled ({n_committable})**
+          {committable}
+
+          **Governed workflow files reconciled ({n_reconciled})**
+          {reconciled}
+
+          ---
+
+          Advisory, and NOT changed by this PR:
+
+          Workflow files that differ but this run could not write ({n_workflows}):
+          {workflows}
+
+          Manifest-declared files MISSING from the repo ({n_missing}) — these need
+          `scripts/sdlc-bootstrap.sh`; the sweep cannot create them:
+          {missing}
+          """.format(
+              branch=os.environ["DEFAULT_BRANCH"],
+              ref=os.environ["BASELINE_REF"],
+              n_committable=counts["committable"], committable=bullets("committable"),
+              n_reconciled=counts["reconciled"], reconciled=bullets("reconciled"),
+              n_workflows=counts["workflows"], workflows=bullets("workflows"),
+              n_missing=counts["missing"], missing=bullets("missing"),
+          )
+          # No dedent needed: YAML already stripped this block scalar's common indentation
+          # before bash ever saw it, so the literal above arrives at column 0. Do NOT re-indent
+          # these lines to "tidy" them — four leading spaces would render the whole PR body as
+          # a code block.
+          with open("/tmp/gs-sweep-body.md", "w", encoding="utf-8") as fh:
+              fh.write(body)
+          print(body)
+          PY
+
+      - name: Open or update the sweep PR
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          BASELINE_REF: ${{ steps.ref.outputs.ref }}
+          COMMITTABLE: ${{ steps.body.outputs.committable }}
+          RECONCILED: ${{ steps.body.outputs.reconciled }}
+          MISSING: ${{ steps.body.outputs.missing }}
+          DETACHED: ${{ steps.body.outputs.detached }}
+          OLD_SWEEP_SHA: ${{ steps.sweep.outputs.sha }}
+          OLD_SWEEP_TREE: ${{ steps.sweep.outputs.tree }}
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          WORKFLOWS_APP_TOKEN: ${{ steps.app_token_workflows.outputs.token }}
+          CI_PUSH_TOKEN: ${{ secrets.GH_RELEASE_PAT }}
+        run: |
+          set -u
+          rm -f .governance-sync-report.json
+          rm -rf .fuzesdlc-canonical
+
+          # ── ADVISORIES ─────────────────────────────────────────────────────────────
+          # `missing` deliberately does NOT fail here, unlike in PR mode. A manifest-declared
+          # file that is absent is real breakage, but it is breakage THIS JOB CANNOT FIX
+          # (governance_sync.py reports it; scripts/sdlc-bootstrap.sh creates it), so failing
+          # on it would put every affected repo red once an hour for a condition no amount of
+          # re-running clears — the alarm-fatigue shape this fleet already removed from
+          # gate-lint / gate-test / gate-dependency-scan. It is warned here, carried in the PR
+          # body when there is a PR, and driven to closure by the nightly
+          # governance-reconciliation sweep, which files a tracking issue.
+          if [ "$MISSING" != "0" ]; then
+            echo "::warning::$MISSING manifest-declared file(s) are MISSING from ${DEFAULT_BRANCH}. Run scripts/sdlc-bootstrap.sh and open a PR — this sweep cannot create them."
+          fi
+          if [ "$DETACHED" != "0" ]; then
+            echo "::notice::$DETACHED workflow file(s) match a canonical template by name but carry no fuze:managed marker — deliberately never touched (governance/file-ownership.md)."
+          fi
+
+          # ── SILENCE WHEN IN SYNC ───────────────────────────────────────────────────
+          # One notice; no PR, no comment, no red. This is the path ~528 runs/day take once
+          # the fleet is converged, and it is the whole reason an hourly sweep is tolerable.
+          if [ "$COMMITTABLE" = "0" ] && [ "$RECONCILED" = "0" ]; then
+            echo "::notice::${DEFAULT_BRANCH} is in sync with FuzeSDLC ${BASELINE_REF} — nothing to reconcile, nothing opened."
+            exit 0
+          fi
+
+          # ── SAFETY ASSERTIONS ──────────────────────────────────────────────────────
+          # Belt and braces around the one thing this job must never do. SWEEP_BRANCH is a
+          # literal, so neither can fire today; they exist so that if someone later makes it
+          # an expression, the job dies instead of writing a protected branch.
+          case "$SWEEP_BRANCH" in
+            governance-sync/*) ;;
+            *) echo "::error::refusing to push: SWEEP_BRANCH='${SWEEP_BRANCH}' is outside the governance-sync/ namespace."; exit 1 ;;
+          esac
+          if [ -z "$SWEEP_BRANCH" ] || [ "$SWEEP_BRANCH" = "$DEFAULT_BRANCH" ]; then
+            echo "::error::refusing to push: the sweep target ('${SWEEP_BRANCH}') resolves to the default branch ('${DEFAULT_BRANCH}'). The sweep must never write the default branch — it would bypass review, branch protection and required signatures."
+            exit 1
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          # NO `[skip ci]`. The sweep PR exists precisely so that CI runs against the
+          # reconciled tree before it merges.
+          git commit -q -m "chore(governance): reconcile ${DEFAULT_BRANCH} to FuzeSDLC ${BASELINE_REF}"
+          NEW_TREE=$(git rev-parse "HEAD^{tree}")
+
+          # ── IDEMPOTENCE, BY TREE AND NOT BY COMMIT ─────────────────────────────────
+          # Re-running must not push again. Commit SHAs differ every run (the committer
+          # timestamp moves), so comparing commits would force-update the branch every hour
+          # and re-notify every subscriber for an unchanged diff. The TREE is what the PR is
+          # about, and it is stable. This also self-corrects when the default branch moves:
+          # any change to it changes the reconciled tree, so the sweep branch is rebuilt on
+          # the new base instead of going stale behind it.
+          if [ -n "${OLD_SWEEP_TREE:-}" ] && [ "$OLD_SWEEP_TREE" = "$NEW_TREE" ]; then
+            echo "::notice::${SWEEP_BRANCH} already carries this exact tree (${NEW_TREE}) — nothing pushed."
+          else
+            # Token choice is identical to PR mode, and for the identical reason: when the
+            # commit touches .github/workflows/** only a workflows-scoped token may push it,
+            # and GitHub rejects such a push ATOMICALLY — it fails the whole commit, taking
+            # every ordinary file down with it. So that token is required, not preferred.
+            PUSH_TOKEN=""; PUSH_IDENTITY=""
+            if [ "$RECONCILED" != "0" ]; then
+              if [ -z "${WORKFLOWS_APP_TOKEN:-}" ]; then
+                echo "::error::governance_sync.py reconciled $RECONCILED workflow file(s) but no workflows-scoped fuze-agent App token is available here. That token is what gates --write-workflows, so this should be impossible — failing rather than falling back to a token GitHub would reject for the whole commit."
+                exit 1
+              fi
+              PUSH_TOKEN="$WORKFLOWS_APP_TOKEN"; PUSH_IDENTITY="FUZE_AGENT_APP_WORKFLOWS"
+            elif [ -n "${APP_TOKEN:-}" ]; then
+              PUSH_TOKEN="$APP_TOKEN"; PUSH_IDENTITY="FUZE_AGENT_APP"
+            elif [ -n "${CI_PUSH_TOKEN:-}" ]; then
+              PUSH_TOKEN="$CI_PUSH_TOKEN"; PUSH_IDENTITY="GH_RELEASE_PAT"
+            else
+              # Unlike PR mode there is no useful GITHUB_TOKEN rung to attempt: a branch
+              # pushed and a PR opened under GITHUB_TOKEN produce a PR with ZERO check runs,
+              # which no protected repo can merge. Say so once an hour rather than
+              # manufacture an unmergeable PR once an hour.
+              echo "::error::${DEFAULT_BRANCH} has drifted ($COMMITTABLE managed + $RECONCILED workflow file(s)) but no CI-triggering push identity is available. Set FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY (the hardening-convention.md §8 default) or the repo secret GH_RELEASE_PAT. A sweep PR pushed with the default GITHUB_TOKEN would carry no checks and could never merge."
+              exit 1
+            fi
+
+            # UNSET FIRST — actions/checkout persisted its own Authorization into this exact
+            # key, and this job checked out twice. Setting a second one made the server see
+            # two Authorization headers and reject the push (`remote: Duplicate header:
+            # "Authorization"`), which is how FuzeInfra run 33615645019 announced a push that
+            # never happened. extraheader, not a token-in-URL remote: git echoes remote URLs
+            # on several error paths and never echoes a header, and some of these repos are
+            # public.
+            AUTH_B64=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)
+            git config --local --unset-all "http.https://github.com/.extraheader" || true
+            git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic ${AUTH_B64}"
+            unset AUTH_B64
+
+            # The sweep branch is regenerated from the default branch whenever the reconciled
+            # tree changes, so the push is a force — but a LEASED one, and only ever onto a
+            # branch this job owns. Deliberately NOT piped into `tee`: a pipe returns tee's
+            # status, which is always 0, and that is precisely the bug that let PR mode print
+            # a success notice over a rejected push. The status checked here is git's own.
+            push_args=(origin "HEAD:refs/heads/${SWEEP_BRANCH}")
+            if [ -n "${OLD_SWEEP_SHA:-}" ]; then
+              push_args=("--force-with-lease=refs/heads/${SWEEP_BRANCH}:${OLD_SWEEP_SHA}" "${push_args[@]}")
+            fi
+            push_rc=0
+            git push "${push_args[@]}" > /tmp/gs-sweep-push.log 2>&1 || push_rc=$?
+            cat /tmp/gs-sweep-push.log
+            git config --local --unset-all "http.https://github.com/.extraheader" || true
+            if [ "$push_rc" -ne 0 ]; then
+              echo "::error::Failed to push the governance reconciliation to ${SWEEP_BRANCH} (git exit ${push_rc}). If the lease was stale, something else wrote the sweep branch between this run's fetch and its push; the next sweep rebuilds it."
+              exit 1
+            fi
+            echo "::notice::Pushed $COMMITTABLE managed file(s) and $RECONCILED governed workflow file(s) to ${SWEEP_BRANCH} using ${PUSH_IDENTITY}."
+          fi
+
+          # ── ONE PR, REUSED ─────────────────────────────────────────────────────────
+          # Runs in the drift case unconditionally — including on the tree-unchanged path
+          # above. If a previous sweep pushed the branch and then failed before opening the
+          # PR, a tree check that short-circuited here would mean the PR never appeared at
+          # all, on any subsequent run. One API read closes that hole.
+          GH_TOKEN_TO_USE="${WORKFLOWS_APP_TOKEN:-}"
+          if [ -z "$GH_TOKEN_TO_USE" ]; then GH_TOKEN_TO_USE="${APP_TOKEN:-}"; fi
+          if [ -z "$GH_TOKEN_TO_USE" ]; then GH_TOKEN_TO_USE="${CI_PUSH_TOKEN:-}"; fi
+          export GH_TOKEN="$GH_TOKEN_TO_USE"
+
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" \
+            --head "$SWEEP_BRANCH" --base "$DEFAULT_BRANCH" --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "::notice::sweep PR #${existing} is already open for ${SWEEP_BRANCH} — updated in place; no second PR opened."
+            exit 0
+          fi
+
+          gh pr create --repo "$GITHUB_REPOSITORY" \
+            --head "$SWEEP_BRANCH" --base "$DEFAULT_BRANCH" \
+            --title "chore(governance): reconcile ${DEFAULT_BRANCH} to FuzeSDLC ${BASELINE_REF}" \
+            --body-file /tmp/gs-sweep-body.md
+          echo "::notice::opened a sweep PR for ${SWEEP_BRANCH}."

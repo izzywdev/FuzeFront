@@ -29,6 +29,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- include "fuzefront.scheduling" (dict "svc" dict "root" $) | nindent 6 }}
       containers:
         - name: db-bootstrap
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"

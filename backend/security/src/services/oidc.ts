@@ -1,5 +1,7 @@
 import { Issuer, Client, generators, custom } from 'openid-client';
 import { db } from '../config/database';
+import { enqueueEvent } from '@fuzefront/core';
+import { TOPICS } from '@fuzefront/shared/kafka';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity';
@@ -453,18 +455,43 @@ export async function syncUserToDatabase(userinfo: any): Promise<User> {
 
       if (userRow) {
         // Update existing user. Only ever promote email_verified FALSE->TRUE.
-        await db('users')
-          .where('id', userRow.id)
-          .update({
-            first_name: firstName,
-            last_name: lastName,
-            ...(emailVerifiedClaim && !userRow.email_verified
-              ? { email_verified: true }
-              : {}),
-            updated_at: new Date(),
-          });
+        // Wrap in a transaction so that, when the IdP-synced profile actually
+        // changes, the identity.user.updated outbox row commits atomically with
+        // the update (diff-guarded — an unchanged login emits no event).
+        const profileChanged =
+          userRow.first_name !== firstName || userRow.last_name !== lastName;
 
-        logger.debug({ email }, 'oidc: updated existing user');
+        await db.transaction(async trx => {
+          await trx('users')
+            .where('id', userRow!.id)
+            .update({
+              first_name: firstName,
+              last_name: lastName,
+              ...(emailVerifiedClaim && !userRow!.email_verified
+                ? { email_verified: true }
+                : {}),
+              updated_at: new Date(),
+            });
+
+          if (profileChanged) {
+            await enqueueEvent(
+              trx,
+              TOPICS.IDENTITY_USER_UPDATED,
+              {
+                userId: userRow!.id,
+                email,
+                firstName,
+                lastName,
+              },
+              `identity-user-updated-${require('uuid').v4()}`
+            );
+          }
+        });
+
+        logger.debug(
+          { email, profileChanged },
+          'oidc: updated existing user'
+        );
       } else {
         // Create new user. The local `id` is ALWAYS a generated uuid — never the
         // OIDC `sub`, which Authentik sets to the email/username (not a uuid) and

@@ -38,6 +38,13 @@ function makeNoOpProxy(): AuthzClient {
     }),
     revoke: async () => undefined,
     listGrants: async () => ({ items: [], page: { nextCursor: null, hasMore: false } }),
+    // Echoes the write back, like `grant` above: this double exists so a unit
+    // test never reaches the network, not to model provider behaviour.
+    setAttributes: async req => ({
+      subject: req.subject,
+      attributes: req.attributes,
+      updatedAt: Date.now(),
+    }),
   };
 }
 

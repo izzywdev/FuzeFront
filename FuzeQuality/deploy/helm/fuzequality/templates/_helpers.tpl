@@ -42,4 +42,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: JIRA_EMAIL, optional: true } }
 - name: JIRA_API_TOKEN
   valueFrom: { secretKeyRef: { name: {{ .Values.secret.existingSecret }}, key: JIRA_API_TOKEN, optional: true } }
+- name: JIRA_ACCEPTANCE_CRITERIA_FIELDS
+  value: {{ join "," .Values.jira.acceptanceCriteriaFields | quote }}
 {{- end -}}

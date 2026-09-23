@@ -30,7 +30,7 @@ const footerNavigation = {
     { name: 'Documentation', href: '/docs' },
     { name: 'GitHub', href: 'https://github.com/izzywdev/FuzeFront' },
     { name: 'Status', href: '/status' },
-    { name: 'API Reference', href: 'https://developers.fuzefront.com' },
+    { name: 'Developers', href: 'https://developers.fuzefront.com' },
   ],
 }
 

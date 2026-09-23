@@ -1,0 +1,47 @@
+{{/*
+Minimal RBAC so the ARC self-hosted runner pod can read the Unleash admin
+token at workflow runtime without a GitHub secret.
+
+prod-unleash-ops.yml reads INIT_ADMIN_API_TOKENS from `unleash-secrets` via
+the k8s API using the runner pod's mounted service account token.  Without
+this Role + RoleBinding the curl call returns 403 and the workflow fails.
+
+The runner service account name is set by:
+  unleash.ciRunner.serviceAccountName   (values.yaml, default: "fuzefront")
+  unleash.ciRunner.serviceAccountNamespace (default: release namespace)
+
+For ARC v2 AutoscalingRunnerSet the SA name equals the runner set name.
+If the runner is deployed in a different namespace, override
+  unleash.ciRunner.serviceAccountNamespace in values-prod.yaml.
+*/}}
+{{- if .Values.unleash.ciRunner.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: unleash-runner-secret-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.unleash.secretName | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: unleash-runner-secret-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.unleash.ciRunner.serviceAccountName }}
+    namespace: {{ .Values.unleash.ciRunner.serviceAccountNamespace | default .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: unleash-runner-secret-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

@@ -31,6 +31,9 @@ RUN npm run type-check \
 
 FROM source AS service
 ENV NODE_ENV=production
+# Keep the runtime image limited to production dependencies. Type definitions,
+# Vite, Vitest, and the verification toolchain remain in the verify stage.
+RUN npm prune --omit=dev --no-audit --no-fund
 # Explicit rather than relying on path discovery: the service falls back to
 # walking up from its own module and from cwd, which is right for the dev loop
 # but leaves prod depending on where the process happens to be started. Naming

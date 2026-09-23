@@ -46,7 +46,7 @@ WORKFLOW_DIR = ".github/workflows"
 def find_workflow_files(directory: str) -> list[str]:
     """Workflow filenames in `directory`, sorted. Non-YAML files are ignored."""
     return sorted(
-        f for f in os.listdir(directory) if f.endswith(".yml") or f.endswith(".yaml")
+        f for f in os.listdir(directory) if f.endswith((".yml", ".yaml"))
     )
 
 

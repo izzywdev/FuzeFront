@@ -245,7 +245,7 @@ paths:
       description: >-
         Receives a vendor webhook. The body MUST be the raw signed bytes
         (consumed via a raw-body parser) so signature verification works. Public
-        (no internal token) — authenticity is the provider signature. The gateway
+        (no service token) — authenticity is the provider signature. The gateway
         neutralises the event before any consumer sees it.
       security: []
       requestBody:
@@ -311,9 +311,11 @@ components:
       type: http
       scheme: bearer
       description: >-
-        `PAYMENT_INTERNAL_TOKEN` presented as a Bearer token by internal
-        consumers (billing-service / the host proxy). Verified by
-        `requireInternalToken`.
+        A FuzeFront-issued **managed service token** (client-credentials machine
+        identity) presented as a Bearer token by internal consumers
+        (billing-service / the host proxy). Verified fail-closed against
+        security-service's `/api/v1/security/tokens/introspect` contract via
+        `@fuzefront/service-auth`. Replaces the retired static shared bearer.
 
   parameters:
     CustomerId:
@@ -326,7 +328,7 @@ components:
 
   responses:
     Unauthorized:
-      description: Missing or invalid internal token.
+      description: Missing or invalid managed service token.
       content:
         application/json:
           schema:

@@ -95,10 +95,20 @@ COPY services/devportal-service/package.json ./services/devportal-service/
 RUN npm ci --workspace=services/selection-list-service --ignore-scripts
 
 # Copy source
+COPY packages/identity/ ./packages/identity/
 COPY packages/auth/ ./packages/auth/
+COPY shared/ ./shared/
 COPY services/selection-list-service/ ./services/selection-list-service/
 
-# Build @fuzefront/auth first (src/middleware/authz.ts -- authorization
+# Build @izzywdev/fuzefront-identity first: it ships only TypeScript sources
+# in-repo, and routes/items.ts + routes/lists.ts import it, so `tsc` needs its
+# BUILT dist + .d.ts or the service build dies on TS2307 "Cannot find module".
+# The manifest COPY in the list above is not enough -- that makes the workspace
+# LINK resolve, not the types exist. Mirrors services/config-service/Dockerfile's
+# identical treatment of the identical package.
+RUN cd packages/identity && npm install --ignore-scripts && npm run build
+
+# Then @fuzefront/auth (src/middleware/authz.ts -- authorization
 # routed through FuzeFront's Security API instead of an embedded Permit.io
 # SDK -- imports it at module load; createAuthzClient() is constructed at
 # authz.ts's module scope), then selection-list-service. packages/auth IS a
@@ -107,6 +117,13 @@ COPY services/selection-list-service/ ./services/selection-list-service/
 # not packages/auth's (tsup) -- mirrors services/config-service/Dockerfile's
 # identical treatment of the same package.
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
+# Build @fuzefront/shared: selection-list-service now imports TypedConsumer /
+# TypedProducer from @fuzefront/shared/kafka (src/events/consumer.ts) for
+# the user/org lifecycle event consumers. shared/dist/index.d.ts is resolved
+# at compile time; shared/dist/index.js at runtime. The --workspace filter
+# above only installs selection-list-service's own devDeps, so shared needs
+# its own install + build here — same pattern as packages/auth above.
+RUN cd shared && npm install --ignore-scripts && npm run build
 RUN cd services/selection-list-service && npm run build
 
 # ---------- production ----------
@@ -126,6 +143,13 @@ COPY --from=build /app/services/selection-list-service/dist ./services/selection
 # the built output (mirrors services/config-service/Dockerfile's identical
 # treatment of the same package -- the "Cannot find module '@fuzefront/auth'"
 # crashloop it documents hitting first for @izzywdev/fuzefront-identity).
+# @izzywdev/fuzefront-identity is a `file:` dependency, so npm LINKS it --
+# node_modules/@izzywdev/fuzefront-identity is a symlink to /app/packages/identity.
+# The base stage ships its package.json so the link resolves instead of dangling;
+# here we populate its target with the built output. It declares NO runtime
+# dependencies, so unlike packages/auth it needs no node_modules COPY.
+COPY --from=build /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
 COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # ...AND packages/auth's own runtime dependencies, which nothing else puts in
@@ -143,6 +167,10 @@ COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # `npm install` inside packages/auth to get tsup, and copying from there would
 # drag tsup/typescript/jest into the production image.
 COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/shared is a workspace dep linked by npm. Populate the symlink
+# target with the built output so the Kafka consumer resolves at runtime.
+COPY --from=build /app/shared/package.json ./shared/package.json
+COPY --from=build /app/shared/dist ./shared/dist
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/selection-list-service/openapi.yaml ./services/selection-list-service/openapi.yaml
 

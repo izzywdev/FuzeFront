@@ -81,6 +81,15 @@ function providerEntries(source: string): { name: string; body: string }[] {
   })
 }
 
+/**
+ * A provider with no browser leg — it declares `redirect_uris: []`, so it can
+ * never serve an authorize request. These are the aud=a2a client_credentials
+ * providers; the authorization_code guard below does not apply to them.
+ */
+function isMachineToMachine(body: string): boolean {
+  return /^\s*redirect_uris:\s*\[\]\s*$/m.test(body)
+}
+
 describe('Authentik OAuth2 provider blueprints', () => {
   const files = blueprintFiles()
 
@@ -97,11 +106,22 @@ describe('Authentik OAuth2 provider blueprints', () => {
     })
 
     it.each(entries.map((e) => [e.name, e.body]))(
-      '%s declares grant_types including authorization_code',
+      '%s declares a grant_types allow-list appropriate to its kind',
       (_name, body) => {
-        // Without this Authentik 2026.x rejects EVERY authorize request with
-        // error=invalid_request. See the header comment.
+        // An EMPTY allow-list is the trap (see header comment item 1), so every
+        // provider must declare the key regardless of kind.
         expect(body).toMatch(/^\s*grant_types:\s*$/m)
+
+        // Machine-to-machine providers have no browser leg: they declare
+        // `redirect_uris: []` and never reach /application/o/authorize/, so the
+        // invalid_request trap cannot apply to them and requiring
+        // authorization_code would be wrong. Introduced by the aud=a2a
+        // providers in provider-oidc-a2a.yaml (#1123).
+        if (isMachineToMachine(body)) {
+          expect(body).toMatch(/^\s*-\s*client_credentials\s*$/m)
+          return
+        }
+
         expect(body).toMatch(/^\s*-\s*authorization_code\s*$/m)
       }
     )

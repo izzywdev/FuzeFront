@@ -2,9 +2,18 @@ name: Harden Gate
 
 # Unified protection gate shared verbatim across all hardened repos.
 # Emits canonical status-check contexts: lint, test, build, sast, secret-scan, dependency-scan.
-# First-pass policy: lint/test/build/sast/dependency-scan are REPORT-ONLY (never fail the job;
-# findings are surfaced to the Security tab via SARIF). secret-scan (gitleaks) DOES gate new
-# secrets in a PR. Flip a job to enforcing later by removing its "|| true" / setting exit-code.
+# ENFORCING: lint, secret-scan (gitleaks).
+# REPORT-ONLY still: test, build, sast, dependency-scan (never fail the job; findings are
+# surfaced to the Security tab via SARIF).
+#
+# Every one of those report-only jobs is ALSO a REQUIRED status context on master, so each
+# is a check that can only pass — which is worse than no check, because a required context
+# that cannot fail is indistinguishable from one that has not reported yet. De-vacuuming
+# them is Stage 0 in governance/required-checks.json (`stages.stage_0`), taken ONE GATE AT
+# A TIME so a first-run red is attributable. gate-lint is done; its action item names the
+# exact change ("remove `set +e` / terminal `exit 0`"). gate-test is explicitly flagged
+# "Do not flip with gate-lint" — it needs its pytest scoping fixed first.
+# Flip a job by removing its "|| true" / `set +e` / terminal `exit 0` / exit-code: '0'.
 
 on:
   push:
@@ -25,31 +34,130 @@ jobs:
   gate-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: '24.x' }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
-      - name: Lint (adaptive, report-only)
+      # ENFORCING as of Stage 0 (governance/required-checks.json → stages.stage_0,
+      # action "gate-lint: remove `set +e` / terminal `exit 0`"). `gate-lint` is a
+      # REQUIRED context on master, and before this it ran every lint and then threw
+      # the result away — a required check that could only ever pass. The lints below
+      # are unchanged; only the disposal of their exit codes is.
+      #
+      # Deliberately NOT `set -e`: every sub-lint still runs, so one push surfaces
+      # every failure at once instead of fixing ruff only to discover node --check on
+      # the next round. Failures accumulate in `rc` and the step exits non-zero. That
+      # is the whole difference from the old `set +e … exit 0`.
+      - name: Lint (adaptive)
         shell: bash
         run: |
-          set +e
+          rc=0
           if [ -f package.json ] && grep -q '"lint"' package.json; then
-            echo "::group::npm run lint"; (npm ci || npm install) >/dev/null 2>&1; npm run lint; echo "::endgroup::"
+            echo "::group::npm run lint"
+            (npm ci || npm install) >/dev/null 2>&1
+            npm run lint || rc=1
+            echo "::endgroup::"
           fi
-          if git ls-files '*.py' | grep -q .; then
-            echo "::group::ruff"; pipx run ruff check . ; echo "::endgroup::"
+          # ENUMERATION FAILURE IS A GATE FAILURE, NOT AN EMPTY REPO.
+          #
+          # This was `if git ls-files '*.py' | grep -q .; then`. If git fails for any
+          # reason — not a checkout, binary missing, index corrupt — the pipeline emits
+          # nothing, `grep -q` returns 1, the branch is SKIPPED, and `rc` stays 0. The
+          # gate then reports green having linted nothing at all: exactly the vacuity
+          # this job was rewritten to remove, re-entering through a different door.
+          # Caught in review on this PR (Copilot, 2026-09-15) after the rest of the
+          # de-vacuuming had landed.
+          #
+          # So: capture the list, check git's own exit status, and fail closed. An
+          # empty-but-successful list is the only case that legitimately skips.
+          py_files=""
+          if ! py_files=$(git ls-files '*.py'); then
+            echo "::error title=gate-lint::could not enumerate Python files (git ls-files failed). Refusing to report a lint result for a file set this job could not read."
+            rc=1
+          elif [ -n "$py_files" ]; then
+            echo "::group::ruff"
+            # PINNED, and that is the load-bearing part of this line.
+            #
+            # This was a bare `pipx run ruff`, which resolves the LATEST release from
+            # PyPI on every run. Measured 2026-09-14 on this very PR: locally installed
+            # ruff 0.15.8 reported 32 findings and CI reported 563, because 0.16 widened
+            # ruff's DEFAULT rule set from E4/E7/E9/F to roughly ten more families
+            # (UP, FURB, BLE, SIM, S, RUF, PLW, PYI, I, EXE...). Nothing in the repo
+            # changed between those two numbers.
+            #
+            # For a REQUIRED context on a deploy-on-push branch that is not a nuisance,
+            # it is a fleet-wide outage waiting for a release day: a new ruff can red
+            # master everywhere at once, for a rule nobody adopted, and no one can
+            # reproduce the failure locally. A gate whose verdict is fetched from the
+            # internet at run time does not have a specification.
+            #
+            # So the version is pinned and bumped deliberately, like any other
+            # dependency. Bumping it is a PR that carries whatever new findings the new
+            # default set surfaces — which is exactly how 0.16.7's arrived here.
+            #
+            # `python3 -m pip install`, not `pipx run`, following FuzeSDLC's canonical
+            # harden-gate: pipx is preinstalled on ubuntu-latest, which is where this job
+            # runs TODAY, but this is the one job in this file that can block a merge, and
+            # the policy already contemplates moving required jobs onto the budget-fallback
+            # runner chooser. A self-hosted pool need not carry pipx — the same
+            # availability failure gate-actionlint documents for the ARC scale set that
+            # carries no npm. The other two `pipx run` uses in this workflow are
+            # report-only, so they can afford the assumption; this one cannot.
+            #
+            # The install is CHECKED, and the version is ASSERTED. Ignoring the install
+            # result would let a green check mean "some ruff ran" rather than "ruff
+            # 0.16.7 ran" — if the install fails and any other ruff is on PATH, the pin
+            # is silently defeated, which is the precise failure this pin exists to stop.
+            if ! python3 -m pip install -q ruff==0.16.7; then
+              echo "::error title=gate-lint::could not install the pinned ruff==0.16.7. Failing closed rather than linting with whatever version happens to be on PATH."
+              rc=1
+            else
+              got=$(ruff --version 2>/dev/null || echo "none")
+              case "$got" in
+                "ruff 0.16.7") ruff check . || rc=1 ;;
+                *) echo "::error title=gate-lint::expected 'ruff 0.16.7' on PATH after install, got '$got'. Failing closed: a lint result from an unpinned version is not the result this gate promises."
+                   rc=1 ;;
+              esac
+            fi
+            echo "::endgroup::"
           fi
-          if git ls-files '*.js' '*.cjs' '*.mjs' | grep -q .; then
-            echo "::group::node --check"; git ls-files '*.js' '*.cjs' '*.mjs' | while read -r f; do node --check "$f" || echo "syntax error: $f"; done; echo "::endgroup::"
+          # Same enumeration-failure rule as the Python branch above: a git failure
+          # must fail the gate, not quietly mean "this repo has no JavaScript".
+          js_files=""
+          if ! js_files=$(git ls-files '*.js' '*.cjs' '*.mjs'); then
+            echo "::error title=gate-lint::could not enumerate JavaScript files (git ls-files failed). Refusing to report a lint result for a file set this job could not read."
+            rc=1
+          elif [ -n "$js_files" ]; then
+            echo "::group::node --check"
+            # Process substitution, NOT `git ls-files | while read`: a pipeline puts the
+            # loop in a subshell, so an `rc=1` set inside it is discarded when the
+            # subshell exits. That is how the original swallowed syntax errors a SECOND
+            # time, independently of the errexit disable — it also only echoed them.
+            #
+            # Comments inside a `run:` block are part of the job body that
+            # scripts/gate_required_checks.py scans for vacuity markers (it parses YAML,
+            # so YAML-level comments are dropped, but shell comments survive). Its
+            # docstring says false positives get fixed by classifying honestly, not by
+            # loosening the pattern — so the prose here deliberately avoids spelling the
+            # markers, rather than the auditor learning to skip comments.
+            while read -r f; do
+              node --check "$f" || { echo "::error file=$f::JavaScript syntax error"; rc=1; }
+            done <<< "$js_files"
+            echo "::endgroup::"
           fi
-          echo "lint complete (report-only)"; exit 0
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=gate-lint::lint failed — see the groups above"
+          else
+            echo "lint clean"
+          fi
+          exit $rc
 
   gate-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: '24.x' }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
@@ -68,8 +176,8 @@ jobs:
   gate-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: '24.x' }
       - name: Build (adaptive, report-only)
         shell: bash
@@ -83,7 +191,7 @@ jobs:
   gate-sast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Semgrep (report-only, SARIF)
         shell: bash
         run: |
@@ -119,7 +227,7 @@ jobs:
   gate-secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
 
       # Runs the gitleaks BINARY, not gitleaks-action. Adopted from the FuzeSDLC canonical
@@ -164,7 +272,14 @@ jobs:
           # Pinned + checksummed. A security gate that curls an unverified binary is worse
           # than the problem it is solving; the digest is the upstream one from
           # gitleaks_${VERSION}_checksums.txt.
-          curl -sSfL -o "$TARBALL" \
+          #
+          # --retry covers a transient release-CDN failure. Without it a single HTTP 504
+          # from the downloads host fails this gate with curl exit 22 BEFORE gitleaks is
+          # installed — so the scan never runs and the red check reads as if a secret was
+          # found. Seen on PR #1052. curl retries 408/429/5xx, which is exactly this case;
+          # the checksum verification below is untouched, so a retry can never widen what
+          # is accepted.
+          curl -sSfL --retry 3 --retry-delay 2 --retry-max-time 120 -o "$TARBALL" \
             "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${TARBALL}"
           echo "${SHA256}  ${TARBALL}" | sha256sum -c -
           tar -xzf "$TARBALL" gitleaks
@@ -189,7 +304,7 @@ jobs:
       security-events: write
       pull-requests: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy filesystem scan (report-only, SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
@@ -287,7 +402,7 @@ jobs:
     # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - name: Semgrep authz/appsec scan (report-only, SARIF)
         shell: bash
@@ -317,7 +432,7 @@ jobs:
     # FuzeInfra#760 (permit-schema-sync with no deadline).
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { submodules: recursive }
       - name: Consumer-test bounded up + smoke
         shell: bash
@@ -355,7 +470,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - name: SemVer bump check (packages + API contracts, report-only)
         shell: bash
@@ -408,7 +523,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
@@ -475,7 +590,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { fetch-depth: 0 }
 
       - name: Can this job reach the gateway?
@@ -501,7 +616,7 @@ jobs:
           fi
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         if: steps.route.outputs.ok == 'true'
         with: { node-version: '24.x' }
 
@@ -543,7 +658,7 @@ jobs:
     # per repo once the billing-service contract annotates/allowlists its collection GETs.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Pagination gate (report-only)
@@ -575,7 +690,7 @@ jobs:
     # Ratchet it to enforcing once that backlog is cleared.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Identifier gate — self-tests (the gate must be known to FIRE)
@@ -632,7 +747,7 @@ jobs:
     # gate — see the script's docstring for why.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - name: Vacuous-check gate — self-tests (the gate must be known to FIRE)
@@ -666,8 +781,8 @@ jobs:
     # no backlog to ratchet.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: '24.x' }
       - name: Toolchain floor gate
         shell: bash
@@ -684,8 +799,8 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'

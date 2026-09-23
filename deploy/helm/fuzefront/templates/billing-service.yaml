@@ -71,13 +71,60 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: BILLING_INTERNAL_TOKEN
-            - name: PERMIT_API_KEY
+            # billing-service's authorization sync is routed through FuzeFront's
+            # own Security API (backend/security's
+            # /api/v1/security/authz/subjects/{type}/{key}/attributes, via
+            # @fuzefront/auth's createAuthzClient — see src/services/authz.ts)
+            # rather than an embedded Permit.io SDK. Permit is now purely an
+            # implementation detail behind backend/security's
+            # AuthorizationProvider seam; billing-service knows nothing about
+            # it and carries no PERMIT_API_KEY/PDP URL of its own. Step 3 of 3
+            # in this migration — config-service (#679) and
+            # selection-list-service (#699) came first.
+            - name: SECURITY_SERVICE_URL
+              # fuzefront-security is the in-cluster Service name for security-service
+              # (port 3002). See templates/security.yaml and
+              # services/config-service-deployment.yaml /
+              # services/selection-list-service-deployment.yaml, which use the
+              # same convention.
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            # billing's syncPlanToPermit() runs from Stripe WEBHOOK handlers —
+            # unlike config-service/selection-list-service, there is no
+            # end-user request in flight to forward a bearer token from. It
+            # authenticates as a machine (client_credentials) caller instead —
+            # see docs/runbooks/s2s-client-credentials.md and
+            # src/services/machineToken.ts. The Security API's
+            # PATCH .../attributes route requires the machine caller to hold
+            # the `authz:admin` scope (gated identically to grant/revoke),
+            # provisioned via
+            # `register-s2s-cli.js billing-service authz:admin` (in-cluster,
+            # NOT part of this chart).
+            - name: AUTHENTIK_TOKEN_URL
+              value: "https://{{ .Values.authentik.host }}/application/o/s2s-billing-service/token/"
+            # `optional: true` DELIBERATELY, and different from every other
+            # key in billing-secrets: billing is LIVE in production
+            # (billingService.enabled: true) and AUTHENTIK_CLIENT_ID/SECRET do
+            # not exist in the sealed billing-secrets yet (the S2S
+            # application has not been provisioned in Authentik — see the
+            # PR this shipped in). Without `optional: true` this Deployment
+            # would go CreateContainerConfigError on its NEXT rollout the
+            # moment this chart syncs, breaking the live pod over a flag that
+            # defaults OFF and a code path nothing calls yet
+            # (fuzefront.billing.authz-enabled). Remove `optional: true` in
+            # the SAME deploy window that seals the real values and flips the
+            # flag on — not before.
+            - name: AUTHENTIK_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
-                  key: PERMIT_API_KEY
-            - name: PERMIT_PDP_URL
-              value: {{ .Values.billingService.permitPdpUrl | quote }}
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: AUTHENTIK_CLIENT_ID
+                  optional: true
+            - name: AUTHENTIK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.secretName | default "billing-secrets" }}
+                  key: AUTHENTIK_CLIENT_SECRET
+                  optional: true
             # Payment-path enablement — plain config, not secrets. Fail-closed:
             # an empty/unset productKeys allowlist rejects every checkout key.
             {{- with .Values.billingService.payment }}

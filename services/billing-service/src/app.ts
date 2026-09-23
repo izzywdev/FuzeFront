@@ -168,7 +168,7 @@ export function createApp(deps?: AppDeps): Application {
   app.use(
     API_BASE,
     guard,
-    createSubscriptionsRouter(deps.subscriptionService, deps.subscriptionRepo, deps.customerRepo),
+    createSubscriptionsRouter(deps.subscriptionService, deps.subscriptionRepo, deps.customerRepo, deps.stripe),
   );
   // Credits is admin-only (HIGH-1): the credits router applies requireAdmin on
   // its POST (the X-Billing-Actor-Is-Admin gate the prior route was missing).

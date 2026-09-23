@@ -34,7 +34,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608  # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v5
         with:
           fetch-depth: 1
 
@@ -51,6 +51,11 @@ jobs:
       - name: Run Claude
         uses: ./.github/actions/fuze-code-action
         with:
+          # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
+          # path. Omitting it does not fail loudly -- the rung is skipped by name
+          # and the chain silently falls through to per-token billing, which is
+          # what every run here was doing until 2026-09-16.
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
           show-full-output: true
           settings: ${{ secrets.PENPOT_MCP_URL != '' && format('{{"mcpServers":{{"penpot":{{"type":"sse","url":"{0}"}}}}}}', secrets.PENPOT_MCP_URL) || '{}' }}

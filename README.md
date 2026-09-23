@@ -1,777 +1,340 @@
-# FuzeFront Platform
+# FuzeFront
 
-A modern microfrontend platform built with Node.js, TypeScript, React, and Vite, featuring **runtime Module Federation** for dynamic app discovery and loading with zero build-time dependencies.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Good First Issues](https://img.shields.io/github/issues-search/izzywdev/FuzeFront?query=label%3A%22good%20first%20issue%22%20is%3Aopen&label=good%20first%20issues)](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22)
+[![Help Wanted](https://img.shields.io/github/issues-search/izzywdev/FuzeFront?query=label%3A%22help%20wanted%22%20is%3Aopen&label=help%20wanted)](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22)
+[![Public Roadmap](https://img.shields.io/badge/roadmap-public-blue)](ROADMAP.md)
+[![Community](https://img.shields.io/badge/community-join-brightgreen)](COMMUNITY.md)
 
-## 🚀 Features
+**The Vibe Coding Platform for Enterprise Software with Kubernetes — A Software Factory for Software Factories.**
 
-- **🔗 Runtime Module Federation**: Apps can self-register and be loaded dynamically without rebuild
-- **📦 Zero Build-time Knowledge**: Hub has no knowledge of apps at compile time
-- **🔄 Dynamic App Discovery**: Apps register themselves via REST API at runtime
-- **Multi-Integration Support**: Module Federation, Iframe, and Web Components
-- **Real-time App Status**: WebSocket-based heartbeat system for live app monitoring
-- **Authentication & Authorization**: JWT-based auth with role management
-- **Modern UI**: Dark/light themes, responsive design, internationalization (English/Hebrew)
-- **9-Dots App Selector**: Google/Atlassian-style app launcher with health indicators
-- **Avatar User Menu**: Modern user management interface
-- **Health Monitoring**: Real-time app health checks with visual indicators
-- **WebSocket Communication**: Real-time updates and notifications
-- **Smart Navigation**: Context-aware routing and deep linking
-- **☸️ Kubernetes-native Deployment**: Helm chart + ingress-nginx for local (kind) and production (k3s) clusters
-- **Graceful Shutdown**: Proper cleanup and port conflict handling
-- **Interactive API Documentation**: Swagger/OpenAPI documentation
-- **Comprehensive Help System**: Built-in guides and documentation
+FuzeFront is the runtime hosting platform and governance control plane of the Fuze ecosystem. It provides the core architectural foundation to compose, sandbox, and automatically deploy distributed microservices and microfrontends directly to Kubernetes across any cloud of choice.
 
-## 📦 Architecture
-
-This is a monorepo managed with **npm workspaces** containing:
-
-- **`backend/`** - Node.js/Express API server with SQLite database
-- **`frontend/`** - React/Vite main platform interface (Module Federation Container)
-- **`shared/`** - Shared types, contexts, and utilities
-- **`sdk/`** - React SDK for microfrontend integration and self-registration
-- **`clock-app/`** - Example microfrontend with Module Federation
-
-## 📁 Project Organization
-
-The project follows a clean, organized folder structure:
-
-### Core Application Directories
-- **`backend/`** - Main API server and business logic
-- **`frontend/`** - Main platform interface (Module Federation Container)
-- **`clock-app/`** - Example microfrontend application
-- **`api-client/`** - Generated API client and types
-- **`sdk/`** - React SDK for microfrontend integration
-- **`shared/`** - Shared utilities and components
-- **`envmanager/`** - Environment configuration management
-- **`FuzeInfra/`** - Infrastructure setup and shared services (Git submodule)
-
-### Documentation (`docs/`)
-- **`docs/setup/`** - Setup and installation guides
-  - `README-SETUP.md` - Main setup instructions
-  - `EMPIRE-SETUP.md` - Empire infrastructure setup
-  - `SECRETS_SETUP.md` - Secret management setup
-- **`docs/guides/`** - Development and usage guides
-  - `DEVELOPER_GUIDE.md` - Comprehensive developer guide
-  - `MODULE_FEDERATION_GUIDE.md` - Module Federation implementation guide
-  - `WINDOWS_DEVELOPMENT_STRATEGY.md` - Windows-specific development notes
-  - `MIGRATION_TO_NPM_WORKSPACES.md` - Migration documentation
-  - `EMPIRE-CHECKLIST.md` - Empire deployment checklist
-  - `MANUAL_PLAYWRIGHT_TESTING.md` - Testing guide
-- **`docs/troubleshooting/`** - Problem-solving documentation
-  - `PERMIT_PDP_TROUBLESHOOTING.md` - Permit PDP issues
-  - `DNS_ACCESS_FIX.md` - DNS configuration fixes
-  - `DATABASE_CONNECTION_FIX.md` - Database connectivity issues
-  - `NETWORK_CONNECTIVITY_ANALYSIS.md` - Network debugging
-  - `POSTGRES_NAMING_FIXES.md` - PostgreSQL naming issues
-- **`docs/chats/`** - Exported chat history for development documentation
-
-### Scripts (`scripts/`)
-- Development automation and deployment scripts
-- Infrastructure setup and maintenance utilities
-- Testing and build automation
-
-### Configuration (`config/`)
-- Configuration file backups and alternatives
-- Environment-specific settings
-- Package.json variations for different setups
-
-### Testing (`tests/`)
-- Debug scripts and network testing utilities
-- Database connection testing
-- Port conflict resolution tests
-
-### Tools & Utilities
-- **`tools/`** - Development tools and generators
-- **`backups/`** - Backup files and recovery data
-- **`.github/`** - GitHub Actions, templates, and workflows
-- **`.husky/`** - Git hooks for code quality
-
-### Development Infrastructure
-- **`node_modules/`** - npm dependencies
-- **`envmanager/`** - Environment variable management
-- **`deploy/helm/fuzefront/`** - Helm chart for deploying FuzeFront to Kubernetes (local kind + prod k3s)
-- **`deploy/contabo/`, `deploy/argocd/`** - Production GitOps (Contabo k3s + Argo CD) manifests
-- **Docker build files** - per-service `Dockerfile`s (images are built and loaded into the cluster)
-- **Legacy Docker Compose files** - `docker-compose.yml`, `docker-compose.prod.yml` (superseded by Kubernetes; Authentik is still launched from `docker-compose.yml` as an interim step — see `docs/AUTHENTICATION_SETUP.md`)
-- **Configuration files** - `.cursorrules`, `.prettierrc`, `lerna.json`, etc.
-
-This organization ensures:
-- **Clean separation** of concerns
-- **Easy navigation** for new developers
-- **Logical grouping** of related files
-- **Scalable structure** for growing projects
-- **Clear documentation** hierarchy
-
-## 🎯 Quick Demo
-
-### Option 1: Development Mode
-
-```bash
-# Install all dependencies
-npm run install:all
-
-# Initialize database
-npm run db:init
-npm run db:seed
-
-# Start all services including the example app demo
-npm run demo
-```
-
-This starts:
-
-- **Hub Portal** on `http://localhost:5173` (Module Federation Container)
-- **Backend API** on `http://localhost:3001` (App Registry & WebSocket)
-- **Clock App** on `http://localhost:3003` (Example Micro-frontend)
-
-### Option 2: Local Kubernetes (kind)
-
-FuzeFront deploys via a Helm chart into a local **kind** cluster (`kind-fuzeinfra`)
-alongside the shared FuzeInfra services. See
-[Deploy to local Kubernetes](#-deploy-to-local-kubernetes-kind-fuzeinfra) below or
-the full guide in [`deploy/helm/fuzefront/README.md`](deploy/helm/fuzefront/README.md).
-
-```bash
-# 1. Bring up FuzeInfra (Postgres + Redis + ingress-nginx) in kind
-cd FuzeInfra && make kind-up && cd ..
-
-# 2. Build and load the FuzeFront images into the cluster
-docker build -t fuzefront/backend:local ./backend
-docker build -t fuzefront/frontend:local --build-arg VITE_API_URL=http://fuzefront.dev.local ./frontend
-kind load docker-image fuzefront/backend:local fuzefront/frontend:local --name fuzeinfra
-
-# 3. Deploy with Helm
-helm upgrade --install fuzefront deploy/helm/fuzefront \
-  -n fuzefront --create-namespace \
-  -f deploy/helm/fuzefront/values-local.yaml
-```
-
-Add `127.0.0.1 fuzefront.dev.local` to your hosts file, then open `http://fuzefront.dev.local`.
-
-> **Legacy:** the old `npm run docker:up` / `docker-compose` flow is superseded by Kubernetes.
-
-### What You'll See
-
-1. **Clock App automatically registers** itself with the hub when started
-2. **Real-time notification** appears in the hub when the app registers
-3. **App appears in the 9-dots selector** ready to be loaded
-4. **Click to load the app** using Module Federation (shared React instances)
-5. **Heartbeat system** keeps the app status updated in real-time
-
-## 🔗 Module Federation Implementation
-
-### 1. **Hub Portal (Container)**
-
-The frontend acts as a Module Federation container that:
-
-- Has no knowledge of apps at build time
-- Dynamically loads apps at runtime based on registry data
-- Shares React/React-DOM as singletons
-- Provides error boundaries and fallbacks
-
-### 2. **Apps (Remotes)**
-
-Each app (like clock-app) can:
-
-- **Self-register** with the hub via REST API
-- **Expose components** via Module Federation
-- **Send heartbeats** to maintain health status
-- **Share dependencies** for optimal performance
-
-### 3. **Dynamic Discovery Flow**
-
-```mermaid
-sequenceDiagram
-    participant A as App (Remote)
-    participant B as Backend API
-    participant H as Hub (Container)
-
-    A->>B: POST /api/apps/register
-    B->>H: WebSocket: app-registered
-    H->>H: Add app to registry
-    User->>H: Click app in selector
-    H->>A: Load remoteEntry.js
-    H->>H: Dynamic import('./App')
-    H->>User: Render federated component
-```
-
-## 🛠️ Tech Stack
-
-- **Backend**: Node.js, Express, TypeScript, SQLite, Socket.IO
-- **Frontend**: React, TypeScript, Vite, Module Federation
-- **Monorepo**: npm workspaces, concurrently
-- **Code Quality**: ESLint, Prettier, Husky, lint-staged, commitlint
-- **Integration**: Module Federation, Iframe, Web Components
-- **Containerization & Orchestration**: Docker (multi-stage builds), Kubernetes (Helm), ingress-nginx, kind (local) / k3s (prod), Argo CD
-
-## 🏃‍♂️ Development
-
-### Available Scripts
-
-```bash
-# Development
-npm run dev                 # Start backend + frontend
-npm run dev:all             # Start all services including clock-app
-npm run dev:backend         # Start backend only
-npm run dev:frontend        # Start frontend only
-
-# Building
-npm run build               # Build all packages
-npm run build:all           # Build all including clock-app
-npm run type-check          # Type check all packages
-npm run lint                # Lint all packages
-
-# Database
-npm run db:init             # Initialize database
-npm run db:seed             # Seed with demo data
-
-# Docker images (build for kind/k8s, or legacy compose)
-npm run docker:build        # Build all Docker images
-npm run docker:up           # Legacy: start all services with docker-compose
-npm run docker:down         # Legacy: stop all docker-compose services
-```
-
-> **Deployment is now Kubernetes-based.** After building images, load them into
-> the cluster (`kind load docker-image ... --name fuzeinfra`) and deploy with Helm —
-> see [Deploy to local Kubernetes](#-deploy-to-local-kubernetes-kind-fuzeinfra).
-> The `docker:up`/`docker:down` compose targets are retained only as legacy.
-
-### Creating New Micro-frontends
-
-See the comprehensive guide: [MODULE_FEDERATION_GUIDE.md](./MODULE_FEDERATION_GUIDE.md)
-
-Quick setup:
-
-```bash
-# 1. Create new Vite React app
-npm create vite@latest my-app -- --template react-ts
-
-# 2. Add Module Federation
-npm install @originjs/vite-plugin-federation --save-dev
-# NOTE: the React SDK is NOT published yet — no @fuzefront/sdk-react and no
-#       @izzywdev/fuzefront-sdk-react exists in the registry. Vendor it from
-#       this repo for now. (@fuzefront is a workspace-internal scope and is not
-#       installable at all; published packages are @izzywdev/fuzefront-<name>.)
-
-# 3. Configure vite.config.ts with federation setup
-# 4. Add self-registration code
-# 5. Start and watch it auto-register with the hub!
-```
-
-## 💓 Heartbeat & Self-Registration
-
-Apps using the FuzeFront SDK can self-register and maintain health status:
-
-```typescript
-import { createHeartbeat } from '@fuzefront/sdk-react'
-
-// Auto-register when running standalone
-async function autoRegister() {
-  const response = await fetch('http://localhost:3001/api/apps/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: 'My App',
-      url: 'http://localhost:3003',
-      integrationType: 'module-federation',
-      remoteUrl: 'http://localhost:3003',
-      scope: 'myApp',
-      module: './App',
-    }),
-  })
-
-  if (response.ok) {
-    const app = await response.json()
-
-    // Start heartbeat
-    const heartbeat = createHeartbeat({
-      appId: app.id,
-      backendUrl: 'http://localhost:3001',
-      interval: 30000,
-    })
-    heartbeat.start()
-  }
-}
-```
-
-## 🔌 Integration Types
-
-### 1. Module Federation (Recommended)
-
-**Best Performance** - Shared dependencies, type safety, rich integration
-
-```typescript
-{
-  integrationType: 'module-federation',
-  remoteUrl: 'https://myapp.example.com',
-  scope: 'myApp',
-  module: './App'
-}
-```
-
-### 2. Iframe
-
-**Maximum Isolation** - Any technology, complete sandboxing
-
-```typescript
-{
-  integrationType: 'iframe',
-  url: 'https://myapp.example.com'
-}
-```
-
-### 3. Web Component
-
-**Standards Based** - Framework agnostic, good encapsulation
-
-```typescript
-{
-  integrationType: 'web-component',
-  remoteUrl: 'https://myapp.example.com/component.js',
-  scope: 'my-web-component'
-}
-```
-
-## 🎯 Default App Icons
-
-The platform automatically assigns icons based on integration type:
-
-- **Module Federation**: 🔗 (Link icon - best performance)
-- **Iframe**: 🖼️ (Frame icon - maximum isolation)
-- **Web Component**: ⚡ (Lightning icon - standards based)
-
-## 🎨 Theming
-
-The platform supports dark/light themes using CSS custom properties:
-
-```css
-:root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --text-primary: #212529;
-  --accent-color: #007bff;
-}
-
-[data-theme='dark'] {
-  --bg-primary: #1a1a1a;
-  --bg-secondary: #2d2d2d;
-  --text-primary: #ffffff;
-  --accent-color: #4dabf7;
-}
-```
-
-## 🌐 Internationalization
-
-Supports English and Hebrew with RTL layout:
-
-```typescript
-import { useLanguage } from './contexts/LanguageContext';
-
-function MyComponent() {
-  const { t, language, setLanguage } = useLanguage();
-
-  return (
-    <div>
-      <h1>{t('welcome')}</h1>
-      <button onClick={() => setLanguage('he')}>עברית</button>
-    </div>
-  );
-}
-```
-
-## 📝 Commit Convention
-
-This project uses [Conventional Commits](https://conventionalcommits.org/):
-
-```bash
-feat(frontend): Add new app selector component
-fix(backend): Resolve authentication token validation
-docs(readme): Update installation instructions
-chore(deps): Update dependencies
-```
-
-### Allowed Types
-
-- `feat` - New feature
-- `fix` - Bug fix
-- `docs` - Documentation
-- `style` - Formatting changes
-- `refactor` - Code refactoring
-- `perf` - Performance improvements
-- `test` - Adding tests
-- `chore` - Maintenance tasks
-- `ci` - CI/CD changes
-- `build` - Build system changes
-
-### Allowed Scopes
-
-- `backend`, `frontend`, `shared`, `sdk`
-- `auth`, `ui`, `api`, `websocket`, `heartbeat`
-- `theme`, `i18n`, `build`, `deps`
-
-## 🔒 Security
-
-- JWT-based authentication
-- Role-based access control (RBAC)
-- CORS configuration for Module Federation
-- Helmet.js security headers
-- Input validation and sanitization
-
-## ☸️ Deploy to local Kubernetes (kind-fuzeinfra)
-
-FuzeFront runs on Kubernetes. Locally it deploys via a Helm chart at
-[`deploy/helm/fuzefront/`](deploy/helm/fuzefront/) into a **kind** cluster named
-`fuzeinfra` (kubectl context `kind-fuzeinfra`), namespace `fuzefront`. The shared
-**FuzeInfra** services (Postgres, Redis) and the **ingress-nginx** controller (host
-ports 80/443) are provided by the FuzeInfra submodule, also on kind.
-
-```bash
-# 1. Bring up FuzeInfra (ingress-nginx + Postgres + Redis) in kind
-cd FuzeInfra && make kind-up && cd ..
-kubectl -n fuzeinfra get pods            # wait until postgres/redis are Running
-
-# 2. Build the images and load them into the cluster
-docker build -t fuzefront/backend:local ./backend
-docker build -t fuzefront/frontend:local --build-arg VITE_API_URL=http://fuzefront.dev.local ./frontend
-kind load docker-image fuzefront/backend:local fuzefront/frontend:local --name fuzeinfra
-
-# 3. Deploy with Helm
-helm upgrade --install fuzefront deploy/helm/fuzefront \
-  -n fuzefront --create-namespace \
-  -f deploy/helm/fuzefront/values-local.yaml
-
-# 4. Resolve the hostname (add to C:\Windows\System32\drivers\etc\hosts)
-#    127.0.0.1 fuzefront.dev.local
-
-# 5. Verify
-kubectl -n fuzefront get pods,svc,ingress
-curl http://fuzefront.dev.local/api/health
-# open http://fuzefront.dev.local
-```
-
-**Services deployed:** `fuzefront-frontend` (svc :8080 — serves the SPA via its
-in-pod nginx, which also proxies `/api` + `/socket.io` to the backend) and
-`fuzefront-backend` (svc :3001). The `fuzefront` Ingress routes host
-`fuzefront.dev.local` → frontend.
-
-**Refresh an image after a code change:**
-
-```bash
-docker build -t fuzefront/frontend:local ./frontend
-kind load docker-image fuzefront/frontend:local --name fuzeinfra
-kubectl -n fuzefront rollout restart deployment/fuzefront-frontend
-```
-
-Full instructions (secrets, runtime app registration, follow-ups):
-[`deploy/helm/fuzefront/README.md`](deploy/helm/fuzefront/README.md).
-
-### Production
-
-Production runs on a Contabo **k3s** cluster managed by **Argo CD** (GitOps), using
-GHCR images and cert-manager (`letsencrypt-prod`) for TLS at `app.fuzefront.com`. See
-[`docs/PRODUCTION_DEPLOYMENT.md`](docs/PRODUCTION_DEPLOYMENT.md) and
-[`deploy/contabo/README.md`](deploy/contabo/README.md).
-
-### Environment Variables
-
-```bash
-# Backend
-PORT=3001
-NODE_ENV=production
-JWT_SECRET=your-secret-key       # supplied via Helm secret / SealedSecret
-USE_POSTGRES=true
-DB_HOST=postgres.fuzeinfra.svc.cluster.local
-DB_PORT=5432
-DB_NAME=fuzefront_platform
-FRONTEND_URL=https://app.fuzefront.com
-
-# Frontend (baked at build time via --build-arg)
-VITE_API_URL=https://app.fuzefront.com
-```
-
-### Legacy: Docker Compose
-
-The previous `docker-compose.yml` / `docker-compose.prod.yml` deployment is
-**superseded by Kubernetes** and kept only for reference. (Authentik is still
-launched from `docker-compose.yml` as an interim step until it moves into the Helm
-chart — see [`docs/AUTHENTICATION_SETUP.md`](docs/AUTHENTICATION_SETUP.md).)
-
-## 📊 Database Schema
-
-The platform uses SQLite with the following main tables:
-
-- **users** - User accounts and authentication
-- **apps** - Registered microfrontend applications with federation metadata
-- **sessions** - User sessions (if using session-based auth)
-
-## 🤝 Contributing
-
-We welcome contributions from the community! FuzeFront is built by developers, for developers, and we appreciate all forms of contribution.
-
-### Quick Start for Contributors
-
-1. **Read our policies**:
-
-   - 📋 [Contributing Guide](CONTRIBUTING.md) - Comprehensive contribution guidelines
-   - 🤝 [Code of Conduct](CODE_OF_CONDUCT.md) - Community standards and expectations
-   - 🔒 [Security Policy](SECURITY.md) - Security vulnerability reporting
-
-2. **Set up your development environment**:
-
-   ```bash
-       git clone https://github.com/your-username/FuzeFront.git
-    cd FuzeFront
-    npm install
-   npm run dev
-   ```
-
-3. **Make your contribution**:
-   - 🐛 **Bug fixes**: Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
-   - ✨ **New features**: Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
-   - 📝 **Documentation**: Help improve our docs and guides
-   - 🧪 **Testing**: Add or improve test coverage
-   - 🔧 **Code quality**: Refactoring and performance improvements
-
-### Development Workflow
-
-We use a structured development workflow with automated quality checks:
-
-```bash
-# 1. Create feature branch
-git checkout -b feat/your-feature-name
-
-# 2. Make changes and test locally
-npm run type-check
-npm run lint
-npm run test
-npm run build
-
-# 3. Commit with conventional format
-git commit -m "feat(component): add new feature"
-
-# 4. Push and create PR
-git push origin feat/your-feature-name
-```
-
-### Automated Quality Assurance
-
-Every contribution goes through our comprehensive CI/CD pipeline:
-
-- ✅ **Linting & Type Checking**: Code quality validation
-- 🏗️ **Build Verification**: Ensures all components build successfully
-- 🧪 **Automated Testing**: Unit and integration tests
-- 🔒 **Security Scanning**: Vulnerability and dependency auditing
-- 📝 **Commit Message Validation**: Conventional commit compliance
-
-### Areas for Contribution
-
-- **🏗️ Core Platform**: Container shell and module federation improvements
-- **🔧 Backend API**: Authentication, app management, and API enhancements
-- **📦 SDK Development**: Developer experience tools and utilities
-- **📚 Documentation**: Guides, examples, and API documentation
-- **🧪 Testing**: Test coverage and quality assurance
-- **⚡ Performance**: Optimization and monitoring improvements
-- **🎨 UI/UX**: Design and accessibility enhancements
-
-### Recognition
-
-Contributors are recognized through:
-
-- 📝 README contributors section (coming soon)
-- 🎉 Release notes for significant contributions
-- 📊 GitHub contributor statistics
-- 🏆 Special mention for security disclosures
-
-### Community Support
-
-- 💬 **GitHub Discussions**: Ask questions and share ideas
-- 🐛 **GitHub Issues**: Report bugs and request features
-- 📖 **Documentation**: Comprehensive guides and examples
-- 👥 **Code Reviews**: Learn from experienced contributors
+Instead of treating AI and modern development velocity as chaotic, unmanaged "vibe coding," FuzeFront transforms it into a **governed Software Factory**. It allows independently built applications to dynamically self-register at runtime, live inside a unified product shell, inherit strict architectural guardrails, and scale seamlessly without forcing every product into a fragile monolith or causing architectural drift.
 
 ---
 
-## 📄 License
+## Three Operating Models: One Governed Platform
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Whether you are an enterprise securing internal software development, a software house delivering client solutions, or a solo founder building a multi-product portfolio, FuzeFront provides the exact structural leverage you need:
 
-## 🆘 Support
+| Operating Model | The Core Challenge | How FuzeFront Solves It | The Transformation |
+|---|---|---|---|
+| **🏢 Enterprises**<br>*In-House App Portal & Software Factory* | Teams want the velocity of modern "semi-Vibe coding," but enterprises cannot tolerate architectural drift, security gaps, and deployment bottlenecks. | Serves as the **internal microfrontend hosting platform**: rigid runtime entrance gates, tokenized design systems, declarative UI/API isolation, ReBAC/ABAC middleware, and sandboxed runtimes. | Business units safely build and deploy internal tools within a unified hosting platform without risking architectural collapse. |
+| **🏭 Software Houses**<br>*Agentic Production Factory* | High overhead from repetitive project scaffolding, fragmented client architectures, manual QA, and brittle handoffs. | Serves as the **end-to-end client delivery engine**: standardizes the agentic software development lifecycle (FuzeSDLC + FuzeAgent) from requirements to automated deployment. | Rapid, repeatable delivery of custom, governed enterprise applications with compounding reuse across client projects. |
+| **🦄 Solo Developers**<br>*One-Person Unicorn Platform* | AI generates code quickly, but a solo founder drowns in multi-repo glue, authentication, routing, infrastructure, CI/CD, and operations. | Serves as the **turnkey production shell & runtime registry**: pre-integrated shared infrastructure, automatic discovery, and unified navigation. | A single builder operates an entire portfolio of serious enterprise products with leverage previously requiring a full company. |
 
-- 📧 Email: support@frontfuse.dev
-- 📖 Documentation: [docs.frontfuse.dev](https://docs.frontfuse.dev)
-- 🐛 Issues: [GitHub Issues](https://github.com/your-org/frontfuse-platform/issues)
+---
 
-## 🗺️ Roadmap
+## Start here
 
-- [x] **Runtime Module Federation** - Zero build-time dependencies ✅
-- [x] **Self-registering Apps** - Dynamic discovery via REST API ✅
-- [x] **Docker Support** - Containerized micro-frontends ✅
-- [x] **Heartbeat System** - Real-time health monitoring ✅
-- [x] **Kubernetes deployment** - Helm chart (kind local + k3s prod via Argo CD) ✅
-- [ ] Plugin system for custom integrations
-- [ ] Advanced analytics and monitoring
-- [ ] Multi-tenant support
-- [ ] Advanced caching strategies
-- [ ] Performance monitoring dashboard
-- [ ] CI/CD pipeline templates for new apps
+FuzeFront is open to developers, platform engineers, architects, engineering leaders, software houses, and founders testing the Software Factory model against real workloads.
 
-## 🛠️ Development Setup
+**Public launch:** [Read the launch note](docs/PUBLIC_LAUNCH.md) · [Public roadmap](ROADMAP.md) · [Good first issues](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) · [Help wanted](https://github.com/izzywdev/FuzeFront/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22)
 
-### Prerequisites
+| You are... | Best next step |
+|---|---|
+| **An enterprise architect / CTO** | Review the [Architecture & Governance Guardrails](docs/SOFTWARE_FACTORY.md) and join the [Architecture Review](https://github.com/izzywdev/FuzeFront/issues/1015). |
+| **A software house / agency** | Become a [Design Partner](https://github.com/izzywdev/FuzeFront/issues/1016) to test agentic client delivery against production workloads. |
+| **A solo developer / founder** | Run the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md) and spin up a federated application in minutes. |
+| **A platform / DevOps engineer** | Test the Kubernetes path (kind/k3s/cloud) and challenge our runtime and infrastructure assumptions. |
+| **A contributor** | Read [COMMUNITY.md](COMMUNITY.md), pick a focused issue, and submit a PR. |
 
-- Node.js 24+ (Active LTS)
-- npm or yarn
-- Git
+### We actively want criticism
 
-### Quick Start
+Do not just star the repository. If you think a boundary is wrong, an enterprise abstraction is over-engineered, an existing tool solves a layer better, or something would fail under high enterprise concurrency, let us know.
 
-1. **Clone and install**:
+**Useful participation:**
+- Reproduce the quickstart and report friction;
+- Stress-test the runtime Module Federation and sandboxing guardrails;
+- Evaluate the Kubernetes multi-cloud deployment loops;
+- Test onboarding with an existing enterprise or client application;
+- Contribute adapters, design system tokens, tests, or developer-experience fixes;
+- Compare Fuze to Backstage, internal developer platforms (IDPs), traditional PaaS products, or agentic coding frameworks.
 
-   ```bash
-   git clone <repository-url>
-   cd frontfuse
-   npm install
-   ```
+Read the full [Software Factory architecture](docs/SOFTWARE_FACTORY.md) and [Community guide](COMMUNITY.md).
 
-2. **Start development servers**:
+---
 
-   ```bash
-   npm run dev
-   ```
+## The Software Factory Thesis
 
-   This starts both frontend (port 5173) and backend (port 3001)
+Traditional software development scales linearly by adding headcount to every stage of delivery: product management, architecture, development, QA, DevOps, security, release management, support, and operations.
 
-3. **Access the platform**:
-   - **Main Platform**: http://localhost:5173
-   - **API Documentation**: http://localhost:3001/api-docs
-   - **Health Check**: http://localhost:3001/health
+The Fuze approach transforms that repeated organizational overhead into reusable software, governed workflows, autonomous agentic lifecycles, shared infrastructure, and standardized runtime product contracts.
 
-### Port Conflict Resolution
-
-The backend now handles port conflicts gracefully:
-
-- **Automatic Port Detection**: Finds available ports starting from 3001
-- **Graceful Shutdown**: Clean shutdown with Ctrl+C
-- **Error Recovery**: Proper error handling and logging
-
-If you encounter port conflicts, the backend will:
-
-1. Detect the conflict
-2. Try the next available port (3002, 3003, etc.)
-3. Update all references automatically
-4. Display the new port in console output
-
-### Manual Cleanup (if needed)
-
-If you need to manually clean up port conflicts:
-
-**Windows**:
-
-```bash
-# From backend directory
-npm run cleanup
-
-# Or manually
-netstat -ano | findstr :3001
-taskkill /F /PID <process-id>
+```text
+Goal / Enterprise Requirement
+            │
+            ▼
+Planning & Prioritization (FuzePlan)
+            │
+            ▼
+Agentic SDLC Governance & Policies (FuzeSDLC)
+            │
+            ▼
+AI-Assisted / Semi-Vibe Implementation
+            │
+            ▼
+Automated Hardening, Validation & Gate Checks
+            │
+            ▼
+Touchless Kubernetes Orchestration on Any Cloud
+            │
+            ▼
+Dynamic Runtime Registration & Sandboxing
+            │
+            ▼
+Unified Enterprise Product Surface (FuzeFront)
+            │
+            ▼
+Observability, Shared Data & Business Systems (FuzeInfra)
 ```
 
-**Mac/Linux**:
+Instead of rebuilding this pipeline from scratch for every company, client, or internal project, Fuze makes the pipeline itself the platform: **a Software Factory for Software Factories.**
 
-```bash
-# Find process using port
-lsof -ti:3001
+---
 
-# Kill process
-kill -9 $(lsof -ti:3001)
+## The Infrastructure Component Stack
+
+The platform operates across three foundational infrastructure layers:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                     Goals / Business Requirements            │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         FuzePlan                             │
+│       Planning, Jira integration, insights, workflows       │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         FuzeSDLC                             │
+│ Canonical governance, agents, skills, CI and repo policies  │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│               FuzeAgent & Orchestration Layer                │
+│    Agentic lifecycle, dynamic module provisioning, IaC       │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                 Automated Deployment Layer                   │
+│      CI/CD, GitOps, and touchless Kubernetes deployment      │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         FuzeInfra                            │
+│  Kubernetes (multi-cloud), data, messaging, observability    │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                         FuzeFront                            │
+│  Internal hosting platform, runtime registry, auth, shell    │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+           ┌───────────────────┼───────────────────┐
+           ▼                   ▼                   ▼
+    Internal Enterprise    Client Project     Vertical Product
+         App (MFE)             (MFE)        (FuzeSales/Market)
 ```
 
-## 📱 Running Individual Components
+### 1. Core Hosting Platform & Governance Control Plane (FuzeFront & FuzeInfra)
+Built on runtime Module Federation and isolated container topologies managed via standardized pipelines. It acts as the enterprise's internal microfrontend hosting platform. By introducing rigid entrance gates, tokenized design system boundaries, declarative UI/API isolation, and ReBAC/ABAC middleware, it provides a **safe runtime sandboxing environment**. This allows developers and internal teams to safely build their own "semi-Vibe coding" solutions without risking architectural collapse.
 
-### Backend Only
+### 2. Automated Deployment & Orchestration Layer (FuzeAgent & FuzeDeploy)
+The internal engine that automatically interprets requirements, dynamically provisions modules, orchestrates infrastructure code, and handles touchless end-to-end deployment to **Kubernetes clusters natively on any cloud of choice** (AWS, GCP, Azure, bare-metal k3s, or local kind).
 
-```bash
-cd backend
-npm run dev
+### 3. Operational Monetization & Vertical Products (FuzeSales & FuzeMarket)
+Native vertical implementations built directly on the framework that prove immediate business ROI by automating data pipelines, market asset distribution, and sales operations at massive concurrent scale.
+
+---
+
+## Why FuzeFront Matters
+
+A Software Factory needs a common, production-grade runtime destination for everything it produces. FuzeFront provides that layer.
+
+Applications can:
+- **Register dynamically at runtime** without rebuilding or redeploying the central host shell;
+- **Integrate flexibly** via runtime Module Federation, isolated iframes, or Web Components;
+- **Safeguard architecture** through tokenized design system boundaries and declarative UI isolation;
+- **Enforce granular security** with built-in JWT authentication and ReBAC/ABAC permission middleware;
+- **Publish and maintain health status** with WebSocket real-time heartbeats;
+- **Deploy to Kubernetes on any cloud** utilizing Helm, Argo CD GitOps, and cloud-native ingress;
+- **Evolve independently** while presenting a single, coherent, branded experience to users.
+
+This decoupling guarantees that the factory can produce dozens of distributed applications without turning the platform into an unmaintainable monolith.
+
+---
+
+## Current Platform Capabilities
+
+### Runtime Application Platform
+- **Runtime Module Federation** for seamless microfrontend composition
+- **Dynamic Application Discovery** and self-registration via REST APIs
+- **Safe Sandboxing** for internal semi-vibe coding applications
+- **Multiple Integration Models** (Module Federation, iframes, Web Components)
+- **Real-Time Status & Heartbeats** over WebSockets
+- **Deep Linking & Unified Routing** across federated microfrontends
+- **Authentication & ReBAC/ABAC** access control
+- **Bi-directional i18n** (English / Hebrew out of the box)
+- **Tokenized Design System** and responsive application shell
+
+### Production-Oriented Kubernetes Runtime
+- **Multi-Cloud Kubernetes Support** (compatible with EKS, GKE, AKS, k3s, and bare metal)
+- **Local Kubernetes Support** via `kind` and `FuzeInfra`
+- **Helm Charts** for declarative packaging and deployment
+- **GitOps-Ready** with Argo CD
+- **Ingress Controller Integration** via `ingress-nginx`
+- **Automated TLS** with cert-manager
+
+### Shared Infrastructure via FuzeInfra
+The platform consumes shared enterprise infrastructure rather than recreating it per product:
+- **Relational & Document Data:** PostgreSQL, MongoDB
+- **Caching & In-Memory:** Redis
+- **Graph & Vector Intelligence:** Neo4j, ChromaDB
+- **Event Streaming & Messaging:** Apache Kafka, RabbitMQ
+- **Service Discovery & Config:** Consul
+- **Enterprise Observability:** Prometheus, Grafana, Loki
+- **Secure Networking:** Cloudflare Tunnel integration and local TLS tooling
+
+---
+
+## Dynamic Discovery Flow
+
+```mermaid
+sequenceDiagram
+    participant A as Microfrontend / App
+    participant B as FuzeFront API
+    participant H as FuzeFront Shell
+    participant U as User
+
+    A->>B: Register application metadata & contracts
+    B->>H: Broadcast app-registered event (WebSocket)
+    H->>H: Update dynamic runtime registry
+    U->>H: Navigate to application route
+    H->>A: Load federated module inside sandboxed container
+    A->>B: Periodic health & heartbeat telemetry
 ```
 
-### Frontend Only
+---
+
+## Quick Demo
+
+### Development Mode
 
 ```bash
-cd frontend
-npm run dev
+npm run install:all
+npm run db:init
+npm run db:seed
+npm run demo
 ```
 
-### Clock Example App
+This boots the platform shell, backend API, and a federated sample application.
+
+### Local Kubernetes
 
 ```bash
-cd clock-app
-npm run dev
+cd FuzeInfra && make kind-up && cd ..
+
+docker build -t fuzefront/backend:local ./backend
+docker build -t fuzefront/frontend:local \
+  --build-arg VITE_API_URL=http://fuzefront.dev.local ./frontend
+
+kind load docker-image \
+  fuzefront/backend:local \
+  fuzefront/frontend:local \
+  --name fuzeinfra
+
+helm upgrade --install fuzefront deploy/helm/fuzefront \
+  -n fuzefront --create-namespace \
+  -f deploy/helm/fuzefront/values-local.yaml
 ```
 
-## 🧪 Default Users
+Add `127.0.0.1 fuzefront.dev.local` to your hosts file and open `http://fuzefront.dev.local`.
 
-The platform comes with pre-configured users:
+---
 
-- **Admin User**:
+## Tech Stack
 
-  - Email: `admin@frontfuse.dev`
-  - Password: `admin123`
-  - Roles: `admin`, `user`
+- **Frontend:** React, TypeScript, Vite, Module Federation
+- **Backend:** Node.js, Express, TypeScript, Socket.IO
+- **Integration:** Module Federation, iframe, Web Components
+- **Data:** SQLite (local dev), PostgreSQL (production/shared)
+- **Containers:** Docker
+- **Orchestration:** Kubernetes, Helm, kind, k3s (deployable on any cloud)
+- **GitOps:** Argo CD
+- **Ingress & Security:** ingress-nginx, cert-manager, ReBAC/ABAC
 
-- **Regular User**:
-  - Email: `user@frontfuse.dev`
-  - Password: `user123`
-  - Roles: `user`
+---
 
-## 📚 Documentation
+## Creating a New Application
 
-- **Help System**: Available in the platform at `/help`
-- **API Documentation**: http://localhost:3001/api-docs
-- **Developer Guide**: `/docs/developer-guide.md`
-
-## 🏗️ Creating Microfrontend Apps
-
-See the [Developer Guide](docs/developer-guide.md) for complete instructions on:
-
-- Setting up Module Federation
-- Using the FrontFuse SDK
-- Implementing authentication
-- Adding menu items
-- Deployment strategies
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-**Port Already in Use**:
-
-- The backend now handles this automatically
-- Use `npm run cleanup` if manual intervention needed
-
-**Module Federation Errors**:
-
-- Check that remoteUrl is accessible
-- Verify scope and module names match configuration
-
-**Authentication Issues**:
-
-- Clear browser localStorage
-- Check JWT token expiration
-- Verify user credentials
-
-### Debug Mode
-
-Enable debug logging:
+A new application integrates with FuzeFront using standard Module Federation and the runtime registration API:
 
 ```bash
-DEBUG=frontfuse:* npm run dev
+npm create vite@latest my-app -- --template react-ts
+npm install @originjs/vite-plugin-federation --save-dev
 ```
 
-### Health Checks
+Configure the federation contract, register with the FuzeFront API, and begin publishing health telemetry. Under the broader Fuze Software Factory, this entire process is automated via agentic provisioning.
 
-Monitor application health:
+---
 
-```bash
-curl http://localhost:3001/health
-```
+## Production & GitOps
+
+Production deployments leverage Kubernetes and GitOps practices. Current deployment assets support k3s and managed Kubernetes clusters orchestrated through Argo CD, with GHCR images and automated TLS via cert-manager.
+
+See:
+- `docs/PRODUCTION_DEPLOYMENT.md`
+- `deploy/contabo/README.md`
+- `deploy/helm/fuzefront/README.md`
+
+---
+
+## Security & Governance
+
+- **Authentication:** JWT-based user and machine authentication
+- **Authorization:** ReBAC / ABAC fine-grained policy evaluation
+- **Isolation:** Declarative UI boundaries and network isolation
+- **Headers & Sanitization:** Helmet security headers, CORS controls, input sanitization
+- **Agentic SDLC Hardening:** Security workflows, gate checks, and drift detection enforced through FuzeSDLC
+
+---
+
+## Roadmap Direction
+
+The roadmap focuses on extending factory automation, hardening multi-tenant isolation, and expanding Kubernetes orchestration. See the public [ROADMAP.md](ROADMAP.md).
+
+Key roadmap pillars:
+- Richer plugin and microfrontend isolation models;
+- Automated, touchless onboarding of new services;
+- Automated CI/CD generation and drift remediation;
+- Deep observability and real-time distributed tracing;
+- Multi-tenant enterprise organization isolation;
+- Advanced agent orchestration across business domains;
+- End-to-end goal-to-Kubernetes automation.
+
+---
+
+## Contributing
+
+See:
+- `COMMUNITY.md`
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+
+## License
+
+This repository is licensed under the MIT License. See `LICENSE` for details.
+
+---
+
+**FuzeFront is the enterprise hosting platform and governance control plane — powering the Software Factory for Software Factories.**

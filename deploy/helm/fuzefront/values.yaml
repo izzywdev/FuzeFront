@@ -346,7 +346,7 @@ mcp:
     # GHCR (digest sha256:442078552b16112f007323085a28bdc17c1eb67b0c7eec37cd670f094352c3de).
     # `0.1.0` was NEVER published despite several charts referencing it — do not
     # reintroduce it.
-    tag: "12cb4f787248"
+    tag: "1abe510f5981"
     pullPolicy: IfNotPresent
   # Empty = derive from the in-cluster applications-service Service, INCLUDING
   # the /api/v1/app-registry prefix the contract's `servers` entry declares.
@@ -745,6 +745,9 @@ selectionListService:
   enabled: false
   replicas: 1
   port: 3008
+  # Shared FuzeInfra Kafka brokers for the lifecycle event consumer.
+  # Must equal selectionListService.port in the networkPolicy block below.
+  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
   image:
     repository: fuzefront/selection-list-service
     tag: local
@@ -765,6 +768,34 @@ selectionListService:
     # services calling the selection-list API). The Traefik rule below covers
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
+
+# MCP SSE gateway for the selection-list-service. Ships dark by default alongside
+# the service itself. Both selectionListService.enabled AND selectionListsMcp.enabled
+# must be true for the pod to deploy (gated by template condition).
+# Port 8082: 8081=app-registry MCP gateway. 8082 was verified free at the time
+# it was added.
+# NOTE: selectionListsMcp.port MUST be declared explicitly — do not use | int /
+# | default / | toString in the template (FuzeInfra#501 precedent).
+selectionListsMcp:
+  enabled: false
+  replicas: 1
+  port: 8082
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    # Same image as the app-registry MCP gateway. Version must be kept in sync
+    # with mcp.image.tag above whenever the gateway image is bumped.
+    tag: "12cb4f787248"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
 # "Try it" playground proxy backing developers.fuzefront.com (docs/planning/
@@ -948,10 +979,20 @@ billingService:
   # per-service billing-secrets SealedSecret.
   dbUser: billing_svc
   # Per-service secret (billing-only keys: STRIPE_*, BILLING_INTERNAL_TOKEN,
-  # BILLING_DB_PASSWORD). Shared creds (PERMIT_API_KEY) stay in fuzefront-secrets.
+  # BILLING_DB_PASSWORD, AUTHENTIK_CLIENT_ID/SECRET for the Security API S2S
+  # sync below). billing-service's authorization sync is routed through
+  # FuzeFront's own Security API (SECURITY_SERVICE_URL — plain in-cluster
+  # Service DNS, set in templates/billing-service.yaml) rather than an
+  # embedded Permit.io SDK, so there is no PERMIT_API_KEY/permitPdpUrl to seal
+  # here (step 3 of the 3-step migration — config-service was step 1,
+  # selection-list-service step 2). AUTHENTIK_CLIENT_ID/SECRET authenticate
+  # billing's Stripe-webhook-triggered plan sync as a machine
+  # (client_credentials) caller — see docs/runbooks/s2s-client-credentials.md
+  # — and are `optional: true` in the Deployment template until they are
+  # provisioned + sealed (billing is LIVE; the flag
+  # fuzefront.billing.authz-enabled defaults OFF regardless).
   secretName: billing-secrets
   meterFlushIntervalSec: 60
-  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
   payment: {}
   # Pre-install Job that creates the billing_svc role + `billing` schema + grants.
   dbBootstrap:
@@ -1043,6 +1084,19 @@ unleash:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # RBAC for prod-unleash-ops.yml: the workflow reads the admin token from
+  # `unleash-secrets` via the k8s API using the runner pod's mounted service
+  # account token. The Role below grants `get` on that one secret; the
+  # RoleBinding attaches it to the ARC runner SA.
+  #
+  # For ARC v2 AutoscalingRunnerSet the SA name == runner set name ("fuzefront").
+  # Override serviceAccountNamespace if your runner set lives in a different
+  # namespace (e.g. "arc-runners"). Override serviceAccountName if your runner
+  # set has a different name.
+  ciRunner:
+    enabled: true
+    serviceAccountName: fuzefront
+    serviceAccountNamespace: ""   # defaults to the release namespace (fuzefront)
 
 authentik:
   enabled: true
