@@ -15,7 +15,7 @@ PenPot is the design source of truth. Every mobile UI change starts here. **PenP
 4. **Open a GitHub Issue** in `izzywdev/FuzeFront` labeled `design-review`:
    - Title: `[Design Review] <feature name> — mobile frames`
    - Body: embedded thumbnails + PenPot file link + interaction notes
-5. **Wait for Telegram approval.** `design-review-notify.yml` fires automatically and sends the issue link to Telegram. The product owner comments `@claude approve` (or `@claude reject: <reason>`) → `claude.yml` spawns a new session to continue.
+5. **Wait for Telegram approval.** `design-review-notify.yml` fires automatically and sends the issue link to Telegram. The product owner comments `@fuze approve` (or `@fuze reject: <reason>`) → `fuze.yml` spawns a new session to continue.
 6. **Only after approval** do you write CSS/React code.
 
 **Fallback (PenPot MCP unavailable):** render a static HTML mockup at 375 px via the Artifact tool, post to the GitHub Issue labeled `design-review`, and follow the same approval flow.
