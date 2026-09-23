@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
+import { Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Plan {
@@ -214,7 +215,13 @@ export const PricingPage: React.FC = () => {
                       </div>
                     </div>
 
-                    <p className="text-sm text-gray-600 mb-5 leading-relaxed">{plan.description}</p>
+                    <Text
+                      tone="secondary"
+                      size="sm"
+                      style={{ marginBottom: 'var(--space-5)', lineHeight: 'var(--leading-relaxed)' }}
+                    >
+                      {plan.description}
+                    </Text>
 
                     <div className="mb-6">
                       {isEnterprise ? (

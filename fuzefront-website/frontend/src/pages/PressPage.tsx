@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
+import { Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -90,7 +91,7 @@ export const PressPage: React.FC = () => {
             <dl className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 shadow-soft">
               {factSheet.map((item) => (
                 <div key={item.label} className="flex justify-between px-5 py-4">
-                  <dt className="text-sm text-gray-600">{item.label}</dt>
+                  <Text as="dt" tone="secondary" size="sm">{item.label}</Text>
                   <dd className="text-sm font-medium text-gray-900">{item.value}</dd>
                 </div>
               ))}
