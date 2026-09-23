@@ -198,6 +198,10 @@ jobs:
 
   a2a-maintain:
     needs: preflight
+    # A clock, per gate-workflow-policy: this job drives an LLM agent that can push
+    # commits, so a wedged rung must die on a timer rather than pin a runner slot
+    # until a human drains the pool. 30 minutes is well above any observed run.
+    timeout-minutes: 30
     # Loop guard: never run on our own maintenance branches.
     # Two conditions, one key (a duplicate `if:` is a YAML syntax error, not an AND):
     #   - preflight said the surface is declared. When it is not, there is nothing to
@@ -421,7 +425,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload agent execution log
-        if: always() && steps.maintainer.outcome == 'failure'
+        # The execution-file guard is load-bearing, not defensive. On a provider
+        # availability/credit outage fuze-code-action produces NO execution file, so
+        # `path` renders EMPTY -- and upload-artifact fails an empty `path` input with
+        # "Input required and not supplied: path", which fails the JOB. That re-reds
+        # the very PR the credit-outage exception in the verdict step below has just
+        # deliberately passed (it exits 0 and prints its ::notice::), so the exception
+        # ported from #1046 was being silently defeated one step later.
+        # `if-no-files-found: ignore` does NOT cover this: it handles a path that
+        # matches nothing, not a path input that is empty.
+        if: always() && steps.maintainer.outcome == 'failure' && steps.maintainer.outputs.execution-file != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: a2a-maintain-execution-log
@@ -438,10 +451,33 @@ jobs:
         env:
           MAINTAINER_OUTCOME: ${{ steps.maintainer.outcome }}
           MAINTAINER_CONCLUSION: ${{ steps.maintainer.outputs.conclusion }}
+          MAINTAINER_AVAILABILITY: ${{ steps.maintainer.outputs.availability }}
           RESULT_IS_ERROR: ${{ steps.result.outputs.is_error }}
           RESULT_MSG: ${{ steps.result.outputs.msg }}
         run: |
           set -uo pipefail
+          # THE OWNER'S CREDIT-OUTAGE EXCEPTION, ported from fuze-code-review.yml (#1046).
+          # classify.sh exit 1 = availability. Without consuming it this verdict cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both --
+          # which is exactly what #1046 fixed for fuze-code-review after a provider outage
+          # failed it on every open PR in this repo while the same check on FuzeSDLC#360
+          # passed with a notice, minutes apart. That fix wired the signal into
+          # fuze-code-review only; these maintainer workflows were left on the old behaviour.
+          #
+          # This MUST be checked before the failure branch below: on an outage the action's
+          # outcome IS `failure`. And it must NOT swallow a real task failure -- availability
+          # is false there, so it falls through and still reds. That pair is the load-bearing
+          # property #1046 pinned with `task_failure_without_availability_still_abstains`.
+          if [ "${MAINTAINER_AVAILABILITY:-}" = "true" ]; then
+            echo "::notice::a2a-maintainer skipped on a provider availability/credit outage -- passing per the owner's exception. The A2A surface was NOT checked for drift here. Re-run once a provider recovers."
+            {
+              echo "### ⚪ a2a-maintainer skipped -- provider availability/credit outage"
+              echo ""
+              echo "This is NOT a defect in this PR and NOT an approval of the A2A surface;"
+              echo "the run could not reach a provider. Re-run once one recovers."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if [ "${MAINTAINER_OUTCOME:-}" = "failure" ] || [ "${RESULT_IS_ERROR:-}" = "true" ]; then
             echo "::error::a2a-maintainer did not complete: ${RESULT_MSG:-no error message surfaced}"
             {

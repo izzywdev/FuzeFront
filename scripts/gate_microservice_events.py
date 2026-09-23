@@ -70,7 +70,7 @@ REQUIRED_EVENTS = {
 # A topic named in a comment is not a subscription. These are the call shapes
 # that actually bind a handler in this codebase (shared/src/kafka/consumer.ts).
 SUBSCRIBE_CALL = re.compile(
-    r"\b(?:subscribe|on|addHandler|handle|consume)\s*(?:<[^>]*>)?\s*\(", re.I
+    r"\b(?:subscribe|on|addHandler|handle|consume)\s*(?:<[^>]*>)?\s*\(", re.IGNORECASE
 )
 
 # Topic-set ALIASES. A service may never name a topic at all and still subscribe
@@ -131,7 +131,7 @@ EFFECT_CALL = re.compile(
     # outbound mutating HTTP — the stateless-service shape
     r"\bmethod\s*:\s*['\"](?:POST|PUT|PATCH|DELETE)['\"]|"
     r"\b(?:axios|http|client)\.(?:post|put|patch|delete)\s*\(",
-    re.I,
+    re.IGNORECASE,
 )
 
 
@@ -153,7 +153,7 @@ def _iter_source(service_dir: str):
                 continue
 
 
-def classify(service_dir: str) -> dict:
+def classify(service_dir: str, repo_root: str = REPO_ROOT) -> dict:
     """Structural verdict for one candidate directory."""
     has_pkg = os.path.isfile(os.path.join(service_dir, "package.json"))
     has_docker = bool(glob.glob(os.path.join(service_dir, "Dockerfile*")))
@@ -168,7 +168,7 @@ def classify(service_dir: str) -> dict:
     if not entry:
         missing.append(" or ".join(ENTRYPOINTS))
     return {
-        "dir": os.path.relpath(service_dir, REPO_ROOT).replace(os.sep, "/"),
+        "dir": os.path.relpath(service_dir, repo_root).replace(os.sep, "/"),
         "name": os.path.basename(service_dir),
         "is_service": not missing,
         "missing": missing,
@@ -189,7 +189,7 @@ def discover(repo_root: str) -> tuple[list[dict], list[dict]]:
             d = os.path.join(base, name)
             if not os.path.isdir(d):
                 continue
-            verdict = classify(d)
+            verdict = classify(d, repo_root)
             (services if verdict["is_service"] else rejects).append(verdict)
     return services, rejects
 

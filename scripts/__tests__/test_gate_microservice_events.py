@@ -77,10 +77,14 @@ def write_policy(root: str, **over):
 
 
 def run_gate(root: str, policy: str, *extra):
+    # check=False: callers assert on r.returncode themselves (including the
+    # nonzero-exit FAIL cases below), so a raised CalledProcessError would
+    # break them -- same convention as scripts/__tests__ elsewhere.
     return subprocess.run(
         [sys.executable, GATE, "--repo", root, "--policy", policy, *extra],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

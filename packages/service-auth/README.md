@@ -36,7 +36,10 @@ npm install @izzywdev/fuzefront-service-auth        # + express, if you use the 
 import { createServiceAuthClient } from '@fuzefront/service-auth'
 
 const auth = createServiceAuthClient({
-  baseUrl: process.env.FUZEFRONT_API_URL!, // e.g. http://backend:3001/api
+  // ORIGIN ONLY — e.g. http://fuzefront-security:3002. Do NOT include `/api`:
+  // this package appends the fixed `/api/v1/security/tokens` path itself, and
+  // a baseUrl that already ends in `/api` produces a 404ing `/api/api/v1/...`.
+  baseUrl: process.env.SECURITY_SERVICE_URL!,
   clientId: process.env.SERVICE_CLIENT_ID!,
   clientSecret: process.env.SERVICE_CLIENT_SECRET!,
   // scope: 'invoices:read invoices:write',
@@ -67,7 +70,8 @@ import express from 'express'
 import { createMachineTokenVerifier, requireMachineAuth } from '@fuzefront/service-auth'
 
 const verifier = createMachineTokenVerifier({
-  baseUrl: process.env.FUZEFRONT_API_URL!,
+  // Same rule: ORIGIN ONLY (no `/api`) — see the caller example above.
+  baseUrl: process.env.SECURITY_SERVICE_URL!,
 })
 
 const app = express()

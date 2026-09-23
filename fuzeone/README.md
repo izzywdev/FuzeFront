@@ -16,6 +16,7 @@ single source of truth lives here, in the hub.
 | `.github/workflows/claude-ci-autofix.yml`, `telegram-pr-merged.yml` | CI-failure→Claude autofix, merge notifications | synced, self-contained |
 | `.github/workflows/helm-validate.yml` | helm lint + kubeconform | synced, only if `deploy/helm/` exists |
 | `.github/workflows/infra-dispatch.yml` | declare infra → FuzeInfra reconciles (repository_dispatch) | synced, only if `deploy/terraform/` or `deploy/argocd/` exists |
+| `.github/workflows/build-android-apk.yml` + `scripts/check-mobile-release.mjs` | build every commit; publish each default-branch signed APK as a versioned GitHub Release | synced when `.fuze/manifest.json` requires Android |
 
 Every generated workflow is a self-contained local file `fuzeone sync` re-stamps — there is no
 `uses:` call into a shared reusable-workflow repo anymore. `claude-ci-autofix.yml` and
@@ -122,6 +123,30 @@ that member's Terraform requests; steady-state Argo is hands-off.
 - `ANTHROPIC_API_KEY` — `@claude` handler + CI autofix.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — merge notifications (optional).
 - `FUZEINFRA_DISPATCH_TOKEN` — only if the repo declares infra; fires the FuzeInfra dispatch.
+- `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_STORE_PASSWORD`, and
+  `ANDROID_KEYSTORE_KEY_PASSWORD` — required for each Android product. Use a distinct,
+  backed-up keystore per package; the workflow deliberately has no development-password fallback.
+
+## Android product contract
+
+An Android member declares `mobile.required: true` and includes `android` in `mobile.targets`.
+`fuzeone sync` then installs the always-reporting APK workflow and its contract check. The product
+must commit `android/twa-manifest.json`, its PWA manifest, icons, and
+`frontend/public/.well-known/assetlinks.json`; its runtime registration must include `standalone`
+and a direct `routing.host` such as `fuzeagent.fuzefront.com`. MendysRobotics is the explicit
+custom-domain exception and uses `live.mendysrobotics.com`. The APK launches that standalone UI
+origin at `/`; the UI reaches its backend through the same origin under relative `/api` paths.
+The TWA host, package ID, signing fingerprint, and Digital Asset Links declaration must agree.
+
+The canonical first-wave product and frontend-origin inventory is
+`fuzeone/mobile-products.json`; the complete runtime and production acceptance contract is
+documented in `docs/deployment/MOBILE_APK_TARGETS.md`.
+
+Pull requests and non-default branch builds retain an unsigned test APK as a 90-day Actions
+artifact. Every successful build on the repository's actual default branch increments the Android
+version code from the Actions run number, appends it to
+the repository SemVer for `versionName`, signs and verifies the APK, and stores it permanently in
+a GitHub Release. Generated versions are not committed back, avoiding a recursive build loop.
 
 Never paste a secret into chat or a commit. Use `gh secret set NAME` (hidden prompt) or
 `gh secret set NAME < file` from a gitignored file.

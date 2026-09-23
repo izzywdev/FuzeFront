@@ -8,12 +8,12 @@ name: Prod Unleash ops (enable feature flags)
 # needing CF-Access authentication (the admin UI host is Access-gated; the
 # in-cluster service is not).
 #
-# PREREQUISITE — mirror the Unleash admin token as a repo secret ONCE:
-#   kubectl -n fuzefront get secret unleash-secrets \
-#     -o jsonpath='{.data.INIT_ADMIN_API_TOKENS}' | base64 -d \
-#     | gh secret set UNLEASH_ADMIN_TOKEN --repo izzywdev/FuzeFront
+# The admin token is read directly from the cluster at runtime via the k8s API
+# (curl + the runner pod's mounted service account token) — no GitHub secret or
+# kubectl required. The runner's service account has read access to the
+# `unleash-secrets` Secret in the `fuzefront` namespace.
 #
-# Then trigger this workflow via GitHub Actions → "Run workflow".
+# Trigger via GitHub Actions → "Run workflow".
 # The `flags` input controls which pre-defined flag set to apply.
 
 on:
@@ -22,12 +22,14 @@ on:
       flags:
         description: |
           Which flag set to apply:
-            billing-portal  — fuzefront.billing.invoice-history (100%)
+            billing-portal      — fuzefront.billing.invoice-history (100%)
+            org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
         required: true
         default: billing-portal
         type: choice
         options:
           - billing-portal
+          - org-context-gating
 
 permissions:
   contents: read
@@ -40,7 +42,6 @@ jobs:
     steps:
       - name: Apply flags
         env:
-          TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
           FLAGS_SET: ${{ inputs.flags }}
           UNLEASH: http://fuzefront-unleash.fuzefront.svc.cluster.local:4242
           PROJECT: default
@@ -48,13 +49,24 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Read the admin token via the k8s API using the runner pod's mounted
+          # service account (no kubectl required — ARC runners lack it).
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          _SECRET_JSON=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/unleash-secrets" \
+            2>/dev/null || true)
+          TOKEN=$(echo "$_SECRET_JSON" | python3 -c "
+          import sys, json, base64
+          try:
+            d = json.load(sys.stdin)
+            print(base64.b64decode(d['data']['INIT_ADMIN_API_TOKENS']).decode().strip())
+          except Exception:
+            sys.exit(0)
+          " 2>/dev/null || true)
           if [ -z "${TOKEN:-}" ]; then
-            echo "::error title=prod-unleash-ops::UNLEASH_ADMIN_TOKEN secret is not set."
-            echo ""
-            echo "Mirror the admin token from the cluster once:"
-            echo "  kubectl -n fuzefront get secret unleash-secrets \\"
-            echo "    -o jsonpath='{.data.INIT_ADMIN_API_TOKENS}' | base64 -d \\"
-            echo "    | gh secret set UNLEASH_ADMIN_TOKEN --repo izzywdev/FuzeFront"
+            echo "::error title=prod-unleash-ops::Could not read INIT_ADMIN_API_TOKENS from unleash-secrets."
             exit 1
           fi
 
@@ -116,10 +128,29 @@ jobs:
               "Release flag. Gates the Invoices tab in the billing portal (PR #1044). GA per billing portal deploy 2026-09-14. Owner: platform team. Removal: once invoice history is GA for >= 2 sprints."
           }
 
+          # ── Org context gating flags ───────────────────────────────────────
+          apply_org_context_gating() {
+            enable_ga "fuzefront.apps.org-context-disabled" \
+              "Release flag. Gates showing org-context required apps as disabled in non-org personal context. Default ON in prod. Owner: frontend-engineer."
+
+            local FLAG="fuzefront.apps.org-context-hidden"
+            local DESC="Release flag. Gates completely hiding org-context required apps in non-org context. Default OFF in prod. Owner: frontend-engineer."
+            echo "=== $FLAG (Created, OFF in prod) ==="
+            curl -sS -o /tmp/resp_hidden.json -w '%{http_code}' -X POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features" \
+              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}" || true
+
+            curl -sfX POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/off" \
+              -H "Authorization: $TOKEN" || true
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
-            billing-portal) apply_billing ;;
-            *)              echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
+            billing-portal)      apply_billing ;;
+            org-context-gating)  apply_org_context_gating ;;
+            *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
           echo "All requested flags applied."
@@ -127,12 +158,25 @@ jobs:
       - name: Verify
         if: always()
         env:
-          TOKEN: ${{ secrets.UNLEASH_ADMIN_TOKEN }}
           UNLEASH: http://fuzefront-unleash.fuzefront.svc.cluster.local:4242
           PROJECT: default
           ENVIRONMENT: production
           FLAGS_SET: ${{ inputs.flags }}
         run: |
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          _SECRET_JSON=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/unleash-secrets" \
+            2>/dev/null || true)
+          TOKEN=$(echo "$_SECRET_JSON" | python3 -c "
+          import sys, json, base64
+          try:
+            d = json.load(sys.stdin)
+            print(base64.b64decode(d['data']['INIT_ADMIN_API_TOKENS']).decode().strip())
+          except Exception:
+            sys.exit(0)
+          " 2>/dev/null || true)
           if [ -z "${TOKEN:-}" ]; then exit 0; fi
 
           echo "=== Verification ==="
@@ -153,3 +197,5 @@ jobs:
           }
 
           check_flag "fuzefront.billing.invoice-history"
+          check_flag "fuzefront.apps.org-context-disabled"
+          check_flag "fuzefront.apps.org-context-hidden"

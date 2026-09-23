@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '0.8.0' as const;
+export const SECURITY_CONTRACT_VERSION = '0.9.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -161,4 +161,41 @@ export interface Grant {
   permission?: string;
   resource?: ResourceRef;
   createdAt?: number;
+}
+
+/**
+ * The authorization provider's subject kinds supported for ABAC attribute
+ * writes (`PATCH /authz/subjects/{subjectType}/{subjectKey}/attributes`).
+ * Closed/enum, unlike `ResourceRef.type` which is open.
+ */
+export type SubjectType = 'user' | 'tenant';
+
+/** A typed subject reference (mirrors API `SubjectRef`). */
+export interface SubjectRef {
+  type: SubjectType;
+  key: string;
+}
+
+/** A scalar ABAC attribute value (mirrors API `AttributeValue`). No nested objects/arrays. */
+export type AttributeValue = string | number | boolean;
+
+/**
+ * Merge-patch body for `setSubjectAttributes` (mirrors API
+ * `SubjectAttributesWriteRequest`). Only the named keys are written; existing
+ * attributes not named here are left untouched — this is a MERGE, never a
+ * replace of the subject's full attribute set.
+ */
+export interface SubjectAttributesWriteRequest {
+  attributes: Record<string, AttributeValue>;
+}
+
+/**
+ * Confirms an attribute write (mirrors API `SubjectAttributesWriteResult`).
+ * Echoes what THIS call wrote — not a read of the subject's full attribute
+ * set.
+ */
+export interface SubjectAttributesWriteResult {
+  subject: SubjectRef;
+  attributes: Record<string, AttributeValue>;
+  updatedAt: number;
 }

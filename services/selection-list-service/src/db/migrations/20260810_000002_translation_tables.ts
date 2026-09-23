@@ -11,7 +11,7 @@
 // When source text changes the hash no longer matches, marking the translation
 // stale and eligible for autofill refresh.
 
-import { Knex } from 'knex';
+import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.raw(`

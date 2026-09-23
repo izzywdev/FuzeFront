@@ -52,9 +52,18 @@ const vars = {
 };
 
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+const hasMobileAndroid = () => {
+  const path = join(target, '.fuze', 'manifest.json');
+  if (!existsSync(path)) return false;
+  try {
+    const mobile = JSON.parse(readFileSync(path, 'utf8')).mobile;
+    return mobile?.required === true && mobile.targets?.includes('android');
+  } catch { return false; }
+};
 const conditions = {
   'has-helm': () => isDir(join(target, 'deploy', 'helm')),
   'has-infra': () => isDir(join(target, 'deploy', 'terraform')) || isDir(join(target, 'deploy', 'argocd')),
+  'has-mobile-android': hasMobileAndroid,
 };
 
 const subst = (s) => s.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars ? vars[k] : m));
