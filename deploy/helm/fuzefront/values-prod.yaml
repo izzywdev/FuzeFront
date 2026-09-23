@@ -141,7 +141,7 @@ securityService:
   # Same flaw affects MFA challenges and broker codes (so 2FA breaks identically).
   # Pinning to 1 replica removes the split; it costs HA for the auth path, so this
   # is a stopgap. PROPER FIX: externalize that state to Redis (FuzeInfra provisions
-  # it — delegate the DB/credentials request via @claude), then restore replicas: 2.
+  # it — delegate the DB/credentials request via @fuze), then restore replicas: 2.
   replicas: 1
   # Server-brokered Google sign-in (PR #329). "true" = enabled — owner has
   # registered this callback in the Google console. Instant rollback: set to
