@@ -22,12 +22,14 @@ on:
       flags:
         description: |
           Which flag set to apply:
-            billing-portal  — fuzefront.billing.invoice-history (100%)
+            billing-portal      — fuzefront.billing.invoice-history (100%)
+            org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
         required: true
         default: billing-portal
         type: choice
         options:
           - billing-portal
+          - org-context-gating
 
 permissions:
   contents: read
@@ -126,10 +128,29 @@ jobs:
               "Release flag. Gates the Invoices tab in the billing portal (PR #1044). GA per billing portal deploy 2026-09-14. Owner: platform team. Removal: once invoice history is GA for >= 2 sprints."
           }
 
+          # ── Org context gating flags ───────────────────────────────────────
+          apply_org_context_gating() {
+            enable_ga "fuzefront.apps.org-context-disabled" \
+              "Release flag. Gates showing org-context required apps as disabled in non-org personal context. Default ON in prod. Owner: frontend-engineer."
+
+            local FLAG="fuzefront.apps.org-context-hidden"
+            local DESC="Release flag. Gates completely hiding org-context required apps in non-org context. Default OFF in prod. Owner: frontend-engineer."
+            echo "=== $FLAG (Created, OFF in prod) ==="
+            curl -sS -o /tmp/resp_hidden.json -w '%{http_code}' -X POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features" \
+              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}" || true
+
+            curl -sfX POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/off" \
+              -H "Authorization: $TOKEN" || true
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
-            billing-portal) apply_billing ;;
-            *)              echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
+            billing-portal)      apply_billing ;;
+            org-context-gating)  apply_org_context_gating ;;
+            *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
           echo "All requested flags applied."
@@ -176,3 +197,5 @@ jobs:
           }
 
           check_flag "fuzefront.billing.invoice-history"
+          check_flag "fuzefront.apps.org-context-disabled"
+          check_flag "fuzefront.apps.org-context-hidden"
