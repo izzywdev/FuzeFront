@@ -2,8 +2,8 @@ name: Design Review — Notify via Telegram
 
 # Fires when any issue is labeled `design-review`.
 # Sends a Telegram message with an inline link to the issue so the product
-# owner can review design frames and comment `@claude approve` or
-# `@claude reject: <reason>` to trigger the next Claude Code cloud session.
+# owner can review design frames and comment `@fuze approve` or
+# `@fuze reject: <reason>` to trigger the next Claude Code cloud session.
 
 on:
   issues:
@@ -29,5 +29,5 @@ jobs:
             *Opened by:* ${{ github.event.issue.user.login }}
 
             Review the design frames in the issue, then comment on the issue:
-            • `@claude approve` — continue implementation
-            • `@claude reject: <reason>` — send back for revision
+            • `@fuze approve` — continue implementation
+            • `@fuze reject: <reason>` — send back for revision
