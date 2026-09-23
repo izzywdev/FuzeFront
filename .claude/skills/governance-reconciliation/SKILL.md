@@ -38,7 +38,7 @@ For each open issue:
 ### 4. Drift vs canonical
 Compare the repo's `.claude/agents` + `CLAUDE.md` + workflow stack against FuzeSDLC (the repo's `.fuze/manifest.json` is the expectation). Flag missing agents, absent `<repo>-expert`, agents without a `skills:` allowlist, stale templates, or out-of-band edits. Open a fix PR for mechanical drift; flag judgment calls.
 
-Also flag, specifically: repos **missing the nightly integration suite / bounded local-up** — ensure the one-shot `@fuze` "Build nightly integration suite" issue exists and is being driven to a draft PR; and repos **missing the ADLC handler** (`fuze.yml` — and `claude.yml` for the `@claude` escape hatch — plus the agent set), because without it that `@fuze` build-issue can't be answered — install it first (re-run `sdlc-bootstrap`). Confirm `nightly-integration.yml` is present (with a staggered cron) alongside `governance-nightly.yml`.
+Also flag, specifically: repos **missing the nightly integration suite / bounded local-up** — ensure the one-shot `@fuze` "Build nightly integration suite" issue exists and is being driven to a draft PR; and repos **missing the ADLC handler** (`fuze.yml` — and `claude.yml` for the `@fuze` escape hatch — plus the agent set), because without it that `@fuze` build-issue can't be answered — install it first (re-run `sdlc-bootstrap`). Confirm `nightly-integration.yml` is present (with a staggered cron) alongside `governance-nightly.yml`.
 
 Also confirm the repo's **manifest declares the platform-service spine** (`platformServices`) + `dependsOn`/`providesTo`, and that the **`<repo>-expert` knows the spine + the cross-product feature-request protocol** (`governance/platform-services.md`). Flag experts/manifests that don't as drift; open a fix PR.
 

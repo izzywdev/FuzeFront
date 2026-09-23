@@ -10,9 +10,9 @@ single source of truth lives here, in the hub.
 | File(s) | What | Update model |
 |---|---|---|
 | `.claude/agents/*` (11 + README) | Single-responsibility domain agents (`contract-designer` → backend/frontend/frontend-test/test/devops/docs + the integration & coordination hats: billing-payments / telephony / agile-manager / wordpress) with the honest-"done" contract | synced (copy); **prefer the user-level install below** |
-| `CLAUDE.md` `<!-- FUZEONE -->` region | The committed family SDLC (so the team + GitHub-runner `@claude` + this repo all see it) | synced (region merge) |
+| `CLAUDE.md` `<!-- FUZEONE -->` region | The committed family SDLC (so the team + GitHub-runner `@fuze` + this repo all see it) | synced (region merge) |
 | `.npmrc` | `@fuzefront/*` resolve privately from GitHub Packages | synced (template) |
-| `.github/workflows/claude.yml`, `claude-auto-pr.yml`, `auto-merge.yml` | `@claude` handler, issue→draft-PR autonomy, merge-on-green | synced, self-contained |
+| `.github/workflows/claude.yml`, `claude-auto-pr.yml`, `auto-merge.yml` | `@fuze` handler, issue→draft-PR autonomy, merge-on-green | synced, self-contained |
 | `.github/workflows/claude-ci-autofix.yml`, `telegram-pr-merged.yml` | CI-failure→Claude autofix, merge notifications | synced, self-contained |
 | `.github/workflows/helm-validate.yml` | helm lint + kubeconform | synced, only if `deploy/helm/` exists |
 | `.github/workflows/infra-dispatch.yml` | declare infra → FuzeInfra reconciles (repository_dispatch) | synced, only if `deploy/terraform/` or `deploy/argocd/` exists |
@@ -120,7 +120,7 @@ So FuzeInfra's role for a new member is the **one-time Argo install above** + ap
 that member's Terraform requests; steady-state Argo is hands-off.
 
 ## Required secrets (sync prints the applicable set)
-- `ANTHROPIC_API_KEY` — `@claude` handler + CI autofix.
+- `ANTHROPIC_API_KEY` — `@fuze` handler + CI autofix.
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — merge notifications (optional).
 - `FUZEINFRA_DISPATCH_TOKEN` — only if the repo declares infra; fires the FuzeInfra dispatch.
 - `ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_STORE_PASSWORD`, and
