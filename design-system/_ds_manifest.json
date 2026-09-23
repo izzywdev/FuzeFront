@@ -170,6 +170,10 @@
       "sourcePath": "components/layout/InfoRow.jsx"
     },
     {
+      "name": "ListStack",
+      "sourcePath": "components/layout/ListStack.jsx"
+    },
+    {
       "name": "SectionHead",
       "sourcePath": "components/layout/SectionHead.jsx"
     },

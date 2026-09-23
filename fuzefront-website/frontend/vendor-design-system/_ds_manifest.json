@@ -46,6 +46,10 @@
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
+      "name": "Text",
+      "sourcePath": "components/core/Text.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
@@ -164,6 +168,10 @@
     {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
+    },
+    {
+      "name": "ListStack",
+      "sourcePath": "components/layout/ListStack.jsx"
     },
     {
       "name": "SectionHead",
