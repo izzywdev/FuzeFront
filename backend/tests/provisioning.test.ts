@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { parseId, configureIdentity, EntityId } from '@izzywdev/fuzefront-identity'
+import { parseId, configureIdentity, EntityId, mintId, toUuid } from '@izzywdev/fuzefront-identity'
 
 // FFRNT-185: dual-accept windows closed; no legacyUuidTypes needed.
 configureIdentity({ legacyUuidTypes: new Set() })
@@ -89,7 +89,8 @@ function deps(permit: any, publish: any): Partial<ProvisioningDeps> {
 }
 
 async function createUser(): Promise<EntityId<'user'>> {
-  const id = uuidv4()
+  const typeId = mintId('user')
+  const id = toUuid(typeId)
   await db('users').insert({
     id,
     email: `prov-${id.slice(0, 8)}@test.local`,
@@ -99,11 +100,12 @@ async function createUser(): Promise<EntityId<'user'>> {
     created_at: new Date(),
     updated_at: new Date(),
   })
-  return parseId('user', id)
+  return parseId('user', typeId)
 }
 
 async function createOrg(ownerId: string, type = 'organization'): Promise<EntityId<'organization'>> {
-  const id = uuidv4()
+  const typeId = mintId('organization')
+  const id = toUuid(typeId)
   await db('organizations').insert({
     id,
     name: 'Acme',
@@ -115,7 +117,7 @@ async function createOrg(ownerId: string, type = 'organization'): Promise<Entity
     is_active: true,
     provisioning_state: 'pending',
   })
-  return parseId('organization', id)
+  return parseId('organization', typeId)
 }
 
 // ---- tests -------------------------------------------------------------
