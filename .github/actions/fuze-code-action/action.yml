@@ -69,7 +69,7 @@ inputs:
       .
       OPTIONAL, and leaving it empty is a MEANINGFUL choice, not an omission: it
       selects MENTION MODE, where claude-code-action derives the task from the
-      triggering GitHub event (an `@fuze` comment, a review, an issue) instead
+      triggering GitHub event (an `@claude` comment, a review, an issue) instead
       of from an instruction supplied here. That is how every `claude.yml` in
       this family invokes it.
       .
