@@ -1030,6 +1030,14 @@ configService:
 # (external image, own release cadence, family-wide flag server FuzeFront
 # hosts) per the hybrid-Argo rule, so it no longer renders from this umbrella
 # chart at all.
+#
+# CI-runner RBAC: the unleash-runner-rbac.yaml template (umbrella chart) creates
+# a Role + RoleBinding so the ARC runner pod can read unleash-secrets without
+# kubectl. In prod the AutoscalingRunnerSet lives in `arc-runners`, not the
+# release namespace, so the RoleBinding subject namespace must be overridden.
+unleash:
+  ciRunner:
+    serviceAccountNamespace: arc-runners
 
 # ── Cloudflare cache purge (prod) ────────────────────────────────────────────
 # Sealed for the Contabo k3s cluster; reseal per the template header if the
