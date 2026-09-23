@@ -2,44 +2,58 @@ import { Pool } from 'pg';
 import { FuzeEvent, IdentityOrgDeletedPayloadV1 } from '@fuzefront/shared/kafka';
 
 /**
- * Reacts to `identity.org.deleted` by removing the deleted organization's
- * config OVERRIDES, so an org that no longer exists stops carrying settings
- * rows forever.
+ * Reacts to `identity.org.deleted`.
  *
- * WHAT IS DELETED, AND WHAT DELIBERATELY IS NOT.
+ * SOFT IS A DEACTIVATION, AND IT MUST NOT DESTROY ANYTHING.
  *
- *   config_values  — DELETED for (scope_type='org', scope_id=<org>). These are
- *                    the sparse per-org overrides. Once the org is gone they
- *                    can never resolve again (scope ids are minted per entity
- *                    and never reused), so they are pure dead weight.
+ * identity.org.deleted's schema says it outright: "`cascade` distinguishes a
+ * soft delete (deactivation — `organizations.is_active = false`, the current
+ * behaviour) from a hard delete (row removed); consumers deactivate vs. purge
+ * accordingly" (shared/src/kafka/schemas/identity.org.deleted.ts).
  *
- *   config_history — NOT touched. migration 004 states the invariant directly:
- *                    "history rows are never deleted by this service", which is
- *                    why `revert_of REFERENCES config_history(id)` carries no
- *                    ON DELETE action. Deleting history here would (a) break
- *                    that documented invariant and (b) raise a foreign-key
- *                    violation the moment any surviving row reverts a deleted
- *                    one. The audit trail is the point of that table: an org
- *                    being deleted is precisely when "who changed this, and
- *                    when" matters most.
+ * A deactivated organization still EXISTS and can be reactivated. Deleting its
+ * config overrides on that event would silently destroy configuration that a
+ * later reactivation is expected to restore — data loss triggered by a
+ * reversible admin action. Every emitter in this repo sends `soft` today
+ * (backend/security/src/routes/organizations.ts, which answers "Organization
+ * deactivated successfully"), so treating the two modes alike would have meant
+ * purging on every real-world deletion event.
  *
- * `cascade` ('soft' | 'hard') is accepted and logged, but both modes behave
- * identically here, and that is deliberate rather than an oversight:
- *   - there is no is_active/soft-delete column on config_values to flip, and
- *   - the only other table holding org data is the audit log, which the
- *     invariant above puts out of scope for BOTH modes.
- * So the strongest action available is already the safe one. Documented rather
- * than silently ignored — selection-list-service's user-deleted handler makes
- * the same "soft and hard are equivalent here" call for the same reason.
+ *   cascade='soft'  -> NO-OP. The org may come back; its overrides must survive.
+ *                      config_values has no is_active column to flip, and it
+ *                      needs none: the rows are inert while the org is
+ *                      deactivated because nothing resolves config for it.
+ *   cascade='hard'  -> DELETE config_values at (scope_type='org', scope_id=<org>).
+ *                      The organization row is gone for good, so its sparse
+ *                      overrides can never resolve again.
  *
- * Idempotent: an org with no overrides deletes 0 rows and logs a no-op, so a
- * redelivered message (Kafka is at-least-once) is harmless.
+ * config_history is never touched in EITHER mode. Migration 004 states the
+ * invariant directly — "history rows are never deleted by this service" —
+ * which is why `revert_of REFERENCES config_history(id)` carries no ON DELETE
+ * action. Purging history would break that invariant AND raise a foreign-key
+ * violation as soon as a surviving row reverted a deleted one. An org being
+ * deleted is exactly when "who changed this, and when" matters most.
+ *
+ * Idempotent: a hard delete affecting 0 rows is a logged no-op, which Kafka's
+ * at-least-once delivery requires.
  */
 export async function handleOrgDeleted(
   pool: Pool,
   event: FuzeEvent<IdentityOrgDeletedPayloadV1>,
 ): Promise<void> {
   const { organizationId, cascade } = event.payload;
+
+  if (cascade !== 'hard') {
+    // eslint-disable-next-line no-console
+    console.log(
+      '[config-service] org.deleted(cascade=%s): org %s was DEACTIVATED, not removed — ' +
+        'config overrides retained so a reactivation restores them (correlationId=%s)',
+      cascade,
+      organizationId,
+      event.correlationId,
+    );
+    return;
+  }
 
   const client = await pool.connect();
   try {
@@ -54,10 +68,9 @@ export async function handleOrgDeleted(
     const deleted = res.rowCount ?? 0;
     // eslint-disable-next-line no-console
     console.log(
-      '[config-service] org.deleted: removed %d config override(s) for org %s (cascade=%s, history retained, correlationId=%s)',
+      '[config-service] org.deleted(cascade=hard): removed %d config override(s) for org %s (history retained, correlationId=%s)',
       deleted,
       organizationId,
-      cascade,
       event.correlationId,
     );
   } catch (err) {

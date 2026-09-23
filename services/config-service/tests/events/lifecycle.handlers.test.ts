@@ -136,3 +136,38 @@ describe('handleUserDeleted', () => {
     expect(f.wasReleased()).toBe(true);
   });
 });
+
+describe('cascade=soft is a DEACTIVATION and must never destroy config', () => {
+  // Regression guard. Every emitter in this repo sends cascade:'soft' today
+  // (backend/security/src/routes/organizations.ts -> "Organization deactivated
+  // successfully", backend/security/src/routes/me.ts), and a deactivated
+  // org/user can be REACTIVATED. A handler that purged on 'soft' would destroy
+  // configuration that the reactivation is expected to restore -- data loss
+  // caused by a reversible admin action, on the single most common code path.
+  it('org: issues NO statements at all — not even a connection', async () => {
+    const f = fakePool([3]);
+    await handleOrgDeleted(f.pool, orgEvent('org-123', 'soft'));
+    expect(f.statements).toHaveLength(0);
+    expect((f.pool.connect as jest.Mock)).not.toHaveBeenCalled();
+  });
+
+  it('org: specifically issues no DELETE', async () => {
+    const f = fakePool([3]);
+    await handleOrgDeleted(f.pool, orgEvent('org-123', 'soft'));
+    expect(f.sqlText()).not.toMatch(/DELETE/i);
+  });
+
+  it('user: issues NO statements at all — not even a connection', async () => {
+    const f = fakePool([2, 5]);
+    await handleUserDeleted(f.pool, userEvent('user-abc', 'soft'));
+    expect(f.statements).toHaveLength(0);
+    expect((f.pool.connect as jest.Mock)).not.toHaveBeenCalled();
+  });
+
+  it('user: retains authorship — no DELETE and no set_by_user_id rewrite', async () => {
+    const f = fakePool([2, 5]);
+    await handleUserDeleted(f.pool, userEvent('user-abc', 'soft'));
+    expect(f.sqlText()).not.toMatch(/DELETE/i);
+    expect(f.sqlText()).not.toMatch(/set_by_user_id/i);
+  });
+});
