@@ -280,6 +280,26 @@ export async function ensureDatabase(): Promise<void> {
   }
 }
 
+// Knex's own migrations_lock table has no staleness/TTL check — if a prior
+// boot's migration process is killed mid-transaction (OOM, SIGKILL past the
+// pod's terminationGracePeriodSeconds, node crash) rather than throwing
+// cleanly, the row that clears `is_locked` never runs and the lock is stuck
+// FOREVER. Every schema-owning service here (security, applications) runs
+// `replicas: 2` in prod and calls this in-process at boot, so two pods race
+// migrate.latest() on every restart. That turns what should be a one-time
+// migration failure into a PERMANENT one: every subsequent boot — this
+// replica AND its sibling, and every replacement Kubernetes schedules after
+// each crash — fails at "Migration table is already locked", not at any
+// actual migration, and nothing ever clears it because no boot ever gets
+// past this line to do so. Match against the message Knex actually throws
+// (Migrator#_lockMigrations / #migrate, knex 3.x): "Migration table is
+// already locked". Force-free and retry exactly ONCE — safe even when the
+// lock is genuinely held by a sibling replica's in-flight migration, since
+// that replica's own transaction still owns its work; this retry simply
+// re-contends normally and, if truly contended, fails the same way it would
+// have without this wrapper (no infinite loop, no masking of a real error).
+const STUCK_MIGRATIONS_LOCK_RE = /migration.*(table|lock).*(already )?locked/i
+
 export async function runMigrations(
   options: DatabaseConfigOptions = {}
 ): Promise<void> {
@@ -288,7 +308,23 @@ export async function runMigrations(
   const migrationDb = knex(getDatabaseConfig(options))
 
   try {
-    const [batchNo, log] = await migrationDb.migrate.latest()
+    let migrateResult: [number, string[]]
+    try {
+      migrateResult = await migrationDb.migrate.latest()
+    } catch (error: any) {
+      const message = String(error?.message ?? '')
+      if (!STUCK_MIGRATIONS_LOCK_RE.test(message)) {
+        throw error
+      }
+      console.warn(
+        '⚠️  Migrations lock appears stuck (no in-flight migration could plausibly ' +
+          'still hold it across a fresh boot) — force-freeing and retrying once:',
+        message
+      )
+      await migrationDb.migrate.forceFreeMigrationsLock()
+      migrateResult = await migrationDb.migrate.latest()
+    }
+    const [batchNo, log] = migrateResult
 
     if (log.length === 0) {
       console.log('✅ Database is already up to date')
