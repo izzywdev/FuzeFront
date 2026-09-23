@@ -110,6 +110,10 @@
       "sourcePath": "components/forms/CodeField.jsx"
     },
     {
+      "name": "FieldLabel",
+      "sourcePath": "components/forms/FieldLabel.jsx"
+    },
+    {
       "name": "FieldStatus",
       "sourcePath": "components/forms/FieldStatus.jsx"
     },
