@@ -322,7 +322,7 @@ describe('reconcileOrganizationProvisioning', () => {
     const rootExists = await db('organizations').where({ id: ROOT_ORG_ID }).first()
     expect(rootExists).toBeTruthy() // seeded by migration 015
 
-    await reconcileOrganizationProvisioning(parseId('organization', ROOT_ORG_ID), deps(permit, publisher))
+    await reconcileOrganizationProvisioning(ROOT_ORG_ID, deps(permit, publisher))
 
     expect((permit as any).parentLinks).toEqual([])
   })
