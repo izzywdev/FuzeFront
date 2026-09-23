@@ -504,7 +504,7 @@ export const HomePage: React.FC = () => {
                   Talk to sales
                 </Link>
               </div>
-              <Caption space="lg">
+              <Caption space="lg" tone="primary">
                 No credit card required &middot; Free for 14 days &middot; Scales as you grow
               </Caption>
             </motion.div>
