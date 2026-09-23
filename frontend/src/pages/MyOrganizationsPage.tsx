@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { MyOrganizationsFlow } from '@fuzefront/identity-ui'
 import { useAppContext, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
 import { getOrganizations, createOrganization } from '../services/api'
-import { organizationErrorMessage } from '../utils/organization'
+import { organizationErrorMessage, slugForName, newSlugSuffix } from '../utils/organization'
 import { usePermissions } from '../components/PermissionGate'
 import type { Organization } from '../services/api'
 import type { OrgContextItem } from '@fuzefront/identity-ui'
@@ -80,6 +80,11 @@ function MyOrganizationsPage() {
         error={error}
         onRetry={() => void load()}
         canCreate={canCreate}
+        // Own the backend's slug rules here (as UserMenu's dialog does): fall
+        // back to `org-<suffix>` when the name has no slug-able characters, so a
+        // Hebrew/Arabic/CJK org name doesn't derive to '' and get 400'd by the
+        // API as "Slug is required".
+        slugForName={name => slugForName(name, newSlugSuffix())}
         onOpenOrg={id => navigate(`/organizations/${id}`)}
         onCreate={async input => {
           try {

@@ -18,6 +18,14 @@ export interface MyOrganizationsFlowProps {
   onCreate: (input: CreateOrganizationInput) => Promise<CreatedOrganization>
   onCreated?: (org: CreatedOrganization) => void
   canCreate?: boolean
+  /**
+   * Derives a slug candidate from the name. The host owns the backend's slug
+   * rules — crucially the fallback for a name with no slug-able characters
+   * (Hebrew/Arabic/CJK, all shipped locales), which the dialog's own naive
+   * default would slug to '' and the API would reject as "Slug is required".
+   * Forwarded to CreateOrganizationDialog; omit to use its default.
+   */
+  slugForName?: (name: string) => string
 }
 
 /**
@@ -36,6 +44,7 @@ export function MyOrganizationsFlow({
   onCreate,
   onCreated,
   canCreate = true,
+  slugForName,
 }: MyOrganizationsFlowProps) {
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -84,6 +93,7 @@ export function MyOrganizationsFlow({
       <CreateOrganizationDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
+        slugForName={slugForName}
         onCreate={onCreate}
         onCreated={org => {
           onCreated?.(org)
