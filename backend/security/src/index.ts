@@ -22,6 +22,7 @@ import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
 import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
+import meRoutes from './routes/me'
 import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
@@ -62,6 +63,7 @@ const startTime = Date.now()
 // a no-op for existing deployments.
 app.use('/api/v1/security', tenantContext)
 app.use('/api/auth', tenantContext)
+app.use('/api/me', tenantContext)
 app.use('/api/organizations', tenantContext)
 app.use('/api/invitations', tenantContext)
 app.use('/api/tokens', tenantContext)
@@ -85,6 +87,8 @@ app.use('/api/auth', authRoutes)
 app.use('/api/organizations', tokenAuthRateLimiter, orgTokensRouter)
 app.use('/api/organizations', organizationsRoutes)
 app.use('/api/invitations', invitationsRoutes)
+// Self-service user profile and account management (FFRNT-172).
+app.use('/api/me', meRoutes)
 // API token CRUD — rate limiter applied to all /api/tokens/* routes
 app.use('/api/tokens', tokenAuthRateLimiter, apiTokensRoutes)
 // Cluster-internal only — NEVER exposed through the public ingress.
