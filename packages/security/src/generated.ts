@@ -470,6 +470,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/authz/subjects/{subjectType}/{subjectKey}/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Merge ABAC attributes onto a subject
+         * @description Merges scalar attributes (string, number, boolean) onto the named subject's record in the authorization provider's own store, so provider-side policies can gate decisions on them (ABAC) alongside RBAC/ReBAC grants. Distinct from `POST /authz/grants`: a grant assigns a role/permission; this writes plain data the provider's policies read directly (e.g. a billing plan tier gating feature access by `plan_tier`/`seat_limit` rather than by role).
+         *
+         *     **Merge, not replace.** Only the attribute keys present in the request body are written; attributes already on the subject that this request does not name are left untouched. Chosen because the first consumer (billing service `syncPlanToPermit`) only ever sends its own partial subset (`plan_tier`/`plan_status`/`seat_limit`) and never the subject's full attribute set, and the underlying provider write (Permit `users.update` / `tenants.update`) is itself a merge — replace semantics here would silently diverge from what actually happens provider-side and could wipe attributes this caller does not own.
+         *
+         *     **This is a WRITE, not a decision — failure must never look like success.** A provider outage, timeout, or rejection returns `502` (`code: PROVIDER_UNAVAILABLE`), never a fail-open/fail-silent `200`. This is deliberately the OPPOSITE of `authz/check`'s fail-closed-returns-`false` contract: there is no safe "assume it worked" default for a write whose caller (billing entitlement sync) needs to know whether the data actually reached the provider, so it can retry rather than believe a stale or absent attribute state.
+         *
+         *     `subjectType` names which of the provider's two subject kinds this write targets (`user` → `permit.api.users.update`, `tenant` → `permit.api.tenants.update` in the first, Permit-backed implementation — vendor name confined to the adapter, never this contract) — the type is load-bearing, not decoration, so no lookup ever resolves a bare subject id (identifier-standard.md, rule 2).
+         */
+        patch: operations["setSubjectAttributes"];
+        trace?: never;
+    };
     "/v1/security/tenants": {
         parameters: {
             query?: never;
@@ -1217,6 +1243,35 @@ export interface components {
         GrantPage: {
             items: components["schemas"]["Grant"][];
             page: components["schemas"]["PageInfo"];
+        };
+        /**
+         * @description The authorization provider's subject kinds this contract currently supports for attribute writes. `user` maps to a per-user ABAC record, `tenant` to a per-tenant/org one (first impl: Permit `users.update` / `tenants.update` respectively — vendor name confined to the adapter, never this contract). Closed/enum, unlike `ResourceRef.type` which is open (any resource kind a policy names).
+         * @enum {string}
+         */
+        SubjectType: "user" | "tenant";
+        /** @description A typed subject reference. Mirrors `ResourceRef`'s `type`+`key` shape but is a separate schema because `type` here is closed (`SubjectType`) rather than an open string. */
+        SubjectRef: {
+            type: components["schemas"]["SubjectType"];
+            key: string;
+        };
+        /** @description A scalar ABAC attribute value. No nested objects/arrays. */
+        AttributeValue: string | number | boolean;
+        /** @description Attribute keys to MERGE onto the subject addressed by `{subjectType}/{subjectKey}` in the URL. Only the named keys are written; attributes already on the subject that this request does not name are left untouched (merge, not replace — see the operation description for why). */
+        SubjectAttributesWriteRequest: {
+            /** @description Merge patch of attribute name → scalar value (string, number, or boolean). At least one key required. */
+            attributes: {
+                [key: string]: components["schemas"]["AttributeValue"];
+            };
+        };
+        /** @description Confirms the write succeeded. Echoes the subject and the keys/values THIS call wrote — NOT a read of the subject's full attribute set (this endpoint is a write, not a decision or a query). */
+        SubjectAttributesWriteResult: {
+            subject: components["schemas"]["SubjectRef"];
+            /** @description Echo of the keys/values merged by this call. */
+            attributes: {
+                [key: string]: components["schemas"]["AttributeValue"];
+            };
+            /** @description Epoch milliseconds this write was applied. */
+            updatedAt: number;
         };
         Tenant: {
             id: string;
@@ -2432,6 +2487,38 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    setSubjectAttributes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Which of the provider's subject kinds this attribute write targets. Sibling type discriminator for `subjectKey` — required so the write never resolves a bare id. */
+                subjectType: components["schemas"]["SubjectType"];
+                /** @description The subject's id within its `subjectType`. Opaque past its prefix. */
+                subjectKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubjectAttributesWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Attributes merged. Returns the subject reference and the attribute keys/values THIS call wrote — not necessarily the subject's full attribute set, since this endpoint confirms the write and is not a read. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectAttributesWriteResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            502: components["responses"]["ProviderError"];
         };
     };
     listTenants: {
