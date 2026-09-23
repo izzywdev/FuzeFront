@@ -6,6 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
+import { Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -82,7 +83,7 @@ export const FuzeHubPage: React.FC = () => {
         {/* Accent glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="5xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-500/15 border border-primary-500/25 text-primary-400 text-sm font-medium mb-8">
               <Monitor size={14} /> FuzeHub — Unified Operations Hub
@@ -109,7 +110,7 @@ export const FuzeHubPage: React.FC = () => {
               </Link>
             </div>
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Mock Dashboard Visual */}
@@ -117,7 +118,7 @@ export const FuzeHubPage: React.FC = () => {
           50-900 are defined) — the class silently generated no CSS at all,
           leaving this section's own background transparent. */}
       <section className="bg-secondary-900 py-12 border-y border-secondary-800">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="5xl">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
@@ -160,12 +161,12 @@ export const FuzeHubPage: React.FC = () => {
               ))}
             </div>
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Features */}
       <section className="py-20 bg-secondary-900">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="5xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-white mb-12 text-center">
             Everything you need, nothing you don't
           </h2>
@@ -174,12 +175,12 @@ export const FuzeHubPage: React.FC = () => {
               <FeatureCard key={feature.title} feature={feature} />
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* Use cases */}
       <section className="py-16 bg-secondary-800">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="4xl">
           <h2 className="text-2xl font-heading font-bold text-white mb-10 text-center">
             Who uses FuzeHub
           </h2>
@@ -194,7 +195,7 @@ export const FuzeHubPage: React.FC = () => {
               </div>
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* CTA */}

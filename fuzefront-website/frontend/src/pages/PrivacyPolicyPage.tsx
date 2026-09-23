@@ -1,11 +1,12 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
+import { Container } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
     <div className="pt-24 pb-20 bg-white">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+      <Container size="3xl">
         {/* Header */}
         <div className="text-center mb-12">
           <div className="w-14 h-14 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
@@ -203,7 +204,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             Back to Home
           </Link>
         </div>
-      </div>
+      </Container>
     </div>
   )
 }

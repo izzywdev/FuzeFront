@@ -17,6 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
+import { Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -175,7 +176,7 @@ export const HomePage: React.FC = () => {
         <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-20">
+        <Container size="7xl" className="relative pt-24 pb-20">
           <div className="text-center max-w-4xl mx-auto">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -254,12 +255,12 @@ export const HomePage: React.FC = () => {
               </div>
             ))}
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* ── Value Props ── */}
       <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
@@ -285,12 +286,12 @@ export const HomePage: React.FC = () => {
               })}
             </div>
           </SectionWrapper>
-        </div>
+        </Container>
       </section>
 
       {/* ── Products Grid ── */}
       <section className="py-24 bg-secondary-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
@@ -336,12 +337,12 @@ export const HomePage: React.FC = () => {
               </Link>
             </motion.div>
           </SectionWrapper>
-        </div>
+        </Container>
       </section>
 
       {/* ── Industries ── */}
       <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-12">
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
@@ -374,13 +375,13 @@ export const HomePage: React.FC = () => {
               </Link>
             </motion.div>
           </SectionWrapper>
-        </div>
+        </Container>
       </section>
 
       {/* ── Pricing Teaser ── */}
       <section className="py-24 bg-gradient-to-br from-primary-900 via-secondary-900 to-accent-900 relative overflow-hidden">
         <div className="absolute inset-0 hero-pattern opacity-30" />
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="4xl" className="relative text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-white mb-4">
@@ -428,7 +429,7 @@ export const HomePage: React.FC = () => {
               </div>
             </motion.div>
           </SectionWrapper>
-        </div>
+        </Container>
       </section>
 
       {/* ── Newsletter ── */}

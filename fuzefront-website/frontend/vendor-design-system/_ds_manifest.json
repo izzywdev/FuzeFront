@@ -46,6 +46,10 @@
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
+      "name": "Text",
+      "sourcePath": "components/core/Text.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
@@ -156,6 +160,10 @@
     {
       "name": "CenteredCard",
       "sourcePath": "components/layout/CenteredCard.jsx"
+    },
+    {
+      "name": "Container",
+      "sourcePath": "components/layout/Container.jsx"
     },
     {
       "name": "Eyebrow",
@@ -1290,6 +1298,42 @@
       "name": "--modal-max-w-lg",
       "value": "720px",
       "kind": "other",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--container-2xl",
+      "value": "42rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--container-3xl",
+      "value": "48rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--container-4xl",
+      "value": "56rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--container-5xl",
+      "value": "64rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--container-6xl",
+      "value": "72rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--container-7xl",
+      "value": "80rem",
+      "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },
     {
