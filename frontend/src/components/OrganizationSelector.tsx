@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner } from '@fuzefront/design-system'
+import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner, Stack } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { usePermissions } from './PermissionGate'
 import {
@@ -261,7 +261,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
                         </p>
                       )}
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <Stack gap="sm">
                       <RoleBadge role={org.role as 'admin' | 'owner' | 'member' | 'viewer'} />
                       {selectedOrg?.id === org.id && (
                         <svg
@@ -276,7 +276,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
                           />
                         </svg>
                       )}
-                    </div>
+                    </Stack>
                   </div>
                 </button>
               ))
