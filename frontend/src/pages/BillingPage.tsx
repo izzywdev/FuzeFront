@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Badge,
+  Button,
   DataTable,
   PricingCard,
   Skeleton,
@@ -635,14 +636,14 @@ const LegacyInvoicesTab: React.FC<{ organizationId?: string }> = ({
 
       {nextCursor && !loading && (
         <div style={{ marginTop: 'var(--space-4)', textAlign: 'center' }}>
-          <button
+          <Button
             type="button"
-            className="btn btn-secondary"
+            variant="secondary"
             onClick={loadMore}
             disabled={loadingMore}
           >
             {loadingMore ? 'Loading…' : 'Load more'}
-          </button>
+          </Button>
         </div>
       )}
     </section>

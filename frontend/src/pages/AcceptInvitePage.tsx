@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Alert, CenteredCard } from '@fuzefront/design-system'
+import { Alert, Button, CenteredCard } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { getInvitation, acceptInvitation } from '../services/api'
 
@@ -201,13 +201,9 @@ function AcceptInvitePage() {
           >
             Sign in to accept
           </button>
-          <button
-            className="btn btn-secondary"
-            onClick={handleAccept}
-            style={{ width: '100%' }}
-          >
+          <Button variant="secondary" onClick={handleAccept} fullWidth>
             Create an account
-          </button>
+          </Button>
         </div>
       )}
     </CenteredCard>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, Button } from '@fuzefront/design-system'
 import { useAppContext, App } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
 import {
@@ -155,9 +155,9 @@ export default function AdminPage() {
 
       {configCatalogEnabled && (
         <div style={{ marginBottom: '1.5rem' }} data-nav="config-catalog">
-          <button className="btn btn-secondary" onClick={() => navigate('/admin/config/catalog')}>
+          <Button variant="secondary" onClick={() => navigate('/admin/config/catalog')}>
             🔑 Configuration key catalog
-          </button>
+          </Button>
         </div>
       )}
 
