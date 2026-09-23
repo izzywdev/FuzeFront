@@ -534,7 +534,19 @@ jobs:
         run: node services/selection-list-service/dist/db/migrate.js
       - name: Start selection-list-service
         env:
-          NODE_ENV: production
+          # NODE_ENV=test, not production. The migrate step above still runs as
+          # production (it only needs the dist migration path), but the SERVICE
+          # must not: NODE_ENV gates every test affordance it has, and running it
+          # as production switched all of them off. That is why this suite could
+          # not reach a single write route. `test` now has its own knex
+          # environment (src/db/knexfile.ts) so it still loads the COMPILED
+          # migrations out of dist -- `development` would point knex at
+          # src/db/migrations and die on the emitted .d.ts files.
+          NODE_ENV: test
+          # There is no Unleash in CI, so the release flag would resolve to its
+          # fail-safe OFF and 404 every gated route. Force it on by key; the
+          # escape hatch is hard-gated to non-production in flags.ts.
+          FLAGS_FORCE_ON: fuzefront.selection-lists.service
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'

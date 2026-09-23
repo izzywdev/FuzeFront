@@ -85,12 +85,33 @@ function buildContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
 }
 
 /**
+ * Local/e2e escape hatch: force specific flags ON where there is no Unleash to
+ * target (comma-separated flag keys). Hard-gated to NON-production so a stray
+ * env var can never light up a dark feature in prod -- prod targeting is done
+ * in Unleash, never by env. Same mechanism and same guard as the host's
+ * `FLAGS_FORCE_ON` in backend/src/routes/flags.ts.
+ *
+ * Without this the integration/acceptance suite cannot reach a single write
+ * route: the release flag defaults OFF, `resolveClient()` finds no flag client
+ * in CI, and every gated request 404s before it is ever authenticated.
+ */
+function isForcedOn(key: string): boolean {
+  if (process.env.NODE_ENV === 'production') return false
+  return (process.env.FLAGS_FORCE_ON || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(key)
+}
+
+/**
  * Release flag (default OFF): is the selection-list-service enabled for the
  * calling org? Pass the request context so per-org rollout targeting works.
  */
 export async function isSelectionListsEnabled(
   ctx?: Partial<FlagContext>
 ): Promise<boolean> {
+  if (isForcedOn(FLAGS.SELECTION_LISTS_SERVICE)) return true
   const client = resolveClient()
   if (!client) return false // fail-safe: release default OFF
   try {

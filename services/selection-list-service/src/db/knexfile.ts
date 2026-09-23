@@ -36,6 +36,35 @@ const config: { [key: string]: Knex.Config } = {
     },
   },
 
+  // `test` is PRODUCTION's artifact layout with DEVELOPMENT's posture: it loads
+  // the COMPILED migrations out of dist, but leaves NODE_ENV free to mean "this
+  // is a test environment" everywhere else.
+  //
+  // Without it NODE_ENV does double duty -- it picks the knex config AND gates
+  // every test affordance in the service (the allow-all authz no-op in
+  // middleware/authz.ts, the non-production flag escape hatch in flags.ts).
+  // The integration job therefore had to run the service as NODE_ENV=production
+  // just to get dist migrations, which switched all of those off and left the
+  // suite unable to authenticate or authorize. Falling back to `development`
+  // instead is not an option either: it points knex at src/db/migrations with
+  // `loadExtensions: ['.ts']`, which against a dist tree picks up the emitted
+  // .d.ts files and dies with "must have both an up and down function".
+  test: {
+    client: 'pg',
+    connection: {
+      ...connection,
+      ssl: process.env.DB_SSL === 'false' ? false : true,
+    },
+    pool: { min: 2, max: 10 },
+    acquireConnectionTimeout: 10000,
+    migrations: {
+      tableName: 'knex_migrations',
+      directory: path.join(__dirname, '../../dist/db/migrations'),
+      extension: 'js',
+      loadExtensions: ['.js'],
+    },
+  },
+
   production: {
     client: 'pg',
     connection: {

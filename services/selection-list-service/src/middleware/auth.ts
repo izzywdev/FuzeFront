@@ -23,6 +23,9 @@ declare global {
 }
 
 interface JwtClaims {
+  sub?: string;
+  organizationId?: string;
+  organization_id?: string;
   userId: string;
   orgId?: string;
   appId?: string;
@@ -46,8 +49,18 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
   try {
     const decoded = jwt.verify(token, secret) as JwtClaims;
-    req.userId = decoded.userId;
-    req.orgId = decoded.orgId;
+    // Accept BOTH spellings. The platform mints its own tokens with
+    // `userId`/`orgId` (backend/src/middleware/auth.ts), but an Authentik-issued
+    // OIDC token carries the standard `sub` plus a snake_case
+    // `organization_id` -- which is what the integration harness mints, per its
+    // own doc comment. Reading only the first pair meant every such request
+    // arrived with req.orgId undefined and was rejected with
+    // "Organization context required". config-service already reads both
+    // (`decoded.userId ?? decoded.sub`); this brings the service in line.
+    // Identity still comes from the VERIFIED token -- this widens which claim
+    // name is read, never whether the signature is checked.
+    req.userId = decoded.userId ?? decoded.sub;
+    req.orgId = decoded.orgId ?? decoded.organizationId ?? decoded.organization_id;
     req.appId = decoded.appId;
     next();
   } catch {
