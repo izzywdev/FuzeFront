@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, Input, Select, Textarea } from '@fuzefront/design-system'
 import { useAppContext, App } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
 import {
@@ -186,145 +186,110 @@ export default function AdminPage() {
                 gap: '1rem',
               }}
             >
-              <div className="form-group">
-                <label>App Name *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={e => handleInputChange('name', e.target.value)}
-                  required
-                  placeholder="My Awesome App"
-                />
-              </div>
+              <Input
+                label="App Name *"
+                type="text"
+                value={formData.name}
+                onChange={e => handleInputChange('name', e.target.value)}
+                required
+                placeholder="My Awesome App"
+              />
 
-              <div className="form-group">
-                <label>Integration Type *</label>
-                <select
-                  value={formData.integrationType}
-                  onChange={e =>
-                    handleInputChange('integrationType', e.target.value)
-                  }
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '4px',
-                    backgroundColor: 'var(--bg-quaternary)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  <option value="iframe">Iframe</option>
-                  <option value="module-federation">Module Federation</option>
-                  <option value="web-component">Web Component</option>
-                </select>
-              </div>
+              <Select
+                label="Integration Type *"
+                value={formData.integrationType}
+                onChange={e =>
+                  handleInputChange('integrationType', e.target.value)
+                }
+                options={[
+                  { value: 'iframe', label: 'Iframe' },
+                  { value: 'module-federation', label: 'Module Federation' },
+                  { value: 'web-component', label: 'Web Component' },
+                ]}
+              />
 
-              <div className="form-group">
-                <label>App URL *</label>
-                <input
-                  type="url"
-                  value={formData.url}
-                  onChange={e => handleInputChange('url', e.target.value)}
-                  required
-                  placeholder="https://myapp.example.com"
-                />
-              </div>
+              <Input
+                label="App URL *"
+                type="url"
+                value={formData.url}
+                onChange={e => handleInputChange('url', e.target.value)}
+                required
+                placeholder="https://myapp.example.com"
+              />
 
-              <div className="form-group">
-                <label>Icon URL</label>
-                <input
-                  type="url"
-                  value={formData.iconUrl}
-                  onChange={e => handleInputChange('iconUrl', e.target.value)}
-                  placeholder="https://cdn.example.com/icon.svg"
-                />
-              </div>
+              <Input
+                label="Icon URL"
+                type="url"
+                value={formData.iconUrl}
+                onChange={e => handleInputChange('iconUrl', e.target.value)}
+                placeholder="https://cdn.example.com/icon.svg"
+              />
 
               {formData.integrationType === 'module-federation' && (
                 <>
-                  <div className="form-group">
-                    <label>Remote URL *</label>
-                    <input
-                      type="url"
-                      value={formData.remoteUrl}
-                      onChange={e =>
-                        handleInputChange('remoteUrl', e.target.value)
-                      }
-                      required
-                      placeholder="https://myapp.example.com"
-                    />
-                  </div>
+                  <Input
+                    label="Remote URL *"
+                    type="url"
+                    value={formData.remoteUrl}
+                    onChange={e =>
+                      handleInputChange('remoteUrl', e.target.value)
+                    }
+                    required
+                    placeholder="https://myapp.example.com"
+                  />
 
-                  <div className="form-group">
-                    <label>Scope *</label>
-                    <input
-                      type="text"
-                      value={formData.scope}
-                      onChange={e => handleInputChange('scope', e.target.value)}
-                      required
-                      placeholder="myApp"
-                    />
-                  </div>
+                  <Input
+                    label="Scope *"
+                    type="text"
+                    value={formData.scope}
+                    onChange={e => handleInputChange('scope', e.target.value)}
+                    required
+                    placeholder="myApp"
+                  />
 
-                  <div className="form-group">
-                    <label>Module *</label>
-                    <input
-                      type="text"
-                      value={formData.module}
-                      onChange={e =>
-                        handleInputChange('module', e.target.value)
-                      }
-                      required
-                      placeholder="./App"
-                    />
-                  </div>
+                  <Input
+                    label="Module *"
+                    type="text"
+                    value={formData.module}
+                    onChange={e =>
+                      handleInputChange('module', e.target.value)
+                    }
+                    required
+                    placeholder="./App"
+                  />
                 </>
               )}
 
               {formData.integrationType === 'web-component' && (
                 <>
-                  <div className="form-group">
-                    <label>Script URL</label>
-                    <input
-                      type="url"
-                      value={formData.remoteUrl}
-                      onChange={e =>
-                        handleInputChange('remoteUrl', e.target.value)
-                      }
-                      placeholder="https://myapp.example.com/component.js"
-                    />
-                  </div>
+                  <Input
+                    label="Script URL"
+                    type="url"
+                    value={formData.remoteUrl}
+                    onChange={e =>
+                      handleInputChange('remoteUrl', e.target.value)
+                    }
+                    placeholder="https://myapp.example.com/component.js"
+                  />
 
-                  <div className="form-group">
-                    <label>Component Name</label>
-                    <input
-                      type="text"
-                      value={formData.scope}
-                      onChange={e => handleInputChange('scope', e.target.value)}
-                      placeholder="my-custom-element"
-                    />
-                  </div>
+                  <Input
+                    label="Component Name"
+                    type="text"
+                    value={formData.scope}
+                    onChange={e => handleInputChange('scope', e.target.value)}
+                    placeholder="my-custom-element"
+                  />
                 </>
               )}
 
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label>Description</label>
-                <textarea
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Textarea
+                  label="Description"
                   value={formData.description}
                   onChange={e =>
                     handleInputChange('description', e.target.value)
                   }
                   placeholder="Brief description of the application"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '4px',
-                    backgroundColor: 'var(--bg-quaternary)',
-                    color: 'var(--text-primary)',
-                    minHeight: '80px',
-                    resize: 'vertical',
-                  }}
                 />
               </div>
             </div>

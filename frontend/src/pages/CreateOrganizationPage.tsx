@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, Input } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { createOrganization } from '../services/api'
 import { useAppContext } from '../lib/shared'
@@ -98,29 +98,35 @@ function CreateOrganizationPage() {
       )}
 
       <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label htmlFor="org-name">{t('organizationName')}</label>
-          <input
-            id="org-name"
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder={t('organizationName')}
-            required
-            autoFocus
-          />
-        </div>
+        <Input
+          label={t('organizationName')}
+          id="org-name"
+          type="text"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder={t('organizationName')}
+          required
+          autoFocus
+        />
 
-        <div className="form-group">
-          <label htmlFor="org-slug">
-            Slug
-            {!slugManuallyEdited && (
-              <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                (auto-derived)
-              </span>
-            )}
-          </label>
-          <input
+        <div style={{ marginBlockStart: 'var(--space-4)' }}>
+          <Input
+            label={
+              <>
+                Slug
+                {!slugManuallyEdited && (
+                  <span
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      fontSize: 'var(--text-xs)',
+                      marginInlineStart: 'var(--space-2)',
+                    }}
+                  >
+                    (auto-derived)
+                  </span>
+                )}
+              </>
+            }
             id="org-slug"
             type="text"
             value={slug}
@@ -133,7 +139,13 @@ function CreateOrganizationPage() {
             title="Only letters, numbers, hyphens, and underscores"
           />
           {slug && (
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0' }}>
+            <p
+              style={{
+                fontSize: 'var(--text-xs)',
+                color: 'var(--text-secondary)',
+                marginBlock: 'var(--space-1) 0',
+              }}
+            >
               URL: /organizations/{slug}
             </p>
           )}
