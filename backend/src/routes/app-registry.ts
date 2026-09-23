@@ -28,12 +28,14 @@ const router = express.Router()
 // Neutralizes a value before it reaches a log line (CodeQL js/log-injection,
 // js/tainted-format-string). `req.url` / `req.method` are caller-controlled, so
 // the console.error below uses a CONSTANT format string with %s arguments — an
-// injected %s/%d cannot forge the rest of the line — and oneLine percent-encodes
-// CR/LF so an embedded newline cannot fabricate a whole extra log entry. Same
-// helper/convention as src/middleware/auth.ts and src/utils/permit/*.
+// injected %s/%d cannot forge the rest of the line — and oneLine strips CR/LF so
+// an embedded newline cannot fabricate a whole extra log entry. Chained
+// single-character replaces (not a character class): CodeQL js/log-injection
+// only treats a replace() with a constant matched string as a sanitiser
+// barrier. Same helper/convention as src/middleware/auth.ts and src/utils/permit/*.
 // NOTE: the caller's Authorization header is forwarded but deliberately never
 // logged.
-const oneLine = (v: unknown) => encodeURIComponent(String(v))
+const oneLine = (v: unknown) => String(v).replace(/\r/g, ' ').replace(/\n/g, ' ')
 
 // Cluster-internal base URL of the applications-service. Overridable via env so
 // the same code works locally (compose / port-forward) and in-cluster.

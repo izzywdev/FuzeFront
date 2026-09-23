@@ -6,10 +6,12 @@ import { defaultEventPublisher } from './eventPublisher';
 // Neutralizes a value before it reaches a log line (CodeQL js/log-injection,
 // js/tainted-format-string). Every console.* call below uses a CONSTANT format
 // string with %s arguments, so an injected %s/%d can never forge the rest of
-// the line; oneLine additionally percent-encodes CR/LF so an embedded newline
-// cannot fabricate a whole extra log entry. Same helper/convention as
+// the line; oneLine additionally strips CR/LF so an embedded newline cannot
+// fabricate a whole extra log entry. Chained single-character replaces (not a
+// character class): CodeQL js/log-injection only treats a replace() with a
+// constant matched string as a sanitiser barrier. Same helper/convention as
 // src/middleware/auth.ts and src/utils/permit/*.
-const oneLine = (v: unknown) => encodeURIComponent(String(v));
+const oneLine = (v: unknown) => String(v).replace(/\r/g, ' ').replace(/\n/g, ' ');
 
 interface OIDCConfig {
   issuerUrl: string;

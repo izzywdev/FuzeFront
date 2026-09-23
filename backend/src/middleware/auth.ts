@@ -19,7 +19,12 @@ import { getRequestPortalsEnabled } from '../utils/portalFlag'
 // string stops an injected %s/%d from forging log output, and oneLine stops an
 // injected newline from forging whole log LINES. Both are needed — neither
 // substitutes for the other.
-const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+// Chained single-character replaces (not a `[\r\n]` character class): CodeQL's
+// js/log-injection only recognises a replace() whose matched string is
+// constant as a sanitiser barrier, so a class-based strip cleans the value but
+// is not seen as a barrier and the alert stays open. Same recognised form as
+// portalContext.ts / routes/internal.ts.
+const oneLine = (v: unknown) => String(v).replace(/\r/g, ' ').replace(/\n/g, ' ')
 
 export const authenticateToken = async (
   req: Request,

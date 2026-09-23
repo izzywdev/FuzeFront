@@ -46,9 +46,18 @@ const logHistory: any[] = []
 //     longer break the line. Non-strings pass through untouched so objects and
 //     Errors stay structurally inspectable in devtools (and are rendered as a
 //     tree, not as raw text, so they cannot forge a line either).
-const LINE_TERMINATORS = /[\r\n\u2028\u2029]/g
+// Chained single-character replaces (not a `[\r\n\u2026]` character class): CodeQL's
+// js/log-injection only recognises a replace() whose matched string is constant
+// as a sanitiser barrier, so a class-based strip cleans the value but is not
+// seen as a barrier and the alert stays open.
 const sanitizeLogArg = (arg: unknown): unknown =>
-  typeof arg === 'string' ? arg.replace(LINE_TERMINATORS, '\\n') : arg
+  typeof arg === 'string'
+    ? arg
+        .replace(/\r/g, '\\n')
+        .replace(/\n/g, '\\n')
+        .replace(/\u2028/g, '\\n')
+        .replace(/\u2029/g, '\\n')
+    : arg
 
 // Enhanced console with timestamps and storage
 const enhanceConsole = () => {
