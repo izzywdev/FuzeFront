@@ -129,11 +129,17 @@ app.get('/api/health', health)
 // from the Service endpoints, invisible to any black-box HTTP check, with
 // Argo CD reporting the Application Degraded/Progressing the whole time. A
 // RollingUpdate Deployment never scales down the old ReplicaSet until the new
-// one is Ready, so the old pods just keep serving forever. This is the
-// mechanism behind #1137: migrations 013/014 run to completion during THIS
-// process's own boot (before httpServer.listen() — see startServer() below),
-// so a new pod that reaches this route has already applied them to the
-// shared database; it just never gets traffic to prove it.
+// one is Ready, so the old pods just keep serving forever. This explains why
+// a new pod that DOES successfully boot is invisible from outside the
+// cluster (#1137) — httpServer.listen() (see startServer() below) only runs
+// after migrations succeed, so any pod that reaches this route already
+// applied them. It does NOT by itself prove migrations 013/014 have actually
+// applied in prod: a pod could equally be failing to reach this route at all
+// (crash-looping earlier in startServer(), e.g. on a migration exception),
+// which would be invisible for the same reason — no traffic, no black-box
+// signal — but is a different failure than "ready and just never selected".
+// Telling those two apart needs `kubectl logs --previous` / `get rs`, not
+// something this route can determine about itself.
 //
 // Same split as backend/src/index.ts's /ready (host backend): liveness (/health)
 // stays 200-always so a DB blip never turns into a restart loop; readiness
@@ -240,6 +246,15 @@ async function startServer() {
   }
 }
 
-startServer()
+// Guarded so `app` can be imported (e.g. by a test asserting against the
+// REAL mounted routes, incl. /ready -- see tests/ready.test.ts) without
+// triggering the boot sequence's DB waits / migrations / process.exit(1) on
+// failure. Same pattern already used by backend/src/seeds/
+// register-platform-apps.ts and backend/src/permit/sync-permit-schema.ts.
+// `node dist/index.js` (the Dockerfile's actual entrypoint) still runs it,
+// since require.main === module is true there.
+if (require.main === module) {
+  startServer()
+}
 
 export default app
