@@ -24,13 +24,40 @@ describe('createServiceAuthClient', () => {
 
   it('fetches a token and caches it for subsequent calls', async () => {
     const fetch = jest.fn(async () => jsonResponse(200, { accessToken: 'tok-1', tokenType: 'Bearer', expiresIn: 3600 })) as unknown as FetchLike;
-    const client = createServiceAuthClient({ baseUrl: 'http://security.local/api', clientId: 'c1', clientSecret: 's1', fetch });
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local', clientId: 'c1', clientSecret: 's1', fetch });
 
     const t1 = await client.getToken();
     const t2 = await client.getToken();
     expect(t1).toBe('tok-1');
     expect(t2).toBe('tok-1');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('constructs the FULL issuance URL from an origin-only baseUrl — no double `/api`', async () => {
+    // Regression guard: `baseUrl` docs previously showed an example WITH a
+    // trailing `/api` (e.g. `https://app.fuzefront.com/api`), even though this
+    // package appends the fixed `/api/v1/security/tokens` path itself.
+    // Following that example produced `/api/api/v1/...`, which 404s. `baseUrl`
+    // must be an origin only.
+    const fetch = jest.fn(async () => jsonResponse(200, { accessToken: 'tok-1', tokenType: 'Bearer', expiresIn: 3600 })) as unknown as FetchLike;
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local', clientId: 'c1', clientSecret: 's1', fetch });
+
+    await client.getToken();
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://security.local/api/v1/security/tokens',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('strips a trailing slash on baseUrl before appending the issuance path', async () => {
+    const fetch = jest.fn(async () => jsonResponse(200, { accessToken: 'tok-1', tokenType: 'Bearer', expiresIn: 3600 })) as unknown as FetchLike;
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local/', clientId: 'c1', clientSecret: 's1', fetch });
+
+    await client.getToken();
+
+    // Never `http://security.local//api/v1/...` (double slash) either.
+    expect(fetch).toHaveBeenCalledWith('http://security.local/api/v1/security/tokens', expect.anything());
   });
 
   it('refreshes BEFORE expiry once inside the safety margin, not reactively after it', async () => {
@@ -41,7 +68,7 @@ describe('createServiceAuthClient', () => {
       return jsonResponse(200, { accessToken: `tok-${call}`, tokenType: 'Bearer', expiresIn: 100 });
     }) as unknown as FetchLike;
     const client = createServiceAuthClient({
-      baseUrl: 'http://security.local/api',
+      baseUrl: 'http://security.local',
       clientId: 'c1',
       clientSecret: 's1',
       fetch,
@@ -76,7 +103,7 @@ describe('createServiceAuthClient', () => {
       await gate;
       return jsonResponse(200, { accessToken: 'tok-shared', tokenType: 'Bearer', expiresIn: 3600 });
     }) as unknown as FetchLike;
-    const client = createServiceAuthClient({ baseUrl: 'http://security.local/api', clientId: 'c1', clientSecret: 's1', fetch });
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local', clientId: 'c1', clientSecret: 's1', fetch });
 
     const p1 = client.getToken();
     const p2 = client.getToken();
@@ -96,7 +123,7 @@ describe('createServiceAuthClient', () => {
       call += 1;
       return jsonResponse(200, { accessToken: `tok-${call}`, tokenType: 'Bearer', expiresIn: 3600 });
     }) as unknown as FetchLike;
-    const client = createServiceAuthClient({ baseUrl: 'http://security.local/api', clientId: 'c1', clientSecret: 's1', fetch });
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local', clientId: 'c1', clientSecret: 's1', fetch });
 
     expect(await client.getToken()).toBe('tok-1');
     client.invalidate();
@@ -105,7 +132,7 @@ describe('createServiceAuthClient', () => {
 
   it('fails closed (throws) on a non-2xx issuance response', async () => {
     const fetch = jest.fn(async () => jsonResponse(401, { error: 'invalid client credentials' })) as unknown as FetchLike;
-    const client = createServiceAuthClient({ baseUrl: 'http://security.local/api', clientId: 'bad', clientSecret: 'bad', fetch });
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local', clientId: 'bad', clientSecret: 'bad', fetch });
 
     await expect(client.getToken()).rejects.toMatchObject({ code: 'TOKEN_REQUEST_FAILED' });
   });
@@ -114,14 +141,14 @@ describe('createServiceAuthClient', () => {
     const fetch = jest.fn(async () => {
       throw new Error('ECONNREFUSED');
     }) as unknown as FetchLike;
-    const client = createServiceAuthClient({ baseUrl: 'http://security.local/api', clientId: 'c1', clientSecret: 's1', fetch });
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local', clientId: 'c1', clientSecret: 's1', fetch });
 
     await expect(client.getToken()).rejects.toMatchObject({ code: 'TOKEN_REQUEST_FAILED' });
   });
 
   it('fails closed on a response missing accessToken', async () => {
     const fetch = jest.fn(async () => jsonResponse(200, { tokenType: 'Bearer', expiresIn: 3600 })) as unknown as FetchLike;
-    const client = createServiceAuthClient({ baseUrl: 'http://security.local/api', clientId: 'c1', clientSecret: 's1', fetch });
+    const client = createServiceAuthClient({ baseUrl: 'http://security.local', clientId: 'c1', clientSecret: 's1', fetch });
 
     await expect(client.getToken()).rejects.toMatchObject({ code: 'MALFORMED_RESPONSE' });
   });

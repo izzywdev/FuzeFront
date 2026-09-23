@@ -22,14 +22,16 @@ on:
       flags:
         description: |
           Which flag set to apply:
-            billing-portal     — fuzefront.billing.invoice-history (100%)
-            portals-directory  — fuzefront.platform.portals-directory + multi-tenant-portals (100%)
+            billing-portal      — fuzefront.billing.invoice-history (100%)
+            portals-directory   — fuzefront.platform.portals-directory + multi-tenant-portals (100%)
+            org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
         required: true
         default: billing-portal
         type: choice
         options:
           - billing-portal
           - portals-directory
+          - org-context-gating
 
 permissions:
   contents: read
@@ -136,11 +138,30 @@ jobs:
               "Release flag. Gates portal-context resolution (resolvePortalContext) + per-portal branding (PortalBrandingProvider). GA per owner decision 2026-09-20 (izzy). Owner: feature-flags-engineer. Removal: once multi-tenant portals are GA."
           }
 
+          # ── Org context gating flags ───────────────────────────────────────
+          apply_org_context_gating() {
+            enable_ga "fuzefront.apps.org-context-disabled" \
+              "Release flag. Gates showing org-context required apps as disabled in non-org personal context. Default ON in prod. Owner: frontend-engineer."
+
+            local FLAG="fuzefront.apps.org-context-hidden"
+            local DESC="Release flag. Gates completely hiding org-context required apps in non-org context. Default OFF in prod. Owner: frontend-engineer."
+            echo "=== $FLAG (Created, OFF in prod) ==="
+            curl -sS -o /tmp/resp_hidden.json -w '%{http_code}' -X POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features" \
+              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' \
+              -d "{\"name\":\"$FLAG\",\"type\":\"release\",\"description\":\"$DESC\"}" || true
+
+            curl -sfX POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/off" \
+              -H "Authorization: $TOKEN" || true
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
-            billing-portal)    apply_billing ;;
-            portals-directory) apply_portals_directory ;;
-            *)                 echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
+            billing-portal)      apply_billing ;;
+            portals-directory)   apply_portals_directory ;;
+            org-context-gating)  apply_org_context_gating ;;
+            *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
           echo "All requested flags applied."
@@ -192,4 +213,7 @@ jobs:
             portals-directory)
               check_flag "fuzefront.platform.portals-directory"
               check_flag "fuzefront.platform.multi-tenant-portals" ;;
+            org-context-gating)
+              check_flag "fuzefront.apps.org-context-disabled"
+              check_flag "fuzefront.apps.org-context-hidden" ;;
           esac

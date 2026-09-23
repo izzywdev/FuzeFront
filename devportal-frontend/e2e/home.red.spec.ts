@@ -146,11 +146,17 @@ test.describe('Dev Portal home — signed-out (frame 01-home-signed-out)', () =>
     await expect(page.locator("[data-quick-link='my-access'][data-locked='true']")).toBeVisible()
   })
 
-  test('renders the participating-product directory', async ({ page }) => {
+  test('does NOT render the participating-product directory to an anonymous visitor', async ({ page }) => {
+    // Reversed 2026-09-16 by direct owner direction: the anonymous landing
+    // was disclosing the full family product directory (all `providesTo`
+    // product names) to every visitor regardless of sign-in state. Treated
+    // as a privacy fix, not a UI nit — the directory is real information
+    // about the platform's product family and is now sign-in-gated, same as
+    // Playground/My access. See frame 01-home-signed-out.html and the
+    // manifest's acceptanceNotes for the corresponding correction.
     await mockSignedOut(page)
     await page.goto('/')
-    await expect(page.locator("[data-panel='product-directory']")).toBeVisible()
-    await expect(page.locator("[data-product='fuzefront']")).toBeVisible()
+    await expect(page.locator("[data-panel='product-directory']")).not.toBeVisible()
   })
 
   test('the sandbox-only safety notice is present even before sign-in', async ({ page }) => {
@@ -190,6 +196,13 @@ test.describe('Dev Portal home — signed-in, populated (frame 02-home-signed-in
     await mockSignedInPopulated(page)
     await page.goto('/')
     await expect(page.locator("[data-panel='sandbox-activity']")).toBeVisible()
+  })
+
+  test('renders the participating-product directory once signed in', async ({ page }) => {
+    await mockSignedInPopulated(page)
+    await page.goto('/')
+    await expect(page.locator("[data-panel='product-directory']")).toBeVisible()
+    await expect(page.locator("[data-product='fuzefront']")).toBeVisible()
   })
 })
 

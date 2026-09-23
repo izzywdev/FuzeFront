@@ -133,12 +133,46 @@
       </section>
     </div>
 
+    <!-- ============ product directory — moved here from
+         01-home-signed-out.html (2026-09-16, direct owner direction): the
+         family product list is now a signed-in-only disclosure. ============ -->
+    <h3 class="dp-h2">Participating products</h3>
+    <p class="dp-sub">Sourced from <code>.fuze/manifest.json</code> → <code>providesTo</code>. A product appears here as
+      soon as one of its repos publishes a spec.</p>
+    <div class="dp-grid-3" data-panel="product-directory">
+      <div class="dp-card" data-product="fuzefront">
+        <div class="dp-inline"><h4 class="dp-h3" style="margin:0">FuzeFront</h4><span class="dp-badge info">host</span></div>
+        <p class="dp-sub" style="margin:var(--space-2) 0 0">12 services · 8 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzeagent">
+        <h4 class="dp-h3">FuzeAgent</h4>
+        <p class="dp-sub" style="margin:0">3 services · 3 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzebi">
+        <h4 class="dp-h3">FuzeBI</h4>
+        <p class="dp-sub" style="margin:0">2 services · 2 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzex">
+        <h4 class="dp-h3">FuzeX</h4>
+        <p class="dp-sub" style="margin:0">4 services · 4 specs</p>
+      </div>
+      <div class="dp-card" data-product="fuzequality">
+        <h4 class="dp-h3">Quality</h4>
+        <p class="dp-sub" style="margin:0">1 service · 1 spec</p>
+      </div>
+      <div class="dp-card" data-product="mendysrobotics">
+        <h4 class="dp-h3">MendysRobotics</h4>
+        <p class="dp-sub" style="margin:0">2 services · 2 specs</p>
+      </div>
+    </div>
+
   </div>
 
   <p class="dp-notes">
     Test hooks: <code>[data-frame='02-home-signed-in']</code> · <code>[data-auth='authenticated']</code> ·
     <code>[data-membership-status='active']</code> · <code>[data-panel='quota-summary']</code> ·
     <code>[data-panel='recent-specs']</code> · <code>[data-panel='sandbox-activity']</code> ·
+    <code>[data-panel='product-directory']</code> ·
     <code>[data-empty='no-recent-specs']</code> · <code>[data-empty='no-sandbox-activity']</code>.<br />
     Contract: <code>GET /api/v1/devportal/me/activity</code>, <code>GET /api/v1/devportal/me/access</code>.
   </p>

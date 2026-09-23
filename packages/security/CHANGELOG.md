@@ -1,5 +1,86 @@
 # Changelog — @fuzefront/security-client
 
+## 0.9.0 — AuthZ: subject ABAC attribute writes (contract slice, F1 of billing-service migration, unreleased)
+
+Freezes the ATTRIBUTE-WRITE surface the `billing-service` → `backend/security`
+`AuthorizationProvider` migration needs (F1 of a 3-step chain; F2 wires the
+provider method + route, F3 migrates billing off the embedded `permitio` SDK
+— NEITHER done here). `config-service` and `selection-list-service` migrated
+onto plain RBAC role grants; billing cannot, because
+`services/billing-service/src/services/permit.service.ts`
+(`syncPlanToPermit`) writes **ABAC attributes** (`plan_tier` string,
+`plan_status` string, `seat_limit` number) directly onto a subject's record
+in the provider's own store so existing policies can gate features by plan —
+something no existing endpoint in this contract can express (`GrantRequest`
+has no scalar-attribute field, and encoding a tier as a role cannot represent
+`seat_limit >= N` at all). `info.version` 0.8.0 → 0.9.0.
+`SECURITY_CONTRACT_VERSION` 0.8.0 → 0.9.0. **Additive/minor — no existing
+shape changes.**
+
+### Added
+
+- **`PATCH /v1/security/authz/subjects/{subjectType}/{subjectKey}/attributes`**
+  (`operationId: setSubjectAttributes`, tag `authz`) — merges scalar ABAC
+  attributes onto a subject's provider-side record. `subjectType` (`user` |
+  `tenant`) is a required sibling type discriminator for `subjectKey`, so no
+  lookup ever resolves a bare subject id (identifier-standard.md, rule 2) —
+  billing has two subject kinds (`user` → `permit.api.users.update`, `tenant`/
+  org → `permit.api.tenants.update`), so the type is load-bearing, not
+  decoration.
+  - **Method choice: `PATCH`, not `PUT`.** Every other mutation in this
+    contract that fully replaces a resource uses `PUT` (e.g.
+    `assignMemberRoles`); this endpoint deliberately does NOT — see merge
+    semantics below — so `PATCH` (RFC 5789) is the honest verb, distinguishing
+    it on sight from the file's existing replace-semantics `PUT`s.
+  - **Merge, not replace.** Only the attribute keys present in the request are
+    written; attributes this request does not name are left untouched.
+    Billing only ever sends its own partial subset
+    (`plan_tier`/`plan_status`/`seat_limit`), never a subject's full attribute
+    set, and the underlying provider write (Permit `users.update` /
+    `tenants.update`) is itself a merge — replace semantics here would
+    silently diverge from what the provider actually does and could wipe
+    attributes this caller does not own.
+  - **Fail-closed on failure, not fail-closed on data.** A provider
+    outage/timeout/rejection returns `502` (`code: PROVIDER_UNAVAILABLE`,
+    reusing the existing enum value and the existing `ProviderError`
+    response/pattern already used by `createTenant`/`createPortal`) — NEVER a
+    fail-open/fail-silent `200`. This is the opposite of `authz/check`'s
+    fail-closed-returns-`false` contract: `check`/`bulkCheck` are decisions
+    where "assume denied" is always safe, but this is a write whose caller
+    (billing entitlement sync) must be able to tell "the plan change reached
+    the provider" from "it didn't and I should retry" — collapsing that
+    distinction to a default would make it look like the write always
+    succeeds.
+  - **Response is a write confirmation, not a read.** `200` returns
+    `SubjectAttributesWriteResult` — the subject reference plus the
+    keys/values THIS call wrote — not the subject's full current attribute
+    set (no read/list surface for provider-side attributes exists in this
+    contract; out of scope here).
+- **Schemas:** `SubjectType` (`user`|`tenant`, closed enum — unlike
+  `ResourceRef.type` which is open), `SubjectRef` (`{ type, key }`, mirrors
+  `ResourceRef`'s shape as a separate schema since its `type` is closed),
+  `AttributeValue` (`oneOf` string/number/boolean — scalar only, no nested
+  objects/arrays), `SubjectAttributesWriteRequest`
+  (`{ attributes: { [key]: AttributeValue } }`, `additionalProperties: false`,
+  `minProperties: 1`), `SubjectAttributesWriteResult`
+  (`{ subject, attributes, updatedAt }`).
+- Client types (`src/types.ts`): `SubjectType`, `SubjectRef`,
+  `AttributeValue`, `SubjectAttributesWriteRequest`,
+  `SubjectAttributesWriteResult` — hand-authored mirrors of the schemas
+  above, matching the existing `ResourceRef`/`GrantRequest`/`Grant` pattern.
+
+### Deferred (F2/F3, NOT in this slice)
+
+- The route handler (`backend/security/src/routes/`), its contract tests, and
+  the `AuthorizationProvider.setAttributes()` method + `PermitAuthorizationProvider`
+  implementation it binds to (F2).
+- Migrating `billing-service` off its embedded `permitio` SDK onto this
+  endpoint via `@fuzefront/security-client` (F3). `services/billing-service`
+  is untouched by this PR.
+- A read/list surface for a subject's current provider-side attributes (no
+  consumer has asked for one yet; this slice is write-only, matching
+  `syncPlanToPermit`'s actual usage).
+
 ## 0.8.0 — Broker: marketplace / consumer-product sign-in handoff (contract slice, #238, unreleased)
 
 Freezes the OpenAPI contract for **#238** — a consumer product (e.g. the Mendys

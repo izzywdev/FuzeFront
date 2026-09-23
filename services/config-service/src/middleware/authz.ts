@@ -67,6 +67,9 @@ function makeNoOpProxy(): AuthzClient {
     revoke: async (): Promise<never> => {
       throw new Error('makeNoOpProxy: revoke() is not used by config-service');
     },
+    setAttributes: async (): Promise<never> => {
+      throw new Error('makeNoOpProxy: setAttributes() is not used by config-service');
+    },
     listGrants: async (): Promise<never> => {
       throw new Error('makeNoOpProxy: listGrants() is not used by config-service');
     },

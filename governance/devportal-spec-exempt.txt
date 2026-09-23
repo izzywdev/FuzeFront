@@ -1,0 +1,15 @@
+# governance/devportal-spec-exempt.txt
+#
+# Services exempted from gate-devportal-spec-registration's R1 check: a
+# services/<name>/ directory that runs its own HTTP server but ships no
+# openapi.yaml.
+#
+# Format: service-name  # reason
+#
+# Earn this only when the service genuinely has no contract surface worth
+# publishing — e.g. a pure Kafka consumer whose only HTTP route is an
+# unauthenticated liveness probe for the kubelet. A service that gains a real
+# API endpoint must lose its entry here and gain a spec instead.
+
+email-service  # pure Kafka consumer (NOTIFY_EMAIL_REQUESTED); its only HTTP route is GET /health for the kubelet liveness/readiness probe, same exemption class as GET /health in governance/openapi-conformance-allowlist.txt. No REST API to publish.
+provisioning-service  # pure Kafka consumer (identity.user.*/identity.org.* lifecycle events); its only HTTP route is GET /health for the kubelet liveness/readiness probe. No REST API to publish.

@@ -12,7 +12,7 @@
 // ON DELETE RESTRICT on items->list: a list cannot be purged while it has items.
 // All CREATE TABLE statements use IF NOT EXISTS for idempotency.
 
-import { Knex } from 'knex';
+import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.raw(`
