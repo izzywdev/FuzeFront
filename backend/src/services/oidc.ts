@@ -4,8 +4,6 @@ import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity';
 
-const sanitizeLog = (v: unknown): string => String(v ?? '').replace(/[\r\n]/g, ' ');
-
 interface OIDCConfig {
   issuerUrl: string;
   clientId: string;
@@ -95,7 +93,7 @@ class OIDCService {
       // Step 1: look up PKCE code verifier stored at login time
       const stateKey = state || 'default';
       const codeVerifier = global.codeVerifiers?.get(stateKey);
-      console.log(`🔄 [oidc] code verifier lookup: state=${sanitizeLog(stateKey?.substring(0,8))}… found=${!!codeVerifier} mapSize=${global.codeVerifiers?.size ?? 0}`);
+      console.log(`🔄 [oidc] code verifier lookup: found=${!!codeVerifier} mapSize=${global.codeVerifiers?.size ?? 0}`);
       if (!codeVerifier) {
         throw new Error(`Code verifier not found for state=${stateKey}`);
       }
@@ -124,7 +122,7 @@ class OIDCService {
 
       return user;
     } catch (error) {
-      console.error('❌ [oidc] handleCallback FAILED:', sanitizeLog((error as Error).message), sanitizeLog((error as any).error_description));
+      console.error('❌ [oidc] handleCallback FAILED:', (error as Error).name ?? 'CallbackError');
       throw error;
     }
   }
