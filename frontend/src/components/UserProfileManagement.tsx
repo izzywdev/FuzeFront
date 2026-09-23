@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Spinner, Toggle, InfoRow } from '@fuzefront/design-system'
+import { Spinner, Toggle, InfoRow, Stack } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { RoleBadge } from './RoleBadge'
 
@@ -298,7 +298,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
         <div className="p-6">
           {/* Profile Tab */}
           {activeTab === 'profile' && (
-            <div className="space-y-6">
+            <Stack gap="lg">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -435,12 +435,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                   {new Date(profile.updated_at).toLocaleDateString()}
                 </p>
               </div>
-            </div>
+            </Stack>
           )}
 
           {/* Security Tab */}
           {activeTab === 'security' && (
-            <div className="space-y-6">
+            <Stack gap="lg">
               <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
                 <div className="flex">
                   <div className="flex-shrink-0">
@@ -489,18 +489,18 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                   </button>
                 </InfoRow>
               </div>
-            </div>
+            </Stack>
           )}
 
           {/* Notifications Tab */}
           {activeTab === 'notifications' && (
-            <div className="space-y-6">
+            <Stack gap="lg">
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">
                   Notification Preferences
                 </h3>
 
-                <div className="space-y-4">
+                <Stack gap="md">
                   <InfoRow label="Email Notifications" description="Receive notifications via email">
                     <Toggle
                       checked={formData.notifications.email}
@@ -527,9 +527,9 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       label="Marketing Communications"
                     />
                   </InfoRow>
-                </div>
+                </Stack>
               </div>
-            </div>
+            </Stack>
           )}
         </div>
       </div>

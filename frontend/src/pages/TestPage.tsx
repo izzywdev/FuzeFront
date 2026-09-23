@@ -17,6 +17,7 @@ import {
   canManageRole,
 } from '../components/RoleBadge'
 import { UserProfileManagement } from '../components/UserProfileManagement'
+import { Stack } from '@fuzefront/design-system'
 
 export function TestPage() {
   return (
@@ -37,7 +38,7 @@ export function TestPage() {
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-4">Role Badges (Phase 2)</h2>
 
-        <div className="space-y-4">
+        <Stack gap="md">
           <div>
             <h3 className="text-lg font-medium mb-2">Different Sizes</h3>
             <div className="flex items-center space-x-4">
@@ -105,7 +106,7 @@ export function TestPage() {
               </ul>
             </div>
           </div>
-        </div>
+        </Stack>
       </section>
 
       {/* User Profile Management - Phase 2 */}
@@ -126,7 +127,7 @@ export function TestPage() {
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-4">Permission Gates</h2>
 
-        <div className="space-y-4">
+        <Stack gap="md">
           <PermissionGate requiredRoles={['admin']}>
             <div className="p-4 bg-blue-100 rounded-md">
               <p className="text-blue-800">✅ You have admin access!</p>
@@ -153,14 +154,14 @@ export function TestPage() {
               <p className="text-green-800">🚀 You have superuser access!</p>
             </div>
           </PermissionGate>
-        </div>
+        </Stack>
       </section>
 
       {/* Permission Buttons */}
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-4">Permission Buttons</h2>
 
-        <div className="space-y-4">
+        <Stack gap="md">
           <div className="flex flex-wrap gap-4">
             <PermissionButton
               requiredPermission="Organization:create"
@@ -185,7 +186,7 @@ export function TestPage() {
             </DeleteButton>
           </div>
 
-          <div className="mt-4">
+          <div>
             <PermissionButton
               requiredPermission="nonexistent:permission"
               onClick={() => alert('This should not appear')}
@@ -198,14 +199,14 @@ export function TestPage() {
               Hidden Button
             </PermissionButton>
           </div>
-        </div>
+        </Stack>
       </section>
 
       {/* Permission Checks */}
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-4">Permission Checks</h2>
 
-        <div className="space-y-2">
+        <Stack gap="sm">
           <PermissionGate requiredPermissions={['Organization:read']}>
             <p className="text-green-600">✅ Can read organizations</p>
           </PermissionGate>
@@ -225,7 +226,7 @@ export function TestPage() {
           <PermissionGate requiredPermissions={['App:install']}>
             <p className="text-green-600">✅ Can install apps</p>
           </PermissionGate>
-        </div>
+        </Stack>
       </section>
 
       {/* Role-based Content */}
