@@ -41,7 +41,7 @@ export const TermsPage: React.FC = () => {
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">2. Description of Services</h2>
             <p>
-              FuzeOne provides a suite of software-as-a-service products including, but not limited to: FuzeFront Platform (Module-Federation host shell), FuzeAgent (AI orchestration), FuzeSocial (social media management), FuzeFinance (financial management), FuzeKeys (credential management), FuzeMarket (marketing intelligence), FuzeQuality (quality engineering), FuzeBI (business intelligence), FuzeX (design-engineering workflow), and FuzeHub (operations hub).
+              FuzeOne provides a suite of software-as-a-service products including, but not limited to: FuzeFront (the portal and Module-Federation host shell), FuzeSDLC (governance), FuzeInfra (infrastructure layer), FuzePlan (product management), FuzeX (UX/UI design and flow approvals), FuzeAgent (agent orchestration), FuzeKeys (identity management), FuzePicker (production UX analysis), FuzeQuality (automated UI/UX test coverage), and FuzeDeploy (multi-cloud CI/CD automation).
             </p>
             <p className="mt-3">
               We reserve the right to modify, suspend, or discontinue any aspect of our Services at any time. We will provide reasonable notice of material changes that affect your use of the Services.

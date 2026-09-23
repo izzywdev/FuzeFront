@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AnalyticsProvider } from './contexts/AnalyticsContext'
 import { NotificationProvider } from './contexts/NotificationContext'
 import { Header } from './components/Header'
@@ -16,7 +16,6 @@ import { SolutionsPage } from './pages/SolutionsPage'
 import { IndustriesPage } from './pages/IndustriesPage'
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage'
 import { TermsPage } from './pages/TermsPage'
-import { FuzeHubPage } from './pages/FuzeHubPage'
 import { CareersPage } from './pages/CareersPage'
 import { PressPage } from './pages/PressPage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -50,7 +49,10 @@ function AppLayout() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsPage />} />
-          <Route path="/fuzehub" element={<FuzeHubPage />} />
+          {/* FuzeHub was never one of the factory's real 10 products —
+              redirect any indexed/bookmarked links to the real catalog
+              instead of 404ing them. */}
+          <Route path="/fuzehub" element={<Navigate to="/products" replace />} />
           <Route path="/careers" element={<CareersPage />} />
           <Route path="/press" element={<PressPage />} />
           <Route path="*" element={<NotFoundPage />} />

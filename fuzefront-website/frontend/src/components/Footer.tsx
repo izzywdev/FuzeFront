@@ -6,14 +6,16 @@ import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const footerNavigation = {
   products: [
-    { name: 'FuzeFront Platform', href: '/products/fuzefront' },
-    { name: 'FuzeAgent', href: '/products/fuzeagent' },
-    { name: 'FuzeSocial', href: '/products/fuzesocial' },
-    { name: 'FuzeFinance', href: '/products/fuzefinance' },
-    { name: 'FuzeKeys', href: '/products/fuzekeys' },
-    { name: 'FuzeBI', href: '/products/fuzebi' },
-    { name: 'FuzeHub', href: '/products/fuzehub' },
+    { name: 'FuzeFront', href: '/products/fuzefront' },
+    { name: 'FuzeSDLC', href: '/products/fuzesdlc' },
+    { name: 'FuzeInfra', href: '/products/fuzeinfra' },
+    { name: 'FuzePlan', href: '/products/fuzeplan' },
     { name: 'FuzeX', href: '/products/fuzex' },
+    { name: 'FuzeAgent', href: '/products/fuzeagent' },
+    { name: 'FuzeKeys', href: '/products/fuzekeys' },
+    { name: 'FuzePicker', href: '/products/fuzepicker' },
+    { name: 'FuzeQuality', href: '/products/fuzequality' },
+    { name: 'FuzeDeploy', href: '/products/fuzedeploy' },
   ],
   company: [
     { name: 'About', href: '/about' },

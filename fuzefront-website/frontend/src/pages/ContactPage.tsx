@@ -221,7 +221,7 @@ export const ContactPage: React.FC = () => {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
                     <option value="">Select your interest</option>
-                    <option value="platform">FuzeFront Platform</option>
+                    <option value="platform">FuzeFront</option>
                     <option value="infrastructure">FuzeInfra</option>
                     <option value="consultation">Consultation</option>
                     <option value="partnership">Partnership</option>

@@ -6,16 +6,16 @@ import { Logo } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const productLinks = [
-  { name: 'FuzeFront Platform', href: '/products/fuzefront', desc: 'Module Federation host shell' },
-  { name: 'FuzeAgent', href: '/products/fuzeagent', desc: 'AI team orchestration' },
-  { name: 'FuzeSocial', href: '/products/fuzesocial', desc: 'Social media automation' },
-  { name: 'FuzeFinance', href: '/products/fuzefinance', desc: 'Enterprise finance & accounting' },
-  { name: 'FuzeKeys', href: '/products/fuzekeys', desc: 'AI-powered credential management' },
-  { name: 'FuzeMarket', href: '/products/fuzemarket', desc: 'Marketing & SEO intelligence' },
-  { name: 'FuzeQuality', href: '/products/fuzequality', desc: 'Evidence graph & QA' },
-  { name: 'FuzeBI', href: '/products/fuzebi', desc: 'Business intelligence' },
-  { name: 'FuzeX', href: '/products/fuzex', desc: 'Design & workflow studio' },
-  { name: 'FuzeHub', href: '/products/fuzehub', desc: 'Unified operations hub' },
+  { name: 'FuzeFront', href: '/products/fuzefront', desc: 'The portal for your software factory' },
+  { name: 'FuzeSDLC', href: '/products/fuzesdlc', desc: 'Governance behind every product' },
+  { name: 'FuzeInfra', href: '/products/fuzeinfra', desc: 'The infrastructure layer' },
+  { name: 'FuzePlan', href: '/products/fuzeplan', desc: 'Product management, wired into Jira' },
+  { name: 'FuzeX', href: '/products/fuzex', desc: 'UX/UI design & flow approvals' },
+  { name: 'FuzeAgent', href: '/products/fuzeagent', desc: 'Agent orchestration' },
+  { name: 'FuzeKeys', href: '/products/fuzekeys', desc: 'Identity management' },
+  { name: 'FuzePicker', href: '/products/fuzepicker', desc: 'Production UX analysis & discussion' },
+  { name: 'FuzeQuality', href: '/products/fuzequality', desc: 'Automated UI/UX test coverage' },
+  { name: 'FuzeDeploy', href: '/products/fuzedeploy', desc: 'Multi-cloud CI/CD automation' },
 ]
 
 const industryLinks = [
