@@ -120,7 +120,7 @@ services:
   # PDP_ENABLE_OFFLINE_MODE keeps it self-contained; PERMIT_API_KEY defaults to
   # ci-noop so the backend degrades to its documented no-op behavior when unset.
   permit-pdp-test:
-    image: permitio/pdp-v2:${PERMIT_PDP_TAG:-0.8.1}
+    image: permitio/pdp-v2:${PERMIT_PDP_TAG:-0.8.1}@sha256:05d7236b8caa068619da19a42d5b91de788022b7829842ae0670d56e0cb4f4ed
     container_name: consumer-test-permit-pdp
     environment:
       PDP_API_KEY: ${PERMIT_API_KEY:-ci-noop}
