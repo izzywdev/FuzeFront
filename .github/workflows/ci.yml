@@ -394,6 +394,12 @@ jobs:
     name: Selection list E2E red specs (TDD — expected to fail until UI lands)
     runs-on: ubuntu-latest
     needs: build
+    # Hard bound. Without it this job inherits GitHub's 6-hour default, and a
+    # job that sits for hours holds `mergeable_state: blocked` on the PR even
+    # though it is continue-on-error — observed stalling #1156 and #1180 for
+    # 40+ minutes each with every required context already green. 30 is well
+    # above the worst case below (~19 min) and far under 6 hours.
+    timeout-minutes: 30
     # continue-on-error: true — these 4 specs are RED-by-design TDD specs written
     # before @fuzeone/selection-lists-ui and the /settings/selection-lists route
     # exist (EPIC-17 / FFRNT-188). They are expected to fail until frontend-engineer
@@ -468,13 +474,31 @@ jobs:
         env:
           BASE_URL: http://localhost:4173
           CI: 'true'
+        # --retries=0 and --workers=4 OVERRIDE playwright.config.ts for these
+        # specs only. The config sets `retries: 2` and `workers: 1` when CI is
+        # set, which is right for suites expected to PASS — absorb flake, keep
+        # ordering deterministic. It is exactly wrong here:
+        #
+        #   155 red-by-design tests x 3 attempts x the 30s config timeout,
+        #   run serially, is a worst case of ~3h52m.
+        #
+        # Retrying a test that is DECLARED to fail yields no information and
+        # triples the runtime, and nothing in these specs shares state — they
+        # drive a static `vite preview` build, with no backend and no fixtures
+        # between them — so serial execution buys nothing either. Together:
+        # ~19 min worst case, bounded by the job timeout-minutes above.
+        #
+        # Both overrides should COME OFF once the UI lands and these specs are
+        # consistently green (same trigger as the `continue-on-error` above):
+        # at that point retries earn their keep again.
         run: |
           npx playwright test \
             tests/selection-lists-list-management.red.spec.ts \
             tests/selection-lists-picker.red.spec.ts \
             tests/selection-lists-access-control.red.spec.ts \
             tests/selection-lists-translation-workbench.red.spec.ts \
-            --project=chromium --reporter=list,html
+            --project=chromium --reporter=list,html \
+            --retries=0 --workers=4
 
       - name: Upload Playwright report
         if: always()
