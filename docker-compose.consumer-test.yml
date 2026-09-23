@@ -10,23 +10,23 @@
 #                                  so it never collides with a dev's local stack.
 #   - docker-compose.consumer-test.yml (this file) -> nightly's bounded local-up.
 #     Services are addressed by CONTAINER NAME on the `consumer-test` network
-#     exactly as production/FuzeInfra would (`postgres`, `permit-pdp-test`, …) —
-#     that is the "consumer-test" contract: this repo stands up its stack the
-#     same way a real consuming app would attach to FuzeInfra, not via ad-hoc
-#     host ports. Adapted from docker-compose.test.yml per governance/
+#     exactly as production/FuzeInfra would (`postgres`, …) — that is the
+#     "consumer-test" contract: this repo stands up its stack the same way a
+#     real consuming app would attach to FuzeInfra, not via ad-hoc host ports.
+#     Adapted from docker-compose.test.yml per governance/
 #     local-environment.md (container-name addressing instead of host-remapped
 #     ports), not a from-scratch build.
 #
 # WHY THE SUITE STILL NEEDS localhost, TOO: `nightly-integration.yml` runs
 # `npm run test:integration` directly on the GitHub-hosted runner (not inside a
-# container on this compose network), so it cannot resolve `postgres` /
-# `permit-pdp-test` by container-name DNS — only via a published host port.
-# Ports below are published on the SAME port numbers the containers use
-# internally (prod-parity numbers, no remap), and `nightly-integration.yml`
-# exports DB_HOST=localhost / PERMIT_PDP_URL=http://localhost:7000 for the
-# suite step so `scripts/test-integration.mjs`'s container-name defaults
-# resolve correctly in CI while staying container-name-addressable for any
-# suite that DOES run inside this network (e.g. a future in-container job).
+# container on this compose network), so it cannot resolve `postgres` by
+# container-name DNS — only via a published host port. Ports below are
+# published on the SAME port numbers the containers use internally
+# (prod-parity numbers, no remap), and `nightly-integration.yml` exports
+# DB_HOST=localhost for the suite step so `scripts/test-integration.mjs`'s
+# container-name defaults resolve correctly in CI while staying
+# container-name-addressable for any suite that DOES run inside this network
+# (e.g. a future in-container job).
 #
 # -----------------------------------------------------------------------------
 # VERSION PARITY (read this before bumping any tag below)
@@ -45,8 +45,8 @@
 # (Postgres) or an in-process mock standing in for prod egress:
 #     stripe        -> stripe-mock (stripemock/stripe-mock)
 #     OpenAI/LLM    -> mock-llm (OpenAI-compatible stub on :11434)
-#     Permit.io     -> permit-pdp-test in OFFLINE mode (PDP_API_KEY defaults ci-noop)
 #     email         -> MailHog (SMTP sink + assertion API)
+# Permit.io is NOT stood up here — see the "Permit PDP" comment below.
 # No real external host may be contacted at test runtime — that boundary is
 # `local-env-verifier` scope (not yet run; see PR description / this repo's
 # `governance/local-environment.md`).
@@ -116,28 +116,23 @@ services:
       timeout: 5s
       retries: 20
 
-  # ── Permit PDP (offline mode — no external SaaS required) ───────────────────
-  # PDP_ENABLE_OFFLINE_MODE keeps it self-contained; PERMIT_API_KEY defaults to
-  # ci-noop so the backend degrades to its documented no-op behavior when unset.
-  permit-pdp-test:
-    image: permitio/pdp-v2:${PERMIT_PDP_TAG:-0.8.1}@sha256:05d7236b8caa068619da19a42d5b91de788022b7829842ae0670d56e0cb4f4ed
-    container_name: consumer-test-permit-pdp
-    environment:
-      PDP_API_KEY: ${PERMIT_API_KEY:-ci-noop}
-      PDP_DEBUG: "false"
-      PDP_ENABLE_OFFLINE_MODE: "true"
-      OPAL_INLINE_OPA_ENABLED: "true"
-      OPAL_CLIENT_ENABLE_REALTIME_UPDATES: "false"
-    ports:
-      - "7000:7000"
-    networks:
-      - consumer-test
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7000/health"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
+  # ── Permit PDP — deliberately NOT started here ──────────────────────────────
+  # Tried permitio/pdp-v2:0.8.1 with PDP_ENABLE_OFFLINE_MODE=true + PDP_API_KEY=
+  # ci-noop (the config docker-compose.test.yml documents): the image does NOT
+  # honor offline mode for its startup config fetch regardless — it still calls
+  # out to https://api.permit.io/v2/pdps/me/config, gets "An invalid API key
+  # was specified" for the placeholder key, and the worker exits(0) before
+  # binding :7000, so `docker compose up --wait` times out at 180s. That control-
+  # plane call is also a real boundary violation for this file's own "no real
+  # external host may be contacted at test runtime" contract, not just a startup
+  # bug. docker-compose.test.yml's own `permit-pdp-test` definition (this was
+  # adapted from) is CI-unexercised — ci.yml's `email-service-test` job never
+  # starts it — so it was never actually proven working, just present.
+  # Excluded per this file's own precedent for redis/kafka/chromadb: neither
+  # current suite (backend auth/apps/permissions; billing-service invoices)
+  # exercises Permit checks. Add it back only once a suite needs it AND a
+  # working offline-mode config is found (upstream image version bump, or a
+  # different control-plane-fetch suppression var) and verified in isolation.
 
   # ── stripe-mock (external SaaS mock for billing) ────────────────────────────
   # Stripe's own mock server; never reaches the real Stripe API.
