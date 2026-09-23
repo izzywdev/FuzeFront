@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
+import { Center } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -42,20 +43,20 @@ export const SolutionsPage: React.FC = () => {
     <div className="bg-white pt-16">
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
+          <Center
+            as={motion.div}
             initial={{ opacity: 0, y: 30 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8 }}
-            className="text-center"
           >
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
               Solutions for Every <span className="gradient-text">Business</span>
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Whether you're a startup building an MVP or an enterprise scaling globally, 
+              Whether you're a startup building an MVP or an enterprise scaling globally,
               we have the right solution for you.
             </p>
-          </motion.div>
+          </Center>
         </div>
       </section>
 

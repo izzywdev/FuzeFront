@@ -1,5 +1,6 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { Center } from '@fuzefront/design-system'
 import { PermissionGate } from './PermissionGate'
 import { useCurrentUser } from '../lib/shared'
 
@@ -86,7 +87,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       fallback={showFallback ? <DefaultFallback /> : null}
       loading={
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
+          <Center>
             <svg
               className="animate-spin -ml-1 mr-3 h-8 w-8 text-blue-600 mx-auto"
               xmlns="http://www.w3.org/2000/svg"
@@ -110,7 +111,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             <p className="mt-2 text-sm text-gray-500">
               Checking permissions...
             </p>
-          </div>
+          </Center>
         </div>
       }
     >

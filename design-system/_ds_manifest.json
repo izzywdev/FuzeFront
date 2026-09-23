@@ -158,6 +158,10 @@
       "sourcePath": "components/launcher/IntegrationBadge.jsx"
     },
     {
+      "name": "Center",
+      "sourcePath": "components/layout/Center.jsx"
+    },
+    {
       "name": "CenteredCard",
       "sourcePath": "components/layout/CenteredCard.jsx"
     },

@@ -46,6 +46,10 @@
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
+      "name": "Text",
+      "sourcePath": "components/core/Text.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
@@ -152,6 +156,10 @@
     {
       "name": "IntegrationBadge",
       "sourcePath": "components/launcher/IntegrationBadge.jsx"
+    },
+    {
+      "name": "Center",
+      "sourcePath": "components/layout/Center.jsx"
     },
     {
       "name": "CenteredCard",

@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
+import { Center } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Position {
@@ -129,12 +130,12 @@ export const CareersPage: React.FC = () => {
             {perks.map((perk) => {
               const Icon = perk.icon
               return (
-                <div key={perk.text} className="text-center">
+                <Center key={perk.text}>
                   <div className="w-11 h-11 rounded-xl bg-primary-50 flex items-center justify-center mx-auto mb-3">
                     <Icon size={20} className="text-primary-700" />
                   </div>
                   <p className="text-sm text-gray-600 leading-snug">{perk.text}</p>
-                </div>
+                </Center>
               )
             })}
           </div>

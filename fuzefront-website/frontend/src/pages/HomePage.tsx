@@ -17,6 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
+import { Center } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -248,10 +249,10 @@ export const HomePage: React.FC = () => {
             className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto"
           >
             {socialProof.map((item) => (
-              <div key={item.label} className="text-center">
+              <Center key={item.label}>
                 <div className="text-3xl font-bold text-white">{item.metric}</div>
                 <div className="text-secondary-300 text-sm mt-1">{item.label}</div>
-              </div>
+              </Center>
             ))}
           </motion.div>
         </div>
