@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, AuthCard } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { createOrganization } from '../services/api'
 import { useAppContext } from '../lib/shared'
@@ -67,7 +67,7 @@ function CreateOrganizationPage() {
 
   if (success) {
     return (
-      <div className="auth-form" style={{ textAlign: 'center' }}>
+      <AuthCard align="center">
         <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>✓</p>
         <h3 style={{ margin: '0 0 0.5rem' }}>{t('success')}</h3>
         <p style={{ color: 'var(--text-secondary)', margin: '0 0 1.5rem' }}>
@@ -80,12 +80,12 @@ function CreateOrganizationPage() {
         >
           {t('dashboard')}
         </button>
-      </div>
+      </AuthCard>
     )
   }
 
   return (
-    <div className="auth-form">
+    <AuthCard>
       <h2 style={{ marginBottom: '0.25rem' }}>{t('createOrganization')}</h2>
       <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '1.5rem' }}>
         {t('createOrganizationDesc')}
@@ -164,7 +164,7 @@ function CreateOrganizationPage() {
           {t('cancel')}
         </button>
       </div>
-    </div>
+    </AuthCard>
   )
 }
 
