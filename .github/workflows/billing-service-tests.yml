@@ -68,6 +68,17 @@ jobs:
         working-directory: packages/identity
         run: npm install --ignore-scripts && npm run build
 
+      # @fuzefront/auth: billing-service's migration off the embedded Permit.io
+      # SDK onto FuzeFront's own Security API (src/services/authz.ts,
+      # src/services/permit.service.ts) imports it. Same reasoning as the
+      # identity step above — dist/ is gitignored, jest.config.js's
+      # moduleNameMapper covers RUNTIME resolution (straight to TS source),
+      # but ts-jest's type-check still resolves the package's declared
+      # `types` (dist/index.d.ts), which does not exist until this builds.
+      - name: Build @fuzefront/auth (d.ts for the billing type-check)
+        working-directory: packages/auth
+        run: npm install --ignore-scripts && npm run build
+
       - name: Install billing-service dependencies
         working-directory: services/billing-service
         # Matches the service Dockerfile (`npm install --ignore-scripts`): this
