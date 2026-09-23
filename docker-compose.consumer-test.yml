@@ -1,0 +1,165 @@
+# docker-compose.consumer-test.yml
+# =============================================================================
+# Bounded local-up for the NIGHTLY integration suite (`nightly-integration.yml`,
+# `npm run test:integration` -> `scripts/test-integration.mjs`), per the
+# detection contract in `governance/local-environment.md`.
+#
+# This is a SIBLING of `docker-compose.test.yml`, not a replacement:
+#   - docker-compose.test.yml   -> PR-level "Integration" tier harness, digest-
+#                                  pinned, host-remapped ports (5433, 6380, …)
+#                                  so it never collides with a dev's local stack.
+#   - docker-compose.consumer-test.yml (this file) -> nightly's bounded local-up.
+#     Services are addressed by CONTAINER NAME on the `consumer-test` network
+#     exactly as production/FuzeInfra would (`postgres`, `permit-pdp-test`, …) —
+#     that is the "consumer-test" contract: this repo stands up its stack the
+#     same way a real consuming app would attach to FuzeInfra, not via ad-hoc
+#     host ports. Adapted from docker-compose.test.yml per governance/
+#     local-environment.md (container-name addressing instead of host-remapped
+#     ports), not a from-scratch build.
+#
+# WHY THE SUITE STILL NEEDS localhost, TOO: `nightly-integration.yml` runs
+# `npm run test:integration` directly on the GitHub-hosted runner (not inside a
+# container on this compose network), so it cannot resolve `postgres` /
+# `permit-pdp-test` by container-name DNS — only via a published host port.
+# Ports below are published on the SAME port numbers the containers use
+# internally (prod-parity numbers, no remap), and `nightly-integration.yml`
+# exports DB_HOST=localhost / PERMIT_PDP_URL=http://localhost:7000 for the
+# suite step so `scripts/test-integration.mjs`'s container-name defaults
+# resolve correctly in CI while staying container-name-addressable for any
+# suite that DOES run inside this network (e.g. a future in-container job).
+#
+# -----------------------------------------------------------------------------
+# VERSION PARITY (read this before bumping any tag below)
+# -----------------------------------------------------------------------------
+# Tags are pinned via `versions.env` (loaded with `--env-file` by
+# `nightly-integration.yml` when present, per governance/local-environment.md),
+# with an inline `${VAR:-default}` fallback so `docker compose config` still
+# renders cleanly with no --env-file. Every default below mirrors the version
+# FuzeInfra runs, sourced from the vendored submodule's
+# `FuzeInfra/docker-compose.FuzeInfra.yml` (the version-parity source of
+# truth — do NOT hand-pick a drifting tag). To refresh after a FuzeInfra
+# version bump: diff `FuzeInfra/docker-compose.FuzeInfra.yml`'s `image:` lines
+# and update both `versions.env` and the fallback here.
+#
+# External SaaS is never hit — everything below is either a real base service
+# (Postgres) or an in-process mock standing in for prod egress:
+#     stripe        -> stripe-mock (stripemock/stripe-mock)
+#     OpenAI/LLM    -> mock-llm (OpenAI-compatible stub on :11434)
+#     Permit.io     -> permit-pdp-test in OFFLINE mode (PDP_API_KEY defaults ci-noop)
+#     email         -> MailHog (SMTP sink + assertion API)
+# No real external host may be contacted at test runtime — that boundary is
+# `local-env-verifier` scope (not yet run; see PR description / this repo's
+# `governance/local-environment.md`).
+#
+# SCOPED TO WHAT'S BOUNDED-SAFE + ACTUALLY EXERCISED TODAY: `redis`, `kafka`,
+# and `chromadb` are FuzeInfra base services too, but neither of the two real
+# suites `scripts/test-integration.mjs` runs today (backend auth/apps/
+# permissions; billing-service invoices) touches them, and Kafka's healthy-
+# start window risks nightly-integration.yml's 180s `--wait-timeout` (`docker
+# compose up --wait` blocks on EVERY declared service's healthcheck, not just
+# the ones a given suite needs). Add a service here only when a suite that
+# needs it lands, keeping the bounded wait reliable rather than padding it
+# with services nothing exercises yet.
+#
+# Bring up with:
+#   docker compose -f docker-compose.consumer-test.yml --env-file versions.env up -d --wait --wait-timeout 180
+# Tear down with:
+#   docker compose -f docker-compose.consumer-test.yml down -v
+#
+# Ports (all on localhost, prod-parity numbers — do not remap; that's what
+# docker-compose.test.yml is for):
+#   5432   -> Postgres (test DB, fuzefront_platform_test)
+#   1025   -> MailHog SMTP
+#   8025   -> MailHog Web UI + API (http://localhost:8025)
+#   7000   -> Permit PDP (offline)
+#  12111  -> stripe-mock (http; 12112 https)
+#  11434  -> mock-llm (OpenAI-compatible)
+# =============================================================================
+
+networks:
+  consumer-test:
+    name: consumer-test
+    driver: bridge
+
+services:
+
+  # ── Postgres (FuzeInfra: postgres:15) — real base service, not a mock ──────
+  postgres:
+    image: postgres:${POSTGRES_TAG:-15}
+    container_name: consumer-test-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fuzefront_platform_test
+    ports:
+      - "5432:5432"
+    networks:
+      - consumer-test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── MailHog (SMTP sink + assertion API) ─────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:${MAILHOG_TAG:-v1.0.1}
+    container_name: consumer-test-mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI + REST API
+    networks:
+      - consumer-test
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8025/api/v2/messages || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── Permit PDP (offline mode — no external SaaS required) ───────────────────
+  # PDP_ENABLE_OFFLINE_MODE keeps it self-contained; PERMIT_API_KEY defaults to
+  # ci-noop so the backend degrades to its documented no-op behavior when unset.
+  permit-pdp-test:
+    image: permitio/pdp-v2:${PERMIT_PDP_TAG:-0.8.1}
+    container_name: consumer-test-permit-pdp
+    environment:
+      PDP_API_KEY: ${PERMIT_API_KEY:-ci-noop}
+      PDP_DEBUG: "false"
+      PDP_ENABLE_OFFLINE_MODE: "true"
+      OPAL_INLINE_OPA_ENABLED: "true"
+      OPAL_CLIENT_ENABLE_REALTIME_UPDATES: "false"
+    ports:
+      - "7000:7000"
+    networks:
+      - consumer-test
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7000/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── stripe-mock (external SaaS mock for billing) ────────────────────────────
+  # Stripe's own mock server; never reaches the real Stripe API.
+  stripe-mock:
+    image: stripemock/stripe-mock:${STRIPE_MOCK_TAG:-latest}
+    container_name: consumer-test-stripe-mock
+    ports:
+      - "12111:12111"
+      - "12112:12112"
+    networks:
+      - consumer-test
+
+  # ── mock-llm (OpenAI-compatible LLM stub) ────────────────────────────────────
+  # Canned chat/embeddings completions so AI services can be exercised without
+  # a real OpenAI key. Point OPENAI_BASE_URL at :11434/v1.
+  mock-llm:
+    image: ghcr.io/berriai/litellm:${MOCK_LLM_TAG:-main-stable}
+    container_name: consumer-test-mock-llm
+    command: ["--model", "gpt-3.5-turbo", "--mock_response", "ci-mock-llm-response", "--port", "11434"]
+    environment:
+      LITELLM_MODE: PRODUCTION
+    ports:
+      - "11434:11434"
+    networks:
+      - consumer-test

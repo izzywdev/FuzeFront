@@ -89,6 +89,24 @@ jobs:
           fi
           echo "::endgroup::"
 
+      - name: Export bounded local-up connection vars for the suite
+        if: env.SUITE_PRESENT == 'true'
+        shell: bash
+        # The suite runs as a plain process on this runner, not inside a
+        # container on the consumer-test compose network, so it cannot resolve
+        # container-name DNS (`postgres`, `permit-pdp-test`) the way a real
+        # consuming app would in-cluster — it needs the published host ports
+        # instead (docker-compose.consumer-test.yml publishes them on the same,
+        # prod-parity port numbers). scripts/test-integration.mjs defaults
+        # DB_PORT/DB_NAME/DB_USER/DB_PASSWORD to values that already match the
+        # consumer-test postgres service, so only the two container-name
+        # hostnames need overriding here.
+        run: |
+          {
+            echo "DB_HOST=localhost"
+            echo "PERMIT_PDP_URL=http://localhost:7000"
+          } >> "$GITHUB_ENV"
+
       - name: Run integration/contract suite (mocks only — no real external egress)
         if: env.SUITE_PRESENT == 'true'
         shell: bash
