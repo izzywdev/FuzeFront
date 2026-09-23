@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { BillingSubscription } from '@fuzefront/billing-client';
+import { PanelHeader } from '@fuzefront/design-system';
 import { useBillingI18n } from '../i18n';
 import { Button, Notice, StatusPill } from './primitives';
 import { Modal } from './Modal';
@@ -38,11 +39,7 @@ export function SubscriptionManager({
   if (!subscription) {
     return (
       <section className="ffb-panel" aria-labelledby="ffb-sub-empty">
-        <div className="ffb-panel__header">
-          <h3 id="ffb-sub-empty" className="ffb-panel__title">
-            {strings.noSubscriptionHeading}
-          </h3>
-        </div>
+        <PanelHeader id="ffb-sub-empty" title={strings.noSubscriptionHeading} />
         <p className="ffb-panel__empty">{strings.noSubscriptionBody}</p>
         {onPickPlan && (
           <div className="ffb-panel__actions">
@@ -79,12 +76,9 @@ export function SubscriptionManager({
 
   return (
     <section className="ffb-panel" aria-labelledby="ffb-sub-title">
-      <div className="ffb-panel__header">
-        <h3 id="ffb-sub-title" className="ffb-panel__title">
-          {strings.subscriptionHeading}
-        </h3>
+      <PanelHeader id="ffb-sub-title" title={strings.subscriptionHeading}>
         <StatusPill status={status} strings={strings} />
-      </div>
+      </PanelHeader>
 
       <div className="ffb-panel__row">
         <span className="ffb-panel__key">{planName ?? strings.subscriptionHeading}</span>

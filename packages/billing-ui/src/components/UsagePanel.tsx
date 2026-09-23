@@ -1,3 +1,4 @@
+import { PanelHeader } from '@fuzefront/design-system';
 import { useBillingI18n } from '../i18n';
 
 export interface UsagePanelProps {
@@ -37,11 +38,7 @@ export function UsagePanel({
 
   return (
     <section className="ffb-panel" aria-labelledby="ffb-usage-title">
-      <div className="ffb-panel__header">
-        <h3 id="ffb-usage-title" className="ffb-panel__title">
-          {strings.usageHeading}
-        </h3>
-      </div>
+      <PanelHeader id="ffb-usage-title" title={strings.usageHeading} />
 
       {!hasAny && <p className="ffb-panel__empty">{strings.noUsageData}</p>}
 

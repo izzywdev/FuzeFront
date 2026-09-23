@@ -1,3 +1,4 @@
+import { PanelHeader } from '@fuzefront/design-system';
 import { useBillingI18n } from '../i18n';
 import { Button } from './primitives';
 
@@ -32,11 +33,7 @@ export function PaymentMethodPanel({ card, onManage, busy }: PaymentMethodPanelP
 
   return (
     <section className="ffb-panel" aria-labelledby="ffb-pm-title">
-      <div className="ffb-panel__header">
-        <h3 id="ffb-pm-title" className="ffb-panel__title">
-          {strings.paymentMethodHeading}
-        </h3>
-      </div>
+      <PanelHeader id="ffb-pm-title" title={strings.paymentMethodHeading} />
 
       {card ? (
         <div className="ffb-pm">
