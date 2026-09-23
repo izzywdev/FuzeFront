@@ -303,8 +303,6 @@ class RenderBodyTests(unittest.TestCase):
             self.assertGreater(len(body), 0)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class CreditOutageExceptionTests(unittest.TestCase):
@@ -361,3 +359,40 @@ class CreditOutageExceptionTests(unittest.TestCase):
         self.assertIn("not a failure", body)
         self.assertIn("PASSES", body)
 
+
+class ActionNeverReported(unittest.TestCase):
+    """A review step killed mid-run reports NOTHING — it must not red the gate.
+
+    Observed twice on 2026-09-23 (#1156 heads e757a892 and 481d498f): the step
+    hung 13-16 minutes against the provider and the job died, so every later
+    step reported a null conclusion, `Decide verdict` never ran, and the check
+    went red — the exact outcome the owner's credit-outage exception exists to
+    prevent. With the step now bounded by `timeout-minutes`, the verdict script
+    DOES run and sees an empty conclusion.
+    """
+
+    def test_empty_conclusion_is_an_outage_not_an_abstain(self):
+        r = V.decide("", "", V.make_nonce(), [], availability=False, action_reported=False)
+        self.assertEqual(r["decision"], "outage")
+        self.assertIsNone(r["verdict"])
+        self.assertEqual(r["findings"], [])
+
+    def test_outage_reason_is_distinct_from_a_clean_credit_skip(self):
+        # A hang must never be silently read as a clean availability skip: the
+        # two have different operational causes and different fixes.
+        hang = V.decide("", "", V.make_nonce(), [], availability=False, action_reported=False)
+        clean = V.decide("failure", "", V.make_nonce(), [], availability=True)
+        self.assertEqual(hang["decision"], clean["decision"])  # both pass the gate
+        self.assertNotEqual(hang["reason"], clean["reason"])   # but are told apart
+        self.assertIn("NO conclusion output", hang["reason"])
+
+    def test_a_reporting_action_is_unaffected(self):
+        # Regression guard: the new branch must not swallow a real task failure.
+        r = V.decide("failure", "", V.make_nonce(), [], availability=False, action_reported=True)
+        self.assertEqual(r["decision"], "abstain")
+
+    def test_defaults_to_reported_so_existing_callers_are_unchanged(self):
+        r = V.decide("failure", "", V.make_nonce(), [], availability=False)
+        self.assertEqual(r["decision"], "abstain")
+if __name__ == "__main__":
+    unittest.main()

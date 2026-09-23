@@ -524,7 +524,13 @@ jobs:
         run: npm run -w selection-list-service build
       - name: Run DB migrations
         env:
-          NODE_ENV: production
+          # 'test', not 'production': src/db/index.ts picks the knex env from
+          # NODE_ENV, and the service below must run non-production so the
+          # FLAGS_FORCE_ON escape hatch can enable the release flag. Both steps
+          # must agree or migrations land in a different config than the
+          # service reads. The knexfile's `test` env loads the same compiled
+          # dist migrations as `production`.
+          NODE_ENV: test
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'
@@ -534,7 +540,28 @@ jobs:
         run: node services/selection-list-service/dist/db/migrate.js
       - name: Start selection-list-service
         env:
-          NODE_ENV: production
+          # NOT 'production'. Every route in this service is gated behind the
+          # `fuzefront.selection-lists.service` release flag, whose default is
+          # OFF and whose only source of truth is Unleash. CI has no Unleash,
+          # so the flag client degrades to the default and every route answers
+          # 404 "Service not enabled." — correct behaviour that made this suite
+          # unpassable by construction (134 of 148 tests failed against a
+          # service working exactly as designed). FLAGS_FORCE_ON below is the
+          # repo's existing escape hatch (backend/src/routes/flags.ts), and it
+          # is hard-gated to non-production so it can never light up a dark
+          # feature in prod — hence NODE_ENV=test here.
+          #
+          # Two deliberate side effects, both wanted in CI:
+          #  - src/index.ts:55 only starts the Kafka lifecycle consumers when
+          #    KAFKA_BROKERS is set or NODE_ENV=production, so they no longer
+          #    spin retrying an unreachable broker and filling the log with
+          #    `getaddrinfo EAI_AGAIN kafka.fuzeinfra.svc.cluster.local`.
+          #  - middleware/authz.ts's no-op client replaces the real one. No
+          #    behaviour change for these tests: requireAuthzCheck already
+          #    passes through in CI because AUTHZ_ENABLED defaults OFF, so the
+          #    client was constructed but never called either way.
+          NODE_ENV: test
+          FLAGS_FORCE_ON: fuzefront.selection-lists.service
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'

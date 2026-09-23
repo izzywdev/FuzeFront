@@ -142,7 +142,7 @@ def extract_verdict_json(result_text: str, nonce: str) -> tuple[dict | None, str
 
 def decide(action_conclusion: str, result_text: str, nonce: str,
            sensitive_files: list[str], mode: str = "",
-           availability: bool = False) -> dict:
+           availability: bool = False, action_reported: bool = True) -> dict:
     """The single decision point. Returns a dict with keys: decision, reason, verdict,
     summary, findings, downgraded (bool: true iff a model "approve" was overridden by the
     sensitive-files rule), deferred (bool: true iff the review was legitimately deferred by
@@ -197,6 +197,34 @@ def decide(action_conclusion: str, result_text: str, nonce: str,
         # which has carried this since the owner's ruling. This repo's copy predated it, so
         # every PR here went red on an outage while FuzeSDLC's passed with a notice — observed
         # on FuzeFront #1039/#1040/#1041 and FuzeSDLC#360 on the same day, same outage.
+        # A review that never REPORTED AT ALL is an infrastructure failure, not a
+        # verdict. `availability` can only be true when fuze-code-action ran far
+        # enough to set its outputs; when the action is killed mid-run (it hung
+        # for 13-16 minutes against the provider and the job died with every
+        # step after it reporting a null conclusion -- observed on #1156 heads
+        # e757a892 and 481d498f, 2026-09-23) it sets NOTHING, so `availability`
+        # is empty and this script previously abstained, reddening the gate.
+        #
+        # That is the same outage the owner's exception exists to absorb, merely
+        # arriving as a hang rather than a clean skip. It CANNOT mask a real
+        # finding: a finding requires a verdict, and there is none. The reason
+        # text keeps it DISTINCT from a clean credit skip so a hang is never
+        # silently read as one.
+        if not action_reported:
+            return {
+                "decision": "outage",
+                "reason": (
+                    "fuze-code-action produced NO conclusion output - the step did not "
+                    "report at all (killed mid-run, e.g. a hang against the provider). "
+                    "That is an infrastructure failure, not a review verdict, and is "
+                    "treated as an availability outage per the owner's exception. No "
+                    "finding can be hidden by this: a finding requires a verdict, and "
+                    "none was produced. Re-run once a provider recovers."
+                ),
+                "verdict": None, "summary": "", "findings": [],
+                "downgraded": False, "deferred": False,
+            }
+
         if availability:
             return {
                 "decision": "outage",
@@ -347,11 +375,15 @@ def main() -> int:
     # availability). Absent or anything but "true" means NOT an outage — so an older action
     # that does not emit it fails closed to the previous behaviour rather than passing.
     availability = os.environ.get("FUZE_ACTION_AVAILABILITY", "").strip().lower() == "true"
+    # The action sets `conclusion` on every path it completes, including its own
+    # failures. An EMPTY conclusion therefore means the step never reported --
+    # see the `action_reported` branch in decide().
+    action_reported = bool(action_conclusion.strip())
     sensitive_raw = os.environ.get("FUZE_SENSITIVE_FILES", "")
     sensitive_files = [line for line in sensitive_raw.splitlines() if line.strip()]
 
     result = decide(action_conclusion, result_text, nonce, sensitive_files, mode,
-                    availability)
+                    availability, action_reported=action_reported)
     body = render_body(result, mode, vendor)
 
     print(f"::notice title=fuze-code-review::decision={result['decision']} reason={result['reason']}")
