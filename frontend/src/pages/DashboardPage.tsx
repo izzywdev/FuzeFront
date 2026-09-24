@@ -1,3 +1,4 @@
+import { Button } from '@fuzefront/design-system'
 import { useCurrentUser, useOrganizations } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { iconGlyph, iconImageUrl, integrationTypeOf, appHref } from '../platform/appManifest'
@@ -143,12 +144,12 @@ function DashboardPage() {
       <div className="quick-actions">
         <h3>Quick Actions</h3>
         <div className="quick-actions-row">
-          <button
-            className="btn btn-secondary"
+          <Button
+            variant="secondary"
             onClick={() => (window.location.href = '/help')}
           >
             📖 View Documentation
-          </button>
+          </Button>
           {user?.roles.includes('admin') && (
             <button
               className="btn btn-primary"
