@@ -74,6 +74,8 @@ PUT /api/apps/{}/activate  # backend: activate app; backend/src lacks openapi.ya
 DELETE /api/apps/{}  # backend: delete app; backend/src lacks openapi.yaml
 DELETE /api/apps/{}/install/{}  # backend: uninstall app; backend/src lacks openapi.yaml
 GET /api/organizations  # backend: org list; backend/src lacks openapi.yaml
+GET /api/organizations/slug-available  # backend: real-time slug availability probe; backend/src lacks openapi.yaml (same debt as the whole org family)
+GET /organizations/slug-available  # frontend client call for the above; resolved without the /api base by the scanner
 GET /api/organizations/{}  # backend: org detail; backend/src lacks openapi.yaml
 POST /api/organizations  # backend: create org; backend/src lacks openapi.yaml
 PUT /api/organizations/{}  # backend: update org; backend/src lacks openapi.yaml

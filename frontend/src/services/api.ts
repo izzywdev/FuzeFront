@@ -618,6 +618,23 @@ export const createOrganization = async (data: Partial<Organization>) => {
   const res = await api.post('/organizations', data)
   return res.data
 }
+/**
+ * Real-time slug availability for the create-organization dialog. Returns the
+ * server's verdict so the UI can warn as-you-type; the create POST's 409 stays
+ * the authoritative safe gate. A malformed slug comes back `available:false,
+ * reason:'invalid'`. Network/other failures resolve to `available:true` so a
+ * transient probe error never blocks a legitimate create — the POST re-checks.
+ */
+export const checkOrganizationSlugAvailable = async (
+  slug: string
+): Promise<{ available: boolean; reason?: 'taken' | 'invalid' }> => {
+  try {
+    const res = await api.get('/organizations/slug-available', { params: { slug } })
+    return { available: !!res.data?.available, reason: res.data?.reason }
+  } catch {
+    return { available: true }
+  }
+}
 export const updateOrganization = async (
   id: string,
   data: Partial<Organization>

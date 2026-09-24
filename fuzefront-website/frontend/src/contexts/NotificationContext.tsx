@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
-import { Caption } from '@fuzefront/design-system'
+import { Caption, IconTile } from '@fuzefront/design-system'
 
 interface Notification {
   id: string
@@ -24,21 +24,35 @@ interface NotificationContextType {
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
 
+const NOTIFICATION_TONES: Record<Notification['type'], 'success' | 'error' | 'warning' | 'accent'> = {
+  success: 'success',
+  error: 'error',
+  warning: 'warning',
+  info: 'accent',
+}
+
 const NotificationIcon: React.FC<{ type: Notification['type'] }> = ({ type }) => {
   const iconProps = { size: 20 }
-  
-  switch (type) {
-    case 'success':
-      return <CheckCircle {...iconProps} className="text-success-500" />
-    case 'error':
-      return <XCircle {...iconProps} className="text-error-500" />
-    case 'warning':
-      return <AlertCircle {...iconProps} className="text-warning-500" />
-    case 'info':
-      return <Info {...iconProps} className="text-primary-500" />
-    default:
-      return <Info {...iconProps} className="text-primary-500" />
-  }
+  const tone = NOTIFICATION_TONES[type] ?? 'accent'
+
+  const icon = (() => {
+    switch (type) {
+      case 'success':
+        return <CheckCircle {...iconProps} />
+      case 'error':
+        return <XCircle {...iconProps} />
+      case 'warning':
+        return <AlertCircle {...iconProps} />
+      default:
+        return <Info {...iconProps} />
+    }
+  })()
+
+  return (
+    <IconTile tone={tone} variant="plain">
+      {icon}
+    </IconTile>
+  )
 }
 
 const NotificationComponent: React.FC<{ 
