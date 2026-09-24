@@ -1,10 +1,8 @@
 import { v4 as uuidv4 } from 'uuid'
-import { parseId, configureIdentity, EntityId } from '@izzywdev/fuzefront-identity'
+import { configureIdentity } from '@izzywdev/fuzefront-identity'
 
-// Allow bare UUIDs as EntityId<T> in tests — production rows are not yet
-// backfilled, so the dual-accept window must be open for test helpers to pass
-// plain UUIDs to the typed service functions without converting them.
-configureIdentity({ legacyUuidTypes: new Set(['user', 'organization']) })
+// FFRNT-185: dual-accept windows closed; no legacyUuidTypes needed.
+configureIdentity({ legacyUuidTypes: new Set() })
 
 // Avoid importing the real Permit SDK (which requires PERMIT_API_KEY at import
 // time). These tests inject fake Permit clients, so the default client built on
@@ -90,26 +88,26 @@ function deps(permit: any, publish: any): Partial<ProvisioningDeps> {
   return { db, permit, publish }
 }
 
-async function createUser(): Promise<EntityId<'user'>> {
+async function createUser(): Promise<string> {
   const id = uuidv4()
   await db('users').insert({
     id,
-    email: `prov-${id.slice(0, 8)}@test.local`,
+    email: `prov-${id.slice(-12).replace(/-/g, '')}@test.local`,
     first_name: 'Prov',
     last_name: 'Test',
     roles: JSON.stringify(['user']),
     created_at: new Date(),
     updated_at: new Date(),
   })
-  return parseId('user', id)
+  return id
 }
 
-async function createOrg(ownerId: string, type = 'organization'): Promise<EntityId<'organization'>> {
+async function createOrg(ownerId: string, type = 'organization'): Promise<string> {
   const id = uuidv4()
   await db('organizations').insert({
     id,
     name: 'Acme',
-    slug: `acme-${id.slice(0, 8)}`,
+    slug: `acme-${id.slice(-12).replace(/-/g, '')}`,
     owner_id: ownerId,
     type,
     settings: JSON.stringify({}),
@@ -117,7 +115,7 @@ async function createOrg(ownerId: string, type = 'organization'): Promise<Entity
     is_active: true,
     provisioning_state: 'pending',
   })
-  return parseId('organization', id)
+  return id
 }
 
 // ---- tests -------------------------------------------------------------
@@ -324,7 +322,7 @@ describe('reconcileOrganizationProvisioning', () => {
     const rootExists = await db('organizations').where({ id: ROOT_ORG_ID }).first()
     expect(rootExists).toBeTruthy() // seeded by migration 015
 
-    await reconcileOrganizationProvisioning(parseId('organization', ROOT_ORG_ID), deps(permit, publisher))
+    await reconcileOrganizationProvisioning(ROOT_ORG_ID, deps(permit, publisher))
 
     expect((permit as any).parentLinks).toEqual([])
   })
