@@ -1,4 +1,4 @@
-import { PanelHeader } from '@fuzefront/design-system';
+import { Panel } from '@fuzefront/design-system';
 import { useBillingI18n } from '../i18n';
 
 export interface UsagePanelProps {
@@ -37,11 +37,7 @@ export function UsagePanel({
   const hasAny = hasCredit || hasSeats;
 
   return (
-    <section className="ffb-panel" aria-labelledby="ffb-usage-title">
-      <PanelHeader id="ffb-usage-title" title={strings.usageHeading} />
-
-      {!hasAny && <p className="ffb-panel__empty">{strings.noUsageData}</p>}
-
+    <Panel title={strings.usageHeading} empty={!hasAny ? strings.noUsageData : undefined}>
       {hasCredit && (
         <div className="ffb-metric ffb-metric--credit">
           <span className="ffb-metric__value">{formatCurrency(creditMinor, currency)}</span>
@@ -58,6 +54,6 @@ export function UsagePanel({
           <span className="ffb-metric__label">{strings.seatsInUse}</span>
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

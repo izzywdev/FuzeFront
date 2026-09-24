@@ -178,8 +178,8 @@
       "sourcePath": "components/layout/InfoRow.jsx"
     },
     {
-      "name": "PanelHeader",
-      "sourcePath": "components/layout/PanelHeader.jsx"
+      "name": "Panel",
+      "sourcePath": "components/layout/Panel.jsx"
     },
     {
       "name": "SectionHead",

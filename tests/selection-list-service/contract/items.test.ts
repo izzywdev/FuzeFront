@@ -57,7 +57,9 @@ describe('POST /v1/selection-lists/{listId}/items — identifier contract', () =
     createdListIds.push(list.id as SelectionListId);
 
     const item = await client.createItem(list.id as SelectionListId, { code: 'ITEM1', label: 'Item One' });
-    expect(item.id).toMatch(/^sli_[0-9a-z]+$/);
+    // `front_sli_`, not `sli_`: openapi.yaml's SelectionListItemId pins
+    // `^front_sli_[0-9a-z]+$`. Same contract drift as lists.test.ts.
+    expect(item.id).toMatch(/^front_sli_[0-9a-z]+$/);
     expect(item.list_id).toBe(list.id);
   });
 
@@ -411,7 +413,7 @@ describe('SelectionListItem response shape', () => {
     createdListIds.push(list.id as SelectionListId);
     const item = await client.createItem(list.id as SelectionListId, { code: 'SHAPE', label: 'Shape Label' });
 
-    expect(item.id).toMatch(/^sli_[0-9a-z]+$/);
+    expect(item.id).toMatch(/^front_sli_[0-9a-z]+$/);
     expect(item.list_id).toBe(list.id);
     expect(typeof item.code).toBe('string');
     expect(item.code.length).toBeGreaterThan(0);

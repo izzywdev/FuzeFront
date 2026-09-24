@@ -1,4 +1,4 @@
-import { PanelHeader } from '@fuzefront/design-system';
+import { Panel } from '@fuzefront/design-system';
 import { useBillingI18n } from '../i18n';
 import { Button } from './primitives';
 
@@ -32,10 +32,18 @@ export function PaymentMethodPanel({ card, onManage, busy }: PaymentMethodPanelP
   const { strings } = useBillingI18n();
 
   return (
-    <section className="ffb-panel" aria-labelledby="ffb-pm-title">
-      <PanelHeader id="ffb-pm-title" title={strings.paymentMethodHeading} />
-
-      {card ? (
+    <Panel
+      title={strings.paymentMethodHeading}
+      empty={!card ? strings.noPaymentMethod : undefined}
+      actions={
+        onManage ? (
+          <Button variant="secondary" onClick={onManage} disabled={busy}>
+            {card ? strings.updatePaymentMethod : strings.addPaymentMethod}
+          </Button>
+        ) : undefined
+      }
+    >
+      {card && (
         <div className="ffb-pm">
           <span className="ffb-pm__brand">{card.brand}</span>
           <span className="ffb-pm__digits">
@@ -45,17 +53,7 @@ export function PaymentMethodPanel({ card, onManage, busy }: PaymentMethodPanelP
             {strings.expiresLabel} {String(card.expMonth).padStart(2, '0')}/{card.expYear}
           </span>
         </div>
-      ) : (
-        <p className="ffb-panel__empty">{strings.noPaymentMethod}</p>
       )}
-
-      {onManage && (
-        <div className="ffb-panel__actions">
-          <Button variant="secondary" onClick={onManage} disabled={busy}>
-            {card ? strings.updatePaymentMethod : strings.addPaymentMethod}
-          </Button>
-        </div>
-      )}
-    </section>
+    </Panel>
   );
 }

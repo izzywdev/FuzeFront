@@ -78,4 +78,59 @@ describe("<Text>", () => {
     expect(node.style.fontStyle).toBe("italic");
     expect(node.style.color).toBe("var(--text-tertiary)");
   });
+
+  it("defaults `size` to inherit (unchanged pre-`size` behavior)", () => {
+    render(<Text>Default size</Text>);
+    expect(screen.getByText("Default size").style.fontSize).toBe("inherit");
+  });
+
+  it("resolves every `size` step to its DS type-scale token — never a raw px value", () => {
+    const cases = [
+      ["xs", "var(--text-xs)"],
+      ["sm", "var(--text-sm)"],
+      ["base", "var(--text-base)"],
+      ["md", "var(--text-md)"],
+    ];
+    cases.forEach(([size, expected]) => {
+      const { unmount } = render(<Text size={size}>{size}</Text>);
+      expect(screen.getByText(size).style.fontSize).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("falls back to inherit for an unknown size value", () => {
+    render(<Text size="not-a-real-size">Fallback size</Text>);
+    expect(screen.getByText("Fallback size").style.fontSize).toBe("inherit");
+  });
+
+  it("defaults `spacing` to none — zero margin-block-end (unchanged pre-`spacing` behavior)", () => {
+    render(<Text>Default spacing</Text>);
+    expect(screen.getByText("Default spacing").style.marginBlockEnd).toBe("0");
+  });
+
+  it("resolves every `spacing` step to its DS spacing-scale token via the logical marginBlockEnd (RTL-safe)", () => {
+    const cases = [
+      ["sm", "var(--space-2)"],
+      ["md", "var(--space-4)"],
+    ];
+    cases.forEach(([spacing, expected]) => {
+      const { unmount } = render(<Text spacing={spacing}>{spacing}</Text>);
+      expect(screen.getByText(spacing).style.marginBlockEnd).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("covers the recurring `text-sm text-gray-{500,600} mb-{2,4}` block-caption pattern via tone+size+spacing", () => {
+    render(
+      <Text tone="secondary" size="sm" spacing="md">
+        You don&apos;t have the required permissions to access this page.
+      </Text>
+    );
+    const node = screen.getByText(
+      "You don't have the required permissions to access this page."
+    );
+    expect(node.style.color).toBe("var(--text-secondary)");
+    expect(node.style.fontSize).toBe("var(--text-sm)");
+    expect(node.style.marginBlockEnd).toBe("var(--space-4)");
+  });
 });

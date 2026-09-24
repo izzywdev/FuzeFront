@@ -1,4 +1,5 @@
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { authenticateToken, requireRole } from '../middleware/auth'
@@ -12,6 +13,57 @@ import { checkAppHealth, probeOrigin } from './appHealth'
 import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 
 const router = express.Router()
+
+// ---------------------------------------------------------------------------
+// Rate limiting (CodeQL js/missing-rate-limiting)
+//
+// Every route below performs authorization, and several also fan out one
+// outbound health probe PER app in the result set, so a single request can
+// amplify into N egress requests. These limiters are defence in depth ONLY —
+// they sit in FRONT of `authenticateToken` so abusive traffic is shed before
+// any auth/DB work, and they never replace the object-level authz
+// (`requireAppAction` / `requireAppPermission` / `requireRole`) that follows.
+//
+// Same express-rate-limit convention as the rest of backend/src/routes
+// (adminPortals.ts `adminRateLimiter`, appRegistry.ts `appsReadLimiter`):
+// per-IP, `trust proxy` is 1 in index.ts so `req.ip` is the real client.
+// ---------------------------------------------------------------------------
+
+// Authenticated reads that trigger a health probe per visible app. 120/min is
+// 2 req/s per client — far above any sane portal poll rate, while bounding the
+// probe amplification.
+const appsReadLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
+// Registry mutations (create / activate / delete / self-register). Low-volume
+// by nature — an app registers once per rollout — but held at the repo-standard
+// 120/min rather than something tighter, matching adminPortals.ts's
+// `adminRateLimiter` and organizations.ts's `invitationsRateLimiter`. A tighter
+// cap would also sit right on top of backend/tests/apps.test.ts, which issues
+// ~25 POST /api/apps from one address inside a single window.
+const appsWriteLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
+// Heartbeats are machine-generated on a timer and cheap (one UPDATE + one
+// socket emit), and many app pods can share one egress IP, so this gets more
+// headroom than the write cap above.
+const appsHeartbeatLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
 
 // Database row interface for apps
 interface AppRow {
@@ -225,7 +277,7 @@ function scopeAppsQuery(query: any, memberOrgIds: string[]) {
 }
 
 // GET /api/apps/health - Check health of apps the caller is entitled to see
-router.get('/health', authenticateToken, async (req: any, res) => {
+router.get('/health', appsReadLimiter, authenticateToken, async (req: any, res) => {
   try {
     // HIGH-4: scope to the caller's orgs + public/marketplace visibility
     // instead of returning every active app on the platform.
@@ -303,7 +355,7 @@ router.get('/health', authenticateToken, async (req: any, res) => {
  *               $ref: '#/components/schemas/Error'
  */
 // GET /api/apps - Get apps the caller is entitled to see, with health status
-router.get('/', authenticateToken, async (req: any, res) => {
+router.get('/', appsReadLimiter, authenticateToken, async (req: any, res) => {
   try {
     const { healthyOnly } = req.query
 
@@ -404,6 +456,7 @@ router.get('/', authenticateToken, async (req: any, res) => {
 // POST /api/apps - Register new app (admin only)
 router.post(
   '/',
+  appsWriteLimiter,
   authenticateToken,
   requireRole(['admin']),
   async (req: any, res) => {
@@ -600,6 +653,7 @@ router.post(
 // the boolean `is_active` (coerced) is written from the body, never raw fields.
 router.put(
   '/:id/activate',
+  appsWriteLimiter,
   authenticateToken,
   requireAppAction('update'),
   async (req: any, res) => {
@@ -631,6 +685,7 @@ router.put(
 // HIGH-3: object-level authz replaces the bare global requireRole(['admin']).
 router.delete(
   '/:id',
+  appsWriteLimiter,
   authenticateToken,
   requireAppAction('delete'),
   async (req: any, res) => {
@@ -657,6 +712,7 @@ router.delete(
 // sanitized metadata projection is broadcast (never raw req.body.metadata).
 router.post(
   '/:id/heartbeat',
+  appsHeartbeatLimiter,
   authenticateToken,
   requireAppAction('update'),
   async (req: any, res) => {
@@ -694,7 +750,16 @@ router.post(
         })
       }
 
-      console.log(`Heartbeat received from ${app.name} (${id}): ${status}`)
+      // Log-injection: `app.name`, `id` and `status` are caller-influenced, so
+      // they are passed as a structured value alongside a CONSTANT message
+      // rather than interpolated into it. console.* inspects the object, which
+      // escapes line terminators — a caller can neither forge an extra log
+      // entry nor smuggle a %-format specifier into the format string.
+      console.log('Heartbeat received', {
+        appName: app.name,
+        appId: id,
+        status,
+      })
 
       res.json({
         success: true,
@@ -719,6 +784,7 @@ router.post(
 // allow-list insert as POST /api/apps.
 router.post(
   '/register',
+  appsWriteLimiter,
   authenticateToken,
   requireAppPermission('create'),
   async (req: any, res) => {
@@ -855,7 +921,9 @@ router.post(
         })
       }
 
-      console.log(`App "${name}" self-registered successfully`)
+      // Constant message + structured field: `name` is req.body-controlled and
+      // must never become part of the format string (log-injection).
+      console.log('App self-registered successfully', { appName: name })
 
       const flagCtx = { userId: req.user?.id }
       const prefixed = await isPrefixedIdsEnabled(flagCtx)
