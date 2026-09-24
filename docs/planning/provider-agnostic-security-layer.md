@@ -137,7 +137,7 @@ Fan out, all gated on the Phase-0 contract:
 **`devops-engineer`** — `deploy/helm/fuzefront/`
 - **Remove the public `auth.fuzefront.com` Ingress** (`templates/authentik.yaml:281-311`); Authentik → ClusterIP only.
 - Add a reverse-proxy path under the app Ingress (`templates/ingress.yaml`) for the OAuth authorize/source endpoints the browser must transit, e.g. `app.fuzefront.com/api/auth/idp/*` → `authentik-server` (internal), so the issuer/redirect become FuzeFront-owned hosts.
-- Update `values-prod.yaml:216-229`: issuer/redirect move under `app.fuzefront.com`. **Delegate the Cloudflare-tunnel change (drop the `auth.fuzefront.com` public route) to FuzeInfra via `@claude`** — never edit FuzeInfra here.
+- Update `values-prod.yaml:216-229`: issuer/redirect move under `app.fuzefront.com`. **Delegate the Cloudflare-tunnel change (drop the `auth.fuzefront.com` public route) to FuzeInfra via `@fuze`** — never edit FuzeInfra here.
 
 **`test-engineer`** (independent) — contract/integration tests vs the frozen spec, incl. a **mock IdentityProvider** proving swappability, and assertions that no response/redirect references `auth.fuzefront.com`.
 
@@ -157,9 +157,9 @@ Fan out, all gated on the Phase-0 contract:
 
 ## Migration & risk (deploy-sensitive)
 
-- **OIDC issuer URL changes** from `auth.fuzefront.com/application/o/fuzefront/` to an `app.fuzefront.com`-hosted issuer, breaking the `iss` claim for old-model clients. **FuzeSocial is the only bound consumer and is not yet rolled out to clients**, so we do a **clean cutover — no dual-issuer soak.** Instead: land the new model in FuzeFront prod first, then **open a GitHub issue on FuzeSocial that `@claude` adapts it to the new FuzeFront Security API / issuer** (embed acceptance criteria + a `STATE:` block per the cross-repo delegation protocol). By the time that PR is green, prod already accepts the new model. Verify the deliverable (branch + PR exist, CI green), not the "done" claim; auto-re-nudge once if missing.
-- **`master` is deploy-on-push + `required_signatures`** — land via signed squash-merge in a deploy window; never hand-deploy; the CF-tunnel change (drop the `auth.fuzefront.com` public route) is a FuzeInfra `@claude` delegation.
-- **Docs are a first-class deliverable** — `docs/consumers/*` + EPIC-05 must be fully rewritten to the new model (the owner called this out explicitly), so the FuzeSocial `@claude` issue can point at accurate onboarding docs.
+- **OIDC issuer URL changes** from `auth.fuzefront.com/application/o/fuzefront/` to an `app.fuzefront.com`-hosted issuer, breaking the `iss` claim for old-model clients. **FuzeSocial is the only bound consumer and is not yet rolled out to clients**, so we do a **clean cutover — no dual-issuer soak.** Instead: land the new model in FuzeFront prod first, then **open a GitHub issue on FuzeSocial that `@fuze` adapts it to the new FuzeFront Security API / issuer** (embed acceptance criteria + a `STATE:` block per the cross-repo delegation protocol). By the time that PR is green, prod already accepts the new model. Verify the deliverable (branch + PR exist, CI green), not the "done" claim; auto-re-nudge once if missing.
+- **`master` is deploy-on-push + `required_signatures`** — land via signed squash-merge in a deploy window; never hand-deploy; the CF-tunnel change (drop the `auth.fuzefront.com` public route) is a FuzeInfra `@fuze` delegation.
+- **Docs are a first-class deliverable** — `docs/consumers/*` + EPIC-05 must be fully rewritten to the new model (the owner called this out explicitly), so the FuzeSocial `@fuze` issue can point at accurate onboarding docs.
 - **Dual-backend duplication** (`backend/src` monolith vs `backend/security`): implement in `backend/security` (the live service); leave monolith shims deprecated to avoid a second migration mid-flight.
 
 ---
