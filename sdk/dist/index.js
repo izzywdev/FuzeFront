@@ -460,6 +460,31 @@ function usePlatform() {
     return snapshot;
 }
 
+/**
+ * Hook to access and listen to active organization changes from FuzeFront host.
+ * Returns null when in personal context or running standalone.
+ */
+function useActiveOrganization() {
+    const [activeOrg, setActiveOrg] = react.useState(() => {
+        var _a, _b;
+        return (_b = (_a = getBridge()) === null || _a === void 0 ? void 0 : _a.getContext().activeOrganization) !== null && _b !== void 0 ? _b : null;
+    });
+    react.useEffect(() => {
+        const bridge = getBridge();
+        if (!bridge)
+            return;
+        // If bridge provides onOrgSwitch (v2+), use it; otherwise subscribe to context
+        if (typeof bridge.onOrgSwitch === 'function') {
+            return bridge.onOrgSwitch(setActiveOrg);
+        }
+        return bridge.subscribe(ctx => {
+            var _a;
+            setActiveOrg((_a = ctx.activeOrganization) !== null && _a !== void 0 ? _a : null);
+        });
+    }, []);
+    return activeOrg;
+}
+
 const DEFAULT_RETRY_OPTIONS = {
     maxAttempts: 3,
     baseDelay: 1000,
@@ -606,6 +631,7 @@ var index = {
     useSocketBus,
     useToast,
     usePlatform,
+    useActiveOrganization,
     getBridge,
     loadApp,
     clearModuleCache,
@@ -621,6 +647,7 @@ exports.getCachedModule = getCachedModule;
 exports.isInPlatform = isInPlatform;
 exports.isModuleCached = isModuleCached;
 exports.loadApp = loadApp;
+exports.useActiveOrganization = useActiveOrganization;
 exports.useCurrentUser = useCurrentUser;
 exports.useGlobalMenu = useGlobalMenu;
 exports.usePlatform = usePlatform;

@@ -203,6 +203,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   }, [dispatch])
 
   useEffect(() => {
+    const activeOrg = state.organizations.find(o => o.id === state.activeOrganizationId)
     bridge.setContext({
       user: state.user
         ? {
@@ -215,9 +216,12 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       activeApp: state.activeApp
         ? { id: state.activeApp.id, name: state.activeApp.name }
         : null,
+      activeOrganization: activeOrg
+        ? { id: activeOrg.id, name: activeOrg.name }
+        : null,
       isPlatformMode: true,
     })
-  }, [state.user, state.apps, state.activeApp])
+  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations])
 
   if (isLoading) {
     return (
