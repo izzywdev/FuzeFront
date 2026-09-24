@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
+import { FieldLabel } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -152,10 +153,11 @@ export const ContactPage: React.FC = () => {
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Name *
-                    </label>
+                    <FieldLabel htmlFor="contact-name" required>
+                      Name
+                    </FieldLabel>
                     <input
+                      id="contact-name"
                       {...register('name', { required: 'Name is required' })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="Your name"
@@ -164,13 +166,14 @@ export const ContactPage: React.FC = () => {
                       <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
                     )}
                   </div>
-                  
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email *
-                    </label>
+                    <FieldLabel htmlFor="contact-email" required>
+                      Email
+                    </FieldLabel>
                     <input
-                      {...register('email', { 
+                      id="contact-email"
+                      {...register('email', {
                         required: 'Email is required',
                         pattern: {
                           value: /^\S+@\S+$/i,
@@ -189,21 +192,23 @@ export const ContactPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <FieldLabel htmlFor="contact-company">
                       Company
-                    </label>
+                    </FieldLabel>
                     <input
+                      id="contact-company"
                       {...register('company')}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="Your company"
                     />
                   </div>
-                  
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <FieldLabel htmlFor="contact-phone">
                       Phone
-                    </label>
+                    </FieldLabel>
                     <input
+                      id="contact-phone"
                       {...register('phone')}
                       type="tel"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -213,10 +218,11 @@ export const ContactPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FieldLabel htmlFor="contact-interest">
                     Interest
-                  </label>
+                  </FieldLabel>
                   <select
+                    id="contact-interest"
                     {...register('interest')}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
@@ -230,10 +236,11 @@ export const ContactPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Subject *
-                  </label>
+                  <FieldLabel htmlFor="contact-subject" required>
+                    Subject
+                  </FieldLabel>
                   <input
+                    id="contact-subject"
                     {...register('subject', { required: 'Subject is required' })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     placeholder="What's this about?"
@@ -244,10 +251,11 @@ export const ContactPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Message *
-                  </label>
+                  <FieldLabel htmlFor="contact-message" required>
+                    Message
+                  </FieldLabel>
                   <textarea
+                    id="contact-message"
                     {...register('message', { required: 'Message is required' })}
                     rows={6}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"

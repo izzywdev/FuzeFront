@@ -65,4 +65,14 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $np.port | default 9000 | int }}
+    # Per-product A2A pods across all namespaces (e.g. a2a-fuzemarket, a2a-fuzeexecutive)
+    # fetch JWKS/discovery in-cluster to authenticate agent calls.
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: a2a
+      ports:
+        - protocol: TCP
+          port: {{ $np.port | default 9000 | int }}
 {{- end }}

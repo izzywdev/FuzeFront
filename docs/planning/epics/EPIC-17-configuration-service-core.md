@@ -524,7 +524,7 @@ else's problem. This story exists so config does not repeat it.
 
 #### 🔗 Dependencies
 - **Blocked By:** FF-EPIC-17-S1 (the service needs its contract to scaffold against).
-- **Related:** Any FuzeInfra capability request goes via `@claude` cross-repo delegation; this repo never edits FuzeInfra directly.
+- **Related:** Any FuzeInfra capability request goes via `@fuze` cross-repo delegation; this repo never edits FuzeInfra directly.
 
 #### ⚠️ Risks & Assumptions
 - **Assumption:** A new Postgres database/role for the service can be provisioned through the existing `database-engineer` bootstrap model.
