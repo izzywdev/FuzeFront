@@ -17,6 +17,7 @@ import {
   canManageRole,
 } from '../components/RoleBadge'
 import { UserProfileManagement } from '../components/UserProfileManagement'
+import { ResponsiveGrid } from '@fuzefront/design-system'
 
 export function TestPage() {
   return (
@@ -232,7 +233,7 @@ export function TestPage() {
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-4">Role-based Content</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ResponsiveGrid columns={2} gap="md">
           <PermissionGate requiredRoles={['admin', 'owner']} requireAll={false}>
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
               <h3 className="font-semibold text-blue-800">Admin/Owner Panel</h3>
@@ -250,7 +251,7 @@ export function TestPage() {
               </p>
             </div>
           </PermissionGate>
-        </div>
+        </ResponsiveGrid>
       </section>
 
       {/* API Integration Status */}
