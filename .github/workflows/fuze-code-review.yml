@@ -140,6 +140,8 @@ jobs:
     # still cuts in first, so an overrun fails as an attributable timeout.
     # This bounds the symptom; it does not fix the runner loss, which is
     # FuzeInfra's `fuzefront` scale set and delegated there.
+    # (Kept at 12 rather than #1126's 30 when the two PRs were consolidated —
+    # 12 is measured against 27 real run durations; 30 was a generic default.)
     timeout-minutes: 12
     steps:
       - name: Checkout
@@ -151,6 +153,7 @@ jobs:
         id: context
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
@@ -199,10 +202,18 @@ jobs:
           if [ -z "$DIFF" ]; then
             READY=false
             REASON="no reviewable diff (only excluded lockfiles changed, or no changes)"
-          elif [ "${HAS_LITELLM:-false}" != "true" ] && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
+          # CLAUDE_CODE_OAUTH_TOKEN counts here. It is rung 1a in fuze-code-action --
+          # attempted BEFORE the LiteLLM/API-key path, deliberately, because a
+          # subscription token bills against an existing plan while the metered
+          # rungs bill per token. Omitting it from this gate meant a repo holding
+          # ONLY the subscription token -- the configuration this job is supposed
+          # to prefer -- reported "no LLM credential configured" and skipped the
+          # review outright, with a working credential already wired to line 260.
+          elif [ "${HAS_OAUTH:-false}" != "true" ] && [ "${HAS_LITELLM:-false}" != "true" ] \
+               && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
                && [ "${HAS_OPENAI:-false}" != "true" ] && [ "${HAS_GEMINI:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           {
