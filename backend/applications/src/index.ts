@@ -110,6 +110,49 @@ const health = async (_req: any, res: any) => {
 app.get('/health', health)
 app.get('/api/health', health)
 
+// ── READINESS: /ready. 503 when a dependency is down. ───────────────────────
+//
+// THE BUG THIS FIXES. deploy/helm/fuzefront/templates/applications.yaml's
+// readinessProbe has pointed at `path: /ready` (not /health) since that
+// template was written, with a comment explaining exactly why: "readiness
+// must reflect dependency state so a degraded backend leaves the Service
+// endpoints AND Argo's built-in Deployment assessment reports Degraded."
+// Correct intent — but this service never implemented the route. Every
+// request to /ready has always 404'd via attachErrorHandlers' catch-all, so
+// the readinessProbe has ALWAYS failed for every pod, on every revision.
+//
+// A pod's readinessProbe path is fixed at pod-template time (a new Deployment
+// revision does not retroactively change an already-Running pod's probe), so
+// this is asymmetric: pods created back when the chart's probe pointed at
+// /health (before that template edit) are still passing their old probe and
+// serving traffic; every pod created SINCE is permanently unready — excluded
+// from the Service endpoints, invisible to any black-box HTTP check, with
+// Argo CD reporting the Application Degraded/Progressing the whole time. A
+// RollingUpdate Deployment never scales down the old ReplicaSet until the new
+// one is Ready, so the old pods just keep serving forever. This explains why
+// a new pod that DOES successfully boot is invisible from outside the
+// cluster (#1137) — httpServer.listen() (see startServer() below) only runs
+// after migrations succeed, so any pod that reaches this route already
+// applied them. It does NOT by itself prove migrations 013/014 have actually
+// applied in prod: a pod could equally be failing to reach this route at all
+// (crash-looping earlier in startServer(), e.g. on a migration exception),
+// which would be invisible for the same reason — no traffic, no black-box
+// signal — but is a different failure than "ready and just never selected".
+// Telling those two apart needs `kubectl logs --previous` / `get rs`, not
+// something this route can determine about itself.
+//
+// Same split as backend/src/index.ts's /ready (host backend): liveness (/health)
+// stays 200-always so a DB blip never turns into a restart loop; readiness
+// reflects the real dependency state, matching the chart's own documented intent.
+app.get('/ready', async (_req: any, res: any) => {
+  const dbHealthy = await checkDatabaseHealth().catch(() => false)
+  res.status(dbHealthy ? 200 : 503).json({
+    status: dbHealthy ? 'ok' : 'degraded',
+    service: 'applications-service',
+    database: { status: dbHealthy ? 'connected' : 'disconnected' },
+  })
+})
+
 attachErrorHandlers(app)
 
 function gracefulShutdown(signal: string) {
@@ -138,24 +181,11 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront applications-service...')
 
-    // Step 5 (FFRNT-185): configure the dual-accept window so that
-    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
-    // predate the TypeID wire form. Flag `fuzefront.identity.prefixed-ids`
-    // (step 4) controls whether RESPONSES emit TypeID form; these types remain
-    // in legacyUuidTypes until their row backfill is complete.
-    configureIdentity({
-      legacyUuidTypes: new Set([
-        'organization',
-        'membership',
-        'invitation',
-        'session',
-        'mfaFactor',
-        'user',
-        'app',
-        // 'portal' removed: migration 024 backfilled all prt_<hex32> rows to
-        // bare UUIDs; the dual-accept window for portal is now closed.
-      ]),
-    })
+    // Step 5 (FFRNT-185): dual-accept windows closed.
+    // All entity types now use mintId() for creation and store bare UUIDs;
+    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
+    // need to be accepted at the request boundary.
+    configureIdentity({ legacyUuidTypes: new Set() })
     const dbOptions = {
       migrationsTableName: 'knex_migrations_apps',
       migrationsDir: path.join(__dirname, 'migrations'),
@@ -203,6 +233,15 @@ async function startServer() {
   }
 }
 
-startServer()
+// Guarded so `app` can be imported (e.g. by a test asserting against the
+// REAL mounted routes, incl. /ready -- see tests/ready.test.ts) without
+// triggering the boot sequence's DB waits / migrations / process.exit(1) on
+// failure. Same pattern already used by backend/src/seeds/
+// register-platform-apps.ts and backend/src/permit/sync-permit-schema.ts.
+// `node dist/index.js` (the Dockerfile's actual entrypoint) still runs it,
+// since require.main === module is true there.
+if (require.main === module) {
+  startServer()
+}
 
 export default app
