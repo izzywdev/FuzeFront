@@ -72,6 +72,34 @@ inputs:
       `custom-headers` output, never echoed.
     required: false
     default: ''
+  public-litellm-base-url:
+    description: >-
+      PUBLIC LiteLLM gateway URL, probed as a SECOND tier when the in-cluster
+      `litellm-base-url` is unreachable (the normal case on a GitHub-hosted
+      runner, which cannot resolve the cluster-internal DNS name). It is the
+      SAME gateway, exposed through a Cloudflare-Access-protected ingress at
+      `litellm.<prod>`. This tier is attempted ONLY when BOTH cf-access creds AND
+      `litellm-ci-key` are also supplied — with any of them empty the public tier
+      is skipped and the action falls straight through to the runner-local
+      fallback, i.e. the exact prior behaviour. The default IS the prod host, so a
+      repo opts in purely by provisioning the three secrets (it does not also have
+      to set this input); set it to empty to disable the tier outright. On a
+      self-hosted in-cluster runner the in-cluster probe wins first, so this tier
+      is a no-op there.
+    required: false
+    default: 'https://litellm.prod.fuzefront.com'
+  litellm-ci-key:
+    description: >-
+      Capped LiteLLM virtual key presented as the bearer token when routing
+      through the PUBLIC gateway (`public-litellm-base-url`). DELIBERATELY a
+      distinct, lower-privilege key from `litellm-key` (the in-cluster
+      `LITELLM_FUZE_KEY`): it travels the public internet on every hosted-runner
+      job, so it is minted with a tight budget/model cap and rotated
+      independently of the in-cluster key. Callers pass `secrets.LITELLM_CI_KEY`
+      (minted by FuzeInfra `scripts/mint-litellm-ci-key.sh`). Masked on entry;
+      only ever leaves this action as the pre-masked `auth-token` output.
+    required: false
+    default: ''
   probe-timeout-seconds:
     description: >-
       Bounded timeout for the LiteLLM readiness probe. Kept short deliberately
@@ -135,7 +163,7 @@ inputs:
 
 outputs:
   mode:
-    description: 'litellm | fallback-local-litellm'
+    description: 'litellm | litellm-public | fallback-anthropic | fallback-local-litellm'
     value: ${{ steps.resolve.outputs.mode }}
   vendor:
     description: >-
@@ -160,10 +188,11 @@ outputs:
       caller MUST set on the claude-code-action step so its OWN model requests
       carry the SAME Cloudflare Access service-token headers this action's
       readiness probe used — otherwise Access 302s those requests to a login
-      page even though the probe passed. Non-empty ONLY on `mode=litellm` when
-      CF-Access creds were supplied (the public-gateway-behind-Access case);
-      empty on every fallback path (direct Anthropic / runner-local LiteLLM),
-      which needs no CF headers. Pre-masked; never echoed.
+      page even though the probe passed. Non-empty on `mode=litellm` or
+      `mode=litellm-public` when CF-Access creds were supplied (the
+      public-gateway-behind-Access case); empty on every fallback path (direct
+      Anthropic / runner-local LiteLLM), which needs no CF headers. Pre-masked;
+      never echoed.
     value: ${{ steps.resolve.outputs.custom-headers }}
 
 runs:
@@ -177,6 +206,8 @@ runs:
         LITELLM_KEY: ${{ inputs.litellm-key }}
         CF_ACCESS_CLIENT_ID: ${{ inputs.cf-access-client-id }}
         CF_ACCESS_CLIENT_SECRET: ${{ inputs.cf-access-client-secret }}
+        PUBLIC_LITELLM_BASE_URL: ${{ inputs.public-litellm-base-url }}
+        LITELLM_CI_KEY: ${{ inputs.litellm-ci-key }}
         PROBE_TIMEOUT: ${{ inputs.probe-timeout-seconds }}
         FALLBACK_CHAIN: ${{ inputs.fallback-chain }}
         FALLBACK_ANTHROPIC_KEY: ${{ inputs.fallback-anthropic-key }}
@@ -203,6 +234,11 @@ runs:
         # not itself sensitive, so it is left unmasked (masking a value that ends
         # up in a header the probe URL does not carry only produces noisy `***`).
         [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ] && echo "::add-mask::$CF_ACCESS_CLIENT_SECRET"
+
+        # The public-gateway CI key is a bearer credential — mask it on entry too,
+        # same belt-and-braces as the vendor keys and the CF-Access secret above,
+        # before any branch below can echo it.
+        [ -n "${LITELLM_CI_KEY:-}" ] && echo "::add-mask::$LITELLM_CI_KEY"
 
         # Build the CF-Access header set ONCE, reused in two places: as `curl -H`
         # args on the readiness probe below, and as the ANTHROPIC_CUSTOM_HEADERS
@@ -259,6 +295,66 @@ runs:
             echo "FUZE_CH_EOF"
           } >> "$GITHUB_OUTPUT"
           exit 0
+        fi
+
+        # ---- Tier 2: PUBLIC LiteLLM gateway (the GitHub-hosted-runner path) ----
+        # The in-cluster service DNS above resolves only from a pod in the
+        # cluster, so a GitHub-hosted runner never routes to it and the Tier-1
+        # probe just failed. The SAME gateway is ALSO exposed publicly at
+        # ${PUBLIC_LITELLM_BASE_URL} behind Cloudflare Access; a hosted runner
+        # reaches it by presenting the CI service token (CF-Access-Client-Id /
+        # -Secret) plus a capped virtual key (LITELLM_CI_KEY). Attempted BEFORE
+        # the runner-local container because routing through the real gateway
+        # keeps LiteLLM's opaque vendor mapping and needs no docker on the runner
+        # — the runner-local chain stays the last resort it was built to be.
+        #
+        # Fail-CLOSED to prior behaviour: this whole tier is skipped unless the
+        # public URL AND both CF-Access creds AND the CI key are all present, so a
+        # repo that has provisioned none of them behaves exactly as before
+        # (Tier-1 miss -> runner-local).
+        if [ -n "${PUBLIC_LITELLM_BASE_URL:-}" ] \
+           && [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && [ -n "${CF_ACCESS_CLIENT_SECRET:-}" ] \
+           && [ -n "${LITELLM_CI_KEY:-}" ]; then
+          # Require a literal 200, not merely "curl connected". Behind CF Access an
+          # unauthenticated or wrong-token request gets a 302 to the Access login
+          # page, which `curl` without -L reports as a SUCCESSFUL transfer — so a
+          # bare `curl -f` would treat a login redirect as "gateway ready" and then
+          # point model traffic at an HTML login page. Capturing %{http_code} and
+          # demanding 200 means only a request the service token actually cleared
+          # (and that LiteLLM answered ready for) routes here; a 302/403 falls
+          # through to the runner-local chain.
+          pub_code="$(curl -sS -o /dev/null -w '%{http_code}' \
+                        --max-time "${PROBE_TIMEOUT:-3}" \
+                        "${CF_CURL_ARGS[@]}" \
+                        "${PUBLIC_LITELLM_BASE_URL%/}/health/readiness" 2>/dev/null || true)"
+          if [ "$pub_code" = "200" ]; then
+            echo "::notice title=llm-endpoint::mode=litellm-public vendor=litellm — routing through the PUBLIC LiteLLM gateway (${PUBLIC_LITELLM_BASE_URL}) with the CI service token (CF Access cleared, /health/readiness 200). Vendor mapping stays opaque here by design; it lives in LiteLLM's config, not this workflow. This is a first-class routed path, NOT a degraded one."
+            {
+              echo "mode=litellm-public"
+              echo "vendor=litellm"
+              echo "base-url=${PUBLIC_LITELLM_BASE_URL}"
+              echo "auth-token=${LITELLM_CI_KEY}"
+            } >> "$GITHUB_OUTPUT"
+            # The public gateway IS behind CF Access, so the caller's OWN model
+            # requests must carry the same service-token headers or Access 302s
+            # them — emit them exactly as the in-cluster branch does.
+            {
+              echo "custom-headers<<FUZE_CH_EOF"
+              printf '%s\n' "${CF_CUSTOM_HEADERS}"
+              echo "FUZE_CH_EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::notice title=llm-endpoint::public LiteLLM gateway did not return 200 (HTTP ${pub_code:-000} from ${PUBLIC_LITELLM_BASE_URL%/}/health/readiness within ${PROBE_TIMEOUT:-3}s) — CF-Access token rejected or gateway not ready. Continuing to the runner-local fallback chain."
+        elif [ -n "${PUBLIC_LITELLM_BASE_URL:-}" ]; then
+          # Public URL set but the creds to use it are not all present. Name WHICH
+          # class is missing (never a value) so a half-provisioned setup is
+          # diagnosable from the log without leaking anything.
+          declare -a PUB_MISSING=()
+          [ -z "${CF_ACCESS_CLIENT_ID:-}" ]     && PUB_MISSING+=("CF_ACCESS_CLIENT_ID")
+          [ -z "${CF_ACCESS_CLIENT_SECRET:-}" ] && PUB_MISSING+=("CF_ACCESS_CLIENT_SECRET")
+          [ -z "${LITELLM_CI_KEY:-}" ]          && PUB_MISSING+=("LITELLM_CI_KEY")
+          echo "::notice title=llm-endpoint::public LiteLLM gateway (${PUBLIC_LITELLM_BASE_URL}) NOT attempted — missing secret(s): [${PUB_MISSING[*]}] (names only, never values). Provision them to route hosted-runner CI through the gateway; leaving them unset keeps the runner-local fallback."
         fi
 
         if [ "$reachable" = false ]; then
