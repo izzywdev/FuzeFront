@@ -26,10 +26,13 @@ import type {
   Page,
   PageParams,
   Role,
+  SetAttributesRequest,
+  SetAttributesResult,
   Tenant,
   TenantCreate,
 } from '../AuthorizationProvider'
 import permit from '../../config/permit'
+import { withReqId } from '../../lib/logger'
 import {
   checkPermission,
   bulkCheckPermissions,
@@ -183,6 +186,54 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
       tenant,
       resource_instance: resourceInstance(req.resource),
     })
+  }
+
+  // ── Subject ABAC attributes (write-side) ──
+
+  /**
+   * Merge ABAC attributes onto a subject's record in Permit.
+   *
+   * `subjectType: 'user'` -> `permit.api.users.update`, `'tenant'` ->
+   * `permit.api.tenants.update` — the ONLY place either vendor call is named.
+   * Permit's own `update()` is itself a merge on `attributes`, so this
+   * naturally satisfies the contract's merge (not replace) semantics without
+   * any local read-modify-write.
+   *
+   * WRITE semantics — deliberately the opposite of `check`/`bulkCheck`'s
+   * fail-closed-returns-false: any provider/transport error here is
+   * rethrown, never swallowed, so the route can surface it as 502
+   * PROVIDER_UNAVAILABLE rather than a silent/false "success".
+   */
+  async setAttributes(req: SetAttributesRequest): Promise<SetAttributesResult> {
+    const log = withReqId()
+    const { subject, attributes } = req
+    const op = `permit.api.${subject.type === 'user' ? 'users' : 'tenants'}.update`
+    const start = Date.now()
+    log.debug({ op, subjectType: subject.type, subjectKey: subject.key }, `${op} start`)
+    try {
+      if (subject.type === 'user') {
+        await permit.api.users.update(subject.key, { attributes })
+      } else {
+        await permit.api.tenants.update(subject.key, { attributes })
+      }
+      log.debug(
+        { op, subjectType: subject.type, subjectKey: subject.key, elapsedMs: Date.now() - start },
+        `${op} end`
+      )
+      return { subject, attributes, updatedAt: Date.now() }
+    } catch (err) {
+      log.error(
+        {
+          op,
+          subjectType: subject.type,
+          subjectKey: subject.key,
+          elapsedMs: Date.now() - start,
+          err: (err as Error).message,
+        },
+        `${op} failed`
+      )
+      throw err // surfaced as 502 PROVIDER_UNAVAILABLE by the route — never fail-open/fail-silent
+    }
   }
 
   async listGrants(query: GrantQuery): Promise<Page<Grant>> {

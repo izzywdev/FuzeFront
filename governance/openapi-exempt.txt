@@ -101,6 +101,8 @@ POST /api/auth/oidc/password  # backend: OIDC password set; auth flow, not REST 
 POST /api/auth/token-exchange  # backend: token exchange; auth flow, not REST API
 GET /api/invitations/{}  # backend: invitation detail; backend/src lacks openapi.yaml
 POST /api/invitations/{}/accept  # backend: accept invitation; backend/src lacks openapi.yaml
+PATCH /api/me  # backend/security: self-service profile edit on the legacy /api/* domain surface (frozen spec is /api/v1/security only), parity with the /api/organizations/* domain routes above — FFRNT-172
+DELETE /api/me  # backend/security: self-service account deactivation on the legacy /api/* domain surface (frozen spec is /api/v1/security only) — FFRNT-172
 GET /api/v1/security/admin/reset-password  # N/A — this is POST not GET; gate scanner artefact
 POST /api/v1/security/admin/reset-password  # backend: admin password reset; internal admin route
 POST /internal/provision  # backend/security: Authentik lifecycle hook; internal, not REST API
@@ -213,6 +215,18 @@ POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint;
 GET /api/v1/requirements/freshness  # fuzequality: tenant-authorized Jira freshness evidence; not public contract surface
 POST /api/v1/internal/intelligence/failure  # fuzequality: S2S worker failure signal; bounded/redacted and not consumer-facing
 GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review audit history; not public contract surface
+#
+# --- O1: applications-service Kubernetes readiness probe (#1137) ---
+# NOT a debt in the sense this file's header warns about (a spec gap to close):
+# a readinessProbe target is infrastructure the kubelet calls, not an operation
+# any consumer, generated client, or MCP tool surface should ever invoke -- the
+# same reasoning already applied to /metrics and /healthz above. Declaring it in
+# applications-service's OpenAPI document would project a cluster-internal
+# health check into the public contract, which is the wrong direction to fix
+# this in. See deploy/helm/fuzefront/templates/applications.yaml's
+# readinessProbe (path: /ready) and backend/applications/src/index.ts's /ready
+# route for the full rationale.
+GET /ready  # applications-service: Kubernetes readiness probe (deploy/helm/fuzefront/templates/applications.yaml readinessProbe); infra-level, not consumer-facing
 #
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not
