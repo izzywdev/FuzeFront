@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
-import { Center, FieldLabel } from '@fuzefront/design-system'
+import { Center, IconTile, Container, FieldLabel } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -79,7 +79,7 @@ export const ContactPage: React.FC = () => {
   return (
     <div className="bg-white pt-16">
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <Center
             as={motion.div}
             initial={{ opacity: 0, y: 30 }}
@@ -93,11 +93,11 @@ export const ContactPage: React.FC = () => {
               Ready to build something amazing? Let's discuss how FuzeFront can help.
             </p>
           </Center>
-        </div>
+        </Container>
       </section>
 
       <section className="py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
             {/* Contact Info */}
             <motion.div
@@ -111,19 +111,19 @@ export const ContactPage: React.FC = () => {
               
               <div className="space-y-6">
                 <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <Mail className="text-primary-600" size={24} />
-                  </div>
+                  <IconTile tone="accent" size="md">
+                    <Mail size={24} />
+                  </IconTile>
                   <div>
                     <h3 className="font-medium text-gray-900">Email</h3>
                     <p className="text-gray-600">contact@fuzefront.com</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <Phone className="text-primary-600" size={24} />
-                  </div>
+                  <IconTile tone="accent" size="md">
+                    <Phone size={24} />
+                  </IconTile>
                   <div>
                     <h3 className="font-medium text-gray-900">Phone</h3>
                     <a href="tel:+16502763313" className="text-gray-600 hover:text-primary-600 transition-colors">
@@ -131,11 +131,11 @@ export const ContactPage: React.FC = () => {
                     </a>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <MapPin className="text-primary-600" size={24} />
-                  </div>
+                  <IconTile tone="accent" size="md">
+                    <MapPin size={24} />
+                  </IconTile>
                   <div>
                     <h3 className="font-medium text-gray-900">Office</h3>
                     <p className="text-gray-600">San Francisco, CA</p>
@@ -286,7 +286,7 @@ export const ContactPage: React.FC = () => {
               </form>
             </motion.div>
           </div>
-        </div>
+        </Container>
       </section>
     </div>
   )

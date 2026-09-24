@@ -51,6 +51,30 @@ describe('MyOrganizationsFlow', () => {
     expect(screen.queryByRole('button', { name: /create organization/i })).not.toBeInTheDocument()
   })
 
+  it('forwards slugForName to the dialog so a non-Latin org name still yields a non-empty slug', async () => {
+    // Regression: MyOrganizationsPage did not forward slugForName, so the
+    // dialog's naive default slugged a Hebrew/Arabic/CJK name to '' and the
+    // API rejected the create with 400 "Slug is required". The host now owns
+    // the rule (org-<suffix> fallback) and it must reach the dialog.
+    const user = userEvent.setup()
+    const onCreate = vi.fn().mockResolvedValue({ id: 'org_new', name: 'ארגון' })
+    render(
+      <MyOrganizationsFlow
+        organizations={organizations}
+        rootOrgId={ROOT_ID}
+        onOpenOrg={vi.fn()}
+        onCreate={onCreate}
+        slugForName={name => (/[a-z0-9]/i.test(name) ? name.toLowerCase() : 'org-zz99')}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: /create organization/i }))
+    await user.type(screen.getByLabelText(/name/i), 'ארגון')
+    await user.click(screen.getByRole('button', { name: /^create organization$/i }))
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith({ name: 'ארגון', slug: 'org-zz99' })
+    )
+  })
+
   it('opens the newly created org after creation', async () => {
     const user = userEvent.setup()
     const onOpenOrg = vi.fn()

@@ -1,5 +1,10 @@
 /**
- * Migration 028 — additive root-org seed + visibility pin.
+ * Migration 025a — additive root-org seed + visibility pin.
+ *
+ * Numbered 025a, not 028: knex runs migrations in lexical filename order and
+ * 026_apps_organization_id_not_null REQUIRES the row this seed creates. At 028
+ * the seed sorted after its own consumer and never ran — see the migration's
+ * header for the measured crash-loop that caused.
  *
  * Stub knex, no database: the point is the control flow and the SQL shape, the
  * same approach as rootOrgAbsentGuards.test.ts (#750). The production state
@@ -17,7 +22,7 @@
  *      writes BOTH the `visibility` column (which `list()` filters on) and
  *      `manifest->>'visibility'` (which `canRead()` reads).
  */
-import * as migration028 from '../src/migrations/028_seed_root_platform_organization_additively'
+import * as migrationSeed from '../src/migrations/025a_seed_root_platform_organization_additively'
 import { ROOT_ORG_ID } from '../src/migrations/015_seed_root_platform_organization'
 
 const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
@@ -101,11 +106,11 @@ const PROD = () => ({
   organizations: [{ id: ADOPTED_PLATFORM_ORG, slug: 'fuzefront', type: 'platform' }],
 })
 
-describe('028 — additive root-org seed', () => {
+describe('025a — additive root-org seed', () => {
   it('seeds ROOT_ORG_ID under a NON-colliding slug when the adopted org holds `fuzefront`', async () => {
     const { knex, raws } = makeKnex(PROD(), [], true)
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     const inserts = orgInserts(raws)
     expect(inserts).toHaveLength(1)
@@ -128,7 +133,7 @@ describe('028 — additive root-org seed', () => {
     // Here the stub never makes the row appear, so the re-read still misses.
     const { knex, raws } = makeKnex(PROD())
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     expect(orgInserts(raws)).toHaveLength(1)
     expect(membershipInserts(raws)).toHaveLength(0)
@@ -143,7 +148,7 @@ describe('028 — additive root-org seed', () => {
       [{ slug: 'stranded-app', visibility: 'private' }]
     )
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     expect(orgInserts(raws)).toHaveLength(0)
     expect(membershipInserts(raws)).toHaveLength(0)
@@ -155,7 +160,7 @@ describe('028 — additive root-org seed', () => {
     // A throw here is the crashloop. Never a throw.
     const { knex, raws } = makeKnex({ users: [], organizations: [] })
 
-    await expect(migration028.up(knex)).resolves.toBeUndefined()
+    await expect(migrationSeed.up(knex)).resolves.toBeUndefined()
     expect(orgInserts(raws)).toHaveLength(0)
   })
 
@@ -169,13 +174,13 @@ describe('028 — additive root-org seed', () => {
       ],
     })
 
-    await expect(migration028.up(knex)).resolves.toBeUndefined()
+    await expect(migrationSeed.up(knex)).resolves.toBeUndefined()
     expect(orgInserts(raws)).toHaveLength(0)
     expect(membershipInserts(raws)).toHaveLength(0)
   })
 })
 
-describe('028 — visibility pin', () => {
+describe('025a — visibility pin', () => {
   it('writes BOTH the visibility column and manifest->>visibility', async () => {
     // list() filters on the COLUMN; canRead() reads the MANIFEST. Updating one
     // and not the other yields a row that lists but will not load, or loads but
@@ -188,7 +193,7 @@ describe('028 — visibility pin', () => {
       [{ slug: 'a', visibility: 'private' }]
     )
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     const [update] = appUpdates(raws)
     expect(update).toBeDefined()
@@ -208,7 +213,7 @@ describe('028 — visibility pin', () => {
       [{ slug: 'a', visibility: 'private' }]
     )
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     const [update] = appUpdates(raws)
     expect(update.sql).toMatch(/WHERE organization_id IS NULL/i)
@@ -226,13 +231,13 @@ describe('028 — visibility pin', () => {
       []
     )
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     expect(appUpdates(raws)).toHaveLength(0)
   })
 })
 
-describe('028 — two trees, one `apps` table', () => {
+describe('025a — two trees, one `apps` table', () => {
   // The first version of this migration selected `slug` unconditionally and
   // wrote `manifest` unconditionally. Both columns are created by the
   // APPLICATIONS-SERVICE tree, not this one, so they exist in the shared
@@ -253,7 +258,7 @@ describe('028 — two trees, one `apps` table', () => {
       [] // backend-only schema: no slug, no manifest
     )
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     const selects = raws.filter(r => /^\s*SELECT/i.test(r.sql))
     expect(selects).toHaveLength(1)
@@ -269,7 +274,7 @@ describe('028 — two trees, one `apps` table', () => {
       []
     )
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     const [update] = appUpdates(raws)
     expect(update).toBeDefined()
@@ -287,11 +292,81 @@ describe('028 — two trees, one `apps` table', () => {
       ['slug', 'manifest']
     )
 
-    await migration028.up(knex)
+    await migrationSeed.up(knex)
 
     const selects = raws.filter(r => /^\s*SELECT/i.test(r.sql))
     expect(selects[0].sql).toMatch(/\bslug AS label\b/)
     const [update] = appUpdates(raws)
     expect(update.sql).toMatch(/jsonb_set\(manifest/i)
+  })
+})
+
+/**
+ * ORDERING REGRESSION — the defect that made the first version of this
+ * migration dead code.
+ *
+ * The migration body was correct and mutation-tested, and it still never ran
+ * in production, because it shipped as `028_` while
+ * `026_apps_organization_id_not_null` — which THROWS unless the row this seed
+ * creates already exists — sorts first. knex runs migrations in lexical
+ * filename order and does not record a migration that throws, so the chain
+ * died at 026 on every boot and 028 was unreachable. Measured 2026-09-20:
+ * fuzefront-backend at 694 restarts, the only Ready pod stuck on a pre-seed
+ * image.
+ *
+ * No unit test of the migration's own logic could catch that — the bug was
+ * entirely in the filename. Hence this test, which asserts the sequence
+ * rather than the behaviour.
+ */
+describe('migration ordering — the seed must precede its consumers', () => {
+  const fs = require('fs') as typeof import('fs')
+  const path = require('path') as typeof import('path')
+  const dir = path.join(__dirname, '..', 'src', 'migrations')
+  const seed = '025a_seed_root_platform_organization_additively.ts'
+
+  it('the root-org seed file is present under the name the ordering depends on', () => {
+    expect(fs.readdirSync(dir)).toContain(seed)
+  })
+
+  it('sorts BEFORE 026_apps_organization_id_not_null, which throws without the root org', () => {
+    const consumer = '026_apps_organization_id_not_null.ts'
+    expect(fs.readdirSync(dir)).toContain(consumer)
+    // Lexical comparison is the real ordering knex applies.
+    expect([seed, consumer].sort()).toEqual([seed, consumer])
+    expect(seed < consumer).toBe(true)
+  })
+
+  it('still sorts AFTER 025, so it does not jump ahead of its own prerequisites', () => {
+    const prior = '025_repair_personal_org_over_reclassification.ts'
+    expect(fs.readdirSync(dir)).toContain(prior)
+    expect(prior < seed).toBe(true)
+  })
+
+  // NO FILE READS HERE, DELIBERATELY.
+  //
+  // This test previously read each migration's source to find ones that throw
+  // on a missing root org. That needed `path.join(dir, <name from readdirSync>)`,
+  // which Semgrep flags as path-traversal
+  // (javascript.lang.security.audit.path-traversal.path-join-resolve-traversal)
+  // and kept flagging even after a strict filename allowlist and a containment
+  // assertion were added -- the join is dynamic, and the rule tracks that, not
+  // the guard around it. Rather than suppress a scanner finding on new code, the
+  // check is now name-based: it needs only the directory listing.
+  //
+  // The tradeoff, stated rather than hidden: this catches the NOT-NULL consumer
+  // family by name, which is what both migration trees actually use
+  // (backend 026_apps_organization_id_not_null, applications
+  // 011_apps_organization_id_not_null). A future consumer that requires
+  // ROOT_ORG_ID under some OTHER name would not be caught here. The explicit
+  // 026 assertion above is the one that pins the bug this PR fixes.
+  const ROOT_ORG_CONSUMER = /_apps_organization_id_not_null\.ts$/
+
+  it('sorts before EVERY apps_organization_id_not_null migration in this tree', () => {
+    const consumers = fs.readdirSync(dir).filter(f => ROOT_ORG_CONSUMER.test(f))
+    // Anti-vacuity: if the naming convention changes, this test must not
+    // silently pass by finding nothing to check.
+    expect(consumers.length).toBeGreaterThan(0)
+    const offenders = consumers.filter(f => f < seed)
+    expect(offenders).toEqual([])
   })
 })

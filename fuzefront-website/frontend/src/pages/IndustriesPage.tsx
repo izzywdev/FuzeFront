@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap } from '@fuzefront/design-system'
+import { Wrap, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -205,7 +205,7 @@ export const IndustriesPage: React.FC = () => {
       {/* Hero */}
       <section className="bg-gradient-to-br from-secondary-900 to-secondary-800 pt-28 pb-20 relative overflow-hidden">
         <div className="absolute inset-0 hero-pattern opacity-20" />
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="4xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
               Built for every industry
@@ -226,18 +226,18 @@ export const IndustriesPage: React.FC = () => {
               ))}
             </div>
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Industries Grid */}
       <section className="py-20 bg-secondary-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {industries.map((industry) => (
               <IndustrySection key={industry.id} industry={industry} />
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* CTA */}

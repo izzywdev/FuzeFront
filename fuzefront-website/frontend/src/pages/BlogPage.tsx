@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Center } from '@fuzefront/design-system'
+import { Center, Container } from '@fuzefront/design-system'
 
 export const BlogPage: React.FC = () => {
   const [heroRef, heroInView] = useInView({ triggerOnce: true })
@@ -9,7 +9,7 @@ export const BlogPage: React.FC = () => {
   return (
     <div className="bg-white pt-16">
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <Center
             as={motion.div}
             initial={{ opacity: 0, y: 30 }}
@@ -23,11 +23,11 @@ export const BlogPage: React.FC = () => {
               Stay updated with the latest in SaaS development, best practices, and FuzeFront updates.
             </p>
           </Center>
-        </div>
+        </Container>
       </section>
 
       <section className="py-24">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="4xl">
           <Center>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">
               Blog Coming Soon
@@ -37,7 +37,7 @@ export const BlogPage: React.FC = () => {
               Subscribe to our newsletter to be notified when we launch.
             </p>
           </Center>
-        </div>
+        </Container>
       </section>
     </div>
   )

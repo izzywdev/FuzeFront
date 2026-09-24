@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X } from 'lucide-react'
-import { Logo, NavLink as DSNavLink } from '@fuzefront/design-system'
+import { Container, Logo, NavLink as DSNavLink } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const productLinks = [
@@ -73,7 +73,7 @@ export const Header: React.FC = () => {
         isScrolled ? 'shadow-[0_4px_20px_var(--shadow)]' : ''
       }`}
     >
-      <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <Container as="nav" size="7xl">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <Link
@@ -217,7 +217,7 @@ export const Header: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
-      </nav>
+      </Container>
     </header>
   )
 }
