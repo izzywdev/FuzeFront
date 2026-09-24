@@ -47,7 +47,9 @@ jest.mock('../src/middleware/quota', () => ({
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
-const JWT_SECRET = 'test-secret-s4-lists';
+// Test-only signing secret (never a production credential); overridable via
+// TEST_JWT_SECRET so the literal is an obviously fake fallback.
+const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-s4-lists';
 const TEST_USER_ID = 'usr_01testuserid0000000000000';
 const TEST_ORG_ID  = 'org_01testorgid00000000000000';
 const TEST_LIST_ID = 'front_sl_01testlistid000000000000';

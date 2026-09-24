@@ -78,7 +78,7 @@ test('Clock mounts from the launcher at runtime', async ({ page }) => {
   console.log('[DIAG] /api/organizations response:', JSON.stringify(orgsResp))
   console.log(
     '[DIAG] active-account token:',
-    activeToken ? activeToken.substring(0, 30) + '...' : 'null'
+    activeToken ? `present (${activeToken.length} chars, not shown)` : 'null'
   )
 
   // --- open the 9-dots launcher and click the Clock card (the real path) ---

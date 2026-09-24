@@ -6,6 +6,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   check_suite:
     types: [completed]
+# Least privilege: `gh pr merge --auto` needs exactly these two. Declared explicitly so
+# the template never silently inherits a write-all default token in a consuming repo.
+permissions:
+  contents: write
+  pull-requests: write
 jobs:
   auto-merge:
     name: Auto Merge PR
@@ -13,9 +18,12 @@ jobs:
     if: github.event.pull_request.draft == false
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Enable auto-merge
         if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
-        run: gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
+        # PR_NUMBER goes through env, not a `${{ }}` interpolation in `run:` — anything
+        # expanded inline is pasted into the shell before it executes.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR_NUMBER" --auto --squash --delete-branch
