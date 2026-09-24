@@ -353,7 +353,17 @@ router.get('/', authenticateToken, async (req: any, res) => {
 // returns only a boolean — no org data — so there is no BOLA surface (a slug is
 // already public in tiles/URLs). MUST stay registered before `/:id` or Express
 // would match "slug-available" as an :id.
-router.get('/slug-available', authenticateToken, async (req: any, res) => {
+//
+// Rate-limited because the handler hits the DB on every keystroke-debounced call
+// (CodeQL js/missing-rate-limiting). Same config as membersRateLimiter below.
+const slugAvailabilityRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+router.get('/slug-available', slugAvailabilityRateLimiter, authenticateToken, async (req: any, res) => {
   try {
     const raw = typeof req.query.slug === 'string' ? req.query.slug.trim().toLowerCase() : ''
 
