@@ -70,6 +70,28 @@ fi
 # finding or build break, so they cannot turn an honest red into a wrongful
 # failover — the specific risk this list is otherwise kept small to avoid.
 #
+# `hit your session limit` / `session limit reached` / `usage limit reached` were added
+# after run 35848544508 (mcp-maintain on FuzeInfra#1212): the subscription-OAuth rung
+# returned the literal `You've hit your session limit · resets 11:50am (UTC)` and NONE of
+# the patterns above matched, so a textbook quota exhaustion was classified exit 2 (TASK
+# failure). Three things followed, all wrong, and they compound:
+#
+#   - availability=false, so the caller reported "a real finding from the work itself, not
+#     a provider problem" about a provider problem;
+#   - NO other rung was tried. A task failure deliberately stops the cascade, so codex and
+#     gemini never ran — the fallover chain that exists precisely for an exhausted vendor
+#     was disabled by the misclassification of the exhaustion;
+#   - once fuze-code-review's `check` output is wired, availability=false turns this into
+#     an abstain and BLOCKS the PR, bypassing the owner's explicit credit-outage exception.
+#
+# A subscription session/usage limit is the same CLASS the list already covers for API
+# credit ("credit balance is too low", "no credits remaining", 429) — the subscription
+# plans simply phrase exhaustion as a session or usage limit with a reset time rather than
+# as a balance. Only the `hit your session limit` form has been observed here; the other
+# two are the same vendor's near-identical wordings, kept equally literal. All three are
+# quota-literal and will not appear in a genuine code-review finding, so this does NOT
+# widen the CLASS — same reasoning as the credit/quota entries above.
+#
 # `Unable to connect to API` / `ConnectionRefused` were added after issue #298: on a
 # self-hosted runner the in-cluster LiteLLM answered `/health/readiness` but refused
 # real inference, and the Claude Code SDK emitted the literal string
@@ -81,7 +103,7 @@ fi
 # through to the `declined` branch instead of `availability`. These two entries are
 # narrow, literal transport signals that will not appear in a real code-review
 # finding or build break, so they do not widen the CLASS.
-AVAILABILITY_PATTERNS='credit balance is too low|insufficient_quota|insufficient quota|no credits remaining|credits are depleted|prepayment credits|RESOURCE_EXHAUSTED|quota exceeded|quota_exceeded|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|authentication_failed|key not allowed to access model|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|Unable to connect to API|ConnectionRefused|connection reset|"status":[[:space:]]*5[0-9][0-9]|"status":[[:space:]]*40[13]|"status":[[:space:]]*429|"code":[[:space:]]*5[0-9][0-9]|"code":[[:space:]]*429|"api_error_status":[[:space:]]*40[13]|"status_code":[[:space:]]*40[13]|"status_code":[[:space:]]*429|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
+AVAILABILITY_PATTERNS='hit your session limit|session limit reached|usage limit reached|credit balance is too low|insufficient_quota|insufficient quota|no credits remaining|credits are depleted|prepayment credits|RESOURCE_EXHAUSTED|quota exceeded|quota_exceeded|rate_limit_error|rate limit exceeded|too many requests|overloaded_error|authentication_error|authentication_failed|key not allowed to access model|invalid x-api-key|invalid api key|permission_error|forbidden|service unavailable|bad gateway|gateway timeout|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|getaddrinfo|network error|fetch failed|could not connect|Unable to connect to API|ConnectionRefused|connection reset|"status":[[:space:]]*5[0-9][0-9]|"status":[[:space:]]*40[13]|"status":[[:space:]]*429|"code":[[:space:]]*5[0-9][0-9]|"code":[[:space:]]*429|"api_error_status":[[:space:]]*40[13]|"status_code":[[:space:]]*40[13]|"status_code":[[:space:]]*429|HTTP/[0-9.]+ 5[0-9][0-9]|HTTP 5[0-9][0-9]|HTTP 429|HTTP 401|HTTP 403'
 
 # No conclusion reported, but the STEP ITSELF SUCCEEDED. Two very different things
 # produce this identical shape, and telling them apart is the whole point:
