@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Alert, CenteredCard } from '@fuzefront/design-system'
+import { Alert, Button, CenteredCard } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { getInvitation, acceptInvitation } from '../services/api'
 
@@ -109,9 +109,9 @@ function AcceptInvitePage() {
         <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
           This invitation has expired or been revoked. Please ask to be re-invited.
         </p>
-        <button className="btn btn-primary" onClick={() => navigate('/login')}>
+        <Button variant="primary" onClick={() => navigate('/login')}>
           Go to login
-        </button>
+        </Button>
       </CenteredCard>
     )
   }
@@ -122,9 +122,9 @@ function AcceptInvitePage() {
         <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>❌</p>
         <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Something went wrong</h2>
         <Alert tone="error" style={{ marginBottom: '1.5rem', textAlign: 'left' }}>{error}</Alert>
-        <button className="btn btn-primary" onClick={() => navigate('/login')}>
+        <Button variant="primary" onClick={() => navigate('/login')}>
           Go to login
-        </button>
+        </Button>
       </CenteredCard>
     )
   }
@@ -139,9 +139,9 @@ function AcceptInvitePage() {
         <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
           Your role is <strong>{invitation?.role}</strong>.
         </p>
-        <button className="btn btn-primary" onClick={() => navigate('/organizations')}>
+        <Button variant="primary" onClick={() => navigate('/organizations')}>
           Go to Organizations
-        </button>
+        </Button>
       </CenteredCard>
     )
   }
@@ -172,14 +172,9 @@ function AcceptInvitePage() {
       )}
 
       {isAuthenticated && emailMatches ? (
-        <button
-          className="btn btn-primary"
-          onClick={handleAccept}
-          disabled={accepting}
-          style={{ width: '100%' }}
-        >
+        <Button variant="primary" onClick={handleAccept} disabled={accepting} fullWidth>
           {accepting ? 'Accepting…' : `Accept invitation`}
-        </button>
+        </Button>
       ) : isAuthenticated && !emailMatches ? (
         <div>
           <p style={{ color: 'var(--error-color)', fontSize: '0.9rem', marginBottom: '1rem' }}>
@@ -194,20 +189,17 @@ function AcceptInvitePage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
             Sign in or create an account to accept this invitation.
           </p>
-          <button
-            className="btn btn-primary"
+          <Button
+            variant="primary"
             onClick={() => navigate(`/login?invite=${token}`)}
-            style={{ width: '100%', marginBottom: '0.75rem' }}
+            fullWidth
+            style={{ marginBlockEnd: 'var(--space-3)' }}
           >
             Sign in to accept
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={handleAccept}
-            style={{ width: '100%' }}
-          >
+          </Button>
+          <Button variant="secondary" onClick={handleAccept} fullWidth>
             Create an account
-          </button>
+          </Button>
         </div>
       )}
     </CenteredCard>
