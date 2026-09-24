@@ -669,13 +669,17 @@ function UserMenu({ user }: UserMenuProps) {
   if (!user) {
     return (
       <div>
-        <Button
-          variant="primary"
+        {/* Not converted to <Button> here: this markup belongs to the
+            app-scopes-user-menu flow, whose design frames aren't approved
+            yet (gate-frames-first blocks covered-but-unapproved changes).
+            Deferred until that flow's frames land. */}
+        <button
+          className="btn btn-primary"
           data-topbar-control="sign-in"
           onClick={() => (window.location.href = '/login')}
         >
           {t('actions.signIn')}
-        </Button>
+        </button>
       </div>
     )
   }

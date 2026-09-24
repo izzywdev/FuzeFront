@@ -185,8 +185,12 @@ function InstalledAppsSection() {
                   Uninstall
                 </Button>
               ) : (
-                <Button
-                  variant="primary"
+                // Not converted to <Button> here: this markup belongs to the
+                // app-management flow, whose design frames aren't approved
+                // yet (gate-frames-first blocks covered-but-unapproved
+                // changes). Deferred until that flow's frames land.
+                <button
+                  className="btn btn-primary"
                   data-action="open-install"
                   data-app-id={app.id}
                   onClick={() =>
@@ -194,7 +198,7 @@ function InstalledAppsSection() {
                   }
                 >
                   Install
-                </Button>
+                </button>
               )}
             </div>
           )
