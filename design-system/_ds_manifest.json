@@ -38,6 +38,10 @@
       "sourcePath": "components/core/Button.jsx"
     },
     {
+      "name": "Caption",
+      "sourcePath": "components/core/Caption.jsx"
+    },
+    {
       "name": "ExternalLink",
       "sourcePath": "components/core/ExternalLink.jsx"
     },
