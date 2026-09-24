@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-auto-pr.yml baseline=v1 digest=sha256:9fc32ff07bca85a93a3b1a65e331f181b5f9b3d74df74d0aa3f66bac09c24f1c
+# fuze:managed template=fuze-auto-pr.yml baseline=v1 digest=sha256:9e1b8bf046419838c9bbec8669e362b18cd290af4edf71944437793f7384097d
 name: Auto-PR from agent branches
 
 # RENAMED from `claude-auto-pr.yml` (and `name:` from "Auto-PR from claude branches") for
@@ -45,7 +45,7 @@ jobs:
       - name: Mint fuze-agent App token
         id: app_token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
