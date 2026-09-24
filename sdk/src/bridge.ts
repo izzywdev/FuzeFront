@@ -49,6 +49,8 @@ export interface FuzeFrontBridge {
   version: number
   getContext(): PlatformSnapshot
   subscribe(listener: (ctx: PlatformSnapshot) => void): () => void
+  onOrgSwitch(handler: (org: { id: string; name: string } | null) => void): () => void
+  onAccountSwitch(handler: (user: { id: string; email: string; roles: string[] } | null) => void): () => void
   notify(toast: ToastInput): string
   dismiss(id: string): void
   menu: {

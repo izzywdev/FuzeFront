@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import react from '@vitejs/plugin-react'
 
 // Mirror vite.config.ts: resolve the @fuzefront/* workspace UI packages from source.
@@ -106,8 +107,22 @@ const stubCss = {
   },
 }
 
+const frontendRequire = createRequire(import.meta.url)
+const workspaceDepResolver = {
+  name: 'resolve-workspace-transitive-deps',
+  resolveId(id: string) {
+    if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return null
+    try {
+      const resolved = frontendRequire.resolve(id)
+      return { id: resolved, external: false }
+    } catch {
+      return null
+    }
+  },
+}
+
 export default defineConfig({
-  plugins: [stubCss, stubFederation, react()],
+  plugins: [stubCss, stubFederation, workspaceDepResolver, react()],
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
@@ -125,11 +140,11 @@ export default defineConfig({
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-admin-ui': portalAdminUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
+      '@fuzeone/selection-lists-ui': selectionListsUiSrc,
       // config-client + config-ui: same unbuilt-dist case as billing-* above.
       // package.json main points at a dist/ that CI never builds, so the Config
       // pages fail to resolve them unless aliased to SOURCE here too. vite.config.ts
       // already does this; vitest.config.ts is a SEPARATE config and needs its own.
-      '@fuzeone/selection-lists-ui': selectionListsUiSrc,
       '@fuzefront/config-client': configClientSrc,
       '@fuzefront/config-ui': configUiSrc,
     },

@@ -80,7 +80,7 @@ domain: Platform / DevOps
 - [ ] Feature 4: `fuzefront.platform.portal-domains` feature flag, default OFF.
 
 ### 🚫 Out of Scope
-- FuzeInfra internals — wildcard DNS, TLS issuance mechanics, ingress controller configuration. These are owned by FuzeInfra and reached only via `@claude` delegation, never edited or operated from this repo.
+- FuzeInfra internals — wildcard DNS, TLS issuance mechanics, ingress controller configuration. These are owned by FuzeInfra and reached only via `@fuze` delegation, never edited or operated from this repo.
 - A per-tenant Helm release or per-domain infrastructure provisioning — routing must resolve entirely through the existing portal-context resolver (FF-EPIC-10), not new infra per domain.
 - Domain transfer/ownership disputes — out of scope for self-service; escalate to Master Admin support flow.
 
@@ -94,7 +94,7 @@ domain: Platform / DevOps
 > issuance. Routing for a verified domain uses the FF-EPIC-10 `resolvePortalContext` resolver
 > (Host/path/custom → portal, fail-closed to root/404/suspended) — **no Helm release per domain**, ever.
 > **HARD DEPENDENCY:** the wildcard DNS + custom-hostname/cert capability this epic polls against does
-> not exist in this repo and must be delegated to FuzeInfra via `@claude` before Story 2 can complete;
+> not exist in this repo and must be delegated to FuzeInfra via `@fuze` before Story 2 can complete;
 > see Dependencies below.
 
 ### 📊 Success Metrics
@@ -113,7 +113,7 @@ domain: Platform / DevOps
 | FF-EPIC-16-S4 | Feature flag fuzefront.platform.portal-domains | Open |
 
 ### 🔗 Dependencies
-- **Blocked By:** FuzeInfra wildcard DNS + custom-hostname/certificate capability — **not yet delegated**; must be requested from FuzeInfra via `@claude` cross-repo delegation before FF-EPIC-16-S2 can complete (this repo cannot implement TLS issuance itself, only poll the mechanism FuzeInfra exposes). Also blocked by FF-EPIC-09 (`portal_domains` schema) and FF-EPIC-10 (portal-context resolver that will route verified domains).
+- **Blocked By:** FuzeInfra wildcard DNS + custom-hostname/certificate capability — **not yet delegated**; must be requested from FuzeInfra via `@fuze` cross-repo delegation before FF-EPIC-16-S2 can complete (this repo cannot implement TLS issuance itself, only poll the mechanism FuzeInfra exposes). Also blocked by FF-EPIC-09 (`portal_domains` schema) and FF-EPIC-10 (portal-context resolver that will route verified domains).
 - **Related:** FF-EPIC-14 (master-admin/portal-admin consoles surface domain status alongside this epic's UI).
 - **Blocks:** none downstream known at authoring time.
 
@@ -199,7 +199,7 @@ through its state machine (pending → verifying → verified/failed/expired).
 Once a domain is `verified` (S1), TLS issuance must be requested and polled through whatever mechanism
 FuzeInfra exposes (Cloudflare custom hostnames preferred, or cert-manager as fallback). **This story has
 a hard dependency on the FuzeInfra wildcard + custom-hostname capability, which must be requested via
-`@claude` cross-repo delegation before this story's backend/DevOps sub-tasks can be implemented** — this
+`@fuze` cross-repo delegation before this story's backend/DevOps sub-tasks can be implemented** — this
 repo integrates against that capability, it does not build TLS issuance itself.
 
 #### ✅ Acceptance Criteria
@@ -220,19 +220,19 @@ repo integrates against that capability, it does not build TLS issuance itself.
 | Type | Summary | Points | Status |
 |------|---------|--------|--------|
 | Backend | Request/poll TLS issuance via the FuzeInfra-provided mechanism; `tls_status` state-machine transitions (issuing/active/failed) | 8 | Open |
-| DevOps | Wire `portal_domains` to the FuzeInfra custom-hostname/cert capability (integration contract only — FuzeInfra internals delegated via `@claude`) | 4 | Open |
+| DevOps | Wire `portal_domains` to the FuzeInfra custom-hostname/cert capability (integration contract only — FuzeInfra internals delegated via `@fuze`) | 4 | Open |
 | QA | TLS status transition test + routing-reachability test (active domain resolves; issuing/failed domains do not) | 4 | Open |
 
 #### 🔗 Dependencies
-- **Blocked By:** FuzeInfra wildcard DNS + custom-hostname/certificate capability — **hard dependency, delegated via `@claude`, not yet available**. Also blocked by FF-EPIC-16-S1 (`verification_status=verified` is the precondition for requesting TLS).
+- **Blocked By:** FuzeInfra wildcard DNS + custom-hostname/certificate capability — **hard dependency, delegated via `@fuze`, not yet available**. Also blocked by FF-EPIC-16-S1 (`verification_status=verified` is the precondition for requesting TLS).
 - **Blocked By:** FF-EPIC-10 (portal-context resolver must exist to consult `tls_status`/`verification_status` when routing).
 
 #### ⚠️ Risks & Assumptions
-- **Assumption:** FuzeInfra will expose a stable integration contract (API or shared state) for custom-hostname/cert status that this repo can poll — to be confirmed in the `@claude` delegation response, not assumed unilaterally.
+- **Assumption:** FuzeInfra will expose a stable integration contract (API or shared state) for custom-hostname/cert status that this repo can poll — to be confirmed in the `@fuze` delegation response, not assumed unilaterally.
 - **Risk:** This story cannot start its DevOps/Backend integration sub-tasks until the FuzeInfra delegation lands — sequencing risk to the whole epic's timeline; the delegation should be filed as early as possible, ideally in parallel with FF-EPIC-16-S1.
 
 #### 📎 References
-- Ingress (single host today): `deploy/helm/fuzefront/templates/ingress.yaml`. FuzeInfra delegation: cross-repo `@claude` issue (to be filed).
+- Ingress (single host today): `deploy/helm/fuzefront/templates/ingress.yaml`. FuzeInfra delegation: cross-repo `@fuze` issue (to be filed).
 
 ---
 
