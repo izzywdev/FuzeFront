@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Badge,
+  Button,
   DataTable,
   PricingCard,
   Skeleton,
@@ -635,14 +636,9 @@ const LegacyInvoicesTab: React.FC<{ organizationId?: string }> = ({
 
       {nextCursor && !loading && (
         <div style={{ marginTop: 'var(--space-4)', textAlign: 'center' }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={loadMore}
-            disabled={loadingMore}
-          >
+          <Button type="button" variant="secondary" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? 'Loading…' : 'Load more'}
-          </button>
+          </Button>
         </div>
       )}
     </section>
@@ -701,15 +697,15 @@ const PaymentsTab: React.FC<{ organizationId?: string }> = ({
           full payment history securely in the Stripe Billing portal. We never
           store your card details.
         </p>
-        <button
+        <Button
           type="button"
-          className="btn btn-primary"
+          variant="primary"
           onClick={openPortal}
           disabled={busy}
           aria-busy={busy || undefined}
         >
           {busy ? 'Opening…' : 'Manage billing'}
-        </button>
+        </Button>
       </div>
     </section>
   )

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import { Button } from '@fuzefront/design-system'
 import {
   useCurrentUser,
   useAppContext,
@@ -260,12 +261,9 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         <p style={{ margin: 0, color: 'var(--text-secondary)', maxWidth: '46ch' }}>
           {t('accounts.limitBody', { max: MAX_PARALLEL_ACCOUNTS })}
         </p>
-        <button
-          className="btn btn-primary"
-          onClick={() => (window.location.href = '/')}
-        >
+        <Button variant="primary" onClick={() => (window.location.href = '/')}>
           {t('nav.dashboard')}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -559,12 +557,9 @@ function AdminRoute() {
       >
         <h3>🔒 Access Denied</h3>
         <p>You need admin privileges to access this page.</p>
-        <button
-          className="btn btn-primary"
-          onClick={() => (window.location.href = '/dashboard')}
-        >
+        <Button variant="primary" onClick={() => (window.location.href = '/dashboard')}>
           Return to Dashboard
-        </button>
+        </Button>
       </div>
     )
   }
@@ -584,12 +579,9 @@ function NotFoundPage() {
     >
       <h1>404 - Page Not Found</h1>
       <p>The page you're looking for doesn't exist.</p>
-      <button
-        className="btn btn-primary"
-        onClick={() => (window.location.href = '/dashboard')}
-      >
+      <Button variant="primary" onClick={() => (window.location.href = '/dashboard')}>
         Go to Dashboard
-      </button>
+      </Button>
     </div>
   )
 }
