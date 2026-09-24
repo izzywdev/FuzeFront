@@ -57,6 +57,7 @@ vi.mock('../PermissionGate', () => ({
 vi.mock('../../services/api', () => ({
   getOrganizations: vi.fn().mockResolvedValue(fixtures.organizations),
   createOrganization: vi.fn(),
+  checkOrganizationSlugAvailable: vi.fn().mockResolvedValue({ available: true }),
 }))
 
 function renderSection() {

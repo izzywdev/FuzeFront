@@ -45,4 +45,44 @@ describe('CreateOrganizationDialog', () => {
     render(<CreateOrganizationDialog open={false} onClose={vi.fn()} onCreate={vi.fn()} />)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
+
+  it('warns inline (before submit) when the real-time probe says the name is taken', async () => {
+    const user = userEvent.setup()
+    const onCheckAvailability = vi.fn().mockResolvedValue({ available: false, reason: 'taken' })
+    render(
+      <CreateOrganizationDialog
+        open
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onCheckAvailability={onCheckAvailability}
+      />
+    )
+    await user.type(screen.getByLabelText(/name/i), 'Northwind')
+    await waitFor(() => expect(onCheckAvailability).toHaveBeenCalledWith('northwind'))
+    await waitFor(() => expect(screen.getByText(/already taken/i)).toBeInTheDocument())
+  })
+
+  it('shows an available hint when the real-time probe says the name is free', async () => {
+    const user = userEvent.setup()
+    const onCheckAvailability = vi.fn().mockResolvedValue({ available: true })
+    render(
+      <CreateOrganizationDialog
+        open
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onCheckAvailability={onCheckAvailability}
+      />
+    )
+    await user.type(screen.getByLabelText(/name/i), 'Northwind')
+    await waitFor(() => expect(screen.getByText(/available/i)).toBeInTheDocument())
+  })
+
+  it('does not probe when no availability checker is wired (submit stays the gate)', async () => {
+    const user = userEvent.setup()
+    render(<CreateOrganizationDialog open onClose={vi.fn()} onCreate={vi.fn()} />)
+    await user.type(screen.getByLabelText(/name/i), 'Northwind')
+    // No availability hint rendered; the field just holds the typed value.
+    expect(screen.queryByText(/checking availability/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/name/i)).toHaveValue('Northwind')
+  })
 })

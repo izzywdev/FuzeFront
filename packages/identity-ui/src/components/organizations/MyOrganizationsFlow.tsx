@@ -5,6 +5,7 @@ import {
   CreateOrganizationDialog,
   type CreateOrganizationInput,
   type CreatedOrganization,
+  type SlugAvailability,
 } from './CreateOrganizationDialog'
 import type { OrgContextItem } from '../../types'
 
@@ -26,6 +27,8 @@ export interface MyOrganizationsFlowProps {
    * Forwarded to CreateOrganizationDialog; omit to use its default.
    */
   slugForName?: (name: string) => string
+  /** Optional real-time slug-availability probe, forwarded to the create dialog. */
+  onCheckAvailability?: (slug: string) => Promise<SlugAvailability>
 }
 
 /**
@@ -45,6 +48,7 @@ export function MyOrganizationsFlow({
   onCreated,
   canCreate = true,
   slugForName,
+  onCheckAvailability,
 }: MyOrganizationsFlowProps) {
   const [createOpen, setCreateOpen] = useState(false)
 
@@ -94,6 +98,7 @@ export function MyOrganizationsFlow({
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         slugForName={slugForName}
+        onCheckAvailability={onCheckAvailability}
         onCreate={onCreate}
         onCreated={org => {
           onCreated?.(org)
