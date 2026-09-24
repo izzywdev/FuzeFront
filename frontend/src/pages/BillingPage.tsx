@@ -702,15 +702,15 @@ const PaymentsTab: React.FC<{ organizationId?: string }> = ({
           full payment history securely in the Stripe Billing portal. We never
           store your card details.
         </p>
-        <button
+        <Button
           type="button"
-          className="btn btn-primary"
+          variant="primary"
           onClick={openPortal}
           disabled={busy}
           aria-busy={busy || undefined}
         >
           {busy ? 'Opening…' : 'Manage billing'}
-        </button>
+        </Button>
       </div>
     </section>
   )

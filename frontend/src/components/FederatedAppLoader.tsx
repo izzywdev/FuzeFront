@@ -4,6 +4,7 @@ import { useCurrentUser } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
 import { useAppRegistry } from '../platform/appRegistry'
 import { usePortalContext } from '@fuzefront/portal-branding-ui'
+import { Button } from '@fuzefront/design-system'
 import {
   loadFederatedAppFromManifest,
   clearModuleCache,
@@ -221,13 +222,9 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
       >
         <h3>⚠️ Failed to Load App</h3>
         <p>{error}</p>
-        <button
-          className="btn btn-primary"
-          onClick={handleRetry}
-          style={{ marginTop: 'var(--space-4)' }}
-        >
+        <Button variant="primary" onClick={handleRetry} style={{ marginBlockStart: 'var(--space-4)' }}>
           🔄 Retry
-        </button>
+        </Button>
       </div>
     )
   }

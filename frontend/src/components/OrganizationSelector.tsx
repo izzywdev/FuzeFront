@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner, Text, Stack } from '@fuzefront/design-system'
+import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner, Text, Stack, Button } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { usePermissions } from './PermissionGate'
 import {
@@ -356,22 +356,17 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-            <button
-              onClick={closeCreateModal}
-              className="btn"
-              style={{ background: 'var(--bg-quaternary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-            >
+            <Button onClick={closeCreateModal} variant="secondary">
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleCreateOrganization}
               disabled={!newOrgName.trim() || isCreating}
-              className="btn btn-primary"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+              variant="primary"
+              leadingIcon={isCreating ? <Spinner size={14} color="white" /> : null}
             >
-              {isCreating && <Spinner size={14} color="white" />}
               {isCreating ? 'Creating...' : 'Create'}
-            </button>
+            </Button>
           </div>
         </div>
       </Modal>

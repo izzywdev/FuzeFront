@@ -7,12 +7,16 @@ the k8s API using the runner pod's mounted service account token.  Without
 this Role + RoleBinding the curl call returns 403 and the workflow fails.
 
 The runner service account name is set by:
-  unleash.ciRunner.serviceAccountName   (values.yaml, default: "fuzefront")
+  unleash.ciRunner.serviceAccountName   (values.yaml, default: "arc-runner-sa")
   unleash.ciRunner.serviceAccountNamespace (default: release namespace)
 
-For ARC v2 AutoscalingRunnerSet the SA name equals the runner set name.
-If the runner is deployed in a different namespace, override
-  unleash.ciRunner.serviceAccountNamespace in values-prod.yaml.
+serviceAccountName must be the SA the runner PODS run as — NOT the runner-set
+name. FuzeInfra pins every scale set's pods to `arc-runner-sa` via
+template.spec.serviceAccountName in its shared runner-scale-set-values.yaml, so
+binding any other name (e.g. the old "fuzefront" default) grants the Role to a
+SA no pod uses and the token read 403s (FuzeInfra#1219). If the runner is
+deployed in a different namespace, override serviceAccountNamespace in
+values-prod.yaml (prod: "arc-runners").
 */}}
 {{- if .Values.unleash.ciRunner.enabled }}
 ---
