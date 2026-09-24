@@ -20,6 +20,8 @@
   "routing": {
     "path": "/fuzemarket"
   },
-  "visibility": "private",
-  "roles": ["admin", "owner"]
+  "visibility": "organization",
+  "scopeLevel": "organization",
+  "requiresOrgContext": true,
+  "roles": []
 }

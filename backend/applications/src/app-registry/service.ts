@@ -371,6 +371,7 @@ export class AppRegistryService {
       builtin: manifest.builtin ?? false,
       organization_id: organizationId,
       visibility: (manifest.visibility ?? 'private') as Visibility,
+      scope_level: manifest.scopeLevel ?? 'both',
       is_active: false,
       heartbeat_token: heartbeatToken,
       created_at: now,
@@ -406,6 +407,7 @@ export class AppRegistryService {
         manifest: JSON.stringify(manifest),
         mode: manifest.mode,
         visibility: (manifest.visibility ?? existing.manifest.visibility ?? 'private') as Visibility,
+        ...(manifest.scopeLevel ? { scope_level: manifest.scopeLevel } : {}),
         updated_at: new Date(),
         // Re-derive placement: a manifest update may move the app in the menu.
         ...navColumns(manifest),

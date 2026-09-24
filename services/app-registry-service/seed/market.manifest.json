@@ -33,5 +33,7 @@
     "host": "fuzemarket.fuzefront.com"
   },
   "visibility": "organization",
+  "scopeLevel": "organization",
+  "requiresOrgContext": true,
   "roles": []
 }
