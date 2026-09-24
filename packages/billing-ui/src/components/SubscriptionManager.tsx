@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { BillingSubscription } from '@fuzefront/billing-client';
+import { Panel } from '@fuzefront/design-system';
 import { useBillingI18n } from '../i18n';
 import { Button, Notice, StatusPill } from './primitives';
 import { Modal } from './Modal';
@@ -37,21 +38,17 @@ export function SubscriptionManager({
 
   if (!subscription) {
     return (
-      <section className="ffb-panel" aria-labelledby="ffb-sub-empty">
-        <div className="ffb-panel__header">
-          <h3 id="ffb-sub-empty" className="ffb-panel__title">
-            {strings.noSubscriptionHeading}
-          </h3>
-        </div>
-        <p className="ffb-panel__empty">{strings.noSubscriptionBody}</p>
-        {onPickPlan && (
-          <div className="ffb-panel__actions">
+      <Panel
+        title={strings.noSubscriptionHeading}
+        empty={strings.noSubscriptionBody}
+        actions={
+          onPickPlan ? (
             <Button variant="primary" onClick={onPickPlan}>
               {strings.changePlan}
             </Button>
-          </div>
-        )}
-      </section>
+          ) : undefined
+        }
+      />
     );
   }
 
@@ -78,60 +75,59 @@ export function SubscriptionManager({
   };
 
   return (
-    <section className="ffb-panel" aria-labelledby="ffb-sub-title">
-      <div className="ffb-panel__header">
-        <h3 id="ffb-sub-title" className="ffb-panel__title">
-          {strings.subscriptionHeading}
-        </h3>
-        <StatusPill status={status} strings={strings} />
-      </div>
-
-      <div className="ffb-panel__row">
-        <span className="ffb-panel__key">{planName ?? strings.subscriptionHeading}</span>
-        {subscription.seatQuantity > 1 && (
-          <span className="ffb-panel__value">
-            {subscription.seatQuantity} × {strings.seatsLabel}
-          </span>
-        )}
-      </div>
-
-      {isTrialing && trialEnd && (
-        <div className="ffb-panel__row">
-          <span className="ffb-panel__key">{strings.trialEndsOn}</span>
-          <span className="ffb-panel__value">{formatDate(trialEnd)}</span>
-        </div>
-      )}
-
-      {currentPeriodEnd && (
-        <div className="ffb-panel__row">
-          <span className="ffb-panel__key">
-            {cancelAtPeriodEnd ? strings.endsOn : strings.renewsOn}
-          </span>
-          <span className="ffb-panel__value">{formatDate(currentPeriodEnd)}</span>
-        </div>
-      )}
-
-      {cancelAtPeriodEnd && <Notice tone="info">{strings.cancelScheduledNotice}</Notice>}
-      {error && <Notice tone="error">{error}</Notice>}
-
-      <div className="ffb-panel__actions">
-        {onChangePlan && (
-          <Button variant="secondary" onClick={onChangePlan} disabled={busy}>
-            {strings.changePlan}
-          </Button>
-        )}
-        {cancelAtPeriodEnd
-          ? onResume && (
-              <Button variant="primary" onClick={runResume} loading={busy}>
-                {strings.resumeSubscription}
-              </Button>
-            )
-          : onCancel && (
-              <Button variant="danger" onClick={() => setConfirmOpen(true)} disabled={busy}>
-                {strings.cancelSubscription}
+    <>
+      <Panel
+        title={strings.subscriptionHeading}
+        trailing={<StatusPill status={status} strings={strings} />}
+        actions={
+          <>
+            {onChangePlan && (
+              <Button variant="secondary" onClick={onChangePlan} disabled={busy}>
+                {strings.changePlan}
               </Button>
             )}
-      </div>
+            {cancelAtPeriodEnd
+              ? onResume && (
+                  <Button variant="primary" onClick={runResume} loading={busy}>
+                    {strings.resumeSubscription}
+                  </Button>
+                )
+              : onCancel && (
+                  <Button variant="danger" onClick={() => setConfirmOpen(true)} disabled={busy}>
+                    {strings.cancelSubscription}
+                  </Button>
+                )}
+          </>
+        }
+      >
+        <div className="ffb-panel__row">
+          <span className="ffb-panel__key">{planName ?? strings.subscriptionHeading}</span>
+          {subscription.seatQuantity > 1 && (
+            <span className="ffb-panel__value">
+              {subscription.seatQuantity} × {strings.seatsLabel}
+            </span>
+          )}
+        </div>
+
+        {isTrialing && trialEnd && (
+          <div className="ffb-panel__row">
+            <span className="ffb-panel__key">{strings.trialEndsOn}</span>
+            <span className="ffb-panel__value">{formatDate(trialEnd)}</span>
+          </div>
+        )}
+
+        {currentPeriodEnd && (
+          <div className="ffb-panel__row">
+            <span className="ffb-panel__key">
+              {cancelAtPeriodEnd ? strings.endsOn : strings.renewsOn}
+            </span>
+            <span className="ffb-panel__value">{formatDate(currentPeriodEnd)}</span>
+          </div>
+        )}
+
+        {cancelAtPeriodEnd && <Notice tone="info">{strings.cancelScheduledNotice}</Notice>}
+        {error && <Notice tone="error">{error}</Notice>}
+      </Panel>
 
       <Modal
         open={confirmOpen}
@@ -149,6 +145,6 @@ export function SubscriptionManager({
           </Button>
         </div>
       </Modal>
-    </section>
+    </>
   );
 }

@@ -3,13 +3,10 @@ import rateLimit from 'express-rate-limit'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
-import { authenticateToken, requireRole } from '../middleware/auth'
-import {
-  PermissionMiddleware,
-  requireOwnership,
-} from '../middleware/permissions'
+import { authenticateToken } from '../middleware/auth'
+import { PermissionMiddleware } from '../middleware/permissions'
 import { db } from '../config/database'
-import { Organization, OrganizationMembership } from '../types/shared'
+import { Organization } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { resolvePortalScopeDecision, applyPortalScope, normalizePortalId } from '../utils/scopeToPortal'
@@ -206,7 +203,8 @@ router.post('/', authenticateToken, async (req: any, res) => {
       await reconcileOrganizationProvisioning(organizationId)
     } catch (error) {
       console.error(
-        `Provisioning reconcile failed for org ${organizationId} (will self-heal):`,
+        'Provisioning reconcile failed for org %s (will self-heal):',
+        organizationId,
         error
       )
     }

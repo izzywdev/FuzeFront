@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { logger } from '../../lib/logger'
 import { User } from '../../types/shared'
 import { assignRoleInPermit, unassignRoleInPermit } from './role-assignment'
 
@@ -39,10 +40,10 @@ export async function syncUserToPermit(user: BackendUser): Promise<boolean> {
     }
 
     await permit.api.users.sync(permitUser)
-    console.log(`User ${user.id} synced to Permit.io successfully`)
+    logger.info({ userId: user.id }, 'permit: user synced')
     return true
   } catch (error) {
-    console.error(`Error syncing user ${user.id} to Permit.io:`, error)
+    logger.error({ userId: user.id, err: error }, 'permit: user sync failed')
     return false
   }
 }
@@ -53,10 +54,10 @@ export async function syncUserToPermit(user: BackendUser): Promise<boolean> {
 export async function deleteUserFromPermit(userId: string): Promise<boolean> {
   try {
     await permit.api.users.delete(userId)
-    console.log(`User ${userId} deleted from Permit.io successfully`)
+    logger.info({ userId }, 'permit: user deleted')
     return true
   } catch (error) {
-    console.error(`Error deleting user ${userId} from Permit.io:`, error)
+    logger.error({ userId, err: error }, 'permit: user delete failed')
     return false
   }
 }
@@ -69,7 +70,7 @@ export async function getUserFromPermit(userId: string) {
     const user = await permit.api.users.get(userId)
     return user
   } catch (error) {
-    console.error(`Error getting user ${userId} from Permit.io:`, error)
+    logger.error({ userId, err: error }, 'permit: user get failed')
     return null
   }
 }
@@ -93,10 +94,16 @@ export async function syncServiceTokenToPermit(
       role: permitRole,
       tenant: orgId,
     })
-    console.log(`Service token ${tokenId} synced to Permit.io with role ${permitRole} in org ${orgId}`)
+    logger.info(
+      { tokenId, permitRole, orgId },
+      'permit: service token synced and role assigned'
+    )
     return true
   } catch (error) {
-    console.error(`Error syncing service token ${tokenId} to Permit.io:`, error)
+    logger.error(
+      { tokenId, permitRole, orgId, err: error },
+      'permit: service token sync failed'
+    )
     return false
   }
 }
@@ -116,10 +123,16 @@ export async function removeServiceTokenFromPermit(
       role: permitRole,
       tenant: orgId,
     })
-    console.log(`Service token ${tokenId} removed from Permit.io (role ${permitRole}) in org ${orgId}`)
+    logger.info(
+      { tokenId, permitRole, orgId },
+      'permit: service token role unassigned'
+    )
     return true
   } catch (error) {
-    console.error(`Error removing service token ${tokenId} from Permit.io:`, error)
+    logger.error(
+      { tokenId, permitRole, orgId, err: error },
+      'permit: service token removal failed'
+    )
     return false
   }
 }
@@ -133,10 +146,10 @@ export async function updateUserInPermit(
 ): Promise<boolean> {
   try {
     await permit.api.users.update(userId, updates)
-    console.log(`User ${userId} updated in Permit.io successfully`)
+    logger.info({ userId }, 'permit: user updated')
     return true
   } catch (error) {
-    console.error(`Error updating user ${userId} in Permit.io:`, error)
+    logger.error({ userId, err: error }, 'permit: user update failed')
     return false
   }
 }

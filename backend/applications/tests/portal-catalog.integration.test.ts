@@ -23,7 +23,9 @@ const PORT = parseInt(process.env.DB_PORT || '5432')
 const USER = process.env.DB_USER || 'fuzeinfra'
 const PASSWORD = process.env.DB_PASSWORD || 'fuzeinfra_secure_password'
 const DB = 'fuzefront_apps_catalog_jest'
-const JWT_SECRET = 'portal-catalog-test-secret'
+// Test-only signing secret (never a production credential); overridable via
+// TEST_JWT_SECRET so the literal is an obviously fake fallback.
+const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-portal-catalog'
 
 async function pgReachable(): Promise<boolean> {
   const c = new Client({ host: HOST, port: PORT, user: USER, password: PASSWORD, database: 'postgres' })

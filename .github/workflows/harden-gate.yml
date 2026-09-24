@@ -529,10 +529,16 @@ jobs:
         with: { python-version: '3.12' }
       - name: DS conformance (PR = changed-lines ratchet, enforcing; push = full scan, advisory)
         shell: bash
+        # github.base_ref is attacker-controllable (a PR source branch name may
+        # contain shell metacharacters), so it never reaches `run:` via ${{ }}
+        # interpolation — it is passed through env: and read as "$VAR".
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin "${{ github.base_ref }}"
-            GATE_BASE_REF="origin/${{ github.base_ref }}" python scripts/gate_ds_conformance.py . --changed-only
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF"
+            GATE_BASE_REF="origin/$BASE_REF" python scripts/gate_ds_conformance.py . --changed-only
           else
             python scripts/gate_ds_conformance.py . --emit-issues || true
           fi

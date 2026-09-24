@@ -53,9 +53,14 @@ const UPSTREAM_TIMEOUT_MS = parseInt(
 function safeForLog(value: unknown): string {
   return (
     String(value)
-      // Control characters (incl. CR/LF) -> no forged log lines.
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\x00-\x1f\x7f]/g, ' ')
+      // CR/LF first, as two single-character global replaces: CodeQL's
+      // js/log-injection barrier only matches a global replace whose pattern
+      // has a constant matched string, so the character-class sweep below —
+      // which does strip these same characters — is not recognized on its own.
+      .replace(/\r/g, ' ')
+      .replace(/\n/g, ' ')
+      // Remaining control characters -> no forged log lines.
+      .replace(/\p{Cc}/gu, ' ')
       // Format specifiers -> printed literally instead of consumed by console.
       .replace(/%/g, '%%')
       .slice(0, 200)

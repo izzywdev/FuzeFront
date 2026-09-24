@@ -13,7 +13,6 @@ import { ROOT_ORG_ID } from '../migrations/015_seed_root_platform_organization'
 import { rowToOrganization } from './organizationProvisioning'
 import { EventPublisher, defaultEventPublisher } from './eventPublisher'
 import {
-  generatePortalId,
   getPortalDomains,
   rowToPortal,
   PortalDto,
