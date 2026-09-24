@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Mail, Github, Twitter, Linkedin, Youtube } from 'lucide-react'
-import { Logo } from '@fuzefront/design-system'
+import { Logo, ListStack } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const footerNavigation = {
@@ -99,7 +99,7 @@ export const Footer: React.FC = () => {
           {/* Products */}
           <div>
             <h3 className="font-semibold text-[var(--text-primary)] mb-4 text-sm uppercase tracking-wider">Products</h3>
-            <ul className="space-y-2.5">
+            <ListStack gap="md">
               {footerNavigation.products.map((item) => (
                 <li key={item.name}>
                   <Link
@@ -111,13 +111,13 @@ export const Footer: React.FC = () => {
                   </Link>
                 </li>
               ))}
-            </ul>
+            </ListStack>
           </div>
 
           {/* Company */}
           <div>
             <h3 className="font-semibold text-[var(--text-primary)] mb-4 text-sm uppercase tracking-wider">Company</h3>
-            <ul className="space-y-2.5">
+            <ListStack gap="md">
               {footerNavigation.company.map((item) => (
                 <li key={item.name}>
                   <Link
@@ -129,13 +129,13 @@ export const Footer: React.FC = () => {
                   </Link>
                 </li>
               ))}
-            </ul>
+            </ListStack>
           </div>
 
           {/* Legal */}
           <div>
             <h3 className="font-semibold text-[var(--text-primary)] mb-4 text-sm uppercase tracking-wider">Legal</h3>
-            <ul className="space-y-2.5">
+            <ListStack gap="md">
               {footerNavigation.legal.map((item) => (
                 <li key={item.name}>
                   <Link
@@ -147,13 +147,13 @@ export const Footer: React.FC = () => {
                   </Link>
                 </li>
               ))}
-            </ul>
+            </ListStack>
           </div>
 
           {/* Resources */}
           <div>
             <h3 className="font-semibold text-[var(--text-primary)] mb-4 text-sm uppercase tracking-wider">Resources</h3>
-            <ul className="space-y-2.5">
+            <ListStack gap="md">
               {footerNavigation.resources.map((item) => (
                 <li key={item.name}>
                   {item.href.startsWith('http') ? (
@@ -177,7 +177,7 @@ export const Footer: React.FC = () => {
                   )}
                 </li>
               ))}
-            </ul>
+            </ListStack>
           </div>
         </div>
 

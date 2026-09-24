@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
 import { useAnalytics } from '../contexts/AnalyticsContext'
+import { ListStack } from '@fuzefront/design-system'
 
 interface Position {
   code: string
@@ -205,27 +206,27 @@ export const CareersPage: React.FC = () => {
                       <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
                         Responsibilities
                       </h4>
-                      <ul className="space-y-1.5">
+                      <ListStack gap="sm">
                         {position.responsibilities.map((r) => (
                           <li key={r} className="text-sm text-gray-600 flex items-start gap-2">
                             <span className="w-1 h-1 rounded-full bg-primary-400 mt-2 flex-shrink-0" />
                             {r}
                           </li>
                         ))}
-                      </ul>
+                      </ListStack>
                     </div>
                     <div>
                       <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
                         Qualifications
                       </h4>
-                      <ul className="space-y-1.5">
+                      <ListStack gap="sm">
                         {position.qualifications.map((q) => (
                           <li key={q} className="text-sm text-gray-600 flex items-start gap-2">
                             <span className="w-1 h-1 rounded-full bg-primary-400 mt-2 flex-shrink-0" />
                             {q}
                           </li>
                         ))}
-                      </ul>
+                      </ListStack>
                     </div>
                   </div>
 

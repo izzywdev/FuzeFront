@@ -193,13 +193,13 @@ export const PrivacyPolicyPage: React.FC = () => {
 
         {/* Footer nav */}
         <div className="mt-16 pt-8 border-t border-gray-200 flex flex-wrap gap-4">
-          <Link to="/terms" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
+          <Link to="/terms" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
             Terms of Service
           </Link>
-          <Link to="/contact" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
+          <Link to="/contact" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
             Contact Us
           </Link>
-          <Link to="/" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
+          <Link to="/" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
             Back to Home
           </Link>
         </div>

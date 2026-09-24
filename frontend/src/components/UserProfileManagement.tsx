@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Spinner, Toggle, InfoRow, Text, FieldLabel, Stack } from '@fuzefront/design-system'
+import { Spinner, Toggle, InfoRow, Text, FieldLabel, ResponsiveGrid, Stack } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { RoleBadge } from './RoleBadge'
 
@@ -299,7 +299,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ResponsiveGrid columns={2}>
                 <div>
                   <FieldLabel htmlFor="profile-first-name" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     First Name
@@ -343,7 +343,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                     </Text>
                   )}
                 </div>
-              </div>
+              </ResponsiveGrid>
 
               <div>
                 <FieldLabel htmlFor="profile-bio" style={{ marginBlockEnd: 'var(--space-1)' }}>
@@ -368,7 +368,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ResponsiveGrid columns={2}>
                 <div>
                   <FieldLabel htmlFor="profile-timezone" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     Timezone
@@ -428,7 +428,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                     </Text>
                   )}
                 </div>
-              </div>
+              </ResponsiveGrid>
 
               <div className="text-sm text-gray-500">
                 <p>
