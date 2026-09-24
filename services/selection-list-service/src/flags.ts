@@ -85,12 +85,40 @@ function buildContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
 }
 
 /**
+ * Local/CI escape hatch: force specific flags ON where there is no Unleash to
+ * target them in (comma-separated flag keys in `FLAGS_FORCE_ON`).
+ *
+ * WHY THIS EXISTS. Every route in this service is gated behind
+ * `isSelectionListsEnabled()`, a release flag whose default is OFF and whose
+ * only source of truth is Unleash. CI has no Unleash, so the client degrades
+ * to the default and EVERY route answers 404 "Service not enabled." — which is
+ * correct behaviour, and which made the whole integration/acceptance suite
+ * unpassable by construction (134 of 148 tests failing on a service that was
+ * working exactly as designed).
+ *
+ * HARD-GATED TO NON-PRODUCTION, deliberately, so a stray env var can never
+ * light up a dark feature in prod — prod targeting is done in Unleash, never
+ * by env. This mirrors `backend/src/routes/flags.ts`'s `FLAGS_FORCE_ON`
+ * exactly, including that gate; it is the same escape hatch, applied at the
+ * service's own flag helper rather than at the host's flag route.
+ */
+function isForcedOn(key: string): boolean {
+  if (process.env.NODE_ENV === 'production') return false
+  return (process.env.FLAGS_FORCE_ON || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .includes(key)
+}
+
+/**
  * Release flag (default OFF): is the selection-list-service enabled for the
  * calling org? Pass the request context so per-org rollout targeting works.
  */
 export async function isSelectionListsEnabled(
   ctx?: Partial<FlagContext>
 ): Promise<boolean> {
+  if (isForcedOn(FLAGS.SELECTION_LISTS_SERVICE)) return true
   const client = resolveClient()
   if (!client) return false // fail-safe: release default OFF
   try {
