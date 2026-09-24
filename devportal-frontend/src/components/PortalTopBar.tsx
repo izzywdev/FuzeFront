@@ -55,7 +55,7 @@ export function PortalTopBar({ auth }: { auth: UseMyAccess }) {
               </Button>
             </div>
           ) : (
-            <Button variant="primary" size="sm" data-action="sign-in" onClick={() => { window.location.href = signInUrl() }}>
+            <Button variant="primary" size="sm" data-action="sign-in" href={signInUrl()}>
               Sign in
             </Button>
           )}
