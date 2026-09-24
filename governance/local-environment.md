@@ -51,32 +51,38 @@ order: an npm script `test:integration` or `test:e2e` in `package.json` → a
 
 ## Current state in FuzeFront (measured 2026-09-23, supersedes 2026-08-27)
 
-- **Present (devops-engineer half, FuzeFront#1096)**: `docker-compose.consumer-test.yml`
-  + `versions.env` now exist at repo root — the bounded local-up: `postgres`
-  (real base service) plus the mock matrix (`mailhog`, `permit-pdp-test` in
-  offline mode, `stripe-mock`, `mock-llm`), each addressed by container name on
-  the `consumer-test` network and published on prod-parity host ports.
-  Adapted from `docker-compose.test.yml` (the PR-level harness) per the
-  contract above — container-name addressing instead of host-remapped ports.
-  `redis`/`kafka`/`chromadb` are deliberately deferred: neither suite below
-  exercises them yet, and including them would risk `nightly-integration.yml`'s
-  180s `--wait-timeout` (`docker compose up --wait` blocks on every declared
-  service's healthcheck, not just the ones a given suite needs) for no benefit
-  — add one when a suite actually needs it.
-- **A wired `test:integration` suite is proposed, not yet merged**: PR #1159
-  adds root `"test:integration": "node scripts/test-integration.mjs"`
-  (orchestrating backend's `auth`/`apps`/`permissions` integration tests and
-  billing-service's DB-backed invoice-store suite) — that is the
-  `test-engineer` half of #1096. Until it merges, the npm branch of the
-  detection order above still finds nothing on `master`, so
-  `nightly-integration.yml`'s detector — which requires **both** the compose
-  file **and** a suite — still correctly no-ops green: the compose file alone
-  does not flip it on. Once both this PR and #1159 are merged, both
-  conditions will be satisfied together.
-- **`nightly-integration.yml` now bridges container-name addressing to the
+- **Present (devops-engineer half, FuzeFront#1096, #1164)**:
+  `docker-compose.consumer-test.yml` + `versions.env` now exist at repo root —
+  the bounded local-up: `postgres` (real base service) plus the mock matrix
+  (`mailhog`, `permit-pdp-test` in offline mode, `stripe-mock`, `mock-llm`),
+  each addressed by container name on the `consumer-test` network and
+  published on prod-parity host ports. Adapted from `docker-compose.test.yml`
+  (the PR-level harness) per the contract above — container-name addressing
+  instead of host-remapped ports. `redis`/`kafka`/`chromadb` are deliberately
+  deferred: neither suite below exercises them yet, and including them would
+  risk `nightly-integration.yml`'s 180s `--wait-timeout` (`docker compose up
+  --wait` blocks on every declared service's healthcheck, not just the ones a
+  given suite needs) for no benefit — add one when a suite actually needs it.
+- **Present (test-engineer half, FuzeFront#1096, #1159)**: root `package.json`
+  now declares `"test:integration": "node scripts/test-integration.mjs"`, so
+  the npm branch of the detection order above matches. That script
+  orchestrates the real suites that already exist: backend's
+  `auth`/`apps`/`permissions` integration tests (`backend/package.json`
+  `test:integration`, DB-required, same as `ci.yml`'s `integration-tests` job)
+  and billing-service's DB-backed invoice-store + keyset-pagination-walk suite
+  (`services/billing-service/tests/integration/invoices.integration.test.ts`,
+  now wired to its own `test:integration` script; self-skips with a stated
+  reason when `DATABASE_URL` is unreachable).
+- **Both halves now landed together**: with the compose file/`versions.env`
+  (#1164) and the `test:integration` entry point (#1159) merged on the same
+  branch, `nightly-integration.yml`'s detector — which requires **both** the
+  compose file **and** a suite — has both conditions satisfied at once for the
+  first time, so the job stops no-op'ing green and actually stands up the
+  stack and runs the suite on its next scheduled/dispatched run.
+- **`nightly-integration.yml` bridges container-name addressing to the
   runner**: the suite runs as a plain process on the GitHub-hosted runner, not
   inside a container on the `consumer-test` network, so it cannot resolve
-  `postgres`/`permit-pdp-test` by container-name DNS. A new step exports
+  `postgres`/`permit-pdp-test` by container-name DNS. A step exports
   `DB_HOST=localhost` / `PERMIT_PDP_URL=http://localhost:7000` (the published
   host ports) after `docker compose up --wait` succeeds, so
   `scripts/test-integration.mjs`'s container-name-addressed defaults still
@@ -86,9 +92,11 @@ order: an npm script `test:integration` or `test:e2e` in `package.json` → a
   failure, teardown-always, the autofix loop-guard).
 - **Not covered by this pass**: the no-prod-egress boundary check
   (`local-env-verifier` scope) — nobody has stood the stack up and confirmed no
-  real external host is contacted; this repo's sandbox has no Docker daemon
+  real external host is contacted; neither PR's sandbox had a Docker daemon
   available to `docker compose up` the stack, so that verification is
-  explicitly deferred, not claimed here.
+  explicitly deferred, not claimed here. The first real exercise will be
+  `nightly-integration.yml`'s next scheduled/dispatched run now that both
+  halves are on `master`.
 
 ## Ratchet plan
 
