@@ -46,6 +46,10 @@
       "sourcePath": "components/core/IconButton.jsx"
     },
     {
+      "name": "Text",
+      "sourcePath": "components/core/Text.jsx"
+    },
+    {
       "name": "DataTable",
       "sourcePath": "components/data/DataTable.jsx"
     },
@@ -104,6 +108,10 @@
     {
       "name": "CodeField",
       "sourcePath": "components/forms/CodeField.jsx"
+    },
+    {
+      "name": "FieldLabel",
+      "sourcePath": "components/forms/FieldLabel.jsx"
     },
     {
       "name": "FieldStatus",

@@ -40,7 +40,7 @@ grant instead of joining the shared-token pool.
    it into logs.** How a consumer's `client_id` + sealed `client_secret` flows
    into its namespace as a SealedSecret is documented in FuzeInfra's
    `credential-handoff.json` — that mechanism lives in FuzeInfra and any change
-   to it must be delegated via `@claude`, never edited from this repo.
+   to it must be delegated via `@fuze`, never edited from this repo.
 
 2. **Grant the Permit invoke permission** for the specific endpoint this service
    is allowed to call:
@@ -174,5 +174,5 @@ pattern documented in
   ChromaDB tenant tokens) — #648 explicitly defers these to "a later pass once
   the pattern is proven".
 - **FuzeInfra's `credential-handoff.json`** — owned by FuzeInfra; any change
-  needed there is delegated via `@claude` in the PR that actually onboards a
+  needed there is delegated via `@fuze` in the PR that actually onboards a
   consumer, never edited from this repo.
