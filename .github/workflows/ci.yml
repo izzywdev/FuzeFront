@@ -817,9 +817,22 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies (root workspaces)
-        # Root install builds @fuzefront/core's sqlite3 devDependency (the unit
-        # tests' in-memory DB) and links the workspaces.
+        # Root install links the workspaces, but does NOT build sqlite3's
+        # native addon: npm's install-scripts trust gate skips lifecycle
+        # scripts for packages that aren't on an allowlist (see the next
+        # step), so a plain `npm ci` leaves sqlite3 without its binding.
         run: npm ci
+
+      - name: Rebuild sqlite3 native module (@fuzefront/core)
+        # Without this, tests/events/outbox.test.ts (the pre-existing
+        # sqlite/in-memory-DB unit suite that this job is the first to run in
+        # CI) fails every test with "Cannot find module 'sqlite3' from
+        # '.../knex/lib/dialects/sqlite3/index.js'" before any real
+        # Postgres/Kafka assertion runs. `npm rebuild` explicitly invokes the
+        # package's install script (prebuild-install/node-gyp), bypassing the
+        # install-scripts allowlist gate that silently no-ops it during `npm
+        # ci`.
+        run: npm rebuild sqlite3 --workspace=@fuzefront/core
 
       - name: Build @fuzefront/shared kafka barrel
         # @fuzefront/core resolves @fuzefront/shared/kafka from its built dist/
