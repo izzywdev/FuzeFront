@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
+import { IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -42,7 +43,7 @@ export const PressPage: React.FC = () => {
             gradient entirely instead of layering. */}
         <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
@@ -55,14 +56,16 @@ export const PressPage: React.FC = () => {
               News, announcements, and resources for journalists and media covering FuzeOne.
             </p>
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Press releases */}
       <section className="py-24 bg-white">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="4xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 flex items-center gap-3">
-            <Newspaper size={24} className="text-primary-700" />
+            <IconTile tone="accent" variant="plain">
+              <Newspaper size={24} />
+            </IconTile>
             Latest news
           </h2>
           <div className="space-y-6">
@@ -79,12 +82,12 @@ export const PressPage: React.FC = () => {
               </div>
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* Fact sheet + media kit */}
       <section className="py-24 bg-secondary-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-2 gap-10">
+        <Container size="5xl" className="grid grid-cols-1 md:grid-cols-2 gap-10">
           <div>
             <h2 className="text-2xl font-heading font-bold text-gray-900 mb-6">Fact sheet</h2>
             <dl className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 shadow-soft">
@@ -123,7 +126,7 @@ export const PressPage: React.FC = () => {
               </div>
             </div>
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* Contact */}

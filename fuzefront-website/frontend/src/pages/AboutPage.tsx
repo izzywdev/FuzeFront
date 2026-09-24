@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
+import { IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -81,7 +82,7 @@ export const AboutPage: React.FC = () => {
         <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
@@ -110,12 +111,12 @@ export const AboutPage: React.FC = () => {
               </div>
             ))}
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Values */}
       <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <motion.div
             ref={valuesRef}
             variants={stagger}
@@ -136,12 +137,12 @@ export const AboutPage: React.FC = () => {
               )
             })}
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Leadership */}
       <section className="py-24 bg-white border-t border-secondary-100">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="4xl">
           <motion.div
             ref={leadershipRef}
             initial={{ opacity: 0, y: 20 }}
@@ -190,12 +191,12 @@ export const AboutPage: React.FC = () => {
               </motion.div>
             ))}
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* What we offer */}
       <section className="py-24 bg-secondary-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="5xl">
           <motion.div
             ref={offerRef}
             initial={{ opacity: 0, y: 20 }}
@@ -225,15 +226,15 @@ export const AboutPage: React.FC = () => {
                   variants={fadeUp}
                   className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-soft"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
-                    <Icon size={18} className="text-primary-600" />
-                  </div>
+                  <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
+                    <Icon size={18} />
+                  </IconTile>
                   <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
                 </motion.div>
               )
             })}
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* CTA */}

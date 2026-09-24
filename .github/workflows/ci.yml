@@ -9,10 +9,24 @@ on:
   release:
     types: [published]
 
+# Supersede a PR's own in-flight pipeline when a new commit lands on it.
+# Without this every push left the previous full run going: three CI/CD Pipeline
+# runs for three superseded heads of ONE pull request were observed running
+# simultaneously on 2026-09-20, each holding a runner for its whole duration.
+# Keyed by ref, so PRs never cancel each other and pushes to master never cancel
+# a release-bearing run (`cancel-in-progress` is false off pull_request).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-and-test:
     name: Lint & Test
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
 
     strategy:
       matrix:
@@ -126,6 +140,10 @@ jobs:
   identity-ui-and-security:
     name: Identity UI + Security (unit)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -191,6 +209,10 @@ jobs:
   build:
     name: Build Applications
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: lint-and-test
 
     steps:
@@ -266,6 +288,10 @@ jobs:
   chat-service-tests:
     name: Chat service (unit)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
@@ -319,6 +345,10 @@ jobs:
   notification-service-tests:
     name: Notification service (unit)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
@@ -348,6 +378,10 @@ jobs:
   selection-list-service-tests:
     name: Selection list service (unit)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     # selection-list-service is a root workspace member. Its tests mock the DB
@@ -410,6 +444,12 @@ jobs:
     # Specs: frontend/tests/selection-lists-{list-management,picker,access-control,
     #        translation-workbench}.red.spec.ts
     continue-on-error: true
+    # Backstop only — the real saving is `--retries=0` on the run step below.
+    # 155 red specs at the 30s per-test timeout, serial (workers=1 in CI), is a
+    # ~77 min worst case; this caps a pathological run without failing a healthy
+    # one. ci.yml previously set no timeout anywhere, so the ceiling was
+    # GitHub's 6-hour default.
+    timeout-minutes: 90
 
     steps:
       - name: Checkout code
@@ -515,6 +555,10 @@ jobs:
   selection-list-service-integration-tests:
     name: Selection list service (integration/acceptance)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
     continue-on-error: true
     services:
@@ -642,6 +686,10 @@ jobs:
   applications-service-tests:
     name: Applications service (unit + integration)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     # This job did not exist before. The applications-service serves /api/apps in
@@ -760,6 +808,10 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     services:
@@ -815,6 +867,10 @@ jobs:
   email-integration:
     name: Email Integration (MailHog)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
@@ -980,6 +1036,10 @@ jobs:
   contract-tests:
     name: Contract Tests (OpenAPI)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
@@ -1047,6 +1107,10 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
@@ -1148,6 +1212,10 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
     if: github.ref == 'refs/heads/master'
     permissions:
@@ -1180,6 +1248,10 @@ jobs:
   gate-selectionlists-client-drift:
     name: gate-selectionlists-client-drift
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     # No Postgres, no Node install, no npm ci — pure filesystem/text check.
 
     steps:
@@ -1194,6 +1266,10 @@ jobs:
   notify:
     name: Notify Team
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     # selection-list-service-e2e and selection-list-service-integration-tests are listed
     # in needs so notify waits for them to complete. Both are intentionally EXCLUDED from
     # the success/failure conditions below: they have continue-on-error: true and their
