@@ -37,7 +37,7 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { db } from '../config/database'
 import { authenticateToken } from '../middleware/auth'
-import { assertRefExists } from '@izzywdev/fuzefront-identity'
+import { assertRefExists, parseId, toUuid } from '@izzywdev/fuzefront-identity'
 import { isRefEnforceEnabled } from '../app-registry/flags'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 import { isPrefixedIdsEnabled } from '../identity/flags'
@@ -454,6 +454,8 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
           code: 'ORG_REF_MISSING',
         })
       }
+      // Normalize TypeID → bare UUID for all DB operations below.
+      organizationId = toUuid(parseId('organization', organizationId))
 
       const role = await getMembershipRole(userId, organizationId)
       if (role === null) {

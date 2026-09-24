@@ -26,7 +26,7 @@ import { checkAppRegistryPermission } from '../app-registry/permit'
 import { getAppRegistryEmitter } from '../app-registry/events'
 import { isV1WriteEnabled, isKafkaEmitEnabled, isRefEnforceEnabled } from '../app-registry/flags'
 import { resolvePortalCatalogContext } from '../app-registry/portalContext'
-import { assertRefExists } from '@izzywdev/fuzefront-identity'
+import { assertRefExists, parseId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 
@@ -135,7 +135,7 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     // NULL` state the visibility query used to special-case. A non-admin
     // caller omitting it is still rejected below; they must name a real org
     // they belong to.
-    const orgId = organizationId ?? (caller.isPlatformAdmin ? ROOT_ORG_ID : null)
+    let orgId = organizationId ?? (caller.isPlatformAdmin ? ROOT_ORG_ID : null)
     // release flag (default OFF): the new write surface is dark until released.
     if (!(await v1WriteGate(caller, orgId, res))) return
 
@@ -154,6 +154,13 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
           message: 'Organization not found',
           code: 'ORG_REF_MISSING',
         })
+      }
+      // FFRNT-185: normalize TypeID → bare UUID for all DB/comparison operations.
+      // parseId+toUuid handles TypeIDs; bare-UUID fallback covers ROOT_ORG_ID.
+      try {
+        orgId = toUuid(parseId('organization', orgId))
+      } catch {
+        // orgId is already a bare UUID (e.g. ROOT_ORG_ID constant) — keep as-is.
       }
     }
 
