@@ -186,6 +186,10 @@
       "sourcePath": "components/layout/SectionHead.jsx"
     },
     {
+      "name": "Wrap",
+      "sourcePath": "components/layout/Wrap.jsx"
+    },
+    {
       "name": "BottomNav",
       "sourcePath": "components/mobile/BottomNav.jsx"
     },
@@ -216,6 +220,10 @@
     {
       "name": "MenuItem",
       "sourcePath": "components/shell/MenuItem.jsx"
+    },
+    {
+      "name": "NavLink",
+      "sourcePath": "components/shell/NavLink.jsx"
     },
     {
       "name": "Tabs",

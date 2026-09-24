@@ -6,6 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
+import { Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -183,13 +184,13 @@ function IndustrySection({ industry }: { industry: Industry }) {
 
         <div>
           <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Recommended products</h4>
-          <div className="flex flex-wrap gap-2">
+          <Wrap gap={2}>
             {industry.products.map((product) => (
               <span key={product} className="px-3 py-1 bg-secondary-100 text-secondary-700 rounded-full text-xs font-medium">
                 {product}
               </span>
             ))}
-          </div>
+          </Wrap>
         </div>
       </div>
     </motion.div>

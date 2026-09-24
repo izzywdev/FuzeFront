@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, ChevronDown, ExternalLink } from 'lucide-react'
-import { Logo } from '@fuzefront/design-system'
+import { Menu, X } from 'lucide-react'
+import { Logo, NavLink as DSNavLink } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const productLinks = [
@@ -49,7 +49,6 @@ const navigation = [
 // Fuze family instead of a site-local Tailwind palette.
 export const Header: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
-  const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
   const [isScrolled, setIsScrolled] = useState(false)
   const location = useLocation()
   const { trackEvent } = useAnalytics()
@@ -62,7 +61,6 @@ export const Header: React.FC = () => {
 
   useEffect(() => {
     setIsOpen(false)
-    setActiveDropdown(null)
   }, [location])
 
   const handleNavClick = (navItem: string) => {
@@ -89,90 +87,34 @@ export const Header: React.FC = () => {
             </span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center space-x-6">
+          {/* Desktop Navigation — the @fuzefront/design-system NavLink primitive
+              (#927): a real router-aware anchor with active-state underline and,
+              for Products/Industries, a hover/focus disclosure submenu. This
+              replaced a hand-rolled Tailwind implementation that duplicated
+              MenuItem's active-underline treatment without a shared component;
+              NavLink owns the hover/focus/Escape/aria-expanded wiring now. */}
+          <div className="hidden lg:flex items-center gap-1">
             {navigation.map((item) => (
-              <div
+              <DSNavLink
                 key={item.name}
-                className="relative"
-                onMouseEnter={() => item.submenu && setActiveDropdown(item.name)}
-                onMouseLeave={() => setActiveDropdown(null)}
-              >
-                {item.submenu ? (
-                  <>
-                    {/* Active-page indicator: --accent-color as the TEXT color at this
-                        weight/size only clears ~4:1 against --bg-secondary (needs 4.5:1)
-                        — caught by e2e/contrast.spec.ts. Keep the text on the always-safe
-                        --text-primary and carry the accent as an underline instead. */}
-                    <Link
-                      to={item.href}
-                      className={`flex items-center space-x-1 font-medium transition-colors duration-200 ${
-                        location.pathname.startsWith(item.href)
-                          ? 'text-[var(--text-primary)] underline decoration-[var(--accent-color)] decoration-2 underline-offset-8'
-                          : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                      }`}
-                      onClick={() => handleNavClick(item.name)}
-                    >
-                      <span>{item.name}</span>
-                      <ChevronDown size={14} className={`transition-transform duration-200 ${
-                        activeDropdown === item.name ? 'rotate-180' : ''
-                      }`} />
-                    </Link>
-
-                    <AnimatePresence>
-                      {activeDropdown === item.name && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 8 }}
-                          transition={{ duration: 0.15 }}
-                          className={`absolute top-full left-0 mt-2 bg-[var(--bg-tertiary)] rounded-xl shadow-[0_8px_30px_var(--shadow)] border border-[var(--border-color)] py-3 ${
-                            item.wide ? 'w-72' : 'w-56'
-                          }`}
-                        >
-                          {item.submenu.map((subItem) => (
-                            <Link
-                              key={subItem.name}
-                              to={subItem.href}
-                              className="block px-4 py-2.5 hover:bg-[var(--bg-quaternary)] transition-colors duration-150 group"
-                              onClick={() => handleNavClick(`${item.name} - ${subItem.name}`)}
-                            >
-                              <div className="text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent-color)]">
-                                {subItem.name}
-                              </div>
-                              {'desc' in subItem && (
-                                <div className="text-xs text-[var(--text-tertiary)] mt-0.5">{(subItem as { name: string; href: string; desc: string }).desc}</div>
-                              )}
-                            </Link>
-                          ))}
-                          {item.name === 'Products' && (
-                            <div className="border-t border-[var(--border-color)] mt-2 pt-2 px-4">
-                              <Link
-                                to="/products"
-                                className="text-xs font-medium text-[var(--accent-color)] hover:text-[var(--accent-hover)] flex items-center gap-1"
-                              >
-                                View all products <ExternalLink size={10} />
-                              </Link>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </>
-                ) : (
-                  <Link
-                    to={item.href}
-                    className={`font-medium transition-colors duration-200 ${
-                      location.pathname === item.href
-                        ? 'text-[var(--text-primary)] underline decoration-[var(--accent-color)] decoration-2 underline-offset-8'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                    }`}
-                    onClick={() => handleNavClick(item.name)}
-                  >
-                    {item.name}
-                  </Link>
-                )}
-              </div>
+                as={Link}
+                to={item.href}
+                submenuAs={Link}
+                label={item.name}
+                active={
+                  item.submenu
+                    ? location.pathname.startsWith(item.href)
+                    : location.pathname === item.href
+                }
+                onClick={() => handleNavClick(item.name)}
+                submenu={item.submenu?.map((subItem) => ({
+                  key: subItem.href,
+                  label: subItem.name,
+                  to: subItem.href,
+                  description: 'desc' in subItem ? subItem.desc : undefined,
+                  onClick: () => handleNavClick(`${item.name} - ${subItem.name}`),
+                }))}
+              />
             ))}
           </div>
 
