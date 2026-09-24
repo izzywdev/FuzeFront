@@ -76,7 +76,7 @@ precedent all exist — the gaps are per-domain bootstrapping and de-branding, n
    lockstep.
 6. **Same-origin infra under the new domain.** The locked domain's ingress must replicate the nginx
    `/api | /chat-api | /socket.io` proxying (plus TLS + Cloudflare tunnel route) so authN/authZ/
-   billing/notifications/sockets keep working transparently. This is a **FuzeInfra `@claude`
+   billing/notifications/sockets keep working transparently. This is a **FuzeInfra `@fuze`
    delegation**, not a change in this repo.
 
 ### Decisions (defaults — flagged for owner review)
@@ -108,7 +108,7 @@ Browser at www.fuzesocial.com ──▶ same-origin FuzeFront shell (single shar
    boot: window.location.host ──▶ GET /api/v1/app-registry  (resolve app where manifest.routing.host == host)
    render: ONLY that product's white-label surface  (branding from manifest.branding)
            NO launcher · NO org switcher · NO return-to-portal · NO FuzeFront wordmark
-        │  same-origin ▼  (locked domain's ingress replicates nginx /api · /chat-api · /socket.io — FuzeInfra @claude)
+        │  same-origin ▼  (locked domain's ingress replicates nginx /api · /chat-api · /socket.io — FuzeInfra @fuze)
    authN · authZ · billing / payments · notifications · sockets · app-registry     (unchanged, hidden)
 
 Mobile: ONE signed TWA APK per locked product  (the shopify-nav precedent), driven off manifest.native
@@ -155,7 +155,7 @@ gate** attaches here (see below). Deliverables:
 4. **Design-review gate.** Per `CLAUDE.md` §"Mobile design-review gate", produce PenPot frames (or the
    static-HTML fallback at 375 px) of (a) the white-label **login** on a locked domain and (b) the
    locked **product shell** (no launcher / no wordmark), open a GitHub Issue labeled **`design-review`**
-   (`design-review-notify.yml` fires the Telegram notice), and wait for `@claude approve` before any
+   (`design-review-notify.yml` fires the Telegram notice), and wait for `@fuze approve` before any
    Phase-1 UI code. The frames + `manifest.json` `testHooks` become the pre-prod Playwright target.
 
 PR = the gate. Amend this PR if implementation proves the contract wrong — never diverge from it.
@@ -195,11 +195,11 @@ Fan out, all gated on the Phase-0 contract.
   (today `infra` documents `auth | billing | api | deployOnFuzeInfra`; confirm sockets/notifications
   are covered or add explicit flags in Phase 0).
 
-**`devops-engineer`** — **delegate to FuzeInfra via `@claude`** (never edit FuzeInfra or operate the
+**`devops-engineer`** — **delegate to FuzeInfra via `@fuze`** (never edit FuzeInfra or operate the
 cluster from here)
 - Per-locked-domain ingress that replicates `frontend/nginx.conf`'s `/api | /chat-api | /socket.io`
   proxy rules + TLS + the Cloudflare tunnel route, so same-origin infra works under the new host. Open
-  a cross-repo `@claude` issue on FuzeInfra with the host list + acceptance criteria.
+  a cross-repo `@fuze` issue on FuzeInfra with the host list + acceptance criteria.
 
 **`test-engineer`** (independent) — contract/integration vs the frozen spec
 - `mode: locked` manifest validation (host + branding required); host-resolution correctness (right
@@ -256,7 +256,7 @@ criterion (retire once the first locked product — FuzeSocial — is GA on its 
 - **`master` is deploy-on-push + `required_signatures`.** Land every implementation PR via a **signed
   squash-merge in a deploy window**; never hand-deploy; prod is GitOps. This *design doc* PR is
   docs-only and carries no deploy risk.
-- **Per-domain TLS / ingress / Cloudflare tunnel are FuzeInfra `@claude` delegations** — never edited
+- **Per-domain TLS / ingress / Cloudflare tunnel are FuzeInfra `@fuze` delegations** — never edited
   or operated from this repo.
 - **White-label billing depth is an open product decision.** "Billing/payments served behind the
   scenes" still raises *whose brand* appears on the Stripe checkout / invoice / customer portal. Fully
