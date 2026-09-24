@@ -25,6 +25,11 @@ COPY packages/identity/package.json ./packages/identity/
 # installs from its OWN lockfile per the note above, so its manifest must be
 # copied here explicitly like identity's, in EVERY stage that installs.
 COPY packages/auth/package.json ./packages/auth/
+# Same shape again for @fuzefront/shared (file:../../shared) — src/events/
+# consumer.ts imports @fuzefront/shared/kafka for the identity lifecycle
+# consumers. Manifest must be present in EVERY stage that installs, or npm
+# creates a dangling symlink exactly as the identity note above describes.
+COPY shared/package.json ./shared/
 COPY services/config-service/package.json services/config-service/package-lock.json ./services/config-service/
 
 RUN cd services/config-service && npm ci --omit=dev --ignore-scripts
@@ -34,6 +39,11 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
+# Same shape again for @fuzefront/shared (file:../../shared) — src/events/
+# consumer.ts imports @fuzefront/shared/kafka for the identity lifecycle
+# consumers. Manifest must be present in EVERY stage that installs, or npm
+# creates a dangling symlink exactly as the identity note above describes.
+COPY shared/package.json ./shared/
 COPY services/config-service/package.json services/config-service/package-lock.json ./services/config-service/
 
 RUN cd services/config-service && npm ci --ignore-scripts
@@ -41,6 +51,7 @@ RUN cd services/config-service && npm ci --ignore-scripts
 # Copy source
 COPY packages/identity/ ./packages/identity/
 COPY packages/auth/ ./packages/auth/
+COPY shared/ ./shared/
 COPY services/config-service/ ./services/config-service/
 
 # Build identity and auth first (config-service's app.ts / middleware/authz.ts
@@ -55,6 +66,15 @@ RUN cd packages/auth && npm install --ignore-scripts && npm run build
 # the build needs them; prune them here so the node_modules copied below is
 # production-only.
 RUN cd packages/auth && npm prune --omit=dev
+# @fuzefront/shared: build ONLY the kafka entrypoint (tsconfig.kafka.json).
+# `npm run build` would compile the whole package, whose React/socket.io-client
+# surface config-service neither imports nor installs types for. Mirrors
+# backend/applications/Dockerfile, which builds the same subset for the same
+# reason.
+RUN cd shared && npm install --ignore-scripts && npm run build:kafka
+# Same devDependency prune as packages/auth above: the build needs typescript,
+# the runtime needs only kafkajs + zod.
+RUN cd shared && npm prune --omit=dev
 RUN cd services/config-service && npm run build
 # tsc does NOT copy non-TS assets. runMigrations reads
 # dist/migrations/*.sql at startup; without this the pod logs
@@ -102,6 +122,15 @@ COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # "Cannot find module 'jose'" — which is exactly what happened in prod the
 # first time config-service was enabled.
 COPY --from=build /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/shared, same three-part shape as @fuzefront/auth above and for the
+# same reason: manifest (so the symlink resolves), dist (the built kafka
+# entrypoint), and node_modules (its RUNTIME deps kafkajs + zod, which
+# config-service's own lockfile records only as a link entry with no
+# transitive deps — the "Cannot find module 'jose'" failure mode above,
+# waiting to repeat itself as "Cannot find module 'kafkajs'").
+COPY --from=build /app/shared/package.json ./shared/package.json
+COPY --from=build /app/shared/dist ./shared/dist
+COPY --from=build /app/shared/node_modules ./shared/node_modules
 
 # Remove declaration files from production image
 RUN find ./services/config-service/dist -name "*.d.ts" -type f -delete
