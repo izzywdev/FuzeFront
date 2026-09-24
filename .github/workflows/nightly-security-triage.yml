@@ -1,4 +1,4 @@
-# fuze:managed template=nightly-security-triage.yml baseline=v1 digest=sha256:755ade48fa3561ceb4906064c1e80cb1870a6406760db499693fddc824a3b98e
+# fuze:managed template=nightly-security-triage.yml baseline=v1 digest=sha256:0aaab3bec6b20883e48deb3c493ea474d6eadbaf1a7bee8124fdabe1d49c8dd5
 name: Nightly Security Triage
 
 # Nightly triage of GitHub Advanced Security "Security and Quality" reports.
@@ -310,6 +310,7 @@ jobs:
           # every other fuze-code-action caller (fuze-code-review, fuze, governance-nightly …).
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           github-token: ${{ steps.identity.outputs.token }}
