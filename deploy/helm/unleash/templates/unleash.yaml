@@ -114,7 +114,7 @@ spec:
 # *.prod.fuzefront.com Cloudflare-Access zone (admin Zero-Trust). The CF tunnel
 # ingress rule (<host> -> traefik.kube-system:80) + the proxied CNAME are
 # FuzeInfra-owned (Terraform) — this Ingress only host-matches once FuzeInfra
-# has wired that (delegated @claude item — NOT done by this chart).
+# has wired that (delegated @fuze item — NOT done by this chart).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

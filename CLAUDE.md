@@ -7,13 +7,13 @@ This repo's `CLAUDE.md` **extends** the FuzeSDLC baseline. It does not duplicate
 - **Expert:** `fuzefront-expert` — consult it first on any task to load architecture/deploy/gotcha context (it advises, it does not gate or own deliverables).
 - **Manifest:** `.fuze/manifest.json` declares the instantiated agent subset, design-system base, and hardening.
 
-Read the baseline for the full governance model (3 layers, repo tiers, single-responsibility agents, contract-first fan-out, signed/merged-PR delivery, async orchestration, cross-repo `@claude` delegation). What follows is only the FuzeFront-specific overlay.
+Read the baseline for the full governance model (3 layers, repo tiers, single-responsibility agents, contract-first fan-out, signed/merged-PR delivery, async orchestration, cross-repo `@fuze` delegation). What follows is only the FuzeFront-specific overlay.
 
 ## What FuzeFront is
 
 - **Module-Federation host shell.** FuzeFront is the host/container application; consuming products and micro-frontends are federated remotes mounted into the shell. Keep the shell's shared-dependency contract (React, the design system) stable — remotes consume it.
 - **Backend:** Express + Postgres, with **Authentik** (identity/SSO) and **Permit** (authorization) for auth. The frontend talks to the API on a **same-origin API base** (no cross-origin base URL) so it works identically under local TLS and prod ingress — never hard-code an absolute API host.
-- **Runs on FuzeInfra.** Deploys to Kubernetes (kind-fuzeinfra locally / Contabo k3s prod) via Helm. Infra changes are **delegated to FuzeInfra via `@claude`** — never edit FuzeInfra or operate the cluster from here.
+- **Runs on FuzeInfra.** Deploys to Kubernetes (kind-fuzeinfra locally / Contabo k3s prod) via Helm. Infra changes are **delegated to FuzeInfra via `@fuze`** — never edit FuzeInfra or operate the cluster from here.
 
 ## Helm values hygiene — don't cast around a missing default, restore it
 
@@ -357,7 +357,7 @@ The narrow, honest exceptions, and they must be *stated* rather than assumed:
   did not ask about.** Say so in one sentence and offer it; do not silently
   widen the blast radius of a task.
 - **You are not the owner.** FuzeInfra is never edited from a consuming repo.
-  Delegate via `@claude`, with the concrete change spelled out.
+  Delegate via `@fuze`, with the concrete change spelled out.
 
 Everything else gets fixed. A finding without a fix or one of those three
 statements attached is unfinished work, not a deliverable.
