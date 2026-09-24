@@ -888,6 +888,94 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
 
+  # Event-propagation integration tests (FFRNT-175): the transactional outbox +
+  # Kafka relay exercised against a REAL Postgres AND a REAL broker — the two
+  # things the sqlite/fake-producer unit tests (backend/core/tests/events/*) can
+  # never cover: the `?::jsonb` cast + `FOR UPDATE SKIP LOCKED` claim, and
+  # actual publish → consume delivery + `<topic>.dlq` dead-lettering. Combines
+  # the Postgres service-container pattern (integration-tests job) with the
+  # docker-compose Kafka broker (email-integration job). Also runs the
+  # provisioning-service handler suite (incl. the redelivery/idempotency cases),
+  # which had no CI home before.
+  event-propagation-integration:
+    name: Event propagation (Postgres + Kafka)
+    runs-on: ubuntu-latest
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: event_propagation_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies (root workspaces)
+        # Root install links the workspaces, but does NOT build sqlite3's
+        # native addon: npm's install-scripts trust gate skips lifecycle
+        # scripts for packages that aren't on an allowlist (see the next
+        # step), so a plain `npm ci` leaves sqlite3 without its binding.
+        run: npm ci
+
+      - name: Rebuild sqlite3 native module (@fuzefront/core)
+        # Without this, tests/events/outbox.test.ts (the pre-existing
+        # sqlite/in-memory-DB unit suite that this job is the first to run in
+        # CI) fails every test with "Cannot find module 'sqlite3' from
+        # '.../knex/lib/dialects/sqlite3/index.js'" before any real
+        # Postgres/Kafka assertion runs. `npm rebuild` explicitly invokes the
+        # package's install script (prebuild-install/node-gyp), bypassing the
+        # install-scripts allowlist gate that silently no-ops it during `npm
+        # ci`.
+        run: npm rebuild sqlite3 --workspace=@fuzefront/core
+
+      - name: Build @fuzefront/shared kafka barrel
+        # @fuzefront/core resolves @fuzefront/shared/kafka from its built dist/
+        # (no moduleNameMapper), so it must be built before the core jest run.
+        run: npm run -w @fuzefront/shared build:kafka
+
+      - name: Start Kafka (KRaft) test broker
+        run: |
+          docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 300 kafka-test
+          echo "Kafka broker is healthy."
+
+      - name: Run @fuzefront/core event tests (real Postgres + real Kafka)
+        env:
+          # Gates the outbox.integration + relay.integration suites (skipped when
+          # unset). The unit suites (sqlite/fake producer) run regardless.
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/event_propagation_test
+          KAFKA_BROKERS: localhost:9094
+        run: npm run -w @fuzefront/core test
+
+      - name: Install provisioning-service deps (standalone workspace)
+        run: cd services/provisioning-service && npm ci
+
+      - name: Run provisioning-service handler tests (incl. redelivery/idempotency)
+        run: cd services/provisioning-service && npm test
+
+      - name: Dump Kafka logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs kafka-test
+
+      - name: Tear down harness
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
   # ── Tier 4: Contract ─────────────────────────────────────────────────────
   contract-tests:
     name: Contract Tests (OpenAPI)
@@ -1112,17 +1200,17 @@ jobs:
     # specs/tests are RED-by-design (TDD — implementations not yet landed). Failures there
     # must never block the gate. Once they go GREEN, add them to the conditions and
     # remove their continue-on-error flags.
-    needs: [lint-and-test, build, integration-tests, email-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, config-service-tests]
+    needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, config-service-tests]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.config-service-tests.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.config-service-tests.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.config-service-tests.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.config-service-tests.result == 'failure' }}
 
         run: |
           echo "❌ Some checks failed. Please review the logs."

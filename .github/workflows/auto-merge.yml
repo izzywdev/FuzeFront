@@ -5,13 +5,47 @@ on:
     # `closed` is required for the dispatch-release job below — it is the only
     # event that tells us a PR actually merged.
     types: [opened, synchronize, reopened, ready_for_review, closed]
-  check_suite:
-    types: [completed]
+
+# NO `check_suite: [completed]` TRIGGER — it fired constantly and could never do
+# anything. Both steps below gate on `github.event.pull_request`, which does not
+# exist in a check_suite payload (that event carries `check_suite.pull_requests[]`
+# instead), so both always skipped. The job-level `if` did NOT stop the job:
+# GitHub coerces the absent `.draft` to null and `null == false` is TRUE in an
+# expression, so the job ran, checked out the repo, skipped both steps and
+# reported success.
+#
+# Measured 2026-09-20 over 100 sampled completed runs of this workflow: 67 were
+# check_suite-triggered, ALL of them on `master`, where there is no pull request
+# to merge at all. That is ~two thirds of a workflow then at run #12,034, and it
+# was the single largest contributor to a 233-run Actions backlog.
+#
+# Nothing is lost by removing it: `gh pr merge --auto` arms PERSISTENTLY, so it
+# does not need re-triggering when checks finish — GitHub merges on its own once
+# the required checks pass.
+
+# Serialize per PR *per event action*, so a rapid push sequence cancels only its
+# own superseded arming runs.
+#
+# `github.event.action` is IN THE KEY deliberately. Without it, `closed` would
+# share a group with `synchronize`, and a push landing as a PR merges could
+# cancel the `dispatch-release` job below. That job is not incidental: this
+# workflow's own header explains that release.yml's `push: branches: [master]`
+# trigger does NOT fire after an auto-merge (GitHub suppresses push-triggered
+# workflows for GITHUB_TOKEN pushes), so the workflow_dispatch it sends is the
+# ONLY path by which a merge actually ships. Cancelling it yields a PR that
+# merges green and deploys nothing — the #400 failure mode.
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}-${{ github.event.action }}
+  cancel-in-progress: true
 
 jobs:
   auto-merge:
     name: Auto Merge PR
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1) — this workflow had none, so a
+    # hung `gh` call could pin a runner slot indefinitely. Arming a merge is a
+    # couple of API calls.
+    timeout-minutes: 10
     # Skip on `closed`: the PR is already merged/abandoned by then, and
     # `gh pr merge --auto` against it just errors.
     if: github.event.pull_request.draft == false && github.event.action != 'closed'
@@ -64,6 +98,7 @@ jobs:
   dispatch-release:
     name: Dispatch release after merge
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
     permissions:
       contents: read
