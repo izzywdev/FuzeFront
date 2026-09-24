@@ -160,7 +160,7 @@ Measured per repo:
 | FuzeDeploy | **NO** | **NO** | yes |
 
 **Hard constraint:** prod is GitOps. Per this repo's own governance, hand-deploying to prod
-is forbidden and infra changes are delegated to FuzeInfra via `@claude`. So the deliverable
+is forbidden and infra changes are delegated to FuzeInfra via `@fuze`. So the deliverable
 from here is *chart + Argo Application + image build*, and the actual rollout is a FuzeInfra
 delegation plus an Argo sync. Nobody working in this repo can complete goal 7 alone.
 
