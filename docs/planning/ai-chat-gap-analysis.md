@@ -184,7 +184,7 @@ than something to bundle into this one. The migrate Job therefore runs as the ex
 
 Ordered; 1–4 are hard blockers. **Items 4–5 of the original list are now done** (struck through).
 
-1. **LiteLLM** — land the chart in FuzeInfra (`@claude` delegation; never edit FuzeInfra from here), then
+1. **LiteLLM** — land the chart in FuzeInfra (`@fuze` delegation; never edit FuzeInfra from here), then
    re-add `deploy/argocd/applications/litellm.yaml`. Seal `LITELLM_MASTER_KEY` and the Anthropic
    provider key **on the gateway**, not on chat-service.
 2. **ChromaDB** — enable it in the FuzeInfra values for the target cluster.

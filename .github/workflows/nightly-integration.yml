@@ -5,7 +5,7 @@ name: Nightly Integration
 # consumer-test stack + external-service mocks, no prod egress) and run its integration/
 # contract suite. On failure -> Claude opens a loop-guarded DRAFT fix PR + tracking issue
 # (NEVER auto-merges). Where no suite / bounded local-up exists yet, the job no-ops GREEN
-# and files ONE idempotent @claude issue to build it (self-propagating adoption).
+# and files ONE idempotent @fuze issue to build it (self-propagating adoption).
 #
 # LLM credential (autofix job): routed through .github/actions/llm-endpoint (LiteLLM
 # in-cluster with automatic fallback to a direct vendor). Requires repo secret
@@ -20,7 +20,7 @@ on:
 permissions:
   contents: write           # open fix branches/PRs
   pull-requests: write      # draft fix PR
-  issues: write             # tracking issue + @claude build issue
+  issues: write             # tracking issue + @fuze build issue
   actions: read             # read the failed run for diagnosis
   id-token: write           # claude-code-action OIDC
 
@@ -57,7 +57,7 @@ jobs:
           if [ -z "$SUITE" ] && [ -f .fuze/manifest.json ] && grep -q '"integrationTest"' .fuze/manifest.json; then SUITE="manifest"; fi
           if [ -z "$CT" ] || [ -z "$SUITE" ]; then
             echo "ran=false" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=false" >> "$GITHUB_ENV"
-            echo "::notice title=nightly-integration::No bounded local-up (consumer-test) and/or integration suite detected — no-op green; filing/keeping the @claude build issue."
+            echo "::notice title=nightly-integration::No bounded local-up (consumer-test) and/or integration suite detected — no-op green; filing/keeping the @fuze build issue."
           else
             echo "ran=true" >> "$GITHUB_OUTPUT"
             {
@@ -114,7 +114,7 @@ jobs:
         shell: bash
         run: docker compose -f "$CT" down -v || true
 
-      - name: No suite yet — file ONE idempotent @claude build issue
+      - name: No suite yet — file ONE idempotent @fuze build issue
         if: env.SUITE_PRESENT == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,10 +122,10 @@ jobs:
         run: |
           title="Build nightly integration suite + bounded local-up"
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then echo "tracking issue #$existing already open — not re-mentioning @claude"; exit 0; fi
+          if [ -n "$existing" ]; then echo "tracking issue #$existing already open — not re-mentioning @fuze"; exit 0; fi
           gh label create integration --color 1d76db --description "nightly integration tests" 2>/dev/null || true
           gh issue create --repo "$GITHUB_REPOSITORY" --label integration --title "$title" --body "$(cat <<'EOF'
-          @claude — this repo has no nightly integration suite / bounded local-up yet, so **Nightly Integration** is a no-op here. Please build it (contract-first), per the FuzeSDLC standard, landing a **DRAFT PR** (do not merge):
+          @fuze — this repo has no nightly integration suite / bounded local-up yet, so **Nightly Integration** is a no-op here. Please build it (contract-first), per the FuzeSDLC standard, landing a **DRAFT PR** (do not merge):
 
           - **devops-engineer** — vendor FuzeInfra as a submodule; wire `docker-compose.consumer-test.yml` + `versions.env` + the external-service mock matrix (MailHog / Twilio-mock / Permit-offline / Stripe-test / Prism-MSW / LocalStack); enforce no prod egress.
           - **test-engineer** — author the integration/contract suite against that bounded stack; expose it as `test:integration` (npm) or `pytest -m integration`, or declare `integrationTest` in `.fuze/manifest.json`.
