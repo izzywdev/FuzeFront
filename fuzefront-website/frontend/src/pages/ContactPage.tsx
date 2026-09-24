@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
-import { IconTile, Container, FieldLabel } from '@fuzefront/design-system'
+import { Center, IconTile, Container, FieldLabel } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -80,11 +80,11 @@ export const ContactPage: React.FC = () => {
     <div className="bg-white pt-16">
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <Container size="7xl">
-          <motion.div
+          <Center
+            as={motion.div}
             initial={{ opacity: 0, y: 30 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8 }}
-            className="text-center"
           >
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
               Get in <span className="gradient-text">Touch</span>
@@ -92,7 +92,7 @@ export const ContactPage: React.FC = () => {
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Ready to build something amazing? Let's discuss how FuzeFront can help.
             </p>
-          </motion.div>
+          </Center>
         </Container>
       </section>
 

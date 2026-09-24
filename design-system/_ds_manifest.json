@@ -170,6 +170,10 @@
       "sourcePath": "components/layout/AuthCard.jsx"
     },
     {
+      "name": "Center",
+      "sourcePath": "components/layout/Center.jsx"
+    },
+    {
       "name": "CenteredCard",
       "sourcePath": "components/layout/CenteredCard.jsx"
     },
@@ -196,6 +200,10 @@
     {
       "name": "Stack",
       "sourcePath": "components/layout/Stack.jsx"
+    },
+    {
+      "name": "Wrap",
+      "sourcePath": "components/layout/Wrap.jsx"
     },
     {
       "name": "BottomNav",
@@ -228,6 +236,10 @@
     {
       "name": "MenuItem",
       "sourcePath": "components/shell/MenuItem.jsx"
+    },
+    {
+      "name": "NavLink",
+      "sourcePath": "components/shell/NavLink.jsx"
     },
     {
       "name": "Tabs",

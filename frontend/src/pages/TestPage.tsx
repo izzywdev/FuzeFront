@@ -1,4 +1,4 @@
-import { Stack, Text } from '@fuzefront/design-system'
+import { Wrap, Stack, Text } from '@fuzefront/design-system'
 import { PermissionGate } from '../components/PermissionGate'
 import {
   PermissionButton,
@@ -59,7 +59,7 @@ export function TestPage() {
 
           <div>
             <h3 className="text-lg font-medium mb-2">All Roles</h3>
-            <div className="flex flex-wrap gap-2">
+            <Wrap gap={2}>
               <OwnerBadge />
               <AdminBadge />
               <MemberBadge />
@@ -67,7 +67,7 @@ export function TestPage() {
               <RoleBadge role="moderator" />
               <RoleBadge role="guest" />
               <RoleBadge role="custom" />
-            </div>
+            </Wrap>
           </div>
 
           <div>
@@ -162,7 +162,7 @@ export function TestPage() {
         <h2 className="text-2xl font-semibold mb-4">Permission Buttons</h2>
 
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-4">
+          <Wrap gap={4}>
             <PermissionButton
               requiredPermission="Organization:create"
               onClick={() => alert('Creating organization...')}
@@ -184,7 +184,7 @@ export function TestPage() {
             <DeleteButton onClick={() => alert('Deleting...')}>
               Delete
             </DeleteButton>
-          </div>
+          </Wrap>
 
           <div className="mt-4">
             <PermissionButton
