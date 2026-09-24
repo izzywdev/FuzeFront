@@ -619,31 +619,9 @@ kbd,
   background-color: var(--bg-quaternary);
 }
 
-.auth-form {
-  position: relative;
-  max-width: 400px;
-  margin: 2rem auto;
-  padding: 2rem;
-  background-color: var(--bg-tertiary);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 24px 60px -24px var(--shadow);
-  overflow: hidden;
-  transition:
-    background-color 0.3s ease,
-    border-color 0.3s ease;
-}
-
-/* The card opens with the seam — the first hint of the fuse identity. */
-.auth-form::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--seam);
-}
+/* .auth-form was extracted to the design-system `AuthCard` component
+   (design-system/components/layout/AuthCard.jsx) — see #892. Removed here;
+   `.provisioning-card` below is a separate, still-in-use class. */
 
 .btn {
   padding: 0.75rem 1.5rem;

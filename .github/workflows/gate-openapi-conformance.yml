@@ -44,7 +44,8 @@ on:
     paths:
       - 'services/*/openapi.yaml'
       - 'services/*/src/**'
-      - 'governance/openapi-conformance-allowlist.txt'
+      - 'governance/openapi-exempt.txt'
+      - '.fuze/openapi-exempt.txt'
       - 'scripts/gate_openapi_conformance.py'
 
 permissions:

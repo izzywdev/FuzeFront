@@ -17,7 +17,11 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
+      # repointed by the action owner (cf. the trivy-action / kics-github-action
+      # compromises). Same SHA as .github/workflows/infra-dispatch.yml and the
+      # rest of this repo's workflows.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 2
       - name: Compute changed infra paths

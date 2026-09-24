@@ -479,7 +479,7 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async saveIntelligence(
     results: Array<{ requirement: Requirement; suggestions: Suggestion[] }>,
-    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'>
+    sync?: Pick<SyncCursor, 'sourceType' | 'sourceKey' | 'cursor'> & { tenantId?: string }
   ) {
     const client = await this.pool.connect()
     try {

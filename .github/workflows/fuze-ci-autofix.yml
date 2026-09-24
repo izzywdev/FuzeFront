@@ -61,8 +61,31 @@ permissions:
 
 jobs:
   call-autofix:
+    # TRUST BOUNDARY (semgrep workflow-run-target-code-checkout). This job runs in the
+    # `workflow_run` context, so it holds repository secrets (ANTHROPIC_API_KEY,
+    # LITELLM_FUZE_KEY, ...) and `contents: write` -- and it then checks out the
+    # triggering run's head branch and executes code from it (`uses:
+    # ./.github/actions/fuze-code-action` is resolved from the CHECKED-OUT tree). So
+    # the checked-out ref MUST be trusted code, never a fork's.
+    #
+    # Two controls, both required, neither sufficient alone:
+    #   1. The checkout below pins `repository: ${{ github.repository }}` -- the BASE
+    #      repo, never `workflow_run.head_repository`. A fork's commits are not
+    #      reachable there, so fork code cannot be fetched even if this job fires.
+    #   2. The `head_repository.full_name == github.repository` guard here stops the
+    #      job firing on a fork-originated run at all. Without it, a fork PR whose
+    #      head branch NAME collides with a real base-repo branch (`master`, or any
+    #      branch a collaborator pushed) would still start this job, which would then
+    #      check out and auto-"fix" unrelated base-repo code and push a branch on a
+    #      fork contributor's behalf with full secrets in scope. Not a code-execution
+    #      escape given (1), but wrong behaviour with a privileged token, and exactly
+    #      the confusion pwn-request bugs are built out of.
+    #
+    # Net effect: only branches inside this repository -- i.e. code pushed by someone
+    # who already has write access -- ever reach the runner with these secrets.
     if: >-
       ${{ github.event.workflow_run.conclusion == 'failure' &&
+          github.event.workflow_run.head_repository.full_name == github.repository &&
           !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-') &&
           github.event.workflow_run.head_branch != 'master' }}
     # Rewritten by the installer to this repo's ci.runner (render.py) via the same

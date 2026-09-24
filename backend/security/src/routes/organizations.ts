@@ -10,6 +10,7 @@ import {
   requireOwnership,
 } from '../middleware/permissions'
 import { db } from '../config/database'
+import { logger } from '../lib/logger'
 import { enqueueEvent } from '@fuzefront/core'
 import { TOPICS } from '@fuzefront/shared/kafka'
 import { Organization, OrganizationMembership } from '../types/shared'
@@ -244,9 +245,11 @@ router.post('/', authenticateToken, async (req: any, res) => {
     try {
       await reconcileOrganizationProvisioning(organizationId)
     } catch (error) {
-      console.error(
-        `Provisioning reconcile failed for org ${organizationId} (will self-heal):`,
-        error
+      // Structured, constant message: the org id is a bound field, never
+      // interpolated into the format string (log-injection / unsafe-formatstring).
+      logger.error(
+        { orgId: organizationId, err: error },
+        'organizations: provisioning reconcile failed (will self-heal)'
       )
     }
 
@@ -1568,7 +1571,10 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) =>
         role as 'admin' | 'member' | 'viewer'
       )
     } catch (permitErr) {
-      console.error(`Permit role update failed for membership ${memberId} (non-fatal):`, permitErr)
+      logger.error(
+        { membershipId: memberId, organizationId: id, err: permitErr },
+        'organizations: Permit role update failed (non-fatal)'
+      )
     }
 
     const flagCtxRole = { orgId: id, userId: req.user?.id }

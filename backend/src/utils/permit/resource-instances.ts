@@ -37,12 +37,17 @@ export async function createAppResourceInstance(
     }
 
     await permit.api.resourceInstances.create(resourceInstance)
-    console.log(
-      `App resource instance ${app.id} created in Permit.io for tenant ${organizationId}`
-    )
+    console.log('Permit.io: app resource instance created', {
+      appId: app.id,
+      tenant: organizationId,
+    })
     return true
   } catch (error) {
-    console.error(`Error creating app resource instance ${app.id}:`, error)
+    console.error(
+      'Permit.io: error creating app resource instance',
+      { appId: app.id },
+      error
+    )
     return false
   }
 }
@@ -57,10 +62,14 @@ export async function updateResourceInstance(
 ): Promise<boolean> {
   try {
     await permit.api.resourceInstances.update(resourceKey, updates)
-    console.log(`Resource instance ${resourceKey} updated in Permit.io`)
+    console.log('Permit.io: resource instance updated', { resourceKey })
     return true
   } catch (error) {
-    console.error(`Error updating resource instance ${resourceKey}:`, error)
+    console.error(
+      'Permit.io: error updating resource instance',
+      { resourceKey },
+      error
+    )
     return false
   }
 }
@@ -73,10 +82,14 @@ export async function deleteResourceInstance(
 ): Promise<boolean> {
   try {
     await permit.api.resourceInstances.delete(resourceKey)
-    console.log(`Resource instance ${resourceKey} deleted from Permit.io`)
+    console.log('Permit.io: resource instance deleted', { resourceKey })
     return true
   } catch (error) {
-    console.error(`Error deleting resource instance ${resourceKey}:`, error)
+    console.error(
+      'Permit.io: error deleting resource instance',
+      { resourceKey },
+      error
+    )
     return false
   }
 }
@@ -89,7 +102,11 @@ export async function getResourceInstance(resourceKey: string) {
     const instance = await permit.api.resourceInstances.get(resourceKey)
     return instance
   } catch (error) {
-    console.error(`Error getting resource instance ${resourceKey}:`, error)
+    console.error(
+      'Permit.io: error getting resource instance',
+      { resourceKey },
+      error
+    )
     return null
   }
 }
@@ -111,7 +128,8 @@ export async function listResourceInstances(
     return instances
   } catch (error) {
     console.error(
-      `Error listing resource instances for tenant ${tenant}:`,
+      'Permit.io: error listing resource instances for tenant',
+      { tenant, resourceType },
       error
     )
     return []
@@ -132,13 +150,14 @@ export async function createOrganizationResourceInstance(
     }
 
     await permit.api.resourceInstances.create(resourceInstance)
-    console.log(
-      `Organization resource instance ${organizationId} created in Permit.io`
-    )
+    console.log('Permit.io: organization resource instance created', {
+      organizationId,
+    })
     return true
   } catch (error) {
     console.error(
-      `Error creating organization resource instance ${organizationId}:`,
+      'Permit.io: error creating organization resource instance',
+      { organizationId },
       error
     )
     return false
@@ -172,9 +191,10 @@ export async function setOrganizationParent(
       object: `Organization:${parentOrgId}`,
       tenant: childOrgId,
     })
-    console.log(
-      `Org hierarchy: ${childOrgId} parent set to ${parentOrgId} in Permit.io`
-    )
+    console.log('Permit.io: org hierarchy parent set', {
+      childOrgId,
+      parentOrgId,
+    })
     return true
   } catch (error: any) {
     const msg = String(error?.message ?? '').toLowerCase()
@@ -182,7 +202,8 @@ export async function setOrganizationParent(
       return true
     }
     console.error(
-      `Error setting org parent (${childOrgId} -> ${parentOrgId}):`,
+      'Permit.io: error setting org parent',
+      { childOrgId, parentOrgId },
       error
     )
     return false
@@ -206,13 +227,15 @@ export async function assignOrgAdminRebac(
       tenant: organizationId,
       resource_instance: `Organization:${organizationId}`,
     })
-    console.log(
-      `ReBAC org-admin granted to ${userId} on Organization ${organizationId}`
-    )
+    console.log('Permit.io: ReBAC org-admin granted', {
+      userId,
+      organizationId,
+    })
     return true
   } catch (error) {
     console.error(
-      `Error granting ReBAC org-admin to ${userId} on ${organizationId}:`,
+      'Permit.io: error granting ReBAC org-admin',
+      { userId, organizationId },
       error
     )
     return false
@@ -235,12 +258,19 @@ export async function grantResourceAccess(
       tenant,
       resource_instance: resourceKey,
     })
-    console.log(
-      `Access granted to user ${userId} for resource ${resourceKey} with role ${role}`
-    )
+    console.log('Permit.io: resource access granted', {
+      userId,
+      resourceKey,
+      tenant,
+      role,
+    })
     return true
   } catch (error) {
-    console.error(`Error granting resource access:`, error)
+    console.error(
+      'Permit.io: error granting resource access',
+      { userId, resourceKey, tenant, role },
+      error
+    )
     return false
   }
 }
@@ -261,12 +291,19 @@ export async function revokeResourceAccess(
       tenant,
       resource_instance: resourceKey,
     })
-    console.log(
-      `Access revoked for user ${userId} from resource ${resourceKey}`
-    )
+    console.log('Permit.io: resource access revoked', {
+      userId,
+      resourceKey,
+      tenant,
+      role,
+    })
     return true
   } catch (error) {
-    console.error(`Error revoking resource access:`, error)
+    console.error(
+      'Permit.io: error revoking resource access',
+      { userId, resourceKey, tenant, role },
+      error
+    )
     return false
   }
 }

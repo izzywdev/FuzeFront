@@ -32,6 +32,90 @@ const API_URL = `${API_BASE_URL}/api`
 // on each page load.
 const API_DEBUG = import.meta.env.DEV
 
+// ---------------------------------------------------------------------------
+// Log redaction — never put a credential VALUE in the console.
+//
+// The DEV request/response groups below used to dump `tokenPreview` (the first
+// 20 characters of the live session JWT), the raw request body (which on
+// /auth/login is `{ email, password }` in plaintext) and the raw response body
+// (which on a successful login is `{ token, ... }`). The browser console is a
+// log sink like any other: it ends up in screen shares, bug-report screenshots
+// and extension-captured traces. Log the SHAPE, never the value.
+// ---------------------------------------------------------------------------
+
+/** Payload keys whose VALUE is a credential and must never be printed. */
+const CREDENTIAL_KEYS = new Set(
+  [
+    'password',
+    'currentpassword',
+    'newpassword',
+    'confirmpassword',
+    'token',
+    'accesstoken',
+    'access_token',
+    'refreshtoken',
+    'refresh_token',
+    'idtoken',
+    'id_token',
+    'sessiontoken',
+    'apikey',
+    'api_key',
+    'secret',
+    'clientsecret',
+    'client_secret',
+    'code',
+    'codeverifier',
+    'code_verifier',
+    'otp',
+    'totp',
+    'mfacode',
+    'recoverycode',
+  ].map(k => k.toLowerCase())
+)
+
+/** Header names that carry a credential value. */
+const CREDENTIAL_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-internal-token',
+])
+
+/**
+ * Deep-copy a request/response payload with every credential value replaced by
+ * a shape descriptor. Non-credential fields are preserved so the group is still
+ * useful for debugging.
+ */
+function redactPayload(value: unknown, depth = 0): unknown {
+  if (depth > 4 || value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(v => redactPayload(v, depth + 1))
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (CREDENTIAL_KEYS.has(k.toLowerCase())) {
+      out[k] =
+        typeof v === 'string'
+          ? `[redacted: ${v.length} chars]`
+          : v == null
+            ? v
+            : '[redacted]'
+    } else {
+      out[k] = redactPayload(v, depth + 1)
+    }
+  }
+  return out
+}
+
+/** Same idea for headers — drop the value, keep "was it present". */
+function redactHeaders(headers: unknown): unknown {
+  if (!headers || typeof headers !== 'object') return headers
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
+    out[k] = CREDENTIAL_HEADERS.has(k.toLowerCase()) ? '[redacted]' : v
+  }
+  return out
+}
+
 if (API_DEBUG) {
   console.log('🔧 API Configuration:', {
     API_BASE_URL,
@@ -111,9 +195,9 @@ api.interceptors.request.use(
         fullURL: `${config.baseURL}${config.url}`,
         timeout: config.timeout,
         hasToken: !!token,
-        tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
-        headers: config.headers,
-        data: config.data,
+        tokenLength: token ? token.length : 0,
+        headers: redactHeaders(config.headers),
+        data: redactPayload(config.data),
         timestamp: new Date().toISOString(),
       })
       console.groupEnd()
@@ -158,12 +242,13 @@ api.interceptors.response.use(
         url: response.config.url,
         method: response.config.method?.toUpperCase(),
         duration: `${duration}ms`,
-        headers: response.headers,
+        headers: redactHeaders(response.headers),
         dataKeys: response.data ? Object.keys(response.data) : 'no data',
         dataSize: JSON.stringify(response.data || {}).length + ' bytes',
         timestamp: new Date().toISOString(),
       })
-      console.log('Response Data:', response.data)
+      // Redacted: a successful /auth/login response body IS the session token.
+      console.log('Response Data:', redactPayload(response.data))
       console.groupEnd()
     }
 
@@ -184,8 +269,8 @@ api.interceptors.response.use(
       url: error.config?.url,
       method: error.config?.method?.toUpperCase(),
       duration: `${duration}ms`,
-      responseData: error.response?.data,
-      responseHeaders: error.response?.headers,
+      responseData: redactPayload(error.response?.data),
+      responseHeaders: redactHeaders(error.response?.headers),
       isNetworkError: error.code === 'NETWORK_ERROR' || !error.response,
       isTimeout: error.code === 'ECONNABORTED',
       stack: error.stack,

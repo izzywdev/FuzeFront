@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { logger } from '../../lib/logger'
 import { App } from '../../types/shared'
 
 export interface PermitResourceInstance {
@@ -37,12 +38,16 @@ export async function createAppResourceInstance(
     }
 
     await permit.api.resourceInstances.create(resourceInstance)
-    console.log(
-      `App resource instance ${app.id} created in Permit.io for tenant ${organizationId}`
+    logger.info(
+      { appId: app.id, tenant: organizationId },
+      'permit: app resource instance created'
     )
     return true
   } catch (error) {
-    console.error(`Error creating app resource instance ${app.id}:`, error)
+    logger.error(
+      { appId: app.id, tenant: organizationId, err: error },
+      'permit: app resource instance create failed'
+    )
     return false
   }
 }
@@ -57,10 +62,13 @@ export async function updateResourceInstance(
 ): Promise<boolean> {
   try {
     await permit.api.resourceInstances.update(resourceKey, updates)
-    console.log(`Resource instance ${resourceKey} updated in Permit.io`)
+    logger.info({ resourceKey, tenant }, 'permit: resource instance updated')
     return true
   } catch (error) {
-    console.error(`Error updating resource instance ${resourceKey}:`, error)
+    logger.error(
+      { resourceKey, tenant, err: error },
+      'permit: resource instance update failed'
+    )
     return false
   }
 }
@@ -73,10 +81,13 @@ export async function deleteResourceInstance(
 ): Promise<boolean> {
   try {
     await permit.api.resourceInstances.delete(resourceKey)
-    console.log(`Resource instance ${resourceKey} deleted from Permit.io`)
+    logger.info({ resourceKey }, 'permit: resource instance deleted')
     return true
   } catch (error) {
-    console.error(`Error deleting resource instance ${resourceKey}:`, error)
+    logger.error(
+      { resourceKey, err: error },
+      'permit: resource instance delete failed'
+    )
     return false
   }
 }
@@ -89,7 +100,10 @@ export async function getResourceInstance(resourceKey: string) {
     const instance = await permit.api.resourceInstances.get(resourceKey)
     return instance
   } catch (error) {
-    console.error(`Error getting resource instance ${resourceKey}:`, error)
+    logger.error(
+      { resourceKey, err: error },
+      'permit: resource instance get failed'
+    )
     return null
   }
 }
@@ -110,9 +124,9 @@ export async function listResourceInstances(
     const instances = await permit.api.resourceInstances.list(filter)
     return instances
   } catch (error) {
-    console.error(
-      `Error listing resource instances for tenant ${tenant}:`,
-      error
+    logger.error(
+      { tenant, resourceType, err: error },
+      'permit: resource instance list failed'
     )
     return []
   }
@@ -132,14 +146,15 @@ export async function createOrganizationResourceInstance(
     }
 
     await permit.api.resourceInstances.create(resourceInstance)
-    console.log(
-      `Organization resource instance ${organizationId} created in Permit.io`
+    logger.info(
+      { organizationId },
+      'permit: organization resource instance created'
     )
     return true
   } catch (error) {
-    console.error(
-      `Error creating organization resource instance ${organizationId}:`,
-      error
+    logger.error(
+      { organizationId, err: error },
+      'permit: organization resource instance create failed'
     )
     return false
   }
@@ -161,12 +176,16 @@ export async function grantResourceAccess(
       tenant,
       resource_instance: resourceKey,
     })
-    console.log(
-      `Access granted to user ${userId} for resource ${resourceKey} with role ${role}`
+    logger.info(
+      { userId, resourceKey, tenant, role },
+      'permit: resource access granted'
     )
     return true
   } catch (error) {
-    console.error(`Error granting resource access:`, error)
+    logger.error(
+      { userId, resourceKey, tenant, role, err: error },
+      'permit: resource access grant failed'
+    )
     return false
   }
 }
@@ -187,12 +206,16 @@ export async function revokeResourceAccess(
       tenant,
       resource_instance: resourceKey,
     })
-    console.log(
-      `Access revoked for user ${userId} from resource ${resourceKey}`
+    logger.info(
+      { userId, resourceKey, tenant, role },
+      'permit: resource access revoked'
     )
     return true
   } catch (error) {
-    console.error(`Error revoking resource access:`, error)
+    logger.error(
+      { userId, resourceKey, tenant, role, err: error },
+      'permit: resource access revoke failed'
+    )
     return false
   }
 }

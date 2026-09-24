@@ -1,6 +1,6 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { Caption } from '@fuzefront/design-system'
+import { Caption, Text } from '@fuzefront/design-system'
 import { PermissionGate } from './PermissionGate'
 import { useCurrentUser } from '../lib/shared'
 
@@ -57,9 +57,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           <h3 className="text-lg font-medium text-gray-900 mb-2">
             Access Denied
           </h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <Text tone="secondary" size="sm" spacing="md">
             You don't have the required permissions to access this page.
-          </p>
+          </Text>
           <div className="text-xs text-gray-400">
             {requiredRoles.length > 0 && (
               <p>Required roles: {requiredRoles.join(', ')}</p>
