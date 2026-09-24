@@ -135,7 +135,8 @@ gh secret set AZURE_SUBSCRIPTION_ID --body="your-azure-subscription-id"
 ### 14. Google Cloud Platform
 
 ```bash
-gh secret set GCP_SERVICE_ACCOUNT_KEY --body='{"type": "service_account", ...}'
+# Read the key from its file — never paste the JSON inline, it lands in shell history.
+gh secret set GCP_SERVICE_ACCOUNT_KEY --body="$(cat "$GCP_SERVICE_ACCOUNT_KEY_FILE")"
 gh secret set GCP_PROJECT_ID --body="your-gcp-project-id"
 ```
 
