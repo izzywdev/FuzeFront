@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Spinner, Toggle, InfoRow } from '@fuzefront/design-system'
+import { Spinner, Toggle, InfoRow, Text, FieldLabel } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { RoleBadge } from './RoleBadge'
 
@@ -231,7 +231,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 ? `${profile.firstName} ${profile.lastName}`
                 : profile.email}
             </h1>
-            <p className="text-gray-600">{profile.email}</p>
+            <Text tone="secondary">{profile.email}</Text>
             <div className="flex items-center space-x-2 mt-2">
               {profile.roles.map(role => (
                 <RoleBadge key={role} role={role} size="sm" variant="subtle" />
@@ -301,11 +301,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-first-name" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     First Name
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <input
+                      id="profile-first-name"
                       type="text"
                       value={formData.firstName}
                       onChange={e =>
@@ -315,18 +316,19 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       placeholder="Enter your first name"
                     />
                   ) : (
-                    <p className="text-gray-900">
+                    <Text tone="primary">
                       {profile.firstName || 'Not set'}
-                    </p>
+                    </Text>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-last-name" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     Last Name
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <input
+                      id="profile-last-name"
                       type="text"
                       value={formData.lastName}
                       onChange={e =>
@@ -336,19 +338,20 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       placeholder="Enter your last name"
                     />
                   ) : (
-                    <p className="text-gray-900">
+                    <Text tone="primary">
                       {profile.lastName || 'Not set'}
-                    </p>
+                    </Text>
                   )}
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <FieldLabel htmlFor="profile-bio" style={{ marginBlockEnd: 'var(--space-1)' }}>
                   Bio
-                </label>
+                </FieldLabel>
                 {isEditing ? (
                   <textarea
+                    id="profile-bio"
                     value={formData.bio}
                     onChange={e =>
                       setFormData({ ...formData, bio: e.target.value })
@@ -359,19 +362,20 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                     maxLength={500}
                   />
                 ) : (
-                  <p className="text-gray-900">
+                  <Text tone="primary">
                     {profile.bio || 'No bio available'}
-                  </p>
+                  </Text>
                 )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-timezone" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     Timezone
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <select
+                      id="profile-timezone"
                       value={formData.timezone}
                       onChange={e =>
                         setFormData({ ...formData, timezone: e.target.value })
@@ -385,16 +389,17 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       ))}
                     </select>
                   ) : (
-                    <p className="text-gray-900">{profile.timezone}</p>
+                    <Text tone="primary">{profile.timezone}</Text>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <FieldLabel htmlFor="profile-language" style={{ marginBlockEnd: 'var(--space-1)' }}>
                     Language
-                  </label>
+                  </FieldLabel>
                   {isEditing ? (
                     <select
+                      id="profile-language"
                       value={formData.language}
                       onChange={e =>
                         setFormData({ ...formData, language: e.target.value })
@@ -408,7 +413,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                       <option value="he">Hebrew</option>
                     </select>
                   ) : (
-                    <p className="text-gray-900">
+                    <Text tone="primary">
                       {profile.language === 'en'
                         ? 'English'
                         : profile.language === 'es'
@@ -420,7 +425,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                               : profile.language === 'he'
                                 ? 'Hebrew'
                                 : profile.language}
-                    </p>
+                    </Text>
                   )}
                 </div>
               </div>
