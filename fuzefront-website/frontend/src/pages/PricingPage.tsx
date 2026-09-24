@@ -34,7 +34,7 @@ const plans: Plan[] = [
     features: [
       'Up to 2 team members',
       'Core auth & billing',
-      'FuzeFront Platform access',
+      'FuzeFront access',
       '1 GB storage',
       'Community support',
     ],
@@ -56,7 +56,7 @@ const plans: Plan[] = [
       'Basic analytics',
       '99.9% uptime SLA',
       'Community support',
-      'FuzeFront Platform access',
+      'FuzeFront access',
       '5 GB storage',
     ],
     notIncluded: ['SSO / SAML', 'Advanced analytics', 'Custom integrations', 'API access'],
