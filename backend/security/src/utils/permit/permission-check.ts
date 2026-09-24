@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { logger } from '../../lib/logger'
 
 export interface PermissionCheck {
   user: string
@@ -25,12 +26,27 @@ export async function checkPermission(
       check.context
     )
 
-    console.log(
-      `Permission check - User: ${check.user}, Action: ${check.action}, Resource: ${check.resource.type}, Result: ${result}`
+    logger.debug(
+      {
+        userId: check.user,
+        action: check.action,
+        resourceType: check.resource.type,
+        tenant: check.resource.tenant,
+        allowed: Boolean(result),
+      },
+      'permit permission check completed'
     )
     return result
   } catch (error) {
-    console.error('Error checking permission:', error)
+    logger.error(
+      {
+        err: error,
+        userId: check.user,
+        action: check.action,
+        resourceType: check.resource.type,
+      },
+      'permit permission check failed - denying (fail closed)'
+    )
     return false // Fail safe - deny access on error
   }
 }
@@ -50,10 +66,16 @@ export async function bulkCheckPermissions(
     }))
 
     const results = await permit.bulkCheck(bulkChecks)
-    console.log(`Bulk permission check completed for ${checks.length} checks`)
+    logger.debug(
+      { checkCount: checks.length },
+      'permit bulk permission check completed'
+    )
     return results
   } catch (error) {
-    console.error('Error in bulk permission check:', error)
+    logger.error(
+      { err: error, checkCount: checks.length },
+      'permit bulk permission check failed - denying all (fail closed)'
+    )
     // Return all false for safety
     return new Array(checks.length).fill(false)
   }
@@ -151,7 +173,10 @@ export async function getUserPermissions(
     ])
     return permissions
   } catch (error) {
-    console.error(`Error getting user permissions for ${userId}:`, error)
+    logger.error(
+      { err: error, userId, organizationId },
+      'failed to get user permissions'
+    )
     return {}
   }
 }
@@ -197,7 +222,7 @@ export function requirePermission(
 
       next()
     } catch (error) {
-      console.error('Permission middleware error:', error)
+      logger.error({ err: error }, 'permission middleware error')
       return res.status(500).json({ error: 'Permission check failed' })
     }
   }

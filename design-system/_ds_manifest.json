@@ -162,6 +162,10 @@
       "sourcePath": "components/launcher/IntegrationBadge.jsx"
     },
     {
+      "name": "AuthCard",
+      "sourcePath": "components/layout/AuthCard.jsx"
+    },
+    {
       "name": "CenteredCard",
       "sourcePath": "components/layout/CenteredCard.jsx"
     },
@@ -172,6 +176,10 @@
     {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
+    },
+    {
+      "name": "Panel",
+      "sourcePath": "components/layout/Panel.jsx"
     },
     {
       "name": "SectionHead",

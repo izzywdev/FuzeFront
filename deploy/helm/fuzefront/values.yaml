@@ -1097,14 +1097,17 @@ unleash:
   # account token. The Role below grants `get` on that one secret; the
   # RoleBinding attaches it to the ARC runner SA.
   #
-  # For ARC v2 AutoscalingRunnerSet the SA name == runner set name ("fuzefront").
-  # Override serviceAccountNamespace if your runner set lives in a different
-  # namespace (e.g. "arc-runners"). Override serviceAccountName if your runner
-  # set has a different name.
+  # serviceAccountName is the ServiceAccount the runner PODS run as — NOT the
+  # scale-set / runs-on name. It is a common trap: ARC v2 does NOT make the pod
+  # SA equal the runner-set name. FuzeInfra pins every set's pods to
+  # `arc-runner-sa` in its shared runner-scale-set-values.yaml
+  # (template.spec.serviceAccountName), so that is the fleet-wide default here.
+  # Override serviceAccountNamespace if the runner set lives in a different
+  # namespace (prod: "arc-runners", set in values-prod.yaml).
   ciRunner:
     enabled: true
-    serviceAccountName: fuzefront
-    serviceAccountNamespace: ""   # defaults to the release namespace (fuzefront)
+    serviceAccountName: arc-runner-sa
+    serviceAccountNamespace: ""   # defaults to the release namespace
 
 authentik:
   enabled: true

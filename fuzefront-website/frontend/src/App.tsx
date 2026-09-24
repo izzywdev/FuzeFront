@@ -37,7 +37,16 @@ function AppLayout() {
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1">
+      {/* This site's chrome (Header/Footer) is intentionally dark and relies on
+          the DS semantic tokens' dark-theme default. Page content, in contrast,
+          is a light/white layout — pin it to the DS light theme explicitly so
+          any DS component consumed here (e.g. FieldLabel on /contact) resolves
+          --text-secondary/--text-tertiary/etc. against the light palette
+          instead of silently inheriting the dark-theme default meant for the
+          chrome. Ported from #1176 (izzywdev/FuzeFront#1176), which fixes this
+          at the root; this port makes this PR green independently of which of
+          the two merges first. */}
+      <main className="flex-1" data-theme="light">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/products" element={<ProductsPage />} />

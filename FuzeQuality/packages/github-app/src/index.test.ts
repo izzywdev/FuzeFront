@@ -12,6 +12,10 @@ const repositories = [{
   id: 'repo-1', owner: 'izzywdev', name: 'FuzeOne', defaultBranch: 'main', installationId: '42',
 }]
 
+// Test-only webhook HMAC key (never a production credential); overridable via
+// TEST_WEBHOOK_SECRET so the literal is an obviously fake fallback.
+const TEST_WEBHOOK_SECRET = process.env.TEST_WEBHOOK_SECRET ?? 'test-only-not-a-real-secret'
+
 describe('FuzeQuality GitHub App contract', () => {
   it('declares only the approved read permissions and webhook events', () => {
     expect(GITHUB_APP_PERMISSIONS).toEqual({ metadata: 'read', contents: 'read', pull_requests: 'read' })
@@ -20,11 +24,12 @@ describe('FuzeQuality GitHub App contract', () => {
 
   it('requires a correctly signed raw payload', () => {
     const payload = Buffer.from('{"ok":true}')
-    const signature = `sha256=${createHmac('sha256', 'test-secret').update(payload).digest('hex')}`
-    expect(verifyGithubWebhook(payload, signature, 'test-secret')).toBe(true)
+    const signature = `sha256=${createHmac('sha256', TEST_WEBHOOK_SECRET).update(payload).digest('hex')}`
+    expect(verifyGithubWebhook(payload, signature, TEST_WEBHOOK_SECRET)).toBe(true)
+    // Deliberately empty secret — must still fail closed.
     expect(verifyGithubWebhook(payload, signature, '')).toBe(false)
-    expect(verifyGithubWebhook(Buffer.from('{}'), signature, 'test-secret')).toBe(false)
-    expect(verifyGithubWebhook(payload, 'sha1=nope', 'test-secret')).toBe(false)
+    expect(verifyGithubWebhook(Buffer.from('{}'), signature, TEST_WEBHOOK_SECRET)).toBe(false)
+    expect(verifyGithubWebhook(payload, 'sha1=nope', TEST_WEBHOOK_SECRET)).toBe(false)
   })
 
   it('queues an exact revision only for a default-branch push', () => {
