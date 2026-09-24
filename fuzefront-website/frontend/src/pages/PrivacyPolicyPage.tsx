@@ -1,12 +1,12 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { IconTile, Container } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
     <div className="pt-24 pb-20 bg-white">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+      <Container size="3xl">
         {/* Header */}
         <div className="text-center mb-12">
           <IconTile tone="accent" size="lg" className="mb-5">
@@ -204,7 +204,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             Back to Home
           </Link>
         </div>
-      </div>
+      </Container>
     </div>
   )
 }
