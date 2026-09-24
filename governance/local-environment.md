@@ -60,7 +60,7 @@ order: an npm script `test:integration` or `test:e2e` in `package.json` → a
   the detector correctly does not count it).
 - Both `gate-localup` and `nightly-integration.yml`'s detector therefore
   correctly no-op (green, not a false failure) and `nightly-integration.yml`
-  files the idempotent `@claude` tracking issue — which is FuzeFront#242.
+  files the idempotent `@fuze` tracking issue — which is FuzeFront#242.
 - **Present and correct**: the CI machinery itself (detection, bounded-wait
   hardening with `--wait-timeout` + `timeout-minutes`, diagnostic dump on
   failure, teardown-always, the autofix loop-guard). Building the actual
