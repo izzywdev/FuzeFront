@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from 'react'
 import { organizationsAPI } from '../services/api'
 import {
   useAppContext,
+  useCurrentUser,
   getPersistedActiveOrganizationId,
+  ROOT_ORG_ID,
 } from '../lib/shared'
+import { isEmployeeUser } from '../utils/employee'
 import { ProvisioningCard, ProvisioningState } from './ProvisioningCard'
 import type { Organization } from '../services/api'
 
@@ -79,6 +82,8 @@ export function WorkspaceProvisioningGate({
   children,
 }: WorkspaceProvisioningGateProps) {
   const { dispatch } = useAppContext()
+  const { user } = useCurrentUser()
+  const isEmployee = isEmployeeUser(user?.roles)
 
   const [gateState, setGateState] = useState<
     'checking' | 'provisioning' | 'ready' | 'timeout' | 'error'
@@ -107,19 +112,32 @@ export function WorkspaceProvisioningGate({
     // Only orgs the caller actually belongs to are candidates for "active" —
     // never the always-visible platform org they merely have visibility into.
     const memberOrgs = orgs.filter(isProvisionedMembership)
-    if (memberOrgs.length > 0) {
-      const personal = memberOrgs.find(o => o.type === 'personal')
+    // Non-employees cannot have ROOT_ORG_ID as their active organization
+    const eligibleOrgs = memberOrgs.filter(o => isEmployee || o.id !== ROOT_ORG_ID)
+
+    if (eligibleOrgs.length > 0) {
+      const personal = eligibleOrgs.find(o => o.type === 'personal')
       // Prefer the org the user previously selected (persisted across reloads)
       // over blindly forcing the personal org — otherwise every reload reset
       // the active org to personal and billed the wrong org. Only fall back to
       // personal — or, absent that, any other org the caller belongs to —
       // when there is no valid persisted selection.
       const persistedId = getPersistedActiveOrganizationId()
-      const persisted = persistedId
-        ? memberOrgs.find(o => o.id === persistedId)
+      const persisted = persistedId && (isEmployee || persistedId !== ROOT_ORG_ID)
+        ? eligibleOrgs.find(o => o.id === persistedId)
         : null
-      const active = persisted ?? personal ?? memberOrgs[0]
+      const active = persisted ?? personal ?? eligibleOrgs[0]
       dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: active.id })
+      try {
+        sessionStorage.setItem(READY_SESSION_KEY, '1')
+      } catch {
+        // ignore
+      }
+      stopPolling()
+      setGateState('ready')
+    } else {
+      // Non-employee with no customer orgs defaults to personal context (null)
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: null })
       try {
         sessionStorage.setItem(READY_SESSION_KEY, '1')
       } catch {

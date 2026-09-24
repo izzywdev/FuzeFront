@@ -1,4 +1,5 @@
-import { useCurrentUser, useOrganizations } from '../lib/shared'
+import { useCurrentUser, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
+import { isEmployeeUser } from '../utils/employee'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { iconGlyph, iconImageUrl, integrationTypeOf, appHref } from '../platform/appManifest'
 import type { App as RegistryApp } from '@fuzefront/app-registry-client'
@@ -9,11 +10,29 @@ import type { App as RegistryApp } from '@fuzefront/app-registry-client'
  * OR it belongs to the currently active organization. Never drop a
  * platform-global app just because org hydration hasn't finished yet /
  * `activeOrganizationId` is momentarily null — that was the crux of BUG 2.
+ *
+ * Apps that declare requiresOrgContext/visibility='organization' or the
+ * internal executive app are excluded in personal context or for non-employees
+ * on the root organization.
  */
 export function isAppVisibleForOrg(
-  app: Pick<RegistryApp, 'organizationId'>,
-  activeOrganizationId: string | null
+  app: Pick<RegistryApp, 'organizationId'> & { slug?: string; manifest?: any },
+  activeOrganizationId: string | null,
+  isEmployee: boolean = false
 ): boolean {
+  if (app.slug === 'executive') {
+    if (activeOrganizationId === null) return false
+    if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
+    return true
+  }
+
+  const orgRequired =
+    app.manifest?.requiresOrgContext === true ||
+    app.manifest?.visibility === 'organization'
+  if (activeOrganizationId === null && orgRequired) {
+    return false
+  }
+
   return (
     app.organizationId === null ||
     app.organizationId === undefined ||
@@ -34,6 +53,7 @@ function integrationIcon(type: string) {
 function DashboardPage() {
   const { user } = useCurrentUser()
   const { activeOrganizationId } = useOrganizations()
+  const isEmployee = isEmployeeUser(user?.roles)
   // BUG 2 root cause: this page previously called the legacy `fetchApps()`
   // (`GET /apps`) instead of the same `@fuzefront/app-registry-client`
   // source (`GET /api/v1/app-registry/apps?status=activated`) the sidebar
@@ -47,7 +67,7 @@ function DashboardPage() {
   // whether org hydration has completed yet.
   const { apps: registeredApps } = useRegisteredApps()
   const allApps = registeredApps.filter(app =>
-    isAppVisibleForOrg(app, activeOrganizationId)
+    isAppVisibleForOrg(app, activeOrganizationId, isEmployee)
   )
 
   const handleAppClick = (app: RegistryApp) => {

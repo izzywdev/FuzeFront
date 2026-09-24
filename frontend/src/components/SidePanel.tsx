@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { MenuItem as DSMenuItem } from '@fuzefront/design-system'
 import { useT } from '@fuzefront/i18n'
-import { useCurrentUser, useAppContext, useOrganizations } from '../lib/shared'
+import { useCurrentUser, useAppContext, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
 import type { MenuItem } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { useActiveApp } from '../platform/useActiveApp'
@@ -215,9 +215,13 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           {apps.map(app => {
             const orgRequired = isOrgOnlyApp(app)
             const isGated = isPersonalContext && orgRequired
+            const isEmployee = isEmployeeUser(user?.roles)
+            const isExecutiveRestricted =
+              app.slug === 'executive' &&
+              (isPersonalContext || (activeOrganizationId === ROOT_ORG_ID && !isEmployee))
 
-            // If in personal context and app requires org context, omit from left side menu
-            if (isGated && (orgContextHidden || app.slug === 'executive')) {
+            // If in personal context and app requires org context, or executive is restricted, omit from left side menu
+            if (isExecutiveRestricted || (isGated && (orgContextHidden || app.slug === 'executive'))) {
               return null
             }
 
