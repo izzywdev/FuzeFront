@@ -15,11 +15,11 @@
     "setup:stripe-plans": "node scripts/setup-stripe-plans.mjs"
   },
   "dependencies": {
+    "@fuzefront/auth": "file:../../packages/auth",
     "@fuzefront/shared": "file:../../shared",
     "express": "4.19.2",
     "kafkajs": "2.2.4",
     "pg": "^8",
-    "permitio": "^2.7.4",
     "stripe": "^17",
     "zod": "3.22.4",
     "@izzywdev/fuzefront-identity": "file:../../packages/identity"

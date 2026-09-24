@@ -2,6 +2,7 @@ import { Issuer, Client, generators } from 'openid-client';
 import { db } from '../config/database';
 import { User } from '../types/shared';
 import { defaultEventPublisher } from './eventPublisher';
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity';
 
 // Neutralizes a value before it reaches a log line (CodeQL js/log-injection,
 // js/tainted-format-string). Every console.* call below uses a CONSTANT format
@@ -172,7 +173,7 @@ class OIDCService {
       } else {
         // Create new user
         const newUser = {
-          id: require('uuid').v4(),
+          id: toUuid(mintId('user')),
           email: email,
           first_name: firstName,
           last_name: lastName,

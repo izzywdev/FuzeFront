@@ -7,7 +7,7 @@
 > acceptance criteria, sub-task points in `{2,4,8}`, estimate/priority hints, labels).
 
 This is **delivery coordination only**. None of these files implement the features — each epic links to
-its GitHub issue, which is the durable `@claude` delegation thread where the actual implementation work
+its GitHub issue, which is the durable `@fuze` delegation thread where the actual implementation work
 is executed by the domain agents (`backend-engineer`, `frontend-engineer`, `billing-payments-engineer`,
 `devops-engineer`, `feature-flags-engineer`, `test-engineer`, `frontend-test-engineer`, `docs-maintainer`).
 
