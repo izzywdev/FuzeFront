@@ -162,6 +162,10 @@
       "sourcePath": "components/launcher/IntegrationBadge.jsx"
     },
     {
+      "name": "AuthCard",
+      "sourcePath": "components/layout/AuthCard.jsx"
+    },
+    {
       "name": "Center",
       "sourcePath": "components/layout/Center.jsx"
     },
