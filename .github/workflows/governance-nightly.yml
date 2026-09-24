@@ -80,7 +80,7 @@ jobs:
                re-enable auto-merge if it was dropped.
 
             3. OPEN ISSUES — drive each to a concrete next step: close ones demonstrably resolved (with
-               evidence), open a PR or delegate small actionable ones via an @claude comment with a STATE
+               evidence), open a PR or delegate small actionable ones via an @fuze comment with a STATE
                block, and summarize decision-needing ones for the human.
 
             4. DRIFT — compare .claude/agents + CLAUDE.md + the workflow stack against the expectation in
