@@ -5,6 +5,34 @@ import { ROOT_ORG_ID } from './015_seed_root_platform_organization'
  * Seed the platform root organization ADDITIVELY, and preserve the visibility
  * of the apps that are about to be backfilled onto it.
  *
+ * ── THE FILENAME IS LOAD-BEARING: THIS MUST SORT BEFORE 026 ─────────────────
+ *
+ * knex runs migrations in lexical filename order, so `025a_` is not cosmetic
+ * and renumbering this file to `028_` (where it originally shipped) makes it
+ * DEAD CODE. That is not hypothetical — it is what happened:
+ *
+ *   migration file "026_apps_organization_id_not_null.js" failed
+ *   migration failed with error: organizations.00000000-...-000000000010 (the
+ *   platform root org) does not exist yet, and 17 org-less app(s) need
+ *   backfilling to it
+ *     at Object.up (/app/backend/dist/migrations/026_apps_organization_id_not_null.js:59:19)
+ *
+ * 026 REQUIRES the row this migration creates, and 026 sorts first. The chain
+ * therefore died at 026 on every boot and never reached 028. Because knex does
+ * not record a migration that throws, there was no self-healing path: the
+ * backend crash-looped (694 restarts, measured 2026-09-20), so the only Ready
+ * pod stayed on a pre-seed image, so the seed never ran, so 026 kept throwing.
+ *
+ * Shipping the fix AFTER the thing it fixes is the whole bug. It is also
+ * exactly the failure this migration was written to end, one migration tree
+ * over: applications-service's own 011_apps_organization_id_not_null throws
+ * the same way for the same missing row. Both unblock the moment this one
+ * commits, and neither can unblock while this sorts last.
+ *
+ * If you add another migration that depends on ROOT_ORG_ID existing, it goes
+ * AFTER this file. If you add one this depends on, it goes before. Do not
+ * renumber this to tidy the sequence.
+ *
  * ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
  *
  * Migration 015 seeds `organizations.ROOT_ORG_ID`, but it has legitimate
@@ -119,7 +147,7 @@ export async function up(knex: Knex): Promise<void> {
 
   if (root) {
     // eslint-disable-next-line no-console
-    console.log(`[028] root platform organization ${ROOT_ORG_ID} already present — not re-seeding`)
+    console.log(`[025a] root platform organization ${ROOT_ORG_ID} already present — not re-seeding`)
   } else {
     const owner =
       (await knex('users').where({ id: PLATFORM_REGISTRAR_ID }).first()) ??
@@ -131,7 +159,7 @@ export async function up(knex: Knex): Promise<void> {
       // error, and specifically not a throw — a throw here is the crashloop
       // this migration exists to end.
       // eslint-disable-next-line no-console
-      console.log('[028] no users yet — root organization deferred to 015/ensureRootPortal()')
+      console.log('[025a] no users yet — root organization deferred to 015/ensureRootPortal()')
       return
     }
 
@@ -144,14 +172,14 @@ export async function up(knex: Knex): Promise<void> {
       }
       // eslint-disable-next-line no-console
       console.log(
-        `[028] slug '${candidate}' is held by organization ${holder.id} (type=${holder.type ?? '<none>'}) — trying the next candidate`
+        `[025a] slug '${candidate}' is held by organization ${holder.id} (type=${holder.type ?? '<none>'}) — trying the next candidate`
       )
     }
 
     if (!slug) {
       // eslint-disable-next-line no-console
       console.error(
-        `[028] every candidate slug is taken (${CANDIDATE_SLUGS.join(', ')}) — NOT seeding ${ROOT_ORG_ID}. ` +
+        `[025a] every candidate slug is taken (${CANDIDATE_SLUGS.join(', ')}) — NOT seeding ${ROOT_ORG_ID}. ` +
           'Free one of those slugs, or add a candidate, then re-run. Deliberately not generating a ' +
           'random slug: the root org is a durable identity and its slug should be reviewable in the diff.'
       )
@@ -168,7 +196,7 @@ export async function up(knex: Knex): Promise<void> {
          (id, name, slug, parent_id, owner_id, type, settings, metadata, is_active, provisioning_state)
        VALUES (?, 'FuzeFront', ?, NULL, ?, 'platform', '{}'::jsonb, ?::jsonb, true, 'pending')
        ON CONFLICT (id) DO NOTHING`,
-      [ROOT_ORG_ID, slug, owner.id, JSON.stringify({ root: true, seededBy: '028', additive: true })]
+      [ROOT_ORG_ID, slug, owner.id, JSON.stringify({ root: true, seededBy: '025a', additive: true })]
     )
 
     // Assert the postcondition; never infer it from the insert's rowCount.
@@ -176,7 +204,7 @@ export async function up(knex: Knex): Promise<void> {
     if (!root) {
       // eslint-disable-next-line no-console
       console.error(
-        `[028] FAILED to seed root platform organization ${ROOT_ORG_ID} under slug '${slug}' — ` +
+        `[025a] FAILED to seed root platform organization ${ROOT_ORG_ID} under slug '${slug}' — ` +
           'the row is still absent after the INSERT. Skipping the owner-membership insert, which ' +
           'would otherwise violate organization_memberships_organization_id_foreign.'
       )
@@ -184,7 +212,7 @@ export async function up(knex: Knex): Promise<void> {
     }
 
     // eslint-disable-next-line no-console
-    console.log(`[028] created root platform organization ${ROOT_ORG_ID} with slug '${slug}'`)
+    console.log(`[025a] created root platform organization ${ROOT_ORG_ID} with slug '${slug}'`)
 
     await knex.raw(
       `INSERT INTO organization_memberships
@@ -229,7 +257,7 @@ export async function up(knex: Knex): Promise<void> {
 
   if (rows.length === 0) {
     // eslint-disable-next-line no-console
-    console.log('[028] no org-less apps needed a visibility pin')
+    console.log('[025a] no org-less apps needed a visibility pin')
     return
   }
 
@@ -237,7 +265,7 @@ export async function up(knex: Knex): Promise<void> {
   // not reversible from the resulting state — see down().
   // eslint-disable-next-line no-console
   console.log(
-    `[028] pinning ${rows.length} org-less app(s) to public, preserving the access they already ` +
+    `[025a] pinning ${rows.length} org-less app(s) to public, preserving the access they already ` +
       `have via the orWhereNull branch: ` +
       rows.map(r => `${r.label}(was ${r.visibility ?? 'null'})`).join(', ')
   )
