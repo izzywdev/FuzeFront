@@ -53,3 +53,21 @@ describe("<Input> password reveal toggle", () => {
     expect(field).toHaveValue("abc");
   });
 });
+
+describe("<Input> label", () => {
+  it("accepts a node label (e.g. an inline annotation) and still associates it with the field", () => {
+    render(
+      <Input
+        label={
+          <>
+            Slug
+            <span> (auto-derived)</span>
+          </>
+        }
+        defaultValue="my-org"
+      />
+    );
+    expect(screen.getByLabelText(/Slug/)).toHaveValue("my-org");
+    expect(screen.getByText("(auto-derived)", { exact: false })).toBeInTheDocument();
+  });
+});
