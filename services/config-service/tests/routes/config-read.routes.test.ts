@@ -27,7 +27,9 @@ import { HistoryRepository, ListHistoryArgs, ListHistoryResult } from '../../src
 import { ConfigHistoryEntry, ConfigValue, KeyDefinition, Namespace, NamespaceEntityId, Scope } from '../../src/types';
 import { decodeCursor, encodeCursor } from '../../src/pagination';
 
-const JWT_SECRET = 'test-secret-ffrnt-157-routes';
+// Test-only signing secret (never a production credential); overridable via
+// TEST_JWT_SECRET so the literal is an obviously fake fallback.
+const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-ffrnt-157-routes';
 process.env.JWT_SECRET = JWT_SECRET;
 
 function token(overrides: Record<string, unknown> = {}): string {

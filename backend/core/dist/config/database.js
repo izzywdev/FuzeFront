@@ -220,11 +220,26 @@ async function ensureDatabase() {
         await client.end();
     }
 }
+const STUCK_MIGRATIONS_LOCK_RE = /migration.*(table|lock).*(already )?locked/i;
 async function runMigrations(options = {}) {
     console.log('🚀 Running database migrations...');
     const migrationDb = (0, knex_1.knex)(getDatabaseConfig(options));
     try {
-        const [batchNo, log] = await migrationDb.migrate.latest();
+        let migrateResult;
+        try {
+            migrateResult = await migrationDb.migrate.latest();
+        }
+        catch (error) {
+            const message = String(error?.message ?? '');
+            if (!STUCK_MIGRATIONS_LOCK_RE.test(message)) {
+                throw error;
+            }
+            console.warn('⚠️  Migrations lock appears stuck (no in-flight migration could plausibly ' +
+                'still hold it across a fresh boot) — force-freeing and retrying once:', message);
+            await migrationDb.migrate.forceFreeMigrationsLock();
+            migrateResult = await migrationDb.migrate.latest();
+        }
+        const [batchNo, log] = migrateResult;
         if (log.length === 0) {
             console.log('✅ Database is already up to date');
         }

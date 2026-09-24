@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Alert, CenteredCard } from '@fuzefront/design-system'
+import { Alert, Button, CenteredCard } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { getInvitation, acceptInvitation } from '../services/api'
 
@@ -16,6 +16,29 @@ interface OrgDetails {
   id: string
   name: string
   slug: string
+}
+
+/**
+ * Resolve a server-supplied redirect target into a URL that is safe to assign to
+ * `window.location.href`.
+ *
+ * The value reaches us inside an API response body — including an *error*
+ * response body — so it must not be treated as trusted markup or trusted code.
+ * A `javascript:` (or `data:`) URL assigned to `location.href` executes in the
+ * page, which is script injection, not navigation. Only http(s) targets are
+ * allowed through; the enrollment flow legitimately points at the Authentik
+ * issuer origin, so cross-origin http(s) must keep working. Anything else
+ * (including a malformed URL) falls back to the local login route.
+ */
+function safeRedirectUrl(raw: unknown, fallback = '/login'): string {
+  if (typeof raw !== 'string' || raw.length === 0) return fallback
+  try {
+    const url = new URL(raw, window.location.origin)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return fallback
+    return url.href
+  } catch {
+    return fallback
+  }
 }
 
 /**
@@ -69,14 +92,14 @@ function AcceptInvitePage() {
     try {
       const result = await acceptInvitation(token)
       if (result.action === 'enroll') {
-        window.location.href = result.enrollUrl
+        window.location.href = safeRedirectUrl(result.enrollUrl)
         return
       }
       setAccepted(true)
     } catch (err: any) {
       if (err.response?.status === 202) {
         // Non-authenticated path via axios (202 is not an error but some configs throw)
-        window.location.href = err.response.data?.enrollUrl || '/login'
+        window.location.href = safeRedirectUrl(err.response.data?.enrollUrl)
         return
       }
       if (err.response?.status === 403) {
@@ -109,9 +132,9 @@ function AcceptInvitePage() {
         <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
           This invitation has expired or been revoked. Please ask to be re-invited.
         </p>
-        <button className="btn btn-primary" onClick={() => navigate('/login')}>
+        <Button variant="primary" onClick={() => navigate('/login')}>
           Go to login
-        </button>
+        </Button>
       </CenteredCard>
     )
   }
@@ -122,9 +145,9 @@ function AcceptInvitePage() {
         <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>❌</p>
         <h2 style={{ margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Something went wrong</h2>
         <Alert tone="error" style={{ marginBottom: '1.5rem', textAlign: 'left' }}>{error}</Alert>
-        <button className="btn btn-primary" onClick={() => navigate('/login')}>
+        <Button variant="primary" onClick={() => navigate('/login')}>
           Go to login
-        </button>
+        </Button>
       </CenteredCard>
     )
   }
@@ -139,9 +162,9 @@ function AcceptInvitePage() {
         <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
           Your role is <strong>{invitation?.role}</strong>.
         </p>
-        <button className="btn btn-primary" onClick={() => navigate('/organizations')}>
+        <Button variant="primary" onClick={() => navigate('/organizations')}>
           Go to Organizations
-        </button>
+        </Button>
       </CenteredCard>
     )
   }
@@ -172,14 +195,9 @@ function AcceptInvitePage() {
       )}
 
       {isAuthenticated && emailMatches ? (
-        <button
-          className="btn btn-primary"
-          onClick={handleAccept}
-          disabled={accepting}
-          style={{ width: '100%' }}
-        >
+        <Button variant="primary" onClick={handleAccept} disabled={accepting} fullWidth>
           {accepting ? 'Accepting…' : `Accept invitation`}
-        </button>
+        </Button>
       ) : isAuthenticated && !emailMatches ? (
         <div>
           <p style={{ color: 'var(--error-color)', fontSize: '0.9rem', marginBottom: '1rem' }}>
@@ -194,20 +212,17 @@ function AcceptInvitePage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
             Sign in or create an account to accept this invitation.
           </p>
-          <button
-            className="btn btn-primary"
+          <Button
+            variant="primary"
             onClick={() => navigate(`/login?invite=${token}`)}
-            style={{ width: '100%', marginBottom: '0.75rem' }}
+            fullWidth
+            style={{ marginBlockEnd: 'var(--space-3)' }}
           >
             Sign in to accept
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={handleAccept}
-            style={{ width: '100%' }}
-          >
+          </Button>
+          <Button variant="secondary" onClick={handleAccept} fullWidth>
             Create an account
-          </button>
+          </Button>
         </div>
       )}
     </CenteredCard>

@@ -24,14 +24,18 @@ async function registerApp(app: typeof APPS[0]) {
   try {
     const check = await axios.get(`${API}/api/v1/app-registry/apps/${app.slug}`, { headers }).catch(() => null)
     if (check?.data?.slug === app.slug) {
-      console.log(`[skip] ${app.slug} already registered`)
+      console.log('[skip] %s already registered', app.slug)
       return
     }
     await axios.post(`${API}/api/v1/app-registry/apps`, { slug: app.slug, manifest: app.manifest }, { headers })
     await axios.post(`${API}/api/v1/app-registry/apps/${app.slug}/activate`, {}, { headers })
-    console.log(`[ok] registered + activated ${app.slug}`)
+    console.log('[ok] registered + activated %s', app.slug)
   } catch (err: any) {
-    console.error(`[error] ${app.slug}:`, err.response?.data || err.message)
+    // Constant format string: never interpolate a non-literal into the
+    // message itself (forged format specifiers / log injection). Only
+    // `err.response?.data` / `err.message` are logged — never `err` itself,
+    // whose `config.headers` carries the `Authorization: Bearer <token>`.
+    console.error('[error] %s:', app.slug, err.response?.data || err.message)
   }
 }
 

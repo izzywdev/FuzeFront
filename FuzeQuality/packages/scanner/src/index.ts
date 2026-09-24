@@ -178,9 +178,26 @@ function storySlug(value: string) {
     .toLowerCase()
 }
 
+// Hardcoded patterns for the `<Export>.storyName = '...'` / `<Export>.play = ...`
+// assignment forms. The export name is compared against the captured identifier
+// afterwards rather than interpolated into a pattern, so no regex is ever built
+// from scanned source text (ReDoS-safe) and the identifier has to match in full
+// instead of as a substring.
+const STORY_NAME_ASSIGNMENT = /\b([A-Z][A-Za-z0-9_]*)\.storyName\s*=\s*['"]([^'"]+)['"]/g
+const STORY_PLAY_ASSIGNMENT = /\b([A-Z][A-Za-z0-9_]*)\.play\s*=/g
+
 function storyDisplayName(exportName: string, source: string) {
-  const assignment = source.match(new RegExp(`${exportName}\\.storyName\\s*=\\s*['"]([^'"]+)['"]`))
-  return assignment?.[1] ?? exportName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  for (const match of source.matchAll(STORY_NAME_ASSIGNMENT)) {
+    if (match[1] === exportName) return match[2]
+  }
+  return exportName.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+}
+
+function hasPlayAssignment(exportName: string, source: string) {
+  for (const match of source.matchAll(STORY_PLAY_ASSIGNMENT)) {
+    if (match[1] === exportName) return true
+  }
+  return false
 }
 
 function extractStories(sourcePath: string, source: string): Array<StorybookStory & { componentName?: string }> {
@@ -201,7 +218,7 @@ function extractStories(sourcePath: string, source: string): Array<StorybookStor
       name: storyDisplayName(exportName, source),
       exportName,
       sourcePath: normalize(sourcePath),
-      hasPlay: /\bplay\s*:/.test(exportBlock) || new RegExp(`${exportName}\\.play\\s*=`).test(source),
+      hasPlay: /\bplay\s*:/.test(exportBlock) || hasPlayAssignment(exportName, source),
       previewPath: `iframe.html?id=${encodeURIComponent(id)}&viewMode=story`,
       componentName,
     }
