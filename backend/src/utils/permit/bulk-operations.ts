@@ -4,6 +4,7 @@ import { Organization } from '../../types/shared'
 import { PermitUser } from './user-sync'
 import { PermitTenant } from './tenant-management'
 import { RoleAssignment } from './role-assignment'
+import { describePermitError } from './describe-error'
 
 // Neutralizes CR/LF before a value reaches a log line (CodeQL js/log-injection
 // — an embedded newline could forge additional fake log lines). A manual
@@ -49,7 +50,7 @@ export async function bulkSyncUsers(
           await permit.api.users.sync(permitUser)
           results.success++
         } catch (error) {
-          console.error('Failed to sync user %s:', oneLine(permitUser.key), error)
+          console.error('Failed to sync user %s:', oneLine(permitUser.key), describePermitError(error))
           results.failed++
         }
       })
@@ -63,7 +64,7 @@ export async function bulkSyncUsers(
       results.failed
     )
   } catch (error) {
-    console.error('Error in bulk user sync:', error)
+    console.error('Error in bulk user sync:', describePermitError(error))
   }
 
   return results
@@ -105,7 +106,7 @@ export async function bulkSyncTenants(
           await permit.api.tenants.create(tenant)
           results.success++
         } catch (error) {
-          console.error('Failed to sync tenant %s:', oneLine(tenant.key), error)
+          console.error('Failed to sync tenant %s:', oneLine(tenant.key), describePermitError(error))
           results.failed++
         }
       })
@@ -119,7 +120,7 @@ export async function bulkSyncTenants(
       results.failed
     )
   } catch (error) {
-    console.error('Error in bulk tenant sync:', error)
+    console.error('Error in bulk tenant sync:', describePermitError(error))
   }
 
   return results
@@ -163,7 +164,7 @@ export async function bulkAssignRoles(
       results.failed
     )
   } catch (error) {
-    console.error('Error in bulk role assignment:', error)
+    console.error('Error in bulk role assignment:', describePermitError(error))
   }
 
   return results
@@ -226,7 +227,7 @@ export async function setupOrganizationWithRoles(
     )
     return true
   } catch (error) {
-    console.error('Error setting up organization %s:', oneLine(organization.id), error)
+    console.error('Error setting up organization %s:', oneLine(organization.id), describePermitError(error))
     return false
   }
 }

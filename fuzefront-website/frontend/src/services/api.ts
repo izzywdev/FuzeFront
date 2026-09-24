@@ -103,7 +103,10 @@ class HttpClient {
 
     try {
       if (IS_DEVELOPMENT) {
-        console.log(`🌐 API Request: ${config.method || 'GET'} ${url}`);
+        // Constant message string, values as separate arguments: never build
+        // the message by concatenation, or a value carrying a %-specifier (or a
+        // newline) can forge the log output (unsafe-formatstring / log-injection).
+        console.log('🌐 API Request:', config.method || 'GET', url);
       }
       
       const response = await fetch(url, config);
@@ -111,7 +114,7 @@ class HttpClient {
 
       if (!response.ok) {
         if (IS_DEVELOPMENT) {
-          console.error(`❌ API Error: ${response.status}`, data);
+          console.error('❌ API Error:', response.status, data);
         }
         throw new ApiError(
           data.error || data.message || 'Request failed',
@@ -121,7 +124,7 @@ class HttpClient {
       }
 
       if (IS_DEVELOPMENT) {
-        console.log(`✅ API Success: ${config.method || 'GET'} ${url}`, data);
+        console.log('✅ API Success:', config.method || 'GET', url, data);
       }
       return data;
     } catch (error) {
@@ -130,7 +133,7 @@ class HttpClient {
       }
 
       if (IS_DEVELOPMENT) {
-        console.error(`🚨 Network Error: ${url}`, error);
+        console.error('🚨 Network Error:', url, error);
       }
       throw new ApiError(
         'Network error. Please check your connection and try again.',

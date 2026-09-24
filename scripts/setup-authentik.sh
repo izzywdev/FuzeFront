@@ -223,7 +223,16 @@ echo "   Redis: redis://$REDIS_CONTAINER:6379"
 echo ""
 echo -e "${BLUE}🔑 Default Credentials:${NC}"
 echo "   Username: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@fuzefront.local}"
-echo "   Password: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin123}"
+# Never echo the value of AUTHENTIK_BOOTSTRAP_PASSWORD: when the operator HAS
+# set it, it is a real credential and this line would put it in shell
+# scrollback / CI output. Print it only in the fall-through case, where the
+# value is the hardcoded local-dev default and printing it is how the operator
+# learns it.
+if [ -n "${AUTHENTIK_BOOTSTRAP_PASSWORD:-}" ]; then
+  echo "   Password: (from \$AUTHENTIK_BOOTSTRAP_PASSWORD — not shown)"
+else
+  echo "   Password: admin123  (local-dev default)"
+fi
 echo ""
 echo -e "${BLUE}🚀 Next Steps:${NC}"
 echo "1. Add to your hosts file:"

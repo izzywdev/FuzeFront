@@ -128,10 +128,17 @@ export function extractPathsBlock(source) {
     return lines.length
   })()
 
+  // Matched with string ops rather than `new RegExp(...)` assembled from the
+  // arguments: a dynamically built regex is a ReDoS footgun (and a semgrep
+  // finding) even when — as here — every caller passes a literal. The shape is
+  // exactly `indent` spaces, `key:`, then only whitespace and/or a `#` comment.
   const findKey = (from, to, indent, key) => {
-    const re = new RegExp(`^ {${indent}}${key}:\\s*(#.*)?$`)
+    const prefix = `${' '.repeat(indent)}${key}:`
     for (let i = from; i < to; i++) {
-      if (re.test(lines[i])) return i
+      const line = lines[i]
+      if (!line.startsWith(prefix)) continue
+      const rest = line.slice(prefix.length).trimStart()
+      if (rest === '' || rest.startsWith('#')) return i
     }
     return -1
   }

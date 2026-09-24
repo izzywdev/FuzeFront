@@ -17,8 +17,18 @@
 
 import { registerA2AMachineClient } from './provision-a2a-clients'
 
+/**
+ * Describe a secret WITHOUT emitting any of its bytes.
+ *
+ * This previously printed the first 4 characters of the client_secret. An
+ * Authentik client_secret is an opaque high-entropy string — unlike a JWT its
+ * leading bytes are secret material, not a static header — so a 4-character
+ * "mask" is a partial credential disclosure into whatever captures this
+ * command's stdout (terminal scrollback, a `kubectl logs` capture, CI output).
+ * Shape only.
+ */
 function mask(secret: string): string {
-  return secret.length > 4 ? `${secret.slice(0, 4)}****` : '****'
+  return secret ? `(set, ${secret.length} chars — not shown)` : '(not set)'
 }
 
 async function main(): Promise<void> {
