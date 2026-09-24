@@ -232,10 +232,20 @@ export type Visibility = z.infer<typeof visibilitySchema>
 export type NavSection = (typeof NAV_SECTIONS)[number]
 export type Nav = z.infer<typeof navSchema>
 
+// FFRNT-185: accept TypeID wire format (org_<26-char suffix>) OR bare UUID (for
+// backward-compat during migration). The route normalizes to bare UUID before DB.
+const orgIdSchema = z
+  .string()
+  .refine(
+    v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ||
+         /^org_[0-9a-hj-km-np-tv-z]{26}$/.test(v),
+    { message: 'must be a UUID or an organization TypeID (org_...)' }
+  )
+
 export const registerAppRequestSchema = z
   .object({
     manifest: appManifestSchema,
-    organizationId: z.string().uuid().nullable().optional(),
+    organizationId: orgIdSchema.nullable().optional(),
   })
   .strict()
 
