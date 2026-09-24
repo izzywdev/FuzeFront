@@ -10,6 +10,7 @@ import { db } from '../config/database'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+import { withReqId } from '../lib/logger'
 
 const router = express.Router()
 
@@ -59,7 +60,10 @@ router.get('/:token', async (req: any, res) => {
     )
     res.json({ invitation: invDto, organization: orgDto })
   } catch (error: any) {
-    console.error('Error resolving invitation:', error)
+    withReqId((req as any).requestId).error(
+      { err: error },
+      'failed to resolve invitation'
+    )
     res.status(500).json({ error: 'Failed to resolve invitation' })
   }
 })
@@ -147,9 +151,13 @@ router.post('/:token/accept', async (req: any, res) => {
         invitation.role as 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
       )
     } catch (permitErr) {
-      console.error(
-        `Permit role assignment failed for user ${req.user.id} in org ${invitation.organization_id} (non-fatal):`,
-        permitErr
+      withReqId((req as any).requestId).error(
+        {
+          err: permitErr,
+          userId: req.user.id,
+          organizationId: invitation.organization_id,
+        },
+        'permit role assignment failed after invitation accept (non-fatal)'
       )
     }
 
@@ -161,7 +169,10 @@ router.post('/:token/accept', async (req: any, res) => {
       { organizationId: 'organization' }
     ))
   } catch (error: any) {
-    console.error('Error accepting invitation:', error)
+    withReqId((req as any).requestId).error(
+      { err: error },
+      'failed to accept invitation'
+    )
     res.status(500).json({ error: 'Failed to accept invitation' })
   }
 })

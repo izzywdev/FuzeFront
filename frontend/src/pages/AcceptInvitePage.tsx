@@ -19,6 +19,29 @@ interface OrgDetails {
 }
 
 /**
+ * Resolve a server-supplied redirect target into a URL that is safe to assign to
+ * `window.location.href`.
+ *
+ * The value reaches us inside an API response body — including an *error*
+ * response body — so it must not be treated as trusted markup or trusted code.
+ * A `javascript:` (or `data:`) URL assigned to `location.href` executes in the
+ * page, which is script injection, not navigation. Only http(s) targets are
+ * allowed through; the enrollment flow legitimately points at the Authentik
+ * issuer origin, so cross-origin http(s) must keep working. Anything else
+ * (including a malformed URL) falls back to the local login route.
+ */
+function safeRedirectUrl(raw: unknown, fallback = '/login'): string {
+  if (typeof raw !== 'string' || raw.length === 0) return fallback
+  try {
+    const url = new URL(raw, window.location.origin)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return fallback
+    return url.href
+  } catch {
+    return fallback
+  }
+}
+
+/**
  * AcceptInvitePage — handles /invitations/:token
  *
  * Resolves the token server-side, shows org + role info, then:
@@ -69,14 +92,14 @@ function AcceptInvitePage() {
     try {
       const result = await acceptInvitation(token)
       if (result.action === 'enroll') {
-        window.location.href = result.enrollUrl
+        window.location.href = safeRedirectUrl(result.enrollUrl)
         return
       }
       setAccepted(true)
     } catch (err: any) {
       if (err.response?.status === 202) {
         // Non-authenticated path via axios (202 is not an error but some configs throw)
-        window.location.href = err.response.data?.enrollUrl || '/login'
+        window.location.href = safeRedirectUrl(err.response.data?.enrollUrl)
         return
       }
       if (err.response?.status === 403) {

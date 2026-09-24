@@ -1,4 +1,4 @@
-import { Stack } from '@fuzefront/design-system'
+import { Stack, Text } from '@fuzefront/design-system'
 import { PermissionGate } from '../components/PermissionGate'
 import {
   PermissionButton,
@@ -90,7 +90,7 @@ export function TestPage() {
           <div>
             <h3 className="text-lg font-medium mb-2">Role Management Logic</h3>
             <div className="bg-gray-50 p-4 rounded-md">
-              <p className="text-sm text-gray-600 mb-2">Role Level Examples:</p>
+              <Text tone="secondary" size="sm" spacing="sm">Role Level Examples:</Text>
               <ul className="text-sm space-y-1">
                 <li>Owner level: {getRoleLevel('owner')}</li>
                 <li>Admin level: {getRoleLevel('admin')}</li>

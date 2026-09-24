@@ -251,6 +251,24 @@ jobs:
         id: review
         if: steps.context.outputs.ready == 'true'
         continue-on-error: true
+        # BOUND THE HANG. Twice on 2026-09-23 (#1156 heads e757a892 and
+        # 481d498f) this step ran 13-16 minutes against an unavailable provider
+        # and the job then died outright: every step after it reported a null
+        # conclusion, so `Decide verdict` never ran, nothing classified the
+        # outage, and the check went red -- the exact outcome the owner's
+        # credit-outage exception exists to prevent. `continue-on-error` above
+        # cannot help when the job itself is killed.
+        #
+        # An explicit timeout converts that into a step FAILURE, which
+        # continue-on-error absorbs, so `Decide verdict` still runs and
+        # classifies it. The action sets no outputs when it is cut off, and the
+        # verdict script now reads that empty conclusion as "never reported" ->
+        # outage (non-blocking), distinct from a clean credit skip.
+        #
+        # 12 minutes is deliberately longer than a healthy review (well under a
+        # minute) and shorter than the observed hangs, so it only ever fires on
+        # a provider that is not answering.
+        timeout-minutes: 12
         uses: ./.github/actions/fuze-code-action
         with:
           # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key

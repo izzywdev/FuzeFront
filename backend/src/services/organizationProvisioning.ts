@@ -273,10 +273,6 @@ export async function ensurePersonalOrg(
   return rowToOrganization(created)
 }
 
-async function ensureStepRows(db: Knex, orgId: string): Promise<void> {
-  await ensureStepRowsTrx(db, orgId)
-}
-
 // Accepts either a Knex instance or a transaction (both expose the same query API).
 async function ensureStepRowsTrx(
   qb: Knex | Knex.Transaction,
@@ -422,7 +418,7 @@ export async function reconcileOrganizationProvisioning(
     const owner = await trx('users').where({ id: org.owner_id }).first()
     const ownerEmail: string = owner?.email || `${org.owner_id}@unknown.local`
 
-    // ensureStepRows must use the same transaction so its upsert is within the lock.
+    // ensureStepRowsTrx must use the same transaction so its upsert is within the lock.
     await ensureStepRowsTrx(trx, orgId)
 
     let anyFailed = false

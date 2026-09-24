@@ -20,15 +20,14 @@ const INTERP_RE = /\{\{[^}]+\}\}/g
 // Simple single-brace ICU args with no nested braces, e.g. {name} or {date}.
 const SIMPLE_ICU_RE = /\{[^{}]+\}/g
 // ICU keywords + selectors that carry meaning and must survive translation.
-const ICU_KEYWORDS = [
-  'plural',
-  'select',
-  'selectordinal',
-  'number',
-  'date',
-  'time',
-  'duration',
-]
+//
+// The keyword test is a single hardcoded alternation rather than a regex built
+// per keyword: the set is fixed, so there is nothing to interpolate, and a
+// literal pattern cannot become a ReDoS surface if this ever grows a
+// caller-supplied keyword. `selectordinal` precedes `select` so the longer
+// keyword is preferred. Compiled once at module load, not once per call.
+const ICU_KEYWORD_RE =
+  /,\s*(?:selectordinal|select|plural|number|date|time|duration)\b/
 const ICU_SELECTORS = ['zero', 'one', 'two', 'few', 'many', 'other']
 
 export interface PlaceholderSignature {
@@ -50,9 +49,7 @@ export function extractPlaceholders(text: string): PlaceholderSignature {
   const withoutInterp = text.replace(INTERP_RE, '')
 
   // Does this look like a structured ICU message (has a keyword)?
-  const hasIcuStructure = ICU_KEYWORDS.some((kw) =>
-    new RegExp(`,\\s*${kw}\\b`).test(withoutInterp)
-  )
+  const hasIcuStructure = ICU_KEYWORD_RE.test(withoutInterp)
 
   let simpleIcu: string[] = []
   const icuControl: string[] = []

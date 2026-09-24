@@ -20,11 +20,80 @@
 //     so signature verification works. It is mounted with a raw body parser and
 //     forwards the Stripe-Signature header verbatim.
 import express, { Request, Response, NextFunction } from 'express'
+import rateLimit from 'express-rate-limit'
 import axios, { AxiosError, AxiosRequestConfig, Method } from 'axios'
 import { authenticateToken } from '../middleware/auth'
 import { checkOrganizationPermission } from '../utils/permit/permission-check'
 
 const router = express.Router()
+
+// ---------------------------------------------------------------------------
+// Rate limiting (CodeQL js/missing-rate-limiting) — DEFENCE IN DEPTH ONLY.
+//
+// These limiters do NOT replace authorization: every user-facing route below
+// still runs authenticateToken + authorizeBillingEntity/authorizeCheckout
+// (Permit.io object-level checks). They bound the *volume* an authenticated or
+// unauthenticated client can push at a surface that is unusually expensive to
+// abuse: each request costs a Permit.io decision plus an upstream call into the
+// billing-service, which in turn talks to Stripe (a metered, paid third party).
+//
+// Same express-rate-limit convention/shape as routes/users.ts (readLimiter),
+// routes/flags.ts (flagsRateLimiter) and routes/adminPortals.ts
+// (adminRateLimiter): fixed 60s window, standard RateLimit headers, JSON error
+// body. Limits are tiered by what a single request actually costs.
+//
+// NOTE: the Stripe webhook router at the bottom of this file is deliberately
+// NOT rate-limited — Stripe legitimately bursts and retries deliveries, and
+// dropping a delivery with a 429 desynchronises billing state. Its authenticity
+// gate is the Stripe signature, verified downstream.
+// ---------------------------------------------------------------------------
+
+// Public, unauthenticated plan catalogue rendered pre-login on the pricing
+// page. A real client fetches it once per page load, so a generous per-client
+// ceiling is invisible while bounding a cheap-request -> upstream-call
+// amplification loop. Matches routes/portal.ts's public portalContextRateLimiter.
+const catalogueRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
+// Authenticated org-scoped billing READS (current subscription, invoice
+// history). The shell's Billing page loads these a handful of times per
+// session; anything beyond that is enumeration of entityId/subscriptionId,
+// which is exactly the brute-force surface a missing rate limit exposes.
+const readRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+
+// Subscription lifecycle MUTATIONS + setup-intent. Each one mutates real
+// billing state upstream in Stripe, so a legitimate caller issues very few;
+// tighter than the reads.
+const mutationRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many billing requests. Try again shortly.' },
+})
+
+// Stripe *session* creation (Checkout Session, Billing Portal Session). The
+// most expensive endpoints here: each call creates a billable object in Stripe
+// and returns a redirect URL. A user clicks "Upgrade"/"Manage billing" once, so
+// a low ceiling costs nothing legitimate and caps the cost of an abuse loop.
+const sessionRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many billing requests. Try again shortly.' },
+})
 
 // ---------------------------------------------------------------------------
 // Object-level authorization (BOLA/IDOR defence).
@@ -411,10 +480,15 @@ async function forward(
     const ax = err as AxiosError
     // Connection refused / DNS / timeout — the service is unreachable.
     // Collapse CR/LF from every dynamic value before logging so externally
-    // controlled input can't inject/forge log records. eslint no-control-regex
-    // safe, and the newline replace is the barrier CodeQL js/log-injection
-    // recognizes; the constant format string covers js/tainted-format-string.
-    const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+    // controlled input can't inject/forge log records. The barrier is written as
+    // two SINGLE-CHARACTER global replaces on purpose: CodeQL's js/log-injection
+    // sanitizer matches a global replace whose pattern has a constant matched
+    // string, so a quantified character class (`/[\r\n]+/g`) is NOT recognized
+    // as a barrier even though it strips the same characters — that form left
+    // this call site flagged. The constant format string below covers
+    // js/tainted-format-string / semgrep unsafe-formatstring.
+    const oneLine = (v: unknown) =>
+      String(v).replace(/\r/g, ' ').replace(/\n/g, ' ')
     console.error(
       '[billing-proxy] upstream error for %s %s: %s',
       oneLine(req.method),
@@ -431,7 +505,7 @@ async function forward(
 // Public-ish catalogue: GET /plans (security: [] in the contract).
 // Kept unauthenticated at the proxy so the pricing page can render pre-login.
 // ---------------------------------------------------------------------------
-router.get('/plans', (req, res) =>
+router.get('/plans', catalogueRateLimiter, (req, res) =>
   forward(req, res, { path: '/plans', internalAuth: true })
 )
 
@@ -448,6 +522,7 @@ router.get('/plans', (req, res) =>
 // ---------------------------------------------------------------------------
 router.post(
   '/subscriptions',
+  mutationRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'manage')
@@ -476,6 +551,7 @@ router.post(
 // param route does not shadow this collection route.
 router.get(
   '/subscriptions',
+  readRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'read')
@@ -491,6 +567,7 @@ router.get(
 
 router.get(
   '/subscriptions/:subscriptionId',
+  readRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'read')
@@ -506,6 +583,7 @@ router.get(
 
 router.patch(
   '/subscriptions/:subscriptionId',
+  mutationRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'manage')
@@ -521,6 +599,7 @@ router.patch(
 
 router.delete(
   '/subscriptions/:subscriptionId',
+  mutationRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'manage')
@@ -537,6 +616,7 @@ router.delete(
 // SetupIntent — collect a payment method without a charge.
 router.post(
   '/setup-intent',
+  mutationRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'manage')
@@ -560,6 +640,7 @@ router.post(
 // The browser receives the upstream { url, sessionId } verbatim.
 router.post(
   '/checkout',
+  sessionRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeCheckout(req, res)
@@ -587,6 +668,7 @@ router.post(
 // The billing-service returns { invoices: [...], nextCursor }, relayed verbatim.
 router.get(
   '/invoices',
+  readRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'read')
@@ -614,6 +696,7 @@ router.get(
 // re-verifies ownership against the trusted headers and returns { url }.
 router.post(
   '/portal',
+  sessionRateLimiter,
   authenticateToken,
   async (req: BillingRequest, res) => {
     const entity = await authorizeBillingEntity(req, res, 'manage')
