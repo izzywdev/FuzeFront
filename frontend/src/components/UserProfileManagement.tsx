@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Spinner, Toggle, InfoRow, Text, FieldLabel } from '@fuzefront/design-system'
+import { Spinner, Toggle, InfoRow, Text, FieldLabel, Stack } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { RoleBadge } from './RoleBadge'
 
@@ -210,7 +210,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
     <div className="max-w-4xl mx-auto p-6">
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="flex items-center space-x-4">
+        <Stack gap="md">
           {/* Avatar */}
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold">
             {profile.avatar ? (
@@ -267,7 +267,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
               </div>
             )}
           </div>
-        </div>
+        </Stack>
       </div>
 
       {/* Tabs */}
