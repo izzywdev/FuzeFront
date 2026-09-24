@@ -1,4 +1,4 @@
-# fuze:managed template=fuze.yml baseline=v1 digest=sha256:3c31119ef24f9d62bf4a1cf34e59578e780367451de8db86942fb15fa3218127
+# fuze:managed template=fuze.yml baseline=v1 digest=sha256:824d7e89b18797cfe837ede929b9ee9bf300a0da4d4cea61c5aac3e81aa2566a
 name: Fuze
 
 # THE CANONICAL `@fuze` ENTRYPOINT. Every onboarded repo gets this file, and this is the
@@ -192,7 +192,9 @@ jobs:
           # that used to block it have landed:
           #   1. a Cloudflare Access SERVICE TOKEN exists — FuzeInfra terraform
           #      `cloudflare_zero_trust_access_service_token.litellm_ci`, bound to the
-          #      `litellm_service` Access app by the `litellm_service_ci_token` policy;
+          #      `litellm_service` Access app by the `litellm_service_ci_token` policy, whose
+          #      `non_identity` decision (FuzeInfra #1039) makes the service-token path return
+          #      200 non-interactively from CI;
           #   2. ./.github/actions/llm-endpoint accepts `cf-access-client-id` /
           #      `cf-access-client-secret`, masks the secret (`::add-mask::`) on entry, uses
           #      them on its readiness probe, and returns them ONLY through its pre-masked
@@ -201,18 +203,25 @@ jobs:
           #      output as ANTHROPIC_CUSTOM_HEADERS on the claude rung so the model requests
           #      carry the same CF-Access headers and clear Access too (the probe passing is
           #      not enough on its own).
-          # TO TURN IT ON (human steps, deliberately not automated): set the two
-          # CF_ACCESS_CLIENT_* secrets — client id/secret extracted from `terraform output`,
-          # a local-terminal step, never a PR/chat/log — and point `vars.FUZE_LITELLM_BASE_URL`
-          # at `https://litellm.prod.fuzefront.com`. With the secrets UNSET, `cf-access-client-*`
-          # below are empty and no CF headers are sent, so leaving the var unset keeps the exact
-          # prior behaviour (in-cluster probe → vendor fallback). Do NOT point the var at the
-          # public host WITHOUT setting the secrets: the probe would 302 and still fall back, a
-          # config that looks deliberate but is not.
+          # TO TURN IT ON, provision THREE secrets and change nothing else:
+          # `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` (from `terraform output`, a
+          # local-terminal step — never a PR/chat/log) and `LITELLM_CI_KEY` (the capped virtual
+          # key). You DO NOT repoint `FUZE_LITELLM_BASE_URL` at the public host: ./llm-endpoint
+          # keeps the in-cluster DNS name as its Tier-1 probe (which a hosted runner misses) and
+          # then probes the public gateway as Tier-2 automatically, using those three secrets,
+          # BEFORE the runner-local fallback. With any of the three UNSET the Tier-2 probe is
+          # skipped entirely, so leaving them unset keeps the exact prior behaviour (in-cluster
+          # probe → runner-local/vendor fallback) — there is no "looks deliberate but 302s"
+          # foot-gun anymore, because the public URL is not activated by a base-URL flip.
           litellm-base-url: ${{ vars.FUZE_LITELLM_BASE_URL || 'http://litellm.fuzeinfra.svc.cluster.local:4000' }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          # Tier-2 public-gateway key. Its presence in this file is also what makes
+          # provision-secrets.yml source LITELLM_CI_KEY onto the repo (the survey keys off the
+          # `secrets.` reference intersected with FLEET_SOURCED). ./llm-endpoint uses it ONLY
+          # against the public host and only alongside the CF-Access creds above.
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Inert on this path — see MENTION MODE in the header. Passed for shape-parity
