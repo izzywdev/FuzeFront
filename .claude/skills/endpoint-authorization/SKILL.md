@@ -1,6 +1,6 @@
 ---
 name: endpoint-authorization
-description: Use when building or reviewing any HTTP/event endpoint. The checklist + Fuze auth architecture for authN-middleware coverage, object/field-level authorization (BOLA/BOPLA mitigation), and input validation — and how to add requireOwnership / permit.check / schema validation. Enforced by gate-authz; owned by appsec-reviewer.
+description: Use when building or reviewing any HTTP/event endpoint. The checklist + Fuze auth architecture for authN-middleware coverage, object/field-level authorization (BOLA/BOPLA mitigation), and input validation — and how to add requireOwnership / permit.check / schema validation. Surfaced by gate-authz (advisory, never blocks); enforced by gate-platform-auth; owned by appsec-reviewer.
 ---
 
 # endpoint-authorization
