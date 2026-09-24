@@ -13,6 +13,19 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
    * @default "primary"
    */
   tone?: "primary" | "secondary" | "muted" | "danger";
+  /**
+   * Step of the DS type scale. `inherit` (default) reads the surrounding
+   * layout's font size, unchanged from before `size` existed.
+   * @default "inherit"
+   */
+  size?: "inherit" | "xs" | "sm" | "base" | "md";
+  /**
+   * Step of the DS spacing scale applied as `margin-block-end` (a logical
+   * property, so it mirrors under RTL). `none` (default) keeps the original
+   * zero-margin behavior.
+   * @default "none"
+   */
+  spacing?: "none" | "sm" | "md";
   children?: React.ReactNode;
 }
 

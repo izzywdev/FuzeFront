@@ -58,7 +58,27 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, BlueOak-1.0.0
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, BlueOak-1.0.0, MIT-0
+          #
+          # MIT-0 ("MIT No Attribution") is a distinct SPDX identifier from MIT,
+          # so allowing MIT does not allow it. It is MIT with the attribution
+          # requirement removed — strictly FEWER obligations than MIT, no
+          # copyleft, and rated permissive by the SPDX/OSI listings. If MIT is
+          # acceptable here then MIT-0 necessarily is; there is no reading under
+          # which it imposes a duty MIT does not.
+          #
+          # Surfaced by nodemailer, which is MIT-0 and has been in this product
+          # all along (6.9.14 was MIT-0 too). It only became visible when this
+          # PR bumped it 6.9.14 -> 9.1.1 for four advisories, because — exactly
+          # as the TruffleHog note below describes — Dependency Review evaluates
+          # CHANGED dependencies, so a package sitting at a steady version is
+          # never assessed. This is therefore a pre-existing gap in the policy
+          # being revealed, not a new obligation being taken on.
+          #
+          # Added to allow-licenses rather than exempted by name, following the
+          # BlueOak-1.0.0 precedent above: a permissive license that will recur
+          # belongs on the list, whereas a name exemption is reserved for the
+          # copyleft case (TruffleHog/AGPL) where the distinction does real work.
           # BlueOak-1.0.0 (Blue Oak Council's Model License) is isaacs' preferred
           # license going forward for the packages he maintains (which, isexe,
           # node-gyp, tar, glob, mkdirp, ...) — a large slice of the npm

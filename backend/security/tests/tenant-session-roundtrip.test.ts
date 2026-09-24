@@ -25,7 +25,20 @@ import {
 } from '../src/middleware/tenant-context'
 import { resetTenantRegistryForTests } from '../src/providers/authentik/tenants'
 
-const JWT_SECRET = 'test-secret-shared-by-every-tenant'
+// Throwaway signing key for in-process tokens — never a real credential. It is
+// read from the environment so this file does not hardcode whatever secret
+// production happens to default to: if production ever stopped reading
+// JWT_SECRET, a test pinning that same literal would keep passing while
+// testing nothing.
+//
+// ONE secret on purpose, shared by every tenant: that is the property under
+// test. Because both tenants sign with it, a tenant-A token verifies cleanly
+// on a tenant-B host, so `tid` is provably the only thing separating the two
+// directories. Do NOT split this into a per-tenant secret — that would make
+// the cross-tenant tests pass on the signature check alone and silently stop
+// exercising the tenant isolation they exist to prove.
+const TEST_JWT_SECRET =
+  process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret'
 
 const ENV_KEYS = ['SECURITY_TENANTS', 'FRONTEND_URL', 'JWT_SECRET']
 let saved: Record<string, string | undefined>
@@ -67,7 +80,7 @@ function buildApp() {
   app.post('/api/test/mint', (_req, res) => {
     const token = jwt.sign(
       { userId: 'user-1', sessionId: 'session-1', tid: sessionTenantId() },
-      JWT_SECRET,
+      TEST_JWT_SECRET,
       { expiresIn: '1h' }
     )
     res.json({ token })
@@ -79,7 +92,7 @@ function buildApp() {
     if (!token) return res.status(401).json({ error: 'missing token' })
     let decoded: { userId: string; tid?: string }
     try {
-      decoded = jwt.verify(token, JWT_SECRET) as never
+      decoded = jwt.verify(token, TEST_JWT_SECRET) as never
     } catch {
       return res.status(401).json({ error: 'invalid signature' })
     }
@@ -100,7 +113,7 @@ beforeEach(() => {
     saved[k] = process.env[k]
     delete process.env[k]
   }
-  process.env.JWT_SECRET = JWT_SECRET
+  process.env.JWT_SECRET = TEST_JWT_SECRET
   process.env.SECURITY_TENANTS = TENANTS
   resetTenantRegistryForTests()
 })
@@ -173,7 +186,7 @@ describe('tid round-trip through the real middleware', () => {
     // Same secret, so the signature verifies cleanly on the other tenant's
     // host. Without the tid check this would be a 200 and a cross-directory
     // session.
-    expect(() => jwt.verify(ffToken, JWT_SECRET)).not.toThrow()
+    expect(() => jwt.verify(ffToken, TEST_JWT_SECRET)).not.toThrow()
 
     const res = await request(buildApp())
       .get('/api/test/verify')
@@ -186,7 +199,7 @@ describe('tid round-trip through the real middleware', () => {
   it('rejects a hand-forged token claiming another tenant', async () => {
     // A token holder cannot simply assert a different tid: the claim is checked
     // against the host, not taken at face value.
-    const forged = jwt.sign({ userId: 'user-1', tid: 'mendys' }, JWT_SECRET, { expiresIn: '1h' })
+    const forged = jwt.sign({ userId: 'user-1', tid: 'mendys' }, TEST_JWT_SECRET, { expiresIn: '1h' })
     await request(buildApp())
       .get('/api/test/verify')
       .set('Host', 'app.fuzefront.com')
@@ -195,7 +208,7 @@ describe('tid round-trip through the real middleware', () => {
   })
 
   it('rejects a claimless token while multi-tenant', async () => {
-    const claimless = jwt.sign({ userId: 'user-1' }, JWT_SECRET, { expiresIn: '1h' })
+    const claimless = jwt.sign({ userId: 'user-1' }, TEST_JWT_SECRET, { expiresIn: '1h' })
     const res = await request(buildApp())
       .get('/api/test/verify')
       .set('Host', 'app.fuzefront.com')
@@ -237,7 +250,7 @@ describe('legacy single-tenant mode is unaffected', () => {
   })
 
   it('serves any host and accepts pre-tenancy claimless tokens', async () => {
-    const claimless = jwt.sign({ userId: 'user-1' }, JWT_SECRET, { expiresIn: '1h' })
+    const claimless = jwt.sign({ userId: 'user-1' }, TEST_JWT_SECRET, { expiresIn: '1h' })
     for (const host of ['app.fuzefront.com', 'fuzefront.dev.local', 'localhost']) {
       await request(buildApp())
         .get('/api/test/verify')
