@@ -83,6 +83,6 @@ strictly **outside** the product surface (`[data-role='design-annotation']`,
 
 Per `CLAUDE.md` §"Mobile design-review gate": open a GitHub Issue labeled
 `design-review` linking these frames; `design-review-notify.yml` fires the
-Telegram notice; the product owner comments `@claude approve`. Approving freezes
+Telegram notice; the product owner comments `@fuze approve`. Approving freezes
 this manifest model; the Phase-1/Phase-2 fan-out in the plan then implements
 against it, with the Playwright frames spec as the pre-production gate.

@@ -18,7 +18,7 @@ domain: Identity / Security
 | **Owner** | Orchestrator (`backend-engineer` for the identity slice; `product-designer` → `frontend-engineer` for the six UI flows; appsec-reviewer gates authz) |
 | **Target Release** | Next deploy window (migration touches `master` deploy-on-push) |
 | **Effort Estimate** | XL |
-| **GitHub** | TBD (no issue yet — file the `@claude` delegation thread when implementation starts) |
+| **GitHub** | TBD (no issue yet — file the `@fuze` delegation thread when implementation starts) |
 | **Plan of record** | `/root/.claude/plans/as-you-can-see-glimmering-rabbit.md` |
 
 ---

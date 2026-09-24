@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner } from '@fuzefront/design-system'
+import { Alert, Skeleton, RoleBadge, Modal, EmptyState, Spinner, Text } from '@fuzefront/design-system'
 import { useCurrentUser } from '../lib/shared'
 import { usePermissions } from './PermissionGate'
 import {
@@ -217,7 +217,7 @@ export const OrganizationSelector: React.FC<OrganizationSelectorProps> = ({
               )}
             </div>
           ) : (
-            <span className="text-gray-500">Select organization</span>
+            <Text as="span" tone="muted">Select organization</Text>
           )}
         </div>
         <svg
