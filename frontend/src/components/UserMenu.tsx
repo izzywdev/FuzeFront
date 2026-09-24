@@ -16,7 +16,6 @@ import { useFlag } from '../platform/featureFlags'
 import {
   getOrganizations,
   createOrganization,
-  checkOrganizationSlugAvailable,
   logout,
   type Organization,
 } from '../services/api'
@@ -559,7 +558,6 @@ export function OrganizationSwitcherSection({
           open={createOpen}
           onClose={() => setCreateOpen(false)}
           slugForName={name => slugForName(name, newSlugSuffix())}
-          onCheckAvailability={checkOrganizationSlugAvailable}
           onCreate={async input => {
             try {
               const org = await createOrganization({ name: input.name, slug: input.slug, type: 'organization' })
