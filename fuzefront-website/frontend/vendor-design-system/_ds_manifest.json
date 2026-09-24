@@ -190,6 +190,10 @@
       "sourcePath": "components/layout/SectionHead.jsx"
     },
     {
+      "name": "Stack",
+      "sourcePath": "components/layout/Stack.jsx"
+    },
+    {
       "name": "Wrap",
       "sourcePath": "components/layout/Wrap.jsx"
     },

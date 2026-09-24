@@ -1,4 +1,4 @@
-import { Wrap, Text } from '@fuzefront/design-system'
+import { Wrap, Stack, Text } from '@fuzefront/design-system'
 import { PermissionGate } from '../components/PermissionGate'
 import {
   PermissionButton,
@@ -41,20 +41,20 @@ export function TestPage() {
         <div className="space-y-4">
           <div>
             <h3 className="text-lg font-medium mb-2">Different Sizes</h3>
-            <div className="flex items-center space-x-4">
+            <Stack gap="md">
               <RoleBadge role="owner" size="sm" />
               <RoleBadge role="admin" size="md" />
               <RoleBadge role="member" size="lg" />
-            </div>
+            </Stack>
           </div>
 
           <div>
             <h3 className="text-lg font-medium mb-2">Different Variants</h3>
-            <div className="flex items-center space-x-4">
+            <Stack gap="md">
               <RoleBadge role="owner" variant="solid" />
               <RoleBadge role="admin" variant="outline" />
               <RoleBadge role="member" variant="subtle" />
-            </div>
+            </Stack>
           </div>
 
           <div>
@@ -72,7 +72,7 @@ export function TestPage() {
 
           <div>
             <h3 className="text-lg font-medium mb-2">Interactive Badges</h3>
-            <div className="flex items-center space-x-4">
+            <Stack gap="md">
               <RoleBadge
                 role="admin"
                 interactive
@@ -84,7 +84,7 @@ export function TestPage() {
                 onClick={() => alert('Member badge clicked!')}
                 variant="outline"
               />
-            </div>
+            </Stack>
           </div>
 
           <div>
