@@ -38,7 +38,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -120,18 +120,14 @@ jobs:
           [ -f /tmp/gateway.pid ] && kill "$(cat /tmp/gateway.pid)" 2>/dev/null || true
           echo '--- gateway log ---'; cat /tmp/gateway.log 2>/dev/null || true
 
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v3
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      # NOT pinned to a SHA, deliberately. Semgrep flags this and it is right in
-      # principle — but no verified SHA for docker/login-action exists anywhere in
-      # this repo, and this repo's GitHub scope cannot read the upstream action's
-      # tags to resolve one. Inventing a plausible-looking 40-hex string would
-      # either break the workflow or, worse, pin to something nobody checked.
-      # Pinning the two actions whose SHAs ARE established here is a real
-      # reduction; leaving this one honest and visible is better than a guess.
+      # Pinned to the SHA this repo already uses for docker/login-action v3.7.0
+      # (release.yml:102, fuzequality-release.yml:32) — the earlier comment here
+      # claimed no verified SHA existed in the repo, which was never true.
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -180,7 +176,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Compute image tag
         id: tag

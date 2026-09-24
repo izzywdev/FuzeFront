@@ -44,6 +44,7 @@
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
+import { mockAuthenticatedSelectionListsSession } from './support/selection-lists-e2e-session'
 
 const LIST_ID = 'sl_01h455vb4pex5vsknk084sn02q'
 const TRANSLATIONS_ROUTE = `/settings/selection-lists/${LIST_ID}/translations`
@@ -95,10 +96,12 @@ const MOCK_LOCALE_INDEX = [
 ]
 
 async function gotoTranslationIndex(page: Page) {
+  await mockAuthenticatedSelectionListsSession(page)
   await page.goto(TRANSLATIONS_ROUTE, { waitUntil: 'domcontentloaded' })
 }
 
 async function gotoLocaleEditor(page: Page) {
+  await mockAuthenticatedSelectionListsSession(page)
   await page.goto(FR_EDITOR_ROUTE, { waitUntil: 'domcontentloaded' })
 }
 

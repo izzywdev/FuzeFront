@@ -93,6 +93,13 @@ export async function githubInstallationToken(installationId: string): Promise<s
   if (!appId || !privateKey) throw new Error('GitHub App credentials are not configured')
   const now = Math.floor(Date.now() / 1000)
   const key = await importPKCS8(privateKey, 'RS256')
+  // Service-to-service ONLY: this is the GitHub App assertion exchanged at
+  // POST /app/installations/{id}/access_tokens for an installation token. It
+  // carries no user/session identity (empty claim set, `iss` = the App id) and
+  // is signed with the App's own RS256 key, never FuzeFront's session secret.
+  // User authN remains FuzeFront/Authentik OIDC — see
+  // governance/architecture-guidelines.md §1; the rule exempts S2S tokens.
+  // nosemgrep: fuze-auth-self-minted-user-token, semgrep.fuze-auth-self-minted-user-token
   const jwt = await new SignJWT({})
     .setProtectedHeader({ alg: 'RS256' })
     .setIssuedAt(now - 30)

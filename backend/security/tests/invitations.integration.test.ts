@@ -88,7 +88,6 @@ import request from 'supertest'
 import express from 'express'
 import { Client } from 'pg'
 import { v4 as uuidv4 } from 'uuid'
-import bcrypt from 'bcryptjs'
 import { runMigrations, initializeDatabase, closeDatabase } from '@fuzefront/core'
 import organizationsRouter from '../src/routes/organizations'
 import invitationsRouter from '../src/routes/invitations'
@@ -194,11 +193,14 @@ describe('invitations routes (integration)', () => {
 
     // Seed: owner user + organization + owner membership.
     // Note: the users table (migration 001) has no is_active column.
-    const passwordHash = await bcrypt.hash('testpass', 10)
+    // No password_hash is seeded: AuthN is FuzeFront's (Authentik OIDC) and this
+    // service neither stores nor verifies local passwords. The column is
+    // nullable (migration 001) and the invitation routes never read it, so a
+    // NULL hash is the correct "no local password" state for a seeded user.
     await pgClient.query(
-      `INSERT INTO users (id, email, password_hash, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW())`,
-      [OWNER_ID, OWNER_EMAIL, passwordHash]
+      `INSERT INTO users (id, email, created_at, updated_at)
+       VALUES ($1, $2, NOW(), NOW())`,
+      [OWNER_ID, OWNER_EMAIL]
     )
     await pgClient.query(
       `INSERT INTO organizations (id, name, slug, owner_id, type, is_active, settings, metadata, created_at, updated_at)
@@ -213,9 +215,9 @@ describe('invitations routes (integration)', () => {
 
     // Seed the invitee user (needed for the accept flow).
     await pgClient.query(
-      `INSERT INTO users (id, email, password_hash, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW())`,
-      [INVITEE_ID, INVITEE_EMAIL, passwordHash]
+      `INSERT INTO users (id, email, created_at, updated_at)
+       VALUES ($1, $2, NOW(), NOW())`,
+      [INVITEE_ID, INVITEE_EMAIL]
     )
   }, 90000)
 

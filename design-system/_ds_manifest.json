@@ -178,6 +178,10 @@
       "sourcePath": "components/layout/ListStack.jsx"
     },
     {
+      "name": "Panel",
+      "sourcePath": "components/layout/Panel.jsx"
+    },
+    {
       "name": "ResponsiveGrid",
       "sourcePath": "components/layout/ResponsiveGrid.jsx"
     },

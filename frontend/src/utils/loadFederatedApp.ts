@@ -173,19 +173,27 @@ export async function loadFederatedAppFromManifest(
   for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
     try {
       console.log(
-        `📦 Loading federated app '${app.manifest.name}' (attempt ${attempt}/${options.maxAttempts})`
+        "📦 Loading federated app '%s' (attempt %d/%d)",
+        app.manifest.name,
+        attempt,
+        options.maxAttempts
       )
       const module = await loadRemoteModule(
         integration.remoteEntry,
         integration.scope,
         integration.module
       )
-      console.log(`✅ Successfully loaded federated app '${app.manifest.name}'`)
+      console.log(
+        "✅ Successfully loaded federated app '%s'",
+        app.manifest.name
+      )
       return module
     } catch (error) {
       lastError = error as Error
       console.error(
-        `❌ Failed to load federated app '${app.manifest.name}' (attempt ${attempt}):`,
+        "❌ Failed to load federated app '%s' (attempt %d):",
+        app.manifest.name,
+        attempt,
         error
       )
       if (attempt < options.maxAttempts) {
@@ -194,7 +202,7 @@ export async function loadFederatedAppFromManifest(
           options.baseDelay,
           options.maxDelay
         )
-        console.log(`⏳ Retrying in ${delay}ms...`)
+        console.log('⏳ Retrying in %dms...', delay)
         await sleep(delay)
       }
     }
@@ -239,12 +247,14 @@ export async function loadFederatedApp(
         app.module
       )
 
-      console.log(`✅ Successfully loaded federated app '${app.name}'`)
+      console.log("✅ Successfully loaded federated app '%s'", app.name)
       return module
     } catch (error) {
       lastError = error as Error
       console.error(
-        `❌ Failed to load federated app '${app.name}' (attempt ${attempt}):`,
+        "❌ Failed to load federated app '%s' (attempt %d):",
+        app.name,
+        attempt,
         error
       )
 
@@ -255,7 +265,7 @@ export async function loadFederatedApp(
           options.baseDelay,
           options.maxDelay
         )
-        console.log(`⏳ Retrying in ${delay}ms...`)
+        console.log('⏳ Retrying in %dms...', delay)
         await sleep(delay)
       }
     }
@@ -295,7 +305,7 @@ export async function loadApp(appId: string): Promise<LoadedModule> {
 
     return loadFederatedApp(app)
   } catch (error) {
-    console.error(`❌ Failed to load app '${appId}':`, error)
+    console.error("❌ Failed to load app '%s':", appId, error)
     throw error
   }
 }
@@ -304,14 +314,14 @@ export async function loadApp(appId: string): Promise<LoadedModule> {
  * Preload multiple apps for better performance
  */
 export async function preloadApps(appIds: string[]): Promise<void> {
-  console.log(`🚀 Preloading ${appIds.length} apps...`)
+  console.log('🚀 Preloading %d apps...', appIds.length)
 
   const loadPromises = appIds.map(async appId => {
     try {
       await loadApp(appId)
-      console.log(`✅ Preloaded app: ${appId}`)
+      console.log('✅ Preloaded app: %s', appId)
     } catch (error) {
-      console.error(`❌ Failed to preload app: ${appId}`, error)
+      console.error('❌ Failed to preload app: %s', appId, error)
     }
   })
 

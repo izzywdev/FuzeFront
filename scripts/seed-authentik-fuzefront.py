@@ -44,7 +44,24 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-BASE = os.environ.get("AUTHENTIK_URL", "http://localhost:9000").rstrip("/") + "/api/v3"
+# urllib speaks file:// and ftp:// as well as HTTP, so AUTHENTIK_URL -- an
+# environment variable, i.e. configuration rather than a constant -- is
+# scheme-checked before any request is built. Without this a stray
+# AUTHENTIK_URL=file:///etc would turn every api() call below into a local
+# file read rather than an obvious failure.
+_ALLOWED_SCHEMES = ("http", "https")
+
+_BASE_HOST = os.environ.get("AUTHENTIK_URL", "http://localhost:9000").rstrip("/")
+_BASE_SCHEME = urllib.parse.urlsplit(_BASE_HOST).scheme.lower()
+if _BASE_SCHEME not in _ALLOWED_SCHEMES:
+    print(
+        f"ERROR: AUTHENTIK_URL must be an http or https URL, got "
+        f"{_BASE_SCHEME or '(no scheme)'}: {_BASE_HOST!r}",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+BASE = _BASE_HOST + "/api/v3"
 TOKEN = os.environ.get("AUTHENTIK_TOKEN", "")
 REDIRECT_URI = os.environ.get(
     "FF_REDIRECT_URI", "http://fuzefront.dev.local/api/auth/oidc/callback"
@@ -64,6 +81,7 @@ def api(method, path, body=None):
     req.add_header("Authorization", "Bearer " + TOKEN)
     req.add_header("Content-Type", "application/json")
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the `file://` read this rule names is unreachable: BASE is scheme-checked against _ALLOWED_SCHEMES at startup (above) and `path` is a code literal concatenated onto it, never urljoin'd, so no caller can re-introduce a scheme.
         with urllib.request.urlopen(req) as r:
             txt = r.read().decode()
             return json.loads(txt) if txt else {}

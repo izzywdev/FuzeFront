@@ -28,8 +28,10 @@ describe('createMachineTokenVerifier — fail-closed introspection', () => {
       code: 'TOKEN_INACTIVE',
     });
     // Prove the call really was a 200 — a status-code-only check would have
-    // treated this as success.
-    const res = await fetch('http://security.local/api/v1/security/tokens/introspect');
+    // treated this as success. `fetch` here is the in-process mock above: no
+    // socket is opened, and the URL is https so no cleartext-request pattern is
+    // modelled in a test that others copy from.
+    const res = await fetch('https://security.local/api/v1/security/tokens/introspect');
     expect(res.status).toBe(200);
   });
 

@@ -5,3 +5,8 @@ updates:
     schedule: { interval: weekly }
     commit-message: { prefix: "ci(deps)" }
     labels: ["dependencies", "github-actions"]
+    # Supply-chain: do not propose an update to a version published within the
+    # last 7 days, so a compromised-maintainer publish is not auto-PR'd before
+    # it is caught and unpublished. Mirrors `min-release-age = 7` in .npmrc.
+    cooldown:
+      default-days: 7
