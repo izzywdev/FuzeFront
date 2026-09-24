@@ -1,5 +1,5 @@
 import React, { Component, ReactNode } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, Button } from '@fuzefront/design-system'
 
 interface Props {
   children: ReactNode
@@ -61,24 +61,16 @@ export class FederatedAppErrorBoundary extends Component<Props, State> {
             </details>
           )}
           <div style={{ marginTop: '1.5rem' }}>
-            <button
-              className="btn btn-primary"
+            <Button
+              variant="primary"
               onClick={this.handleRetry}
-              style={{ marginRight: '1rem' }}
+              style={{ marginInlineEnd: 'var(--space-4)' }}
             >
               🔄 Retry
-            </button>
-            <button
-              className="btn"
-              onClick={() => (window.location.href = '/dashboard')}
-              style={{
-                backgroundColor: 'var(--bg-quaternary)',
-                border: 'none',
-                color: 'var(--text-primary)',
-              }}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => (window.location.href = '/dashboard')}>
               🏠 Go to Dashboard
-            </button>
+            </Button>
           </div>
         </Alert>
       )
