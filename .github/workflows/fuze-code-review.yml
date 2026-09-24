@@ -129,6 +129,20 @@ jobs:
     # with FuzeInfra scripts/mint-litellm-fuze-key.sh. Without it the job
     # skips (not fails) as documented in the header comment above.
     runs-on: fuzefront
+    # Flagged by gate-workflow-policy [missing-timeout], for exactly the reason
+    # measured here: with no bound, a job whose runner stops responding is only
+    # reaped when the pod finally dies, and GitHub reports the opaque "the
+    # self-hosted runner lost communication with the server" with every step
+    # left at a null conclusion -- which reads like an infra blip rather than
+    # this job overrunning. Across 27 consecutive runs every completed review
+    # finished between 18s and 6m55s; the only two failures ran 15m02s and
+    # 16m03s. 12 minutes clears the observed ceiling with ~70% headroom and
+    # still cuts in first, so an overrun fails as an attributable timeout.
+    # This bounds the symptom; it does not fix the runner loss, which is
+    # FuzeInfra's `fuzefront` scale set and delegated there.
+    # (Kept at 12 rather than #1126's 30 when the two PRs were consolidated —
+    # 12 is measured against 27 real run durations; 30 was a generic default.)
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -139,21 +153,42 @@ jobs:
         id: context
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
           HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
         run: |
           set -uo pipefail
-          git fetch origin "$BASE_REF" --depth=1
+          # NOT --depth=1. `actions/checkout` above already fetched full history
+          # (fetch-depth: 0), but a shallow fetch of the base ref makes the whole
+          # repository shallow, and `origin/$BASE_REF...HEAD` then dies with
+          # "fatal: no merge base" whenever the base has moved past what the
+          # checkout holds. Both diffs below swallowed that with `|| true`, so an
+          # empty DIFF read as "nothing to review" and the job SKIPPED TO A PASS
+          # on a PR with a real diff -- while $SENSITIVE went empty too, silently
+          # disarming the sensitive-path input to the self-approval defense below.
+          # Measured on #1042 (+1376/-115 across 27 files): with --depth=1 the
+          # diff is 0 bytes and exits 128; without it, 81558 bytes and exits 0.
+          git fetch origin "$BASE_REF"
 
-          git diff --name-only "origin/$BASE_REF"...HEAD > /tmp/changed_files.txt 2>/dev/null || true
+          # A diff that cannot be COMPUTED is not a diff that is EMPTY. Never
+          # conflate the two: the first is a broken gate and must be loud, the
+          # second is a legitimate skip. This is the `|| true` that made a
+          # required-adjacent review check pass without reviewing anything.
+          if ! git diff --name-only "origin/$BASE_REF"...HEAD > /tmp/changed_files.txt; then
+            echo "::error title=fuze-code-review::cannot compute the changed-file list against origin/$BASE_REF -- refusing to report a verdict, and refusing to pass, on a diff this job cannot see"
+            exit 1
+          fi
 
           # Diff to a temp file first: piping straight into `head` makes git die of
           # SIGPIPE (exit 141) when head closes the stream early — the same fix
           # already applied in the gate-code-review job this wraps.
-          git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' \
-            > /tmp/fulldiff.txt 2>/dev/null || true
+          if ! git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' \
+            > /tmp/fulldiff.txt; then
+            echo "::error title=fuze-code-review::cannot compute the diff against origin/$BASE_REF -- refusing to report a verdict, and refusing to pass, on a diff this job cannot see"
+            exit 1
+          fi
           DIFF=$(head -c 80000 /tmp/fulldiff.txt)
 
           # The approval machinery and the org governance surface. Matched against
@@ -167,10 +202,18 @@ jobs:
           if [ -z "$DIFF" ]; then
             READY=false
             REASON="no reviewable diff (only excluded lockfiles changed, or no changes)"
-          elif [ "${HAS_LITELLM:-false}" != "true" ] && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
+          # CLAUDE_CODE_OAUTH_TOKEN counts here. It is rung 1a in fuze-code-action --
+          # attempted BEFORE the LiteLLM/API-key path, deliberately, because a
+          # subscription token bills against an existing plan while the metered
+          # rungs bill per token. Omitting it from this gate meant a repo holding
+          # ONLY the subscription token -- the configuration this job is supposed
+          # to prefer -- reported "no LLM credential configured" and skipped the
+          # review outright, with a working credential already wired to line 260.
+          elif [ "${HAS_OAUTH:-false}" != "true" ] && [ "${HAS_LITELLM:-false}" != "true" ] \
+               && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
                && [ "${HAS_OPENAI:-false}" != "true" ] && [ "${HAS_GEMINI:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           {
