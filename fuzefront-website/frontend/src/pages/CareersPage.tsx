@@ -2,6 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
+import { IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Position {
@@ -105,7 +106,7 @@ export const CareersPage: React.FC = () => {
             gradient entirely instead of layering. */}
         <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="4xl" className="relative text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
@@ -119,31 +120,31 @@ export const CareersPage: React.FC = () => {
               build it.
             </p>
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Perks */}
       <section className="py-16 bg-white border-b border-secondary-100">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="5xl">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {perks.map((perk) => {
               const Icon = perk.icon
               return (
                 <div key={perk.text} className="text-center">
-                  <div className="w-11 h-11 rounded-xl bg-primary-50 flex items-center justify-center mx-auto mb-3">
-                    <Icon size={20} className="text-primary-700" />
-                  </div>
+                  <IconTile tone="accent" size="md" className="mb-3">
+                    <Icon size={20} />
+                  </IconTile>
                   <p className="text-sm text-gray-600 leading-snug">{perk.text}</p>
                 </div>
               )
             })}
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* Open positions */}
       <section className="py-24 bg-secondary-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="5xl">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
               Open positions
@@ -240,7 +241,7 @@ export const CareersPage: React.FC = () => {
               )
             })}
           </div>
-        </div>
+        </Container>
       </section>
     </div>
   )
