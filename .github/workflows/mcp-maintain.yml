@@ -146,6 +146,10 @@ jobs:
 
   mcp-maintain:
     needs: preflight
+    # A clock, per gate-workflow-policy: this job drives an LLM agent that can push
+    # commits, so a wedged rung must die on a timer rather than pin a runner slot
+    # until a human drains the pool. 30 minutes is well above any observed run.
+    timeout-minutes: 30
     # Loop guard: never run on our own maintenance branches.
     # Two conditions, one key (a duplicate `if:` is a YAML syntax error, not an AND):
     #   - preflight said the surface is declared. When it is not, there is nothing to
@@ -332,7 +336,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Upload agent execution log
-        if: always() && steps.maintainer.outcome == 'failure'
+        # The execution-file guard is load-bearing, not defensive. On a provider
+        # availability/credit outage fuze-code-action produces NO execution file, so
+        # `path` renders EMPTY -- and upload-artifact fails an empty `path` input with
+        # "Input required and not supplied: path", which fails the JOB. That re-reds
+        # the very PR the credit-outage exception in the verdict step below has just
+        # deliberately passed (it exits 0 and prints its ::notice::), so the exception
+        # ported from #1046 was being silently defeated one step later.
+        # `if-no-files-found: ignore` does NOT cover this: it handles a path that
+        # matches nothing, not a path input that is empty.
+        if: always() && steps.maintainer.outcome == 'failure' && steps.maintainer.outputs.execution-file != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: mcp-maintain-execution-log

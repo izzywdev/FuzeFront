@@ -272,7 +272,7 @@ add/upgrade any missing/stale workflow.
 - [ ] `claude-ci-autofix.yml` covers Harden Gate
 - [ ] Any gap added/upgraded (PR)
 - [ ] **Rollback Plan:** trigger = a new/upgraded workflow misbehaves → disable that single workflow (revert its file) without affecting the others
-- [ ] **Security Checklist:** workflow permissions least-priv · no plaintext secrets · `@claude` handler scoped · auto-merge only on green
+- [ ] **Security Checklist:** workflow permissions least-priv · no plaintext secrets · `@fuze` handler scoped · auto-merge only on green
 
 #### 📋 Sub-Tasks
 | Type | Summary | Points | Status |

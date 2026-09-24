@@ -605,7 +605,7 @@
     },
     "dataTier": {
       "type": "array",
-      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@fuze please provision' request (governance/shared-cluster-deploy.md \u00a75). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses \u2014 a role granted on the wrong db name is the classic silent-empty-data bug.",
+      "description": "Declarative data-tier provisioning request (the IaC hand-off to FuzeInfra). FuzeInfra's reconciler consumes each entry: it ensures the per-service role exists AND is GRANTED the declared privileges on the declared database, then VERIFIES the role can actually read/write it (fail-loud if a role can auth but not access its DB). Replaces the old ad-hoc '@fuze please provision' request (governance/shared-cluster-deploy.md §5). Every store the product's role authenticates to MUST be declared here, with the exact database name the app uses — a role granted on the wrong db name is the classic silent-empty-data bug.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -714,6 +714,14 @@
       "description": "Files and directories the repo's expert agent monitors for drift. governance-nightly reads these paths and compares their content against the expert's claims; if significant drift is found it opens an auto-refresh PR. Declare paths that are 'architecture-defining' for this repo: Helm charts, CI workflows, the service's main OpenAPI spec, key source directories. Example: [\"deploy/helm/\", \".github/workflows/\", \"openapi.yaml\", \"src/services/\"].",
       "items": {
         "type": "string"
+      }
+    },
+    "forkedWorkflows": {
+      "type": "array",
+      "description": "DECLARED per-file override. Managed `.github/workflows/**` files this repo has hardened BEYOND canonical on purpose (e.g. an incident fix) and OWNS — the declared opt-out from workflow reconciliation. A file named here is PRESERVED by both reconcilers: the bootstrap installer never overwrites it, not even under `--adopt-canonical` (lib/ownership.decide -> FORKED), and governance-sync reports it rather than reconciling it, regardless of whether the file still carries its `fuze:managed` marker. Solves the problem that `--adopt-canonical` is one global flag but a repo legitimately needs it in OPPOSITE directions on two files at once — adopt stale gate jobs into `harden-gate.yml` while preserving a hardened `auto-merge.yml`. Use this only for a fix that genuinely cannot be expressed as a render variable AND is not yet upstreamed; the preferred path is still to land the change in canonical (governance/file-ownership.md). Each entry is a repo-relative, forward-slash workflow path.",
+      "items": {
+        "type": "string",
+        "pattern": "^\\.github/workflows/[^/]+\\.ya?ml$"
       }
     }
   },
