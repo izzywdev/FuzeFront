@@ -54,6 +54,7 @@ import ConfigPage from './pages/ConfigPage'
 import ConfigCatalogPage from './pages/ConfigCatalogPage'
 import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
+import ConnectorsPage from './pages/ConnectorsPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import {
   SelectionListManagementFlow,
@@ -382,6 +383,7 @@ function AppContent() {
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
+            <Route path="/connectors" element={<ConnectorsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
@@ -587,4 +589,3 @@ function NotFoundPage() {
 }
 
 export default App
-

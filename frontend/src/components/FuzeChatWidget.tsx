@@ -4,6 +4,7 @@ import { ChatWidget } from '@fuzefront/chat-ui'
 import '@fuzefront/chat-ui/styles.css'
 import { useOrganizations } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
+import websocketService from '../services/websocket'
 
 // Chat-service base URL. Same-origin by default: the in-pod / ingress nginx
 // proxies /chat-api/ -> fuzefront-chat-service:3006/ (see frontend/nginx.conf),
@@ -33,6 +34,11 @@ export function FuzeChatWidget() {
     [],
   )
 
+  const subscribeInjected = useMemo(() => (handler: (event: any) => void) => {
+    websocketService.onServer('chat:injection', handler)
+    return () => websocketService.offServer('chat:injection', handler)
+  }, [])
+
   // No active org yet (pre-provisioning) -> don't mount the assistant.
   if (!activeOrganizationId) return null
 
@@ -42,6 +48,7 @@ export function FuzeChatWidget() {
       orgId={activeOrganizationId}
       appId="fuzefront"
       onError={message => window.__FUZEFRONT__?.notify?.({ level: 'error', message })}
+      subscribeInjected={subscribeInjected}
     />
   )
 }

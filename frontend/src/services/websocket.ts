@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client'
+import { getActiveAuthToken } from '../lib/accounts'
 
 class WebSocketService {
   private socket: Socket | null = null
@@ -16,6 +17,7 @@ class WebSocketService {
     this.socket = io(backendUrl, {
       transports: ['websocket', 'polling'],
       timeout: 5000,
+      auth: { token: getActiveAuthToken(), appId: 'fuzefront' },
     })
 
     this.socket.on('connect', () => {

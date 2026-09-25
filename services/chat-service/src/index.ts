@@ -17,6 +17,7 @@ import { createKafkaClient, TypedProducer } from '@fuzefront/shared';
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer';
 import { KnexRefIndexRepository } from './repositories/ref-index.repository';
 import { initFeatureFlags } from './utils/feature-flags';
+import { injectRecentGmailSummary } from './connectors/gmail-injection';
 
 async function main() {
   const config = loadConfig();
@@ -89,6 +90,13 @@ async function main() {
       feedback,
       confirmations,
       billing,
+      injectRecentGmailSummary: ({ userId, conversationId }) => injectRecentGmailSummary({
+        producer,
+        messages,
+        conversations,
+        fuzekeysUrl: config.fuzekeysUrl,
+        internalToken: config.fuzekeysConnectorToken,
+      }, { userId, conversationId }),
     },
   });
 

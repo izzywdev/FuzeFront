@@ -20,6 +20,7 @@ import {
   notifyEmailRequestedSchemaV1,
   notifyEmailStatusSchemaV1,
   portalCreatedSchemaV1,
+  chatResponseChunkSchemaV1,
 } from './schemas';
 
 /**
@@ -50,6 +51,7 @@ export const SCHEMA_BY_TOPIC: Readonly<Record<string, ZodTypeAny>> = {
   [TOPICS.NOTIFY_EMAIL_REQUESTED]: notifyEmailRequestedSchemaV1,
   [TOPICS.NOTIFY_EMAIL_STATUS]: notifyEmailStatusSchemaV1,
   [TOPICS.PORTAL_CREATED]: portalCreatedSchemaV1,
+  [TOPICS.CHAT_RESPONSE_CHUNK]: chatResponseChunkSchemaV1,
 };
 
 /** Returns the payload schema for a topic, or undefined if none is registered. */

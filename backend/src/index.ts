@@ -9,6 +9,7 @@ import dotenv from 'dotenv'
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
+import connectorRoutes from './routes/connectors'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import usersRoutes from './routes/users'
@@ -44,6 +45,7 @@ import { startBillingProjection, stopBillingProjection } from './services/billin
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
+import { startChatResponseConsumer, stopChatResponseConsumer } from './kafka/chat-response.consumer'
 
 // Load environment variables
 dotenv.config()
@@ -336,6 +338,7 @@ app.use('/api/v1/billing', billingRoutes)
 // /api/v1/notifications/*; this forwards it in-cluster. The service's
 // /internal/* publish surface is blocked here — see routes/notifications.ts.
 app.use('/api/v1/notifications', notificationProxyRoutes)
+app.use('/api/v1/connectors', connectorRoutes)
 
 app.use('/api/v1/app-registry', appRegistryRoutes)
 // App-registry proxy: browser -> backend -> fuzefront-applications:3003. The
@@ -518,6 +521,12 @@ function gracefulShutdown(signal: string) {
         await stopRefIndexProjection()
       } catch (error) {
         console.error('❌ Error stopping ref_index projection consumer:', error)
+      }
+
+      try {
+        await stopChatResponseConsumer()
+      } catch (error) {
+        console.error('❌ Error stopping chat response consumer:', error)
       }
 
       console.log('🎯 Graceful shutdown complete')
@@ -713,6 +722,10 @@ async function startServer() {
     // Non-fatal + no-op when KAFKA_BROKERS is unset.
     const refIndexStore = new KnexRefIndexRepository(db)
     await startRefIndexProjection(refIndexStore)
+
+    await startChatResponseConsumer(io).catch(error => {
+      console.error('⚠️  Chat response WebSocket bridge failed to start (non-fatal):', error)
+    })
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)

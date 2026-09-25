@@ -103,6 +103,14 @@ spec:
             # Empty => publisher is a logging no-op; provisioning still self-heals.
             - name: KAFKA_BROKERS
               value: {{ .Values.emailService.kafka.brokers | default "" | quote }}
+            - name: FUZEKEYS_URL
+              value: {{ .Values.connectors.fuzekeysUrl | quote }}
+            - name: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
+                  optional: true
             # Shared secret guarding POST /internal/provision (Plan D calls this).
             - name: INTERNAL_PROVISION_SECRET
               valueFrom:
