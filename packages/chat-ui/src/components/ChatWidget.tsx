@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ChatServiceClient } from '@fuzefront/chat-client';
 import { ChatI18nProvider, useChatI18n, type ChatStrings, type Direction } from '../i18n';
 import { useChat } from '../hooks/useChat';
+import type { InjectedChatEvent } from '../hooks/useChat';
 import { ChatPanel } from './ChatPanel';
 
 export interface ChatWidgetProps {
@@ -31,6 +32,8 @@ export interface ChatWidgetProps {
   strings?: Partial<ChatStrings>;
   /** Surface errors to the host (toasts, logging). */
   onError?: (message: string) => void;
+  /** Subscribe to persisted Kafka/WebSocket assistant response chunks. */
+  subscribeInjected?: (handler: (event: InjectedChatEvent) => void) => () => void;
 }
 
 /** Floating launcher + drawer, self-contained: provides i18n and drives useChat. */
@@ -45,6 +48,7 @@ export function ChatWidget({
   dir = 'ltr',
   strings,
   onError,
+  subscribeInjected,
 }: ChatWidgetProps) {
   return (
     <ChatI18nProvider dir={dir} strings={strings}>
@@ -57,6 +61,7 @@ export function ChatWidget({
         pageSize={pageSize}
         defaultOpen={defaultOpen}
         onError={onError}
+        subscribeInjected={subscribeInjected}
       />
     </ChatI18nProvider>
   );
@@ -71,13 +76,14 @@ function ChatWidgetInner({
   pageSize,
   defaultOpen,
   onError,
+  subscribeInjected,
 }: Pick<
   ChatWidgetProps,
-  'client' | 'orgId' | 'appId' | 'conversationId' | 'resume' | 'pageSize' | 'defaultOpen' | 'onError'
+  'client' | 'orgId' | 'appId' | 'conversationId' | 'resume' | 'pageSize' | 'defaultOpen' | 'onError' | 'subscribeInjected'
 >) {
   const [open, setOpen] = useState(Boolean(defaultOpen));
   const { strings, dir } = useChatI18n();
-  const chat = useChat({ client, orgId, appId, conversationId, resume, pageSize, onError });
+  const chat = useChat({ client, orgId, appId, conversationId, resume, pageSize, onError, subscribeInjected });
 
   if (!open) {
     return (

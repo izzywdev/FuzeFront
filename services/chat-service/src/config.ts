@@ -20,6 +20,8 @@ export interface Config {
    * `provisioning-service` already use for the same purpose.
    */
   securityServiceUrl: string;
+  fuzekeysUrl: string;
+  fuzekeysConnectorToken: string;
 
   // Kafka
   kafka: {
@@ -69,6 +71,8 @@ export function loadConfig(): Config {
     backendUrl: process.env.BACKEND_URL || 'http://fuzefront-backend:3001',
     permitPdpUrl: process.env.PERMIT_PDP_URL || 'http://fuzefront-permit-pdp:7000',
     securityServiceUrl: process.env.SECURITY_SERVICE_URL || 'http://fuzefront-security:3002',
+    fuzekeysUrl: process.env.FUZEKEYS_URL || 'http://fuzekeys-backend:8000',
+    fuzekeysConnectorToken: process.env.FUZEKEYS_CONNECTOR_INTERNAL_TOKEN || '',
 
     kafka: { brokers },
 

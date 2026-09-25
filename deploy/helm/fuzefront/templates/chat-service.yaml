@@ -47,6 +47,14 @@ spec:
               value: "http://fuzefront-security:{{ .Values.securityService.port }}"
             - name: KAFKA_BROKERS
               value: {{ .Values.chatService.kafka.brokers | quote }}
+            - name: FUZEKEYS_URL
+              value: {{ .Values.connectors.fuzekeysUrl | quote }}
+            - name: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
+                  optional: true
             {{- if .Values.fuzeinfra.redis.host }}
             # Shared FuzeInfra Redis backs chat-service's per-user rate limiter
             # (rate-limit-redis) with a cross-replica store. chat-service is the

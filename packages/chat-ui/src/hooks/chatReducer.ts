@@ -42,6 +42,9 @@ export interface ChatModel {
 export type ChatAction =
   | { kind: 'user_message'; id: string; content: string; createdAt: string }
   | { kind: 'assistant_start'; id: string; createdAt: string }
+  | { kind: 'injection_start'; id: string; conversationId: string; createdAt: string }
+  | { kind: 'injection_delta'; id: string; delta: string }
+  | { kind: 'injection_done'; id: string }
   | { kind: 'stream_event'; event: ChatStreamEvent }
   | { kind: 'set_feedback'; id: string; feedback: 'positive' | 'negative' }
   | { kind: 'confirm_running'; confirmationId: string }
@@ -121,6 +124,37 @@ export function chatReducer(state: ChatModel, action: ChatAction): ChatModel {
           ...state.messages,
           { id: action.id, role: 'assistant', content: '', streaming: true, createdAt: action.createdAt },
         ],
+      };
+
+    case 'injection_start':
+      const withoutPlaceholder = state.messages.filter((message, index) =>
+        !(index === state.messages.length - 1 && message.role === 'assistant' && message.content === '')
+      );
+      return {
+        ...state,
+        streaming: true,
+        conversationId: action.conversationId,
+        messages: [
+          ...withoutPlaceholder.filter(message => message.id !== action.id),
+          { id: action.id, role: 'assistant', content: '', streaming: true, createdAt: action.createdAt },
+        ],
+      };
+
+    case 'injection_delta':
+      return {
+        ...state,
+        messages: state.messages.map(message => message.id === action.id
+          ? { ...message, content: message.content + action.delta }
+          : message),
+      };
+
+    case 'injection_done':
+      return {
+        ...state,
+        streaming: false,
+        messages: state.messages.map(message => message.id === action.id
+          ? { ...message, streaming: false }
+          : message),
       };
 
     case 'set_feedback':

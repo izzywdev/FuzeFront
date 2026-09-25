@@ -21,3 +21,4 @@ export * from './identity.session.revoked';
 export * from './notify.email.requested';
 export * from './notify.email.status';
 export * from './portal.created';
+export * from './chat.response.chunk';
