@@ -17,6 +17,7 @@ spec:
         app: fuzefront-chat-service
         {{- include "fuzefront.labels" . | nindent 8 }}
     spec:
+      serviceAccountName: fuzefront-chat-service
       {{- include "fuzefront.scheduling" (dict "svc" .Values.chatService "root" .) | nindent 6 }}
       containers:
         - name: chat-service
@@ -47,14 +48,6 @@ spec:
               value: "http://fuzefront-security:{{ .Values.securityService.port }}"
             - name: KAFKA_BROKERS
               value: {{ .Values.chatService.kafka.brokers | quote }}
-            - name: FUZEKEYS_URL
-              value: {{ .Values.connectors.fuzekeysUrl | quote }}
-            - name: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
-                  key: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
-                  optional: true
             {{- if .Values.fuzeinfra.redis.host }}
             # Shared FuzeInfra Redis backs chat-service's per-user rate limiter
             # (rate-limit-redis) with a cross-replica store. chat-service is the
@@ -138,6 +131,18 @@ spec:
             periodSeconds: 15
           resources:
             {{- toYaml .Values.chatService.resources | nindent 12 }}
+          volumeMounts:
+            - name: fuzefront-security-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
+      volumes:
+        - name: fuzefront-security-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: fuzefront-security
+                  audience: fuzefront-security
+                  expirationSeconds: 600
 ---
 apiVersion: v1
 kind: Service

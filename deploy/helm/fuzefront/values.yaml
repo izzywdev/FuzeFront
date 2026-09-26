@@ -185,7 +185,6 @@ secret:
   featureFlagsClientToken: ""
   notificationInternalToken: ""
   # Shared only by FuzeFront backend/chat-service and FuzeKeys connector API.
-  fuzekeysConnectorInternalToken: ""
   mendysDatasetsClientSecret: ""
   mendysPlatformClientSecret: ""
   authentikMendysSecretKey: ""
@@ -201,9 +200,6 @@ backend:
   # http://fuzefront-backend:3001, and the backend Service is named accordingly.
   port: 3001
   replicas: 1
-
-connectors:
-  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8000"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -216,6 +212,9 @@ connectors:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+
+connectors:
+  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8000"
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in

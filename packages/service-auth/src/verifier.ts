@@ -213,6 +213,9 @@ export function createMachineTokenVerifier(options: MachineTokenVerifierOptions)
         scope: introspection.scope,
         scopes: introspection.scope ? introspection.scope.split(/\s+/).filter(Boolean) : [],
         expiresAt: introspection.expiresAt,
+        audience: (introspection as TokenIntrospection & { audience?: string }).audience,
+        actor: (introspection as TokenIntrospection & { actor?: { sub: string; previous?: unknown } }).actor,
+        tokenKind: (introspection as TokenIntrospection & { tokenKind?: string }).tokenKind,
         raw: introspection,
       };
 

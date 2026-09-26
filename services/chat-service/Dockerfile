@@ -118,6 +118,8 @@ COPY packages/identity/ ./packages/identity/
 # built here or `npm run build` below fails with TS2307 "Cannot find module"
 # (there is no dist/ for either yet at this point in the stage).
 COPY packages/auth/ ./packages/auth/
+COPY packages/security/ ./packages/security/
+COPY packages/service-auth/ ./packages/service-auth/
 COPY packages/feature-flags/ ./packages/feature-flags/
 COPY services/chat-service/ ./services/chat-service/
 
@@ -131,6 +133,8 @@ COPY docs/ ./services/chat-service/docs/
 RUN cd shared && npm run build
 RUN cd packages/identity && npm install --ignore-scripts && npm run build
 RUN cd packages/auth && npm install --ignore-scripts && npm run build
+RUN cd packages/security && npm install --ignore-scripts && npm run build
+RUN cd packages/service-auth && npm run build
 RUN cd packages/feature-flags && npm install --ignore-scripts && npm run build
 RUN cd services/chat-service && npm run build
 
@@ -163,6 +167,8 @@ COPY --from=build /app/packages/identity/dist ./packages/identity/dist
 # services/selection-list-service/Dockerfile's identical treatment).
 COPY --from=build /app/packages/auth/package.json ./packages/auth/package.json
 COPY --from=build /app/packages/auth/dist ./packages/auth/dist
+COPY --from=build /app/packages/service-auth/package.json ./packages/service-auth/package.json
+COPY --from=build /app/packages/service-auth/dist ./packages/service-auth/dist
 # ...AND its runtime dependency `jose`, which is NOT hoisted to /app/node_modules:
 # @fuzefront/auth needs jose@^5.10.0 but the root lockfile pins node_modules/jose
 # to 4.15.9 for other consumers, so jose@5 lives ONLY at

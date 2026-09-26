@@ -229,6 +229,13 @@ GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review au
 # readinessProbe (path: /ready) and backend/applications/src/index.ts's /ready
 # route for the full rationale.
 GET /ready  # applications-service: Kubernetes readiness probe (deploy/helm/fuzefront/templates/applications.yaml readinessProbe); infra-level, not consumer-facing
+# --- O1: connector facade (browser/chat only; credential operations stay private) ---
+GET /api/v1/connectors/google-gmail  # authenticated FuzeFront UI facade; intentionally not projected to generated clients or MCP
+PATCH /api/v1/connectors/google-gmail  # authenticated connector configuration facade; intentionally not MCP
+DELETE /api/v1/connectors/google-gmail  # authenticated connector lifecycle facade; intentionally not MCP
+POST /api/v1/connectors/google-gmail/connect  # browser OAuth initiation facade; intentionally not MCP
+GET /api/v1/connectors/google-gmail/oauth/callback  # Google browser redirect; encrypted short-lived continuation state, not a generated client operation
+GET /api/v1/connectors/google-gmail/messages/recent  # chat-only summary source; raw credential lease remains private S2S
 #
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not
