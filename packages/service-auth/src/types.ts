@@ -84,6 +84,12 @@ export interface MachineIdentity {
   scopes: string[];
   /** Token expiry (epoch seconds), when present. */
   expiresAt?: number;
+  /** Audience for an exchanged delegation token. */
+  audience?: string;
+  /** Immediate service actor for a delegated user token. */
+  actor?: { sub: string; previous?: unknown };
+  /** Security-service token classification, when supplied by introspection. */
+  tokenKind?: string;
   /** The raw introspection response this identity was built from. */
   raw: TokenIntrospection;
 }

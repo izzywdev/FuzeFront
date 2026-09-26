@@ -44,7 +44,7 @@ export interface ChatRouterDeps {
   feedback: Pick<FeedbackRepository, 'submit'>;
   confirmations: Pick<ConfirmationStore, 'confirm'>;
   billing: Pick<BillingEmitter, 'emitUsage'>;
-  injectRecentGmailSummary?: (input: { userId: string; conversationId: string }) => Promise<void>;
+  injectRecentGmailSummary?: (input: { userId: string; conversationId: string; userToken: string }) => Promise<void>;
 }
 
 const VALID_RATINGS: FeedbackRating[] = ['positive', 'negative'];
@@ -138,7 +138,8 @@ export function createChatRouter(deps: ChatRouterDeps): Router {
         // Queue-backed connector responses are persisted by the injector and
         // delivered over Kafka -> authenticated Socket.IO. End this HTTP stream
         // without creating a duplicate assistant message.
-        void deps.injectRecentGmailSummary({ userId, conversationId }).catch(() => undefined);
+        const userToken = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+        void deps.injectRecentGmailSummary({ userId, conversationId, userToken }).catch(() => undefined);
         write({ type: 'done' });
         return;
       }

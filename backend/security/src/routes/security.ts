@@ -12,6 +12,7 @@
 import crypto from 'crypto'
 import express, { Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
+import jwt from 'jsonwebtoken'
 import { getIdentityProvider } from '../providers/factory'
 import {
   MfaRequiredError,
@@ -34,8 +35,82 @@ import { db } from '../config/database'
 import { resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { authenticateKubernetesWorkload } from '../services/workload-identity'
 
 const router = express.Router()
+
+const DELEGATION_TOKEN_TTL_SECONDS = 300
+
+type DelegationClaims = {
+  kind: 'fuze-delegation'
+  sub: string
+  aud: string
+  scope: string
+  tenantId?: string | null
+  act: { sub: string; previous?: unknown }
+  jti: string
+  iat?: number
+  exp?: number
+}
+
+type WorkloadClaims = {
+  kind: 'fuze-workload'
+  sub: string
+  aud: string
+  scope: string
+  namespace: string
+  serviceAccount: string
+  jti: string
+  iat?: number
+  exp?: number
+}
+
+function delegationSigningKey(): string {
+  const key = process.env.DELEGATION_SIGNING_KEY || process.env.JWT_SECRET
+  if (!key) throw new Error('DELEGATION_SIGNING_KEY or JWT_SECRET is required')
+  return key
+}
+
+function requestedScopes(value: unknown): string[] {
+  if (typeof value !== 'string') return []
+  return [...new Set(value.split(/\s+/).map(v => v.trim()).filter(Boolean))]
+}
+
+function isSubset(requested: string[], granted: string | undefined): boolean {
+  const allowed = new Set(requestedScopes(granted))
+  return requested.every(scope => allowed.has(scope))
+}
+
+async function introspectAnyToken(token: string) {
+  try {
+    const claims = jwt.verify(token, delegationSigningKey()) as DelegationClaims | WorkloadClaims
+    if (claims.kind === 'fuze-delegation' && claims.sub && claims.aud && claims.act?.sub) {
+      return {
+        active: true,
+        subject: claims.sub,
+        tenantId: claims.tenantId ?? null,
+        scope: claims.scope,
+        expiresAt: claims.exp,
+        audience: claims.aud,
+        actor: claims.act,
+        tokenKind: claims.kind,
+      }
+    }
+    if (claims.kind === 'fuze-workload' && claims.sub && claims.aud) {
+      return {
+        active: true,
+        subject: claims.sub,
+        scope: claims.scope,
+        expiresAt: claims.exp,
+        audience: claims.aud,
+        tokenKind: claims.kind,
+      }
+    }
+  } catch {
+    // Not a Fuze delegation token; try the configured identity provider.
+  }
+  return getIdentityProvider().introspectToken(token)
+}
 
 // ── Public email-availability rate limiter ───────────────────────────────────
 //
@@ -531,10 +606,105 @@ router.post('/tokens', async (req: Request, res: Response) => {
   }
 })
 
+/** Exchange a projected Kubernetes ServiceAccount token for a short-lived
+ * Fuze workload token. Kubernetes TokenReview proves the pod identity; the
+ * repo-owned FuzeWorkloadIdentity resource supplies the allowed service name,
+ * audience, and scopes. No reusable bootstrap secret is created or stored. */
+router.post('/tokens/workload', async (req: Request, res: Response) => {
+  try {
+    const serviceAccountToken = req.body?.serviceAccountToken
+    if (!serviceAccountToken || typeof serviceAccountToken !== 'string') {
+      throw new InvalidInputError('serviceAccountToken is required')
+    }
+    const workload = await authenticateKubernetesWorkload(serviceAccountToken)
+    const ttl = Math.min(workload.tokenTtlSeconds ?? 600, 900)
+    const accessToken = jwt.sign({
+      kind: 'fuze-workload',
+      sub: workload.service,
+      aud: 'fuzefront-services',
+      scope: workload.scopes.join(' '),
+      namespace: workload.namespace,
+      serviceAccount: workload.serviceAccount,
+      jti: crypto.randomUUID(),
+    } satisfies WorkloadClaims, delegationSigningKey(), {
+      algorithm: 'HS256',
+      expiresIn: ttl,
+      issuer: 'fuzefront-security',
+    })
+    res.status(200).json({ accessToken, tokenType: 'Bearer', expiresIn: ttl, scope: workload.scopes.join(' ') })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+/**
+ * RFC 8693-inspired constrained delegation exchange.
+ *
+ * The Authorization bearer authenticates the immediate service (actor). The
+ * subjectToken carries the end user or an earlier delegation. The resulting
+ * token is audience-bound to exactly one downstream service and cannot gain
+ * scopes that the actor token does not already carry.
+ */
+router.post('/tokens/exchange', async (req: Request, res: Response) => {
+  const actorToken = bearer(req)
+  if (!actorToken) return res.status(401).json({ error: 'Service bearer token is required' })
+
+  try {
+    const { subjectToken, audience } = req.body || {}
+    const scopes = requestedScopes(req.body?.scope)
+    if (!subjectToken || typeof subjectToken !== 'string') {
+      throw new InvalidInputError('subjectToken is required')
+    }
+    if (!audience || typeof audience !== 'string' || !audience.startsWith('service:')) {
+      throw new InvalidInputError('audience must be a service identity')
+    }
+    if (scopes.length === 0) throw new InvalidInputError('scope is required')
+
+    const [actor, subject] = await Promise.all([
+      introspectAnyToken(actorToken),
+      introspectAnyToken(subjectToken),
+    ])
+    if (!actor.active || !actor.subject || (actor as any).tokenKind !== 'fuze-workload') {
+      throw new UnauthorizedError('A Fuze workload token is required')
+    }
+    if (!subject.active || !subject.subject) throw new UnauthorizedError('Inactive subject token')
+    if (!isSubset(scopes, actor.scope)) {
+      return res.status(403).json({ error: 'Requested delegation exceeds service scopes' })
+    }
+
+    const previous = (subject as any).actor
+    const claims: DelegationClaims = {
+      kind: 'fuze-delegation',
+      sub: subject.subject,
+      aud: audience,
+      scope: scopes.join(' '),
+      tenantId: subject.tenantId ?? null,
+      act: { sub: actor.subject, ...(previous ? { previous } : {}) },
+      jti: crypto.randomUUID(),
+    }
+    const accessToken = jwt.sign(claims, delegationSigningKey(), {
+      algorithm: 'HS256',
+      expiresIn: DELEGATION_TOKEN_TTL_SECONDS,
+      issuer: 'fuzefront-security',
+    })
+    res.status(200).json({
+      accessToken,
+      tokenType: 'Bearer',
+      expiresIn: DELEGATION_TOKEN_TTL_SECONDS,
+      scope: claims.scope,
+      subject: claims.sub,
+      actor: claims.act,
+      audience,
+    })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.post('/tokens/introspect', async (req: Request, res: Response) => {
   try {
     if (!req.body?.token) throw new InvalidInputError('token is required')
-    const r = await getIdentityProvider().introspectToken(req.body.token)
+    const r = await introspectAnyToken(req.body.token)
     res.status(200).json(r)
   } catch (err) {
     // Fail-closed: introspection never throws to the caller.

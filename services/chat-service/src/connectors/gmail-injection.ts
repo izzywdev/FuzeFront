@@ -8,6 +8,7 @@ import {
 } from '@fuzefront/shared';
 import type { MessagesRepository } from '../db/repositories/messages';
 import type { ConversationsRepository } from '../db/repositories/conversations';
+import type { DelegationClient, WorkloadAuthClient } from '@fuzefront/service-auth';
 
 type GmailMessage = { from: string; subject: string; date: string; snippet: string };
 
@@ -15,8 +16,9 @@ export interface GmailInjectionDeps {
   producer: Pick<TypedProducer, 'send'>;
   messages: Pick<MessagesRepository, 'append'>;
   conversations: Pick<ConversationsRepository, 'touch'>;
-  fuzekeysUrl: string;
-  internalToken: string;
+  fuzefrontUrl: string;
+  workloadAuth: WorkloadAuthClient;
+  delegation: DelegationClient;
 }
 
 const RECENT_GMAIL = /\b(?:recent|latest|last)\s+(?:five|5)\s+(?:gmail|e-?mails?|messages?)\b|\b(?:gmail|e-?mails?)\b.*\b(?:recent|latest|last)\b/i;
@@ -37,15 +39,20 @@ function summarize(messages: GmailMessage[], identityEmail?: string): string {
 
 export async function injectRecentGmailSummary(
   deps: GmailInjectionDeps,
-  input: { userId: string; conversationId: string },
+  input: { userId: string; conversationId: string; userToken: string },
 ): Promise<void> {
   let text: string;
   try {
-    if (!deps.internalToken) throw new Error('FuzeKeys connector integration is not configured');
-    const response = await fetch(`${deps.fuzekeysUrl.replace(/\/+$/, '')}/api/v1/connectors/google-gmail/messages/recent?limit=5`, {
+    const serviceToken = await deps.workloadAuth.getToken();
+    const delegated = await deps.delegation.exchange({
+      subjectToken: input.userToken,
+      audience: 'service:fuzefront-backend',
+      scopes: ['connectors:gmail:read'],
+    });
+    const response = await fetch(`${deps.fuzefrontUrl.replace(/\/+$/, '')}/api/v1/connectors/google-gmail/messages/recent?limit=5`, {
       headers: {
-        'X-Fuze-User-Id': input.userId,
-        'X-FuzeKeys-Internal-Token': deps.internalToken,
+        Authorization: `Bearer ${serviceToken}`,
+        'X-Fuze-Delegation': `Bearer ${delegated.accessToken}`,
       },
     });
     if (!response.ok) {

@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-security
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-workload-authenticator
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-workload-authenticator
+subjects:
+  - kind: ServiceAccount
+    name: fuzefront-security
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-workload-authenticator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-backend
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuzefront-backend
+  labels:
+    security.fuze.dev/workload-identity: "true"
+data:
+  service: service:fuzefront-backend
+  serviceAccountName: fuzefront-backend
+  scopes: connectors:metadata connectors:credentials:read connectors:credentials:write
+  tokenTtlSeconds: "600"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-chat-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuzefront-chat-service
+  labels:
+    security.fuze.dev/workload-identity: "true"
+data:
+  service: service:fuzefront-chat-service
+  serviceAccountName: fuzefront-chat-service
+  scopes: connectors:gmail:read
+  tokenTtlSeconds: "600"

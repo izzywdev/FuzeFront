@@ -19,6 +19,7 @@ spec:
       annotations:
         {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.backend.port "root" .) | nindent 8 }}
     spec:
+      serviceAccountName: fuzefront-backend
       {{- include "fuzefront.scheduling" (dict "svc" .Values.backend "root" .) | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -32,8 +33,15 @@ spec:
           hostnames:
             - {{ .Values.authentik.host | quote }}
       {{- end }}
-      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
       volumes:
+        - name: fuzefront-workload-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: fuzefront-security
+                  expirationSeconds: 600
+      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
         - name: fuzefront-ca
           configMap:
             name: {{ .Values.authentik.oidc.caConfigMap | quote }}
@@ -105,12 +113,22 @@ spec:
               value: {{ .Values.emailService.kafka.brokers | default "" | quote }}
             - name: FUZEKEYS_URL
               value: {{ .Values.connectors.fuzekeysUrl | quote }}
-            - name: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
+            - name: FUZEFRONT_SECURITY_URL
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            - name: GOOGLE_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
-                  key: FUZEKEYS_CONNECTOR_INTERNAL_TOKEN
+                  key: GOOGLE_CLIENT_ID
                   optional: true
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: GOOGLE_CLIENT_SECRET
+                  optional: true
+            - name: GOOGLE_OAUTH_REDIRECT_URI
+              value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}/api/v1/connectors/google-gmail/oauth/callback"
             # Shared secret guarding POST /internal/provision (Plan D calls this).
             - name: INTERNAL_PROVISION_SECRET
               valueFrom:
@@ -277,8 +295,11 @@ spec:
             periodSeconds: 15
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
           volumeMounts:
+            - name: fuzefront-workload-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
+          {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
             - name: fuzefront-ca
               mountPath: /etc/fuzefront-ca
               readOnly: true
