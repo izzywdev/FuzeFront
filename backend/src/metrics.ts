@@ -7,6 +7,21 @@
 // the backend still boots (mirrors the optional-require pattern used for Swagger).
 import type { Express, Request, Response, NextFunction } from 'express'
 
+// Prometheus label cardinality is an availability concern: every distinct label
+// value mints a new time series, and a label fed from a user-controlled URL
+// grows that set without bound until the scraper OOMs. Any path segment that
+// looks like an identifier is therefore collapsed to ":id" before it is used as
+// a label value.
+const ID_SEGMENT =
+  /^(?:\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z][a-z0-9]*_[0-9a-hjkmnp-tv-z]{26}|[0-9a-fA-F]{16,}|[^/]{24,})$/
+
+function normalizeRouteLabel(p: string): string {
+  return p
+    .split('/')
+    .map(seg => (ID_SEGMENT.test(seg) ? ':id' : seg))
+    .join('/')
+}
+
 interface MetricsHandle {
   /** Express middleware that records request count + duration. */
   middleware: (req: Request, res: Response, next: NextFunction) => void
@@ -64,11 +79,17 @@ export function setupMetrics(): MetricsHandle {
       if (req.path === '/metrics') return next()
       const end = httpRequestDuration.startTimer()
       res.on('finish', () => {
-        // Prefer the matched route pattern (low cardinality); fall back to path.
-        const route =
-          (req.route && req.route.path) ||
-          (req.baseUrl ? `${req.baseUrl}` : req.path) ||
-          'unknown'
+        // Prefer the matched route pattern (low cardinality). NEVER fall back to
+        // req.path: it is raw user input, so unmatched requests (404 probes)
+        // would mint one Prometheus series per distinct URL. Unmatched requests
+        // collapse to the constant "unmatched"; the router mount prefix is
+        // normalised in case a router is mounted under a parameterised path.
+        const matchedPath =
+          req.route && typeof req.route.path === 'string' ? req.route.path : null
+        const base = req.baseUrl ? normalizeRouteLabel(req.baseUrl) : ''
+        const route = matchedPath
+          ? `${base}${matchedPath}` || 'unknown'
+          : base || 'unmatched'
         const labels = {
           method: req.method,
           route,
@@ -85,7 +106,14 @@ export function setupMetrics(): MetricsHandle {
           res.set('Content-Type', register.contentType)
           res.end(await register.metrics())
         } catch (err) {
-          res.status(500).end(String(err))
+          // Log the full error (incl. stack) server-side only; the response body
+          // stays generic so internal details are never exposed to the scraper
+          // or to anyone else who can reach the endpoint.
+          console.error('Failed to collect Prometheus metrics:', err)
+          res
+            .status(500)
+            .type('text/plain')
+            .end('# metrics collection failed\n')
         }
       })
     },

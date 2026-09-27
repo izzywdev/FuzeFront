@@ -1,4 +1,4 @@
-# fuze:managed template=governance-sync.yml baseline=v1 digest=sha256:ad95d02840290f03265d7f540d7b6a2e7974521b5c6046def08895836acd2d02
+# fuze:managed template=governance-sync.yml baseline=v1 digest=sha256:2c25882e292c4a7a655e40e9fd1e52b4f0a82301ca4d7fab06ef979afdb7743f
 name: Governance Sync
 
 # Per-repo, CI-time governance reconciliation (stamped by sdlc-bootstrap).
@@ -161,7 +161,7 @@ jobs:
         id: app_token
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -186,7 +186,7 @@ jobs:
         id: app_token_workflows
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -511,7 +511,7 @@ jobs:
         id: app_token
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -520,7 +520,7 @@ jobs:
         id: app_token_workflows
         if: steps.guard.outputs.ok == 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}

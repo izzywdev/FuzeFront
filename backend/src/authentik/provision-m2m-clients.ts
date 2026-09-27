@@ -158,10 +158,13 @@ async function logCredentials(
   const clientId: string = res.data.client_id || '(not set)'
   const clientSecret: string = res.data.client_secret || ''
 
-  const maskedSecret =
-    clientSecret.length > 4
-      ? `${clientSecret.slice(0, 4)}****`
-      : '****'
+  // Shape only — never any bytes of the secret. An Authentik client_secret is
+  // an opaque high-entropy string, so its leading characters ARE secret
+  // material (unlike a JWT's static header). This previously printed the first
+  // 4 characters into the provisioning log.
+  const maskedSecret = clientSecret
+    ? `(set, ${clientSecret.length} chars — not shown)`
+    : '(not set)'
 
   console.log('[provision-m2m] -------------------------------------------------------')
   console.log('[provision-m2m] FuzeSocial Registration credentials (Mode A):')

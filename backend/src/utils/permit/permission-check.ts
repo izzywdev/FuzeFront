@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { describePermitError } from './describe-error'
 
 export interface PermissionCheck {
   user: string
@@ -30,7 +31,7 @@ export async function checkPermission(
     )
     return result
   } catch (error) {
-    console.error('Error checking permission:', error)
+    console.error('Error checking permission:', describePermitError(error))
     return false // Fail safe - deny access on error
   }
 }
@@ -57,7 +58,7 @@ export async function bulkCheckPermissions(
     // ready (e.g. OPA returning 502). Fall back to individual checks so the
     // caller always receives exactly one boolean per input.
     if (results.length === checks.length) {
-      console.log(`Bulk permission check completed for ${checks.length} checks`)
+      console.log('Bulk permission check completed for %s checks', checks.length)
       return results
     }
 
@@ -65,7 +66,7 @@ export async function bulkCheckPermissions(
       `Bulk check returned ${results.length}/${checks.length} results, falling back to individual checks`
     )
   } catch (error) {
-    console.error('Error in bulk permission check, falling back to individual checks:', error)
+    console.error('Error in bulk permission check, falling back to individual checks:', describePermitError(error))
   }
 
   return Promise.all(checks.map(check => checkPermission(check)))
@@ -169,7 +170,7 @@ export async function getUserPermissions(
     ])
     return permissions
   } catch (error) {
-    console.error(`Error getting user permissions for ${userId}:`, error)
+    console.error('Error getting user permissions for user %s:', userId, describePermitError(error))
     return {}
   }
 }
@@ -215,7 +216,7 @@ export function requirePermission(
 
       next()
     } catch (error) {
-      console.error('Permission middleware error:', error)
+      console.error('Permission middleware error:', describePermitError(error))
       return res.status(500).json({ error: 'Permission check failed' })
     }
   }

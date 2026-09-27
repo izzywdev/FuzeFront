@@ -89,7 +89,7 @@ function HomeHero({ authenticated }: { authenticated: boolean }) {
       </p>
       <div className="dp-row">
         {!authenticated && (
-          <Button variant="primary" data-action="sign-in" onClick={() => { window.location.href = signInUrl() }}>
+          <Button variant="primary" data-action="sign-in" href={signInUrl()}>
             Sign in to explore
           </Button>
         )}

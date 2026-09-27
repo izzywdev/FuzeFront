@@ -1,6 +1,6 @@
 import { Producer, Kafka } from 'kafkajs';
 import { ZodSchema } from 'zod';
-import { FuzeEvent, TopicName, dlqTopic } from './types';
+import { FuzeEvent, TopicName } from './types';
 
 export class TypedProducer {
   private producer: Producer;

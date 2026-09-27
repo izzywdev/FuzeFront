@@ -118,6 +118,24 @@ inputs:
       `cf-access-client-id`). Callers pass `secrets.CF_ACCESS_CLIENT_SECRET`.
     required: false
     default: ''
+  public-litellm-base-url:
+    description: >-
+      Public LiteLLM gateway URL, forwarded verbatim to ./llm-endpoint as
+      `public-litellm-base-url`. ./llm-endpoint probes it as a second tier (with
+      the CF-Access service token + `litellm-ci-key`) when the in-cluster
+      `litellm-base-url` is unreachable — the hosted-runner path — before the
+      runner-local fallback. Defaults to the prod host; the tier self-skips
+      unless the CF-Access creds and `litellm-ci-key` are also provisioned.
+    required: false
+    default: 'https://litellm.prod.fuzefront.com'
+  litellm-ci-key:
+    description: >-
+      Capped LiteLLM virtual key for the PUBLIC gateway tier, forwarded to
+      ./llm-endpoint as `litellm-ci-key`. Distinct, lower-privilege key from
+      `litellm-key` (see ./llm-endpoint for why). Callers pass
+      `secrets.LITELLM_CI_KEY`.
+    required: false
+    default: ''
   anthropic-api-key:
     description: 'Direct Anthropic API key. Forwarded to ./llm-endpoint as fallback-anthropic-key.'
     required: false
@@ -195,8 +213,18 @@ inputs:
       codex-action and run-gemini-cli have no notion of which bot actors may
       trigger a run — they are never triggered BY a GitHub actor here; the
       workflow decides whether to run and this action only carries out the task.
+      Defaults to `fuze-agent` (the org's own agent identity, not `*`) rather
+      than empty: a caller that omits this input is not scoping anything, it is
+      silently broken — claude-code-action hard-fails ANY Bot actor with no
+      `allowed_bots` configured, and `fuze-agent` (the App this fleet mints a
+      token for to push commit-backs — hardening-convention.md §8) is the one
+      identity nearly every caller of this action is triggered by or pushes as.
+      A caller with a wider or narrower need (e.g. `claude` for @claude-triggered
+      runs) still sets this input explicitly; this default only stops a caller
+      that forgot to from failing every run with a config bug that reports as a
+      false AVAILABILITY/quota error (issue #418).
     required: false
-    default: ''
+    default: 'fuze-agent'
   additional-permissions:
     description: >-
       Passed through verbatim as claude-code-action `additional_permissions`
@@ -449,6 +477,14 @@ runs:
         # claude rung below. Empty on the in-cluster path, and harmless there.
         cf-access-client-id: ${{ inputs.cf-access-client-id }}
         cf-access-client-secret: ${{ inputs.cf-access-client-secret }}
+        # PUBLIC-gateway tier: when the in-cluster probe misses (every hosted
+        # runner), ./llm-endpoint probes this URL with the CF-Access service
+        # token + the capped `litellm-ci-key` BEFORE falling back to a
+        # runner-local LiteLLM. Both forwarded verbatim; the tier self-skips
+        # unless the CF-Access creds AND litellm-ci-key above are all set, so
+        # forwarding them is inert until a repo provisions the secrets.
+        public-litellm-base-url: ${{ inputs.public-litellm-base-url }}
+        litellm-ci-key: ${{ inputs.litellm-ci-key }}
         # ALL THREE keys, not just anthropic. ./llm-endpoint filters its
         # fallback-chain down to the vendors whose key is actually non-empty, so
         # a key this action accepts but does not forward removes that vendor from

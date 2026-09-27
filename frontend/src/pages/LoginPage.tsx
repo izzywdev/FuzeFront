@@ -3,7 +3,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
 import type { SessionResult } from '../services/api'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, AuthCard } from '@fuzefront/design-system'
 import { AuthPanel } from '@fuzefront/auth-ui'
 import type {
   AuthTransport,
@@ -18,7 +18,7 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  *
  * All email/password/signup/Google/MFA form markup + state now live ONCE in
  * AuthPanel (packages/auth-ui). This page only supplies:
- *   - the page chrome (FuzeFront logo + the `.auth-form` card wrapper),
+ *   - the page chrome (FuzeFront logo + the `AuthCard` card wrapper),
  *   - the `AuthTransport` that wires AuthPanel to the existing `authAPI`,
  *   - i18n labels via `useLanguage()` (AuthPanel never imports useLanguage
  *     itself — it only renders injected strings),
@@ -35,11 +35,11 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  * logic AuthPanel is meant to own). See the PR description for the follow-up.
  */
 
-// `variant="compact"` — `.auth-form` (frontend/src/index.css) is ALREADY the
-// card chrome (max-width, padding, border, shadow, seam accent). AuthPanel's
-// `variant="full"` would wrap the form in its own CenteredCard, nesting a card
-// inside a card. `compact` renders just the form/social/toggle innards, which
-// is what belongs inside the page's own card.
+// `variant="compact"` — the design-system `AuthCard` (design-system/components/layout)
+// is ALREADY the card chrome (max-width, padding, border, shadow, seam accent).
+// AuthPanel's `variant="full"` would wrap the form in its own CenteredCard,
+// nesting a card inside a card. `compact` renders just the form/social/toggle
+// innards, which is what belongs inside the page's own card.
 const PANEL_VARIANT = 'compact' as const
 
 /**
@@ -213,7 +213,7 @@ function LoginPage() {
   )
 
   return (
-    <div className="auth-form">
+    <AuthCard>
       <div
         style={{
           display: 'flex',
@@ -244,7 +244,7 @@ function LoginPage() {
         onMfaRequired={handleMfaRequired}
         labels={labels}
       />
-    </div>
+    </AuthCard>
   )
 }
 

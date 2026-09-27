@@ -49,6 +49,7 @@
     "build:backend": "npm run build -w backend",
     "build:shared": "npm run build -w shared",
     "test:backend": "npm run test -w backend",
+    "test:integration": "node scripts/test-integration.mjs",
     "type-check:backend": "npm run type-check -w backend",
     "check:workspace-deps": "node scripts/check-workspace-deps.mjs",
     "check:dockerfile-lockfile": "node scripts/check-dockerfile-lockfile.mjs",
@@ -78,7 +79,10 @@
     "body-parser": ">=1.20.6 <2",
     "ip-address": ">=10.2.2",
     "undici": ">=7.29.0 <8",
-    "qs": ">=6.15.3 <7"
+    "qs": ">=6.16.0 <7",
+    "fast-uri": ">=3.1.6 <4",
+    "morgan": ">=1.12.0 <2",
+    "nodemailer": ">=9.1.1 <10"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
@@ -99,7 +103,7 @@
     "@typescript-eslint/parser": "^8.38.0",
     "eslint": "^9.31.0",
     "glob": "^11.0.3",
-    "js-yaml": "^4.3.1",
+    "js-yaml": "^4.3.2",
     "lru-cache": "^11.1.0",
     "node-addon-api": "^8.5.0",
     "permitio": "^2.7.4",

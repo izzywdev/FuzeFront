@@ -33,6 +33,7 @@ import request from 'supertest'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import { v4 as uuidv4 } from 'uuid'
+import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 
 // Raise the rate-limit ceilings BEFORE importing the router — it reads them at
 // module load. The limiter is deliberately NOT disabled: a control that switches
@@ -88,8 +89,13 @@ const OWNER = { id: uuidv4(), email: `owner-${suffix}@test.local`, roles: ['user
 const MEMBER = { id: uuidv4(), email: `member-${suffix}@test.local`, roles: ['user'] }
 const OUTSIDER = { id: uuidv4(), email: `outsider-${suffix}@test.local`, roles: ['user'] }
 
-const ORG_ID = uuidv4()
-const OTHER_ORG_ID = uuidv4()
+const _orgTypeId = mintId('organization')
+const ORG_ID = toUuid(_orgTypeId)         // bare UUID — DB inserts and response checks
+const ORG_ID_WIRE = _orgTypeId            // TypeID — HTTP request bodies
+
+const _otherOrgTypeId = mintId('organization')
+const OTHER_ORG_ID = toUuid(_otherOrgTypeId)
+const OTHER_ORG_ID_WIRE = _otherOrgTypeId
 
 // One app per scope_level, so each level's accept/reject behaviour is tested
 // against a real row rather than a stub.
@@ -277,7 +283,7 @@ describe('app installations', () => {
     it('installs for the caller only with mode=self', async () => {
       const res = await request(app)
         .post(`/api/apps/${BOTH_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID, mode: 'self' })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'self' })
 
       expect(res.status).toBe(201)
       expect(res.body.installation).toMatchObject({
@@ -291,7 +297,7 @@ describe('app installations', () => {
     it('installs for everyone when the caller is an org owner', async () => {
       const res = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID, mode: 'everyone' })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
 
       expect(res.status).toBe(201)
       // An `everyone` install has no user anchor — it belongs to the org.
@@ -303,7 +309,7 @@ describe('app installations', () => {
       currentUser = MEMBER
       const res = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID, mode: 'everyone' })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
 
       expect(res.status).toBe(403)
       expect(res.body.code).toBe('REQUIRES_ORG_ADMIN')
@@ -313,7 +319,7 @@ describe('app installations', () => {
       currentUser = MEMBER
       const res = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE })
 
       expect(res.status).toBe(201)
       expect(res.body.installation.mode).toBe('self')
@@ -323,7 +329,7 @@ describe('app installations', () => {
     it('404s on an organization the caller does not belong to', async () => {
       const res = await request(app)
         .post(`/api/apps/${BOTH_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: OTHER_ORG_ID })
+        .send({ scope: 'organization', organizationId: OTHER_ORG_ID_WIRE })
 
       expect(res.status).toBe(404)
       expect(res.body.code).toBe('ORGANIZATION_NOT_FOUND')
@@ -344,7 +350,7 @@ describe('app installations', () => {
     it('422s installing a personal-only app at organization scope', async () => {
       const res = await request(app)
         .post(`/api/apps/${PERSONAL_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE })
 
       expect(res.status).toBe(422)
       expect(res.body.code).toBe('SCOPE_NOT_PERMITTED')
@@ -399,7 +405,7 @@ describe('app installations', () => {
         .send({ scope: 'personal' })
       await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID, mode: 'everyone' })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
 
       // The member sees the org-wide one plus nothing of the owner's personal.
       currentUser = MEMBER
@@ -416,7 +422,7 @@ describe('app installations', () => {
     it("does not leak another org's installs when the caller is not a member", async () => {
       await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID, mode: 'everyone' })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
 
       currentUser = OUTSIDER
       const res = await request(app).get(
@@ -456,7 +462,7 @@ describe('app installations', () => {
     it('refuses to remove an everyone-install from a plain member', async () => {
       const install = await request(app)
         .post(`/api/apps/${ORG_APP_ID}/install`)
-        .send({ scope: 'organization', organizationId: ORG_ID, mode: 'everyone' })
+        .send({ scope: 'organization', organizationId: ORG_ID_WIRE, mode: 'everyone' })
       const installationId = install.body.installation.id
 
       currentUser = MEMBER

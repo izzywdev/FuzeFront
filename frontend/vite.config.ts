@@ -165,7 +165,17 @@ export default defineConfig({
     // @fuzefront/i18n is bundled from source and pulls react-i18next (which has a
     // nested react copy under packages/i18n/node_modules). Dedupe so the host
     // bundle has a single React instance — otherwise hooks crash at runtime.
-    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
+    // react-router-dom needs the same treatment: @fuzeone/selection-lists-ui
+    // (above) is aliased to SOURCE under packages/selection-lists-ui, which is
+    // an npm-workspace member (root node_modules/react-router-dom, hoisted from
+    // its own peerDependency) — while frontend/ is deliberately NOT a workspace
+    // member and has its own separately-installed copy in frontend/node_modules.
+    // Without dedupe, the host's <BrowserRouter> (frontend's copy) and the
+    // picker's useSearchParams()/useLocation() (root's copy) read from two
+    // distinct React Router contexts, so the hook throws "useLocation() may be
+    // used only in the context of a <Router> component." even though a
+    // <BrowserRouter> is mounted.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next', 'react-router-dom'],
   },
   plugins: [
     workspaceDepResolver,
