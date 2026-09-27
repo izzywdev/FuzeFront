@@ -1017,16 +1017,18 @@ jobs:
         # step), so a plain `npm ci` leaves sqlite3 without its binding.
         run: npm ci
 
-      - name: Rebuild sqlite3 native module (@fuzefront/core)
-        # Without this, tests/events/outbox.test.ts (the pre-existing
-        # sqlite/in-memory-DB unit suite that this job is the first to run in
-        # CI) fails every test with "Cannot find module 'sqlite3' from
-        # '.../knex/lib/dialects/sqlite3/index.js'" before any real
-        # Postgres/Kafka assertion runs. `npm rebuild` explicitly invokes the
-        # package's install script (prebuild-install/node-gyp), bypassing the
-        # install-scripts allowlist gate that silently no-ops it during `npm
-        # ci`.
-        run: npm rebuild sqlite3 --workspace=@fuzefront/core
+      - name: Rebuild sqlite3 native module
+        # backend/core/tests/events/outbox.test.ts drives knex against an
+        # in-memory sqlite DB. Two things must hold (ported from #1191):
+        #  1. RESOLUTION. knex is hoisted to the ROOT node_modules, so its
+        #     require('sqlite3') never walks into backend/node_modules. sqlite3
+        #     is declared in the ROOT package.json devDeps so a root-level copy
+        #     exists where knex resolves.
+        #  2. THE NATIVE BINDING. `npm ci` skips sqlite3's install script
+        #     (install-scripts trust gate); `npm rebuild` runs it explicitly.
+        # This previously read `--workspace=@fuzefront/core`, where sqlite3 is
+        # not installed — npm reported success and built nothing.
+        run: npm rebuild sqlite3
 
       - name: Build @fuzefront/shared kafka barrel
         # @fuzefront/core resolves @fuzefront/shared/kafka from its built dist/
