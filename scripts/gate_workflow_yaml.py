@@ -90,7 +90,11 @@ def parse_failures(directory: str, files: list[str]) -> list[tuple[str, str]]:
         path = os.path.join(directory, name)
         try:
             with open(path, encoding="utf-8") as fh:
-                yaml.load(fh.read(), Loader=_StrictLoader)  # noqa: S506 — SafeLoader subclass
+                loader = _StrictLoader(fh.read())
+            try:
+                loader.get_single_data()
+            finally:
+                loader.dispose()
         except yaml.YAMLError as exc:
             reason = " ".join(str(exc).split())
             failures.append((path, reason))
