@@ -353,6 +353,15 @@ jobs:
         # @fuzefront/security-client prebuild steps above.
         run: npm run -w @fuzefront/auth build
 
+      - name: Build @fuzefront/security-client + service-auth (d.ts for chat-service type-check)
+        # chat-service imports @fuzefront/service-auth (#1189/#1190), which
+        # resolves through its uncommitted dist/; its d.ts build in turn imports
+        # @fuzefront/security-client. Merged while ci.yml was not running, so
+        # the missing build went unnoticed (TS2307).
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+
       - name: Type-check chat-service
         run: npm run -w @fuzefront/chat-service build
 
