@@ -39,7 +39,14 @@ import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic
  * host's ingress/nginx proxies `/v1/traces` through to the OTel Collector's
  * HTTP receiver — a browser should never call FuzeInfra's collector
  * cross-origin directly. Pass an explicit `otlpEndpoint` if that passthrough
- * isn't wired yet; see `docs/TRACE_CONTRACT.md#browser-transport`. */
+ * isn't wired yet; see `docs/TRACE_CONTRACT.md#browser-transport`.
+ *
+ * NOTE: a relative URL only resolves through `@opentelemetry/exporter-trace-
+ * otlp-http`'s BROWSER platform implementation (selected via that package's
+ * `browser` field — Vite/webpack/Rollup honor it for a client build; plain
+ * Node does not). This entry point is only ever meant to run bundled for a
+ * browser target; loading it under plain Node (e.g. SSR) needs an explicit
+ * absolute `otlpEndpoint`. */
 const DEFAULT_BROWSER_OTLP_ENDPOINT = '/v1/traces';
 
 export interface BrowserTelemetryOptions {
