@@ -17,15 +17,10 @@ import type { NextFunction, Request, Response } from 'express';
 import { MachineIdentity, ServiceAuthError } from './types';
 import { MachineTokenVerifier } from './verifier';
 
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Express {
-    interface Request {
-      /** Populated by `requireMachineAuth()`. Absent on requests it did not gate. */
-      machineIdentity?: MachineIdentity;
-    }
-  }
-}
+type AuthenticatedRequest = Request & {
+  machineIdentity?: MachineIdentity;
+  delegatedIdentity?: MachineIdentity;
+};
 
 /** The JSON error body `requireMachineAuth` sends on rejection. */
 export interface MachineAuthErrorBody {
@@ -54,6 +49,15 @@ export interface RequireMachineAuthOptions {
   header?: string;
   /** Optional per-caller authorization check. See {@link MachineAuthorizeHook}. */
   authorize?: MachineAuthorizeHook;
+}
+
+export interface RequireDelegatedAuthOptions extends RequireMachineAuthOptions {
+  /** Stable identity of this resource server, e.g. `service:fuzekeys`. */
+  audience: `service:${string}`;
+  /** Header carrying the FuzeFront-issued delegation token. */
+  delegationHeader?: string;
+  /** Scopes every accepted delegation must contain. */
+  requiredScopes?: string[];
 }
 
 /** Pull the raw token out of `Authorization: Bearer <token>` (or a custom header). */
@@ -99,7 +103,7 @@ export function requireMachineAuth(
     verifier
       .verifyMachineToken(token)
       .then(async identity => {
-        req.machineIdentity = identity;
+        (req as AuthenticatedRequest).machineIdentity = identity;
 
         if (!authorize) {
           next();
@@ -126,6 +130,54 @@ export function requireMachineAuth(
         // body — see verifier.ts). Always a denial; never next().
         deny(res, err);
       });
+  };
+}
+
+/**
+ * Require both the immediate workload and the external user it acts for.
+ * The delegation is accepted only when its audience is this service and its
+ * signed `act.sub` exactly matches the authenticated immediate caller.
+ */
+export function requireDelegatedAuth(
+  options: RequireDelegatedAuthOptions,
+): (req: Request, res: Response, next: NextFunction) => void {
+  const {
+    verifier,
+    audience,
+    delegationHeader = 'x-fuze-delegation',
+    requiredScopes = [],
+    authorize,
+  } = options;
+  if (!audience) throw new ServiceAuthError('MISCONFIGURED', 'delegation audience is required', 500);
+
+  return (req, res, next) => {
+    const machineToken = readBearer(req, options.header ?? 'authorization');
+    const delegationToken = readBearer(req, delegationHeader);
+    if (!machineToken || !delegationToken) {
+      deny(res, new ServiceAuthError('NO_TOKEN', 'service and delegation bearer tokens are required', 401));
+      return;
+    }
+    Promise.all([
+      verifier.verifyMachineToken(machineToken),
+      verifier.verifyMachineToken(delegationToken),
+    ]).then(async ([machine, delegated]) => {
+      const hasScopes = requiredScopes.every(scope => delegated.scopes.includes(scope));
+      if (
+        machine.tokenKind !== 'fuze-workload' ||
+        delegated.tokenKind !== 'fuze-delegation' ||
+        delegated.audience !== audience ||
+        delegated.actor?.sub !== machine.subject ||
+        !hasScopes
+      ) {
+        throw new ServiceAuthError('FORBIDDEN', 'delegation does not authorize this caller or operation', 403);
+      }
+      (req as AuthenticatedRequest).machineIdentity = machine;
+      (req as AuthenticatedRequest).delegatedIdentity = delegated;
+      if (authorize && !(await authorize(machine, req))) {
+        throw new ServiceAuthError('FORBIDDEN', 'not permitted', 403);
+      }
+      next();
+    }).catch(err => deny(res, err));
   };
 }
 

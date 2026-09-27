@@ -46,6 +46,9 @@ export function initializeSocketIO(httpServer: HTTPServer) {
     if (socket.appId) {
       socket.join(socket.appId)
     }
+    if (socket.userId) {
+      socket.join(`user:${socket.userId}`)
+    }
 
     // Handle command events
     socket.on('command-event', (event: CommandEvent) => {

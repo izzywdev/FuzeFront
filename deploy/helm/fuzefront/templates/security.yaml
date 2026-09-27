@@ -20,6 +20,7 @@ spec:
       annotations:
         {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.securityService.port "root" .) | nindent 8 }}
     spec:
+      serviceAccountName: fuzefront-security
       {{- include "fuzefront.scheduling" (dict "svc" .Values.securityService "root" .) | nindent 6 }}
       # Bound DNS stalls (same rationale as authentik-server): single CoreDNS
       # replica over the overlay intermittently stalls lookups in 5s/10s retry
