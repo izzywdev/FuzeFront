@@ -531,7 +531,10 @@ function SuggestionActions({ id, payload, onComplete }: { id: string; payload: R
       const value: Record<string, unknown> = { decision, reason: reason || undefined }
       if (decision === 'edit') value.editedPayload = JSON.parse(editedPayload)
       if (decision === 'merge') value.mergeIntoSuggestionId = mergeIntoSuggestionId
-      if (decision === 'suppress') Object.assign(value, { owner, expiresAt })
+      // Assign the two suppression fields explicitly rather than spreading an
+      // object into `value`: an Object.assign here is a mass-assignment shape
+      // that grows silently if the source object ever gains fields.
+      if (decision === 'suppress') { value.owner = owner; value.expiresAt = expiresAt }
       await api.decideSuggestion(id, value)
       await onComplete()
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }

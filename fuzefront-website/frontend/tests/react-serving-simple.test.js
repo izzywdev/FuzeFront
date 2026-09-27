@@ -45,7 +45,7 @@ async function testReactApplication(url, description) {
       hasModernJS: html.includes('type="module"'),
     };
     
-    console.log(`${description} checks:`, checks);
+    console.log('%s checks:', description, checks);
     
     // Assert critical React application requirements
     expect(checks.hasHtmlStructure).toBe(true);
@@ -68,7 +68,7 @@ async function testReactApplication(url, description) {
     };
     
   } catch (error) {
-    console.error(`❌ ${description} test failed:`, error.message);
+    console.error('❌ %s test failed: %s', description, error.message);
     
     // For network errors, provide helpful information
     if (error.code === 'ECONNREFUSED') {

@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { logger } from '../../lib/logger'
 import { BackendUser } from './user-sync'
 import { Organization } from '../../types/shared'
 import { PermitUser } from './user-sync'
@@ -40,7 +41,10 @@ export async function bulkSyncUsers(
           await permit.api.users.sync(permitUser)
           results.success++
         } catch (error) {
-          console.error(`Failed to sync user ${permitUser.key}:`, error)
+          logger.error(
+            { userId: permitUser.key, err: error },
+            'permit: bulk user sync item failed'
+          )
           results.failed++
         }
       })
@@ -48,11 +52,12 @@ export async function bulkSyncUsers(
       await Promise.all(promises)
     }
 
-    console.log(
-      `Bulk user sync completed: ${results.success} successful, ${results.failed} failed`
+    logger.info(
+      { succeeded: results.success, failed: results.failed },
+      'permit: bulk user sync completed'
     )
   } catch (error) {
-    console.error('Error in bulk user sync:', error)
+    logger.error({ err: error }, 'permit: bulk user sync failed')
   }
 
   return results
@@ -94,7 +99,10 @@ export async function bulkSyncTenants(
           await permit.api.tenants.create(tenant)
           results.success++
         } catch (error) {
-          console.error(`Failed to sync tenant ${tenant.key}:`, error)
+          logger.error(
+            { tenantId: tenant.key, err: error },
+            'permit: bulk tenant sync item failed'
+          )
           results.failed++
         }
       })
@@ -102,11 +110,12 @@ export async function bulkSyncTenants(
       await Promise.all(promises)
     }
 
-    console.log(
-      `Bulk tenant sync completed: ${results.success} successful, ${results.failed} failed`
+    logger.info(
+      { succeeded: results.success, failed: results.failed },
+      'permit: bulk tenant sync completed'
     )
   } catch (error) {
-    console.error('Error in bulk tenant sync:', error)
+    logger.error({ err: error }, 'permit: bulk tenant sync failed')
   }
 
   return results
@@ -131,9 +140,14 @@ export async function bulkAssignRoles(
           await permit.api.roleAssignments.assign(assignment)
           results.success++
         } catch (error) {
-          console.error(
-            `Failed to assign role ${assignment.role} to user ${assignment.user}:`,
-            error
+          logger.error(
+            {
+              role: assignment.role,
+              userId: assignment.user,
+              tenantId: assignment.tenant,
+              err: error,
+            },
+            'permit: bulk role assignment item failed'
           )
           results.failed++
         }
@@ -142,11 +156,12 @@ export async function bulkAssignRoles(
       await Promise.all(promises)
     }
 
-    console.log(
-      `Bulk role assignment completed: ${results.success} successful, ${results.failed} failed`
+    logger.info(
+      { succeeded: results.success, failed: results.failed },
+      'permit: bulk role assignment completed'
     )
   } catch (error) {
-    console.error('Error in bulk role assignment:', error)
+    logger.error({ err: error }, 'permit: bulk role assignment failed')
   }
 
   return results
@@ -201,12 +216,16 @@ export async function setupOrganizationWithRoles(
 
     await bulkAssignRoles(roleAssignments)
 
-    console.log(
-      `Organization ${organization.id} setup completed with ${membershipData.length} members`
+    logger.info(
+      { tenantId: organization.id, memberCount: membershipData.length },
+      'permit: organization setup completed'
     )
     return true
   } catch (error) {
-    console.error(`Error setting up organization ${organization.id}:`, error)
+    logger.error(
+      { tenantId: organization.id, err: error },
+      'permit: organization setup failed'
+    )
     return false
   }
 }
@@ -227,7 +246,7 @@ export async function initialDataSync(data: {
   tenants: { success: number; failed: number }
   roles: { success: number; failed: number }
 }> {
-  console.log('Starting initial data sync to Permit.io...')
+  logger.info('permit: initial data sync starting')
 
   // 1. Sync users first
   const userResults = await bulkSyncUsers(data.users)
@@ -253,7 +272,7 @@ export async function initialDataSync(data: {
 
   const roleResults = await bulkAssignRoles(roleAssignments)
 
-  console.log('Initial data sync completed')
+  logger.info('permit: initial data sync completed')
   return {
     users: userResults,
     tenants: tenantResults,

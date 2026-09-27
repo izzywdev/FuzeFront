@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { logger } from '../../lib/logger'
 
 export interface RoleAssignment {
   user: string
@@ -15,14 +16,19 @@ export async function assignRoleInPermit(
 ): Promise<boolean> {
   try {
     await permit.api.roleAssignments.assign(assignment)
-    console.log(
-      `Role ${assignment.role} assigned to user ${assignment.user} in tenant ${assignment.tenant}`
+    logger.info(
+      {
+        role: assignment.role,
+        user: assignment.user,
+        tenant: assignment.tenant,
+      },
+      'permit role assigned to user in tenant'
     )
     return true
   } catch (error) {
-    console.error(
-      `Error assigning role ${assignment.role} to user ${assignment.user}:`,
-      error
+    logger.error(
+      { err: error, role: assignment.role, user: assignment.user },
+      'error assigning permit role to user'
     )
     return false
   }
@@ -48,14 +54,19 @@ export async function unassignRoleInPermit(
 ): Promise<boolean> {
   try {
     await permit.api.roleAssignments.unassign(assignment)
-    console.log(
-      `Role ${assignment.role} unassigned from user ${assignment.user} in tenant ${assignment.tenant}`
+    logger.info(
+      {
+        role: assignment.role,
+        user: assignment.user,
+        tenant: assignment.tenant,
+      },
+      'permit role unassigned from user in tenant'
     )
     return true
   } catch (error) {
-    console.error(
-      `Error unassigning role ${assignment.role} from user ${assignment.user}:`,
-      error
+    logger.error(
+      { err: error, role: assignment.role, user: assignment.user },
+      'error unassigning permit role from user'
     )
     return false
   }
@@ -75,7 +86,10 @@ export async function getUserRoleAssignments(
     const assignments = await permit.api.roleAssignments.list(filter)
     return assignments
   } catch (error) {
-    console.error(`Error getting role assignments for user ${userId}:`, error)
+    logger.error(
+      { err: error, user: userId, tenant: tenantId },
+      'error getting role assignments for user'
+    )
     return []
   }
 }
@@ -90,9 +104,9 @@ export async function getTenantRoleAssignments(tenantId: string) {
     })
     return assignments
   } catch (error) {
-    console.error(
-      `Error getting role assignments for tenant ${tenantId}:`,
-      error
+    logger.error(
+      { err: error, tenant: tenantId },
+      'error getting role assignments for tenant'
     )
     return []
   }
@@ -113,7 +127,10 @@ export async function userHasRole(
         assignment.role === role && assignment.tenant === tenantId
     )
   } catch (error) {
-    console.error(`Error checking if user ${userId} has role ${role}:`, error)
+    logger.error(
+      { err: error, user: userId, role, tenant: tenantId },
+      'error checking whether user has role'
+    )
     return false
   }
 }
@@ -144,9 +161,9 @@ export async function assignOrganizationRole(
       tenant: organizationId,
     })
   } catch (error) {
-    console.error(
-      `Error assigning organization role for user ${userId}:`,
-      error
+    logger.error(
+      { err: error, user: userId, organizationId, membershipRole },
+      'error assigning organization role for user'
     )
     return false
   }
@@ -180,12 +197,9 @@ export async function unassignOrganizationRole(
       tenant: organizationId,
     })
   } catch (error) {
-    // Constant format string (userId passed as an argument, not interpolated)
-    // to satisfy the log-injection SAST rule.
-    console.error(
-      'Error unassigning organization role for user',
-      userId,
-      error
+    logger.error(
+      { err: error, user: userId, organizationId, membershipRole },
+      'error unassigning organization role for user'
     )
     return false
   }
@@ -229,7 +243,10 @@ export async function updateOrganizationRole(
 
     return true
   } catch (error) {
-    console.error(`Error updating organization role for user ${userId}:`, error)
+    logger.error(
+      { err: error, user: userId, organizationId, oldRole, newRole },
+      'error updating organization role for user'
+    )
     return false
   }
 }

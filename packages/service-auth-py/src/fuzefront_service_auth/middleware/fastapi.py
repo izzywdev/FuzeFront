@@ -77,3 +77,46 @@ def machine_identity_dependency(
         return identity
 
     return dependency
+
+
+def delegated_identity_dependency(
+    verifier: MachineTokenVerifier,
+    *,
+    audience: str,
+    required_scopes: list[str] | None = None,
+    delegation_header: str = "x-fuze-delegation",
+):
+    """Require an immediate service token plus signed delegated-user context.
+
+    The delegation's audience must equal this service and its signed actor must
+    equal the immediate machine caller. Plain user-id headers are never trusted.
+    """
+    required = set(required_scopes or [])
+
+    async def dependency(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),  # noqa: B008
+    ) -> MachineIdentity:
+        if credentials is None or not credentials.credentials:
+            raise _deny(ServiceAuthError("no service bearer token presented", code="NO_TOKEN", status=401))
+        raw_delegation = request.headers.get(delegation_header)
+        if not raw_delegation or not raw_delegation.lower().startswith("bearer "):
+            raise _deny(ServiceAuthError("no delegation bearer token presented", code="NO_TOKEN", status=401))
+        try:
+            machine = verifier.verify_machine_token(credentials.credentials)
+            delegated = verifier.verify_machine_token(raw_delegation.split(" ", 1)[1])
+        except ServiceAuthError as error:
+            raise _deny(error)
+        if (
+            delegated.token_kind != "fuze-delegation"
+            or delegated.audience != audience
+            or not delegated.actor
+            or delegated.actor.get("sub") != machine.subject
+            or not required.issubset(set(delegated.scopes))
+        ):
+            raise _deny(AuthorizationError("delegation does not authorize this caller or operation"))
+        request.state.machine_identity = machine
+        request.state.delegated_identity = delegated
+        return delegated
+
+    return dependency

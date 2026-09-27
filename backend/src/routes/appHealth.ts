@@ -168,7 +168,12 @@ export async function checkAppHealth(
       : 'text/html,application/json'
   )
   if (!probe.ok) {
-    console.log(`Health check failed for ${app.name} (${target}):`, probe.message)
+    console.log(
+      'Health check failed for %s (%s):',
+      app.name,
+      target,
+      probe.message
+    )
     return {
       isHealthy: false,
       httpStatus: null,

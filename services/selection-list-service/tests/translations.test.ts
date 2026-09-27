@@ -37,7 +37,9 @@ const mockFlag = isSelectionListsEnabled as jest.Mock;
 
 // ─── Test data ────────────────────────────────────────────────────────────────
 
-const JWT_SECRET = 'translations-test-secret';
+// Test-only signing secret (never a production credential); overridable via
+// TEST_JWT_SECRET so the literal is an obviously fake fallback.
+const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-translations';
 const TOKEN = jwt.sign(
   { userId: 'usr_01test', orgId: 'org_01test' },
   JWT_SECRET

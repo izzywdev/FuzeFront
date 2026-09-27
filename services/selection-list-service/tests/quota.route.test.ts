@@ -48,12 +48,14 @@ const mockCheckItemQuota = checkItemQuota as jest.MockedFunction<typeof checkIte
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const JWT_SECRET = 'test-secret-s6-quota';
+// Test-only signing key. Never a production value: read from the environment so
+// this file cannot silently mirror whatever default production happens to use.
+const TEST_JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret';
 
 function makeToken(payload: Record<string, unknown> = {}): string {
   return jwt.sign(
     { userId: 'usr_testuser', orgId: 'org_testorg', ...payload },
-    JWT_SECRET,
+    TEST_JWT_SECRET,
   );
 }
 
@@ -90,7 +92,7 @@ function makeQuotaApp() {
     const token = authHeader?.split(' ')[1];
     if (!token) { return next(); }
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const decoded = jwt.verify(token, TEST_JWT_SECRET) as any;
       req.userId = decoded.userId;
       req.orgId = decoded.orgId;
     } catch { /* invalid token — leave userId/orgId unset */ }
@@ -108,7 +110,7 @@ function makeQuotaApp() {
       return res.status(401).json({ code: 'UNAUTHENTICATED', message: 'No token.' });
     }
     try {
-      jwt.verify(token, JWT_SECRET);
+      jwt.verify(token, TEST_JWT_SECRET);
       next();
     } catch {
       res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Invalid token.' });
@@ -157,7 +159,7 @@ function makeItemMiddlewareApp(orgId?: string, userId?: string) {
 // ─── Setup / teardown ─────────────────────────────────────────────────────────
 
 beforeAll(() => {
-  process.env.JWT_SECRET = JWT_SECRET;
+  process.env.JWT_SECRET = TEST_JWT_SECRET;
 });
 
 afterAll(() => {
@@ -224,7 +226,7 @@ describe('GET /v1/selection-lists/quota — auth guard', () => {
   it('returns 401 when orgId claim is missing from JWT', async () => {
     const app = makeQuotaApp();
     // Token with userId but no orgId
-    const tokenNoOrg = jwt.sign({ userId: 'usr_testuser' }, JWT_SECRET);
+    const tokenNoOrg = jwt.sign({ userId: 'usr_testuser' }, TEST_JWT_SECRET);
 
     const res = await request(app)
       .get('/v1/selection-lists/quota')

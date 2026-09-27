@@ -324,27 +324,25 @@ export function InstallAppDialog({
             {everyoneInstall ? t('actions.close') : t('actions.cancel')}
           </Button>
           {everyoneInstall ? (
-            <button
-              className="btn btn-primary"
+            <Button
+              variant="primary"
               data-action="uninstall"
               disabled={busy}
               onClick={() => void handleUninstall()}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}
+              leadingIcon={busy ? <Spinner size={14} color="white" /> : null}
             >
-              {busy && <Spinner size={14} color="white" />}
               {t('install.uninstallAction')}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="btn btn-primary"
+            <Button
+              variant="primary"
               data-action="install"
               disabled={busy || (scope === 'organization' && !activeOrganizationId)}
               onClick={() => void handleInstall()}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}
+              leadingIcon={busy ? <Spinner size={14} color="white" /> : null}
             >
-              {busy && <Spinner size={14} color="white" />}
               {t('install.action')}
-            </button>
+            </Button>
           )}
         </div>
       </div>

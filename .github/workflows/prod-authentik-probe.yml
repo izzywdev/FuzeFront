@@ -34,8 +34,16 @@ jobs:
           set -uo pipefail
           jar=$(mktemp)
           echo '=== identification challenge (default-authentication-flow) ==='
+          # Download to a file first, then pretty-print FROM the file. Piping a
+          # network response straight into an interpreter (`curl ... | python3`)
+          # is the curl-pipe-shell pattern: a hijacked/compromised endpoint gets
+          # its bytes handed to an interpreter on the runner. `-m json.tool`
+          # only parses, but the shape is the hazard and it costs nothing to
+          # avoid. The response is data here, and is read as data.
+          chal=$(mktemp)
           curl -sSL -c "$jar" -b "$jar" -H 'Accept: application/json' \
-            "$AK/api/v3/flows/executor/default-authentication-flow/?query=" | python3 -m json.tool || true
+            -o "$chal" "$AK/api/v3/flows/executor/default-authentication-flow/?query=" || true
+          python3 -m json.tool < "$chal" || cat "$chal" || true
           echo
           echo '=== flow existence (HTTP codes; 404 = flow not created) ==='
           for slug in fuzefront-enrollment fuzefront-recovery default-authentication-flow; do

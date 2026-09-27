@@ -42,6 +42,7 @@
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
+import { mockAuthenticatedSelectionListsSession } from './support/selection-lists-e2e-session'
 
 const LIST_ID = 'sl_01h455vb4pex5vsknk084sn02q'
 const ACCESS_ROUTE = `/settings/selection-lists/${LIST_ID}/access`
@@ -70,6 +71,7 @@ const MOCK_ACCESS_GRANTS = [
 ]
 
 async function gotoAccessPanel(page: Page) {
+  await mockAuthenticatedSelectionListsSession(page)
   await page.goto(ACCESS_ROUTE, { waitUntil: 'domcontentloaded' })
 }
 

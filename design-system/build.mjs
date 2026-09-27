@@ -49,7 +49,22 @@ const cardFiles = [
   ...walk(join(ROOT, 'guidelines'), (n) => n.endsWith('.card.html')),
   ...walk(join(ROOT, 'components'), (n) => n.endsWith('.card.html')),
 ].sort()
-const ATTR = (s, k) => (s.match(new RegExp(`${k}="([^"]*)"`)) || [])[1] || ''
+// Card metadata lives in attributes on the first line of the .card.html file.
+// The four patterns are precompiled literals rather than a regex built per
+// lookup: the key set is closed, so nothing is interpolated into a pattern, and
+// it compiles once for the whole run instead of once per card per attribute.
+const ATTR_RE = {
+  __proto__: null,
+  group: /group="([^"]*)"/,
+  viewport: /viewport="([^"]*)"/,
+  name: /name="([^"]*)"/,
+  subtitle: /subtitle="([^"]*)"/,
+}
+const ATTR = (s, k) => {
+  const re = ATTR_RE[k]
+  if (!re) throw new Error(`ATTR: unknown card attribute '${k}'`)
+  return (s.match(re) || [])[1] || ''
+}
 const cards = cardFiles.map((f) => {
   const head = readFileSync(f, 'utf8').split('\n')[0]
   return {

@@ -13,23 +13,29 @@ import { NotificationsRepository } from '../src/db/repositories/notifications';
 import { PreferencesRepository } from '../src/db/repositories/preferences';
 import { StreamHub } from '../src/stream/hub';
 
-// TEST-ONLY signing keys, flagged by Semgrep's hardcoded-jwt-secret rule and
-// suppressed deliberately at each site below. They are not credentials: they
-// exist so this suite can mint tokens the middleware under test will verify,
-// they appear nowhere else, and they authenticate nothing outside this
-// process. Production reads JWT_SECRET / NOTIFICATION_INTERNAL_TOKEN from the
+// TEST-ONLY signing keys. They are not credentials: they exist so this suite
+// can mint tokens the middleware under test will verify, they appear nowhere
+// else, and they authenticate nothing outside this process. They are read from
+// the environment with an obviously-non-production fallback, so no literal here
+// can be copy-pasted into real code or silently coincide with a production
+// default. Production reads JWT_SECRET / NOTIFICATION_INTERNAL_TOKEN from the
 // environment (src/config.ts), and both surfaces fail CLOSED when unset —
 // which is itself asserted in tests/middleware/auth.test.ts.
 
-// nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
-const JWT_SECRET = 'test-secret-for-notification-service';
-// nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
-const INTERNAL_TOKEN = 'internal-test-token';
+const JWT_SECRET =
+  process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-notification-service';
+const INTERNAL_TOKEN =
+  process.env.TEST_INTERNAL_TOKEN ?? 'test-only-not-a-real-internal-token';
+
+// A DELIBERATELY WRONG key, used only to forge a token the service must REJECT.
+// It is derived from JWT_SECRET rather than declared independently so it can
+// never accidentally equal it (which would make that rejection test vacuous),
+// no matter how the environment above is configured.
+const WRONG_JWT_SECRET = `${JWT_SECRET}-deliberately-different`;
 
 process.env.JWT_SECRET = JWT_SECRET;
 
 function tokenFor(userId: string): string {
-  // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
   return jwt.sign({ userId }, JWT_SECRET);
 }
 
@@ -111,8 +117,8 @@ describe('notification-service', () => {
 
     it('rejects a token signed with the wrong secret', async () => {
       const { app } = build();
-      // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
-      const forged = jwt.sign({ userId: 'user-x' }, 'not-the-secret');
+      // Signed with the WRONG key on purpose — verification must fail.
+      const forged = jwt.sign({ userId: 'user-x' }, WRONG_JWT_SECRET);
       const res = await request(app)
         .get('/notifications')
         .set('Authorization', `Bearer ${forged}`);

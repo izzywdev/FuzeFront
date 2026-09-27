@@ -64,6 +64,13 @@ const mockedPost = axios.post as jest.MockedFunction<typeof axios.post>
 const ISSUER = 'http://authentik.test/application/o/s2s-fuzecall-backend/'
 const ENDPOINT_KEY = 'fuzecall_control_plane'
 
+// Test-only signing key for the flag-OFF case below, where the token is never
+// verified at all (the flag short-circuits before any JWKS fetch), so the key
+// is irrelevant. Read from the environment with an obviously-non-production
+// fallback so no secret literal lives in this file.
+const TEST_IRRELEVANT_JWT_SECRET =
+  process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-irrelevant-since-flag-off'
+
 beforeEach(() => {
   jest.clearAllMocks()
   _clearJwksCacheForTests()
@@ -182,7 +189,7 @@ describe('S2S identity foundation — issuance -> JWKS validation -> permit.chec
   it('never fetches the JWKS or authorizes when the JWKS-auth flag is OFF (default)', async () => {
     jest.spyOn(s2sJwksFlagModule, 'isS2SJwksAuthEnabled').mockResolvedValue(false)
 
-    const token = jwt.sign({ aud: 's2s', service: 'fuzecall-backend' }, 'irrelevant-since-flag-off', {
+    const token = jwt.sign({ aud: 's2s', service: 'fuzecall-backend' }, TEST_IRRELEVANT_JWT_SECRET, {
       algorithm: 'HS256',
       expiresIn: '5m',
     })

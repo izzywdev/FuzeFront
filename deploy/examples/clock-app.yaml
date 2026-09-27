@@ -22,10 +22,32 @@ spec:
       labels:
         app: clock-app
     spec:
+      # Hardening (semgrep yaml.kubernetes.security.run-as-non-root /
+      # allow-privilege-escalation-no-securitycontext).
+      #
+      # `runAsNonRoot: true` on its own would make the kubelet REFUSE this pod:
+      # clock-app/Dockerfile's final stage is nginx:alpine with no USER, so the
+      # image declares root and the check fails before the container starts.
+      # 101:101 is the `nginx` user/group that ships in the nginx:alpine base.
+      # Running unprivileged is safe for this image specifically because
+      # clock-app/nginx.conf listens on 8080 (not a privileged port) and sets
+      # `pid /tmp/nginx.pid` (not /var/run), and the container only serves
+      # static files, so it never writes to /var/cache/nginx.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: clock-app
           image: fuzefront/clock-app:local
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: 8080

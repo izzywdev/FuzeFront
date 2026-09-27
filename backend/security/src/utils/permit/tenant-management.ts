@@ -1,4 +1,5 @@
 import permit from '../../config/permit'
+import { logger } from '../../lib/logger'
 import { Organization } from '../../types/shared'
 
 export interface PermitTenant {
@@ -62,18 +63,19 @@ export async function createTenantInPermit(
 
   try {
     await permit.api.tenants.create(tenant)
-    console.log(`Tenant ${organization.id} created in Permit.io successfully`)
+    logger.info({ tenantId: organization.id }, 'permit: tenant created')
     return true
   } catch (error) {
     if (isAlreadyExistsError(error)) {
-      console.log(
-        `Tenant ${organization.id} already exists in Permit.io (benign 409)`
+      logger.info(
+        { tenantId: organization.id },
+        'permit: tenant already exists (benign 409)'
       )
       return true
     }
-    console.error(
-      `Error creating tenant ${organization.id} in Permit.io:`,
-      error
+    logger.error(
+      { tenantId: organization.id, err: error },
+      'permit: tenant create failed'
     )
     throw error
   }
@@ -88,12 +90,12 @@ export async function updateTenantInPermit(
 ): Promise<boolean> {
   try {
     await permit.api.tenants.update(organizationId, updates)
-    console.log(`Tenant ${organizationId} updated in Permit.io successfully`)
+    logger.info({ tenantId: organizationId }, 'permit: tenant updated')
     return true
   } catch (error) {
-    console.error(
-      `Error updating tenant ${organizationId} in Permit.io:`,
-      error
+    logger.error(
+      { tenantId: organizationId, err: error },
+      'permit: tenant update failed'
     )
     return false
   }
@@ -107,12 +109,12 @@ export async function deleteTenantFromPermit(
 ): Promise<boolean> {
   try {
     await permit.api.tenants.delete(organizationId)
-    console.log(`Tenant ${organizationId} deleted from Permit.io successfully`)
+    logger.info({ tenantId: organizationId }, 'permit: tenant deleted')
     return true
   } catch (error) {
-    console.error(
-      `Error deleting tenant ${organizationId} from Permit.io:`,
-      error
+    logger.error(
+      { tenantId: organizationId, err: error },
+      'permit: tenant delete failed'
     )
     return false
   }
@@ -126,9 +128,9 @@ export async function getTenantFromPermit(organizationId: string) {
     const tenant = await permit.api.tenants.get(organizationId)
     return tenant
   } catch (error) {
-    console.error(
-      `Error getting tenant ${organizationId} from Permit.io:`,
-      error
+    logger.error(
+      { tenantId: organizationId, err: error },
+      'permit: tenant get failed'
     )
     return null
   }
@@ -142,7 +144,7 @@ export async function listTenantsFromPermit() {
     const tenants = await permit.api.tenants.list()
     return tenants
   } catch (error) {
-    console.error('Error listing tenants from Permit.io:', error)
+    logger.error({ err: error }, 'permit: tenant list failed')
     return []
   }
 }

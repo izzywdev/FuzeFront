@@ -7,7 +7,9 @@ import jwt from 'jsonwebtoken';
 import { createChatRouter } from '../../src/routes/chat';
 import { CursorNotFoundError } from '../../src/db/repositories/messages';
 
-const JWT_SECRET = 'test-secret';
+// Test-only JWT signing secret. Overridable via TEST_JWT_SECRET; the fallback is
+// a deliberately non-production placeholder, never a real credential.
+const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret';
 const USER_ID = '11111111-1111-1111-1111-111111111111';
 const ORG_ID = '22222222-2222-2222-2222-222222222222';
 

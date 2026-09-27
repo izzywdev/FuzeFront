@@ -385,7 +385,8 @@ router.post('/portals', authenticateToken, async (req: any, res) => {
       await reconcileOrganizationProvisioning(fromUuid('organization', organizationId))
     } catch (error) {
       console.error(
-        `[security] Portal provisioning reconcile failed for org ${organizationId} (will self-heal):`,
+        '[security] Portal provisioning reconcile failed for org %s (will self-heal):',
+        organizationId,
         error
       )
     }
