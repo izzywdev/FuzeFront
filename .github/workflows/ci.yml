@@ -107,6 +107,17 @@ jobs:
         # statically, so backend's tsc cannot resolve it until this runs.
         run: npm run -w @fuzefront/custom-hostname-client build
 
+      - name: Build @fuzefront/shared + @fuzefront/service-auth (d.ts for backend type-check)
+        # Both resolve through dist/. shared/dist is COMMITTED and goes stale
+        # whenever shared/src changes without a rebuild (#1189 added the
+        # chat.response.chunk schema to src only), and service-auth/dist is not
+        # committed at all — so backend's tsc failed on master with TS2305/TS2307
+        # for both. service-auth's d.ts build imports @fuzefront/security-client,
+        # which is built earlier in this job.
+        run: |
+          npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/service-auth build
+
       - name: Build @fuzeone/selection-lists-ui (d.ts for frontend type-check)
         # frontend/tsconfig.json resolves @fuzeone/selection-lists-ui to its
         # built dist/index.d.ts; without this the type-check and vite build
@@ -249,6 +260,15 @@ jobs:
       # build, exactly like @fuzefront/shared's kafka sub-tree.
       - name: Build @fuzefront/custom-hostname-client (for backend build)
         run: npm run -w @fuzefront/custom-hostname-client build
+
+      - name: Build @fuzefront/security-client, shared, service-auth (for backend build)
+        # Same reason as the matching step in lint-and-test: backend imports
+        # shared + service-auth through their dist/ types. service-auth's d.ts
+        # needs security-client built first.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/service-auth build
 
       - name: Build backend
         run: cd backend && npm run build
