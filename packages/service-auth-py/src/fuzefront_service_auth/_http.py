@@ -28,7 +28,13 @@ HttpPost = Any  # Callable[[str, dict, float], Tuple[int, str]]
 _ALLOWED_SCHEMES = frozenset(("http", "https"))
 
 
-def default_http_post(url: str, payload: dict, timeout: float) -> tuple[int, str]:
+def default_http_post(
+    url: str,
+    payload: dict,
+    timeout: float,
+    *,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, str]:
     """POST JSON `payload` to `url`; return (status_code, raw_body_text).
 
     Returns the HTTP status even for 4xx/5xx (via `urllib.error.HTTPError`)
@@ -54,7 +60,7 @@ def default_http_post(url: str, payload: dict, timeout: float) -> tuple[int, str
         url,
         data=body,
         method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Content-Type": "application/json", "Accept": "application/json", **(headers or {})},
     )
     try:
         # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the `file://` read this rule names is unreachable: the scheme of `url` is checked against _ALLOWED_SCHEMES immediately above and anything else raises before a Request is ever built. `url` itself is a configured base_url plus a code-literal path (`/api/v1/security/tokens[/introspect]`) built by the two callers in client.py/verifier.py -- never caller-supplied.

@@ -30,7 +30,7 @@ export type { FeedbackButtonsProps } from './components/FeedbackButtons';
 
 // Hooks + reducer (drive a custom UI directly).
 export { useChat } from './hooks/useChat';
-export type { UseChatOptions, UseChatResult } from './hooks/useChat';
+export type { UseChatOptions, UseChatResult, InjectedChatEvent } from './hooks/useChat';
 export { chatReducer, initialModel } from './hooks/chatReducer';
 export type { ChatModel, ChatAction } from './hooks/chatReducer';
 export type { UiMessage, PendingConfirmation, RagSource } from './hooks/types';

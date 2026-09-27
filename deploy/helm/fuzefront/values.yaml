@@ -184,6 +184,7 @@ secret:
   # fuzefront-secrets SealedSecret. NEVER commit a real token here.
   featureFlagsClientToken: ""
   notificationInternalToken: ""
+  # Shared only by FuzeFront backend/chat-service and FuzeKeys connector API.
   mendysDatasetsClientSecret: ""
   mendysPlatformClientSecret: ""
   authentikMendysSecretKey: ""
@@ -211,6 +212,9 @@ backend:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+
+connectors:
+  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8000"
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in

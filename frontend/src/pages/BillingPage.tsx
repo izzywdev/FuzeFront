@@ -636,7 +636,12 @@ const LegacyInvoicesTab: React.FC<{ organizationId?: string }> = ({
 
       {nextCursor && !loading && (
         <div style={{ marginTop: 'var(--space-4)', textAlign: 'center' }}>
-          <Button type="button" variant="secondary" onClick={loadMore} disabled={loadingMore}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={loadMore}
+            disabled={loadingMore}
+          >
             {loadingMore ? 'Loading…' : 'Load more'}
           </Button>
         </div>
