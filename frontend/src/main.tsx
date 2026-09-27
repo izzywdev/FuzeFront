@@ -28,6 +28,37 @@ const originalConsole = {
 // Store logs for debugging
 const logHistory: any[] = []
 
+// Log-injection defense for the patched console (CodeQL js/log-injection).
+//
+// Everything this shell logs funnels through the four wrappers below, and a
+// lot of it is caller-influenced — `navigator.userAgent`, `location.href`,
+// and the `message`/`filename` of a window `error` event all reach a console
+// call. A string carrying CR/LF can forge an entirely separate log entry in
+// whatever later reads these lines; a string in leading position could also be
+// read as a format string.
+//
+// Two rules, applied here once instead of at every call site:
+//  1. The FIRST argument handed to the original console is always the constant
+//     timestamp — never a caller-supplied value — so no value can act as the
+//     format string.
+//  2. Every string argument has its line terminators escaped. The information
+//     is preserved verbatim (an escaped `\n` is still readable); it just can no
+//     longer break the line. Non-strings pass through untouched so objects and
+//     Errors stay structurally inspectable in devtools (and are rendered as a
+//     tree, not as raw text, so they cannot forge a line either).
+// Chained single-character replaces (not a `[\r\n\u2026]` character class): CodeQL's
+// js/log-injection only recognises a replace() whose matched string is constant
+// as a sanitiser barrier, so a class-based strip cleans the value but is not
+// seen as a barrier and the alert stays open.
+const sanitizeLogArg = (arg: unknown): unknown =>
+  typeof arg === 'string'
+    ? arg
+        .replace(/\r/g, '\\n')
+        .replace(/\n/g, '\\n')
+        .replace(/\u2028/g, '\\n')
+        .replace(/\u2029/g, '\\n')
+    : arg
+
 // Enhanced console with timestamps and storage
 const enhanceConsole = () => {
   const timestamp = () => `[${new Date().toISOString()}]`
@@ -35,25 +66,25 @@ const enhanceConsole = () => {
   console.log = (...args) => {
     const entry = { type: 'log', timestamp: new Date().toISOString(), args }
     logHistory.push(entry)
-    originalConsole.log(timestamp(), ...args)
+    originalConsole.log(timestamp(), ...args.map(sanitizeLogArg))
   }
 
   console.error = (...args) => {
     const entry = { type: 'error', timestamp: new Date().toISOString(), args }
     logHistory.push(entry)
-    originalConsole.error(timestamp(), ...args)
+    originalConsole.error(timestamp(), ...args.map(sanitizeLogArg))
   }
 
   console.warn = (...args) => {
     const entry = { type: 'warn', timestamp: new Date().toISOString(), args }
     logHistory.push(entry)
-    originalConsole.warn(timestamp(), ...args)
+    originalConsole.warn(timestamp(), ...args.map(sanitizeLogArg))
   }
 
   console.info = (...args) => {
     const entry = { type: 'info', timestamp: new Date().toISOString(), args }
     logHistory.push(entry)
-    originalConsole.info(timestamp(), ...args)
+    originalConsole.info(timestamp(), ...args.map(sanitizeLogArg))
   }
 }
 

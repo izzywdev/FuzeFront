@@ -68,7 +68,11 @@ const mockDbRaw = db.raw as jest.Mock;
 const mockFlagEnabled = isSelectionListsEnabled as jest.Mock;
 
 // ─── JWT helpers ──────────────────────────────────────────────────────────────
-const TEST_SECRET = 'resolve-test-jwt-secret-2026';
+// Test-only signing key. Sourced from the environment so this suite never
+// carries a literal that could be copy-pasted into (or drift from) a real
+// production default; the fallback is deliberately, obviously not a secret.
+const TEST_SECRET =
+  process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-resolve';
 
 function makeToken(orgId: string, userId = 'usr_testuser01h455vb'): string {
   return jwt.sign({ userId, orgId }, TEST_SECRET);

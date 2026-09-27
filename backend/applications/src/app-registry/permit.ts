@@ -102,7 +102,9 @@ export async function checkAppRegistryPermission(args: {
     return Boolean(result)
   } catch (err) {
     console.error(
-      `[app-registry][permit] check failed (deny) user=${args.userId} action=${args.action}:`,
+      '[app-registry][permit] check failed (deny) user=%s action=%s: %s',
+      args.userId,
+      args.action,
       err instanceof Error ? err.message : String(err)
     )
     return false

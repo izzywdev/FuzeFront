@@ -18,6 +18,21 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          # Both images are clients only — nothing here needs root, a privileged
+          # capability, or the ability to gain privileges via a setuid binary.
+          # uid/gid are pinned NUMERICALLY: `runAsNonRoot` makes the kubelet
+          # refuse to start a container whose image user it cannot prove is
+          # non-root, and a name-only USER is unverifiable.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999 # `postgres` in postgres:15
+            runAsGroup: 999
+            # The dump is written by the initContainer and read by the upload
+            # container; fsGroup gives the emptyDir a shared owning group so the
+            # handoff does not depend on the default 0644 umask.
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
           volumes:
             - name: dump
               emptyDir: {}
@@ -37,6 +52,14 @@ spec:
                   valueFrom: { secretKeyRef: { name: fuzeinfra-secrets, key: POSTGRES_USER } }
                 - name: POSTGRES_PASSWORD
                   valueFrom: { secretKeyRef: { name: fuzeinfra-secrets, key: POSTGRES_PASSWORD } }
+              securityContext:
+                # Repeated at container level as well as pod level: the uid/gid
+                # come from the pod securityContext above, but several scanners
+                # (and any future sibling container) only look here.
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ['ALL']
               volumeMounts:
                 - { name: dump, mountPath: /dump }
           containers:
@@ -56,5 +79,18 @@ spec:
                   valueFrom: { secretKeyRef: { name: backup-s3, key: S3_ENDPOINT } }
                 - name: S3_BUCKET
                   valueFrom: { secretKeyRef: { name: backup-s3, key: S3_BUCKET } }
+                # amazon/aws-cli's image HOME is root's; running non-root it is
+                # unreadable, so point HOME at a writable dir. Credentials come
+                # from the env vars above, not from a profile on disk.
+                - name: HOME
+                  value: /tmp
+              securityContext:
+                # Repeated at container level as well as pod level: the uid/gid
+                # come from the pod securityContext above, but several scanners
+                # (and any future sibling container) only look here.
+                runAsNonRoot: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ['ALL']
               volumeMounts:
                 - { name: dump, mountPath: /dump }

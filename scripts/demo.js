@@ -134,11 +134,14 @@ ${colors.bright}Demo Accounts:${colors.reset}
 ${colors.yellow}Press Enter to start the demo, or Ctrl+C to exit...${colors.reset}
 `)
 
-  // Wait for user input
-  require('child_process').spawnSync('read', ['-p', ''], {
-    stdio: 'inherit',
-    shell: true,
-  })
+  // Wait for user input. Read fd 0 directly instead of shelling out to the `read`
+  // builtin: that required { shell: true }, which spawns a real shell (inheriting the
+  // caller's environment, options and any injected variables) purely to block on Enter.
+  try {
+    fs.readSync(0, Buffer.alloc(1024), 0, 1024, null)
+  } catch {
+    // EOF / EAGAIN — stdin is not an interactive TTY (CI, piped input). Nothing to wait on.
+  }
 }
 
 function startDemo() {

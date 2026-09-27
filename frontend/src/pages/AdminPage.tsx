@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, Button } from '@fuzefront/design-system'
 import { useAppContext, App } from '../lib/shared'
 import { useFlag } from '../platform/featureFlags'
 import {
@@ -144,20 +144,16 @@ export default function AdminPage() {
         }}
       >
         <h1>🛠️ App Registry Administration</h1>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowForm(true)}
-          disabled={showForm}
-        >
+        <Button variant="primary" onClick={() => setShowForm(true)} disabled={showForm}>
           ➕ Register New App
-        </button>
+        </Button>
       </div>
 
       {configCatalogEnabled && (
         <div style={{ marginBottom: '1.5rem' }} data-nav="config-catalog">
-          <button className="btn btn-secondary" onClick={() => navigate('/admin/config/catalog')}>
+          <Button variant="secondary" onClick={() => navigate('/admin/config/catalog')}>
             🔑 Configuration key catalog
-          </button>
+          </Button>
         </div>
       )}
 
@@ -330,29 +326,16 @@ export default function AdminPage() {
             </div>
 
             <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={loading}
-              >
+              <Button type="submit" variant="primary" disabled={loading}>
                 {loading
                   ? 'Saving...'
                   : editingApp
                     ? 'Update App'
                     : 'Register App'}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={cancelForm}
-                style={{
-                  backgroundColor: 'var(--bg-quaternary)',
-                  border: 'none',
-                  color: 'var(--text-primary)',
-                }}
-              >
+              </Button>
+              <Button type="button" variant="secondary" onClick={cancelForm}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         </div>

@@ -9,10 +9,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const MIGRATIONS_DIR = path.join(__dirname, '../src/migrations');
+const MIGRATIONS_DIR = path.resolve(__dirname, '../src/migrations');
 
+/**
+ * Reads one migration, refusing anything that resolves outside MIGRATIONS_DIR.
+ *
+ * `file` is a bare filename at every call site (literals below, plus the
+ * readdirSync listing), but joining an unvalidated segment onto a root is the
+ * path-traversal shape regardless of who calls it today — a later caller
+ * passing `../../something` would silently read outside the migrations dir.
+ * Resolve first, then assert containment; never hand-strip `..`.
+ */
 function readMigration(file: string): string {
-  return fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+  const resolved = path.resolve(MIGRATIONS_DIR, file);
+  if (resolved !== MIGRATIONS_DIR && !resolved.startsWith(MIGRATIONS_DIR + path.sep)) {
+    throw new Error(`migration path escapes the migrations directory: ${file}`);
+  }
+  return fs.readFileSync(resolved, 'utf8');
 }
 
 function withoutComments(sql: string): string {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Cookie } from 'lucide-react'
+import { Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 export const CookieNotice: React.FC = () => {
@@ -52,10 +53,10 @@ export const CookieNotice: React.FC = () => {
                 <h3 className="font-semibold text-gray-900 mb-2">
                   We use cookies
                 </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  We use cookies to enhance your experience, analyze site traffic, and for marketing purposes. 
+                <Text tone="secondary" size="sm" spacing="md">
+                  We use cookies to enhance your experience, analyze site traffic, and for marketing purposes.
                   By continuing to use our site, you agree to our use of cookies.
-                </p>
+                </Text>
                 
                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                   <button
