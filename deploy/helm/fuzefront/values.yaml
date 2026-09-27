@@ -191,6 +191,20 @@ secret:
   authentikMendysBootstrapToken: ""
   authentikMendysDbPassword: ""
 
+# Human root administrators of the ROOT platform organization. Each listed
+# account, once it has logged in, gets `admin` in users.roles, root `org-admin`
+# in Permit, an `owner` membership on the root org, and root-org ownership if
+# the platform-registrar placeholder still holds it
+# (backend/src/services/rootOrgAdmin.ts).
+#
+# SECURITY: only list an email whose Authentik account is PRE-CREATED by a
+# checked-in blueprint (authentik/blueprints/groups-fuzeinfra-admins.yaml for
+# the entry below). Self-signup does not verify email, so an email without a
+# pre-created account can be registered — and made root — by anyone.
+rootAdmins:
+  emails:
+    - izzy.weinberg@gmail.com
+
 backend:
   image:
     repository: fuzefront/backend

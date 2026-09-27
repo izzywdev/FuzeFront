@@ -6,7 +6,12 @@ jest.mock('../src/config/permit', () => ({
 }))
 
 import { db, initializeDatabaseConnection } from '../src/config/database'
-import { ensureRootOrgAdmins } from '../src/services/rootOrgAdmin'
+import {
+  ensureConfiguredRootAdmins,
+  ensureRootOrgAdmins,
+  parseRootAdminEmails,
+  promoteConfiguredRootAdmins,
+} from '../src/services/rootOrgAdmin'
 import { ROOT_ORG_ID } from '../src/migrations/015_seed_root_platform_organization'
 
 const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
@@ -177,5 +182,141 @@ describe('ensureRootOrgAdmins', () => {
 
       expect(granted).not.toContain(employeeOnlyId)
     })
+  })
+})
+
+async function userRoles(id: string): Promise<string[]> {
+  const row = await db('users').where({ id }).first()
+  return typeof row.roles === 'string' ? JSON.parse(row.roles) : row.roles
+}
+
+async function rootMembership(userId: string) {
+  return db('organization_memberships')
+    .where({ user_id: userId, organization_id: ROOT_ORG_ID })
+    .first()
+}
+
+async function emailOf(id: string): Promise<string> {
+  return (await db('users').where({ id }).first()).email
+}
+
+describe('configured root admins (PLATFORM_ROOT_ADMIN_EMAILS)', () => {
+  // Every test that adopts ownership must hand it back, or later tests (and the
+  // dev-seed exemption keyed on the root owner) see a leaked owner.
+  afterEach(async () => {
+    await db('organizations')
+      .where({ id: ROOT_ORG_ID })
+      .update({ owner_id: PLATFORM_REGISTRAR_ID })
+  })
+
+  it('parses a comma list: trims, lowercases, dedupes, drops non-emails', () => {
+    expect(
+      parseRootAdminEmails(' A@x.io, a@x.io ,,nope, b@y.io ')
+    ).toEqual(['a@x.io', 'b@y.io'])
+    expect(parseRootAdminEmails('')).toEqual([])
+    expect(parseRootAdminEmails(undefined)).toEqual([])
+  })
+
+  it('promotes a listed user: admin role, root owner membership, root ownership', async () => {
+    const id = await createUser(['user'])
+    const email = await emailOf(id)
+
+    // Match is case-insensitive on the stored email.
+    const ids = await promoteConfiguredRootAdmins(db, [email.toLowerCase()])
+
+    expect(ids).toEqual([id])
+    expect(await userRoles(id)).toEqual(['user', 'admin'])
+    expect(await rootMembership(id)).toMatchObject({ role: 'owner', status: 'active' })
+    const root = await db('organizations').where({ id: ROOT_ORG_ID }).first()
+    expect(root.owner_id).toBe(id)
+  })
+
+  it('upgrades an existing root `member` membership to owner and is idempotent', async () => {
+    const id = await createUser(['user'])
+    await db('organization_memberships').insert({
+      id: uuidv4(),
+      user_id: id,
+      organization_id: ROOT_ORG_ID,
+      role: 'member',
+      status: 'active',
+    })
+    const email = await emailOf(id)
+
+    await promoteConfiguredRootAdmins(db, [email])
+    await promoteConfiguredRootAdmins(db, [email])
+
+    expect(await userRoles(id)).toEqual(['user', 'admin'])
+    const rows = await db('organization_memberships').where({
+      user_id: id,
+      organization_id: ROOT_ORG_ID,
+    })
+    expect(rows).toHaveLength(1)
+    expect(rows[0].role).toBe('owner')
+  })
+
+  it('does not promote unlisted users', async () => {
+    const listed = await createUser(['user'])
+    const other = await createUser(['user'])
+
+    await promoteConfiguredRootAdmins(db, [await emailOf(listed)])
+
+    expect(await userRoles(other)).toEqual(['user'])
+    expect(await rootMembership(other)).toBeUndefined()
+  })
+
+  it('never takes root ownership from a human who already holds it', async () => {
+    const humanOwner = await createUser(['admin'])
+    await db('organizations')
+      .where({ id: ROOT_ORG_ID })
+      .update({ owner_id: humanOwner })
+    const listed = await createUser(['user'])
+
+    await promoteConfiguredRootAdmins(db, [await emailOf(listed)])
+
+    const root = await db('organizations').where({ id: ROOT_ORG_ID }).first()
+    expect(root.owner_id).toBe(humanOwner)
+  })
+
+  // SECURITY: listing the registrar's email must not make the token-only
+  // principal a root admin by the back door.
+  it('ignores the platform-registrar even if its email is listed', async () => {
+    const ids = await promoteConfiguredRootAdmins(db, [
+      'platform-registrar@fuzefront.internal',
+    ])
+    expect(ids).toEqual([])
+  })
+
+  it('is a no-op for a listed email with no account yet', async () => {
+    expect(await promoteConfiguredRootAdmins(db, ['nobody-yet@test.local'])).toEqual([])
+  })
+
+  it('ensureRootOrgAdmins grants a listed user org-admin in the same pass', async () => {
+    const id = await createUser(['user'])
+    const rec = recorder()
+
+    const granted = await ensureRootOrgAdmins({
+      db,
+      assignOrgAdmin: rec.assignOrgAdmin,
+      isEmployeeTriggerEnabled: async () => false,
+      rootAdminEmails: [await emailOf(id)],
+    })
+
+    expect(granted).toContain(id)
+    expect(rec.calls).toContainEqual({ userId: id, orgId: ROOT_ORG_ID })
+  })
+
+  it('ensureConfiguredRootAdmins grants only the listed users', async () => {
+    const listed = await createUser(['user'])
+    const otherAdmin = await createUser(['admin'])
+    const rec = recorder()
+
+    const granted = await ensureConfiguredRootAdmins({
+      db,
+      assignOrgAdmin: rec.assignOrgAdmin,
+      rootAdminEmails: [await emailOf(listed)],
+    })
+
+    expect(granted).toEqual([listed])
+    expect(rec.calls.map(c => c.userId)).not.toContain(otherAdmin)
   })
 })

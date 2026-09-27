@@ -99,6 +99,11 @@ spec:
               {{- end }}
             - name: PERMIT_DEBUG
               value: "false"
+            # Human root administrators (backend/src/services/rootOrgAdmin.ts).
+            # Each email must have a blueprint-pre-created Authentik account —
+            # see the TRUST ANCHOR note there.
+            - name: PLATFORM_ROOT_ADMIN_EMAILS
+              value: {{ join "," .Values.rootAdmins.emails | quote }}
             # Kafka brokers for publishing identity/email events (Plan B/C).
             # Empty => publisher is a logging no-op; provisioning still self-heals.
             - name: KAFKA_BROKERS
