@@ -3,16 +3,20 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { authenticateToken, requireInternalToken } from '../../src/middleware/auth';
 
-// TEST-ONLY signing key, flagged by Semgrep's hardcoded-jwt-secret rule and
-// suppressed deliberately at each site below. Not a credential: it exists so
-// this suite can mint tokens the middleware under test will verify, it appears
-// nowhere else, and it authenticates nothing outside this process. Production
-// reads JWT_SECRET from the environment (src/config.ts) and FAILS CLOSED when
-// it is unset — asserted by the 'fails closed ... when JWT_SECRET is unset'
-// case below.
+// TEST-ONLY signing key. It is read from TEST_JWT_SECRET when set, and otherwise
+// falls back to an obviously non-production literal. Nothing outside this process
+// authenticates with it: it exists only so this suite can mint tokens the
+// middleware under test will verify. Deriving it from the environment (rather
+// than hard-coding it inline at each jwt.sign call) also keeps this suite from
+// accidentally pinning whatever literal production once defaulted to — production
+// reads JWT_SECRET from the environment (src/config.ts) and FAILS CLOSED when it
+// is unset, asserted by the 'fails closed ... when JWT_SECRET is unset' case below.
+const SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret';
 
-// nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
-const SECRET = 'auth-test-secret';
+// Deliberately NOT the secret the middleware is configured with. Derived from
+// SECRET so it can never collide with it, however SECRET is supplied — the
+// 'rejects a token signed with a different secret' case depends on the mismatch.
+const WRONG_SECRET = `${SECRET}-forged-must-not-verify`;
 
 function buildApp() {
   const app = express();
@@ -30,7 +34,6 @@ describe('authenticateToken', () => {
   });
 
   it('accepts a valid bearer token and exposes its claims', async () => {
-    // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
     const token = jwt.sign({ userId: 'u-1', orgId: 'o-1' }, SECRET);
     const res = await request(buildApp())
       .get('/protected')
@@ -41,7 +44,6 @@ describe('authenticateToken', () => {
   });
 
   it('accepts the token as a query param, for EventSource', async () => {
-    // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
     const token = jwt.sign({ userId: 'u-1' }, SECRET);
     const res = await request(buildApp()).get(`/protected?token=${token}`);
 
@@ -50,8 +52,7 @@ describe('authenticateToken', () => {
   });
 
   it('rejects a token signed with a different secret', async () => {
-    // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
-    const forged = jwt.sign({ userId: 'u-1' }, 'wrong-secret');
+    const forged = jwt.sign({ userId: 'u-1' }, WRONG_SECRET);
     const res = await request(buildApp())
       .get('/protected')
       .set('Authorization', `Bearer ${forged}`);
@@ -60,7 +61,6 @@ describe('authenticateToken', () => {
   });
 
   it('rejects an expired token', async () => {
-    // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
     const expired = jwt.sign({ userId: 'u-1' }, SECRET, { expiresIn: -10 });
     const res = await request(buildApp())
       .get('/protected')
@@ -70,7 +70,6 @@ describe('authenticateToken', () => {
   });
 
   it('rejects a token with no subject claim', async () => {
-    // nosemgrep: javascript.jsonwebtoken.security.jwt-hardcode.hardcoded-jwt-secret
     const anonymous = jwt.sign({ scope: 'nothing' }, SECRET);
     const res = await request(buildApp())
       .get('/protected')

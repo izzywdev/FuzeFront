@@ -213,8 +213,18 @@ inputs:
       codex-action and run-gemini-cli have no notion of which bot actors may
       trigger a run — they are never triggered BY a GitHub actor here; the
       workflow decides whether to run and this action only carries out the task.
+      Defaults to `fuze-agent` (the org's own agent identity, not `*`) rather
+      than empty: a caller that omits this input is not scoping anything, it is
+      silently broken — claude-code-action hard-fails ANY Bot actor with no
+      `allowed_bots` configured, and `fuze-agent` (the App this fleet mints a
+      token for to push commit-backs — hardening-convention.md §8) is the one
+      identity nearly every caller of this action is triggered by or pushes as.
+      A caller with a wider or narrower need (e.g. `claude` for @claude-triggered
+      runs) still sets this input explicitly; this default only stops a caller
+      that forgot to from failing every run with a config bug that reports as a
+      false AVAILABILITY/quota error (issue #418).
     required: false
-    default: ''
+    default: 'fuze-agent'
   additional-permissions:
     description: >-
       Passed through verbatim as claude-code-action `additional_permissions`

@@ -56,11 +56,12 @@ class AppHeartbeat {
       }
 
       const result = await response.json()
-      console.log(`💓 Heartbeat sent successfully for app ${this.config.appId}`)
+      console.log('💓 Heartbeat sent successfully for app %s', this.config.appId)
       return result
     } catch (error) {
       console.error(
-        `❌ Failed to send heartbeat for app ${this.config.appId}:`,
+        '❌ Failed to send heartbeat for app %s:',
+        this.config.appId,
         error
       )
       throw error
@@ -109,7 +110,7 @@ class AppHeartbeat {
     // Send offline status
     this.sendHeartbeat('offline').catch(console.error)
 
-    console.log(`🛑 Stopped heartbeat for app ${this.config.appId}`)
+    console.log('🛑 Stopped heartbeat for app %s', this.config.appId)
   }
 
   /**

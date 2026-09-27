@@ -17,6 +17,8 @@ import { createKafkaClient, TypedProducer } from '@fuzefront/shared';
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer';
 import { KnexRefIndexRepository } from './repositories/ref-index.repository';
 import { initFeatureFlags } from './utils/feature-flags';
+import { injectRecentGmailSummary } from './connectors/gmail-injection';
+import { createDelegationClient, createWorkloadAuthClient } from '@fuzefront/service-auth';
 
 async function main() {
   const config = loadConfig();
@@ -79,6 +81,9 @@ async function main() {
   const refIndexStore = new KnexRefIndexRepository(db);
   await startRefIndexProjection(refIndexStore);
 
+  const workloadAuth = createWorkloadAuthClient({ baseUrl: config.securityServiceUrl });
+  const delegation = createDelegationClient({ baseUrl: config.securityServiceUrl, serviceAuth: workloadAuth });
+
   // --- App ---
   const app = createApp({
     chat: {
@@ -89,6 +94,14 @@ async function main() {
       feedback,
       confirmations,
       billing,
+      injectRecentGmailSummary: ({ userId, conversationId, userToken }) => injectRecentGmailSummary({
+        producer,
+        messages,
+        conversations,
+        fuzefrontUrl: config.backendUrl,
+        workloadAuth,
+        delegation,
+      }, { userId, conversationId, userToken }),
     },
   });
 

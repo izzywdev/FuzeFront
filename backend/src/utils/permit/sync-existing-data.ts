@@ -6,6 +6,7 @@ import {
 } from './bulk-operations'
 import { BackendUser } from './user-sync'
 import { Organization } from '../../types/shared'
+import { describePermitError } from './describe-error'
 
 // Neutralizes CR/LF before a value reaches a log line (CodeQL js/log-injection
 // — an embedded newline could forge additional fake log lines). A manual
@@ -106,7 +107,7 @@ export async function syncExistingDataToPermit(): Promise<void> {
       console.log('⚠️  %d operations failed. Check logs above for details.', totalFailed)
     }
   } catch (error) {
-    console.error('❌ Error during data sync:', error)
+    console.error('❌ Error during data sync:', describePermitError(error))
     throw error
   }
 }
@@ -147,7 +148,7 @@ export async function syncSingleUserToPermit(userId: string): Promise<boolean> {
       return false
     }
   } catch (error) {
-    console.error('Error syncing user %s:', oneLine(userId), error)
+    console.error('Error syncing user %s:', oneLine(userId), describePermitError(error))
     return false
   }
 }
@@ -195,7 +196,7 @@ export async function syncSingleOrganizationToPermit(
       return false
     }
   } catch (error) {
-    console.error('Error syncing organization %s:', oneLine(organizationId), error)
+    console.error('Error syncing organization %s:', oneLine(organizationId), describePermitError(error))
     return false
   }
 }
@@ -213,7 +214,7 @@ export async function checkPermitConnection(): Promise<boolean> {
     console.log('✅ Permit.io connection successful')
     return true
   } catch (error) {
-    console.error('❌ Permit.io connection failed:', error)
+    console.error('❌ Permit.io connection failed:', describePermitError(error))
     return false
   }
 }

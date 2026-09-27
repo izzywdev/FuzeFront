@@ -55,6 +55,17 @@
   --modal-max-w: 560px;
   --modal-max-w-lg: 720px;
 
+  /* ---- Content-width scale (Container component) ---------
+     Page-content max-widths — replaces the recurring
+     `max-w-{N} mx-auto px-4 sm:px-6 lg:px-8` block (ds-fp:4cb066daa4ea).
+     Named on the same rem-based scale most call sites already used. */
+  --container-2xl: 42rem;  /* 672px */
+  --container-3xl: 48rem;  /* 768px */
+  --container-4xl: 56rem;  /* 896px */
+  --container-5xl: 64rem;  /* 1024px */
+  --container-6xl: 72rem;  /* 1152px */
+  --container-7xl: 80rem;  /* 1280px */
+
   /* ---- Mobile layout ------------------------------------- */
   --top-bar-height-mobile: 52px;  /* collapsed top bar on xs/sm */
   --bottom-nav-height: 56px;      /* bottom nav bar replaces side panel */

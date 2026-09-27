@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
+import { Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Plan {
@@ -145,7 +146,7 @@ export const PricingPage: React.FC = () => {
       {/* Hero */}
       <section className="bg-gradient-to-br from-secondary-900 to-secondary-800 pt-28 pb-16 relative overflow-hidden">
         <div className="absolute inset-0 hero-pattern opacity-20" />
-        <div className="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <Container size="4xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
               Simple, transparent pricing
@@ -173,12 +174,12 @@ export const PricingPage: React.FC = () => {
               </button>
             </div>
           </motion.div>
-        </div>
+        </Container>
       </section>
 
       {/* Plans */}
       <section className="py-16 bg-secondary-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {plans.map((plan, i) => {
               const Icon = plan.icon
@@ -275,12 +276,12 @@ export const PricingPage: React.FC = () => {
               )
             })}
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* Feature Comparison Table */}
       <section className="py-20 bg-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="5xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 text-center">
             Compare all features
           </h2>
@@ -317,7 +318,7 @@ export const PricingPage: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </Container>
       </section>
 
       {/* Enterprise CTA */}

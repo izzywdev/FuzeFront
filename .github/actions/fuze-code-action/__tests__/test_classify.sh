@@ -63,6 +63,14 @@ expect 0 "success wins even with scary log text"               "success" "credit
 # ── availability: safe to fall through ───────────────────────────────────────
 expect 1 "empty conclusion = action-could-not-start"           ""
 expect 1 "credit exhaustion"        "failure" "Error: Your credit balance is too low to access the API"
+# Subscription-plan exhaustion. The first is the VERBATIM string from run 35848544508,
+# where it was classified exit 2 (task) and so stopped the cascade dead: codex and gemini
+# were never tried, and the caller announced "a real finding from the work itself, not a
+# provider problem" about an exhausted quota. Same class as the credit line above; the
+# subscription plans just phrase it as a session/usage limit with a reset time.
+expect 1 "session limit (observed)" "failure" "You've hit your session limit · resets 11:50am (UTC)"
+expect 1 "session limit reached"    "failure" "Error: session limit reached, try again later"
+expect 1 "usage limit reached"      "failure" "Claude AI usage limit reached"
 expect 1 "insufficient_quota"       "failure" '{"error":{"code":"insufficient_quota"}}'
 expect 1 "rate limit"               "failure" '{"type":"rate_limit_error","message":"..."}'
 expect 1 "overloaded"               "failure" '{"type":"overloaded_error"}'
@@ -101,6 +109,12 @@ expect 2 "test failure"             "failure" "2 failing
   1) auth middleware rejects an expired token"
 expect 2 "lint failure"             "failure" "eslint: 4 problems (4 errors, 0 warnings)"
 expect 2 "unrecognised failure mode is NOT retried" "failure" "something nobody has seen before"
+# The counterweight to the session/usage-limit entries: a genuine review finding ABOUT
+# rate-limiting code must still fail closed. This is the exact risk the pattern list is
+# kept narrow and vendor-literal to avoid — a finding discusses limits in prose, it does
+# not reproduce the vendor's own exhaustion string.
+expect 2 "a finding about limit-handling code is not an outage" "failure" \
+  "src/api.ts:88 — the retry loop ignores the session limit response and spins forever"
 expect 2 "nonzero exit with a stack trace"  "failure" "Traceback (most recent call last):
   File \"x.py\", line 1"
 

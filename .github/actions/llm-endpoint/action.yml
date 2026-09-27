@@ -6,6 +6,19 @@ description: >-
   anthropic/openai/gemini mapping lives in LiteLLM's config, not here, so this
   is the genuinely vendor-agnostic path.
   .
+  Readiness alone is not enough. A passing /health/readiness proves a proxy is
+  UP; it does not prove the resolved credential AUTHENTICATES, nor that the
+  endpoint will actually SERVE inference. So before returning success this
+  action runs one minimal, bounded, AUTHENTICATED serve probe against the
+  resolved endpoint — the very request shape claude-code-action itself sends
+  (Anthropic-shape `POST /v1/messages`, `max_tokens: 1`). A definitive 401/403
+  fails FAST in the fast preflight with an actionable message, instead of a
+  present-but-invalid key sailing through and dying inside the full agent job
+  (issue #405). A readiness-OK endpoint that refuses real traffic
+  (connection-refused / 5xx) is NOT committed to and degrades to the fallback
+  chain, so a flapping pod can no longer trap the run on a dead path with no
+  degradation route (issue #298 Gap B).
+  .
   If it does not answer (cluster down, or the caller is a GitHub-hosted
   runner that can never route to a cluster-internal DNS name — both are the
   SAME case from here), this action starts a SECOND, runner-local LiteLLM
@@ -107,6 +120,16 @@ inputs:
       failure mode, worse than the one this action exists to route around.
     required: false
     default: '3'
+  serve-probe-timeout-seconds:
+    description: >-
+      Bounded timeout for the AUTHENTICATED serve probe (the real
+      `POST /v1/messages` inference call this action makes against the resolved
+      endpoint before returning success — issues #405 / #298 Gap B). Longer
+      than the readiness probe because it is a genuine round-trip through the
+      model gateway, but still bounded so a hung endpoint fails the fast
+      preflight instead of the slow agent job.
+    required: false
+    default: '10'
   fallback-chain:
     description: >-
       Ordered, comma-separated vendor fallback chain: any of
@@ -209,6 +232,7 @@ runs:
         PUBLIC_LITELLM_BASE_URL: ${{ inputs.public-litellm-base-url }}
         LITELLM_CI_KEY: ${{ inputs.litellm-ci-key }}
         PROBE_TIMEOUT: ${{ inputs.probe-timeout-seconds }}
+        SERVE_PROBE_TIMEOUT: ${{ inputs.serve-probe-timeout-seconds }}
         FALLBACK_CHAIN: ${{ inputs.fallback-chain }}
         FALLBACK_ANTHROPIC_KEY: ${{ inputs.fallback-anthropic-key }}
         FALLBACK_OPENAI_KEY: ${{ inputs.fallback-openai-key }}
@@ -255,6 +279,59 @@ runs:
           CF_CUSTOM_HEADERS=$'CF-Access-Client-Id: '"${CF_ACCESS_CLIENT_ID}"$'\nCF-Access-Client-Secret: '"${CF_ACCESS_CLIENT_SECRET}"
         fi
 
+        # ---- Authenticated serve-ability probe (issues #405 and #298 Gap B) ---
+        # A passing /health/readiness proves a proxy is UP, not that the resolved
+        # credential AUTHENTICATES or that the endpoint will actually SERVE
+        # inference.
+        #   #405: a present-but-invalid ANTHROPIC_API_KEY passes the non-empty
+        #         check on the direct path (no LiteLLM in front to catch a 401),
+        #         then dies inside the full agent job with "Invalid API key".
+        #   #298 Gap B: an in-cluster LiteLLM answered readiness while refusing
+        #         real traffic ("Unable to connect to API (ConnectionRefused)"),
+        #         yet the action had already committed to mode=litellm with no
+        #         degradation path.
+        # Both are closed by one minimal, bounded, AUTHENTICATED request against
+        # the resolved endpoint BEFORE returning success — the exact request
+        # shape claude-code-action itself sends (Anthropic-shape POST
+        # /v1/messages, max_tokens:1), so this probes the real serve path, not a
+        # proxy-liveness side channel. The response body is discarded
+        # (-o /dev/null): it can carry a provider error blob, and per the fleet
+        # secrets rule nothing from a provider response is echoed. Only the
+        # numeric HTTP status is read, into SERVE_RESULT:
+        #   ok            — answered at the application layer AND accepted the
+        #                   credential: any 2xx, or a 4xx that is NOT 401/403
+        #                   (e.g. a 400/404 on the throwaway probe model still
+        #                   proves auth passed and the serve path is live). Route.
+        #   auth-rejected — HTTP 401/403: credential present but REJECTED. The
+        #                   #405 case; fail fast in preflight (direct paths).
+        #   unreachable   — no HTTP status (curl prints 000 on connection
+        #                   refused/reset/timeout) or an HTTP 5xx: readiness
+        #                   lied, the serve path is down. The #298 Gap B case;
+        #                   do not commit — degrade / fall through.
+        # PROBE_CF_ARGS is set by each caller: the CF-Access headers for the
+        # public-gateway litellm probe, empty ("${arr[@]}" -> zero words under
+        # bash 5.x set -u, same as CF_CURL_ARGS above) for the direct/local paths.
+        SERVE_PROBE_CODE=""
+        SERVE_RESULT=""
+        PROBE_CF_ARGS=()
+        serve_probe() {
+          local base="${1%/}" token="$2"
+          SERVE_PROBE_CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+            --max-time "${SERVE_PROBE_TIMEOUT:-10}" \
+            -X POST "${base}/v1/messages" \
+            "${PROBE_CF_ARGS[@]}" \
+            -H "x-api-key: ${token}" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d '{"model":"fuze-llm-endpoint-probe","max_tokens":1,"messages":[{"role":"user","content":"ping"}]}' \
+            2>/dev/null || true)"
+          case "$SERVE_PROBE_CODE" in
+            401|403)    SERVE_RESULT="auth-rejected" ;;
+            5??|000|"") SERVE_RESULT="unreachable" ;;
+            *)          SERVE_RESULT="ok" ;;
+          esac
+        }
+
         reachable=false
         if [ -n "${LITELLM_BASE_URL:-}" ]; then
           # A REAL READINESS PATH, NOT A TCP CONNECT. /health/readiness is
@@ -275,26 +352,39 @@ runs:
           fi
         fi
 
+        litellm_serve_failed=false
         if [ "$reachable" = true ] && [ -n "${LITELLM_KEY:-}" ]; then
-          echo "::notice title=llm-endpoint::mode=litellm vendor=litellm — routing through in-cluster LiteLLM (${LITELLM_BASE_URL}). Vendor mapping is opaque here by design; it lives in LiteLLM's config, not this workflow."
-          {
-            echo "mode=litellm"
-            echo "vendor=litellm"
-            echo "base-url=${LITELLM_BASE_URL}"
-            echo "auth-token=${LITELLM_KEY}"
-          } >> "$GITHUB_OUTPUT"
-          # Emit the CF-Access headers (if any) as a MULTILINE output so the
-          # caller can set ANTHROPIC_CUSTOM_HEADERS on the claude-code-action
-          # step. Empty when no CF creds were supplied (e.g. the in-cluster
-          # path) — an empty value is harmless as an env var. Only this
-          # (litellm) branch emits it; the fallback branches reach a direct
-          # api.anthropic.com or a runner-local proxy, neither behind CF Access.
-          {
-            echo "custom-headers<<FUZE_CH_EOF"
-            printf '%s\n' "${CF_CUSTOM_HEADERS}"
-            echo "FUZE_CH_EOF"
-          } >> "$GITHUB_OUTPUT"
-          exit 0
+          # Readiness passed — but confirm the gateway will actually SERVE
+          # inference with this key before committing to it (issue #298 Gap B).
+          # A pod that answers /health/readiness while refusing real traffic
+          # must NOT trap the run on mode=litellm with no degradation path; if
+          # the authenticated serve probe fails, fall through to the runner-local
+          # fallback chain (built from the direct vendor keys) instead.
+          PROBE_CF_ARGS=("${CF_CURL_ARGS[@]}")
+          serve_probe "${LITELLM_BASE_URL}" "${LITELLM_KEY}"
+          if [ "$SERVE_RESULT" = "ok" ]; then
+            echo "::notice title=llm-endpoint::mode=litellm vendor=litellm — routing through in-cluster LiteLLM (${LITELLM_BASE_URL}); readiness AND an authenticated serve probe (HTTP ${SERVE_PROBE_CODE}) both passed. Vendor mapping is opaque here by design; it lives in LiteLLM's config, not this workflow."
+            {
+              echo "mode=litellm"
+              echo "vendor=litellm"
+              echo "base-url=${LITELLM_BASE_URL}"
+              echo "auth-token=${LITELLM_KEY}"
+            } >> "$GITHUB_OUTPUT"
+            # Emit the CF-Access headers (if any) as a MULTILINE output so the
+            # caller can set ANTHROPIC_CUSTOM_HEADERS on the claude-code-action
+            # step. Empty when no CF creds were supplied (e.g. the in-cluster
+            # path) — an empty value is harmless as an env var. Only this
+            # (litellm) branch emits it; the fallback branches reach a direct
+            # api.anthropic.com or a runner-local proxy, neither behind CF Access.
+            {
+              echo "custom-headers<<FUZE_CH_EOF"
+              printf '%s\n' "${CF_CUSTOM_HEADERS}"
+              echo "FUZE_CH_EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          litellm_serve_failed=true
+          echo "::warning title=llm-endpoint::in-cluster LiteLLM (${LITELLM_BASE_URL}) passed /health/readiness but the authenticated serve probe did NOT (result=${SERVE_RESULT}, HTTP ${SERVE_PROBE_CODE}) — readiness is a false positive for serve-ability here (issue #298 Gap B). NOT committing to mode=litellm; falling through to the runner-local fallback chain so this run still has a degradation path."
         fi
 
         # ---- Tier 2: PUBLIC LiteLLM gateway (the GitHub-hosted-runner path) ----
@@ -359,6 +449,8 @@ runs:
 
         if [ "$reachable" = false ]; then
           echo "::notice title=llm-endpoint::LiteLLM unreachable from this runner (probed ${LITELLM_BASE_URL:-<unset>}/health/readiness, ${PROBE_TIMEOUT:-3}s timeout) — starting a runner-local LiteLLM fallback chain. Expected on ubuntu-latest (no route to the cluster-internal DNS name) and this IS the deliberate bootstrap path: recovering the cluster may itself need an agent run, so the fallback must not depend on the cluster being up."
+        elif [ "$litellm_serve_failed" = true ]; then
+          echo "::notice title=llm-endpoint::in-cluster LiteLLM answered readiness but failed the authenticated serve probe (see warning above, issue #298 Gap B) — starting a runner-local LiteLLM fallback chain."
         else
           echo "::notice title=llm-endpoint::LiteLLM reachable but no litellm-key provided (LITELLM_FUZE_KEY secret unset) — starting a runner-local LiteLLM fallback chain."
         fi
@@ -407,6 +499,20 @@ runs:
         if [ "${#AVAILABLE[@]}" -eq 1 ] && [ "${AVAILABLE[0]}" = "anthropic" ]; then
           echo "::notice title=llm-endpoint::mode=fallback-anthropic vendor=anthropic — chain resolved to a single vendor (skipped-no-key=[${SKIPPED[*]:-none}]), so this routes DIRECT to api.anthropic.com instead of starting a runner-local LiteLLM. A one-entry LiteLLM has no fallbacks to walk; the container would be pure overhead and a second thing that can fail."
           echo "::add-mask::${FALLBACK_ANTHROPIC_KEY}"
+          # Confirm the key AUTHENTICATES before returning success (issue #405).
+          # The non-empty check above proves only that a string is present; on
+          # this direct path there is no LiteLLM in front to catch a 401 and roll
+          # over, so a present-but-invalid key would otherwise sail through
+          # preflight and die on the first model call inside the full agent job.
+          PROBE_CF_ARGS=()
+          serve_probe "https://api.anthropic.com" "${FALLBACK_ANTHROPIC_KEY}"
+          if [ "$SERVE_RESULT" = "auth-rejected" ]; then
+            echo "::error title=llm-endpoint::ANTHROPIC_API_KEY is present but REJECTED by api.anthropic.com (HTTP ${SERVE_PROBE_CODE}) — rotate/replace the secret. Failing in the fast preflight (issue #405) instead of burning a full agent run that would die on its first model call with 'Invalid API key'."
+            exit 1
+          fi
+          if [ "$SERVE_RESULT" != "ok" ]; then
+            echo "::warning title=llm-endpoint::authenticated serve probe to api.anthropic.com was inconclusive (result=${SERVE_RESULT}, HTTP ${SERVE_PROBE_CODE}) — could NOT reach it to confirm the key, and this is NOT a definitive 401/403. Proceeding on the direct-Anthropic path rather than turning a transient network blip into a new preflight failure mode; a persistently bad key will still surface downstream."
+          fi
           {
             echo "mode=fallback-anthropic"
             echo "vendor=anthropic"
@@ -550,6 +656,16 @@ runs:
             if [ "$v" = "anthropic" ]; then
               echo "::warning title=llm-endpoint::${why} — DEGRADING to mode=fallback-anthropic (direct api.anthropic.com). The chain [${AVAILABLE[*]}] is NOT active for this run: without LiteLLM there is no automatic advance past anthropic on a quota/rate-limit/auth error, so an exhausted anthropic key now fails the run instead of rolling over."
               echo "::add-mask::${FALLBACK_ANTHROPIC_KEY}"
+              # This degraded leg ALSO has no LiteLLM in front to catch a 401, so
+              # apply the same auth-validity gate as the single-vendor direct
+              # path (issue #405): verify the key authenticates before handing it
+              # back as a resolved credential.
+              PROBE_CF_ARGS=()
+              serve_probe "https://api.anthropic.com" "${FALLBACK_ANTHROPIC_KEY}"
+              if [ "$SERVE_RESULT" = "auth-rejected" ]; then
+                echo "::error title=llm-endpoint::degrade target api.anthropic.com REJECTED ANTHROPIC_API_KEY (HTTP ${SERVE_PROBE_CODE}) — the key is present but invalid; rotate it. Failing in preflight (issue #405) rather than emitting a credential that cannot authenticate."
+                exit 1
+              fi
               {
                 echo "mode=fallback-anthropic"
                 echo "vendor=anthropic"
@@ -588,7 +704,22 @@ runs:
         fi
 
         primary_vendor="${AVAILABLE[0]}"
-        echo "::notice title=llm-endpoint::mode=fallback-local-litellm vendor=${primary_vendor} — runner-local LiteLLM (chain=[${AVAILABLE[*]}], skipped-no-key=[${SKIPPED[*]:-none}]) became ready in ${elapsed}s. LiteLLM's own router_settings.fallbacks will auto-advance past ${primary_vendor} on a quota/rate-limit/auth error without another workflow run."
+        # Readiness of the freshly-started local proxy is necessary but not
+        # sufficient (issue #298 Gap B, applied to the local leg too): confirm it
+        # will serve an authenticated inference call before returning it. This
+        # request also walks LiteLLM's own router_settings.fallbacks, so a bad
+        # head-vendor key rolls over to the next configured vendor within the
+        # probe itself; only if the WHOLE chain refuses does the probe fail. On
+        # failure, degrade to the direct-Anthropic leg (which auth-probes in
+        # turn) rather than hand back a proxy that merely answers readiness.
+        PROBE_CF_ARGS=()
+        serve_probe "http://127.0.0.1:${PORT}" "${LOCAL_MASTER_KEY}"
+        if [ "$SERVE_RESULT" != "ok" ]; then
+          echo "::warning title=llm-endpoint::runner-local LiteLLM became ready but its authenticated serve probe did NOT pass (result=${SERVE_RESULT}, HTTP ${SERVE_PROBE_CODE}) — the chain [${AVAILABLE[*]}] refused a real inference call."
+          docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
+          degrade_to_anthropic "runner-local LiteLLM answered readiness but failed the authenticated serve probe (result=${SERVE_RESULT}, HTTP ${SERVE_PROBE_CODE})"
+        fi
+        echo "::notice title=llm-endpoint::mode=fallback-local-litellm vendor=${primary_vendor} — runner-local LiteLLM (chain=[${AVAILABLE[*]}], skipped-no-key=[${SKIPPED[*]:-none}]) became ready in ${elapsed}s and passed an authenticated serve probe (HTTP ${SERVE_PROBE_CODE}). LiteLLM's own router_settings.fallbacks will auto-advance past ${primary_vendor} on a quota/rate-limit/auth error without another workflow run."
         {
           echo "mode=fallback-local-litellm"
           echo "vendor=${primary_vendor}"

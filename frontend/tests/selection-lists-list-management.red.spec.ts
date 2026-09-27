@@ -49,6 +49,7 @@
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
+import { mockAuthenticatedSelectionListsSession } from './support/selection-lists-e2e-session'
 
 const LIST_INDEX_ROUTE = '/settings/selection-lists'
 // A real list id for detail/item routes — the harness injects mock data.
@@ -126,10 +127,12 @@ const MOCK_QUOTA_NEAR_LIMIT = {
 }
 
 async function gotoListIndex(page: Page) {
+  await mockAuthenticatedSelectionListsSession(page)
   await page.goto(LIST_INDEX_ROUTE, { waitUntil: 'domcontentloaded' })
 }
 
 async function gotoListDetail(page: Page) {
+  await mockAuthenticatedSelectionListsSession(page)
   await page.goto(LIST_DETAIL_ROUTE, { waitUntil: 'domcontentloaded' })
 }
 
