@@ -1383,6 +1383,26 @@ paths:
       x-pagination: exempt
       x-pagination-reason: Singleton mutation.
   # ─────────────────────────────── M2M tokens ───────────────────────────────
+  /v1/security/tokens/workload:
+    post:
+      operationId: exchangeWorkloadToken
+      summary: Exchange a projected Kubernetes ServiceAccount JWT for a Fuze workload token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serviceAccountToken]
+              properties:
+                serviceAccountToken: { type: string }
+      responses:
+        '200':
+          description: Short-lived workload bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenIssueResponse'
   /v1/security/tokens:
     post:
       tags: [tokens]
@@ -1434,6 +1454,40 @@ paths:
                 $ref: '#/components/schemas/TokenIntrospection'
       x-pagination: exempt
       x-pagination-reason: Singleton introspection.
+  /v1/security/tokens/exchange:
+    post:
+      tags: [tokens]
+      summary: Exchange user authority for an audience-bound delegation
+      operationId: exchangeDelegationToken
+      description: >-
+        RFC 8693-inspired on-behalf-of exchange. The Authorization bearer
+        authenticates the immediate service. `subjectToken` identifies the
+        external user or an earlier delegation. The issued token is short-lived,
+        audience-bound, carries the signed actor chain, and cannot exceed the
+        immediate service's scopes.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DelegationExchangeRequest'
+      responses:
+        '200':
+          description: Audience-bound delegation token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DelegationExchangeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      x-pagination: exempt
+      x-pagination-reason: Singleton token exchange.
   # ─────────────────────────────── MFA: factors ─────────────────────────────
   /v1/security/mfa/factors:
     get:
@@ -2810,7 +2864,46 @@ components:
           type: string
         expiresAt:
           type: integer
+        audience:
+          type: string
+        tokenKind:
+          type: string
+        actor:
+          $ref: '#/components/schemas/DelegationActor'
       required: [active]
+    DelegationActor:
+      type: object
+      additionalProperties: false
+      properties:
+        sub:
+          type: string
+        previous:
+          type: object
+      required: [sub]
+    DelegationExchangeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        subjectToken:
+          type: string
+        audience:
+          type: string
+          pattern: '^service:'
+        scope:
+          type: string
+      required: [subjectToken, audience, scope]
+    DelegationExchangeResponse:
+      allOf:
+        - $ref: '#/components/schemas/TokenIssueResponse'
+        - type: object
+          properties:
+            subject:
+              type: string
+            audience:
+              type: string
+            actor:
+              $ref: '#/components/schemas/DelegationActor'
+          required: [subject, audience, actor]
     # ── MFA shapes ──
     MfaFactorType:
       type: string
