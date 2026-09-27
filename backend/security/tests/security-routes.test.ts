@@ -85,6 +85,39 @@ function makeApp(p: IdentityProvider) {
 
 afterEach(() => setIdentityProvider(null))
 
+describe('delegation token exchange', () => {
+  beforeEach(() => { process.env.DELEGATION_SIGNING_KEY = 'test-delegation-signing-key-at-least-32-bytes' })
+  afterEach(() => { delete process.env.DELEGATION_SIGNING_KEY })
+
+  it('binds the user, audience, scopes and immediate workload actor', async () => {
+    const provider = fakeProvider({
+      introspectToken: jest.fn()
+        .mockResolvedValueOnce({ active: true, subject: 'service:chat', scope: 'connectors:metadata', tokenKind: 'fuze-workload' })
+        .mockResolvedValueOnce({ active: true, subject: 'user-1', tenantId: 'org-1' }),
+    })
+    const exchange = await request(makeApp(provider))
+      .post('/api/v1/security/tokens/exchange')
+      .set('Authorization', 'Bearer workload')
+      .send({ subjectToken: 'user-session', audience: 'service:fuzekeys', scope: 'connectors:metadata' })
+    expect(exchange.status).toBe(200)
+    expect(exchange.body).toMatchObject({ subject: 'user-1', audience: 'service:fuzekeys', actor: { sub: 'service:chat' } })
+
+    const introspection = await request(makeApp(provider))
+      .post('/api/v1/security/tokens/introspect')
+      .send({ token: exchange.body.accessToken })
+    expect(introspection.body).toMatchObject({ active: true, subject: 'user-1', audience: 'service:fuzekeys', tokenKind: 'fuze-delegation' })
+  })
+
+  it('rejects a user session used as the actor token', async () => {
+    const provider = fakeProvider({ introspectToken: jest.fn().mockResolvedValue({ active: true, subject: 'user-1' }) })
+    const response = await request(makeApp(provider))
+      .post('/api/v1/security/tokens/exchange')
+      .set('Authorization', 'Bearer user-session')
+      .send({ subjectToken: 'other-session', audience: 'service:fuzekeys', scope: 'connectors:metadata' })
+    expect(response.status).toBe(401)
+  })
+})
+
 describe('GET /identity/connections', () => {
   it('returns 200 application/json connections for an authorized caller without a 403 forbidden result', async () => {
     // @fuzequality api getIdentityConnections

@@ -3,8 +3,8 @@
 # IMPORTANT: build context is the REPOSITORY ROOT (see skaffold.yaml), not
 # backend/. This lets the backend consume the @fuzefront/shared workspace
 # (kafka sub-barrel) the same way services/email-service does. Only the kafka
-# sub-tree of shared is built (npm run build:kafka) so the server image needs no
-# React/DOM toolchain.
+# package root is also used by the chat-response websocket bridge, so the full
+# shared package must be built into the runtime image.
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
@@ -15,6 +15,8 @@ COPY package.json package-lock.json ./
 COPY shared/package.json ./shared/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/identity/package.json ./packages/identity/
+COPY packages/security/package.json ./packages/security/
+COPY packages/service-auth/package.json ./packages/service-auth/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY backend/package.json ./backend/
 
@@ -24,21 +26,25 @@ RUN npm install
 COPY shared/ ./shared/
 COPY packages/feature-flags/ ./packages/feature-flags/
 COPY packages/identity/ ./packages/identity/
+COPY packages/security/ ./packages/security/
+COPY packages/service-auth/ ./packages/service-auth/
 COPY custom-hostname-client/ ./custom-hostname-client/
 COPY backend/ ./backend/
 
-# Build shared kafka sub-tree, then the flag client, then the backend.
+# Build shared, then the flag client, then the backend.
 # @fuzefront/feature-flags must be BUILT here: its package `main` points at
 # dist/, and without this the workspace symlink resolves to an empty package —
 # which is why the flag client was absent from the running image and every flag
 # silently took its in-code default.
-RUN cd shared && npm run build:kafka
+RUN cd shared && npm run build
 RUN cd packages/feature-flags && npm run build
 # Same reason as the flag client above: @izzywdev/fuzefront-identity's `main`
 # points at dist/, and backend/src routes/services import mintId/toUuid
 # STATICALLY. Without this build the workspace symlink resolves to an empty
 # package and the container crashloops at boot.
 RUN cd packages/identity && npm run build
+RUN cd packages/security && npm run build
+RUN cd packages/service-auth && npm run build
 # Same reason as the flag client above: @fuzefront/custom-hostname-client's
 # `main`/`types` point at dist/, and backend/src/custom-domains imports it
 # STATICALLY. Without this build the workspace symlink resolves to an empty
@@ -69,6 +75,8 @@ COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/dist ./pack
 COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
 COPY --from=build --chown=backend:nodejs /app/packages/identity/dist ./packages/identity/dist
 COPY --from=build --chown=backend:nodejs /app/packages/identity/package.json ./packages/identity/package.json
+COPY --from=build --chown=backend:nodejs /app/packages/service-auth/dist ./packages/service-auth/dist
+COPY --from=build --chown=backend:nodejs /app/packages/service-auth/package.json ./packages/service-auth/package.json
 COPY --from=build --chown=backend:nodejs /app/custom-hostname-client/dist ./custom-hostname-client/dist
 COPY --from=build --chown=backend:nodejs /app/custom-hostname-client/package.json ./custom-hostname-client/package.json
 COPY --from=build --chown=backend:nodejs /app/backend/dist ./backend/dist
