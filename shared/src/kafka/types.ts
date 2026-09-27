@@ -22,6 +22,7 @@ export const TOPICS = {
   BILLING_TENANT_REGISTERED: 'billing.tenant.registered',
   BILLING_PAYMENT_METHOD_UPDATED: 'billing.payment_method.updated',
   PORTAL_CREATED: 'portal.created',
+  CHAT_RESPONSE_CHUNK: 'chat.response.chunk',
 } as const;
 
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];

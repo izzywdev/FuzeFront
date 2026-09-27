@@ -398,6 +398,12 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           label={t('nav.billing', { defaultValue: 'Billing' })}
           onClick={() => handleNavigate('/billing')}
         />
+        <DSMenuItem
+          icon="🔌"
+          label={t('nav.connectors', { defaultValue: 'Connectors' })}
+          active={pathname.startsWith('/connectors')}
+          onClick={() => handleNavigate('/connectors')}
+        />
         {employeeConsoleEnabled && isEmployeeUser(user?.roles) && (
           <DSMenuItem
             icon="⛨"

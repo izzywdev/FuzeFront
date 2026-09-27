@@ -624,6 +624,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/tokens/workload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange a projected Kubernetes ServiceAccount JWT for a Fuze workload token */
+        post: operations["exchangeWorkloadToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/tokens": {
         parameters: {
             query?: never;
@@ -658,6 +675,26 @@ export interface paths {
          * @description Returns the active state and normalized claims for a presented M2M token. Fail-closed: an unknown/expired token returns `{ active: false }`.
          */
         post: operations["introspectToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/tokens/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange user authority for an audience-bound delegation
+         * @description RFC 8693-inspired on-behalf-of exchange. The Authorization bearer authenticates the immediate service. `subjectToken` identifies the external user or an earlier delegation. The issued token is short-lived, audience-bound, carries the signed actor chain, and cannot exceed the immediate service's scopes.
+         */
+        post: operations["exchangeDelegationToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1322,6 +1359,23 @@ export interface components {
             tenantId?: string | null;
             scope?: string;
             expiresAt?: number;
+            audience?: string;
+            tokenKind?: string;
+            actor?: components["schemas"]["DelegationActor"];
+        };
+        DelegationActor: {
+            sub: string;
+            previous?: Record<string, never>;
+        };
+        DelegationExchangeRequest: {
+            subjectToken: string;
+            audience: string;
+            scope: string;
+        };
+        DelegationExchangeResponse: components["schemas"]["TokenIssueResponse"] & {
+            subject: string;
+            audience: string;
+            actor: components["schemas"]["DelegationActor"];
         };
         /**
          * @description Neutral factor type. Extensible; `webauthn` reserved for later.
@@ -2735,6 +2789,32 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    exchangeWorkloadToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    serviceAccountToken: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Short-lived workload bearer token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenIssueResponse"];
+                };
+            };
+        };
+    };
     issueToken: {
         parameters: {
             query?: never;
@@ -2783,6 +2863,33 @@ export interface operations {
                     "application/json": components["schemas"]["TokenIntrospection"];
                 };
             };
+        };
+    };
+    exchangeDelegationToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DelegationExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Audience-bound delegation token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegationExchangeResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMfaFactors: {
