@@ -29,7 +29,11 @@ import {
   getPermitSyncStatus,
 } from './permit/sync-permit-schema'
 import permitClient from './config/permit'
-import { ensureRootOrgAdmins } from './services/rootOrgAdmin'
+import {
+  ensureConfiguredRootAdmins,
+  ensureRootOrgAdmins,
+  parseRootAdminEmails,
+} from './services/rootOrgAdmin'
 import { initFeatureFlags } from './utils/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
@@ -712,6 +716,18 @@ async function startServer() {
       )
     } catch (error) {
       console.error('⚠️  ensureRootOrgAdmins failed (non-fatal):', error)
+    }
+
+    // Configured human root admins (PLATFORM_ROOT_ADMIN_EMAILS) usually have no
+    // `users` row at boot — it appears on their first login. Re-check on an
+    // interval so that login takes effect without a restart. Permit treats a
+    // repeat assignment as a benign conflict.
+    if (parseRootAdminEmails().length > 0) {
+      setInterval(() => {
+        ensureConfiguredRootAdmins().catch(error =>
+          console.error('⚠️  ensureConfiguredRootAdmins failed (non-fatal):', error)
+        )
+      }, 5 * 60 * 1000).unref()
     }
 
     // Start consuming billing.subscription.changed to project plan-tier/status
