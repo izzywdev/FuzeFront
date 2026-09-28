@@ -1,0 +1,81 @@
+{
+  "name": "@fuzefront/telemetry",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  },
+  "description": "OpenTelemetry distributed tracing for the FuzeFront family, correlated with the @fuzefront pino structured-logging standard — OTLP export (gRPC or HTTP) to FuzeInfra's Grafana Tempo / OTel Collector, an Express tracing middleware, and a browser SDK.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "sideEffects": false,
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/izzywdev/FuzeFront.git",
+    "directory": "packages/telemetry"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "express": "^4.22.2"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opentelemetry/context-async-hooks": "^2.11.0",
+    "@types/express": "^4.17.25",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^24.13.3",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "pino": "^9.5.0",
+    "ts-jest": "^29.4.11",
+    "tsup": "^8.0.2",
+    "typescript": "^5.9.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "require": "./dist/browser.js"
+    }
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.11.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/instrumentation": "^0.222.0",
+    "@opentelemetry/instrumentation-express": "^0.70.0",
+    "@opentelemetry/instrumentation-fetch": "^0.222.0",
+    "@opentelemetry/instrumentation-http": "^0.222.0",
+    "@opentelemetry/instrumentation-xml-http-request": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "@opentelemetry/sdk-trace-web": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0"
+  }
+}

@@ -107,6 +107,14 @@ jobs:
         # statically, so backend's tsc cannot resolve it until this runs.
         run: npm run -w @fuzefront/custom-hostname-client build
 
+      - name: Build @fuzefront/telemetry (browser dist for frontend type-check)
+        # frontend/src/main.tsx imports @fuzefront/telemetry/browser, whose
+        # `exports` map points at dist/browser.{js,mjs,d.ts} — unbuilt, frontend's
+        # tsc fails with TS2307 "Cannot find module". No vite source alias exists
+        # for it (unlike identity-ui/i18n), so this build has to produce the real
+        # dist that both tsc and vite/vitest below resolve.
+        run: npm run -w @fuzefront/telemetry build
+
       - name: Build @fuzefront/shared + @fuzefront/service-auth (d.ts for backend type-check)
         # Both resolve through dist/. shared/dist is COMMITTED and goes stale
         # whenever shared/src changes without a rebuild (#1189 added the
@@ -203,9 +211,14 @@ jobs:
         # shared MUST build before core — @fuzefront/core now imports
         # @fuzefront/shared/kafka (the schema registry), and tsc resolves it
         # through shared/dist, so shared has to be current first.
+        # @fuzefront/telemetry is also required here: lib/logger.ts imports it
+        # for trace_id/span_id correlation, and ts-jest type-checks on
+        # transform, so an unbuilt dist fails every suite that loads the
+        # logger with TS2307, not only telemetry's own tests.
         run: |
           npm run -w @fuzefront/shared build
           npm run -w @fuzefront/core build
+          npm run -w @fuzefront/telemetry build
 
       - name: security — API-token jest suite (DB mocked, no Postgres)
         run: |
@@ -284,6 +297,11 @@ jobs:
       # resolve the package entry until it has been built.
       - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
         run: npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Build @fuzefront/telemetry (for frontend bundle)
+        # frontend imports @fuzefront/telemetry/browser at its bootstrap
+        # (main.tsx); its `exports` map points at dist/, unbuilt by default.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Build frontend
         run: cd frontend && npm run build
@@ -507,6 +525,11 @@ jobs:
       # resolve the package entry until it has been built.
       - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
         run: npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Build @fuzefront/telemetry (for frontend bundle)
+        # frontend imports @fuzefront/telemetry/browser at its bootstrap
+        # (main.tsx); its `exports` map points at dist/, unbuilt by default.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Build frontend
         run: cd frontend && npm run build
