@@ -107,6 +107,17 @@ jobs:
         # statically, so backend's tsc cannot resolve it until this runs.
         run: npm run -w @fuzefront/custom-hostname-client build
 
+      - name: Build @fuzefront/shared + @fuzefront/service-auth (d.ts for backend type-check)
+        # Both resolve through dist/. shared/dist is COMMITTED and goes stale
+        # whenever shared/src changes without a rebuild (#1189 added the
+        # chat.response.chunk schema to src only), and service-auth/dist is not
+        # committed at all — so backend's tsc failed on master with TS2305/TS2307
+        # for both. service-auth's d.ts build imports @fuzefront/security-client,
+        # which is built earlier in this job.
+        run: |
+          npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/service-auth build
+
       - name: Build @fuzeone/selection-lists-ui (d.ts for frontend type-check)
         # frontend/tsconfig.json resolves @fuzeone/selection-lists-ui to its
         # built dist/index.d.ts; without this the type-check and vite build
@@ -250,6 +261,15 @@ jobs:
       - name: Build @fuzefront/custom-hostname-client (for backend build)
         run: npm run -w @fuzefront/custom-hostname-client build
 
+      - name: Build @fuzefront/security-client, shared, service-auth (for backend build)
+        # Same reason as the matching step in lint-and-test: backend imports
+        # shared + service-auth through their dist/ types. service-auth's d.ts
+        # needs security-client built first.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/service-auth build
+
       - name: Build backend
         run: cd backend && npm run build
 
@@ -332,6 +352,15 @@ jobs:
         # runs — same pattern as the @fuzefront/custom-hostname-client /
         # @fuzefront/security-client prebuild steps above.
         run: npm run -w @fuzefront/auth build
+
+      - name: Build @fuzefront/security-client + service-auth (d.ts for chat-service type-check)
+        # chat-service imports @fuzefront/service-auth (#1189/#1190), which
+        # resolves through its uncommitted dist/; its d.ts build in turn imports
+        # @fuzefront/security-client. Merged while ci.yml was not running, so
+        # the missing build went unnoticed (TS2307).
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
 
       - name: Type-check chat-service
         run: npm run -w @fuzefront/chat-service build
@@ -444,12 +473,11 @@ jobs:
     # Specs: frontend/tests/selection-lists-{list-management,picker,access-control,
     #        translation-workbench}.red.spec.ts
     continue-on-error: true
-    # Backstop only — the real saving is `--retries=0` on the run step below.
-    # 155 red specs at the 30s per-test timeout, serial (workers=1 in CI), is a
-    # ~77 min worst case; this caps a pathological run without failing a healthy
-    # one. ci.yml previously set no timeout anywhere, so the ceiling was
-    # GitHub's 6-hour default.
-    timeout-minutes: 90
+    # (timeout-minutes is set once, above. A second `timeout-minutes: 90` merged
+    # in here from a concurrent PR made the key duplicate, and GitHub rejected
+    # the whole file — no ci.yml job ran anywhere for three days. The 90 was
+    # sized for 155 specs run serially; the run step overrides to --workers=4,
+    # which is the ~19 min worst case the 30 above is sized against.)
 
     steps:
       - name: Checkout code
@@ -989,16 +1017,18 @@ jobs:
         # step), so a plain `npm ci` leaves sqlite3 without its binding.
         run: npm ci
 
-      - name: Rebuild sqlite3 native module (@fuzefront/core)
-        # Without this, tests/events/outbox.test.ts (the pre-existing
-        # sqlite/in-memory-DB unit suite that this job is the first to run in
-        # CI) fails every test with "Cannot find module 'sqlite3' from
-        # '.../knex/lib/dialects/sqlite3/index.js'" before any real
-        # Postgres/Kafka assertion runs. `npm rebuild` explicitly invokes the
-        # package's install script (prebuild-install/node-gyp), bypassing the
-        # install-scripts allowlist gate that silently no-ops it during `npm
-        # ci`.
-        run: npm rebuild sqlite3 --workspace=@fuzefront/core
+      - name: Rebuild sqlite3 native module
+        # backend/core/tests/events/outbox.test.ts drives knex against an
+        # in-memory sqlite DB. Two things must hold (ported from #1191):
+        #  1. RESOLUTION. knex is hoisted to the ROOT node_modules, so its
+        #     require('sqlite3') never walks into backend/node_modules. sqlite3
+        #     is declared in the ROOT package.json devDeps so a root-level copy
+        #     exists where knex resolves.
+        #  2. THE NATIVE BINDING. `npm ci` skips sqlite3's install script
+        #     (install-scripts trust gate); `npm rebuild` runs it explicitly.
+        # This previously read `--workspace=@fuzefront/core`, where sqlite3 is
+        # not installed — npm reported success and built nothing.
+        run: npm rebuild sqlite3
 
       - name: Build @fuzefront/shared kafka barrel
         # @fuzefront/core resolves @fuzefront/shared/kafka from its built dist/
