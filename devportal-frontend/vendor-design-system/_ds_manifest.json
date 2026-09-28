@@ -202,6 +202,10 @@
       "sourcePath": "components/shell/MenuItem.jsx"
     },
     {
+      "name": "NavLink",
+      "sourcePath": "components/shell/NavLink.jsx"
+    },
+    {
       "name": "Tabs",
       "sourcePath": "components/shell/Tabs.jsx"
     },
