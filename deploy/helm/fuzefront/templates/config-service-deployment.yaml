@@ -65,6 +65,25 @@ spec:
               # config-service's authorization is routed through this Service
               # (src/middleware/authz.ts) instead of an embedded Permit.io SDK.
               value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            - name: KAFKA_BROKERS
+              # Shared FuzeInfra Kafka cluster. Not a secret — a plain
+              # cluster-internal DNS address. Drives src/events/consumer.ts,
+              # which SKIPS starting the identity lifecycle consumers entirely
+              # when this is unset rather than retrying a default broker
+              # forever.
+              #
+              # Declared explicitly in values.yaml (configService.kafkaBrokers)
+              # rather than defaulted at the render site — same rule the
+              # networkPolicy.port comment in
+              # config-service-networkpolicy.yaml spells out, and the reason
+              # FuzeInfra#501 blocked every Argo sync for days.
+              #
+              # No NetworkPolicy change is needed for this: the config-service
+              # policy is policyTypes:[Ingress] only, so egress is
+              # unrestricted. Adding an egress rule here would flip the pod to
+              # default-deny egress and break its Postgres and Security API
+              # calls.
+              value: {{ .Values.configService.kafkaBrokers | quote }}
           readinessProbe:
             # /health/ready pings the DB; /health (liveness, below) does not.
             # Splitting them means a database outage takes this pod OUT OF THE
