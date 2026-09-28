@@ -30,12 +30,24 @@ export type {
 export { createServiceAuthClient } from './client';
 export type { ServiceAuthClient, ServiceAuthClientOptions } from './client';
 
+export { createDelegationClient } from './delegation';
+export type {
+  DelegationClient,
+  DelegationExchangeOptions,
+  DelegationRequest,
+  DelegationToken,
+} from './delegation';
+
+export { createWorkloadAuthClient } from './workload';
+export type { WorkloadAuthClient, WorkloadAuthClientOptions } from './workload';
+
 export { createMachineTokenVerifier } from './verifier';
 export type { MachineTokenVerifier, MachineTokenVerifierOptions } from './verifier';
 
-export { requireMachineAuth } from './middleware';
+export { requireDelegatedAuth, requireMachineAuth } from './middleware';
 export type {
   MachineAuthErrorBody,
   MachineAuthorizeHook,
   RequireMachineAuthOptions,
+  RequireDelegatedAuthOptions,
 } from './middleware';

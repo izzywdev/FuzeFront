@@ -4,6 +4,7 @@ import { useCurrentUser } from '../lib/shared'
 import { getActiveAuthToken } from '../lib/accounts'
 import { useAppRegistry } from '../platform/appRegistry'
 import { usePortalContext } from '@fuzefront/portal-branding-ui'
+import { Button } from '@fuzefront/design-system'
 import {
   loadFederatedAppFromManifest,
   clearModuleCache,
@@ -183,7 +184,9 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
           throw new Error(`Unsupported integration type: ${integration.type}`)
         }
       } catch (err) {
-        console.error(`Failed to load app "${app?.manifest.name}":`, err)
+        // Constant format string — the app name comes from the registry
+        // manifest and must not be interpolated into the message itself.
+        console.error('Failed to load app "%s":', app?.manifest.name, err)
         if (mounted) {
           setError(err instanceof Error ? err.message : 'Unknown error occurred')
         }
@@ -219,13 +222,9 @@ export function FederatedAppLoader({ appId }: FederatedAppLoaderProps) {
       >
         <h3>⚠️ Failed to Load App</h3>
         <p>{error}</p>
-        <button
-          className="btn btn-primary"
-          onClick={handleRetry}
-          style={{ marginTop: 'var(--space-4)' }}
-        >
+        <Button variant="primary" onClick={handleRetry} style={{ marginBlockStart: 'var(--space-4)' }}>
           🔄 Retry
-        </button>
+        </Button>
       </div>
     )
   }

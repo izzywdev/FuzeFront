@@ -44,7 +44,9 @@ import { _setAuthzClientForTesting, makeNoOpProxy } from '../src/middleware/auth
 import { db } from '../src/db';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const JWT_SECRET = 'test-secret-s7-access-routes';
+// Test-only signing secret (never a production credential); overridable via
+// TEST_JWT_SECRET so the literal is an obviously fake fallback.
+const JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-s7-access-routes';
 process.env.JWT_SECRET = JWT_SECRET;
 
 const LIST_ID = 'sl_testlist01';

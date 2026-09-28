@@ -12,7 +12,19 @@ import { getRequestPortalsEnabled } from '../utils/portalFlag'
 // header) even though it's cryptographically verified first — defense in
 // depth against CodeQL's conservative taint tracking, same idiom as
 // routes/billing.ts's upstream-error logger.
-const oneLine = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+//
+// It is the companion to the constant-format-string rule used by every
+// console.* call in this file (semgrep
+// javascript.lang.security.audit.unsafe-formatstring): the constant format
+// string stops an injected %s/%d from forging log output, and oneLine stops an
+// injected newline from forging whole log LINES. Both are needed — neither
+// substitutes for the other.
+// Chained single-character replaces (not a `[\r\n]` character class): CodeQL's
+// js/log-injection only recognises a replace() whose matched string is
+// constant as a sanitiser barrier, so a class-based strip cleans the value but
+// is not seen as a barrier and the alert stays open. Same recognised form as
+// portalContext.ts / routes/internal.ts.
+const oneLine = (v: unknown) => String(v).replace(/\r/g, ' ').replace(/\n/g, ' ')
 
 export const authenticateToken = async (
   req: Request,
@@ -23,21 +35,33 @@ export const authenticateToken = async (
   const authHeader = req.headers['authorization']
   const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
 
-  console.log(`🔐 [${requestId}] Auth middleware - checking token:`, {
-    hasAuthHeader: !!authHeader,
-    hasToken: !!token,
-    tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
-    path: req.path,
-    method: req.method,
-  })
+  // Constant format string + arguments, never an interpolated one (a variable
+  // used as/in the format string lets an injected %s/%d specifier forge log
+  // output) — same convention as utils/feature-flags.ts and the portal-mismatch
+  // logger below.
+  //
+  // SECRET REDACTION (`logging` skill §5): the bearer token's own bytes are
+  // NEVER logged. This previously emitted `tokenPreview` — the first 20
+  // characters of the caller's credential — straight to stdout/Loki. Log the
+  // token's SHAPE (presence, length) instead; that is all an operator needs to
+  // tell "no header" from "malformed header" from "expired token".
+  console.log(
+    '🔐 [%s] Auth middleware - checking token: hasAuthHeader=%s hasToken=%s tokenLength=%s path=%s method=%s',
+    oneLine(requestId),
+    !!authHeader,
+    !!token,
+    token ? token.length : 0,
+    oneLine(req.path),
+    oneLine(req.method)
+  )
 
   if (!token) {
-    console.log(`❌ [${requestId}] No token provided`)
+    console.log('❌ [%s] No token provided', oneLine(requestId))
     return res.status(401).json({ error: 'Access denied. No token provided.' })
   }
 
   try {
-    console.log(`🔍 [${requestId}] Verifying JWT token...`)
+    console.log('🔍 [%s] Verifying JWT token...', oneLine(requestId))
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string
       // FF-EPIC-10-S3 — the portal this token was minted for (routes/auth.ts
@@ -46,9 +70,11 @@ export const authenticateToken = async (
       portalId?: string
     }
 
-    console.log(`✅ [${requestId}] Token verified, fetching user:`, {
-      userId: decoded.userId,
-    })
+    console.log(
+      '✅ [%s] Token verified, fetching user: userId=%s',
+      oneLine(requestId),
+      oneLine(decoded.userId)
+    )
 
     // Fetch user from database
     const userRow = await db('users')
@@ -67,17 +93,21 @@ export const authenticateToken = async (
       .first()
 
     if (!userRow) {
-      console.log(`❌ [${requestId}] User not found in database:`, {
-        userId: decoded.userId,
-      })
+      console.log(
+        '❌ [%s] User not found in database: userId=%s',
+        oneLine(requestId),
+        oneLine(decoded.userId)
+      )
       return res.status(401).json({ error: 'User not found' })
     }
 
-    console.log(`👤 [${requestId}] User authenticated:`, {
-      userId: userRow.id,
-      email: userRow.email,
-      roles: userRow.roles,
-    })
+    console.log(
+      '👤 [%s] User authenticated: userId=%s email=%s roles=%s',
+      oneLine(requestId),
+      oneLine(userRow.id),
+      oneLine(userRow.email),
+      oneLine(JSON.stringify(userRow.roles))
+    )
 
     const user: User = {
       id: userRow.id,
@@ -198,10 +228,14 @@ export const authenticateToken = async (
     req.user = user
     next()
   } catch (error) {
-    console.log(`❌ [${requestId}] Token verification failed:`, {
-      error: error instanceof Error ? error.message : String(error),
-      tokenPreview: token ? `${token.substring(0, 20)}...` : 'none',
-    })
+    // Same redaction rule as the entry log above — the failure REASON is what
+    // an operator needs; the token bytes are a credential and never appear.
+    console.log(
+      '❌ [%s] Token verification failed: error=%s tokenLength=%s',
+      oneLine(requestId),
+      oneLine(error instanceof Error ? error.message : String(error)),
+      token ? token.length : 0
+    )
     return res.status(401).json({ error: 'Invalid token.' })
   }
 }

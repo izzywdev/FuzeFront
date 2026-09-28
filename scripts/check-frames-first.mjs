@@ -107,6 +107,16 @@ const MAX_GLOB_LENGTH = 200
  * path separator, so backtracking is anchored rather than free. `***` (which
  * would emit adjacent unbounded wildcards) is rejected, and glob length is
  * capped, so a typo in a manifest cannot hang CI.
+ *
+ * ADJACENT unbounded wildcards were still reachable without `***`, though: a
+ * glob repeating the `**` + separator segment N times emits N sequential copies
+ * of the zero-or-more-path-segments group, and N ambiguous quantifiers in a row
+ * backtrack polynomially (O(len^N)) on a near-miss path. Within the 200-char
+ * cap that is ~66 of them, which is enough to hang the gate. Emission below
+ * therefore COLLAPSES a wildcard that would repeat the one already at the tail
+ * of the pattern: two of those groups in a row match exactly the same set as
+ * one (zero or more path segments), and the same holds for a doubled `.` + `*`
+ * atom, so this is a pure de-ambiguation — no glob changes meaning.
  */
 export function globToRegExp(glob) {
   const cached = GLOB_CACHE.get(glob)
@@ -122,15 +132,19 @@ export function globToRegExp(glob) {
 
   let re = ''
   let braceDepth = 0
+  /** Append an unbounded wildcard unless the pattern already ends with it. */
+  const appendWildcard = atom => {
+    if (!re.endsWith(atom)) re += atom
+  }
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]
     if (c === '*') {
       if (glob[i + 1] === '*') {
         if (glob[i + 2] === '/') {
-          re += '(?:[^/]*/)*' // **/ => zero or more path segments
+          appendWildcard('(?:[^/]*/)*') // **/ => zero or more path segments
           i += 2
         } else {
-          re += '.*'
+          appendWildcard('.*')
           i += 1
         }
       } else {
@@ -150,6 +164,11 @@ export function globToRegExp(glob) {
       re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
     }
   }
+  // `re` is assembled here, char by char, from a length-capped repo-controlled
+  // glob: every literal is escaped, every wildcard comes from the fixed set of
+  // atoms above, and adjacent unbounded atoms are collapsed. There is no
+  // caller-supplied regex syntax and no untrusted input on this path.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const compiled = new RegExp('^' + re + '$')
   GLOB_CACHE.set(glob, compiled)
   return compiled

@@ -52,6 +52,9 @@ class MachineIdentity:
     scope: str | None = None
     scopes: list[str] = field(default_factory=list)
     expires_at: int | None = None
+    audience: str | None = None
+    actor: dict[str, Any] | None = None
+    token_kind: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -171,6 +174,9 @@ class MachineTokenVerifier:
             scope=scope,
             scopes=scope.split() if isinstance(scope, str) and scope else [],
             expires_at=data.get("expiresAt"),
+            audience=data.get("audience"),
+            actor=data.get("actor"),
+            token_kind=data.get("tokenKind"),
             raw=data,
         )
         self._cache.put(token, identity, now, expires_at=data.get("expiresAt"))

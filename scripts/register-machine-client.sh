@@ -7,8 +7,16 @@
 #   1. An OAuth2 Provider configured for client_credentials grant only
 #   2. An Application bound to that provider
 #
-# Outputs the generated client_id and client_secret to stdout.
-# These credentials should be stored securely (e.g. a Kubernetes SealedSecret).
+# Outputs the generated client_id to stdout. The client_secret is a live
+# credential, so it is NEVER echoed by default: it is written to a 0600 file and
+# only the PATH is printed. Set SHOW_SECRET=1 to print it to stdout instead
+# (do that only on a terminal you control -- stdout here lands in shell
+# scrollback, `kubectl exec` captures and any CI log that wraps this script).
+# Store the secret in a Kubernetes SealedSecret and delete the file.
+#
+# This matches what the TypeScript equivalents already do -- see
+# backend/src/authentik/register-a2a-cli.ts / register-s2s-cli.ts, which mask
+# the secret and tell the operator to retrieve the full value out of band.
 #
 # Usage:
 #   export AUTHENTIK_BASE_URL=http://authentik.dev.local
@@ -206,6 +214,16 @@ CLIENT_SECRET=$(echo "$PROVIDER_DETAIL" | python3 -c "import json,sys; print(jso
 # Output
 # ---------------------------------------------------------------------------
 
+# client_id is not a secret. client_secret IS -- keep it off stdout unless the
+# operator explicitly opts in. Written with a 0600 umask so it is not
+# world-readable on a shared box.
+SECRET_FILE=""
+if [ "${SHOW_SECRET:-0}" != "1" ]; then
+  SECRET_FILE="$(mktemp -t "machine-client-${SLUG}.XXXXXX")"
+  chmod 600 "$SECRET_FILE"
+  printf 'MACHINE_CLIENT_ID=%s\nMACHINE_CLIENT_SECRET=%s\n' "$CLIENT_ID" "$CLIENT_SECRET" > "$SECRET_FILE"
+fi
+
 echo ""
 echo "=========================================="
 echo "  Machine client registered successfully"
@@ -215,20 +233,25 @@ echo "  Application:   $APP_SLUG"
 echo "  Provider ID:   $PROVIDER_ID"
 echo ""
 echo "  CLIENT_ID:     $CLIENT_ID"
-echo "  CLIENT_SECRET: $CLIENT_SECRET"
-echo ""
-echo "  Store these in a Kubernetes SealedSecret:"
-echo "    MACHINE_CLIENT_ID=$CLIENT_ID"
-echo "    MACHINE_CLIENT_SECRET=$CLIENT_SECRET"
+if [ "${SHOW_SECRET:-0}" = "1" ]; then
+  echo "  CLIENT_SECRET: $CLIENT_SECRET"
+else
+  echo "  CLIENT_SECRET: (set, ${#CLIENT_SECRET} chars - not shown)"
+  echo ""
+  echo "  Written to:    $SECRET_FILE  (mode 0600)"
+  echo "  Seal it, then delete the file:  shred -u \"$SECRET_FILE\""
+  echo "  Re-run with SHOW_SECRET=1 to print it to stdout instead."
+fi
 echo "=========================================="
 echo ""
 echo "  Token endpoint:"
 echo "  ${AUTHENTIK_BASE_URL}/application/o/${APP_SLUG}/token/"
 echo ""
-echo "  Obtain a token:"
+echo "  Obtain a token (substitute the secret yourself - it is deliberately"
+echo "  not interpolated into this copy-paste line):"
 echo "  curl -X POST ${AUTHENTIK_BASE_URL}/application/o/${APP_SLUG}/token/ \\"
 echo "    -d 'grant_type=client_credentials' \\"
 echo "    -d 'client_id=${CLIENT_ID}' \\"
-echo "    -d 'client_secret=${CLIENT_SECRET}' \\"
+echo "    -d \"client_secret=\$MACHINE_CLIENT_SECRET\" \\"
 echo "    -d 'scope=${SCOPES}'"
 echo "=========================================="

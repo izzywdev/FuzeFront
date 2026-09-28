@@ -269,6 +269,7 @@ class SelectionListClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the `file://` read this rule names is rejected in __init__: any base_url whose scheme is not in _ALLOWED_SCHEMES raises ValueError before a client exists. `path` cannot re-introduce one either, because _build_url is plain concatenation and never urllib.parse.urljoin (urljoin is what would let an absolute `file://` path override the base).
             with urllib.request.urlopen(req) as resp:
                 status: int = resp.status
                 raw_body: bytes = resp.read()

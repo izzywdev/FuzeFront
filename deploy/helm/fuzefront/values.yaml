@@ -184,12 +184,27 @@ secret:
   # fuzefront-secrets SealedSecret. NEVER commit a real token here.
   featureFlagsClientToken: ""
   notificationInternalToken: ""
+  # Shared only by FuzeFront backend/chat-service and FuzeKeys connector API.
   mendysDatasetsClientSecret: ""
   mendysPlatformClientSecret: ""
   authentikMendysSecretKey: ""
   authentikMendysBootstrapPassword: ""
   authentikMendysBootstrapToken: ""
   authentikMendysDbPassword: ""
+
+# Human root administrators of the ROOT platform organization. Each listed
+# account, once it has logged in, gets `admin` in users.roles, root `org-admin`
+# in Permit, an `owner` membership on the root org, and root-org ownership if
+# the platform-registrar placeholder still holds it
+# (backend/src/services/rootOrgAdmin.ts).
+#
+# SECURITY: only list an email whose Authentik account is PRE-CREATED by a
+# checked-in blueprint (authentik/blueprints/groups-fuzeinfra-admins.yaml for
+# the entry below). Self-signup does not verify email, so an email without a
+# pre-created account can be registered — and made root — by anyone.
+rootAdmins:
+  emails:
+    - izzy.weinberg@gmail.com
 
 backend:
   image:
@@ -211,6 +226,9 @@ backend:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+
+connectors:
+  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8000"
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in
@@ -893,6 +911,14 @@ configService:
   enabled: false
   replicas: 1
   port: 3011
+  # Shared FuzeInfra Kafka cluster, consumed by src/events/consumer.ts for the
+  # identity lifecycle consumers (org/user deleted -> drop that scope's config
+  # overrides). Declared here EXPLICITLY, not defaulted inside the template:
+  # see config-service-networkpolicy.yaml's header for why a missing value
+  # absorbed at the render site is how FuzeInfra#501 broke every Argo sync.
+  # Set to "" to disable the consumers (the service then serves reads/writes
+  # normally and logs that they were not started).
+  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
   # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
   # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
   # billing-service's billing_svc — no separate database is provisioned.
@@ -1089,14 +1115,17 @@ unleash:
   # account token. The Role below grants `get` on that one secret; the
   # RoleBinding attaches it to the ARC runner SA.
   #
-  # For ARC v2 AutoscalingRunnerSet the SA name == runner set name ("fuzefront").
-  # Override serviceAccountNamespace if your runner set lives in a different
-  # namespace (e.g. "arc-runners"). Override serviceAccountName if your runner
-  # set has a different name.
+  # serviceAccountName is the ServiceAccount the runner PODS run as — NOT the
+  # scale-set / runs-on name. It is a common trap: ARC v2 does NOT make the pod
+  # SA equal the runner-set name. FuzeInfra pins every set's pods to
+  # `arc-runner-sa` in its shared runner-scale-set-values.yaml
+  # (template.spec.serviceAccountName), so that is the fleet-wide default here.
+  # Override serviceAccountNamespace if the runner set lives in a different
+  # namespace (prod: "arc-runners", set in values-prod.yaml).
   ciRunner:
     enabled: true
-    serviceAccountName: fuzefront
-    serviceAccountNamespace: ""   # defaults to the release namespace (fuzefront)
+    serviceAccountName: arc-runner-sa
+    serviceAccountNamespace: ""   # defaults to the release namespace
 
 authentik:
   enabled: true

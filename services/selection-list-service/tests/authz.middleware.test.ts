@@ -49,7 +49,11 @@ import { db } from '../src/db';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const JWT_SECRET = 'test-secret-s7-authz';
+// Test-only signing key. Sourced from the environment so this suite never
+// carries a literal that could be copy-pasted into (or drift from) a real
+// production default; the fallback is deliberately, obviously not a secret.
+const JWT_SECRET =
+  process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-s7-authz';
 process.env.JWT_SECRET = JWT_SECRET;
 
 function makeToken(overrides: Record<string, unknown> = {}): string {
