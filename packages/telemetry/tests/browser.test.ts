@@ -113,9 +113,11 @@ describe('trace-context helpers', () => {
     const tracer = trace.getTracer('test');
     tracer.startActiveSpan('manual-span', span => {
       const headers = injectTraceHeaders();
-      expect(headers.traceparent).toMatch(
-        new RegExp(`^00-${span.spanContext().traceId}-[0-9a-f]{16}-0[01]$`)
-      );
+      // Hardcoded literal regex (not built from the trace id) to avoid a
+      // non-literal-RegExp ReDoS finding; the trace id match is asserted
+      // separately below.
+      expect(headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
+      expect(headers.traceparent).toContain(span.spanContext().traceId);
       span.end();
     });
   });

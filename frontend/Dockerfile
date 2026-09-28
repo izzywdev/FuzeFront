@@ -44,6 +44,12 @@ COPY . .
 # (npm optional-deps bug npm/cli#4828).
 RUN rm -f package-lock.json && npm install
 
+# @fuzefront/telemetry has no vite source alias (unlike identity-ui/i18n) — the
+# frontend bootstrap (main.tsx) imports @fuzefront/telemetry/browser, whose
+# `exports` map points at dist/browser.{js,mjs}, so it must be built before
+# `vite build` below, same reasoning as chat-client/chat-ui in ci.yml.
+RUN npm run -w @fuzefront/telemetry build
+
 # Frontend is NOT a workspace member — install its own deps (incl. the chat-*
 # file: packages) and build. vite resolves the aliased package SOURCES from
 # /app/packages + /app/design-system and their transitive deps from the hoisted
