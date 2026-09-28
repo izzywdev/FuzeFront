@@ -32,9 +32,9 @@ import { Knex } from 'knex'
  * way PLATFORM_REGISTRAR_ID makes the registrar durable.
  *
  * OWNERSHIP: this seeds the row owned by `platform-registrar` so the migration
- * has no dependency on a human existing yet. `ensureRootPortal()` promotes
- * ownership to a real administrator when one appears — see
- * `adoptRootOrganizationOwner()`. That keeps the row durable AND eventually
+ * has no dependency on a human existing yet. Ownership moves to a real
+ * administrator once a configured root admin (`PLATFORM_ROOT_ADMIN_EMAILS`)
+ * exists — see `adoptRootOrganizationOwner()` in services/rootOrgAdmin.ts. That keeps the row durable AND eventually
  * human-owned, instead of trading one problem for the other.
  */
 
