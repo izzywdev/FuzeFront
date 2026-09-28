@@ -5,13 +5,28 @@
     "knownUnhandled is a RATCHET, not an allowlist. A service is only ever REMOVED",
     "from it. A new service missing the required events fails the gate immediately,",
     "so the debt below can shrink but never grow. The gate also fails if a listed",
-    "service starts handling its events and is not removed here in the same PR —",
+    "service starts handling its events and is not removed here in the same PR \u2014",
     "without that, the list rots into a permanent exemption nobody revisits.",
     "",
     "The seven entries below were measured on 2026-09-14, when the gate was written:",
     "12 structurally-real microservices, of which 5 consumed identity lifecycle",
     "events and 7 did not. Run `python3 scripts/gate_microservice_events.py --report`",
-    "before trusting that count — it drifts as services are fixed."
+    "before trusting that count \u2014 it drifts as services are fixed.",
+    "",
+    "PARTIAL PROGRESS, config-service (2026-09-23). It now subscribes to",
+    "identity.org.deleted and identity.user.deleted and cascades both",
+    "(services/config-service/src/events/), closing the row-leak half of this",
+    "debt: a deleted org or user no longer strands config_values overrides.",
+    "It remains listed because the gate requires all FOUR events and the",
+    "CREATED pair has nothing to do here: config_values is a SPARSE override",
+    "store, so a brand-new org or user needs no rows at all -- resolution walks",
+    "platform -> portal -> org -> user and falls back to the inherited value",
+    "(src/resolver/resolve.ts). Writing empty org.created/user.created handlers",
+    "would clear this list entry while seeding nothing, which is precisely the",
+    "'looks handled and seeds nothing' failure the gate itself rejects one",
+    "branch further down. Owner decision needed: either carve a per-topic",
+    "exemption into the gate for stores with no per-entity seed, or accept this",
+    "entry as permanent for this service."
   ],
   "owner": "@izzywdev",
   "minServices": 10,
@@ -27,7 +42,7 @@
   "exempt": [
     {
       "name": "core",
-      "reason": "Shared library, not a deployable service — it has no Dockerfile, so discovery already rejects it. Listed explicitly so a future Dockerfile does not silently enrol it without a decision."
+      "reason": "Shared library, not a deployable service \u2014 it has no Dockerfile, so discovery already rejects it. Listed explicitly so a future Dockerfile does not silently enrol it without a decision."
     }
   ]
 }
