@@ -459,12 +459,37 @@ clockApp:
 # fuzefront-website — public site at fuzefront.com.
 # Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
 # release.yml and their tags are bumped by the GitOps step on every release.
+#
+# ONE DOMAIN, ONE BRAND. The apex is the canonical host and it serves the
+# FuzeOne family site. `www.fuzefront.com` is an ALIAS that 301s to the apex
+# (the redirect lives in fuzefront-website/frontend/nginx.conf) — it is never
+# a second site and never a single product's home.
+#
+# It was exactly that until this landed: `www` was an unproxied CNAME to the
+# CloudFront distribution d27hi5funhy3o7.cloudfront.net, serving a static
+# FuzeHub landing page (last-modified 2026-07-02) while the apex served
+# FuzeOne. Two brands on one domain, no redirect between them, and the split
+# was invisible to every check in this repo because `www` never reached the
+# cluster at all.
+#
+# Listing it here is the half FuzeFront owns: the cluster now CLAIMS the host,
+# so the moment the DNS record moves it is served and canonicalized. While the
+# record still points at CloudFront this line changes nothing for visitors —
+# claim-then-flip is the safe ordering (see templates/website.yaml).
+#
+# THE OTHER HALF IS FUZEINFRA'S AND IS NOT DONE BY THIS FILE. Cloudflare DNS
+# is FuzeInfra's Terraform plane; this repo holds no credential for it. The
+# `www-canonical-host` job in .github/workflows/prod-post-deploy.yml probes the
+# live edge and stays RED until that record is repointed — deliberately, so the
+# gap is a visible alarm instead of a comment nobody reads.
 websiteFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-frontend
     tag: 546c63815b70
   host: fuzefront.com
+  aliasHosts:
+    - www.fuzefront.com
 
 websiteBackend:
   enabled: true
