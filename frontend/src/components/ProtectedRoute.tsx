@@ -1,6 +1,6 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { Center, Spinner, Text } from '@fuzefront/design-system'
+import { Caption, Center, Spinner, Text } from '@fuzefront/design-system'
 import { PermissionGate } from './PermissionGate'
 import { useCurrentUser } from '../lib/shared'
 
@@ -94,9 +94,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
               className="mx-auto"
               label="Checking permissions..."
             />
-            <p className="mt-2 text-sm text-gray-500">
-              Checking permissions...
-            </p>
+            <Caption tone="muted">Checking permissions...</Caption>
           </Center>
         </div>
       }

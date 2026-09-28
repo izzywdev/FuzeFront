@@ -423,7 +423,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -799,7 +799,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -1293,6 +1293,38 @@ jobs:
           chmod +x scripts/check-selection-lists-client-drift.sh
           bash scripts/check-selection-lists-client-drift.sh
 
+  # One domain, one brand. Boots the real fuzefront-website nginx config and
+  # proves every host the production Ingress claims as an alias
+  # (websiteFrontend.aliasHosts) 301s to the canonical apex.
+  #
+  # The live edge is probed separately by the `www-canonical-host` job in
+  # prod-post-deploy.yml. Both are needed and neither substitutes for the
+  # other: that one can only run after a deploy and is additionally gated on
+  # FuzeInfra's DNS record, while this one catches a regression in the image's
+  # own config BEFORE it ships. The defect they guard — www.fuzefront.com
+  # serving FuzeHub off CloudFront while the apex served FuzeOne — survived
+  # for months precisely because no pre-merge check looked at a non-apex host.
+  gate-website-canonical-host:
+    name: gate-website-canonical-host
+    runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 10 min is far above this job's runtime (a few seconds).
+    timeout-minutes: 10
+    # No Postgres, no Node, no npm ci — nginx + curl + python3 only.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install nginx
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx-light
+
+      - name: Verify alias hosts redirect to the canonical apex
+        run: bash scripts/check-website-canonical-host.sh
+
   notify:
     name: Notify Team
     runs-on: ubuntu-latest
@@ -1306,17 +1338,17 @@ jobs:
     # specs/tests are RED-by-design (TDD — implementations not yet landed). Failures there
     # must never block the gate. Once they go GREEN, add them to the conditions and
     # remove their continue-on-error flags.
-    needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, config-service-tests]
+    needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, gate-website-canonical-host, config-service-tests]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.config-service-tests.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.gate-website-canonical-host.result == 'success' && needs.config-service-tests.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.config-service-tests.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.gate-website-canonical-host.result == 'failure' || needs.config-service-tests.result == 'failure' }}
 
         run: |
           echo "❌ Some checks failed. Please review the logs."

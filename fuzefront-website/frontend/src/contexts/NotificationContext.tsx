@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { Caption, IconTile } from '@fuzefront/design-system'
 
 interface Notification {
   id: string
@@ -90,9 +90,7 @@ const NotificationComponent: React.FC<{
         <NotificationIcon type={type} />
         <div className="flex-1">
           <h4 className="font-medium text-gray-900">{title}</h4>
-          {message && (
-            <p className="mt-1 text-sm text-gray-600">{message}</p>
-          )}
+          {message && <Caption space="xs">{message}</Caption>}
           {action && (
             <button
               onClick={action.onClick}

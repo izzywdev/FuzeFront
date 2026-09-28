@@ -35,10 +35,12 @@
 #
 # Measured instead: every `kind:` rendered by this repo's three charts
 # (deploy/helm/fuzefront, deploy/helm/unleash,
-# FuzeQuality/deploy/helm/fuzequality). The only cluster-scoped one is
-# Namespace. Role and RoleBinding are namespaced, not cluster-scoped.
-# So the whitelist is exactly Namespace. Re-derive it if a chart starts
-# rendering something new — do not widen it back to a wildcard.
+# FuzeQuality/deploy/helm/fuzequality). The chart now also renders the narrowly
+# scoped workload-authenticator ClusterRole and ClusterRoleBinding so the
+# security service can validate Kubernetes service-account identities. Those
+# exact RBAC kinds and Namespace are the complete cluster-scoped allow-list.
+# Re-derive it if a chart starts rendering something new — do not widen it
+# back to a wildcard.
 # =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
@@ -66,10 +68,14 @@ spec:
       server: https://kubernetes.default.svc
     # NOTE: `fuzeinfra` is deliberately absent. See the rule above.
   clusterResourceWhitelist:
-    # Narrowed from `*/*`. FuzeQuality's chart renders a Namespace; nothing in
-    # this repo renders any other cluster-scoped kind.
+    # Narrowed from `*/*` to the exact cluster-scoped resources rendered by
+    # this repo's charts.
     - group: ''
       kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
   namespaceResourceWhitelist:
     # Unrestricted is fine here — it is already scoped to the destinations above.
     - group: '*'
