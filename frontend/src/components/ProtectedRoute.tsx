@@ -1,6 +1,6 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { Caption, Spinner, Text } from '@fuzefront/design-system'
+import { Caption, Center, Spinner, Text } from '@fuzefront/design-system'
 import { PermissionGate } from './PermissionGate'
 import { useCurrentUser } from '../lib/shared'
 
@@ -87,7 +87,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       fallback={showFallback ? <DefaultFallback /> : null}
       loading={
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
+          <Center>
             <Spinner
               size={32}
               color="var(--accent-color)"
@@ -95,7 +95,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
               label="Checking permissions..."
             />
             <Caption tone="muted">Checking permissions...</Caption>
-          </div>
+          </Center>
         </div>
       }
     >
