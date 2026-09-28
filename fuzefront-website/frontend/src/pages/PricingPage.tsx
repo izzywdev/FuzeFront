@@ -5,6 +5,7 @@ import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
 import { Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
+import { ListStack } from '@fuzefront/design-system'
 
 interface Plan {
   name: string
@@ -257,7 +258,7 @@ export const PricingPage: React.FC = () => {
                       </a>
                     )}
 
-                    <ul className="space-y-2.5">
+                    <ListStack gap="md">
                       {plan.features.map((feature) => (
                         <li key={feature} className="flex items-start gap-2 text-sm">
                           <Check size={14} className="text-success-500 flex-shrink-0 mt-0.5" />
@@ -270,7 +271,7 @@ export const PricingPage: React.FC = () => {
                           <span className="text-gray-600">{feature}</span>
                         </li>
                       ))}
-                    </ul>
+                    </ListStack>
                   </div>
                 </motion.div>
               )
