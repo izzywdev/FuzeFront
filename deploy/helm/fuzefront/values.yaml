@@ -192,6 +192,20 @@ secret:
   authentikMendysBootstrapToken: ""
   authentikMendysDbPassword: ""
 
+# Human root administrators of the ROOT platform organization. Each listed
+# account, once it has logged in, gets `admin` in users.roles, root `org-admin`
+# in Permit, an `owner` membership on the root org, and root-org ownership if
+# the platform-registrar placeholder still holds it
+# (backend/src/services/rootOrgAdmin.ts).
+#
+# SECURITY: only list an email whose Authentik account is PRE-CREATED by a
+# checked-in blueprint (authentik/blueprints/groups-fuzeinfra-admins.yaml for
+# the entry below). Self-signup does not verify email, so an email without a
+# pre-created account can be registered — and made root — by anyone.
+rootAdmins:
+  emails:
+    - izzy.weinberg@gmail.com
+
 backend:
   image:
     repository: fuzefront/backend
@@ -897,6 +911,14 @@ configService:
   enabled: false
   replicas: 1
   port: 3011
+  # Shared FuzeInfra Kafka cluster, consumed by src/events/consumer.ts for the
+  # identity lifecycle consumers (org/user deleted -> drop that scope's config
+  # overrides). Declared here EXPLICITLY, not defaulted inside the template:
+  # see config-service-networkpolicy.yaml's header for why a missing value
+  # absorbed at the render site is how FuzeInfra#501 broke every Argo sync.
+  # Set to "" to disable the consumers (the service then serves reads/writes
+  # normally and logs that they were not started).
+  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
   # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
   # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
   # billing-service's billing_svc — no separate database is provisioned.

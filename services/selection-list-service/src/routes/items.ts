@@ -607,7 +607,7 @@ router.patch('/:listId/items/:itemId', async (req: Request, res: Response): Prom
             VALUES (?, ?, ?, ?, ?, false)
             ON CONFLICT (item_id, locale) DO UPDATE
             SET label = EXCLUDED.label,
-                description = CASE WHEN ? IS NOT NULL THEN ? ELSE selection_list_item_translations.description END,
+                description = CASE WHEN CAST(? AS text) IS NOT NULL THEN CAST(? AS text) ELSE selection_list_item_translations.description END,
                 source_hash = EXCLUDED.source_hash,
                 is_machine = false,
                 updated_at = now()
