@@ -12,6 +12,7 @@ import {
   closeDatabase,
   db,
 } from '@fuzefront/core'
+import { initTelemetry, tracingMiddleware, type TelemetryHandle } from '@fuzefront/telemetry'
 import path from 'path'
 
 import authRoutes from './routes/auth'
@@ -35,6 +36,19 @@ import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below, so
+// HttpInstrumentation/ExpressInstrumentation are enabled before any route
+// handles real traffic (the imports above already ran — that's fine, both
+// instrumentations patch shared module/prototype state that is looked up at
+// CALL time, not at require time — but request handling must not start
+// first). Sends OTLP to FuzeInfra's Collector (never Tempo/Loki directly);
+// endpoint/protocol/sampling default from OTEL_* env vars — see
+// `@fuzefront/telemetry`'s `docs/TRACE_CONTRACT.md`.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'security-service',
+  serviceVersion: process.env.npm_package_version,
+})
+
 // Transactional-outbox relay handle (null when KAFKA_BROKERS is unset).
 let outboxRelay: OutboxRelayHandle | null = null
 
@@ -44,6 +58,14 @@ const app = createExpressApp({ serviceName: 'security-service' })
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
 // the real client from X-Forwarded-For.
 app.set('trust proxy', 1)
+// Starts/continues a per-request span, exposing req.traceId/req.spanId for
+// `withReqId(reqId, req)` (see `lib/logger.ts`) to bind onto the request's
+// child logger alongside `reqId`. Deliberately mounted independently of
+// `@fuzefront/core`'s own request-id assignment above (inside
+// `createExpressApp`) — tracingMiddleware() never reads/writes
+// req.requestId/x-request-id, so the two correlation ids coexist rather than
+// compete; see tracingMiddleware's own doc comment.
+app.use(tracingMiddleware())
 const httpServer = createServer(app)
 const startTime = Date.now()
 
@@ -118,6 +140,9 @@ function gracefulShutdown(signal: string) {
     outboxRelay?.stop()
     await stopRefIndexProjection().catch(() => undefined)
     await closeDatabase().catch(() => undefined)
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => undefined)
     process.exit(0)
   })
   setTimeout(() => process.exit(1), 30000)

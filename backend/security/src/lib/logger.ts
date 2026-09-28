@@ -14,8 +14,17 @@
  * Use `logger.child({ reqId })` (see `withReqId`) to correlate every log line
  * within a request with the `[security-service:xxxx]` id already assigned by
  * `@fuzefront/core`'s `createExpressApp` (req.requestId).
+ *
+ * `withReqId` optionally also binds `trace_id`/`span_id` (via `@fuzefront/
+ * telemetry`'s `withTraceContext`) when a request carries them — set by
+ * `tracingMiddleware()`, mounted in `src/index.ts`. This is additive, not a
+ * replacement: `reqId` keeps correlating this service's OWN logs; `trace_id`
+ * additionally correlates them with the Tempo trace + any other service's
+ * logs on the same request. See `@fuzefront/telemetry`'s own
+ * `docs/TRACE_CONTRACT.md` for the full contract.
  */
 import pino from 'pino'
+import { withTraceContext, type TraceBearingRequest } from '@fuzefront/telemetry'
 
 const REDACT_PATHS = [
   'password',
@@ -72,9 +81,17 @@ export const logger = pino({
   base: { service: 'security-service' },
 })
 
-/** Bind a per-request child logger to the `[security-service:xxxx]` request id. */
-export function withReqId(reqId?: string) {
-  return logger.child({ reqId: reqId || 'unknown' })
+/**
+ * Bind a per-request child logger to the `[security-service:xxxx]` request
+ * id. Pass `req` (anything carrying `traceId`/`spanId` — i.e. anything
+ * `tracingMiddleware()` has run on) to ALSO bind `trace_id`/`span_id`,
+ * correlating this line with its Tempo trace. Omitting `req` (e.g. from code
+ * with no HTTP request in scope, like a background job) yields the same
+ * `reqId`-only logger as before — this parameter is purely additive.
+ */
+export function withReqId(reqId?: string, req?: TraceBearingRequest) {
+  const base = logger.child({ reqId: reqId || 'unknown' })
+  return req ? withTraceContext(base, req) : base
 }
 
 export default logger

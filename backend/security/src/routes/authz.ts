@@ -83,7 +83,7 @@ interface ResolvedCaller {
  * form resolves to null, never a default identity.
  */
 async function caller(req: Request): Promise<ResolvedCaller | null> {
-  const log = withReqId((req as any).requestId)
+  const log = withReqId((req as any).requestId, req)
   const token = bearer(req)
   if (!token) {
     log.debug('authz: caller resolution failed — no bearer token')
@@ -148,7 +148,7 @@ function toQuery(body: any, callerId: string): AuthzQuery | null {
 // ── Decisions ─────────────────────────────────────────────────────────────
 
 router.post('/authz/check', async (req: Request, res: Response) => {
-  const log = withReqId((req as any).requestId)
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
   const q = toQuery(req.body, c.id)
@@ -192,7 +192,7 @@ router.post('/authz/check', async (req: Request, res: Response) => {
 const BULK_MAX_CHECKS = 200 // contract: AuthzBulkCheckRequest.checks.maxItems
 
 router.post('/authz/bulk-check', async (req: Request, res: Response) => {
-  const log = withReqId((req as any).requestId)
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
   const raw = Array.isArray(req.body?.checks) ? req.body.checks : null
@@ -316,7 +316,7 @@ function isAttributeValue(v: unknown): v is AttributeValue {
  * and retry rather than trust a stale/absent attribute state.
  */
 router.patch('/authz/subjects/:subjectType/:subjectKey/attributes', async (req: Request, res: Response) => {
-  const log = withReqId((req as any).requestId)
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
   if (!requireAuthzAdmin(c, res)) return
