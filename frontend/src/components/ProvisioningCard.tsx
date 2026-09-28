@@ -1,4 +1,5 @@
 import { useLanguage } from '../contexts/LanguageContext'
+import { Button } from '@fuzefront/design-system'
 
 export type ProvisioningState = 'loading' | 'timeout' | 'error'
 
@@ -46,9 +47,9 @@ export function ProvisioningCard({
       <p className="provisioning-description">{resolvedDescription}</p>
 
       {(state === 'timeout' || state === 'error') && onRetry && (
-        <button type="button" className="btn btn-primary" onClick={onRetry}>
+        <Button type="button" variant="primary" onClick={onRetry}>
           {t('provisioningRetry')}
-        </button>
+        </Button>
       )}
     </div>
   )

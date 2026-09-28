@@ -48,9 +48,26 @@ const VARIANTS = {
 /**
  * Pill-ish action button — `primary` carries the accent fuse glow; the host
  * shell's signature CTA ("Launch app", "Connect remote", "Sign in").
+ *
+ * **Polymorphic.** Renders a real `<a>` (with proper `href`/`target`/`rel`
+ * semantics — not a JS `onClick` navigation) whenever `href` is passed, or
+ * whenever `as` is given explicitly (a tag name or a component, e.g.
+ * react-router-dom's `Link`, for in-app routing). With neither, it renders a
+ * native `<button>`, exactly as before. Every variant/size looks identical
+ * either way — only the rendered element and its semantics change. This is
+ * what makes a "Sign in" / "Launch app" CTA a REAL link: middle-click and
+ * ctrl/cmd-click open a new tab, right-click offers "copy link", keyboard
+ * users get link (not button) semantics, and crawlers can follow it.
+ *
+ * An anchor can't carry the native `disabled` attribute, so when `disabled`
+ * is set on an anchor-rendered Button it drops `href`, sets
+ * `aria-disabled="true"` + `tabIndex={-1}`, and swallows clicks — the same
+ * "inert, not just unclickable" contract as a disabled `<button>`.
  */
 export function Button({
   children,
+  as,
+  href,
   variant = "primary",
   size = "md",
   withArrow = false,
@@ -58,48 +75,95 @@ export function Button({
   fullWidth = false,
   disabled = false,
   style,
+  target,
+  rel,
+  onClick,
   ...rest
 }) {
   const s = SIZES[size] || SIZES.md;
   const v = VARIANTS[variant] || VARIANTS.primary;
-  return (
-    <button
-      disabled={disabled}
-      style={{
-        display: fullWidth ? "flex" : "inline-flex",
-        width: fullWidth ? "100%" : "auto",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "8px",
-        padding: s.padding,
-        fontFamily: "var(--font-sans)",
-        fontSize: s.font,
-        fontWeight: "var(--weight-semibold)",
-        lineHeight: 1,
-        borderRadius: "var(--radius-md)",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-        whiteSpace: "nowrap",
-        background: v.background,
-        color: v.color,
-        border: v.border,
-        boxShadow: v.boxShadow,
-        transition:
-          "background var(--duration-base) var(--ease-standard), box-shadow var(--duration-base) var(--ease-standard), transform var(--duration-fast) var(--ease-standard)",
-        ...style,
-      }}
-      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = v.hover; }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = v.background;
-        e.currentTarget.style.transform = "translateY(0)";
-      }}
-      onMouseDown={(e) => { if (!disabled) e.currentTarget.style.transform = "translateY(1px)"; }}
-      onMouseUp={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
-      {...rest}
-    >
+  const Tag = as || (href ? "a" : "button");
+  const isAnchor = Tag !== "button";
+
+  const sharedStyle = {
+    display: fullWidth ? "flex" : "inline-flex",
+    width: fullWidth ? "100%" : "auto",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: s.padding,
+    fontFamily: "var(--font-sans)",
+    fontSize: s.font,
+    fontWeight: "var(--weight-semibold)",
+    lineHeight: 1,
+    borderRadius: "var(--radius-md)",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.5 : 1,
+    whiteSpace: "nowrap",
+    textDecoration: "none",
+    background: v.background,
+    color: v.color,
+    border: v.border,
+    boxShadow: v.boxShadow,
+    transition:
+      "background var(--duration-base) var(--ease-standard), box-shadow var(--duration-base) var(--ease-standard), transform var(--duration-fast) var(--ease-standard)",
+    ...style,
+  };
+
+  const sharedHandlers = {
+    onMouseEnter: (e) => { if (!disabled) e.currentTarget.style.background = v.hover; },
+    onMouseLeave: (e) => {
+      e.currentTarget.style.background = v.background;
+      e.currentTarget.style.transform = "translateY(0)";
+    },
+    onMouseDown: (e) => { if (!disabled) e.currentTarget.style.transform = "translateY(1px)"; },
+    onMouseUp: (e) => { e.currentTarget.style.transform = "translateY(0)"; },
+  };
+
+  const content = (
+    <>
       {leadingIcon}
       {children}
       {withArrow && <ArrowRight size={s.icon} />}
+    </>
+  );
+
+  if (isAnchor) {
+    // A caller-supplied `rel` is respected; otherwise `target="_blank"`
+    // always gets the `noopener noreferrer` safety default (reverse
+    // tabnabbing) — the same contract ExternalLink enforces unconditionally.
+    const computedRel = rel || (target === "_blank" ? "noopener noreferrer" : undefined);
+    // Only forward an `href` key when the caller actually passed one — an
+    // `as={Link}`-only usage (in-app routing via `to`) must not have its
+    // component's own computed href clobbered by an explicit `href:
+    // undefined` landing in `rest`.
+    const hrefProp = href !== undefined ? { href: disabled ? undefined : href } : {};
+    return (
+      <Tag
+        target={target}
+        rel={computedRel}
+        aria-disabled={disabled || undefined}
+        tabIndex={disabled ? -1 : undefined}
+        style={sharedStyle}
+        onClick={disabled ? (e) => e.preventDefault() : onClick}
+        {...sharedHandlers}
+        {...hrefProp}
+        {...rest}
+      >
+        {content}
+      </Tag>
+    );
+  }
+
+  return (
+    <button
+      disabled={disabled}
+      style={sharedStyle}
+      onClick={onClick}
+      {...sharedHandlers}
+      {...rest}
+    >
+      {content}
     </button>
   );
 }

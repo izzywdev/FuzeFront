@@ -2,7 +2,7 @@ name: Harden Gate
 
 # Unified protection gate shared verbatim across all hardened repos.
 # Emits canonical status-check contexts: lint, test, build, sast, secret-scan, dependency-scan.
-# ENFORCING: lint, secret-scan (gitleaks).
+# ENFORCING: lint, secret-scan (gitleaks), version (gate-version).
 # REPORT-ONLY still: test, build, sast, dependency-scan (never fail the job; findings are
 # surfaced to the Security tab via SARIF).
 #
@@ -465,49 +465,31 @@ jobs:
           helm lint "$cdir" || echo "::warning title=helm-lint::chart findings (report)"
 
   gate-version:
-    # SemVer discipline (governance/versioning.md): a changed npm package or API contract
-    # must bump its version. Report-only first pass; ratchet to enforcing per repo.
-    if: github.event_name == 'pull_request'
+    # SemVer discipline: a changed PUBLISHED npm package or API contract must bump its
+    # version. ENFORCING — packages-publish.yml skips any package whose version did not
+    # change, so an unbumped change to a published package merges green and never ships.
+    # Logic + attribution rules live in scripts/check-version-bump.mjs (tested by
+    # scripts/__tests__/check-version-bump.test.mjs); this job only runs it.
+    #
+    # Runs on push too, where it has no base to diff against and reports a no-op, so
+    # the required context always posts (governance/required-checks.json
+    # definition.always_reports).
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
-      - name: SemVer bump check (packages + API contracts, report-only)
-        shell: bash
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: '24.x' }
+      - name: Self-test the gate
+        run: node --test scripts/__tests__/check-version-bump.test.mjs
+      - name: SemVer bump check (published packages + API contracts)
+        if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.base_ref }}
         run: |
-          set +e
-          git fetch origin "$BASE" --depth=1 >/dev/null 2>&1
-          base="origin/$BASE"
-          SEMVER='^[0-9]+\.[0-9]+\.[0-9]+([-+.0-9A-Za-z]*)?$'
-          findings=0
-          # --- npm packages: source changed => version must change ---
-          for pj in $(git ls-files '**/package.json' 'package.json'); do
-            d=$(dirname "$pj"); case "$d" in *node_modules*) continue;; esac
-            git diff --name-only "$base"...HEAD -- "$d" | grep -v 'package-lock.json' | grep -q . || continue
-            new=$(jq -r '.version // empty' "$pj" 2>/dev/null); [ -z "$new" ] && continue
-            name=$(jq -r '.name // "(unnamed)"' "$pj" 2>/dev/null)
-            old=$(git show "$base:$pj" 2>/dev/null | jq -r '.version // empty' 2>/dev/null)
-            if ! echo "$new" | grep -Eq "$SEMVER"; then
-              echo "::warning title=gate-version::$name version '$new' is not valid SemVer"; findings=1
-            elif [ -n "$old" ] && [ "$old" = "$new" ]; then
-              echo "::warning title=gate-version::package '$name' ($d) changed but version not bumped (still $old) — bump per SemVer (governance/versioning.md)"; findings=1
-            fi
-          done
-          # --- API contracts (OpenAPI/Swagger): spec changed => the info `version:` must change ---
-          # (heredoc-free: match the indented version: under info, not the top-level openapi:/swagger:)
-          verline() { grep -aE '(^[[:space:]]+version:)|("version"[[:space:]]*:)' 2>/dev/null | head -1 | tr -d " \"',"; }
-          for spec in $(git ls-files '**/openapi*.y*ml' '**/openapi*.json' '**/swagger*.y*ml' 'contracts/**/*.y*ml' 'contracts/**/*.json' 2>/dev/null); do
-            git diff --name-only "$base"...HEAD -- "$spec" | grep -q . || continue
-            newv=$(verline < "$spec")
-            oldv=$(git show "$base:$spec" 2>/dev/null | verline)
-            if [ -n "$oldv" ] && [ "$oldv" = "$newv" ]; then
-              echo "::warning title=gate-version::API contract '$spec' changed but info version not bumped (still $oldv) — bump per SemVer; breaking changes require a MAJOR bump (governance/versioning.md)"; findings=1
-            fi
-          done
-          [ "$findings" = "0" ] && echo "gate-version: OK (no unbumped package/contract changes)" || echo "gate-version: findings above (report-only — will gate once ratcheted)"
-          exit 0
+          git fetch --no-tags origin "$BASE"
+          node scripts/check-version-bump.mjs --base "origin/$BASE"
 
   gate-ds-conformance:
     # Design-system conformance (CLAUDE.baseline.md §6). ENFORCING via a CHANGED-LINES ratchet:
@@ -529,10 +511,16 @@ jobs:
         with: { python-version: '3.12' }
       - name: DS conformance (PR = changed-lines ratchet, enforcing; push = full scan, advisory)
         shell: bash
+        # github.base_ref is attacker-controllable (a PR source branch name may
+        # contain shell metacharacters), so it never reaches `run:` via ${{ }}
+        # interpolation — it is passed through env: and read as "$VAR".
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin "${{ github.base_ref }}"
-            GATE_BASE_REF="origin/${{ github.base_ref }}" python scripts/gate_ds_conformance.py . --changed-only
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch origin "$BASE_REF"
+            GATE_BASE_REF="origin/$BASE_REF" python scripts/gate_ds_conformance.py . --changed-only
           else
             python scripts/gate_ds_conformance.py . --emit-issues || true
           fi

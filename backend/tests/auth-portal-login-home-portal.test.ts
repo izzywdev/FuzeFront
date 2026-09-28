@@ -78,6 +78,16 @@ const PASSWORD = 'S5-test-passw0rd!'
 let PASSWORD_HASH: string
 
 beforeAll(async () => {
+  // fuze-auth-local-password-store points PRODUCTS at FuzeFront for AuthN.
+  // This IS FuzeFront's backend: `/api/auth/login` (src/routes/auth.ts) is the
+  // platform's own credential endpoint, and this line only hashes a throwaway
+  // fixture password so the S5 cross-portal rejection assertions below can
+  // drive that endpoint. Nothing here stores or verifies a real user's
+  // password, and there is no other way to exercise the login path in-process.
+  // Same carve-out, and same reasoning, as tests/permit-integration.test.ts
+  // and the `paths.exclude` the sibling rule fuze-auth-self-minted-user-token
+  // already applies to tests in .semgrep/fuze-authz.yml.
+  // nosemgrep: fuze-auth-local-password-store, semgrep.fuze-auth-local-password-store
   PASSWORD_HASH = await bcrypt.hash(PASSWORD, 4) // low cost factor — speed, not security, in tests
 })
 

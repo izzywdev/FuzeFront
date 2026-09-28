@@ -77,7 +77,10 @@ describe('POST /v1/selection-lists — identifier contract', () => {
     const list = await client.createList({ key: 'id-test-' + Math.random().toString(16).slice(2, 8), name: 'ID Test' });
     createdListIds.push(list.id as SelectionListId);
 
-    expect(list.id).toMatch(/^sl_[0-9a-z]+$/);
+    // `front_sl_`, not `sl_`: openapi.yaml's SelectionListId pins
+    // `^front_sl_[0-9a-z]+$`. This assertion read `^sl_` and so failed against a
+    // service that mints exactly what its own contract publishes.
+    expect(list.id).toMatch(/^front_sl_[0-9a-z]+$/);
     expect(list.organization_id).toBe(ORG_ID);
   });
 

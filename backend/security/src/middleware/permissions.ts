@@ -5,6 +5,7 @@ import {
   checkAppPermission,
   checkUserManagementPermission,
 } from '../utils/permit/permission-check'
+import { logger } from '../lib/logger'
 
 // Extend Express Request type to include user and organization context.
 //
@@ -114,7 +115,7 @@ export function requirePermission(config: PermissionConfig) {
       req.organization = { id: tenant, role: 'unknown' }
       next()
     } catch (error) {
-      console.error('Permission middleware error:', error)
+      logger.error({ err: error }, 'permission middleware error')
       return res.status(500).json({
         error: 'Permission check failed',
         code: 'PERMISSION_CHECK_ERROR',
@@ -167,7 +168,7 @@ export function requireOrganizationPermission(
       req.organization = { id: organizationId, role: 'unknown' }
       next()
     } catch (error) {
-      console.error('Organization permission error:', error)
+      logger.error({ err: error }, 'organization permission check error')
       return res.status(500).json({
         error: 'Organization permission check failed',
         code: 'ORG_PERMISSION_ERROR',
@@ -233,7 +234,7 @@ export function requireAppPermission(
       req.organization = { id: organizationId, role: 'unknown' }
       next()
     } catch (error) {
-      console.error('App permission error:', error)
+      logger.error({ err: error }, 'app permission check error')
       return res.status(500).json({
         error: 'App permission check failed',
         code: 'APP_PERMISSION_ERROR',
@@ -289,7 +290,7 @@ export function requireUserManagementPermission(
       req.organization = { id: organizationId, role: 'unknown' }
       next()
     } catch (error) {
-      console.error('User management permission error:', error)
+      logger.error({ err: error }, 'user management permission check error')
       return res.status(500).json({
         error: 'User management permission check failed',
         code: 'USER_MGMT_PERMISSION_ERROR',
@@ -362,7 +363,7 @@ export function requireOwnership(
 
       next()
     } catch (error) {
-      console.error('Ownership check error:', error)
+      logger.error({ err: error }, 'ownership check error')
       return res.status(500).json({
         error: 'Ownership check failed',
         code: 'OWNERSHIP_CHECK_ERROR',
@@ -417,9 +418,13 @@ export function requireAnyPermission(permissions: PermissionConfig[]) {
             return next()
           }
         } catch (error) {
-          console.error(
-            `Permission check failed for ${config.resource}:${config.action}:`,
-            error
+          logger.error(
+            {
+              err: error,
+              resource: config.resource,
+              action: config.action,
+            },
+            'permission check failed for configured resource/action'
           )
           continue
         }
@@ -436,7 +441,7 @@ export function requireAnyPermission(permissions: PermissionConfig[]) {
         })),
       })
     } catch (error) {
-      console.error('Multi-permission check error:', error)
+      logger.error({ err: error }, 'multi-permission check error')
       return res.status(500).json({
         error: 'Permission check failed',
         code: 'PERMISSION_CHECK_ERROR',

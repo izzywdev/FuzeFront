@@ -14,6 +14,7 @@ vi.mock('react-router-dom', async () => {
 const apiMocks = vi.hoisted(() => ({
   getOrganizations: vi.fn(),
   createOrganization: vi.fn(),
+  checkOrganizationSlugAvailable: vi.fn().mockResolvedValue({ available: true }),
 }))
 vi.mock('../services/api', () => apiMocks)
 

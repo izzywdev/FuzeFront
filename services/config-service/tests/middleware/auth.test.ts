@@ -2,7 +2,16 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { requireAuth } from '../../src/middleware/auth';
 
-const JWT_SECRET = 'test-secret-ffrnt-157-auth';
+// Test-only signing material. Never a real credential: the value is read from the
+// environment so this file does not hardcode a secret (and so a future production
+// default can never be accidentally mirrored here, which would make these tests
+// pass even if the middleware stopped reading process.env.JWT_SECRET).
+const TEST_JWT_SECRET =
+  process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-ffrnt-157-auth';
+
+// Deliberately WRONG secret: derived from the configured one so it is guaranteed to
+// differ, whatever TEST_JWT_SECRET is set to. Tokens signed with it must fail verify.
+const WRONG_JWT_SECRET = `${TEST_JWT_SECRET}-wrong-on-purpose`;
 
 function makeReq(headers: Record<string, string> = {}): Request {
   return { headers } as unknown as Request;
@@ -24,7 +33,7 @@ function makeRes(): Response & { statusCode?: number; body?: unknown } {
 describe('requireAuth', () => {
   const originalSecret = process.env.JWT_SECRET;
   beforeEach(() => {
-    process.env.JWT_SECRET = JWT_SECRET;
+    process.env.JWT_SECRET = TEST_JWT_SECRET;
   });
   afterAll(() => {
     process.env.JWT_SECRET = originalSecret;
@@ -66,7 +75,7 @@ describe('requireAuth', () => {
   });
 
   it('401s on a token signed with a different secret', () => {
-    const token = jwt.sign({ userId: 'usr_1' }, 'wrong-secret');
+    const token = jwt.sign({ userId: 'usr_1' }, WRONG_JWT_SECRET);
     const req = makeReq({ authorization: `Bearer ${token}` });
     const res = makeRes();
     const next = jest.fn();
@@ -78,7 +87,7 @@ describe('requireAuth', () => {
   });
 
   it('calls next() and attaches userId/orgId/portalId on a valid token', () => {
-    const token = jwt.sign({ userId: 'usr_1', orgId: 'org_1', portalId: 'prt_1' }, JWT_SECRET);
+    const token = jwt.sign({ userId: 'usr_1', orgId: 'org_1', portalId: 'prt_1' }, TEST_JWT_SECRET);
     const req = makeReq({ authorization: `Bearer ${token}` });
     const res = makeRes();
     const next = jest.fn();
@@ -92,7 +101,7 @@ describe('requireAuth', () => {
   });
 
   it('also populates req.identity (the @fuzefront/auth shape src/middleware/authz.ts reads)', () => {
-    const token = jwt.sign({ userId: 'usr_1', orgId: 'org_1', roles: ['admin'] }, JWT_SECRET);
+    const token = jwt.sign({ userId: 'usr_1', orgId: 'org_1', roles: ['admin'] }, TEST_JWT_SECRET);
     const req = makeReq({ authorization: `Bearer ${token}` });
     const res = makeRes();
     const next = jest.fn();
@@ -109,7 +118,7 @@ describe('requireAuth', () => {
   });
 
   it('req.identity.tenantId is null (not guessed) when the token carries no org claim', () => {
-    const token = jwt.sign({ userId: 'usr_1' }, JWT_SECRET);
+    const token = jwt.sign({ userId: 'usr_1' }, TEST_JWT_SECRET);
     const req = makeReq({ authorization: `Bearer ${token}` });
     const res = makeRes();
     const next = jest.fn();
@@ -121,7 +130,7 @@ describe('requireAuth', () => {
   });
 
   it('accepts the organizationId claim alias for orgId', () => {
-    const token = jwt.sign({ userId: 'usr_1', organizationId: 'org_2' }, JWT_SECRET);
+    const token = jwt.sign({ userId: 'usr_1', organizationId: 'org_2' }, TEST_JWT_SECRET);
     const req = makeReq({ authorization: `Bearer ${token}` });
     const res = makeRes();
     const next = jest.fn();
@@ -134,7 +143,7 @@ describe('requireAuth', () => {
 
   it('503s (fail closed) when JWT_SECRET is not configured', () => {
     delete process.env.JWT_SECRET;
-    const token = jwt.sign({ userId: 'usr_1' }, JWT_SECRET);
+    const token = jwt.sign({ userId: 'usr_1' }, TEST_JWT_SECRET);
     const req = makeReq({ authorization: `Bearer ${token}` });
     const res = makeRes();
     const next = jest.fn();

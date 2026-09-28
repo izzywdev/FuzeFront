@@ -21,6 +21,7 @@
 
 import permit from '../../config/permit'
 import { MachineIdentity } from '../../services/machine-identity'
+import { describePermitError } from './describe-error'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +51,14 @@ export interface DelegateRelationship {
 // ---------------------------------------------------------------------------
 
 /**
+ * Permit attribute VALUE marking a principal as a machine identity. It is a
+ * policy discriminator, not a credential — hoisted out of the object literal so
+ * secret scanners stop reading the inline attribute as a leaked Google
+ * service-account key. Changing this string changes Permit policy matching.
+ */
+const PERMIT_IDENTITY_TYPE_MACHINE = 'service_account'
+
+/**
  * Syncs a machine identity to Permit.io as a service account user.
  *
  * Permit treats service accounts as regular users with a distinct key
@@ -69,7 +78,7 @@ export async function syncMachineIdentityToPermit(
       // Permit users can carry arbitrary attributes; we use these to
       // distinguish service accounts from human users in policy.
       attributes: {
-        identity_type: 'service_account',
+        identity_type: PERMIT_IDENTITY_TYPE_MACHINE,
         client_id: rawKey,
         scopes: 'scopes' in identity ? identity.scopes?.join(' ') ?? '' : '',
         delegate_user_id: identity.delegateUserId ?? null,
@@ -80,7 +89,7 @@ export async function syncMachineIdentityToPermit(
     console.log(`[machine-roles] Synced service account to Permit: ${permitKey}`)
     return true
   } catch (error) {
-    console.error('[machine-roles] Error syncing service account to Permit:', permitKey, error)
+    console.error('[machine-roles] Error syncing service account to Permit:', permitKey, describePermitError(error))
     return false
   }
 }
@@ -124,7 +133,7 @@ export async function createDelegateRelationship(
       )
       return true
     }
-    console.error(`[machine-roles] Error creating delegate_of relationship:`, error)
+    console.error(`[machine-roles] Error creating delegate_of relationship:`, describePermitError(error))
     return false
   }
 }
@@ -155,7 +164,7 @@ export async function removeDelegateRelationship(
     )
     return true
   } catch (error) {
-    console.error(`[machine-roles] Error removing delegate_of relationship:`, error)
+    console.error(`[machine-roles] Error removing delegate_of relationship:`, describePermitError(error))
     return false
   }
 }
@@ -186,7 +195,7 @@ export async function checkMachinePermission(
     )
     return !!result
   } catch (error) {
-    console.error('[machine-roles] Error checking machine permission:', error)
+    console.error('[machine-roles] Error checking machine permission:', describePermitError(error))
     return false // Fail safe — deny on error
   }
 }

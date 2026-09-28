@@ -213,8 +213,15 @@ const SUBMITS_POLICY = /apps\/\$\{?SLUG\}?\/policy|apps\/\$SLUG\/policy/
  */
 function shippedContent(cmPath, cmText, key) {
   const lines = cmText.split('\n')
-  const start = lines.findIndex(l =>
-    new RegExp(`^  ${key.replace('.', '\\.')}:\\s*\\|`).test(l)
+  // Plain string match rather than a RegExp built from `key`: the old
+  // `new RegExp('^  ' + key.replace('.', '\\.') + ':\\s*\\|')` escaped only the
+  // FIRST '.' and nothing else, so any other regex metacharacter in a key
+  // would have changed what this matched (and it tripped
+  // detect-non-literal-regexp). This is byte-for-byte the same predicate:
+  // two-space indent, the literal key, ':', optional whitespace, then '|'.
+  const keyPrefix = `  ${key}:`
+  const start = lines.findIndex(
+    l => l.startsWith(keyPrefix) && l.slice(keyPrefix.length).trimStart().startsWith('|')
   )
   if (start === -1) return null
 

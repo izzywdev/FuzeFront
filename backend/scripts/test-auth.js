@@ -89,7 +89,10 @@ async function testLogin() {
         logInfo(`User: ${user.email}`)
         logInfo(`Roles: ${user.roles.join(', ')}`)
         logInfo(`Session ID: ${sessionId}`)
-        logInfo(`Token: ${token.substring(0, 20)}...`)
+        // Shape only — never any bytes of a live session token. This
+        // script runs against a REAL backend, so `token` here is a working
+        // credential, and its output routinely lands in CI logs.
+        logInfo(`Token: received (${token.length} chars, not shown)`)
 
         return { token, user, sessionId }
       } else {

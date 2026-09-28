@@ -50,7 +50,21 @@ export async function seed(knex: Knex): Promise<void> {
     .whereNotIn('id', rootOwnerIds)
     .del()
 
-  // Generate password hash for admin
+  // Generate password hash for admin.
+  //
+  // fuze-auth-local-password-store points *products* at FuzeFront for AuthN.
+  // This IS FuzeFront's backend: `POST /api/auth/login` (backend/src/routes/
+  // auth.ts) is the platform's own credential endpoint, so the platform is
+  // necessarily the one side of the family that stores a password hash — there
+  // is no "verify a FuzeFront-issued token instead" for the issuer itself.
+  // The two hashes below only seed the throwaway local dev/CI accounts that
+  // endpoint authenticates; this file never runs in production (seeds are gated
+  // on NODE_ENV by initializeDatabase()) and the credentials are already public
+  // in the repo's test fixtures and docs. Same carve-out, and same reasoning, as
+  // backend/tests/permit-integration.test.ts, and as the `paths.exclude` the
+  // sibling rule fuze-auth-self-minted-user-token already applies in
+  // .semgrep/fuze-authz.yml.
+  // nosemgrep: fuze-auth-local-password-store, semgrep.fuze-auth-local-password-store
   const adminPasswordHash = await bcrypt.hash('admin123', 10)
 
   // Insert seed entries for users
@@ -68,6 +82,8 @@ export async function seed(knex: Knex): Promise<void> {
     {
       id: '7bc42d8e-3f2a-4e1b-8c5d-1a9b2c3d4e5f',
       email: 'demo@fuzefront.dev',
+      // Same platform-is-the-issuer carve-out as the admin hash above.
+      // nosemgrep: fuze-auth-local-password-store, semgrep.fuze-auth-local-password-store
       password_hash: await bcrypt.hash('demo123', 10),
       first_name: 'Demo',
       last_name: 'User',

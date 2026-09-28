@@ -73,7 +73,16 @@ export interface UseChatOptions {
   pageSize?: number;
   /** Called when a turn errors (in addition to the error surfacing in state). */
   onError?: (message: string) => void;
+  subscribeInjected?: (handler: (event: InjectedChatEvent) => void) => () => void;
 }
+
+export type InjectedChatEvent = {
+  conversationId: string;
+  messageId: string;
+  sequence: number;
+  type: 'start' | 'delta' | 'done' | 'error';
+  delta?: string;
+};
 
 export interface UseChatResult extends ChatModel {
   send(text: string): Promise<void>;
@@ -88,7 +97,7 @@ export interface UseChatResult extends ChatModel {
 }
 
 export function useChat(options: UseChatOptions): UseChatResult {
-  const { client, orgId, appId, conversationId, resume = true, pageSize = 50, onError } = options;
+  const { client, orgId, appId, conversationId, resume = true, pageSize = 50, onError, subscribeInjected } = options;
   const [model, dispatch] = useReducer(chatReducer, initialModel);
 
   // Keep the running history for the request payload without re-creating `send`.
@@ -105,6 +114,30 @@ export function useChat(options: UseChatOptions): UseChatResult {
   // Keep the latest onError without retriggering the hydration effect.
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+
+  useEffect(() => {
+    if (!subscribeInjected) return;
+    const textByMessage = new Map<string, string>();
+    return subscribeInjected(event => {
+      if (event.type === 'start') {
+        conversationIdRef.current = event.conversationId;
+        textByMessage.set(event.messageId, '');
+        dispatch({ kind: 'injection_start', id: event.messageId, conversationId: event.conversationId, createdAt: new Date().toISOString() });
+      } else if (event.type === 'delta') {
+        const delta = event.delta || '';
+        textByMessage.set(event.messageId, (textByMessage.get(event.messageId) || '') + delta);
+        dispatch({ kind: 'injection_delta', id: event.messageId, delta });
+      } else if (event.type === 'done') {
+        const text = textByMessage.get(event.messageId) || '';
+        historyRef.current = [...historyRef.current, { role: 'assistant', content: text }];
+        textByMessage.delete(event.messageId);
+        dispatch({ kind: 'injection_done', id: event.messageId });
+      } else {
+        onErrorRef.current?.(event.delta || 'Injected chat response failed');
+        dispatch({ kind: 'injection_done', id: event.messageId });
+      }
+    });
+  }, [subscribeInjected]);
 
   // Hydrate persisted history on mount / scope change. A scope change
   // (client/org/app/conversation) always starts from a clean slate — the
