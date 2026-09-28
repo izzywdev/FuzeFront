@@ -254,8 +254,11 @@ permission, and the match endpoint's own docs must say so.
 ## Earned tags — criteria, metrics and awards
 
 A tag may be **assignable** (applied by a person) or **earned** (awarded only when criteria are met).
-This is the gamification: *to reach the next capability tag you need ≥3 months tenure and ≥500 calls
-rated 4★*.
+This is the gamification: *to reach the next capability tag you need ≥3 months since the previous
+rung, ≥1000 calls answered averaging ≥4★, and the Tier-2 escalation course passed.*
+
+This model is drawn from a system the owner previously built and ran in production for exactly this
+purpose, so the criterion shapes below are the ones real ladders turned out to need — not a guess.
 
 **tag-service evaluates; products push metrics. It never learns what a call is.** A criterion is a
 declarative expression over **named metric keys** plus tag prerequisites. The owning product
@@ -270,9 +273,30 @@ tag_awards      (id, tag_id, subject_type, subject_id, state 'awarded'|'revoked'
                  evidence JSONB, evaluated_at, created_at)      -- APPEND-ONLY
 ```
 
-`expression` is a small, closed grammar — `all` / `any` / `not` over leaves that are either
-`{ metric, op, value }` or `{ holdsTag }`. Closed on purpose: no user-supplied code, no arbitrary
-SQL, nothing that can be made to reach outside the row it is evaluating.
+`expression` is a small, **closed** grammar — `all` / `any` / `not` over a fixed leaf set. Closed on
+purpose: no user-supplied code, no arbitrary SQL, nothing that can reach outside the subject it is
+evaluating. The leaves:
+
+| Leaf | Example | Notes |
+|---|---|---|
+| `{ metric, op, value }` | `avg_rating >= 4.0` | a pushed metric |
+| `{ holdsTag }` | holds `Agent L2` | a prerequisite rung |
+| `{ daysSinceTag, days }` | ≥90 days since `Agent L2` **was awarded** | reads `tag_awards.evaluated_at` — **not** absolute tenure |
+| `{ course }` / `{ exam }` | `course_completed:tier2-escalation` | boolean metric from whatever owns training |
+| `{ endorsements, from }` | 3 endorsements from a `team-lead` | see open decision 5 |
+
+Three of these are easy to get subtly wrong, so they are called out:
+
+- **`daysSinceTag` is veterancy, not tenure.** "Three months at the previous rung" is the real
+  progression measure; absolute time at the company is not, and a new hire promoted quickly would
+  otherwise clear it on day one. It is derivable from `tag_awards` with no new storage.
+- **Average-over-volume is not a count.** *"1000 calls averaging ≥4★"* is
+  `all: [calls_answered >= 1000, avg_rating >= 4.0]` — two joined leaves. It is **not**
+  `calls_rated_4plus >= 1000`, which is a different and weaker statistic: a count only ever rises,
+  while an average can fall, which is precisely what makes revocation meaningful.
+- **Courses and exams are metric sources, not a subsystem.** A completed course arrives as a boolean
+  metric on the normal `/v1/metrics` path. **tag-service does not become an LMS** — it never stores
+  course content, attempts, or scores beyond the pass/fail value it was handed.
 
 Owner-confirmed rules, all four:
 
@@ -306,6 +330,58 @@ subject's metrics and awards can never be read in a mutually contradictory state
 **Out of scope for v1, named so it is a decision and not an oversight:** no leaderboards, no points,
 no cross-org comparison. The earned-tag ladder is the mechanic; ranking people against each other is
 a separate product question with its own privacy weight.
+
+## Sensitive-attribute tags — a separate class, decided up front
+
+Real capability sets for this use case include **language, specialty, expertise — and gender and
+religion**. The last two are lawfully useful for routing in specific cases (a caller asking for a
+same-gender agent on a sensitive health line; a faith-based advisory service) but they are
+**special-category personal data** under GDPR Art. 9 and protected characteristics under employment
+law. They cannot ride the same code path as "speaks Spanish".
+
+This is cheap to design in now — a `sensitivity` marker, one authz rule and an audit row — and a
+retrofit across the entire match path later. So it is in the plan, not in the open-decisions list:
+
+- **`tag_sets.sensitivity`** (`normal` | `special_category`) with the **lawful basis and purpose
+  recorded on the set**, required before a tag in it can be applied to anyone.
+- **Self-declaration only.** A special-category tag may be applied **by the subject and nobody else**
+  — never manager-assigned, never inferred from another attribute, never earned by criteria.
+- **Per-subject opt-in to being matched on it**, separate from declaring it. Declaring a
+  characteristic and agreeing to be routed by it are two different consents.
+- **Off by default per org.** Special-category matching requires an explicit org-admin enablement;
+  a fresh tenant cannot route on these accidentally.
+- **Every match that used one is logged** with the requirement that justified it — the audit answers
+  "why was this allocation made" for a regulator or a grievance, which no ordinary access log does.
+- **Withdrawal is immediate.** Removing the tag or the consent drops the subject from matching on it
+  at once; `tag_awards`' append-only rule does not apply here, because an erasure request must
+  actually erase.
+- **Never a `requires_first` prerequisite and never an earned tag.** A characteristic is not a rung
+  and cannot be a gate on progression — allowing it would build a discriminatory career ladder out
+  of otherwise-correct primitives.
+
+Anything the org cannot state a lawful basis for does not belong in the system at all; the tag set
+is the place that decision gets recorded, so it is made once and visibly rather than per tag.
+
+## Where this belongs in the Fuze family
+
+**tag-service is FuzeFront platform infrastructure, not a call-centre feature.** What this design
+describes is a *competency and progression* platform — declare capabilities, define how they are
+earned, allocate work by fit. The call centre is its first consumer, not its scope: field-service
+dispatch, clinical rostering, support tiering and professional-services staffing are the same shape.
+That generality is the argument for it sitting beside config-service and selection-list-service.
+
+Three boundaries, and they are the load-bearing part of this plan:
+
+| Concern | Owner | Why |
+|---|---|---|
+| Tags, DAG, criteria, awards, tracks, match projection | **`tag-service`** (FuzeFront) | Generic; reusable; where the authz and identity seams already are |
+| Telephony, call records, star ratings, ACD routing | **the `call` product** | Domain-specific. tag-service knows "a number called `avg_rating`", never what a call is |
+| Courses, exams, training content | **whatever owns training** | Pushes `course_completed:<id>` as a boolean metric. **tag-service does not become an LMS** |
+
+**One naming concern to settle before the contract freezes.** "tag-service" undersells this: tags are
+the substrate, but the product is competency management. The slug is **immutable once registered**
+(see `CLAUDE.md`, *slug is free at creation, immutable thereafter*), so this is the only moment the
+question is cheap. Open for the owner.
 
 ## Career path — open decisions
 
