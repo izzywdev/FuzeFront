@@ -56,6 +56,33 @@ class GateWorkflowYaml(unittest.TestCase):
             "schedules NO JOBS", out, "the message must explain WHY silence is the failure"
         )
 
+    def test_the_regression_duplicate_key_fails(self):
+        """ci.yml, 2026-09-24: two merges each added `timeout-minutes` to one
+        job. PyYAML kept the last; GitHub rejected the file and ran no ci.yml
+        job anywhere for three days. The gate must treat that as unparseable.
+        """
+        self.write(
+            "ci.yml",
+            "name: c\non: [push]\njobs:\n  j:\n    runs-on: ubuntu-latest\n"
+            "    timeout-minutes: 30\n    continue-on-error: true\n"
+            "    timeout-minutes: 90\n    steps:\n      - run: echo hi\n",
+        )
+        code, out = run(self.dir)
+        self.assertEqual(code, 1, out)
+        self.assertIn("ci.yml", out)
+        self.assertIn("duplicate key 'timeout-minutes'", out)
+
+    def test_same_key_in_sibling_mappings_is_fine(self):
+        """Duplicates are per-mapping; `run:` in two steps is normal."""
+        self.write(
+            "ok.yml",
+            "name: o\non: [push]\njobs:\n  a:\n    runs-on: ubuntu-latest\n"
+            "    steps:\n      - run: echo 1\n      - run: echo 2\n"
+            "  b:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 3\n",
+        )
+        code, out = run(self.dir)
+        self.assertEqual(code, 0, out)
+
     def test_anti_vacuity_healthy_directory_passes(self):
         """Or the gate is just always-red, which is as useless as never-red."""
         self.write("a.yml", GOOD)
