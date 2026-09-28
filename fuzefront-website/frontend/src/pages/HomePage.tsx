@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Caption, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -504,9 +504,9 @@ export const HomePage: React.FC = () => {
                   Talk to sales
                 </Link>
               </div>
-              <p className="mt-6 text-sm text-gray-600">
+              <Caption space="lg" tone="primary">
                 No credit card required &middot; Free for 14 days &middot; Scales as you grow
-              </p>
+              </Caption>
             </motion.div>
           </SectionWrapper>
         </div>
