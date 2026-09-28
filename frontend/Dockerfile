@@ -44,11 +44,13 @@ COPY . .
 # (npm optional-deps bug npm/cli#4828).
 RUN rm -f package-lock.json && npm install
 
-# @fuzefront/telemetry has no vite source alias (unlike identity-ui/i18n) — the
-# frontend bootstrap (main.tsx) imports @fuzefront/telemetry/browser, whose
-# `exports` map points at dist/browser.{js,mjs}, so it must be built before
-# `vite build` below, same reasoning as chat-client/chat-ui in ci.yml.
-RUN npm run -w @fuzefront/telemetry build
+# @fuzefront/telemetry/browser is resolved from SOURCE via a vite alias (see
+# frontend/vite.config.ts), same as identity-ui/i18n/selection-lists-ui — no
+# pre-build step here. Building it inside this Dockerfile is unsafe: this
+# install re-resolves floating ranges, and telemetry's tsup dts build broke
+# the same way GHSA-qwcr-r2fm-qrc7's note in security.yml describes for
+# packages/auth (typescript floats ^5.9.3 -> 6.x, which hard-errors on
+# `moduleResolution: "node"`).
 
 # Frontend is NOT a workspace member — install its own deps (incl. the chat-*
 # file: packages) and build. vite resolves the aliased package SOURCES from
