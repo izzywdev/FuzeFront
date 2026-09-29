@@ -30,7 +30,8 @@ function resourceId(input: unknown, label: string): string {
 }
 
 function sheetRange(input: unknown): string {
-  if (typeof input !== 'string' || input.length < 1 || input.length > 256 || /[\x00-\x1f\x7f]/.test(input)) {
+  if (typeof input !== 'string' || input.length < 1 || input.length > 256 ||
+      Array.from(input).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
     throw new Error('range must be a bounded A1 notation range')
   }
   return input
