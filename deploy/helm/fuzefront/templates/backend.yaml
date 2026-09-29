@@ -150,11 +150,21 @@ spec:
               (dict "env" "SLACK_REDIRECT_URI" "id" "slack")
               (dict "env" "NOTION_REDIRECT_URI" "id" "notion")
               (dict "env" "GITHUB_CONNECTOR_REDIRECT_URI" "id" "github")
-              (dict "env" "DROPBOX_CONNECTOR_REDIRECT_URI" "id" "dropbox") }}
+              (dict "env" "DROPBOX_CONNECTOR_REDIRECT_URI" "id" "dropbox")
+              (dict "env" "GOOGLE_SHEETS_OAUTH_REDIRECT_URI" "id" "google-sheets")
+              (dict "env" "GOOGLE_DOCS_OAUTH_REDIRECT_URI" "id" "google-docs")
+              (dict "env" "GOOGLE_SLIDES_OAUTH_REDIRECT_URI" "id" "google-slides")
+              (dict "env" "GOOGLE_TASKS_OAUTH_REDIRECT_URI" "id" "google-tasks")
+              (dict "env" "MICROSOFT_SHAREPOINT_REDIRECT_URI" "id" "microsoft-sharepoint")
+              (dict "env" "MICROSOFT_TODO_REDIRECT_URI" "id" "microsoft-todo")
+              (dict "env" "JIRA_CONNECTOR_REDIRECT_URI" "id" "jira-cloud")
+              (dict "env" "CONFLUENCE_CONNECTOR_REDIRECT_URI" "id" "confluence-cloud")
+              (dict "env" "LINEAR_CONNECTOR_REDIRECT_URI" "id" "linear")
+              (dict "env" "TRELLO_CONNECTOR_REDIRECT_URI" "id" "trello") }}
             - name: {{ $entry.env }}
               value: "{{ ternary "https" "http" $.Values.ingress.tls.enabled }}://{{ $.Values.ingress.host }}/api/v1/connectors/{{ $entry.id }}/oauth/callback"
             {{- end }}
-            {{- range $name := list "MICROSOFT_OAUTH_CLIENT_ID" "MICROSOFT_OAUTH_CLIENT_SECRET" "SLACK_CLIENT_ID" "SLACK_CLIENT_SECRET" "NOTION_CLIENT_ID" "NOTION_CLIENT_SECRET" "GITHUB_CONNECTOR_CLIENT_ID" "GITHUB_CONNECTOR_CLIENT_SECRET" "DROPBOX_CONNECTOR_CLIENT_ID" "DROPBOX_CONNECTOR_CLIENT_SECRET" }}
+            {{- range $name := list "MICROSOFT_OAUTH_CLIENT_ID" "MICROSOFT_OAUTH_CLIENT_SECRET" "SLACK_CLIENT_ID" "SLACK_CLIENT_SECRET" "NOTION_CLIENT_ID" "NOTION_CLIENT_SECRET" "GITHUB_CONNECTOR_CLIENT_ID" "GITHUB_CONNECTOR_CLIENT_SECRET" "DROPBOX_CONNECTOR_CLIENT_ID" "DROPBOX_CONNECTOR_CLIENT_SECRET" "JIRA_CONNECTOR_CLIENT_ID" "JIRA_CONNECTOR_CLIENT_SECRET" "CONFLUENCE_CONNECTOR_CLIENT_ID" "CONFLUENCE_CONNECTOR_CLIENT_SECRET" "LINEAR_CONNECTOR_CLIENT_ID" "LINEAR_CONNECTOR_CLIENT_SECRET" "TRELLO_CONNECTOR_CLIENT_ID" "TRELLO_CONNECTOR_CLIENT_SECRET" }}
             - name: {{ $name }}
               valueFrom:
                 secretKeyRef:

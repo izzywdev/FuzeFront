@@ -9,7 +9,7 @@ type GmailStatus = {
   configuration?: { query?: string; include_spam_trash?: boolean }
 }
 
-type ConnectorEntry = { id: string; name: string; configured?: boolean; status?: 'connected' | 'disconnected' | 'error'; identity_email?: string }
+type ConnectorEntry = { id: string; name: string; authentication?: 'oauth' | 'api-key'; configured?: boolean; status?: 'connected' | 'disconnected' | 'error'; identity_email?: string }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/v1/connectors${path}`, {
@@ -34,6 +34,7 @@ export default function ConnectorsPage() {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('in:inbox')
   const [includeSpamTrash, setIncludeSpamTrash] = useState(false)
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +88,18 @@ export default function ConnectorsPage() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false) }
   }
 
+  const connectWithKey = async (id: string) => {
+    const key = apiKeys[id]?.trim()
+    if (!key) { setError('Enter an API key first'); return }
+    setBusy(true); setError('')
+    try {
+      await request(`/${id}/credential`, { method: 'POST', body: JSON.stringify({ api_key: key }) })
+      setApiKeys(current => ({ ...current, [id]: '' }))
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(false) }
+  }
+
   const disconnectOther = async (id: string) => {
     if (!window.confirm(`Disconnect ${id} and delete its stored OAuth grant?`)) return
     setBusy(true); setError('')
@@ -129,9 +142,17 @@ export default function ConnectorsPage() {
             <h2 style={{ margin: 0 }}>{item.name}</h2>
             <div style={{ color: 'var(--text-secondary)' }}>{item.status === 'connected' ? `Connected${item.identity_email ? ` as ${item.identity_email}` : ''}` : !item.configured ? 'Provider setup pending' : item.status === 'error' ? 'Status unavailable' : 'Not connected'}</div>
           </div>
+          {item.authentication === 'api-key' && item.status !== 'connected' && item.configured &&
+            <label>API key
+              <input type="password" autoComplete="off" value={apiKeys[item.id] || ''}
+                onChange={e => setApiKeys(current => ({ ...current, [item.id]: e.target.value }))}
+                aria-label={`${item.name} API key`} />
+            </label>}
           {item.status === 'connected'
             ? <Button variant="secondary" disabled={busy} onClick={() => void disconnectOther(item.id)}>Disconnect</Button>
-            : <Button variant="primary" disabled={busy || !item.configured || item.status === 'error'} onClick={() => void connectOther(item.id)}>Connect</Button>}
+            : item.authentication === 'api-key'
+              ? <Button variant="primary" disabled={busy || !item.configured || item.status === 'error' || !apiKeys[item.id]?.trim()} onClick={() => void connectWithKey(item.id)}>Save key</Button>
+              : <Button variant="primary" disabled={busy || !item.configured || item.status === 'error'} onClick={() => void connectOther(item.id)}>Connect</Button>}
         </section>)}
       </div>
     </main>
