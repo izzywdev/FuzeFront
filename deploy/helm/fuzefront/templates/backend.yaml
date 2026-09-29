@@ -134,6 +134,34 @@ spec:
                   optional: true
             - name: GOOGLE_OAUTH_REDIRECT_URI
               value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}/api/v1/connectors/google-gmail/oauth/callback"
+            - name: CONNECTOR_STATE_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: CONNECTOR_STATE_ENCRYPTION_KEY
+                  optional: true
+            {{- range $entry := list
+              (dict "env" "GOOGLE_DRIVE_OAUTH_REDIRECT_URI" "id" "google-drive")
+              (dict "env" "GOOGLE_CALENDAR_OAUTH_REDIRECT_URI" "id" "google-calendar")
+              (dict "env" "GOOGLE_CONTACTS_OAUTH_REDIRECT_URI" "id" "google-contacts")
+              (dict "env" "MICROSOFT_OUTLOOK_REDIRECT_URI" "id" "microsoft-outlook")
+              (dict "env" "MICROSOFT_ONEDRIVE_REDIRECT_URI" "id" "microsoft-onedrive")
+              (dict "env" "MICROSOFT_TEAMS_REDIRECT_URI" "id" "microsoft-teams")
+              (dict "env" "SLACK_REDIRECT_URI" "id" "slack")
+              (dict "env" "NOTION_REDIRECT_URI" "id" "notion")
+              (dict "env" "GITHUB_CONNECTOR_REDIRECT_URI" "id" "github")
+              (dict "env" "DROPBOX_CONNECTOR_REDIRECT_URI" "id" "dropbox") }}
+            - name: {{ $entry.env }}
+              value: "{{ ternary "https" "http" $.Values.ingress.tls.enabled }}://{{ $.Values.ingress.host }}/api/v1/connectors/{{ $entry.id }}/oauth/callback"
+            {{- end }}
+            {{- range $name := list "MICROSOFT_OAUTH_CLIENT_ID" "MICROSOFT_OAUTH_CLIENT_SECRET" "SLACK_CLIENT_ID" "SLACK_CLIENT_SECRET" "NOTION_CLIENT_ID" "NOTION_CLIENT_SECRET" "GITHUB_CONNECTOR_CLIENT_ID" "GITHUB_CONNECTOR_CLIENT_SECRET" "DROPBOX_CONNECTOR_CLIENT_ID" "DROPBOX_CONNECTOR_CLIENT_SECRET" }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" $ }}
+                  key: {{ $name }}
+                  optional: true
+            {{- end }}
             # Shared secret guarding POST /internal/provision (Plan D calls this).
             - name: INTERNAL_PROVISION_SECRET
               valueFrom:

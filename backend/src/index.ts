@@ -10,6 +10,11 @@ import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
 import connectorRoutes from './routes/connectors'
+import { createConnectorPlatformRouter } from './connector-platform'
+import { googleProviders } from './connector-providers/google'
+import { microsoftProviders } from './connector-providers/microsoft'
+import { workspaceProviders } from './connector-providers/workspace'
+import { developerProviders } from './connector-providers/developer'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import usersRoutes from './routes/users'
@@ -342,6 +347,9 @@ app.use('/api/v1/billing', billingRoutes)
 // /api/v1/notifications/*; this forwards it in-cluster. The service's
 // /internal/* publish surface is blocked here — see routes/notifications.ts.
 app.use('/api/v1/notifications', notificationProxyRoutes)
+app.use('/api/v1/connectors', createConnectorPlatformRouter([
+  ...googleProviders, ...microsoftProviders, ...workspaceProviders, ...developerProviders,
+]))
 app.use('/api/v1/connectors', connectorRoutes)
 
 app.use('/api/v1/app-registry', appRegistryRoutes)
