@@ -239,6 +239,7 @@ GET /api/v1/connectors/google-gmail/messages/recent  # chat-only summary source;
 GET /api/v1/connectors/{}/oauth/callback  # provider browser OAuth redirect, not a generated client operation
 GET /api/v1/connectors/catalog  # authenticated browser connector catalog; backend has no OpenAPI spec
 POST /api/v1/connectors/{}/connect  # authenticated browser OAuth initiation, not an MCP operation
+POST /api/v1/connectors/{}/credential  # authenticated browser secret onboarding; must never be projected into generated clients or MCP tools
 GET /api/v1/connectors/{}/actions/{}  # authenticated per-user read facade; provider operations require separate contracts before MCP projection
 GET /api/v1/connectors/{}  # authenticated browser connector metadata facade
 PATCH /api/v1/connectors/{}  # authenticated browser configuration facade
