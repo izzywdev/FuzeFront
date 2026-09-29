@@ -140,7 +140,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     if (!provider) return res.status(404).json({ error: 'Unknown connector' })
     try {
       const upstream = await axios.request({
-        method, url: `${keysUrl}/api/v1/connectors/${provider.id}`,
+        method, url: `${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}`,
         data: method === 'PATCH' ? req.body : undefined,
         headers: await headers(bearer(req), ['connectors:metadata']),
         timeout: 10000, validateStatus: () => true,
@@ -168,7 +168,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       if (typeof token.access_token !== 'string') throw new Error('Missing access token')
       const identityEmail = provider.tokenIdentity ? await provider.tokenIdentity(token) : await provider.identity!(token.access_token)
       const credential = { ...token, ...(Number(token.expires_in) > 0 ? { expires_at: Math.floor(Date.now() / 1000) + Number(token.expires_in) } : {}) }
-      await axios.put(`${keysUrl}/api/v1/connectors/${provider.id}/credential`, {
+      await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}/credential`, {
         credential, identity_email: identityEmail,
         scopes: typeof token.scope === 'string' ? token.scope.split(/[\s,]+/).filter(Boolean) : provider.scopes,
         configuration: provider.initialConfiguration || {},
@@ -185,8 +185,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     if (req.path === '/catalog' || byId.has(req.path.split('/')[1])) return next()
     return next('router')
   })
-  router.use(authenticatedLimit)
-  router.use(authenticateToken)
+  router.use(authenticatedLimit, authenticateToken)
 
   router.get('/catalog', (_req, res) => {
     res.json({ connectors: definitions.map(({ id, name, description, clientIdEnv, clientSecretEnv, redirectUriEnv }) =>
@@ -194,7 +193,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
         process.env[clientIdEnv] && process.env[clientSecretEnv] && process.env[redirectUriEnv]) })) })
   })
 
-  router.post('/:provider/connect', async (req, res) => {
+  router.post('/:provider/connect', authenticatedLimit, async (req, res) => {
     const provider = byId.get(req.params.provider)
     if (!provider) return res.status(404).json({ error: 'Unknown connector' })
     try {
@@ -217,18 +216,18 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     }
   })
 
-  router.get('/:provider/actions/:action', async (req, res) => {
+  router.get('/:provider/actions/:action', authenticatedLimit, async (req, res) => {
     const provider = byId.get(req.params.provider)
     const action = provider?.actions?.[req.params.action]
     if (!action) return res.status(404).json({ error: 'Unknown connector action' })
     try {
       const delegated = await headers(bearer(req), ['connectors:credentials:read', 'connectors:credentials:write'])
-      const lease = await axios.get(`${keysUrl}/api/v1/connectors/${provider!.id}/credential`, { headers: delegated, timeout: 10000 })
+      const lease = await axios.get(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { headers: delegated, timeout: 10000 })
       let credential = lease.data.credential as Record<string, any>
       if (!credential || typeof credential.access_token !== 'string') throw new Error('Invalid credential')
       if (credential.expires_at && Number(credential.expires_at) <= Date.now() / 1000 + 60) {
         credential = await refresh(provider!, credential)
-        await axios.put(`${keysUrl}/api/v1/connectors/${provider!.id}/credential`, { credential }, { headers: delegated, timeout: 10000 })
+        await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { credential }, { headers: delegated, timeout: 10000 })
       }
       const result = await action({ accessToken: credential.access_token,
         query: req.query as Record<string, unknown>, configuration: lease.data.configuration || {} })
