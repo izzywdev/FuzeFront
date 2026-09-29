@@ -236,6 +236,13 @@ DELETE /api/v1/connectors/google-gmail  # authenticated connector lifecycle faca
 POST /api/v1/connectors/google-gmail/connect  # browser OAuth initiation facade; intentionally not MCP
 GET /api/v1/connectors/google-gmail/oauth/callback  # Google browser redirect; encrypted short-lived continuation state, not a generated client operation
 GET /api/v1/connectors/google-gmail/messages/recent  # chat-only summary source; raw credential lease remains private S2S
+GET /api/v1/connectors/{}/oauth/callback  # provider browser OAuth redirect, not a generated client operation
+GET /api/v1/connectors/catalog  # authenticated browser connector catalog; backend has no OpenAPI spec
+POST /api/v1/connectors/{}/connect  # authenticated browser OAuth initiation, not an MCP operation
+GET /api/v1/connectors/{}/actions/{}  # authenticated per-user read facade; provider operations require separate contracts before MCP projection
+GET /api/v1/connectors/{}  # authenticated browser connector metadata facade
+PATCH /api/v1/connectors/{}  # authenticated browser configuration facade
+DELETE /api/v1/connectors/{}  # authenticated browser disconnect facade
 #
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not
