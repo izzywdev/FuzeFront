@@ -2,6 +2,7 @@
 import axios from 'axios'
 import crypto from 'crypto'
 import express, { Request, Response } from 'express'
+import rateLimit from 'express-rate-limit'
 import { createDelegationClient, createWorkloadAuthClient } from '@fuzefront/service-auth'
 import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
@@ -85,7 +86,7 @@ function unseal(encoded: string): OAuthState {
   if (!encoded || encoded.length > 8192) throw new Error('Invalid OAuth state')
   const data = Buffer.from(encoded, 'base64url')
   if (data.length < 29) throw new Error('Invalid OAuth state')
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), data.subarray(0, 12))
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key(), data.subarray(0, 12), { authTagLength: 16 })
   decipher.setAuthTag(data.subarray(12, 28))
   const state = JSON.parse(Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString()) as OAuthState
   if (!state.provider || !state.delegation || !state.verifier || !state.nonce ||
@@ -94,9 +95,11 @@ function unseal(encoded: string): OAuthState {
 }
 
 function bearer(req: Request): string {
-  const match = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '')
-  if (!match) throw new Error('Missing bearer token')
-  return match[1]
+  const header = req.headers.authorization || ''
+  if (header.length > 8192 || header.slice(0, 7).toLowerCase() !== 'bearer ') throw new Error('Missing bearer token')
+  const token = header.slice(7).trim()
+  if (!token || /\s/.test(token)) throw new Error('Invalid bearer token')
+  return token
 }
 
 /** Generic metadata, OAuth and credential leasing for independently registered providers. */
@@ -111,6 +114,8 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
   const workload = createWorkloadAuthClient({ baseUrl: securityUrl })
   const delegation = createDelegationClient({ baseUrl: securityUrl, serviceAuth: workload })
   const consume = options.consumeNonce || consumeOAuthNonce
+  const callbackLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false })
+  const authenticatedLimit = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false })
 
   async function headers(subject: string, scopes: string[]) {
     const [serviceToken, delegated] = await Promise.all([
@@ -131,9 +136,11 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
   }
 
   async function proxy(req: Request, res: Response, method: 'GET' | 'PATCH' | 'DELETE') {
+    const provider = byId.get(req.params.provider)
+    if (!provider) return res.status(404).json({ error: 'Unknown connector' })
     try {
       const upstream = await axios.request({
-        method, url: `${keysUrl}/api/v1/connectors/${req.params.provider}`,
+        method, url: `${keysUrl}/api/v1/connectors/${provider.id}`,
         data: method === 'PATCH' ? req.body : undefined,
         headers: await headers(bearer(req), ['connectors:metadata']),
         timeout: 10000, validateStatus: () => true,
@@ -144,7 +151,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     }
   }
 
-  router.get('/:provider/oauth/callback', async (req, res, next) => {
+  router.get('/:provider/oauth/callback', callbackLimit, async (req, res, next) => {
     if (!byId.has(req.params.provider)) return next('router')
     try {
       const provider = byId.get(req.params.provider)
@@ -178,6 +185,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     if (req.path === '/catalog' || byId.has(req.path.split('/')[1])) return next()
     return next('router')
   })
+  router.use(authenticatedLimit)
   router.use(authenticateToken)
 
   router.get('/catalog', (_req, res) => {
