@@ -110,6 +110,9 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     throw new Error('Connector IDs must be unique lowercase slugs')
   }
   const keysUrl = (options.fuzekeysUrl || process.env.FUZEKEYS_URL || 'http://fuzekeys-backend:8000').replace(/\/+$/, '')
+  const metadataUrls = new Map(definitions.map(provider => [
+    provider.id, `${keysUrl}/api/v1/connectors/${provider.id}`,
+  ]))
   const securityUrl = (options.securityUrl || process.env.FUZEFRONT_SECURITY_URL || 'http://fuzefront-security:3002').replace(/\/+$/, '')
   const workload = createWorkloadAuthClient({ baseUrl: securityUrl })
   const delegation = createDelegationClient({ baseUrl: securityUrl, serviceAuth: workload })
@@ -136,11 +139,11 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
   }
 
   async function proxy(req: Request, res: Response, method: 'GET' | 'PATCH' | 'DELETE') {
-    const provider = byId.get(req.params.provider)
-    if (!provider) return res.status(404).json({ error: 'Unknown connector' })
+    const upstreamUrl = metadataUrls.get(req.params.provider)
+    if (!upstreamUrl) return res.status(404).json({ error: 'Unknown connector' })
     try {
       const upstream = await axios.request({
-        method, url: `${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}`,
+        method, url: upstreamUrl,
         data: method === 'PATCH' ? req.body : undefined,
         headers: await headers(bearer(req), ['connectors:metadata']),
         timeout: 10000, validateStatus: () => true,
