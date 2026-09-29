@@ -7,27 +7,37 @@ import { createDelegationClient, createWorkloadAuthClient } from '@fuzefront/ser
 import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
 
-export interface ConnectorDefinition {
+interface ConnectorBase {
   id: string
   name: string
   description?: string
+  /** Resolve a display identity using the new access token; never persist this response. */
+  identity?(accessToken: string): Promise<string>
+  actions?: Record<string, (context: ConnectorActionContext) => Promise<unknown>>
+  initialConfiguration?: Record<string, unknown>
+}
+
+export interface OAuthConnectorDefinition extends ConnectorBase {
+  authentication?: 'oauth'
   authorizationUrl: string
   tokenUrl: string
   scopes: string[]
   clientIdEnv: string
   clientSecretEnv: string
   redirectUriEnv: string
-  /** Resolve a display identity using the new access token; never persist this response. */
-  identity?(accessToken: string): Promise<string>
   tokenIdentity?(token: Record<string, any>): Promise<string>
   buildAuthorizationParameters?(base: URLSearchParams): URLSearchParams
   exchangeCode?(code: string, verifier: string): Promise<Record<string, any>>
   refreshToken?(credential: Record<string, any>): Promise<Record<string, any>>
   supportsPkce?: boolean
-  actions?: Record<string, (context: ConnectorActionContext) => Promise<unknown>>
   authorizationParameters?: Record<string, string>
-  initialConfiguration?: Record<string, unknown>
 }
+
+export interface ApiKeyConnectorDefinition extends ConnectorBase {
+  authentication: 'api-key'
+}
+
+export type ConnectorDefinition = OAuthConnectorDefinition | ApiKeyConnectorDefinition
 
 export interface ConnectorActionContext {
   accessToken: string
@@ -127,7 +137,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     return { Authorization: `Bearer ${serviceToken}`, 'X-Fuze-Delegation': `Bearer ${delegated.accessToken}` }
   }
 
-  async function refresh(provider: ConnectorDefinition, credential: Record<string, any>) {
+  async function refresh(provider: OAuthConnectorDefinition, credential: Record<string, any>) {
     if (!credential.refresh_token) throw new Error('Connector reauthorization required')
     const updated = provider.refreshToken ? await provider.refreshToken(credential) : (await axios.post(provider.tokenUrl,
       new URLSearchParams({ grant_type: 'refresh_token', refresh_token: credential.refresh_token,
@@ -155,9 +165,11 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
   }
 
   router.get('/:provider/oauth/callback', callbackLimit, async (req, res, next) => {
-    if (!byId.has(req.params.provider)) return next('router')
+    const selected = byId.get(req.params.provider)
+    if (!selected) return next('router')
+    if (selected.authentication === 'api-key') return res.status(404).json({ error: 'OAuth is unavailable for this connector' })
     try {
-      const provider = byId.get(req.params.provider)
+      const provider = selected
       const state = unseal(String(req.query.state || ''))
       if (!provider || state.provider !== provider.id || typeof req.query.code !== 'string' || !req.query.code || req.query.error) {
         return res.status(400).json({ error: 'Invalid authorization response' })
@@ -191,14 +203,41 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
   router.use(authenticatedLimit, authenticateToken)
 
   router.get('/catalog', (_req, res) => {
-    res.json({ connectors: definitions.map(({ id, name, description, clientIdEnv, clientSecretEnv, redirectUriEnv }) =>
-      ({ id, name, description, configured: Boolean(process.env.CONNECTOR_STATE_ENCRYPTION_KEY &&
-        process.env[clientIdEnv] && process.env[clientSecretEnv] && process.env[redirectUriEnv]) })) })
+    res.json({ connectors: definitions.map(provider => ({
+      id: provider.id, name: provider.name, description: provider.description,
+      authentication: provider.authentication || 'oauth',
+      configured: provider.authentication === 'api-key' || Boolean(process.env.CONNECTOR_STATE_ENCRYPTION_KEY &&
+        process.env[provider.clientIdEnv] && process.env[provider.clientSecretEnv] && process.env[provider.redirectUriEnv]),
+    })) })
+  })
+
+  router.post('/:provider/credential', async (req, res) => {
+    const provider = byId.get(req.params.provider)
+    if (!provider || provider.authentication !== 'api-key') return res.status(404).json({ error: 'Unknown API-key connector' })
+    const secret = req.body?.api_key
+    if (typeof secret !== 'string' || !secret.trim() || secret.length > 4096 || /[\r\n\0]/.test(secret)) {
+      return res.status(400).json({ error: 'A valid API key is required' })
+    }
+    try {
+      const delegatedHeaders = await headers(bearer(req), ['connectors:credentials:write'])
+      const identityEmail = provider.identity ? await provider.identity(secret) : undefined
+      if (identityEmail !== undefined && (typeof identityEmail !== 'string' || identityEmail.length > 320)) {
+        throw new Error('Invalid connector identity')
+      }
+      await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}/credential`, {
+        credential: { access_token: secret }, identity_email: identityEmail,
+        configuration: provider.initialConfiguration || {},
+      }, { headers: delegatedHeaders, timeout: 10000 })
+      return res.status(201).json({ status: 'connected', provider: provider.id })
+    } catch {
+      return res.status(502).json({ error: 'Unable to validate or store connector credential' })
+    }
   })
 
   router.post('/:provider/connect', authenticatedLimit, async (req, res) => {
     const provider = byId.get(req.params.provider)
     if (!provider) return res.status(404).json({ error: 'Unknown connector' })
+    if (provider.authentication === 'api-key') return res.status(404).json({ error: 'OAuth is unavailable for this connector' })
     try {
       const continuation = await delegation.exchange({ subjectToken: bearer(req), audience: 'service:fuzekeys', scopes: ['connectors:credentials:write'] })
       const verifier = crypto.randomBytes(32).toString('base64url')
@@ -228,7 +267,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       const lease = await axios.get(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { headers: delegated, timeout: 10000 })
       let credential = lease.data.credential as Record<string, any>
       if (!credential || typeof credential.access_token !== 'string') throw new Error('Invalid credential')
-      if (credential.expires_at && Number(credential.expires_at) <= Date.now() / 1000 + 60) {
+      if (provider!.authentication !== 'api-key' && credential.expires_at && Number(credential.expires_at) <= Date.now() / 1000 + 60) {
         credential = await refresh(provider!, credential)
         await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { credential }, { headers: delegated, timeout: 10000 })
       }
