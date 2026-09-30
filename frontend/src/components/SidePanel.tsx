@@ -165,7 +165,17 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
             icon={item.icon}
             label={item.label}
             onClick={() => {
-              if (item.route) navigate(`/app/${activeApp.slug}${item.route}`)
+              if (item.route) {
+                navigate(`/app/${activeApp.slug}${item.route.startsWith('/') ? item.route : `/${item.route}`}`)
+              }
+              window.dispatchEvent(
+                new CustomEvent('fuzefront:navigate', {
+                  detail: { id: item.id, section: item.id, route: item.route }
+                })
+              )
+              if ('action' in item && typeof (item as { action?: () => void }).action === 'function') {
+                (item as { action?: () => void }).action?.()
+              }
             }}
           />
         ))}
@@ -298,47 +308,54 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
                       margin: '0.25rem 0 0.5rem 0'
                     }}
                   >
-                    {activeSubItems.map((subItem: MenuItem) => (
-                      <div
-                        key={subItem.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => {
-                          if (subItem.route) {
-                            navigate(`/app/${app.slug}${subItem.route.startsWith('/') ? subItem.route : `/${subItem.route}`}`)
-                          } else {
+                    {activeSubItems.map((subItem: MenuItem) => {
+                      const subItemPath = subItem.route
+                        ? `/app/${app.slug}${subItem.route.startsWith('/') ? subItem.route : `/${subItem.route}`}`
+                        : ''
+                      const isSubActive = subItemPath ? pathname === subItemPath : false
+
+                      return (
+                        <div
+                          key={subItem.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (subItemPath) {
+                              navigate(subItemPath)
+                            }
                             window.dispatchEvent(
                               new CustomEvent('fuzefront:navigate', {
-                                detail: { id: subItem.id, section: subItem.id }
+                                detail: { id: subItem.id, section: subItem.id, route: subItem.route }
                               })
                             )
                             if (subItem.action) subItem.action()
-                          }
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.5rem',
-                          padding: '0.35rem 0.65rem',
-                          borderRadius: 'var(--radius-md, 6px)',
-                          fontSize: '0.78rem',
-                          color: 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = 'var(--hover-bg)'
-                          e.currentTarget.style.color = 'var(--text-primary)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent'
-                          e.currentTarget.style.color = 'var(--text-secondary)'
-                        }}
-                      >
-                        <span style={{ fontSize: '0.85rem' }}>{subItem.icon}</span>
-                        <span style={{ fontWeight: 500 }}>{subItem.label}</span>
-                      </div>
-                    ))}
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.35rem 0.65rem',
+                            borderRadius: 'var(--radius-md, 6px)',
+                            fontSize: '0.78rem',
+                            color: isSubActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            backgroundColor: isSubActive ? 'var(--hover-bg)' : 'transparent',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'var(--hover-bg)'
+                            e.currentTarget.style.color = 'var(--text-primary)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = isSubActive ? 'var(--hover-bg)' : 'transparent'
+                            e.currentTarget.style.color = isSubActive ? 'var(--text-primary)' : 'var(--text-secondary)'
+                          }}
+                        >
+                          <span style={{ fontSize: '0.85rem' }}>{subItem.icon}</span>
+                          <span style={{ fontWeight: isSubActive ? 600 : 500 }}>{subItem.label}</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>

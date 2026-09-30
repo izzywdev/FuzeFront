@@ -102,6 +102,19 @@ const portalAdminUiSrc = fileURLToPath(
 const selectionListsUiSrc = fileURLToPath(
   new URL('../packages/selection-lists-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/telemetry/browser (packages/telemetry) is a file: workspace package
+// whose `exports` map points at dist/browser.{js,mjs} — building it inside
+// frontend/Dockerfile is unsafe: that Dockerfile's `rm -f package-lock.json &&
+// npm install` re-resolves floating ranges (npm/cli#4828 workaround), and
+// telemetry's tsup dts build broke exactly the way the GHSA-qwcr-r2fm-qrc7 note
+// in security.yml describes for packages/auth — typescript floated ^5.9.3 -> 6.x,
+// which hard-errors on tsconfig's `moduleResolution: "node"` (TS5107). Resolve
+// from SOURCE instead, same as selection-lists-ui: no pre-build step needed for
+// the Dockerfile/vite build. CI still builds dist/browser.d.ts before the
+// frontend type-check step (tsc resolves via node_modules, not this alias).
+const telemetryBrowserSrc = fileURLToPath(
+  new URL('../packages/telemetry/src/browser.ts', import.meta.url)
+)
 // @fuzefront/config-client (top-level config-client/) is the typed
 // config-service client (FFRNT-153) and @fuzefront/config-ui
 // (packages/config-ui) is the Configuration Management Console UI built
@@ -154,6 +167,7 @@ export default defineConfig({
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
       '@fuzeone/selection-lists-ui': selectionListsUiSrc,
+      '@fuzefront/telemetry/browser': telemetryBrowserSrc,
       '@fuzefront/config-client': configClientSrc,
       '@fuzefront/config-ui': configUiSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system

@@ -31,6 +31,7 @@
     "@fuzeone/selection-lists-ui": "file:../packages/selection-lists-ui",
     "@fuzefront/chat-client": "file:../packages/chat-client",
     "@fuzefront/chat-ui": "file:../packages/chat-ui",
+    "@fuzefront/telemetry": "file:../packages/telemetry",
     "@originjs/vite-plugin-federation": "^1.4.1",
     "axios": "^1.9.0",
     "class-variance-authority": "^0.7.1",
