@@ -81,6 +81,8 @@ function InstalledAppsSection() {
     id: string
     name: string
     scopeLevel: AppScopeLevel
+    installMode?: 'self' | 'everyone' | 'both'
+    orgLevelOnly?: boolean
   } | null>(null)
   const [installationByApp, setInstallationByApp] = useState<
     Record<string, { id: string; mode: string }>
@@ -94,6 +96,16 @@ function InstalledAppsSection() {
     if (isExecutive) {
       if (isPersonalContext) return false
       if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
+    }
+    const isOrgRequired =
+      app.scopeLevel === 'organization' ||
+      (app as any).requiresOrgContext ||
+      (app as any).orgLevelOnly ||
+      (app as any).installMode === 'everyone' ||
+      app.id === 'fuzesocial' ||
+      app.scope === 'fuzesocial'
+    if (isPersonalContext && isOrgRequired) {
+      return false
     }
     return true
   })
@@ -159,9 +171,13 @@ function InstalledAppsSection() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
         {visibleAvailable.map(app => {
-          const installed = installedAppIds.has(app.id)
-          const installation = installationByApp[app.id]
-          const scopeLevel: AppScopeLevel = app.scopeLevel ?? 'both'
+          const isExecutive =
+            app.id === 'executive' ||
+            app.scope === 'executive' ||
+            app.name.toLowerCase().includes('executive')
+          const scopeLevel: AppScopeLevel = isExecutive
+            ? 'organization'
+            : (app.scopeLevel ?? 'both')
 
           return (
             <div
@@ -222,9 +238,21 @@ function InstalledAppsSection() {
                   className="btn btn-primary"
                   data-action="open-install"
                   data-app-id={app.id}
-                  onClick={() =>
-                    setDialogApp({ id: app.id, name: app.name, scopeLevel })
-                  }
+                  onClick={() => {
+                    const isOrgLevelOnly = Boolean(
+                      (app as any).orgLevelOnly ||
+                      (app as any).installMode === 'everyone' ||
+                      app.id === 'fuzesocial' ||
+                      app.scope === 'fuzesocial'
+                    )
+                    setDialogApp({
+                      id: app.id,
+                      name: app.name,
+                      scopeLevel,
+                      installMode: (app as any).installMode,
+                      orgLevelOnly: isOrgLevelOnly,
+                    })
+                  }}
                 >
                   Install
                 </button>
@@ -240,6 +268,8 @@ function InstalledAppsSection() {
           appId={dialogApp.id}
           appName={dialogApp.name}
           scopeLevel={dialogApp.scopeLevel}
+          installMode={dialogApp.installMode}
+          orgLevelOnly={dialogApp.orgLevelOnly}
           onClose={() => setDialogApp(null)}
           onChanged={() => void load()}
         />

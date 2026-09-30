@@ -104,6 +104,7 @@ interface AppRow {
   visibility: 'private' | 'organization' | 'public' | 'marketplace'
   scope_level: AppScopeLevel
   install_count: number | null
+  manifest?: unknown
 }
 
 export interface InstallationRow {
@@ -332,9 +333,23 @@ router.get('/:id/installations', installReadRateLimiter, authenticateToken, asyn
     const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
     const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const outerDto = prefixDtoIds({ appId: app.id }, prefixed, { appId: 'app' })
+    let manifest: Record<string, any> = {}
+    try {
+      manifest =
+        typeof app.manifest === 'string'
+          ? JSON.parse(app.manifest)
+          : (app.manifest as Record<string, any>) ?? {}
+    } catch {
+      manifest = {}
+    }
+    const isOrgLevelOnly = Boolean(
+      manifest.orgLevelOnly || manifest.installMode === 'everyone'
+    )
     res.json({
       appId: outerDto.appId,
       scopeLevel: app.scope_level ?? 'both',
+      orgLevelOnly: isOrgLevelOnly,
+      installMode: manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
       installations: rows.map(row =>
         prefixDtoIds(toInstallation(row), prefixed, {
           appId: 'app',
@@ -377,6 +392,18 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
     }
 
     const scopeLevel: AppScopeLevel = app.scope_level ?? 'both'
+    let manifest: Record<string, any> = {}
+    try {
+      manifest =
+        typeof app.manifest === 'string'
+          ? JSON.parse(app.manifest)
+          : (app.manifest as Record<string, any>) ?? {}
+    } catch {
+      manifest = {}
+    }
+    const isOrgLevelOnly = Boolean(
+      manifest.orgLevelOnly || manifest.installMode === 'everyone'
+    )
     const body = req.body ?? {}
 
     // --- resolve scope ----------------------------------------------------
@@ -400,6 +427,13 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
       scope = body.scope
     }
 
+    if (isOrgLevelOnly && scope === 'personal') {
+      return res.status(422).json({
+        error: 'This app can only be installed in an organization context.',
+        code: 'ORG_LEVEL_ONLY',
+      })
+    }
+
     if (!scopeIsAllowed(scopeLevel, scope)) {
       return res.status(422).json({
         error: `This app cannot be installed at '${scope}' scope. Its scopeLevel is '${scopeLevel}'.`,
@@ -410,7 +444,7 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
     // --- resolve mode -----------------------------------------------------
     // A personal install is always just you; an explicit mode='everyone' there
     // is a contradiction and is rejected rather than silently downgraded.
-    let mode: InstallMode = 'self'
+    let mode: InstallMode = isOrgLevelOnly ? 'everyone' : 'self'
     if (body.mode !== undefined && body.mode !== null) {
       if (!VALID_MODES.includes(body.mode)) {
         return res.status(400).json({
@@ -419,6 +453,13 @@ router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (r
         })
       }
       mode = body.mode
+    }
+    if (isOrgLevelOnly && mode === 'self') {
+      return res.status(422).json({
+        error:
+          'This app can only be installed for the entire organization, not for individual users.',
+        code: 'ORG_LEVEL_ONLY',
+      })
     }
     if (scope === 'personal' && mode === 'everyone') {
       return res.status(422).json({

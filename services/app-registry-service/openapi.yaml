@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront App Registry API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     REST API for the FuzeFront **app registry** — the contract by which a
     federated (or standalone) application is registered, activated, and surfaced
@@ -816,6 +816,13 @@ components:
         requiresOrgContext:
           type: boolean
           description: Whether the app strictly requires an active organization context to run.
+        installMode:
+          type: string
+          enum: [self, everyone, both]
+          description: Allowed installation modes (self, everyone, or both). 'everyone' enforces whole-organization only installs.
+        orgLevelOnly:
+          type: boolean
+          description: Whether installation is restricted to the whole organization only (cannot be installed to a single user in an org).
         roles:
           type: array
           description: Roles permitted to see/activate the app. Empty = all members.

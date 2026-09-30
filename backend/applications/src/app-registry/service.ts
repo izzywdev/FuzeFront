@@ -370,8 +370,11 @@ export class AppRegistryService {
       mode: manifest.mode,
       builtin: manifest.builtin ?? false,
       organization_id: organizationId,
-      visibility: (manifest.visibility ?? 'private') as Visibility,
-      scope_level: manifest.scopeLevel ?? 'both',
+      scope_level:
+        manifest.scopeLevel ??
+        (manifest.requiresOrgContext || manifest.visibility === 'organization'
+          ? 'organization'
+          : 'both'),
       is_active: false,
       heartbeat_token: heartbeatToken,
       created_at: now,
@@ -407,7 +410,11 @@ export class AppRegistryService {
         manifest: JSON.stringify(manifest),
         mode: manifest.mode,
         visibility: (manifest.visibility ?? existing.manifest.visibility ?? 'private') as Visibility,
-        ...(manifest.scopeLevel ? { scope_level: manifest.scopeLevel } : {}),
+        ...(manifest.scopeLevel
+          ? { scope_level: manifest.scopeLevel }
+          : manifest.requiresOrgContext || manifest.visibility === 'organization'
+          ? { scope_level: 'organization' }
+          : {}),
         updated_at: new Date(),
         // Re-derive placement: a manifest update may move the app in the menu.
         ...navColumns(manifest),
@@ -529,6 +536,11 @@ export class AppRegistryService {
         // any other, owned by the platform root org rather than org-less.
         organization_id: ROOT_ORG_ID,
         visibility: (manifest.visibility ?? 'public') as Visibility,
+        scope_level:
+          manifest.scopeLevel ??
+          (manifest.requiresOrgContext || manifest.visibility === 'organization'
+            ? 'organization'
+            : 'both'),
         is_active: status === 'activated',
         heartbeat_token: heartbeatToken,
         created_at: now,
