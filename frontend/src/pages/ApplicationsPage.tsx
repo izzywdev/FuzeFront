@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AppCard, Badge, Button } from '@fuzefront/design-system'
 import { useRegisteredApps } from '../platform/appRegistry'
-import { useOrganizations, type App as BackendApp } from '../lib/shared'
+import { useCurrentUser, useOrganizations, ROOT_ORG_ID, type App as BackendApp } from '../lib/shared'
+import { isEmployeeUser } from '../utils/employee'
 import {
   appsAPI,
   getInstalledApps,
@@ -26,11 +27,28 @@ import {
 function ApplicationsPage() {
   const navigate = useNavigate()
   const { apps, loading, error } = useRegisteredApps()
+  const { user } = useCurrentUser()
+  const { activeOrganizationId } = useOrganizations()
+  const isPersonalContext = activeOrganizationId === null
+  const isEmployee = isEmployeeUser(user?.roles)
+
+  const visibleApps = apps.filter(app => {
+    if (app.slug === 'executive') {
+      if (isPersonalContext) return false
+      if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
+    }
+    const manifest = app.manifest as any
+    const orgRequired =
+      manifest?.requiresOrgContext === true ||
+      manifest?.visibility === 'organization'
+    if (isPersonalContext && orgRequired) return false
+    return true
+  })
 
   return (
     <>
       <ApplicationsLauncher
-        apps={apps}
+        apps={visibleApps}
         loading={loading}
         error={error}
         navigate={navigate}
@@ -53,6 +71,9 @@ function ApplicationsPage() {
  */
 function InstalledAppsSection() {
   const { activeOrganizationId } = useOrganizations()
+  const { user } = useCurrentUser()
+  const isPersonalContext = activeOrganizationId === null
+  const isEmployee = isEmployeeUser(user?.roles)
   const [available, setAvailable] = useState<BackendApp[]>([])
   const [installedAppIds, setInstalledAppIds] = useState<Set<string>>(new Set())
   const [status, setStatus] = useState<'loading' | 'idle' | 'error'>('loading')
@@ -64,6 +85,18 @@ function InstalledAppsSection() {
   const [installationByApp, setInstallationByApp] = useState<
     Record<string, { id: string; mode: string }>
   >({})
+
+  const visibleAvailable = available.filter(app => {
+    const isExecutive =
+      app.id === 'executive' ||
+      app.scope === 'executive' ||
+      app.name.toLowerCase().includes('executive')
+    if (isExecutive) {
+      if (isPersonalContext) return false
+      if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
+    }
+    return true
+  })
 
   const load = useCallback(async () => {
     setStatus('loading')
@@ -118,14 +151,14 @@ function InstalledAppsSection() {
         <p style={{ color: 'var(--text-tertiary)' }}>Loading…</p>
       )}
 
-      {status === 'idle' && available.length === 0 && (
+      {status === 'idle' && visibleAvailable.length === 0 && (
         <p style={{ color: 'var(--text-tertiary)' }}>
           No applications available to install.
         </p>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        {available.map(app => {
+        {visibleAvailable.map(app => {
           const installed = installedAppIds.has(app.id)
           const installation = installationByApp[app.id]
           const scopeLevel: AppScopeLevel = app.scopeLevel ?? 'both'

@@ -10,6 +10,7 @@ import {
   type OrgTreeNode,
 } from '@fuzefront/identity-ui'
 import { User, useCurrentUser, useOrganizations, useAppContext, ROOT_ORG_ID } from '../lib/shared'
+import { isEmployeeUser } from '../utils/employee'
 import { useAccounts } from '../contexts/AccountsContext'
 import { usePermissions } from './PermissionGate'
 import { useFlag } from '../platform/featureFlags'
@@ -380,9 +381,16 @@ export function OrganizationSwitcherSection({
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
   const [canCreate, setCanCreate] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const { user } = useCurrentUser()
+  const isEmployee = isEmployeeUser(user?.roles)
 
-  const organizations =
+  const rawOrganizations =
     contextOrganizations.length > 0 ? contextOrganizations : (fetched ?? [])
+
+  // Non-employees ("facebook members") cannot switch to the root platform org
+  const organizations = rawOrganizations.filter(
+    org => isEmployee || org.id !== ROOT_ORG_ID
+  )
 
   const load = useCallback(async () => {
     setStatus('loading')

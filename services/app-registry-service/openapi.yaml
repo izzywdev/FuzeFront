@@ -809,6 +809,13 @@ components:
           $ref: '#/components/schemas/Infra'
         visibility:
           $ref: '#/components/schemas/Visibility'
+        scopeLevel:
+          type: string
+          enum: [personal, organization, both]
+          description: Where the app may be installed (personal, organization, or either).
+        requiresOrgContext:
+          type: boolean
+          description: Whether the app strictly requires an active organization context to run.
         roles:
           type: array
           description: Roles permitted to see/activate the app. Empty = all members.
