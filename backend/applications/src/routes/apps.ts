@@ -41,6 +41,7 @@ interface AppRow {
   // Where the app may be INSTALLED (backend migration 017). Distinct from
   // `scope` above, which is the Module-Federation remote container name.
   scope_level: 'personal' | 'organization' | 'both'
+  manifest?: unknown
   created_at: Date
   updated_at: Date
 }
@@ -163,6 +164,18 @@ router.get('/', authenticateToken, async (req: any, res) => {
     const appsWithHealth = await Promise.all(
       apps.map(async (app: AppRow) => {
         const isHealthy = await checkAppHealth(app)
+        let manifest: Record<string, any> = {}
+        try {
+          manifest =
+            typeof (app as any).manifest === 'string'
+              ? JSON.parse((app as any).manifest)
+              : ((app as any).manifest ?? {})
+        } catch {
+          manifest = {}
+        }
+        const isOrgLevelOnly = Boolean(
+          manifest.orgLevelOnly || manifest.installMode === 'everyone'
+        )
         return {
           id: app.id,
           name: app.name,
@@ -180,6 +193,9 @@ router.get('/', authenticateToken, async (req: any, res) => {
           module: app.module,
           description: app.description,
           scopeLevel: app.scope_level ?? 'both',
+          orgLevelOnly: isOrgLevelOnly,
+          installMode: manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
+          requiresOrgContext: Boolean(manifest.requiresOrgContext || app.scope_level === 'organization'),
         }
       })
     )
@@ -453,7 +469,7 @@ router.post(
         scope_level: scopeLevel,
       })
 
-      const newApp: App = {
+      const newApp: any = {
         id: appId,
         name,
         url,
@@ -636,7 +652,7 @@ router.post('/register', async (req: any, res) => {
       scope_level: scopeLevel,
     })
 
-    const newApp: App = {
+    const newApp: any = {
       id: appId,
       name,
       url,
