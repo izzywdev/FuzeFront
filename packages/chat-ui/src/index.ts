@@ -20,7 +20,7 @@ export type { MessageListProps } from './components/MessageList';
 export { MessageItem } from './components/MessageItem';
 export type { MessageItemProps } from './components/MessageItem';
 export { Composer } from './components/Composer';
-export type { ComposerProps } from './components/Composer';
+export type { ComposerProps, MentionCandidate } from './components/Composer';
 export { Citations } from './components/Citations';
 export type { CitationsProps } from './components/Citations';
 export { ConfirmationCard } from './components/ConfirmationCard';
