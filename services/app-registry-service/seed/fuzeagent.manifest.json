@@ -2,24 +2,39 @@
   "manifestVersion": "1",
   "slug": "fuzeagent",
   "name": "FuzeAgent",
-  "menuLabel": "FuzeAgent",
-  "description": "AI team orchestration platform",
+  "menuLabel": "Agents",
+  "description": "AI team orchestration platform — create and manage autonomous AI agents (Claude Code SDK + CrewAI) coordinated by digital leadership.",
   "icon": { "kind": "emoji", "value": "🤖" },
   "mode": "portal",
-  "builtin": false,
+  "builtin": true,
   "integration": {
     "type": "module-federation",
-    "remoteEntry": "https://fuzeagent.prod.fuzefront.com/remoteEntry.js",
+    "remoteEntry": "/apps/fuzeagent/remoteEntry.js",
     "scope": "fuzeagentApp",
     "module": "./FuzeAgentApp"
   },
+  "nav": {
+    "section": "build",
+    "order": 10
+  },
   "chrome": {
-    "menu": "substitute",
-    "topbar": "host"
+    "menu": "host",
+    "topbar": "host",
+    "items": [
+      { "id": "overview", "label": "Agents Overview", "icon": "🤖", "order": 1 },
+      { "id": "templates", "label": "Image Registry", "icon": "📦", "order": 2 },
+      { "id": "brains", "label": "Brains & Memory", "icon": "🧠", "order": 3 },
+      { "id": "sandboxes", "label": "Sandboxes & Runtime", "icon": "🛡️", "order": 4 },
+      { "id": "teams", "label": "Teams & Hierarchy", "icon": "👥", "order": 5 },
+      { "id": "escalations", "label": "Escalations & Approvals", "icon": "⚡", "order": 6 }
+    ]
   },
   "routing": {
     "path": "/app/fuzeagent"
   },
   "visibility": "organization",
+  "scopeLevel": "organization",
+  "requiresOrgContext": true,
   "roles": []
 }
+

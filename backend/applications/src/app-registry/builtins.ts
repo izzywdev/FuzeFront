@@ -71,12 +71,26 @@ const BUILTIN_MANIFESTS: unknown[] = [
       scope: 'fuzeagentApp',
       module: './FuzeAgentApp',
     },
-    chrome: { menu: 'host', topbar: 'host' },
+    chrome: {
+      menu: 'host',
+      topbar: 'host',
+      items: [
+        { id: 'overview', label: 'Agents Overview', icon: '🤖', order: 1 },
+        { id: 'templates', label: 'Image Registry', icon: '📦', order: 2 },
+        { id: 'brains', label: 'Brains & Memory', icon: '🧠', order: 3 },
+        { id: 'sandboxes', label: 'Sandboxes & Runtime', icon: '🛡️', order: 4 },
+        { id: 'teams', label: 'Teams & Hierarchy', icon: '👥', order: 5 },
+        { id: 'escalations', label: 'Escalations & Approvals', icon: '⚡', order: 6 },
+      ],
+    },
     nav: { section: 'build', order: 10 },
     routing: { path: '/app/fuzeagent' },
     visibility: 'organization',
+    scopeLevel: 'organization',
+    requiresOrgContext: true,
     roles: [],
   },
+
   {
     manifestVersion: '1',
     slug: 'clock',
