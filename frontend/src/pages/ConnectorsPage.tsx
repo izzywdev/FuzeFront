@@ -9,6 +9,8 @@ type GmailStatus = {
   configuration?: { query?: string; include_spam_trash?: boolean }
 }
 
+type ConnectorEntry = { id: string; name: string; authentication?: 'oauth' | 'api-key'; configured?: boolean; status?: 'connected' | 'disconnected' | 'error'; identity_email?: string }
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/v1/connectors${path}`, {
     ...init,
@@ -27,17 +29,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function ConnectorsPage() {
   const [gmail, setGmail] = useState<GmailStatus | null>(null)
+  const [otherConnectors, setOtherConnectors] = useState<ConnectorEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('in:inbox')
   const [includeSpamTrash, setIncludeSpamTrash] = useState(false)
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
     try {
-      const status = await request<GmailStatus>('/google-gmail')
+      const catalog = await request<{ connectors: ConnectorEntry[] }>('/catalog')
+      const status = await request<GmailStatus>('/google-gmail').catch(() => null)
       setGmail(status)
-      setQuery(status.configuration?.query || 'in:inbox')
-      setIncludeSpamTrash(Boolean(status.configuration?.include_spam_trash))
+      setQuery(status?.configuration?.query || 'in:inbox')
+      setIncludeSpamTrash(Boolean(status?.configuration?.include_spam_trash))
+      const entries = catalog.connectors.filter(item => item.id !== 'google-gmail')
+      setOtherConnectors(await Promise.all(entries.map(async item => {
+        try { return { ...item, ...await request<ConnectorEntry>(`/${item.id}`) } }
+        catch { return { ...item, status: 'error' as const } }
+      })))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -70,6 +80,34 @@ export default function ConnectorsPage() {
     finally { setBusy(false) }
   }
 
+  const connectOther = async (id: string) => {
+    setBusy(true); setError('')
+    try {
+      const result = await request<{ authorization_url: string }>(`/${id}/connect`, { method: 'POST', body: '{}' })
+      window.location.assign(result.authorization_url)
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); setBusy(false) }
+  }
+
+  const connectWithKey = async (id: string) => {
+    const key = apiKeys[id]?.trim()
+    if (!key) { setError('Enter an API key first'); return }
+    setBusy(true); setError('')
+    try {
+      await request(`/${id}/credential`, { method: 'POST', body: JSON.stringify({ api_key: key }) })
+      setApiKeys(current => ({ ...current, [id]: '' }))
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(false) }
+  }
+
+  const disconnectOther = async (id: string) => {
+    if (!window.confirm(`Disconnect ${id} and delete its stored OAuth grant?`)) return
+    setBusy(true); setError('')
+    try { await request(`/${id}`, { method: 'DELETE' }); await load() }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setBusy(false) }
+  }
+
   return (
     <main style={{ padding: 'var(--space-8)', maxWidth: '960px', margin: '0 auto' }}>
       <h1 style={{ marginTop: 0 }}>Connectors</h1>
@@ -98,6 +136,25 @@ export default function ConnectorsPage() {
           </div>
         )}
       </section>
+      <div style={{ display: 'grid', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+        {otherConnectors.map(item => <section key={item.id} style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-6)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0 }}>{item.name}</h2>
+            <div style={{ color: 'var(--text-secondary)' }}>{item.status === 'connected' ? `Connected${item.identity_email ? ` as ${item.identity_email}` : ''}` : !item.configured ? 'Provider setup pending' : item.status === 'error' ? 'Status unavailable' : 'Not connected'}</div>
+          </div>
+          {item.authentication === 'api-key' && item.status !== 'connected' && item.configured &&
+            <label>API key
+              <input type="password" autoComplete="off" value={apiKeys[item.id] || ''}
+                onChange={e => setApiKeys(current => ({ ...current, [item.id]: e.target.value }))}
+                aria-label={`${item.name} API key`} />
+            </label>}
+          {item.status === 'connected'
+            ? <Button variant="secondary" disabled={busy} onClick={() => void disconnectOther(item.id)}>Disconnect</Button>
+            : item.authentication === 'api-key'
+              ? <Button variant="primary" disabled={busy || !item.configured || item.status === 'error' || !apiKeys[item.id]?.trim()} onClick={() => void connectWithKey(item.id)}>Save key</Button>
+              : <Button variant="primary" disabled={busy || !item.configured || item.status === 'error'} onClick={() => void connectOther(item.id)}>Connect</Button>}
+        </section>)}
+      </div>
     </main>
   )
 }

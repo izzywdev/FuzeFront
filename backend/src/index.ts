@@ -10,6 +10,19 @@ import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
 import connectorRoutes from './routes/connectors'
+import { createConnectorPlatformRouter } from './connector-platform'
+import { googleProviders } from './connector-providers/google'
+import { microsoftProviders } from './connector-providers/microsoft'
+import { workspaceProviders } from './connector-providers/workspace'
+import { developerProviders } from './connector-providers/developer'
+import { googleProductivityProviders } from './connector-providers/google-productivity'
+import { googleTasksSlidesProviders } from './connector-providers/google-tasks-slides'
+import { microsoftProductivityProviders } from './connector-providers/microsoft-productivity'
+import { atlassianProviders } from './connector-providers/atlassian'
+import { projectToolProviders } from './connector-providers/project-tools'
+import { aiModelProviders } from './connector-providers/ai-models'
+import { aiBuilderProviders } from './connector-providers/ai-builders'
+import { deployBuilderProviders } from './connector-providers/deploy-builders'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import usersRoutes from './routes/users'
@@ -342,6 +355,12 @@ app.use('/api/v1/billing', billingRoutes)
 // /api/v1/notifications/*; this forwards it in-cluster. The service's
 // /internal/* publish surface is blocked here — see routes/notifications.ts.
 app.use('/api/v1/notifications', notificationProxyRoutes)
+app.use('/api/v1/connectors', createConnectorPlatformRouter([
+  ...googleProviders, ...microsoftProviders, ...workspaceProviders, ...developerProviders,
+  ...googleProductivityProviders, ...googleTasksSlidesProviders, ...microsoftProductivityProviders,
+  ...atlassianProviders, ...projectToolProviders,
+  ...aiModelProviders, ...aiBuilderProviders, ...deployBuilderProviders,
+]))
 app.use('/api/v1/connectors', connectorRoutes)
 
 app.use('/api/v1/app-registry', appRegistryRoutes)
