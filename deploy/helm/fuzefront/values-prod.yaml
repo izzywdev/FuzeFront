@@ -974,7 +974,11 @@ notificationService:
 # bump step only rewrites a tag: found on the line directly following a matched
 # repository: anchor.
 selectionListService:
-  enabled: false
+  # STAGED, DO NOT MERGE until the authz review is go and the blockers in
+  # docs/runbooks/selection-lists-rollout.md are closed. selectionListsMcp is
+  # deliberately NOT enabled here (base default false): the MCP gateway forwards
+  # caller tokens to an API whose authz posture is still under review.
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: 848485db4f8c
