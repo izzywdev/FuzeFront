@@ -6,12 +6,16 @@ import {
   IdentityOrgCreatedPayloadV1,
   IdentityOrgUpdatedPayloadV1,
   IdentityOrgDeletedPayloadV1,
+  IdentityMembershipAddedPayloadV1,
+  IdentityMembershipRemovedPayloadV1,
 } from '@fuzefront/shared/kafka';
 import {
   callProvision,
   callDeprovision,
   callUserSync,
   callUserDelete,
+  callMembershipSync,
+  callMembershipUnsync,
   HttpClient,
   nodeFetchClient,
 } from './provision';
@@ -208,5 +212,57 @@ export async function handleUserDeleted(
 
   console.log(
     `[provisioning-service] Deprovisioned user ${userId}: permitDeleted=${result.permitDeleted} sessionsRevoked=${result.sessionsRevoked}`
+  );
+}
+
+/**
+ * Handles an identity.membership.added event by assigning the member's Permit
+ * role via security /internal/membership-sync. Idempotent downstream (Permit
+ * role assignment is replay-safe), so — like the other handlers — it carries no
+ * per-delivery state. A non-retryable/exhausted failure throws so the consumer's
+ * withDlq wrapper dead-letters the event instead of silently succeeding. The
+ * TypedConsumer already validated the payload against
+ * identityMembershipAddedSchemaV1.
+ */
+export async function handleMembershipAdded(
+  event: FuzeEvent<IdentityMembershipAddedPayloadV1>,
+  deps: HandlerDeps
+): Promise<void> {
+  const { organizationId, userId, role } = event.payload;
+  const http = deps.http ?? nodeFetchClient;
+
+  console.log(
+    `[provisioning-service] Syncing membership user=${userId} org=${organizationId} role=${role} (correlationId=${event.correlationId})`
+  );
+
+  await callMembershipSync(
+    { organizationId, userId, role },
+    deps.securityServiceUrl,
+    deps.internalProvisionSecret,
+    http
+  );
+}
+
+/**
+ * Handles an identity.membership.removed event by revoking the member's Permit
+ * role via security /internal/membership-unsync. Same idempotency / failure
+ * contract as handleMembershipAdded.
+ */
+export async function handleMembershipRemoved(
+  event: FuzeEvent<IdentityMembershipRemovedPayloadV1>,
+  deps: HandlerDeps
+): Promise<void> {
+  const { organizationId, userId, role } = event.payload;
+  const http = deps.http ?? nodeFetchClient;
+
+  console.log(
+    `[provisioning-service] Unsyncing membership user=${userId} org=${organizationId} role=${role} (correlationId=${event.correlationId})`
+  );
+
+  await callMembershipUnsync(
+    { organizationId, userId, role },
+    deps.securityServiceUrl,
+    deps.internalProvisionSecret,
+    http
   );
 }
