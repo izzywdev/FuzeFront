@@ -6,16 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireRole = exports.authenticateToken = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const database_1 = require("../config/database");
-// Strips CR/LF before a value reaches a log line — an embedded newline in a
-// request-derived value (the request id, a JWT claim resolved from the
-// client-supplied Authorization header, an upstream error message) could
-// otherwise forge whole additional log entries. Companion to the
-// constant-format-string rule every console.* call below follows (semgrep
-// javascript.lang.security.audit.unsafe-formatstring): the constant format
-// string stops an injected %s/%d from forging log CONTENT, oneLine stops an
-// injected newline from forging log LINES. Same idiom as the sibling
-// backend/src/middleware/auth.ts.
-const oneLine = (v) => String(v).replace(/[\r\n]+/g, ' ');
 /**
  * JWT auth middleware shared by every FuzeFront backend service. Depends only on
  * `db` (the @fuzefront/core knex singleton, configured by the consuming service)
@@ -27,54 +17,20 @@ const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
     if (!token) {
-        console.log('❌ [%s] No token provided', oneLine(requestId));
+        console.log(`❌ [${requestId}] No token provided`);
         return res.status(401).json({ error: 'Access denied. No token provided.' });
     }
     try {
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-        // Revocation is enforced HERE, on the request path, or it does not exist.
-        //
-        // The session JWT is stateless HS256, so signature validity alone says
-        // nothing about whether the session still lives. `logout()` and any
-        // device-revoke delete the `sessions` row — but until this check existed,
-        // nothing on the request path read that table, so a "logged out" token kept
-        // authenticating every route until `exp` (up to 24h). Revocation was
-        // enforced only by GET /session ("me"), i.e. effectively nowhere.
-        //
-        // Run in parallel with the user load: this is a PK lookup, so the added
-        // cost is one concurrent round-trip, not a serial one.
-        const [userRow, session] = await Promise.all([
-            (0, database_1.db)('users')
-                .select('id', 'email', 'first_name', 'last_name', 'default_app_id', 'roles')
-                .where('id', decoded.userId)
-                .first(),
-            decoded.sessionId
-                ? (0, database_1.db)('sessions').select('id', 'expires_at').where('id', decoded.sessionId).first()
-                : Promise.resolve(undefined),
-        ]);
+        const userRow = await (0, database_1.db)('users')
+            .select('id', 'email', 'first_name', 'last_name', 'default_app_id', 'roles')
+            .where('id', decoded.userId)
+            .first();
         if (!userRow) {
-            console.log('❌ [%s] User not found in database: userId=%s', oneLine(requestId), oneLine(decoded.userId));
+            console.log(`❌ [${requestId}] User not found in database:`, {
+                userId: decoded.userId,
+            });
             return res.status(401).json({ error: 'User not found' });
-        }
-        if (decoded.sessionId) {
-            if (!session) {
-                // Signed-out, device-revoked, or reaped. Deny.
-                console.log('❌ [%s] Session revoked: sessionId=%s', oneLine(requestId), oneLine(decoded.sessionId));
-                return res.status(401).json({ error: 'Session revoked' });
-            }
-            if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
-                console.log('❌ [%s] Session expired: sessionId=%s', oneLine(requestId), oneLine(decoded.sessionId));
-                return res.status(401).json({ error: 'Session expired' });
-            }
-        }
-        else {
-            // Every current mint site includes `sessionId`, so absence means a token
-            // issued by an older build. Those age out with the 24h TTL; allowing them
-            // keeps this deploy from signing everyone out mid-session. Not a new
-            // weakness — an attacker cannot strip the claim without the signing key,
-            // and holding that key lets them mint anything anyway.
-            // TODO: once a release has fully rolled (>24h), make this branch a 401.
-            console.warn('⚠️ [%s] Session token has no sessionId — pre-rollout token, revocation cannot be enforced', oneLine(requestId));
         }
         const user = {
             id: userRow.id,
@@ -90,7 +46,9 @@ const authenticateToken = async (req, res, next) => {
         next();
     }
     catch (error) {
-        console.log('❌ [%s] Token verification failed: error=%s', oneLine(requestId), oneLine(error instanceof Error ? error.message : String(error)));
+        console.log(`❌ [${requestId}] Token verification failed:`, {
+            error: error instanceof Error ? error.message : String(error),
+        });
         return res.status(401).json({ error: 'Invalid token.' });
     }
 };
