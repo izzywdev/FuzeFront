@@ -65,3 +65,9 @@ jobs:
 
       - name: Every run block is parseable bash
         run: python3 .github/actions/fuze-code-action/__tests__/test_run_blocks_parse.py
+
+      # A hung `docker run` (cold image pull / wedged daemon) on llm-endpoint's
+      # runner-local path must be cut off and degrade to direct Anthropic, not
+      # hold the caller's step open. See docs/runbooks/fuze-code-review-runner-hang.md.
+      - name: llm-endpoint docker CLI is wall-clock bounded
+        run: python3 .github/actions/fuze-code-action/__tests__/test_llm_endpoint_docker_timeout.py
