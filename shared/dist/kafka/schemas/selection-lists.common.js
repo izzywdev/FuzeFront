@@ -226,6 +226,9 @@ function refineSeedLists(lists, ctx) {
         });
     }
 }
+// `locale?` (not `locale`) on purpose: consumers that compile this source with
+// `strict: false` (backend/jest.config.js maps @fuzefront/shared to src) get
+// zod-inferred types whose properties are all optional.
 function checkTranslations(translations, sourceLocale, path, ctx) {
     const seen = new Set();
     (translations !== null && translations !== void 0 ? translations : []).forEach((t, ti) => {

@@ -252,13 +252,16 @@ export function refineSeedLists(lists: SelectionListSeedListSpecV1[], ctx: z.Ref
   }
 }
 
+// `locale?` (not `locale`) on purpose: consumers that compile this source with
+// `strict: false` (backend/jest.config.js maps @fuzefront/shared to src) get
+// zod-inferred types whose properties are all optional.
 function checkTranslations(
-  translations: { locale: string }[] | undefined,
+  translations: { locale?: string }[] | undefined,
   sourceLocale: string,
   path: (string | number)[],
   ctx: z.RefinementCtx,
 ): void {
-  const seen = new Set<string>();
+  const seen = new Set<string | undefined>();
   (translations ?? []).forEach((t, ti) => {
     if (t.locale === sourceLocale) {
       ctx.addIssue({
