@@ -8,7 +8,9 @@
 //   - Security boundary: org membership from JWT (`req.orgId`). Items belonging
 //     to any other org are silently placed in `missing` — never a 403 or 404
 //     so the endpoint cannot be used as a cross-org existence oracle. No
-//     per-list Permit.io checks — intentional for hot-path performance.
+//     per-list checks — intentional for hot-path performance. The caller needs
+//     the tenant-level `resolve` action on the SelectionListCatalog resource
+//     (review H-3); the org predicate in the query is the isolation boundary.
 //   - Locale fallback order: body.locale → Accept-Language (first supported
 //     tag) → per-item source_locale (via SQL COALESCE) → 'en'.
 //   - Archived items resolve normally (they are still valid references);
@@ -23,7 +25,7 @@ import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
-import { requireAuthzCheck } from '../middleware/authz';
+import { requireCatalogCheck } from '../middleware/authz';
 import { isItemId } from '../middleware/validateInput';
 
 const router = createRouter();
@@ -48,7 +50,7 @@ function parseAcceptLanguage(header: string | undefined): string | null {
   return null;
 }
 
-router.post('/resolve', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
+router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res: Response) => {
   // ── Feature flag gate (release, default OFF) ───────────────────────────────
   const enabled = await isSelectionListsEnabled({
     organizationId: req.orgId,

@@ -24,7 +24,7 @@ import { registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
-import { requireAuthzCheck } from '../middleware/authz';
+import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
@@ -694,7 +694,18 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
 
 // ─── DELETE /:listId/items/:itemId — archive or purge ────────────────────────
 
-router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remove_value'), async (req: Request, res: Response): Promise<void> => {
+// Purge is irreversible and orphans every consumer row that stores the item id,
+// so it is owner-only (openapi §"Archive is the default; purge is explicit"):
+// `?purge=true` additionally needs `delete` on the parent list (list-owner), on
+// top of the route's base `remove_value` (which is all an archive needs).
+// Review M-1.
+const requireDeleteOnPurge = requireAuthzCheckWhen(
+  (req) => req.query.purge === 'true',
+  'SelectionList',
+  'delete',
+);
+
+router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remove_value'), requireDeleteOnPurge, async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
