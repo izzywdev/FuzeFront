@@ -119,6 +119,23 @@ export const reconcilerLastSweepGauge = new client.Gauge({
   registers: [registry],
 });
 
+// Seeded-list owner grants (docs/planning/selection-lists-events.md section 13.0.5): the org owner
+// receives `list-owner` on the platform-seeded lists. `result` is one of granted | failed;
+// `reason` is why a whole org was skipped (no-owner | no-seeded-lists | org-inactive). No org id.
+export const ownerGrantsTotal = new client.Counter({
+  name: 'selection_list_seed_owner_grants_total',
+  help: 'list-owner grants on platform-seeded lists for the org owner, by result (granted | failed)',
+  labelNames: ['result'] as const,
+  registers: [registry],
+});
+
+export const ownerGrantSkippedTotal = new client.Counter({
+  name: 'selection_list_seed_owner_grant_skipped_total',
+  help: 'Organizations for which the seeded-list owner grant was skipped, by reason (no-owner | no-seeded-lists | org-inactive)',
+  labelNames: ['reason'] as const,
+  registers: [registry],
+});
+
 /** Low-cardinality route label: the matched pattern, or "unmatched". */
 export function routeLabel(req: Request): string {
   const matched = req.route && typeof req.route.path === 'string' ? req.route.path : null;

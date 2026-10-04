@@ -7,6 +7,8 @@ import {
   TypedProducer,
   createKafkaClient,
   TOPICS,
+  identityOrgUpdatedSchemaV1,
+  IdentityOrgUpdatedPayloadV1,
   identityOrgDeletedSchemaV1,
   IdentityOrgDeletedPayloadV1,
   identityUserDeletedSchemaV1,
@@ -16,10 +18,12 @@ import {
 import { handleOrgDeleted } from './org-deleted.handler';
 import { handleUserDeleted } from './user-deleted.handler';
 import { handleOrgCreated } from './org-created.handler';
+import { handleOrgUpdated } from './org-updated.handler';
 import { handleSeedRequested } from './seed-requested.handler';
 
 interface LifecycleConsumers {
   orgCreated: TypedConsumer;
+  orgUpdated: TypedConsumer;
   seedRequested: TypedConsumer;
   orgDeleted: TypedConsumer;
   userDeleted: TypedConsumer;
@@ -32,6 +36,7 @@ interface LifecycleConsumers {
  *
  * Consumer groups (`${KAFKA_GROUP_ID}-<name>`):
  *   selection-list-service-group-org-created     identity.org.created           (projection + platform seeding)
+ *   selection-list-service-group-org-updated     identity.org.updated           (projection refresh: type / is_active / name; flag-independent)
  *   selection-list-service-group-seed-requested  selection-lists.seed.requested (app seeding, attested)
  *   selection-list-service-group-org-deleted
  *   selection-list-service-group-user-deleted
@@ -75,6 +80,19 @@ export async function startLifecycleConsumers(): Promise<LifecycleConsumers> {
     dlqProducer,
   );
 
+  // Projection refresh only (type / is_active / name): never flagged, never seeds. A payload that fails
+  // identityOrgUpdatedSchemaV1 is dead-lettered by TypedConsumer to `identity.org.updated.dlq`.
+  const orgUpdatedConsumer = new TypedConsumer(kafka, `${baseGroupId}-org-updated`);
+  await orgUpdatedConsumer.connect();
+  await orgUpdatedConsumer.subscribe(TOPICS.IDENTITY_ORG_UPDATED);
+  await orgUpdatedConsumer.run<IdentityOrgUpdatedPayloadV1>(
+    async (event: FuzeEvent<IdentityOrgUpdatedPayloadV1>) => {
+      await handleOrgUpdated(event);
+    },
+    identityOrgUpdatedSchemaV1,
+    dlqProducer,
+  );
+
   const seedRequestedConsumer = new TypedConsumer(kafka, `${baseGroupId}-seed-requested`);
   await seedRequestedConsumer.connect();
   await seedRequestedConsumer.subscribe(TOPICS.SELECTION_LISTS_SEED_REQUESTED);
@@ -115,6 +133,7 @@ export async function startLifecycleConsumers(): Promise<LifecycleConsumers> {
   const disconnect = async (): Promise<void> => {
     await Promise.all([
       orgCreatedConsumer.disconnect(),
+      orgUpdatedConsumer.disconnect(),
       seedRequestedConsumer.disconnect(),
       orgDeletedConsumer.disconnect(),
       userDeletedConsumer.disconnect(),
@@ -124,6 +143,7 @@ export async function startLifecycleConsumers(): Promise<LifecycleConsumers> {
 
   return {
     orgCreated: orgCreatedConsumer,
+    orgUpdated: orgUpdatedConsumer,
     seedRequested: seedRequestedConsumer,
     orgDeleted: orgDeletedConsumer,
     userDeleted: userDeletedConsumer,

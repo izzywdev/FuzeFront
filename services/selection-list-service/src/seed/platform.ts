@@ -12,7 +12,9 @@
 //     ORG_INACTIVE and records seed.failed (S6);
 //   - an org the projection does not know yet falls through to the algorithm, which
 //     answers ORG_UNKNOWN (retryable).
-// Packs are applied in (packKey) order, one transaction each (one pack = one
+// After the packs, the org owner is granted list-owner on the seeded lists (ownerGrants.ts, after the
+// seed transactions committed; throws on a transient grant failure). Packs are applied in (packKey)
+// order, one transaction each (one pack = one
 // request = one outcome event).
 
 import type { Knex } from 'knex';
@@ -20,6 +22,7 @@ import { PLATFORM_SEED_SOURCE, SELECTION_LIST_SERVICE_PRINCIPAL } from '@fuzefro
 import { logger } from '../lib/logger';
 import { applySeedRequest } from './apply';
 import { readOrgProjection } from './org';
+import { ensureSeededListOwners, type EnsureSeededListOwnersOptions } from './ownerGrants';
 import { currentPlatformPacks, DEFAULT_PLATFORM_PACK_DIR, loadPlatformPack } from './packs';
 import type { SeedResult, SeedTrigger } from './types';
 
@@ -31,6 +34,8 @@ export interface ApplyPlatformDefaultsOptions {
   internalErrors?: 'record' | 'throw';
   /** Pack directory override (tests); default is the shipped `seed-packs/platform`. */
   packDir?: string;
+  /** Seam for tests: the list-owner grant call (default: the production `grantListOwner`, machine identity, fail closed). */
+  grantListOwner?: EnsureSeededListOwnersOptions['grantListOwner'];
 }
 
 export interface PlatformSeedOutcome {
@@ -73,6 +78,16 @@ export async function applyPlatformDefaults(
     });
     outcomes.push({ packKey: pack.packKey, version: pack.version, result });
   }
+
+  // The seed transactions have all committed (or were already applied / refused). Now - and only now,
+  // because it is an external call - make the org owner a list-owner of the seeded lists (decision Q3).
+  // Runs on EVERY call, including when every pack was already-applied, so a grant that failed on an
+  // earlier delivery is healed by the retry. A failure throws: the consumer is retried / the reconciler
+  // backs the org off; the seed itself is idempotent. A missing owner is a logged skip, never an error.
+  await ensureSeededListOwners(db, organizationId, {
+    grantListOwner: options.grantListOwner,
+    correlationId: options.correlationId,
+  });
   return outcomes;
 }
 
