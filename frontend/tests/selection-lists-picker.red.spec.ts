@@ -49,6 +49,13 @@
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
+import { stubExternalFonts, isShellHarnessNoise } from './support/selection-lists-e2e-session'
+
+// The vite build registers a Workbox service worker (vite-plugin-pwa 1.x still emits
+// sw.js with CI=true) that takes control mid-test via clientsClaim. Requests the SW
+// handles bypass page.route() mocks, so after claim every mocked /api/v1/* fetch hits
+// the preview server's SPA fallback and returns text/html. Block SWs so mocks hold.
+test.use({ serviceWorkers: 'block' })
 
 const PICKER_HARNESS_ROUTE = '/embed/selection-list-picker'
 
@@ -78,12 +85,24 @@ const PURGED_ITEM_ID = 'sli_purged_01h455vb4pex5vsknk084sn02q'
 async function gotoPickerHarness(page: Page, params: Record<string, string> = {}) {
   const qs = new URLSearchParams(params).toString()
   const route = qs ? `${PICKER_HARNESS_ROUTE}?${qs}` : PICKER_HARNESS_ROUTE
+  await stubExternalFonts(page)
   await page.goto(route, { waitUntil: 'domcontentloaded' })
+}
+
+/**
+ * Open the combobox menu if it is not already open. A multi-select menu stays open
+ * after a pick (the user is composing a set), so a blind second click on
+ * [data-combo-control] would TOGGLE IT CLOSED and strand the next option click.
+ */
+async function openComboMenu(page: Page) {
+  const menu = page.locator('[data-combo-menu]')
+  if (!(await menu.isVisible())) await page.locator('[data-combo-control]').click()
+  await expect(menu, '[data-combo-menu] must be open').toBeVisible()
 }
 
 /** Inject items for a given list key. */
 async function injectListItems(page: Page, key: string, items: typeof MOCK_SALES_REGION_ITEMS) {
-  await page.route(`**/v1/selection-lists*`, async route => {
+  await page.route(`**/v1/selection-lists**`, async route => {
     const url = route.request().url()
     if (url.includes('/items') && url.includes(key)) {
       await route.fulfill({
@@ -225,7 +244,7 @@ test.describe('Selection Lists picker — frame 12-picker-single', () => {
   })
 
   test('[data-state="loading"] renders inside the control at final height (no host-form reflow)', async ({ page }) => {
-    await page.route('**/v1/selection-lists*', async route => {
+    await page.route('**/v1/selection-lists**', async route => {
       await new Promise(r => setTimeout(r, 300))
       await route.fulfill({
         status: 200,
@@ -241,7 +260,7 @@ test.describe('Selection Lists picker — frame 12-picker-single', () => {
   })
 
   test('[data-state="empty"] disables the combobox with "No options available" when no active items exist', async ({ page }) => {
-    await page.route('**/v1/selection-lists*', async route => {
+    await page.route('**/v1/selection-lists**', async route => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -265,7 +284,7 @@ test.describe('Selection Lists picker — frame 12-picker-single', () => {
   })
 
   test('[data-state="error"] shows an in-place retry and keeps any existing selection on load failure', async ({ page }) => {
-    await page.route('**/v1/selection-lists*', async route => {
+    await page.route('**/v1/selection-lists**', async route => {
       await route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     })
     await gotoPickerHarness(page, { list: 'sales-regions', mode: 'single' })
@@ -278,7 +297,7 @@ test.describe('Selection Lists picker — frame 12-picker-single', () => {
   })
 
   test('[data-state="not-found"] and [data-error="NOT_FOUND"] render when the list key is unknown', async ({ page }) => {
-    await page.route('**/v1/selection-lists*', async route => {
+    await page.route('**/v1/selection-lists**', async route => {
       await route.fulfill({
         status: 404,
         contentType: 'application/json',
@@ -299,7 +318,7 @@ test.describe('Selection Lists picker — frame 12-picker-single', () => {
   test('load failure does not throw an uncaught error into the host render tree', async ({ page }) => {
     const pageErrors: string[] = []
     page.on('pageerror', err => pageErrors.push(String(err)))
-    await page.route('**/v1/selection-lists*', async route => {
+    await page.route('**/v1/selection-lists**', async route => {
       await route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     })
     await gotoPickerHarness(page, { list: 'sales-regions', mode: 'single' })
@@ -387,11 +406,11 @@ test.describe('Selection Lists picker — frame 13-picker-multi', () => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await gotoPickerHarness(page, { list: 'countries', mode: 'multi' })
     // Select items in REVERSE sort_order (click 3rd, then 1st, then 2nd).
-    await page.locator('[data-combo-control]').click()
+    await openComboMenu(page)
     await page.locator("[data-item='sli_06h455vb4pex5vsknk084sn02q']").click() // sort_order=3
-    await page.locator('[data-combo-control]').click()
+    await openComboMenu(page)
     await page.locator(`[data-item='${ITEM_ID_MULTI}']`).click() // sort_order=1
-    await page.locator('[data-combo-control]').click()
+    await openComboMenu(page)
     await page.locator("[data-item='sli_05h455vb4pex5vsknk084sn02q']").click() // sort_order=2
     // The [data-persisted] value must list ids in sort_order, regardless of click order.
     const persisted = page.locator('[data-persisted]')
@@ -413,10 +432,10 @@ test.describe('Selection Lists picker — frame 13-picker-multi', () => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await gotoPickerHarness(page, { list: 'countries', mode: 'multi' })
     // Select an item first.
-    await page.locator('[data-combo-control]').click()
+    await openComboMenu(page)
     await page.locator(`[data-item='${ITEM_ID_MULTI}']`).click()
     // Now search for something that returns no matches.
-    await page.locator('[data-combo-control]').click()
+    await openComboMenu(page)
     await page.locator('[data-combo-search]').fill('xyzzy_no_match')
     await expect(
       page.locator("[data-state='no-matches']"),
@@ -635,7 +654,7 @@ test.describe('Selection Lists picker — runtime console-clean gate (ui-runtime
     const failedRequests: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => consoleErrors.push(`pageerror: ${String(err)}`))
     page.on('requestfailed', (req: Request) => {
@@ -663,7 +682,7 @@ test.describe('Selection Lists picker — runtime console-clean gate (ui-runtime
     const failedRequests: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => consoleErrors.push(`pageerror: ${String(err)}`))
     page.on('requestfailed', (req: Request) => {
@@ -687,7 +706,7 @@ test.describe('Selection Lists picker — runtime console-clean gate (ui-runtime
     const pageErrors: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => {
       pageErrors.push(String(err))
