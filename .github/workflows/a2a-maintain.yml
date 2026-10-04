@@ -114,10 +114,31 @@ jobs:
       needs-llm: ${{ steps.drift.outputs.needs-llm }}
       credential_available: ${{ steps.set_cred.outputs.credential_available }}
     steps:
+      # The job can dequeue after the PR merged and its branch was deleted, which makes
+      # checkout fail ("A branch or tag with the name '...' could not be found"). Ask the API
+      # first; every later step is gated on the answer (a real conditional, not a swallowed
+      # failure -- an API error here fails the step loudly).
+      - name: Check PR is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$STATE" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::a2a-maintain skipped because PR #${PR_NUMBER} is no longer open (state=${STATE})"
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: steps.pr.outputs.open == 'true'
 
       - name: Is a2a-maintain declared?
         id: check
+        if: steps.pr.outputs.open == 'true'
         shell: bash
         run: |
           set -uo pipefail
@@ -220,8 +241,16 @@ jobs:
         env:
           NEEDS_LLM: ${{ needs.preflight.outputs.needs-llm }}
           CRED_AVAILABLE: ${{ needs.preflight.outputs.credential_available }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [ "${NEEDS_LLM:-true}" = "false" ]; then
+          # Re-check at job start: the PR may have merged (head branch deleted) since
+          # preflight ran, which would fail the writable head checkout below.
+          PR_STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$PR_STATE" != "open" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::a2a-maintain skipped because PR #${PR_NUMBER} is no longer open (state=${PR_STATE})."
+          elif [ "${NEEDS_LLM:-true}" = "false" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No A2A-relevant files changed — surface is in sync by construction. Skipping LLM maintainer."
           elif [ "${CRED_AVAILABLE}" = "false" ]; then
