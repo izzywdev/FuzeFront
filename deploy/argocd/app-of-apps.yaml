@@ -13,9 +13,32 @@
 # RULE, not the file's location: `fuzeinfra` is never a destination for a
 # consumer project. That rule travels with deploy/argocd/project.yaml and is
 # restated at length in its header. Issue #502 was a stale, WIDER copy being
-# re-applied; the in-repo copy is strictly narrower than FuzeInfra's
-# (clusterResourceWhitelist is Namespace-only instead of `*/*`), so applying it
-# cannot re-widen anything.
+# re-applied.
+#
+# CORRECTED 2026-10-04 — this previously read "the in-repo copy is strictly
+# narrower than FuzeInfra's (clusterResourceWhitelist is Namespace-only instead
+# of `*/*`), so applying it cannot re-widen anything." That is NO LONGER TRUE and
+# must not be relied on. PR #1198 widened THIS copy to permit ClusterRole and
+# ClusterRoleBinding, while FuzeInfra's copy was narrowed to Namespace-only by
+# FuzeInfra#629. On cluster-scoped resources the in-repo copy is now the WIDER of
+# the two, and the direction of the last-write-wins race therefore matters:
+#
+#   * This copy (ClusterRole-permitting) is applied by FuzeInfra's
+#     `argocd-register.yml` over `deploy/argocd/`, per owner ruling FuzeInfra#639.
+#   * FuzeInfra's copy (Namespace-only) is applied by its `deploy-prod.yml` on any
+#     push touching `argocd/projects/**` — last such push 2026-08-23.
+#   * Nothing reconciles the AppProject continuously: the Application below
+#     watches `deploy/argocd/applications`, NOT `deploy/argocd`, so project.yaml
+#     is not self-healed by Argo. Only whichever imperative `kubectl apply` ran
+#     most recently is in effect.
+#
+# So the next FuzeInfra push touching `argocd/projects/**` re-applies the
+# Namespace-only copy and RE-FREEZES this entire Application — the chart renders
+# a ClusterRole, Argo invalidates the sync task, and Argo aborts the whole sync
+# operation rather than skipping one resource. That is the 2026-09-28 incident
+# verbatim. Deleting FuzeInfra's duplicate (FuzeInfra#639 step 4) is the real fix
+# and cannot be done from this repo; it is delegated. Analysis:
+# docs/planning/workload-identity-layering.md.
 #
 # `project: fuzefront` below — and on every Application under
 # deploy/argocd/applications/ — is what makes that AppProject enforce anything

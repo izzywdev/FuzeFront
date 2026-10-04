@@ -6,7 +6,7 @@
  *  - TranslationWorkbenchFlow     (frames 07-09)
  *  - SelectionListAccessFlow      (frames 10-11)
  *  - SelectionListPickerHarness   (frames 12-14, harness route)
- *  - SelectionListPicker          (embeddable picker component)
+ *  - SelectionListPicker          (embeddable picker; `onChange` emits item ids)
  *  - Domain types
  *  - API helpers
  */
@@ -16,6 +16,11 @@ export { SelectionListManagementFlow } from './SelectionListManagementFlow'
 export { TranslationWorkbenchFlow } from './TranslationWorkbenchFlow'
 export { SelectionListAccessFlow } from './SelectionListAccessFlow'
 export { SelectionListPickerHarness, SelectionListPicker } from './SelectionListPickerHarness'
+export type {
+  SelectionListPickerProps,
+  SingleSelectionListPickerProps,
+  MultiSelectionListPickerProps,
+} from './SelectionListPickerHarness'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export type {
@@ -30,8 +35,10 @@ export type {
   AccessGrant,
   ResolvedItem,
   ResolveResponse,
+  ResolveWireResponse,
   PagedResponse,
   ApiError,
+  AutofillResult,
 } from './types'
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -55,6 +62,7 @@ export {
   updateAccessGrant,
   revokeAccessGrant,
   resolveItems,
+  RESOLVE_MAX_IDS,
   searchUsers,
   probeReorderPermission,
   unwrapItems,

@@ -38,8 +38,15 @@
  * "may this subject act", never change what's true) so any authenticated
  * caller may query it; grant/revoke change what's true platform-wide, so they
  * are restricted to a narrow, explicitly-provisioned set of operator service
- * accounts (see docs/runbooks/s2s-client-credentials.md). Human callers are
- * unaffected by this gate (unchanged pre-existing behavior).
+ * accounts (see docs/runbooks/s2s-client-credentials.md).
+ *
+ * ## Human callers — tenant-admin authorization (P0 fix)
+ *
+ * Human (session) callers are NOT trusted merely for being authenticated.
+ * Grant/revoke, member/role mutation and cross-subject reads are authorized
+ * against the TARGET tenant (and, for instance-scoped grants, the resource)
+ * through `AuthorizationProvider.check()`; see `services/authz-gate.ts` for the
+ * full rule set. Fail-closed: provider error ⇒ 502, never allow.
  */
 import express, { Request, Response } from 'express'
 import { getIdentityProvider } from '../providers/factory'
@@ -50,11 +57,19 @@ import { introspectMachineToken } from '../services/machine-identity'
 import jwt from 'jsonwebtoken'
 import { findMembershipByUserAndOrg } from '../repositories/organizationRepository'
 import type { EntityId } from '@izzywdev/fuzefront-identity'
+import {
+  AUTHZ_ADMIN_SCOPE,
+  authorizeGrantMutation,
+  authorizeSubjectRead,
+  authorizeTenantAction,
+  authorizeTenantAdmin,
+  type GateResult,
+} from '../services/authz-gate'
 
 const router = express.Router()
 
 /** Scope a machine caller must hold to create/revoke grants (see file header). */
-export const AUTHZ_ADMIN_SCOPE = 'authz:admin'
+export { AUTHZ_ADMIN_SCOPE }
 export const SELECTION_LIST_OWNER_GRANT_SCOPE = 'selection-list:owner-grant'
 
 const selectionListRoles = new Set([
@@ -81,23 +96,15 @@ async function authorizeSelectionListGrant(
     return !revoke && c.id === 'service:selection-list-service' && body.role === 'list-owner' &&
       (c.scopes ?? []).includes(SELECTION_LIST_OWNER_GRANT_SCOPE)
   }
-  return getAuthorizationProvider().check({
-    subject: c.id,
-    tenant: body.tenant,
+  const gate = await authorizeGrantMutation(getAuthorizationProvider(), c, {
+    tenant: body.tenant, role: body.role,
     resource: { type: 'SelectionList', key: body.resource.key },
-    action: 'manage_access',
   })
+  if (gate.status === 502) throw new Error('Authorization provider unavailable')
+  return gate.allowed
 }
 
-async function authorizeTenantGrant(c: ResolvedCaller, tenant: string): Promise<boolean> {
-  if (c.kind === 'machine') return (c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE)
-  return getAuthorizationProvider().check({
-    subject: c.id,
-    tenant,
-    resource: { type: 'Organization', key: tenant },
-    action: 'manage',
-  })
-}
+
 
 function bearer(req: Request): string | null {
   const h = req.headers['authorization']
@@ -181,9 +188,11 @@ function unauthorized(res: Response): void {
 }
 
 /**
- * Grant/revoke gate: a machine caller must hold `AUTHZ_ADMIN_SCOPE`. Human
- * callers are unaffected (pre-existing behavior, unchanged). Returns true iff
- * the request may proceed; sends the 403 itself otherwise.
+ * Machine-caller gate for grant/revoke: a machine caller must hold
+ * `AUTHZ_ADMIN_SCOPE`. Human callers pass THIS gate only because they are
+ * authorized per-target by `authorizeGrantMutation` / `authorizeTenantAdmin`,
+ * which every human-reachable route below MUST also call. Returns true iff the
+ * request may proceed; sends the 403 itself otherwise.
  */
 function requireAuthzAdmin(c: ResolvedCaller, res: Response): boolean {
   if (c.kind === 'machine' && !(c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE)) {
@@ -194,6 +203,41 @@ function requireAuthzAdmin(c: ResolvedCaller, res: Response): boolean {
     return false
   }
   return true
+}
+
+/** Send a denied/failed gate result. Returns true iff the request may proceed. */
+function enforce(
+  gate: GateResult,
+  res: Response,
+  log: ReturnType<typeof withReqId>,
+  c: ResolvedCaller,
+  what: string,
+  detail: Record<string, unknown>
+): boolean {
+  if (gate.allowed) return true
+  log.warn(
+    { callerId: c.id, callerKind: c.kind, what, status: gate.status, ...detail },
+    'authz: request denied by tenant-admin gate'
+  )
+  res.status(gate.status).json({ error: gate.error, code: gate.code })
+  return false
+}
+
+const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0
+
+/**
+ * Normalize a request resource. `null` = malformed (400). A resource WITHOUT a
+ * key is a tenant-wide assignment to the provider, so it normalizes to
+ * `undefined` — what is authorized is exactly what is executed.
+ */
+function normalizeResource(raw: unknown): { type: string; key: string } | undefined | null {
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null
+  const r = raw as { type?: unknown; key?: unknown }
+  if (!isNonEmptyString(r.type)) return null
+  if (r.key === undefined || r.key === null || r.key === '') return undefined
+  if (typeof r.key !== 'string') return null
+  return { type: r.type, key: r.key }
 }
 
 /** Coerce a request-body query into the neutral AuthzQuery (subject defaults to caller). */
@@ -300,6 +344,11 @@ router.get('/authz/permissions', async (req: Request, res: Response) => {
   const tenant = String(req.query.tenant || '')
   if (!tenant) return res.status(400).json({ error: 'tenant is required', code: 'MALFORMED' })
   const subject = req.query.subject ? String(req.query.subject) : c.id
+  const log = withReqId((req as any).requestId, req)
+  // A caller may read their own effective permissions; another subject's
+  // require administering the tenant.
+  const gate = await authorizeSubjectRead(getAuthorizationProvider(), c, subject, tenant)
+  if (!enforce(gate, res, log, c, 'permissions:read-other', { tenant })) return
   const permissions = await getAuthorizationProvider().getPermissions(subject, tenant)
   res.status(200).json({ permissions })
 })
@@ -307,27 +356,42 @@ router.get('/authz/permissions', async (req: Request, res: Response) => {
 // ── Grants ────────────────────────────────────────────────────────────────
 
 router.post('/authz/grants', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
   const b = req.body || {}
   if (!b.subject || !b.tenant || !b.role) {
     return res.status(400).json({ error: 'subject, tenant and role are required', code: 'MALFORMED' })
   }
-  try {
-    if (b.resource?.type === 'SelectionList' || selectionListRoles.has(b.role)) {
-      if (!(await authorizeSelectionListGrant(c, b, false))) {
-        return res.status(403).json({ error: 'List grant forbidden', code: 'FORBIDDEN' })
-      }
-    } else if (!(await authorizeTenantGrant(c, String(b.tenant)))) {
-      return res.status(403).json({ error: 'Grant forbidden', code: 'FORBIDDEN' })
+  const resource = normalizeResource(b.resource)
+  if (resource === null) {
+    return res.status(400).json({ error: 'resource must be { type, key? }', code: 'MALFORMED' })
+  }
+  const subject = String(b.subject)
+  const tenant = String(b.tenant)
+  const role = String(b.role)
+  const provider = getAuthorizationProvider()
+
+  // Authorize the TARGET tenant/resource for human callers (machine callers
+  // already passed the AUTHZ_ADMIN_SCOPE gate above). What is authorized here
+  // is exactly what is passed to the provider below.
+  const isListGrant = resource?.type === 'SelectionList' || selectionListRoles.has(role)
+  let gate: GateResult
+  if (isListGrant) {
+    try {
+      gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, false), status: 403, code: 'FORBIDDEN', error: 'List grant forbidden' }
+    } catch {
+      gate = { allowed: false, status: 502, code: 'PROVIDER_UNAVAILABLE', error: 'Authorization provider unavailable' }
     }
-    const grant = await getAuthorizationProvider().grant({
-      subject: String(b.subject),
-      tenant: String(b.tenant),
-      role: String(b.role),
-      permission: b.permission,
-      resource: b.resource,
-    })
+  } else {
+    if (!requireAuthzAdmin(c, res)) return
+    gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  }
+  if (!enforce(gate, res, log, c, 'grant', { tenant, role, resourceType: resource?.type })) return
+
+  try {
+    const grant = await provider.grant({ subject, tenant, role, permission: b.permission, resource })
+    log.info({ callerId: c.id, callerKind: c.kind, tenant, role, resourceType: resource?.type }, 'authz: grant created')
     res.status(201).json(grant)
   } catch (err) {
     res.status(502).json({ error: 'grant failed', code: 'PROVIDER_ERROR' })
@@ -335,44 +399,51 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
 })
 
 router.delete('/authz/grants', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (!requireAuthzAdmin(c, res)) return
   const b = req.body || {}
   if (!b.grantId && !(b.subject && b.tenant && b.role)) {
     return res.status(400).json({ error: 'grantId or subject+tenant+role required', code: 'MALFORMED' })
   }
+  const resource = normalizeResource(b.resource)
+  if (resource === null) {
+    return res.status(400).json({ error: 'resource must be { type, key? }', code: 'MALFORMED' })
+  }
+
+  // Resolve the EFFECTIVE (subject, tenant, role) tuple exactly as the
+  // provider would (explicit fields win; a `tenant:subject:role` grantId fills
+  // the gaps), then authorize AND execute that same tuple — a grantId naming
+  // one tenant can never be used to revoke in another.
+  let subject: string | undefined = b.subject ? String(b.subject) : undefined
+  let tenant: string | undefined = b.tenant ? String(b.tenant) : undefined
+  let role: string | undefined = b.role ? String(b.role) : undefined
+  if (b.grantId) {
+    const [gTenant, gSubject, gRole] = String(b.grantId).split(':')
+    subject = subject ?? gSubject
+    tenant = tenant ?? gTenant
+    role = role ?? gRole
+  }
+  if (!subject || !tenant || !role) {
+    return res.status(400).json({ error: 'grantId or subject+tenant+role required', code: 'MALFORMED' })
+  }
+  const provider = getAuthorizationProvider()
+  let gate: GateResult
+  if (resource?.type === 'SelectionList' || selectionListRoles.has(role)) {
+    try {
+      gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, true), status: 403, code: 'FORBIDDEN', error: 'List revoke forbidden' }
+    } catch {
+      gate = { allowed: false, status: 502, code: 'PROVIDER_UNAVAILABLE', error: 'Authorization provider unavailable' }
+    }
+  } else {
+    gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  }
+  if (!enforce(gate, res, log, c, 'revoke', { tenant, role, resourceType: resource?.type })) return
+
   try {
-    // The Permit adapter emits tenant:subject:role IDs. Resolve that same
-    // tuple here before the policy check; reject opaque IDs that cannot be
-    // authorized. Explicit tuple fields must agree with the ID.
-    if (b.grantId && c.kind === 'human') {
-      const first = b.grantId.indexOf(':')
-      const last = b.grantId.lastIndexOf(':')
-      if (first <= 0 || last <= first + 1 || last === b.grantId.length - 1) {
-        return res.status(403).json({ error: 'Revoke requires a scoped tenant', code: 'FORBIDDEN' })
-      }
-      const parsed = {
-        tenant: b.grantId.slice(0, first),
-        subject: b.grantId.slice(first + 1, last),
-        role: b.grantId.slice(last + 1),
-      }
-      if ((b.tenant && b.tenant !== parsed.tenant) ||
-          (b.subject && b.subject !== parsed.subject) ||
-          (b.role && b.role !== parsed.role)) {
-        return res.status(403).json({ error: 'Grant ID does not match tuple', code: 'FORBIDDEN' })
-      }
-      b.tenant = parsed.tenant
-      b.subject = parsed.subject
-      b.role = parsed.role
-    }
-    if (b.resource?.type === 'SelectionList' || selectionListRoles.has(b.role)) {
-      if (!(await authorizeSelectionListGrant(c, b, true))) {
-        return res.status(403).json({ error: 'List revoke forbidden', code: 'FORBIDDEN' })
-      }
-    } else if (!(await authorizeTenantGrant(c, String(b.tenant || '')))) {
-      return res.status(403).json({ error: 'Revoke forbidden', code: 'FORBIDDEN' })
-    }
-    await getAuthorizationProvider().revoke(b)
+    await provider.revoke({ subject, tenant, role, resource })
+    log.info({ callerId: c.id, callerKind: c.kind, tenant, role, resourceType: resource?.type }, 'authz: grant revoked')
     res.status(204).end()
   } catch (err) {
     res.status(400).json({ error: (err as Error).message, code: 'MALFORMED' })
@@ -380,11 +451,16 @@ router.delete('/authz/grants', async (req: Request, res: Response) => {
 })
 
 router.get('/authz/grants', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
   const subject = req.query.subject ? String(req.query.subject) : c.id
   const tenant = String(req.query.tenant || '')
   if (!tenant) return res.status(400).json({ error: 'tenant is required', code: 'MALFORMED' })
+  // A caller may list their OWN grants; listing another subject's grants
+  // (enumeration) requires administering the tenant.
+  const gate = await authorizeSubjectRead(getAuthorizationProvider(), c, subject, tenant)
+  if (!enforce(gate, res, log, c, 'grants:list-other', { tenant })) return
   const page = await getAuthorizationProvider().listGrants({
     subject,
     tenant,
@@ -405,9 +481,11 @@ function isAttributeValue(v: unknown): v is AttributeValue {
 
 /**
  * `PATCH /authz/subjects/{subjectType}/{subjectKey}/attributes` — merge ABAC
- * attributes onto a subject. Gated identically to grant/revoke
- * (`requireAuthzAdmin` for machine callers): this writes entitlement-relevant
- * state, so it is never less protected than a role grant.
+ * attributes onto a subject. MACHINE-ONLY: a machine caller must hold
+ * `AUTHZ_ADMIN_SCOPE`; human (session) callers are always denied. This writes
+ * entitlement-relevant state (plan tier, seat limit) that only the operator
+ * service account that owns it (billing sync) may set — no tenant role, not
+ * even tenant admin, confers it.
  *
  * WRITE, not a decision: unlike `/authz/check`'s fail-closed-returns-`{allow:
  * false}` contract, a provider outage/timeout/rejection here returns an
@@ -419,6 +497,13 @@ router.patch('/authz/subjects/:subjectType/:subjectKey/attributes', async (req: 
   const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (c.kind !== 'machine') {
+    log.warn({ callerId: c.id, callerKind: c.kind }, 'authz: attribute write denied — machine callers only')
+    return res.status(403).json({
+      error: 'subject attributes may only be written by an operator machine identity',
+      code: 'FORBIDDEN',
+    })
+  }
   if (!requireAuthzAdmin(c, res)) return
 
   const subjectType = req.params.subjectType
@@ -473,6 +558,28 @@ router.patch('/authz/subjects/:subjectType/:subjectKey/attributes', async (req: 
 
 // ── Tenants / members / roles ───────────────────────────────────────────────
 
+/**
+ * Per-tenant authorization for the `/tenants/:id/*` routes. Runs BEFORE the
+ * tenant lookup so an unauthorized caller gets 403 whether or not the tenant
+ * exists (no existence oracle). `admin` = administer the tenant (mutations);
+ * otherwise a read-level `{resource, action}` check on the target tenant.
+ */
+async function gateTenant(
+  req: Request,
+  res: Response,
+  c: ResolvedCaller,
+  tenantId: string,
+  need: 'admin' | { resource: string; action: string }
+): Promise<boolean> {
+  const log = withReqId((req as any).requestId, req)
+  const provider = getAuthorizationProvider()
+  const gate =
+    need === 'admin'
+      ? await authorizeTenantAdmin(provider, c, tenantId, { mutating: true })
+      : await authorizeTenantAction(provider, c, tenantId, need.resource, need.action)
+  return enforce(gate, res, log, c, `tenant:${req.method} ${need === 'admin' ? 'admin' : need.action}`, { tenant: tenantId })
+}
+
 router.get('/tenants', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
@@ -501,6 +608,7 @@ router.post('/tenants', async (req: Request, res: Response) => {
 router.get('/tenants/:id', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (!(await gateTenant(req, res, c, req.params.id, { resource: 'Organization', action: 'read' }))) return
   const tenant = await getAuthorizationProvider().getTenant(req.params.id)
   if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   res.status(200).json(tenant)
@@ -509,6 +617,7 @@ router.get('/tenants/:id', async (req: Request, res: Response) => {
 router.get('/tenants/:id/members', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (!(await gateTenant(req, res, c, req.params.id, { resource: 'UserManagement', action: 'view_members' }))) return
   const tenant = await getAuthorizationProvider().getTenant(req.params.id)
   if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   const page = await getAuthorizationProvider().listMembers(req.params.id, {
@@ -521,6 +630,7 @@ router.get('/tenants/:id/members', async (req: Request, res: Response) => {
 router.post('/tenants/:id/members', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (!(await gateTenant(req, res, c, req.params.id, 'admin'))) return
   const tenant = await getAuthorizationProvider().getTenant(req.params.id)
   if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   if (!req.body?.userId && !req.body?.email) {
@@ -541,6 +651,7 @@ router.post('/tenants/:id/members', async (req: Request, res: Response) => {
 router.delete('/tenants/:id/members/:userId', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (!(await gateTenant(req, res, c, req.params.id, 'admin'))) return
   const tenant = await getAuthorizationProvider().getTenant(req.params.id)
   if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   await getAuthorizationProvider().removeMember(req.params.id, req.params.userId)
@@ -550,6 +661,7 @@ router.delete('/tenants/:id/members/:userId', async (req: Request, res: Response
 router.get('/tenants/:id/roles', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (!(await gateTenant(req, res, c, req.params.id, { resource: 'Organization', action: 'read' }))) return
   const tenant = await getAuthorizationProvider().getTenant(req.params.id)
   if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   const roles = await getAuthorizationProvider().listRoles(req.params.id)
@@ -559,6 +671,7 @@ router.get('/tenants/:id/roles', async (req: Request, res: Response) => {
 router.put('/tenants/:id/members/:userId/roles', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  if (!(await gateTenant(req, res, c, req.params.id, 'admin'))) return
   const tenant = await getAuthorizationProvider().getTenant(req.params.id)
   if (!tenant) return res.status(404).json({ error: 'Tenant not found', code: 'NOT_FOUND' })
   const roles = Array.isArray(req.body?.roles) ? req.body.roles.map(String) : null

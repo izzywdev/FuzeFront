@@ -31,7 +31,10 @@ jest.mock('../src/db', () => ({
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
 
+// Only mintId is stubbed (deterministic ids); the registry (ENTITY_PREFIXES, used
+// by the edge id validation in src/middleware/validateInput.ts) stays REAL.
 jest.mock('@izzywdev/fuzefront-identity', () => ({
+  ...jest.requireActual('@izzywdev/fuzefront-identity'),
   mintId: (type: string) =>
     type === 'selectionListItem'
       ? 'front_sli_01testitemid0000000000000'
@@ -43,6 +46,19 @@ jest.mock('@izzywdev/fuzefront-identity', () => ({
 jest.mock('../src/middleware/quota', () => ({
   enforceListQuota: (_req: any, _res: any, next: any) => next(),
   enforceItemQuota: (_req: any, _res: any, next: any) => next(),
+  sendQuotaExceeded: jest.requireActual('../src/middleware/quota').sendQuotaExceeded,
+}));
+
+// ─── Quota service mock — the locked, in-transaction re-check ─────────────────
+// The create handler takes an advisory lock then re-checks the ceiling INSIDE the
+// transaction (exact enforcement). Real counting is covered by quota.service.test.ts.
+
+const mockLockQuotaScope = jest.fn().mockResolvedValue(undefined);
+const mockCheckItemQuota = jest.fn().mockResolvedValue(undefined);
+jest.mock('../src/services/quota.service', () => ({
+  ...jest.requireActual('../src/services/quota.service'),
+  lockQuotaScope: (...args: any[]) => mockLockQuotaScope(...args),
+  checkItemQuota: (...args: any[]) => mockCheckItemQuota(...args),
 }));
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -97,6 +113,8 @@ beforeEach(() => {
   mockTransaction.mockReset();
   // Re-establish the transaction implementation after reset.
   mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
+  mockLockQuotaScope.mockReset().mockResolvedValue(undefined);
+  mockCheckItemQuota.mockReset().mockResolvedValue(undefined);
   setFlagClient({ getBooleanValue: async () => true });
 });
 
@@ -255,10 +273,10 @@ describe('POST /v1/selection-lists/:listId/items', () => {
   it('creates item and returns 201 with correct shape', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ max_order: '200' }] })     // max sort_order
       .mockResolvedValueOnce({ rows: [ITEM_ROW] });                // fetch created
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ max_order: '200' }] }) // max sort_order (in-tx)
       .mockResolvedValueOnce({ rows: [] }) // INSERT item
       .mockResolvedValueOnce({ rows: [] }); // INSERT translation
 
@@ -336,10 +354,10 @@ describe('POST /v1/selection-lists/:listId/items', () => {
   it('appends at max+100 when sort_order not supplied', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ max_order: '400' }] })     // max sort_order
       .mockResolvedValueOnce({ rows: [{ ...ITEM_ROW, sort_order: 500 }] }); // fetch
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ max_order: '400' }] }) // max sort_order (in-tx)
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
@@ -350,8 +368,49 @@ describe('POST /v1/selection-lists/:listId/items', () => {
 
     expect(res.status).toBe(201);
     // Verify the insert used sort_order = 500 (max 400 + 100)
-    const insertParams = mockTrxRaw.mock.calls[0][1] as unknown[];
+    const insertParams = mockTrxRaw.mock.calls[1][1] as unknown[];
     expect(insertParams).toContain(500);
+  });
+
+  it('takes the per-list advisory lock and re-checks the ceiling INSIDE the transaction', async () => {
+    mockRaw
+      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] })
+      .mockResolvedValueOnce({ rows: [ITEM_ROW] });
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ max_order: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await request(app)
+      .post(`/v1/selection-lists/${TEST_LIST_ID}/items`)
+      .set(authHeader())
+      .send({ code: 'MX', label: 'Mexico' });
+
+    expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `list_items:${TEST_LIST_ID}`);
+    expect(mockCheckItemQuota).toHaveBeenCalledWith(TEST_LIST_ID, TEST_ORG_ID, mockTrx);
+    expect(mockLockQuotaScope.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCheckItemQuota.mock.invocationCallOrder[0],
+    );
+    // Lock + check precede the INSERT.
+    expect(mockCheckItemQuota.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTrxRaw.mock.invocationCallOrder[1],
+    );
+  });
+
+  it('returns 403 QUOTA_EXCEEDED (not 500) when the in-transaction re-check refuses', async () => {
+    const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+    mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] });
+    mockCheckItemQuota.mockRejectedValueOnce(new QuotaExceededError('list_items', 5, 5, 'items'));
+
+    const res = await request(app)
+      .post(`/v1/selection-lists/${TEST_LIST_ID}/items`)
+      .set(authHeader())
+      .send({ code: 'CU', label: 'Cuba' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_items', limit: 5, current: 5 });
+    // Nothing was inserted.
+    expect(mockTrxRaw).not.toHaveBeenCalled();
   });
 });
 

@@ -124,36 +124,36 @@ export const permitSchema: PermitSchema = {
         read: action('Read'),
       },
     },
-    {
-      key: 'Chat',
-      name: 'Chat',
-      actions: {
-        stream: action('Stream'),
-        manage: action('Manage'),
-      },
-    },
+    // Selection lists (services/selection-list-service/openapi.yaml, "Authorization").
+    // Per-list resource: instances are keyed per list id, and access is granted
+    // as one of the five instance roles below via /authz/grants (resource =
+    // { type: 'SelectionList', key: <listId> }). Direct assignment only — NO
+    // `granted_to` derivation and no tenant role holds any SelectionList:*
+    // action (see the SelectionListCatalog resource for tenant-level actions).
+    // OPEN DESIGN QUESTION: deriving list-owner from Organization admin is
+    // deliberately NOT declared; nothing writes a SelectionList->Organization
+    // relation tuple, so it would be inert, and customer-org admins hold the
+    // tenant `admin` role rather than ReBAC org-admin.
     {
       key: 'SelectionList',
       name: 'Selection List',
       actions: {
-        list: action('List visible lists'),
-        create: action('Create'),
         read: action('Read'),
-        add_value: action('Add value'),
-        update_value: action('Update value'),
-        remove_value: action('Remove value'),
+        add_value: action('Add Value'),
+        update_value: action('Update Value'),
+        remove_value: action('Remove Value'),
         translate: action('Translate'),
         update: action('Update'),
         delete: action('Delete'),
-        manage_access: action('Manage access'),
+        manage_access: action('Manage Access'),
       },
-      // Per-list assignments use SelectionList:<id>. Tenant roles receive
-      // only collection access and creation below; they cannot read a list
-      // merely because they can enumerate the collection.
       roles: {
         'list-owner': {
           name: 'List Owner',
-          permissions: ['read', 'add_value', 'update_value', 'remove_value', 'translate', 'update', 'delete', 'manage_access'],
+          permissions: [
+            'read', 'add_value', 'update_value', 'remove_value',
+            'translate', 'update', 'delete', 'manage_access',
+          ],
         },
         'list-editor': {
           name: 'List Editor',
@@ -171,6 +171,27 @@ export const permitSchema: PermitSchema = {
           name: 'List Viewer',
           permissions: ['read'],
         },
+      },
+    },
+    // Tenant-level selection-list catalog actions (no instance): list/create
+    // lists, read the quota, resolve a list by name. Granted via the tenant
+    // roles below; `developer` is deliberately excluded.
+    {
+      key: 'SelectionListCatalog',
+      name: 'Selection List Catalog',
+      actions: {
+        list: action('List'),
+        create: action('Create'),
+        read_quota: action('Read Quota'),
+        resolve: action('Resolve'),
+      },
+    },
+    {
+      key: 'Chat',
+      name: 'Chat',
+      actions: {
+        stream: action('Stream'),
+        manage: action('Manage'),
       },
     },
     // docs/planning/developers-portal.md §5.3 — developers.fuzefront.com.
@@ -206,10 +227,8 @@ export const permitSchema: PermitSchema = {
         'UserManagement:update_role', 'UserManagement:view_members',
         'Docs:read',
         'Chat:stream', 'Chat:manage',
-        'SelectionList:list', 'SelectionList:create', 'SelectionList:read',
-        'SelectionList:add_value', 'SelectionList:update_value', 'SelectionList:remove_value',
-        'SelectionList:translate', 'SelectionList:update', 'SelectionList:delete',
-        'SelectionList:manage_access',
+        'SelectionListCatalog:list', 'SelectionListCatalog:create',
+        'SelectionListCatalog:read_quota', 'SelectionListCatalog:resolve',
       ],
     },
     {
@@ -221,7 +240,7 @@ export const permitSchema: PermitSchema = {
         'UserManagement:view_members',
         'Docs:read',
         'Chat:stream',
-        'SelectionList:list', 'SelectionList:create',
+        'SelectionListCatalog:list', 'SelectionListCatalog:create', 'SelectionListCatalog:resolve',
       ],
     },
     {
@@ -233,7 +252,7 @@ export const permitSchema: PermitSchema = {
         'UserManagement:view_members',
         'Docs:read',
         'Chat:stream',
-        'SelectionList:list',
+        'SelectionListCatalog:list', 'SelectionListCatalog:resolve',
       ],
     },
     {

@@ -1,15 +1,9 @@
 // access.ts — per-list ReBAC access grant management (S7, FFRNT-190).
 //
-// Endpoints:
+// Endpoints (openapi `access` tag; every one requires `manage_access`):
 //   GET    /:listId/access           List all grants (cursor-paginated)
-//   PUT    /:listId/access/:userId   Grant or update a role for a user
-//   DELETE /:listId/access/:userId   Revoke a user's access
-//
-// Authorization:
-//   - GET  requires 'read'  on SelectionList (list-owner, list-editor, list-contributor,
-//                            list-translator, list-viewer can read the roster)
-//   - PUT  requires 'admin' on SelectionList (list-owner only)
-//   - DELETE requires 'admin' on SelectionList (list-owner only)
+//   PUT    /:listId/access/:userId   Grant or change a user's role (upsert, roles do not stack)
+//   DELETE /:listId/access/:userId   Revoke a user's access (idempotent)
 //
 // The selection_list_access table is a READ-MODEL MIRROR of the authorization
 // backend's state (FuzeFront's Security API, via @fuzefront/auth's
@@ -18,17 +12,38 @@
 //   a) returning the grant roster on GET
 //   b) the last-owner guard (count of non-revoked owners before demotion/revoke)
 //
+// Wire shape: snake_case, exactly `SelectionListAccessGrant` in the openapi
+// (list_id, user_id, role, granted_by, granted_at, updated_at). Errors use the
+// contract's codes: 400 VALIDATION_ERROR, 404 NOT_FOUND, 409 CONFLICT.
+//
+// Who authenticates what. Decisions about the CALLER (and the membership probe
+// on the target user) use the end user's bearer token. Grant/revoke WRITES use
+// the caller's credential and exact instance manage_access authorization.
+// Security repeats the exact-instance policy check on each write; the read
+// mirror is never used to authorize a grant.
+//
+// Write ordering (a thrown Security API call must never leave the mirror
+// claiming a change that did not happen): every handler runs inside ONE
+// transaction that takes a row lock on the list's access rows, performs the
+// Security API write(s) first, and only then writes the mirror. A failure at
+// any point rolls the mirror back; the lock also makes the last-owner guard
+// race-free (two concurrent demotions of a 2-owner list cannot both pass it).
+//
 // Pagination (GET):
 //   - Default limit: 50; max: 200 (clamped server-side).
 //   - Cursor: opaque base64url encoding of the last user_id in the page.
 //   - Deterministic order: user_id ASC (stable under concurrent writes).
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
+import { getLog } from '../lib/logger';
 import { db } from '../db';
-import { requireAuthzCheck, countActiveOwners, getAuthzClient, bearer } from '../middleware/authz';
+import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
 import { authMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -45,6 +60,9 @@ const VALID_ROLES = new Set([
   'list-viewer',
 ]);
 
+/** References carry their type: a user id is `usr_…` (governance/identifier-standard.md §2). */
+const USER_ID_PREFIX = 'usr_';
+
 // ---------------------------------------------------------------------------
 // Cursor helpers (opaque base64url of user_id)
 // ---------------------------------------------------------------------------
@@ -58,15 +76,50 @@ function decodeCursor(cursor: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Row -> wire
+// ---------------------------------------------------------------------------
+
+interface AccessRow {
+  list_id: string;
+  user_id: string;
+  role: string;
+  granted_by: string;
+  granted_at: Date | string;
+  updated_at: Date | string;
+}
+
+function iso(v: Date | string): string {
+  return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
+}
+
+function formatGrant(r: AccessRow) {
+  return {
+    list_id: r.list_id,
+    user_id: r.user_id,
+    role: r.role,
+    granted_by: r.granted_by,
+    granted_at: iso(r.granted_at),
+    updated_at: iso(r.updated_at),
+  };
+}
+
+/** True iff the list exists in the caller's organization (org-scoped, never cross-org). */
+async function listExistsInOrg(listId: string, orgId: string): Promise<boolean> {
+  const row = await db('selection_lists').where({ id: listId, organization_id: orgId }).first('id');
+  return Boolean(row);
+}
+
+// ---------------------------------------------------------------------------
 // GET /:listId/access  — list grants (cursor-paginated)
 // ---------------------------------------------------------------------------
 
 router.get(
   '/:listId/access',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'read'),
+  requireAuthzCheck('SelectionList', 'manage_access'),
   async (req: Request, res: Response): Promise<void> => {
     const { listId } = req.params;
+    const orgId = req.orgId as string;
 
     // --- Pagination params ---
     const rawLimit = parseInt(String(req.query['limit'] ?? DEFAULT_LIMIT), 10);
@@ -75,11 +128,16 @@ router.get(
     const afterUserId = cursorParam ? decodeCursor(cursorParam) : undefined;
 
     try {
+      if (!(await listExistsInOrg(listId, orgId))) {
+        res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
+        return;
+      }
+
       // Fetch one extra row to determine hasMore.
       // Chain order: select → where → whereNull → orderBy → (cursor where) → limit
       // limit() is always last so it can serve as the query execution trigger in tests.
       let query = db('selection_list_access')
-        .select('user_id', 'role', 'granted_by', 'granted_at', 'updated_at', 'org_id')
+        .select('list_id', 'user_id', 'role', 'granted_by', 'granted_at', 'updated_at')
         .where({ list_id: listId })
         .whereNull('revoked_at')
         .orderBy('user_id', 'asc');
@@ -98,44 +156,65 @@ router.get(
           : null;
 
       res.status(200).json({
-        items: items.map((r) => ({
-          userId: r['user_id'],
-          role: r['role'],
-          grantedBy: r['granted_by'],
-          grantedAt: r['granted_at'],
-          updatedAt: r['updated_at'],
-          orgId: r['org_id'],
-        })),
+        items: items.map((r) => formatGrant(r as AccessRow)),
         page: {
           nextCursor,
           hasMore,
         },
       });
     } catch (err) {
-      console.error('[access.GET] DB error', err);
+      getLog(req).error(
+      { err, op: 'access.GET DB error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'access.GET DB error failed',
+    );
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to list access grants.' });
     }
   },
 );
 
 // ---------------------------------------------------------------------------
-// PUT /:listId/access/:userId  — grant or update a role
+// PUT /:listId/access/:userId  — grant or change a role
 // ---------------------------------------------------------------------------
+
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: { code: string; message: string },
+  ) {
+    super(body.message);
+  }
+}
 
 router.put(
   '/:listId/access/:userId',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'admin'),
+  requireAuthzCheck('SelectionList', 'manage_access'),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
-    const orgId = req.orgId!;
-    const actorId = req.userId!;
+    const orgId = req.orgId as string;
+    const actorId = req.userId as string;
 
-    const { role } = req.body as { role?: string };
-
-    if (!role || !VALID_ROLES.has(role)) {
+    // --- Validate inputs (additionalProperties: false; role is the only field) ---
+    if (!userId.startsWith(USER_ID_PREFIX) || userId.length <= USER_ID_PREFIX.length) {
       res.status(400).json({
-        code: 'INVALID_ROLE',
+        code: 'VALIDATION_ERROR',
+        message: `userId must be a '${USER_ID_PREFIX}'-prefixed user id.`,
+      });
+      return;
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const unknownProps = Object.keys(body).filter((k) => k !== 'role');
+    if (unknownProps.length > 0) {
+      res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: `Unknown properties: ${unknownProps.join(', ')}`,
+      });
+      return;
+    }
+    const role = body['role'];
+    if (typeof role !== 'string' || !VALID_ROLES.has(role)) {
+      res.status(400).json({
+        code: 'VALIDATION_ERROR',
         message: `role must be one of: ${[...VALID_ROLES].join(', ')}.`,
       });
       return;
@@ -148,67 +227,119 @@ router.put(
     }
 
     try {
-      // Last-owner guard: if target currently has list-owner and we're changing
-      // them to a non-owner role, ensure there is at least one other owner.
-      if (role !== 'list-owner') {
-        const existing = await db('selection_list_access')
-          .where({ list_id: listId, user_id: userId })
-          .whereNull('revoked_at')
-          .select('role')
-          .first();
-
-        if (existing && existing['role'] === 'list-owner') {
-          const ownerCount = await countActiveOwners(listId);
-          if (ownerCount <= 1) {
-            res.status(409).json({
-              code: 'LAST_OWNER',
-              message: 'Cannot demote the last owner of a list.',
-            });
-            return;
-          }
-        }
+      if (!(await listExistsInOrg(listId, orgId))) {
+        res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
+        return;
       }
 
-      // Assign role via the Security API (source of truth for authz).
-      // resource is REQUIRED here: it is what scopes this grant to this one
-      // list (resource_instance 'SelectionList:${listId}' on the wire) rather
-      // than tenant-wide. This is a WRITE — grant() throws (never resolves)
-      // on a Security API failure, so a 502/timeout is caught below and
-      // surfaced as 500 WITHOUT ever reaching the mirror upsert.
-      await getAuthzClient().grant(
-        {
-          subject: userId,
-          tenant: orgId,
-          role,
-          resource: { type: 'SelectionList', key: listId },
-        },
+      // The target must already belong to the list's organization. Asked of the
+      // Security API (the membership authority — this service holds no
+      // membership state): a member can `read` their own Organization. Fail
+      // CLOSED: a thrown AuthzError -> 500 below, never "assume member".
+      const member = await getAuthzClient().check(
+        { subject: userId, tenant: orgId, resource: { type: 'Organization' }, action: 'read' },
         token,
       );
+      if (!member.allow) {
+        res.status(400).json({
+          code: 'VALIDATION_ERROR',
+          message: 'The user is not a member of this list\'s organization.',
+        });
+        return;
+      }
 
-      // Upsert the mirror row. Only reached if the grant above succeeded.
-      await db('selection_list_access')
-        .insert({
-          list_id: listId,
-          user_id: userId,
-          role,
-          granted_by: actorId,
-          org_id: orgId,
-          granted_at: db.fn.now(),
-          updated_at: db.fn.now(),
-          revoked_at: null,
-        })
-        .onConflict(['list_id', 'user_id'])
-        .merge(['role', 'granted_by', 'org_id', 'updated_at', 'revoked_at']);
+      // Authenticate the exact list manager at the Security API; do not impersonate a broad grant administrator.
+      const callerToken = bearer(req);
+      if (!callerToken) { res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' }); return; }
 
-      res.status(200).json({
-        userId,
-        listId,
-        role,
-        grantedBy: actorId,
-        orgId,
+      const row = await db.transaction(async (trx) => {
+        // Serialise every access mutation on this list (guard + writes).
+        await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
+
+        const existing = await trx('selection_list_access')
+          .where({ list_id: listId, user_id: userId })
+          .whereNull('revoked_at')
+          .first('role');
+
+        // Last-owner guard: demoting the only list-owner is refused.
+        if (existing && existing['role'] === 'list-owner' && role !== 'list-owner') {
+          const owners = await trx('selection_list_access')
+            .where({ list_id: listId, role: 'list-owner' })
+            .whereNull('revoked_at')
+            .count<{ count: string }>('user_id as count')
+            .first();
+          if (parseInt(owners?.count ?? '0', 10) <= 1) {
+            throw new HttpError(409, {
+              code: 'CONFLICT',
+              message: 'Cannot demote the last list-owner of a list.',
+            });
+          }
+        }
+
+        // Roles do not stack: drop the old role in the Security API before
+        // granting the new one. Revoke-first fails safe — a failure between the
+        // two leaves the user with LESS access, never more.
+        if (existing && existing['role'] !== role) {
+          await getAuthzClient().revoke(
+            {
+              subject: userId,
+              tenant: orgId,
+              role: existing['role'],
+              resource: { type: 'SelectionList', key: listId },
+            },
+            callerToken,
+          );
+        }
+
+        // Assign role via the Security API (source of truth for authz).
+        // resource is REQUIRED: it scopes this grant to this one list rather
+        // than tenant-wide. grant() THROWS on a Security API failure, which
+        // rolls this transaction back before the mirror is touched.
+        await getAuthzClient().grant(
+          {
+            subject: userId,
+            tenant: orgId,
+            role,
+            resource: { type: 'SelectionList', key: listId },
+          },
+          callerToken,
+        );
+
+        // Mirror upsert. A previously revoked row is a NEW grant (granted_at
+        // restarts); a live row keeps its original granted_at (the contract:
+        // "when the grant was first created").
+        await trx.raw(
+          `
+          INSERT INTO selection_list_access
+            (list_id, user_id, role, granted_by, org_id, granted_at, updated_at, revoked_at)
+          VALUES (?, ?, ?, ?, ?, now(), now(), NULL)
+          ON CONFLICT (list_id, user_id) DO UPDATE SET
+            role       = EXCLUDED.role,
+            granted_by = EXCLUDED.granted_by,
+            org_id     = EXCLUDED.org_id,
+            granted_at = CASE WHEN selection_list_access.revoked_at IS NOT NULL
+                              THEN now() ELSE selection_list_access.granted_at END,
+            updated_at = now(),
+            revoked_at = NULL
+          `,
+          [listId, userId, role, actorId, orgId],
+        );
+
+        return (await trx('selection_list_access')
+          .where({ list_id: listId, user_id: userId })
+          .first('list_id', 'user_id', 'role', 'granted_by', 'granted_at', 'updated_at')) as AccessRow;
       });
+
+      res.status(200).json(formatGrant(row));
     } catch (err) {
-      console.error('[access.PUT] error', err);
+      if (err instanceof HttpError) {
+        res.status(err.status).json(err.body);
+        return;
+      }
+      getLog(req).error(
+      { err, op: 'access.PUT error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'access.PUT error failed',
+    );
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to grant access.' });
     }
   },
@@ -221,68 +352,78 @@ router.put(
 router.delete(
   '/:listId/access/:userId',
   authMiddleware,
-  requireAuthzCheck('SelectionList', 'admin'),
+  requireAuthzCheck('SelectionList', 'manage_access'),
   async (req: Request, res: Response): Promise<void> => {
     const { listId, userId } = req.params;
-    const orgId = req.orgId!;
-
-    const token = bearer(req);
-    if (!token) {
-      res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Missing bearer token.' });
-      return;
-    }
+    const orgId = req.orgId as string;
 
     try {
-      // Fetch current grant for last-owner guard and idempotency.
-      const existing = await db('selection_list_access')
-        .where({ list_id: listId, user_id: userId })
-        .whereNull('revoked_at')
-        .select('role')
-        .first();
-
-      if (!existing) {
-        // Idempotent: no active grant → 204.
-        res.status(204).send();
+      if (!(await listExistsInOrg(listId, orgId))) {
+        res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }
 
-      // Last-owner guard.
-      if (existing['role'] === 'list-owner') {
-        const ownerCount = await countActiveOwners(listId);
-        if (ownerCount <= 1) {
-          res.status(409).json({
-            code: 'LAST_OWNER',
-            message: 'Cannot remove the last owner of a list.',
-          });
-          return;
+      // Keep the authenticated caller identity for every instance grant mutation.
+      const callerToken = bearer(req);
+      if (!callerToken) { res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' }); return; }
+
+      await db.transaction(async (trx) => {
+        // Serialise every access mutation on this list (guard + writes).
+        await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
+
+        // Fetch current grant for last-owner guard and idempotency.
+        const existing = await trx('selection_list_access')
+          .where({ list_id: listId, user_id: userId })
+          .whereNull('revoked_at')
+          .first('role');
+
+        // Idempotent: no active grant → nothing to do (204).
+        if (!existing) return;
+
+        // Last-owner guard.
+        if (existing['role'] === 'list-owner') {
+          const owners = await trx('selection_list_access')
+            .where({ list_id: listId, role: 'list-owner' })
+            .whereNull('revoked_at')
+            .count<{ count: string }>('user_id as count')
+            .first();
+          if (parseInt(owners?.count ?? '0', 10) <= 1) {
+            throw new HttpError(409, {
+              code: 'CONFLICT',
+              message: 'Cannot remove the last list-owner of a list.',
+            });
+          }
         }
-      }
 
-      // Revoke via the Security API. resource is REQUIRED here for the same
-      // reason as the PUT handler's grant() call: it scopes the revocation
-      // to this list's instance rather than the tenant-wide role. This is a
-      // WRITE — revoke() throws (never resolves) on a Security API failure,
-      // caught below and surfaced as 500 WITHOUT ever reaching the mirror's
-      // soft-delete, so a failed revoke never leaves the mirror claiming
-      // access was removed when it was not.
-      await getAuthzClient().revoke(
-        {
-          subject: userId,
-          tenant: orgId,
-          role: existing['role'],
-          resource: { type: 'SelectionList', key: listId },
-        },
-        token,
-      );
+        // Revoke via the Security API. resource is REQUIRED: it scopes the
+        // revocation to this list's instance. revoke() THROWS on failure,
+        // rolling back before the mirror soft-delete, so a failed revoke never
+        // leaves the mirror claiming access was removed when it was not.
+        await getAuthzClient().revoke(
+          {
+            subject: userId,
+            tenant: orgId,
+            role: existing['role'],
+            resource: { type: 'SelectionList', key: listId },
+          },
+          callerToken,
+        );
 
-      // Soft-delete the mirror row. Only reached if the revoke above succeeded.
-      await db('selection_list_access')
-        .where({ list_id: listId, user_id: userId })
-        .update({ revoked_at: db.fn.now(), updated_at: db.fn.now() });
+        await trx('selection_list_access')
+          .where({ list_id: listId, user_id: userId })
+          .update({ revoked_at: trx.fn.now(), updated_at: trx.fn.now() });
+      });
 
       res.status(204).send();
     } catch (err) {
-      console.error('[access.DELETE] error', err);
+      if (err instanceof HttpError) {
+        res.status(err.status).json(err.body);
+        return;
+      }
+      getLog(req).error(
+      { err, op: 'access.DELETE error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'access.DELETE error failed',
+    );
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to revoke access.' });
     }
   },

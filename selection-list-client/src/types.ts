@@ -23,7 +23,7 @@
  * alias exists to document intent at call sites.
  */
 export type SelectionListId = string
-/** `sli_`-prefixed item id — the value consumers persist in their own rows. */
+/** `front_sli_`-prefixed item id — the value consumers persist in their own rows. */
 export type SelectionListItemId = string
 /** `org_`-prefixed organization id. */
 export type OrganizationId = string
@@ -31,9 +31,9 @@ export type OrganizationId = string
 export type UserId = string
 
 /** Wire prefixes minted by this service. */
-export const SELECTION_LIST_ID_PREFIX = 'sl_'
+export const SELECTION_LIST_ID_PREFIX = 'front_sl_'
 /** Wire prefix for selection-list items. */
-export const SELECTION_LIST_ITEM_ID_PREFIX = 'sli_'
+export const SELECTION_LIST_ITEM_ID_PREFIX = 'front_sli_'
 
 /* -------------------------------------------------------------------------- */
 /* Enums                                                                       */
@@ -113,7 +113,7 @@ export interface PageParams {
 
 /** A selection list, with its text resolved for one locale. */
 export interface SelectionList {
-  /** The `sl_`-prefixed list id. */
+  /** The `front_sl_`-prefixed list id. */
   id: SelectionListId
   /** Owning organization. */
   organization_id: OrganizationId
@@ -183,7 +183,7 @@ export interface ListSelectionListsParams extends PageParams {
 
 /** One item of a selection list, with its text resolved for one locale. */
 export interface SelectionListItem {
-  /** The `sli_`-prefixed item id — persist this, never `code`. */
+  /** The `front_sli_`-prefixed item id — persist this, never `code`. */
   id: SelectionListItemId
   /** The list this item belongs to. */
   list_id: SelectionListId

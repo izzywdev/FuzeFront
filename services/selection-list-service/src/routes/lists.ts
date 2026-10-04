@@ -3,7 +3,12 @@
 // All routes require a valid JWT (authMiddleware upstream).
 // All DB queries are scoped to req.orgId — never cross-org.
 //
-// TODO(S7): add permit.check() before each mutating operation.
+// Authorization (middleware/authz.ts; matrix: docs/planning/selection-lists-permit-actions.md):
+//   - tenant-level routes use the keyless SelectionListCatalog resource:
+//     GET / -> `list`, POST / -> `create`. GET / additionally filters every
+//     returned list through the per-list SelectionList `read` action.
+//   - every :listId route carries requireAuthzCheck('SelectionList', <action>)
+//     keyed on the list id.
 //
 // Pagination: cursor-based (opaque base64url JSON cursor), newest-first.
 //   DEFAULT_PAGE_SIZE = 50, MAX_PAGE_SIZE = 200.
@@ -20,15 +25,19 @@
 //   DELETE /:listId?purge=true — hard deletes the row (translations first)
 //   POST   /:listId/archive   — always archives (soft-delete)
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
+import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { isSelectionListsEnabled } from '../flags';
-import { enforceListQuota } from '../middleware/quota';
-import { requireAuthzCheck, grantListOwner, bearer, getAuthzClient } from '../middleware/authz';
-import { getBooleanFlag, FLAGS } from '../middleware/authz.flags';
+import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
+import { lockQuotaScope, checkListQuota, QuotaExceededError } from '../services/quota.service';
+import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -188,7 +197,7 @@ async function fetchList(
 
 // ─── GET / — list all selection lists ────────────────────────────────────────
 
-router.get('/', requireAuthzCheck('SelectionList', 'list'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response): Promise<void> => {
   // Feature flag gate
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
@@ -199,8 +208,6 @@ router.get('/', requireAuthzCheck('SelectionList', 'list'), async (req: Request,
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'read', resource: 'SelectionList' })
 
   // Parse + clamp pagination params
   const rawLimit = parseInt(String(req.query.limit ?? DEFAULT_PAGE_SIZE), 10);
@@ -219,6 +226,16 @@ router.get('/', requireAuthzCheck('SelectionList', 'list'), async (req: Request,
     return;
   }
 
+  // An unsupported `locale` is a 400, never a silent fallback (openapi: so a
+  // client bug does not masquerade as missing translations).
+  if (req.query.locale !== undefined && !SUPPORTED_LOCALES.has(String(req.query.locale))) {
+    res.status(400).json({
+      code: 'VALIDATION_ERROR',
+      message: `locale '${String(req.query.locale)}' is not supported.`,
+    });
+    return;
+  }
+
   // Decode cursor if supplied
   let cursor: ListCursor | null = null;
   if (rawCursor) {
@@ -233,10 +250,6 @@ router.get('/', requireAuthzCheck('SelectionList', 'list'), async (req: Request,
   // so we join fallback translations in order). For the list endpoint, use
   // a fixed fallback order and let COALESCE sort it out.
   const queryLocale = req.query.locale as string | undefined;
-  if (queryLocale !== undefined && (typeof queryLocale !== 'string' || !SUPPORTED_LOCALES.has(queryLocale))) {
-    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Unsupported locale.' });
-    return;
-  }
   const acceptLang = req.headers['accept-language'] as string | undefined;
 
   // Build the locale chain for the translation JOIN; source_locale varies per row.
@@ -319,32 +332,15 @@ router.get('/', requireAuthzCheck('SelectionList', 'list'), async (req: Request,
 
     const rows = result.rows;
     const hasMore = rows.length > limit;
-    const candidateItems = hasMore ? rows.slice(0, limit) : rows;
-    let items = candidateItems;
-    const authzEnabled = await getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, {
-      userId: req.userId, orgId: req.orgId, appId: req.appId,
-    });
-    if (authzEnabled && candidateItems.length > 0) {
-      const token = bearer(req);
-      if (!token) {
-        res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' });
-        return;
-      }
-      try {
-        const decisions = await getAuthzClient().bulkCheck(candidateItems.map(row => ({
-          subject: req.userId!, tenant: req.orgId!, resource: { type: 'SelectionList', key: row.id }, action: 'read',
-        })), token);
-        if (decisions.length !== candidateItems.length) throw new Error('Misaligned authorization decisions');
-        items = candidateItems.filter((_, index) => decisions[index]?.allow === true);
-      } catch {
-        res.status(403).json({ code: 'FORBIDDEN', message: 'Authorization service unavailable.' });
-        return;
-      }
-    }
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    // Instance-level read filter: a list the caller has no grant on is absent
+    // from the page, never a 403. The cursor still follows the DB order, so a
+    // page may be shorter than `limit` but the walk stays gap- and dupe-free.
+    const items = await filterReadable(req, pageRows);
 
     let nextCursor: string | null = null;
-    if (hasMore && items.length > 0) {
-      const last = items[items.length - 1];
+    if (hasMore && pageRows.length > 0) {
+      const last = pageRows[pageRows.length - 1];
       nextCursor = encodeCursor({
         createdAt: last.created_at instanceof Date
           ? last.created_at.toISOString()
@@ -359,38 +355,44 @@ router.get('/', requireAuthzCheck('SelectionList', 'list'), async (req: Request,
       SELECT COUNT(*) AS total
       FROM selection_lists sl
       WHERE sl.organization_id = ?
-      ${statusFilter === 'all' ? '' : 'AND sl.status = ?'}
+      ${statusFilter !== 'all' ? 'AND sl.status = ?' : ''}
       ${keyFilter ? 'AND sl.key = ?' : ''}
       `,
-      [req.orgId, ...(statusFilter === 'all' ? [] : [statusFilter]), ...(keyFilter ? [keyFilter] : [])],
+      [
+        req.orgId,
+        ...(statusFilter !== 'all' ? [statusFilter] : []),
+        ...(keyFilter ? [keyFilter] : []),
+      ],
     );
-    const total = authzEnabled ? items.length : parseInt(countResult.rows[0]?.total ?? '0', 10);
+    const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
+
+    // `total` counts every list in the org, including ones the caller cannot
+    // read; once instance-level authz is enforced that would leak how many
+    // lists exist, so it is omitted (the field is optional in the contract).
+    const authzEnforced = await isAuthzEnabled(req);
 
     res.status(200).json({
       items: items.map(formatList),
-      page: {
-        nextCursor,
-        hasMore: hasMore && nextCursor !== null,
-        total,
-      },
+      page: authzEnforced ? { nextCursor, hasMore } : { nextCursor, hasMore, total },
     });
   } catch (err) {
-    console.error('[lists] GET / error:', err);
+    getLog(req).error(
+      { err, op: 'lists GET / error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists GET / error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── POST / — create a selection list ────────────────────────────────────────
 
-router.post('/', requireAuthzCheck('SelectionList', 'create'), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag already checked by enforceListQuota middleware
 
   if (!req.orgId) {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'add_value', resource: 'SelectionList' })
 
   const { key, name, description, source_locale } = req.body ?? {};
 
@@ -436,15 +438,16 @@ router.post('/', requireAuthzCheck('SelectionList', 'create'), enforceListQuota,
 
   // Mint the id — never accept one from the client (governance/identifier-standard.md §1)
   const id = mintId('selectionList');
-  const token = bearer(req);
-  if (!token || !req.userId) {
-    res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' });
-    return;
-  }
 
   try {
-    // Insert list row + seed source-locale translation in a transaction
+    // Insert list row + seed source-locale translation + grant the creator
+    // list-owner, all in one transaction.
     await db.transaction(async (trx) => {
+      // Exact quota enforcement: serialise creates for this org, re-check the
+      // ceiling under the lock, then insert (see quota.service.ts header).
+      await lockQuotaScope(trx, `org_lists:${req.orgId}`);
+      await checkListQuota(req.orgId as string, trx);
+
       await trx.raw(
         `
         INSERT INTO selection_lists (id, organization_id, key, source_locale, status, created_by)
@@ -466,18 +469,14 @@ router.post('/', requireAuthzCheck('SelectionList', 'create'), enforceListQuota,
           hashText(name.trim()),
         ],
       );
-    });
 
-    try {
-      await grantListOwner(req.userId, req.orgId, id, req.userId);
-    } catch (grantError) {
-      // A list without its owner grant would be inaccessible and unsafe to keep.
-      await db.transaction(async (trx) => {
-        await trx.raw(`DELETE FROM selection_list_translations WHERE list_id = ?`, [id]);
-        await trx.raw(`DELETE FROM selection_lists WHERE id = ?`, [id]);
-      });
-      throw grantError;
-    }
+      // The creator becomes list-owner: Security API grant FIRST (source of
+      // truth), mirror row second, both inside this transaction — if the grant
+      // throws, the list row rolls back, so no list is ever created that
+      // nobody (but an org admin) can administer.
+      // (Written with this service's machine identity, not the caller's token.)
+      await grantListOwner(req.userId as string, req.orgId as string, id, req.userId as string, trx);
+    });
 
     // Fetch the newly created list (with translation) to return the canonical shape
     const listResult = await db.raw<{ rows: ListRow[] }>(
@@ -511,12 +510,19 @@ router.post('/', requireAuthzCheck('SelectionList', 'create'), enforceListQuota,
 
     res.status(201).json(formatList(row));
   } catch (err: unknown) {
+    if (err instanceof QuotaExceededError) {
+      sendQuotaExceeded(res, err);
+      return;
+    }
     const pg = err as { code?: string };
     if (pg?.code === '23505') {
       res.status(409).json({ code: 'CONFLICT', message: `A list with key '${key}' already exists.` });
       return;
     }
-    console.error('[lists] POST / error:', err);
+    getLog(req).error(
+      { err, op: 'lists POST / error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists POST / error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -534,14 +540,8 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
     return;
   }
 
-  // TODO(S7): permit.check({ user: req.userId, action: 'read', resource: 'SelectionList', resourceInstance: req.params.listId })
-
   const { listId } = req.params;
   const queryLocale = req.query.locale as string | undefined;
-  if (queryLocale !== undefined && (typeof queryLocale !== 'string' || !SUPPORTED_LOCALES.has(queryLocale))) {
-    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Unsupported locale.' });
-    return;
-  }
   const acceptLang = req.headers['accept-language'] as string | undefined;
 
   // We need the source_locale to build the chain — do a quick fetch first
@@ -601,14 +601,29 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
 
     res.status(200).json(formatList(row));
   } catch (err) {
-    console.error('[lists] GET /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists GET /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists GET /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── PATCH /:listId — partial update ─────────────────────────────────────────
 
-router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), async (req: Request, res: Response): Promise<void> => {
+// PATCH {status:"archived"} IS an archive, so it needs the same action as
+// POST /:listId/archive and DELETE /:listId — `delete` (list-owner only) —
+// otherwise a list-editor could archive via PATCH what it cannot archive via
+// the archive endpoint (review L-1). Un-archiving ({status:"active"}) stays on
+// the route's base `update` action. Stacked AFTER the base check, so it can
+// only tighten.
+const requireArchiveAuthzOnStatusChange = requireAuthzCheckWhen(
+  (req) => req.body?.status === 'archived',
+  'SelectionList',
+  'delete',
+);
+
+router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireArchiveAuthzOnStatusChange, async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -618,8 +633,6 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), async (re
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'edit', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId } = req.params;
   const body = req.body ?? {};
@@ -773,7 +786,10 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), async (re
       res.status(409).json({ code: 'CONFLICT', message: 'A list with that key already exists.' });
       return;
     }
-    console.error('[lists] PATCH /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists PATCH /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists PATCH /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -791,8 +807,6 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
     return;
   }
 
-  // TODO(S7): permit.check({ user: req.userId, action: 'delete', resource: 'SelectionList', resourceInstance: req.params.listId })
-
   const { listId } = req.params;
   const purge = req.query.purge === 'true';
 
@@ -807,18 +821,8 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
     }
 
     if (purge) {
-      // Lock the parent row so a concurrent item insert cannot pass the purge guard.
-      const purged = await db.transaction(async (trx) => {
-        await trx.raw(`SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR UPDATE`, [listId, req.orgId]);
-        const active = await trx.raw<{ rows: [{ count: string }] }>(
-          `SELECT COUNT(*) AS count FROM selection_list_items WHERE list_id = ? AND status = 'active'`, [listId],
-        );
-        if (Number(active.rows[0].count) > 0) return false;
-
-        // Audit records are immutable, so detach their nullable FK references.
-        await trx.raw(`UPDATE selection_list_audit SET item_id = NULL WHERE list_id = ?`, [listId]);
-        await trx.raw(`UPDATE selection_list_audit SET list_id = NULL WHERE list_id = ?`, [listId]);
-        await trx.raw(`DELETE FROM selection_list_access WHERE list_id = ?`, [listId]);
+      // Hard delete — translations and items must be removed first
+      await db.transaction(async (trx) => {
         // Delete item translations first (FK constraint)
         await trx.raw(
           `
@@ -833,14 +837,12 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
         await trx.raw(`DELETE FROM selection_list_items WHERE list_id = ?`, [listId]);
         // Delete list translations
         await trx.raw(`DELETE FROM selection_list_translations WHERE list_id = ?`, [listId]);
+        // Delete the access-grant mirror rows (FK ON DELETE RESTRICT) — purge
+        // cascades to every access grant (openapi DELETE /{listId}).
+        await trx.raw(`DELETE FROM selection_list_access WHERE list_id = ?`, [listId]);
         // Delete the list
         await trx.raw(`DELETE FROM selection_lists WHERE id = ?`, [listId]);
-        return true;
       });
-      if (!purged) {
-        res.status(409).json({ code: 'CONFLICT', message: 'Archive all items before purging the list.' });
-        return;
-      }
       res.status(204).send();
     } else {
       // Soft delete: archive
@@ -878,7 +880,10 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
       res.status(200).json(formatList(result.rows[0]));
     }
   } catch (err) {
-    console.error('[lists] DELETE /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists DELETE /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists DELETE /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -895,8 +900,6 @@ router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), as
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'delete', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId } = req.params;
 
@@ -943,7 +946,10 @@ router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), as
 
     res.status(200).json(formatList(result.rows[0]));
   } catch (err) {
-    console.error('[lists] POST /:listId/archive error:', err);
+    getLog(req).error(
+      { err, op: 'lists POST /:listId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists POST /:listId/archive error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });

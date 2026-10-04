@@ -52,7 +52,7 @@ const listGrant = {
 test('schema matches every list role action and keeps tenant member permissions instance safe', () => {
   const resource = permitSchema.resources.find(r => r.key === 'SelectionList')!
   expect(Object.keys(resource.actions)).toEqual([
-    'list', 'create', 'read', 'add_value', 'update_value', 'remove_value',
+    'read', 'add_value', 'update_value', 'remove_value',
     'translate', 'update', 'delete', 'manage_access',
   ])
   expect(resource.roles?.['list-owner'].permissions).toEqual([
@@ -61,7 +61,7 @@ test('schema matches every list role action and keeps tenant member permissions 
   ])
   for (const role of ['editor', 'viewer']) {
     const permissions = permitSchema.roles.find(r => r.key === role)!.permissions
-    expect(permissions).toContain('SelectionList:list')
+    expect(permissions).toContain('SelectionListCatalog:list')
     expect(permissions).not.toContain('SelectionList:read')
     expect(permissions).not.toContain('SelectionList:manage_access')
   }
@@ -102,13 +102,13 @@ test('human cannot bypass list policy by granting themselves tenant admin', asyn
     .send({ subject: 'caller', tenant: 'tenant', role: 'admin' }).expect(403)
   expect(authz.check).toHaveBeenCalledWith({
     subject: 'caller', tenant: 'tenant',
-    resource: { type: 'Organization', key: 'tenant' }, action: 'manage',
+    resource: { type: 'Organization' }, action: 'manage',
   })
   expect(authz.grant).not.toHaveBeenCalled()
 })
 
 test('list owner can grant an active member on that list only', async () => {
-  authz.check.mockResolvedValue(true)
+  authz.check.mockImplementation(async query => query.resource.type === 'SelectionList')
   await request(app).post('/api/v1/security/authz/grants')
     .set('Authorization', 'Bearer valid').send(listGrant).expect(201)
   expect(authz.check).toHaveBeenCalledWith({
@@ -152,4 +152,26 @@ test('dedicated workload can grant first owner but cannot grant other roles or r
     .set('Authorization', `Bearer ${otherService}`)
     .send({ ...listGrant, role: 'list-owner' }).expect(403)
   delete process.env.JWT_SECRET
+})
+
+test.each([
+  ['wrong audience', 'another-service', 'fuzefront-security', 60, 'selection-list:owner-grant', 401],
+  ['wrong issuer', 'fuzefront-services', 'untrusted-issuer', 60, 'selection-list:owner-grant', 401],
+  ['expired', 'fuzefront-services', 'fuzefront-security', -1, 'selection-list:owner-grant', 401],
+  ['missing owner scope', 'fuzefront-services', 'fuzefront-security', 60, 'connectors:read', 403],
+])('owner bootstrap rejects %s workload tokens', async (_name, audience, issuer, expiresIn, scope, status) => {
+  setIdentityProvider({ getUserInfo: async () => { throw new Error('not a session') } } as any)
+  const previous = process.env.JWT_SECRET
+  process.env.JWT_SECRET = 'selection-list-test-signing-key'
+  try {
+    const token = jwt.sign({ kind: 'fuze-workload', sub: 'service:selection-list-service', scope },
+      process.env.JWT_SECRET, { issuer, audience, expiresIn: Number(expiresIn) })
+    await request(app).post('/api/v1/security/authz/grants')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...listGrant, role: 'list-owner' }).expect(Number(status))
+    expect(authz.grant).not.toHaveBeenCalled()
+  } finally {
+    if (previous === undefined) delete process.env.JWT_SECRET
+    else process.env.JWT_SECRET = previous
+  }
 })

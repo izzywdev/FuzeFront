@@ -8,7 +8,9 @@
 //   - Security boundary: org membership from JWT (`req.orgId`). Items belonging
 //     to any other org are silently placed in `missing` — never a 403 or 404
 //     so the endpoint cannot be used as a cross-org existence oracle. No
-//     per-list Permit.io checks — intentional for hot-path performance.
+//     per-list checks — intentional for hot-path performance. The caller needs
+//     the tenant-level `resolve` action on the SelectionListCatalog resource
+//     (review H-3); the org predicate in the query is the isolation boundary.
 //   - Locale fallback order: body.locale → Accept-Language (first supported
 //     tag) → per-item source_locale (via SQL COALESCE) → 'en'.
 //   - Archived items resolve normally (they are still valid references);
@@ -19,20 +21,20 @@
 //     is OFF (release flag, default OFF).
 //   - Empty ids: 200 with { results: {}, missing: [] } (short-circuits DB).
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
+import { requireCatalogCheck } from '../middleware/authz';
+import { isItemId } from '../middleware/validateInput';
 
-const router = Router();
+const router = createRouter();
 
 const SUPPORTED_LOCALES = new Set<string>([
   'en', 'es', 'fr', 'de', 'pt', 'ru', 'zh', 'ja', 'hi', 'ar', 'he',
 ]);
 
 const MAX_IDS = 500;
-
-// Regex for a basic front_sli_ prefix check (fast pre-filter before hitting DB).
-const ITEM_ID_PREFIX = 'front_sli_';
 
 /**
  * Parse the first supported language code from an Accept-Language header.
@@ -48,7 +50,7 @@ function parseAcceptLanguage(header: string | undefined): string | null {
   return null;
 }
 
-router.post('/resolve', async (req: Request, res: Response) => {
+router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res: Response) => {
   // ── Feature flag gate (release, default OFF) ───────────────────────────────
   const enabled = await isSelectionListsEnabled({
     organizationId: req.orgId,
@@ -101,7 +103,10 @@ router.post('/resolve', async (req: Request, res: Response) => {
   const validIds: string[] = [];
   const invalidIds: string[] = [];
   for (const id of ids) {
-    if (typeof id === 'string' && id.startsWith(ITEM_ID_PREFIX) && id.length > ITEM_ID_PREFIX.length) {
+    // Contract shape (`^front_sli_[0-9a-z]+$`, <= 255): anything else cannot
+    // exist, so it is `missing` without a DB round trip. NUL bytes never get
+    // here (rejectNulBytes answers 400 at the edge).
+    if (isItemId(id)) {
       validIds.push(id);
     } else {
       invalidIds.push(String(id));

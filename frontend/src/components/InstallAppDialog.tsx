@@ -4,6 +4,7 @@ import { Button, Modal, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useOrganizations } from '../lib/shared'
 import {
   AppInstallation,
+  AppInstallationsResponse,
   AppScopeLevel,
   InstallMode,
   InstallScope,
@@ -34,6 +35,8 @@ interface InstallAppDialogProps {
   appId: string
   appName: string
   scopeLevel: AppScopeLevel
+  installMode?: 'self' | 'everyone' | 'both'
+  orgLevelOnly?: boolean
   /** Called after a successful install or uninstall. */
   onChanged?: () => void
 }
@@ -129,6 +132,8 @@ export function InstallAppDialog({
   appId,
   appName,
   scopeLevel,
+  installMode,
+  orgLevelOnly,
   onChanged,
 }: InstallAppDialogProps) {
   const { t } = useT()
@@ -138,11 +143,19 @@ export function InstallAppDialog({
     activeOrganization?.user_role ?? ''
   )
 
+  const [installationsRes, setInstallationsRes] = useState<AppInstallationsResponse | null>(null)
+  const isOrgLevelOnly = Boolean(
+    orgLevelOnly ||
+    installMode === 'everyone' ||
+    installationsRes?.orgLevelOnly ||
+    installationsRes?.installMode === 'everyone'
+  )
+
   // A single-scope app has nothing to choose; seed the only legal value.
   const [scope, setScope] = useState<InstallScope>(
-    scopeLevel === 'personal' ? 'personal' : 'organization'
+    scopeLevel === 'personal' && !isOrgLevelOnly ? 'personal' : 'organization'
   )
-  const [mode, setMode] = useState<InstallMode>('self')
+  const [mode, setMode] = useState<InstallMode>(isOrgLevelOnly ? 'everyone' : 'self')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [existing, setExisting] = useState<AppInstallation[] | null>(null)
@@ -151,14 +164,38 @@ export function InstallAppDialog({
     if (!open) return
     setError(null)
     setBusy(false)
-    setScope(scopeLevel === 'personal' ? 'personal' : 'organization')
-    setMode('self')
     setExisting(null)
+    setInstallationsRes(null)
 
     getAppInstallations(appId)
-      .then(res => setExisting(res.installations))
-      .catch(() => setExisting([]))
-  }, [open, appId, scopeLevel])
+      .then(res => {
+        setInstallationsRes(res)
+        setExisting(res.installations)
+        const lockedOrgLevel = Boolean(
+          orgLevelOnly ||
+          installMode === 'everyone' ||
+          res.orgLevelOnly ||
+          res.installMode === 'everyone'
+        )
+        if (lockedOrgLevel) {
+          setScope('organization')
+          setMode('everyone')
+        } else {
+          setScope(scopeLevel === 'personal' ? 'personal' : 'organization')
+          setMode('self')
+        }
+      })
+      .catch(() => {
+        setExisting([])
+        if (isOrgLevelOnly) {
+          setScope('organization')
+          setMode('everyone')
+        } else {
+          setScope(scopeLevel === 'personal' ? 'personal' : 'organization')
+          setMode('self')
+        }
+      })
+  }, [open, appId, scopeLevel, installMode, orgLevelOnly, isOrgLevelOnly])
 
   // An `everyone` install on the active org is the one installation that is
   // visible to, and reversible by, an admin from this dialog.
@@ -208,8 +245,8 @@ export function InstallAppDialog({
   }
 
   const orgName = activeOrganization?.name ?? ''
-  const showScopeChoice = scopeLevel === 'both'
-  const showModeChoice = scope === 'organization' && scopeLevel !== 'personal'
+  const showScopeChoice = scopeLevel === 'both' && !isOrgLevelOnly
+  const showModeChoice = scope === 'organization' && scopeLevel !== 'personal' && !isOrgLevelOnly
 
   return (
     <Modal open={open} onClose={onClose} title={t('install.title', { app: appName })}>
@@ -226,19 +263,46 @@ export function InstallAppDialog({
           />
         ) : (
           <>
-            <p
-              style={{
-                margin: 0,
-                color: 'var(--text-secondary)',
-                fontSize: 'var(--text-sm)',
-              }}
-            >
-              {showScopeChoice
-                ? t('install.lead')
-                : scopeLevel === 'personal'
-                  ? t('install.personalOnly', { app: appName })
-                  : t('install.organizationOnly', { app: appName })}
-            </p>
+            {isOrgLevelOnly ? (
+              <>
+                <p
+                  style={{
+                    margin: 0,
+                    color: 'var(--text-secondary)',
+                    fontSize: 'var(--text-sm)',
+                  }}
+                >
+                  {t('install.orgLevelOnlyLead', {
+                    defaultValue: `${appName} is installed at the organization level for all members of ${orgName || 'the organization'}.`,
+                    app: appName,
+                    organization: orgName,
+                  })}
+                </p>
+                {!canInstallForEveryone && (
+                  <StatusCallout
+                    tone="warning"
+                    data-guard="requires-org-admin"
+                    title={t('install.everyoneRequiresAdmin', {
+                      defaultValue: 'Installing for everyone requires an organization owner or admin',
+                    })}
+                  />
+                )}
+              </>
+            ) : (
+              <p
+                style={{
+                  margin: 0,
+                  color: 'var(--text-secondary)',
+                  fontSize: 'var(--text-sm)',
+                }}
+              >
+                {showScopeChoice
+                  ? t('install.lead')
+                  : scopeLevel === 'personal'
+                    ? t('install.personalOnly', { app: appName })
+                    : t('install.organizationOnly', { app: appName })}
+              </p>
+            )}
 
             {showScopeChoice && (
               <div role="radiogroup" data-group="scope" aria-label={t('install.scopeLegend')}>
@@ -337,7 +401,12 @@ export function InstallAppDialog({
             <Button
               variant="primary"
               data-action="install"
-              disabled={busy || (scope === 'organization' && !activeOrganizationId)}
+              data-guard={isOrgLevelOnly && !canInstallForEveryone ? 'requires-org-admin' : undefined}
+              disabled={
+                busy ||
+                (scope === 'organization' && !activeOrganizationId) ||
+                (isOrgLevelOnly && !canInstallForEveryone)
+              }
               onClick={() => void handleInstall()}
               leadingIcon={busy ? <Spinner size={14} color="white" /> : null}
             >

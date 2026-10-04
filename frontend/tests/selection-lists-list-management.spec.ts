@@ -1,9 +1,9 @@
 /**
- * SELECTION LISTS — LIST MANAGEMENT FLOW — INDEPENDENT, PRE-PRODUCTION, RED-by-design UI e2e.
+ * SELECTION LISTS — LIST MANAGEMENT FLOW — INDEPENDENT, PRE-PRODUCTION UI e2e.
  * (frontend-test-engineer — independent verification, NOT the implementer.)
  *
  * ── What this file is ────────────────────────────────────────────────────────
- * TDD RED specs for the list-management flow of EPIC-17 / FFRNT-188 (Selection
+ * Playwright specs for the list-management flow of EPIC-17 / FFRNT-188 (Selection
  * Lists). They are derived STRICTLY from the approved visual contract:
  *
  *   design/frames/selection-lists/manifest.json  (build inventory + test hooks)
@@ -30,26 +30,28 @@
  *   package     @fuzeone/selection-lists-ui
  *   components  SelectionListIndex, SelectionListDetail, ValueEditor, QuotaWarning
  *
- * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
- * The route /settings/selection-lists and @fuzeone/selection-lists-ui do NOT
- * exist yet. Every test below is EXPECTED to fail today, and must fail for the
- * RIGHT reason: the panels / modals / states are ABSENT from the DOM — not a
- * harness/config error. That RED state proves this is TDD (specs written against
- * the approved design before implementation), not tests retrofitted to shipped UI.
- *
- * Tests are deliberately NOT test.skip / test.fixme — hiding RED defeats the
- * point. They go GREEN when frontend-engineer lands @fuzeone/selection-lists-ui
- * and wires the /settings/selection-lists route.
+ * ── Status ───────────────────────────────────────────────────────────────────
+ * These began as TDD-red specs written against the approved design before
+ * @fuzeone/selection-lists-ui existed. The UI has landed and they are GREEN; they
+ * are now a blocking CI gate (job `selection-list-service-e2e`, rolled into
+ * `Notify Team`). A failure here is a real regression — fix the UI or the spec,
+ * never test.skip / test.fixme it away.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
- *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-list-management.red
+ *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-list-management.spec.ts
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
-import { mockAuthenticatedSelectionListsSession } from './support/selection-lists-e2e-session'
+import { mockAuthenticatedSelectionListsSession, gotoFlagGatedRoute, isShellHarnessNoise } from './support/selection-lists-e2e-session'
+
+// The vite build registers a Workbox service worker (vite-plugin-pwa 1.x still emits
+// sw.js with CI=true) that takes control mid-test via clientsClaim. Requests the SW
+// handles bypass page.route() mocks, so after claim every mocked /api/v1/* fetch hits
+// the preview server's SPA fallback and returns text/html. Block SWs so mocks hold.
+test.use({ serviceWorkers: 'block' })
 
 const LIST_INDEX_ROUTE = '/settings/selection-lists'
 // A real list id for detail/item routes — the harness injects mock data.
@@ -128,12 +130,12 @@ const MOCK_QUOTA_NEAR_LIMIT = {
 
 async function gotoListIndex(page: Page) {
   await mockAuthenticatedSelectionListsSession(page)
-  await page.goto(LIST_INDEX_ROUTE, { waitUntil: 'domcontentloaded' })
+  await gotoFlagGatedRoute(page, LIST_INDEX_ROUTE)
 }
 
 async function gotoListDetail(page: Page) {
   await mockAuthenticatedSelectionListsSession(page)
-  await page.goto(LIST_DETAIL_ROUTE, { waitUntil: 'domcontentloaded' })
+  await gotoFlagGatedRoute(page, LIST_DETAIL_ROUTE)
 }
 
 /** Inject a successful list-index response with both active and archived rows. */
@@ -244,7 +246,7 @@ test.describe('Selection Lists list-management — frame 01-list-index', () => {
     await injectListIndexData(page)
     await gotoListIndex(page)
     await expect(
-      page.locator("[data-status='archived']"),
+      page.locator("[data-status='archived']").first(),
       'an archived list must expose [data-status="archived"] on its row',
     ).toBeVisible()
   })
@@ -254,7 +256,7 @@ test.describe('Selection Lists list-management — frame 01-list-index', () => {
     await gotoListIndex(page)
     // is_machine:true rows must render an M badge surfaced via data-machine="true".
     await expect(
-      page.locator("[data-machine='true']"),
+      page.locator("[data-machine='true']").first(),
       'a list whose name is machine-translated must carry [data-machine="true"] (M badge)',
     ).toBeVisible()
   })
@@ -301,7 +303,8 @@ test.describe('Selection Lists list-management — frame 01-list-index', () => {
         body: JSON.stringify({ data: [MOCK_LIST_COUNTRIES], next_cursor: null, total: 1 }),
       })
     })
-    await page.goto(LIST_INDEX_ROUTE)
+    await mockAuthenticatedSelectionListsSession(page)
+    await gotoFlagGatedRoute(page, LIST_INDEX_ROUTE)
     // The skeleton must appear during the load.
     // Use .first() to avoid strict-mode violation if multiple loading skeletons render.
     await expect(
@@ -329,7 +332,7 @@ test.describe('Selection Lists list-management — frame 01-list-index', () => {
     ).toBeVisible()
     // Empty state must still offer the create CTA.
     await expect(
-      page.locator("[data-action='new-list']"),
+      page.locator("[data-action='new-list']").first(),
       'empty state must include the [data-action="new-list"] create CTA',
     ).toBeVisible()
   })
@@ -342,11 +345,11 @@ test.describe('Selection Lists list-management — frame 01-list-index', () => {
     })
     await gotoListIndex(page)
     await expect(
-      page.locator("[data-state='error']"),
+      page.locator("[data-state='error']").first(),
       '[data-state="error"] must appear when the list fetch fails with 500',
     ).toBeVisible()
     await expect(
-      page.locator("[data-action='retry']"),
+      page.locator("[data-action='retry']").first(),
       'the error state must offer [data-action="retry"]',
     ).toBeVisible()
   })
@@ -675,13 +678,18 @@ test.describe('Selection Lists list-management — frame 03-list-detail', () => 
   test('shows not-found state [data-state="not-found"] and [data-error="NOT_FOUND"] on 404 (never 403)', async ({ page }) => {
     // The contract: a non-existent or unreadable list returns 404, NEVER 403
     // (a 403 would be a cross-org existence oracle).
-    await page.route(`**/v1/selection-lists/${LIST_ID}*`, async route => {
-      await route.fulfill({
-        status: 404,
-        contentType: 'application/json',
-        body: JSON.stringify({ code: 'NOT_FOUND', message: 'List not found' }),
+    // The service answers 404 for the list AND its sub-resources ('*' does not cross '/',
+    // so the items fetch needs its own route; left unmocked it would return the SPA's
+    // HTML and race the 404 into a generic error state).
+    for (const glob of [`**/v1/selection-lists/${LIST_ID}*`, `**/v1/selection-lists/${LIST_ID}/items*`]) {
+      await page.route(glob, async route => {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 'NOT_FOUND', message: 'List not found' }),
+        })
       })
-    })
+    }
     await gotoListDetail(page)
     await expect(
       page.locator("[data-state='not-found']"),
@@ -872,6 +880,12 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     await injectListDetailData(page)
     await gotoListDetail(page)
     const handles = page.locator('[data-drag-handle]')
+    // Wait for the editor to render before counting — a bare count() right after
+    // goto() races the items fetch and reads 0.
+    await expect(
+      handles.first(),
+      'at least one [data-drag-handle] must render once the value editor has loaded',
+    ).toBeVisible()
     const count = await handles.count()
     expect(count, 'drag handles must render for each reorderable item').toBeGreaterThan(0)
   })
@@ -962,7 +976,7 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     })
     await injectListDetailData(page)
     await gotoListDetail(page)
-    // Wait for the value editor to render — this fails in RED state (no UI) and
+    // Wait for the value editor to render — this fails when the UI is absent and
     // avoids the count()==0 false-GREEN that a bare handles.count() check creates.
     await expect(
       page.locator("[data-panel='value-editor']"),
@@ -997,30 +1011,55 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
   })
 
   test('PUT …/items/reorder body contains the FULL permutation of item_ids', async ({ page }) => {
-    const reorderBodies: unknown[] = []
-    await page.route(`**/v1/selection-lists/${LIST_ID}/items/reorder`, async route => {
-      const body = route.request().postDataJSON()
-      reorderBodies.push(body)
-      await route.fulfill({ status: 204, body: '' })
-    })
+    // Three ACTIVE items + one archived: the contract (SelectionListItemReorder) says
+    // item_ids is a permutation of exactly the list's NON-ARCHIVED item ids.
+    const active = ['sli_01h455vb4pex5vsknk084sn02q', 'sli_05h455vb4pex5vsknk084sn02q', 'sli_06h455vb4pex5vsknk084sn02q']
+    const mkItem = (id: string, i: number) => ({ ...MOCK_ITEM, id, code: `C${i}`, label: `Item ${i}`, sort_order: i + 1 })
+    const reorderPuts: Record<string, unknown>[] = []
     await injectListDetailData(page)
+    // Registered after injectListDetailData => tried first (LIFO).
+    await page.route(`**/v1/selection-lists/${LIST_ID}/items*`, async route => {
+      const url = route.request().url()
+      if (route.request().method() === 'GET' && !url.includes('/items/')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: [...active.map(mkItem), MOCK_ITEM_ARCHIVED], next_cursor: null, total: 4 }),
+        })
+      } else {
+        await route.fallback()
+      }
+    })
+    await page.route(`**/v1/selection-lists/${LIST_ID}/items/reorder`, async route => {
+      // The UI may HEAD-probe this endpoint for permission; only the PUT carries a body.
+      if (route.request().method() === 'PUT') {
+        reorderPuts.push(route.request().postDataJSON())
+        await route.fulfill({ status: 204, body: '' })
+      } else {
+        await route.fulfill({ status: 204, body: '' })
+      }
+    })
     await gotoListDetail(page)
     const firstHandle = page.locator('[data-drag-handle]').first()
+    await expect(firstHandle, 'drag handles must render before a keyboard reorder can start').toBeVisible()
     await firstHandle.focus()
     await page.keyboard.press('Space')
     await page.keyboard.press('ArrowDown')
     await page.keyboard.press('Space')
-    await page.waitForTimeout(400)
-    // The contract: PUT body must contain item_ids covering the full list.
-    expect(
-      reorderBodies.length,
-      'PUT …/items/reorder must have been captured at least once — check that keyboard reorder fires the request',
-    ).toBeGreaterThan(0)
-    for (const body of reorderBodies as Record<string, unknown>[]) {
+    await expect
+      .poll(() => reorderPuts.length, {
+        message: 'PUT …/items/reorder must have been sent at least once — check that keyboard reorder fires the request',
+      })
+      .toBeGreaterThan(0)
+    for (const body of reorderPuts) {
       const itemIds = body?.item_ids as string[] | undefined
       expect(itemIds, 'PUT …/items/reorder body must include item_ids').toBeDefined()
       expect(Array.isArray(itemIds), 'item_ids must be an array').toBe(true)
-      expect(itemIds!.length, 'item_ids must be a full permutation (all item ids present)').toBeGreaterThan(0)
+      expect(
+        [...itemIds!].sort(),
+        'item_ids must be a permutation of exactly the non-archived item ids (no archived id, none missing)',
+      ).toEqual([...active].sort())
+      expect(itemIds, 'ArrowDown on the first row must change the order').not.toEqual(active)
     }
   })
 })
@@ -1086,7 +1125,7 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
       '[data-banner="quota-at"] must appear at the 100% ceiling',
     ).toBeVisible()
     await expect(
-      page.locator("[data-quota-state='at-limit']"),
+      page.locator("[data-quota-state='at-limit']").first(),
       '[data-quota-state="at-limit"] must mark the at-limit state',
     ).toBeVisible()
     // The CTA must be disabled (may use aria-disabled) at the ceiling.
@@ -1108,7 +1147,8 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_QUOTA_NEAR_LIMIT) })
     })
     await injectListIndexData(page)
-    await page.goto(LIST_INDEX_ROUTE)
+    await mockAuthenticatedSelectionListsSession(page)
+    await gotoFlagGatedRoute(page, LIST_INDEX_ROUTE)
     // Wait for the list panel to mount — only the quota fetch remains in-flight after this.
     await expect(
       page.locator("[data-panel='list-index']"),
@@ -1132,7 +1172,7 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
     await injectListIndexData(page)
     await gotoListIndex(page)
     await expect(
-      page.locator("[data-state='error']"),
+      page.locator("[data-state='error']").first(),
       '[data-state="error"] must appear when the quota call fails',
     ).toBeVisible()
     // The CTA must be ENABLED despite the failed quota call (fail-OPEN).
@@ -1147,6 +1187,38 @@ test.describe('Selection Lists list-management — frame 06-quota', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Shell deep-link — flag-gated routes survive a hard load
+// ─────────────────────────────────────────────────────────────────────────────
+
+test.describe('Selection Lists list-management — flag-gated deep links (shell)', () => {
+  // The other specs reach their route through gotoFlagGatedRoute() (shell first, flags
+  // settled, then client-side nav). These deliberately do a raw hard load — a bookmark,
+  // a refresh, a link from an email — with `fuzefront.selection-lists.service` ON.
+  // Known gap (frontend/src/App.tsx SelectionListsRoute & siblings): useFlag() returns
+  // its OFF default until GET /api/flags settles, so the route renders
+  // <Navigate to="/dashboard"> before the flag can say ON. The gate must wait for
+  // `loaded` (or render a pending state) instead of redirecting on the default.
+  for (const [name, route, hook] of [
+    ['list index', LIST_INDEX_ROUTE, "[data-panel='list-index']"],
+    ['list detail', LIST_DETAIL_ROUTE, "[data-panel='value-editor']"],
+    ['translation workbench', `${LIST_DETAIL_ROUTE}/translations`, "[data-panel='translation-index']"],
+    ['access panel', `${LIST_DETAIL_ROUTE}/access`, "[data-panel='access']"],
+  ] as const) {
+    test(`hard-loading the ${name} route with the flag ON stays on ${route.replace(LIST_ID, ':listId')}`, async ({ page }) => {
+      await injectListIndexData(page)
+      await injectListDetailData(page)
+      await mockAuthenticatedSelectionListsSession(page)
+      await page.goto(route, { waitUntil: 'domcontentloaded' })
+      await expect(page.locator(hook), `${hook} must mount on a hard load of ${route}`).toBeVisible()
+      expect(
+        new URL(page.url()).pathname,
+        `a hard load of ${route} with fuzefront.selection-lists.service ON must not bounce to /dashboard`,
+      ).toBe(route)
+    })
+  }
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Runtime console-clean gate (ui-runtime-validation — baseline §7.1)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1156,7 +1228,7 @@ test.describe('Selection Lists list-management — runtime console-clean gate (u
     const failedRequests: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => consoleErrors.push(`pageerror: ${String(err)}`))
     page.on('requestfailed', (req: Request) => {
@@ -1172,7 +1244,7 @@ test.describe('Selection Lists list-management — runtime console-clean gate (u
 
     await injectListIndexData(page)
     await gotoListIndex(page)
-    // The panel must be present for this gate to be meaningful — RED until it exists.
+    // The panel must be present for this gate to be meaningful — it must mount.
     await expect(page.locator("[data-panel='list-index']")).toBeVisible()
 
     expect(consoleErrors, `console errors on list-index:\n${consoleErrors.join('\n')}`).toEqual([])
@@ -1184,7 +1256,7 @@ test.describe('Selection Lists list-management — runtime console-clean gate (u
     const failedRequests: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => consoleErrors.push(`pageerror: ${String(err)}`))
     page.on('requestfailed', (req: Request) => {

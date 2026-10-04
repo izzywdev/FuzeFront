@@ -1,0 +1,11 @@
+import { getGrantToken, _setGrantTokenProviderForTesting, _setServiceAuthFactoryForTesting, OWNER_GRANT_SCOPE } from '../src/lib/machineIdentity';
+const original = { ...process.env };
+const getToken = jest.fn();
+const factory = jest.fn(() => ({ getToken, invalidate: jest.fn() }));
+beforeEach(() => { getToken.mockReset().mockResolvedValue('workload-token'); factory.mockClear(); _setGrantTokenProviderForTesting(null); _setServiceAuthFactoryForTesting(factory); process.env.NODE_ENV='production'; process.env.SECURITY_SERVICE_URL='http://security:3002'; });
+afterEach(() => { _setServiceAuthFactoryForTesting(null); process.env= { ...original }; });
+it('uses projected workload auth with no client secret or broad grant scope', async () => { process.env.SELECTION_LIST_SERVICE_TOKEN_FILE='/test/projected-token'; expect(await getGrantToken()).toBe('workload-token'); expect(factory).toHaveBeenCalledWith(expect.objectContaining({ baseUrl:'http://security:3002',serviceAccountTokenFile:'/test/projected-token' })); expect(factory.mock.calls[0][0]).not.toHaveProperty('clientSecret'); expect(OWNER_GRANT_SCOPE).toBe('selection-list:owner-grant'); });
+it('reuses the SDK client with its token refresh/cache', async () => { await getGrantToken(); await getGrantToken(); expect(factory).toHaveBeenCalledTimes(1); expect(getToken).toHaveBeenCalledTimes(2); });
+it('fails closed when projected identity cannot be exchanged', async () => { getToken.mockRejectedValue(new Error('TOKEN_REQUEST_FAILED')); await expect(getGrantToken()).rejects.toThrow('TOKEN_REQUEST_FAILED'); });
+it('uses injected test provider', async () => { _setGrantTokenProviderForTesting({ getToken: async () => 'injected' }); expect(await getGrantToken()).toBe('injected'); expect(factory).not.toHaveBeenCalled(); });
+it('no-op is restricted to test with no Security endpoint', async () => { process.env.NODE_ENV='test'; delete process.env.SECURITY_SERVICE_URL; expect(await getGrantToken()).toBe('noop-machine-token'); expect(factory).not.toHaveBeenCalled(); });
