@@ -263,7 +263,7 @@ export function createConfigWriteRouter(pool: Pool): Router {
       // client (matching txValues above) gives for free (FF-EPIC-18 /
       // FFRNT-280, GET /v1/config/history's write side).
       const txHistory = new PgHistoryRepository(client as unknown as Pool);
-      const actor = { actorType: 'user' as const, actorId: principal.userId };
+      const actor = { actorType: 'user' as const, actorId: principal.userId, actorRedacted: false };
 
       for (const op of body.operations) {
         const def = byKey.get(op.key)!;

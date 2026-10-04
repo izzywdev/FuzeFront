@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Configuration Service API
-  version: 1.1.0
+  version: 1.2.0
   summary: Namespaced, hierarchical key/value configuration with typed key metadata and provenance-carrying resolution.
   description: >-
     **FROZEN CONTRACT — FFRNT-153 (FF-EPIC-17-S1), amended for FF-EPIC-18.**
@@ -1266,15 +1266,24 @@ components:
         Who performed one recorded change or reveal, from the token that
         authorized it. Never a bare id — always paired with its type.
       additionalProperties: false
-      required: [actorType]
+      required: [actorType, actorRedacted]
       properties:
         actorType:
           $ref: '#/components/schemas/ActorType'
         actorId:
           type: [string, 'null']
           description: >-
-            The acting user. Null exactly when `actorType` is `system` (for
-            example a platform-owned key reconciled by an automated process).
+            The acting user. Null when `actorType` is `system` (for example a
+            platform-owned key reconciled by an automated process), or when
+            `actorRedacted` is true.
+        actorRedacted:
+          type: boolean
+          description: >-
+            True when the acting user was hard-deleted and their id erased from
+            this entry under right-to-erasure; `actorType` stays `user`, so a
+            redacted human action remains distinguishable from a `system` one
+            even though both have a null `actorId`. False for every live or
+            system actor.
     ConfigHistoryAction:
       type: string
       description: >-
