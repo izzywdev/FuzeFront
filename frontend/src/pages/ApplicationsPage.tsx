@@ -178,6 +178,8 @@ function InstalledAppsSection() {
           const scopeLevel: AppScopeLevel = isExecutive
             ? 'organization'
             : (app.scopeLevel ?? 'both')
+          const installed = installedAppIds.has(app.id)
+          const installation = installationByApp[app.id]
 
           return (
             <div

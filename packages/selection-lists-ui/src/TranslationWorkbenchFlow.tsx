@@ -101,7 +101,8 @@ function AutofillModal({
       if (e.code === 'FORBIDDEN') {
         setForbidden(true)
       } else {
-        setError({ ...e, code: 'autofill-failed' })
+        // NB: spreading an Error drops its non-enumerable `message`, so copy it explicitly
+        setError({ code: 'autofill-failed', message: e.message })
       }
     } finally {
       setRunning(false)
