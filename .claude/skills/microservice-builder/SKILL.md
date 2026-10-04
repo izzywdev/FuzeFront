@@ -15,11 +15,13 @@ Names the service, its scope, type (`http-service` | `worker` | `library`), lang
 1. **Boundary + plan** — run `feature-tech-planning`: build-vs-adopt, the service's public interface, and confirm the package/service name + Argo placement (umbrella vs standalone). *(contract-designer)*
 2. **Directory** — scaffold the service dir in the repo's convention (`services/<svc>/` or the repo's layout), with src/test/config skeleton, README stub, and a health endpoint.
 3. **Contract (the gate)** — freeze OpenAPI/AsyncAPI + event (Kafka Zod) schemas; lint (Spectral); **generate the typed client**. Nothing else merges until this PR is frozen. *(contract-designer)*
+   - **Data contract** — write `data-contract.json` beside the spec (schema `governance/data-contract.schema.json`, standard `governance/data-consistency-standard.md`): the entity types the service owns, the topics it emits (envelope v2) and consumes, every cross-service reference with its validation level and on-delete policy, and — for a BFF — its projections. Follow the `data-consistency` skill. *(contract-designer)*
 4. **PACKAGING — first-class, not an afterthought:** *(devops-engineer owns the wiring; contract-designer owns the client API)*
    - **Client npm package** `@<scope>/<svc>-client`: `package.json` with `publishConfig` targeting the **private** registry (GitHub Packages `https://npm.pkg.github.com`, the repo's scope, `access: "restricted"` — **never public npm**), the `repository` field set, types/`.d.ts` emitted, and a consumer `.npmrc` snippet documented. Wire it into the **release pipeline** so it publishes on version bump. A service isn't done until this is publishable.
    - **Container image**: a `Dockerfile` (multi-stage, non-root), build, and publish to the image registry (GHCR by default); **add the service to the release/CI image build matrix** and the **prod values tag-bump**.
    - **Versioning/release**: semver via conventional commits; the release workflow bumps the client package + image tag together; changelog generated.
 5. **Data tier** — per-service DB role/database, ordered + idempotent migrations and their deploy mechanism (pre-sync Helm/Argo Job), connection wiring via `DATABASE_URL`/SealedSecret/service-DNS. *(database-engineer)*
+   - If the data contract emits or consumes events: the `event_outbox` + relay, the consumer inbox `processed_events`, `aggregate_version` on owned entities, and `ref_index` for each L1 reference — all from the shared events/identity packages, never hand-rolled. *(database-engineer + backend-engineer)*
 6. **Deploy wiring** — Helm `Deployment`+`Service`+values with an **`enabled` gate**; Argo per the hybrid model (core/coupled → the umbrella chart's one Application; independently-lifecycled → its own Argo Application); image in the CI matrix + prod values tag-bump; SealedSecrets scaffolding. **Prod is GitOps — never hand-deploy.** *(devops-engineer)*
 7. **Channels (optional, per `service.json`)** — MCP server scaffold *(mcp-engineer)* and/or CLI scaffold *(cli-engineer)*, each generated from the contract/client.
 8. **Tests** — unit-test skeleton with the implementer; independent contract/integration tests authored by `test-engineer`.
@@ -29,6 +31,7 @@ Names the service, its scope, type (`http-service` | `worker` | `library`), lang
 - `helm template` renders the new chart with `enabled: true`; `kubeconform` passes; the Argo Application/umbrella entry resolves.
 - The `@<scope>/<svc>-client` package builds, resolves from source in-repo, and has valid private `publishConfig` + `repository`.
 - Contract lints (Spectral); migrations apply cleanly + idempotently.
+- `data-contract.json` validates against its schema; every foreign-id column in the migrations is declared in `references[]`; each consumed `*.deleted` topic has a handler implementing the declared on-delete policy.
 - The service appears in the CI build matrix and prod values.
 
 ## Ownership (see governance/routing.md)
