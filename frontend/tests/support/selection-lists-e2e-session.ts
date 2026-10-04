@@ -1,7 +1,7 @@
 import type { ConsoleMessage, Page } from '@playwright/test'
 
 /**
- * Selection List red-spec harness — authenticated-session mock for a
+ * Selection List e2e harness — authenticated-session mock for a
  * backend-less run (the `selection-list-service-e2e` CI job serves the
  * frontend with `vite preview`, no backend, no Authentik).
  *
@@ -9,7 +9,7 @@ import type { ConsoleMessage, Page } from '@playwright/test'
  * mobile-layout.spec.ts, clock-load.spec.ts, ...) signs in against a REAL
  * backend + Authentik on a full local-up stack. This job intentionally does
  * not run that stack — it only builds and serves the static frontend bundle,
- * so the selection-list red specs mock the shell's session/flag/org
+ * so the selection-list e2e specs mock the shell's session/flag/org
  * dependencies directly instead. Without this, `/settings/selection-lists`
  * (and its /translations, /access siblings) redirect straight to
  * `/dashboard` before any UI under test ever mounts — regardless of how
@@ -132,8 +132,8 @@ export function isShellHarnessNoise(msg: ConsoleMessage): boolean {
  * before `GET /api/flags` settles; `useFlag()` returns its OFF default while
  * `loaded === false`, so `SelectionListsRoute` & co. immediately render
  * `<Navigate to="/dashboard">` and the deep link is lost (a real shell defect — it is
- * asserted on its own in the "deep link" spec in selection-lists-list-management.red.spec.ts,
- * and stays RED until the shell waits for the flag fetch). Without this helper that one
+ * asserted on its own in the "deep link" spec in selection-lists-list-management.spec.ts,
+ * and guards the shell waiting for the flag fetch). Without this helper that one
  * defect would mask every other assertion in the four selection-lists specs, so the
  * per-frame specs reach the route the way a signed-in user does: load the shell, let the
  * flags settle, then navigate client-side.

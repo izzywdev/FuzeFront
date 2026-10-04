@@ -225,7 +225,7 @@ There is **no per-repo MCP server** for this feature: no `mcp/` directory exists
 | Service unit/route tests (jest, DB mocked; authz no-op under `NODE_ENV=test`) | `services/selection-list-service/tests/*.test.ts` | `npm run -w selection-list-service test` (CI job `selection-list-service-tests`) |
 | Independent acceptance + contract + security suite against a **running** service (`SERVICE_BASE_URL`, default `http://localhost:3011`) | `tests/selection-list-service/{contract,security}/` | `npm test` / `test:contract` / `test:security` in that dir; its helper builds an `@fuzeone/selection-list-client` |
 | Python client tests | `packages/selection-list-client-py/tests/test_client.py` | `pip install -e '.[dev]' && pytest` in that dir |
-| UI e2e (Playwright, derived from the approved frames; `data-*` hooks from the manifest) | `frontend/tests/selection-lists-{list-management,translation-workbench,access-control,picker}.red.spec.ts` | CI job `selection-list-service-e2e` (**`continue-on-error`**, still labelled RED-by-design) |
+| UI e2e (Playwright, derived from the approved frames; `data-*` hooks from the manifest) | `frontend/tests/selection-lists-{list-management,translation-workbench,access-control,picker}.spec.ts` | CI job `selection-list-service-e2e` ("Selection list E2E") — a **blocking gate**: no `continue-on-error`, required by `Notify Team` |
 | UI unit tests | `packages/selection-lists-ui/` has only `src/test/setup.ts`; **no test files** yet (`npm test` = `vitest run`) | — |
 | TS-client ↔ spec coverage | `scripts/check-selection-lists-client-drift.sh` (**not** wired into `ci.yml`) | run by hand |
 | Contract lint | `selection-list-client`: `npm run lint:contract` (Spectral, `services/selection-list-service/.spectral.yaml`) | by hand |
