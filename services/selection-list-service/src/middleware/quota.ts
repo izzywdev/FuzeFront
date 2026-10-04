@@ -11,13 +11,26 @@
 //   4. On QuotaExceededError → 403 QUOTA_EXCEEDED (OpenAPI Forbidden response).
 //   5. On any other error → forward to the default Express error handler.
 //
-// NOTE: S7 adds Permit.io authz checks. TODO(S7): add permit.check() before the
-// quota guard in each middleware so callers without the required Permit action
-// never reach the quota check path.
+// Authz: the route chain runs requireAuthzCheck BEFORE these middlewares, so a
+// caller without `add_value` never reaches the quota check path.
 
 import { Request, Response, NextFunction } from 'express';
 import { checkListQuota, checkItemQuota, QuotaExceededError } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
+import { getLog } from '../lib/logger';
+
+/** Wire-format 403 QUOTA_EXCEEDED body (shared with the create handlers' locked re-check). */
+export function sendQuotaExceeded(res: Response, err: QuotaExceededError): void {
+  // HTTP 403: per OpenAPI spec, QUOTA_EXCEEDED shares the Forbidden status
+  // because "you may not, and retrying identically will not help".
+  res.status(403).json({
+    code: 'QUOTA_EXCEEDED',
+    scope: err.scope,
+    current: err.current,
+    limit: err.limit,
+    message: err.message,
+  });
+}
 
 // ─── enforceListQuota ─────────────────────────────────────────────────────────
 
@@ -47,13 +60,12 @@ export const enforceListQuota = async (
     return;
   }
 
-  // TODO(S7): permit.check({ user: req.userId, action: 'add_value', resource: 'SelectionList' })
-
   try {
     await checkListQuota(req.orgId);
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {
+      getLog(req).info({ orgId: req.orgId, scope: err.scope, current: err.current, limit: err.limit }, 'quota exceeded — 403');
       // HTTP 403: per OpenAPI spec, QUOTA_EXCEEDED shares the Forbidden status
       // because "you may not, and retrying identically will not help".
       res.status(403).json({
@@ -65,6 +77,7 @@ export const enforceListQuota = async (
       });
       return;
     }
+    getLog(req).error({ err, orgId: req.orgId }, 'quota check failed — forwarding to error handler');
     next(err);
   }
 };
@@ -108,13 +121,12 @@ export const enforceItemQuota = async (
     return;
   }
 
-  // TODO(S7): permit.check({ user: req.userId, action: 'add_value', resource: 'SelectionList', resourceInstance: listId })
-
   try {
     await checkItemQuota(listId, req.orgId);
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {
+      getLog(req).info({ orgId: req.orgId, scope: err.scope, current: err.current, limit: err.limit }, 'quota exceeded — 403');
       // HTTP 403: per OpenAPI spec, QUOTA_EXCEEDED shares the Forbidden status.
       res.status(403).json({
         code: 'QUOTA_EXCEEDED',
@@ -125,6 +137,7 @@ export const enforceItemQuota = async (
       });
       return;
     }
+    getLog(req).error({ err, orgId: req.orgId }, 'quota check failed — forwarding to error handler');
     next(err);
   }
 };

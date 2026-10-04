@@ -163,7 +163,7 @@ const client = new SelectionListClient({
 | Option | Type | Required | Notes |
 |---|---|---|---|
 | `baseUrl` | `string` | Yes | Same-origin path in the browser; absolute URL in server-side callers |
-| `token` | `string \| () => string \| Promise<string>` | No | `resolveIds` may be called unauthenticated by trusted in-cluster callers |
+| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | Bearer token with an `orgId` claim. `resolveIds` also requires it (spec v2.0.0) |
 | `fetch` | `typeof fetch` | No | Inject for tests or non-global runtimes; defaults to `globalThis.fetch` |
 | `defaultLocale` | `Locale` | No | Applied to every request that doesn't supply its own |
 | `headers` | `Record<string, string>` | No | Merged into every request (tracing IDs, tenant hints) |
@@ -182,16 +182,23 @@ const client = new SelectionListClient({
 
 ## Feature flag
 
-The service is gated behind `fuzefront.selection-lists.service`.  Check it
-before initializing the client or rendering any selection-list UI:
+The service is gated behind release flag `fuzefront.selection-lists.service`
+(default OFF). While OFF every `/v1/selection-lists/*` route returns 404 and
+the shell hides the UI. In browser code read it with `useFlag` (the key is in
+`WEB_EXPOSED_FLAGS`); server-side use the OpenFeature client with the request's
+org/user context:
 
 ```ts
-import { featureFlags, FLAGS } from '@fuzefront/feature-flags'
+import { FLAG_KEYS, getClient } from '@fuzefront/feature-flags'
 
-if (await featureFlags.isEnabled(FLAGS.SELECTION_LISTS_SERVICE)) {
-  // show UI, initialize client
-}
+const enabled = await getClient().getBooleanValue(
+  FLAG_KEYS.SELECTION_LISTS_SERVICE,
+  false, // release flag: fail-safe OFF
+  { environment, organizationId, userId, app: 'my-service' },
+)
 ```
+
+Rollout/rollback procedure: `docs/runbooks/selection-lists-flag-rollout.md`.
 
 ---
 

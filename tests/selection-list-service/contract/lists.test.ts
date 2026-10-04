@@ -357,8 +357,11 @@ describe('DELETE /v1/selection-lists/{listId} — archive vs purge', () => {
   });
 
   it('GET returns 404 (not 403) for a list the caller cannot read (cross-org existence oracle)', async () => {
-    // Use a plausible but non-existent list id; the service should 404
-    const { status } = await rawFetch('/v1/selection-lists/sl_01hnonexistent000000000000', {
+    // Use a plausible but non-existent list id; the service should 404.
+    // The id must be CONTRACT-VALID (^front_sl_[0-9a-z]+$): a malformed id (e.g. the
+    // old bare `sl_...` fixture) is now a 400 VALIDATION_ERROR at the edge, before
+    // it can reach Postgres (review H-4); only a well-formed, never-minted id 404s.
+    const { status } = await rawFetch('/v1/selection-lists/front_sl_01hnonexistent000000000000', {
       method: 'GET',
       token: ownerToken(),
     });

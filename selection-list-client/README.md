@@ -13,8 +13,8 @@ const client = new SelectionListClient({ baseUrl: '/api/selection-lists', token:
 const { items } = await client.getItems(listId, { status: 'active', locale: 'fr' })
 
 // Persist item.id — never item.code, which is an interop key, not a foreign key.
-const { results, missing } = await client.resolveIds(['sli_01h4…'], { locale: 'fr' })
-results['sli_01h4…']?.label // 'États-Unis'
+const { results, missing } = await client.resolveIds(['front_sli_01h4…'], { locale: 'fr' })
+results['front_sli_01h4…']?.label // 'États-Unis'
 
 // Walk a cursor without hand-rolling the loop.
 for await (const item of client.paginate((p) => client.getItems(listId, p))) { /* … */ }

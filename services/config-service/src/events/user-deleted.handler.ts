@@ -32,22 +32,30 @@ import { FuzeEvent, IdentityUserDeletedPayloadV1 } from '@fuzefront/shared/kafka
  *      Order matters: the DELETE runs first, so the UPDATE does not bother
  *      rewriting rows that are about to disappear anyway.
  *
- * config_history.actor_id is deliberately NOT anonymised, in either mode. Two
- * reasons, and this is a judgement worth surfacing rather than burying:
- *   - migration 004 documents "NULL exactly when actor_type = 'system'".
- *     NULLing actor_id while actor_type stays 'user' would make a human action
- *     indistinguishable from a system one to every reader of that table and to
- *     openapi.yaml's Actor schema — corrupting the audit log rather than
- *     redacting it.
- *   - that same migration states history rows are never deleted by this
- *     service, i.e. the table is an append-only audit trail by design.
- * If the deleted user's id must also be erased from history (a
- * right-to-erasure requirement rather than a referential one), that needs a
- * schema change — an explicit `actor_redacted` flag or a sentinel actor_type —
- * not a silent NULL. Flagged for the owner; not decided here.
+ *        3. REDACT the deleted user's id from config_history (hard only).
+ *           DECIDED 2026-10-04 (migration 005): right-to-erasure requires the
+ *           user's id to leave the audit trail too, but a silent
+ *           `actor_id = NULL` would be indistinguishable from a system action
+ *           (migration 004's invariant: actor_id NULL iff actor_type='system').
+ *           So erasure is explicit: on a 'user' row authored by this user,
+ *           `actor_id` goes NULL and `actor_redacted` goes TRUE while
+ *           `actor_type` stays 'user'. This is the ONE sanctioned in-place
+ *           mutation of an otherwise append-only table, and it changes only WHO
+ *           — action/old_value/new_value/occurred_at are untouched, so the
+ *           record of WHAT changed is preserved.
  *
- * Idempotent: a hard delete with no overrides and no authorship is a logged
- * no-op, which Kafka's at-least-once delivery requires.
+ * Why a flag and not a sentinel: the sibling selection-list-service erases its
+ * TEXT authorship columns with a '[deleted-user]' string, but config_history
+ * .actor_id is a native UUID surfaced as a TypeID id — a fabricated sentinel id
+ * would be forbidden by governance/identifier-standard.md and would read as a
+ * real user. A UUID column takes a flag; a TEXT column takes a sentinel. Do not
+ * "harmonise" the two.
+ *
+ * SOFT retains history authorship unchanged: a deactivated user can be
+ * reactivated, so their authorship is restorable state, not erasable.
+ *
+ * Idempotent: a hard delete with no overrides, no authorship and no history is
+ * a logged no-op, which Kafka's at-least-once delivery requires.
  */
 export async function handleUserDeleted(
   pool: Pool,
@@ -85,15 +93,27 @@ export async function handleUserDeleted(
       [userId],
     );
 
+    // Right-to-erasure: redact the user's id from the append-only audit trail
+    // without destroying the record that a user (not the system) acted. See
+    // migration 005 and the header comment.
+    const redactedRes = await client.query(
+      `UPDATE config.config_history
+          SET actor_id = NULL,
+              actor_redacted = TRUE
+        WHERE actor_type = 'user' AND actor_id = $1`,
+      [userId],
+    );
+
     await client.query('COMMIT');
 
     const deleted = deletedRes.rowCount ?? 0;
     const anonymised = anonymisedRes.rowCount ?? 0;
+    const redacted = redactedRes.rowCount ?? 0;
 
-    if (deleted === 0 && anonymised === 0) {
+    if (deleted === 0 && anonymised === 0 && redacted === 0) {
       // eslint-disable-next-line no-console
       console.log(
-        '[config-service] user.deleted(cascade=hard): user %s had no overrides and no authorship — no-op (correlationId=%s)',
+        '[config-service] user.deleted(cascade=hard): user %s had no overrides, no authorship and no history — no-op (correlationId=%s)',
         userId,
         event.correlationId,
       );
@@ -102,9 +122,10 @@ export async function handleUserDeleted(
 
     // eslint-disable-next-line no-console
     console.log(
-      '[config-service] user.deleted(cascade=hard): removed %d user-scoped override(s) and anonymised authorship on %d surviving row(s) for user %s (history retained, correlationId=%s)',
+      '[config-service] user.deleted(cascade=hard): removed %d user-scoped override(s), anonymised authorship on %d surviving row(s), and redacted %d history entr(ies) for user %s (correlationId=%s)',
       deleted,
       anonymised,
+      redacted,
       userId,
       event.correlationId,
     );

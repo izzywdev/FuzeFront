@@ -22,6 +22,8 @@
 // The in-code default is OFF (release fail-safe) so an Unleash outage degrades
 // safely: the route acts as if the service does not yet exist for the org.
 
+import { logger } from './lib/logger'
+
 export interface FlagContext {
   environment: string
   organizationId?: string | null
@@ -123,7 +125,8 @@ export async function isSelectionListsEnabled(
   if (!client) return false // fail-safe: release default OFF
   try {
     return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SERVICE, false, buildContext(ctx))
-  } catch {
+  } catch (err) {
+    logger.warn({ err, flag: FLAGS.SELECTION_LISTS_SERVICE }, 'flag evaluation failed — using fail-safe default OFF')
     return false
   }
 }

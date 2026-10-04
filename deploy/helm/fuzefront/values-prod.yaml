@@ -88,7 +88,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -102,7 +102,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -130,7 +130,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -256,7 +256,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -454,7 +454,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
 
 # fuzefront-website — public site at fuzefront.com.
 # Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
@@ -486,7 +486,7 @@ websiteFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-frontend
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   host: fuzefront.com
   aliasHosts:
     - www.fuzefront.com
@@ -495,7 +495,7 @@ websiteBackend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-backend
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -506,7 +506,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -551,7 +551,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -571,7 +571,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   <<: *elasticPlacement
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
@@ -607,7 +607,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -642,7 +642,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   # Same dead node-2 hostname affinity as billingService above (fuzefront-node-2
   # is not a real node label) — replaced with the real elastic-pool placement.
   # Currently disabled (enabled: false) so this has zero live effect yet, but
@@ -908,7 +908,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -956,7 +956,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -967,17 +967,37 @@ notificationService:
 # PERMIT_API_KEY/permitPdpUrl to seal here (step 2 of the 3-step migration —
 # config-service was step 1; see the configService comment below for that
 # precedent). GO-LIVE steps:
-#   1. Seal DATABASE_URL, JWT_SECRET into selection-list-secrets
-#      (see deploy/contabo/sealed/selection-list-service-secrets.yaml.template).
-#   2. Flip `enabled` to true here via GitOps in a deploy window.
+#   1. Dispatch rotate-sealed-secret.yml to mint+seal DB_PASSWORD into
+#      selection-list-secrets (the service's OWN role password; nobody sees it) and
+#      merge the PR -- see docs/runbooks/per-service-database-and-role.md and
+#      deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
+#   2. In a LATER merge, flip `enabled` to true here via GitOps in a deploy window
+#      (the pre-sync Job then creates role selection_list_svc + its database).
+#      (The service also needs SERVICE_CLIENT_ID / SERVICE_CLIENT_SECRET sealed into the same
+#      Secret: its OAuth client_credentials identity (scope authz:admin) for Security API
+#      grant/revoke. Without them list creation / access grants fail closed.)
 # The tag: line MUST stay immediately after repository: — release.yml's GitOps
 # bump step only rewrites a tag: found on the line directly following a matched
 # repository: anchor.
 selectionListService:
   enabled: false
+  # Authorization is ALWAYS enforced in production (code-level, review H-1); the
+  # explicit true keeps the rendered manifest honest. Do not set false.
+  authzEnabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
+  # Unleash CLIENT token read from the Unleash chart's own sealed Secret (same
+  # wiring as applicationsService/securityService/chatService above); server-side
+  # only. The service now calls @fuzefront/feature-flags init() at startup.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "selection-list-service"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Fleet placement policy (see .elasticPlacement above): every backend service
+  # runs on the elastic pool; this one was missed when it was added dark.
+  <<: *elasticPlacement
 
 # devportal-service / devportal-frontend (docs/planning/developers-portal.md).
 # Step 2 of the two-step go-live executed here: workloads are now deployed.
@@ -990,13 +1010,13 @@ devportalService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
 
 devportalFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   host: developers.fuzefront.com
 
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
@@ -1046,7 +1066,7 @@ configService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
-    tag: 2f5edffb80f4
+    tag: ec0b4da00dda
   <<: *elasticPlacement
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
@@ -1073,6 +1093,12 @@ unleash:
   ciRunner:
     serviceAccountNamespace: arc-runners
     serviceAccountName: arc-runner-sa
+    # prod-synthetic-admin.yml reads INTERNAL_PROVISION_SECRET from
+    # `fuzefront-secrets` via the k8s API (same mechanism prod-unleash-ops.yml
+    # uses for `unleash-secrets`). The runner Role is resourceName-scoped, so
+    # without this the get 403s ("Could not read INTERNAL_PROVISION_SECRET").
+    extraSecretNames:
+      - fuzefront-secrets
 
 # ── Cloudflare cache purge (prod) ────────────────────────────────────────────
 # Sealed for the Contabo k3s cluster; reseal per the template header if the
