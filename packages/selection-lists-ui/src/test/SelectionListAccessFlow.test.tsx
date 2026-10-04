@@ -458,10 +458,8 @@ describe('frame 11 — add-access modal', () => {
     expect(searchBox()).toHaveFocus()
   })
 
-  // a11y: "Search users" / "Role" labels are not associated with their controls
-  // (no htmlFor / nesting), so the fields have no accessible name. `it.fails`
-  // pins the gap and will flip red once the labels are wired up.
-  it.fails('a11y: the search and role controls are named by their labels (KNOWN GAP)', async () => {
+  // a11y: "Search users" / "Role" labels are associated with their controls.
+  it('a11y: the search and role controls are named by their labels', async () => {
     await openModal()
     expect(screen.getByLabelText('Search users')).toBeInTheDocument()
     expect(screen.getByLabelText('Role', { selector: 'select' })).toBeInTheDocument()

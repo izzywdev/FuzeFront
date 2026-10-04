@@ -13,6 +13,7 @@ import type {
   ResolveResponse,
   PagedResponse,
   ApiError,
+  AutofillResult,
 } from './types'
 
 const BASE = '/api/v1/selection-lists'
@@ -173,8 +174,8 @@ export async function autofillTranslations(
   listId: string,
   locale: string,
   body: { overwrite_machine: boolean },
-): Promise<{ filled: number; skipped: number }> {
-  const { data } = await request<{ filled: number; skipped: number }>(
+): Promise<AutofillResult> {
+  const { data } = await request<AutofillResult>(
     `${BASE}/${listId}/translations/${locale}/autofill`,
     { method: 'POST', body: JSON.stringify(body) },
   )
