@@ -50,12 +50,12 @@ export async function handleOrgCreated(
     budget: defaultBudget,
     ...overrides,
   };
-  const { organizationId, type, isActive } = event.payload;
+  const { organizationId, type, isActive, ownerId, name } = event.payload;
   const log = logger.child({ reqId: event.correlationId, component: 'org-created' });
   log.info({ organizationId, type, isActive }, 'identity.org.created received');
 
   // 1. Projection first, unconditionally (infra faults throw -> retried).
-  const wire = await timed(log, 'db.upsert-org-projection', () => upsertOrgProjection(deps.db, { organizationId, type, isActive }), { organizationId });
+  const wire = await timed(log, 'db.upsert-org-projection', () => upsertOrgProjection(deps.db, { organizationId, type, isActive, ownerId, name, occurredAt: event.occurredAt }), { organizationId });
 
   // 2. Inactive orgs are not seeded.
   if (!isActive) {

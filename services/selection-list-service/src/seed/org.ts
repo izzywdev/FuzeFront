@@ -14,12 +14,14 @@ export interface OrgProjection {
   orgType: 'platform' | 'organization' | 'personal' | null;
   /** From the identity.org.created snapshot; null when unknown. */
   isActive: boolean | null;
+  /** The org owner's wire id (`usr_...`) from identity.org.created; null when unknown / none. */
+  ownerId: string | null;
 }
 
 /** The org's projection row, or null when the org is not (yet) known. */
 export async function readOrgProjection(ex: Knex | Knex.Transaction, organizationId: string): Promise<OrgProjection | null> {
   const wire = wireOrgId(organizationId);
-  const row = await ex('selection_list_ref_index').where({ entity_type: 'organization', wire_id: wire }).first('status', 'org_type', 'is_active');
+  const row = await ex('selection_list_ref_index').where({ entity_type: 'organization', wire_id: wire }).first('status', 'org_type', 'is_active', 'owner_id');
   if (!row) return null;
-  return { status: row.status, orgType: row.org_type ?? null, isActive: row.is_active ?? null };
+  return { status: row.status, orgType: row.org_type ?? null, isActive: row.is_active ?? null, ownerId: row.owner_id ?? null };
 }
