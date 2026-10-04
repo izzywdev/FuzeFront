@@ -40,6 +40,7 @@ function historyRowFromInsertParams(params: unknown[]) {
     redacted,
     actor_type: actorType,
     actor_id: actorId,
+    actor_redacted: false,
     reason,
     revert_of: revertOf,
     occurred_at: NOW,
@@ -64,7 +65,7 @@ describe('PgHistoryRepository.append', () => {
       oldValue: 'comfortable',
       newValue: 'compact',
       redacted: false,
-      actor: { actorType: 'user', actorId: 'usr_1' },
+      actor: { actorType: 'user', actorId: 'usr_1', actorRedacted: false },
       reason: 'testing',
     });
 
@@ -89,7 +90,7 @@ describe('PgHistoryRepository.append', () => {
       oldValue: 'old-secret-plaintext',
       newValue: 'new-secret-plaintext',
       redacted: true,
-      actor: { actorType: 'user', actorId: 'usr_1' },
+      actor: { actorType: 'user', actorId: 'usr_1', actorRedacted: false },
       reason: 'rotation',
     });
 
@@ -117,11 +118,11 @@ describe('PgHistoryRepository.append', () => {
       action: 'set',
       newValue: 'v',
       redacted: false,
-      actor: { actorType: 'system', actorId: null },
+      actor: { actorType: 'system', actorId: null, actorRedacted: false },
     });
 
     expect(capturedParams[11]).toBeNull();
-    expect(entry.actor).toEqual({ actorType: 'system', actorId: null });
+    expect(entry.actor).toEqual({ actorType: 'system', actorId: null, actorRedacted: false });
   });
 
   it('scopeId is null exactly when scopeType is platform, and set otherwise', async () => {
@@ -139,7 +140,7 @@ describe('PgHistoryRepository.append', () => {
       scope: { scopeType: 'org', scopeId: LEGACY_ORG_UUID },
       action: 'unset',
       redacted: false,
-      actor: { actorType: 'user', actorId: 'usr_1' },
+      actor: { actorType: 'user', actorId: 'usr_1', actorRedacted: false },
     });
 
     expect(capturedParams[4]).toBe('org');
@@ -163,7 +164,7 @@ describe('PgHistoryRepository.append', () => {
       action: 'set',
       newValue: 'v',
       redacted: false,
-      actor: { actorType: 'user', actorId: 'usr_1' },
+      actor: { actorType: 'user', actorId: 'usr_1', actorRedacted: false },
       revertOf: revertOfId,
     });
 
@@ -273,6 +274,7 @@ describe('PgHistoryRepository.listPage', () => {
       redacted: false,
       actor_type: 'user',
       actor_id: 'usr_1',
+      actor_redacted: false,
       reason: null,
       revert_of: null,
       occurred_at: new Date(2026, 0, 1 + i),

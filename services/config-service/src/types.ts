@@ -174,8 +174,19 @@ export type ActorType = 'user' | 'system';
 /** Who performed one recorded change or reveal (openapi.yaml `Actor`). */
 export interface Actor {
   actorType: ActorType;
-  /** Null exactly when `actorType` is `system`. */
+  /**
+   * Null when `actorType` is `system`, or when `actorRedacted` is true (the
+   * acting user was hard-deleted and their id erased under right-to-erasure —
+   * `actorType` stays `user`). See migration 005.
+   */
   actorId: string | null;
+  /**
+   * True when a `user` actor's id was erased from this history entry under
+   * right-to-erasure. False for every live or system actor. Lets a reader tell
+   * "a user acted, id erased" apart from "the system acted" — both have a null
+   * `actorId`, but only the former is redacted.
+   */
+  actorRedacted: boolean;
 }
 
 /**

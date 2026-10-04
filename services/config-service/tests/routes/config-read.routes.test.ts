@@ -229,7 +229,7 @@ function makeHistoryEntry(overrides: Partial<ConfigHistoryEntry> = {}): ConfigHi
     oldValue: null,
     newValue: 'compact',
     redacted: false,
-    actor: { actorType: 'user', actorId: 'usr_1' },
+    actor: { actorType: 'user', actorId: 'usr_1', actorRedacted: false },
     reason: null,
     revertOf: null,
     occurredAt: new Date(2026, 0, 1, 0, 0, seq).toISOString(),

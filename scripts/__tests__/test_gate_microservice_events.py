@@ -202,6 +202,102 @@ class GateMicroserviceEvents(unittest.TestCase):
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             self.assertIn("mentions-only", r.stdout)
 
+    # ── notApplicable: the per-topic, non-abusable exemption ──────────────────
+
+    def test_not_applicable_covers_the_gap_and_PASSES(self):
+        """Subscribed-to-deleted + N/A-on-created, with a real effect, is OK."""
+        with tempfile.TemporaryDirectory() as root:
+            make_identity_pkg(root)
+            make_service(
+                root, "services", "sparse-service",
+                topics=["identity.user.deleted", "identity.org.deleted"],
+            )
+            r = run_gate(root, write_policy(root, notApplicable={
+                "sparse-service": {
+                    "identity.user.created": "sparse override store; a new user needs zero rows and inherits",
+                    "identity.org.created": "sparse override store; a new org needs zero rows and inherits",
+                }
+            }))
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertNotIn("::error", r.stdout)
+            self.assertNotIn("::warning", r.stdout)
+
+    def test_not_applicable_for_ALL_FOUR_FAILS(self):
+        """A service with no lifecycle at all is `exempt`, not notApplicable."""
+        with tempfile.TemporaryDirectory() as root:
+            make_identity_pkg(root)
+            make_service(root, "services", "whole-hog", topics=[])
+            r = run_gate(root, write_policy(root, notApplicable={
+                "whole-hog": {t: "a sufficiently long reason string to clear the forty character floor" for t in ALL_FOUR}
+            }))
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("ALL FOUR", r.stdout)
+
+    def test_not_applicable_short_reason_FAILS(self):
+        """A label is not a reason — the 40-char floor forces a real one."""
+        with tempfile.TemporaryDirectory() as root:
+            make_identity_pkg(root)
+            make_service(root, "services", "terse", topics=["identity.user.deleted", "identity.org.deleted"])
+            r = run_gate(root, write_policy(root, notApplicable={
+                "terse": {"identity.user.created": "sparse", "identity.org.created": "n/a"}
+            }))
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("substantive", r.stdout)
+
+    def test_not_applicable_AND_bound_handler_is_a_contradiction_FAILS(self):
+        """Declaring a topic N/A while binding a handler for it is incoherent."""
+        with tempfile.TemporaryDirectory() as root:
+            make_identity_pkg(root)
+            make_service(root, "services", "two-faced", topics=ALL_FOUR)
+            r = run_gate(root, write_policy(root, notApplicable={
+                "two-faced": {"identity.user.created": "declared n/a yet a handler is bound for this very topic"}
+            }))
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("not both", r.stdout)
+
+    def test_not_applicable_AND_knownUnhandled_is_mutually_exclusive_FAILS(self):
+        with tempfile.TemporaryDirectory() as root:
+            make_identity_pkg(root)
+            make_service(root, "services", "double-listed", topics=["identity.user.deleted", "identity.org.deleted"])
+            r = run_gate(root, write_policy(
+                root,
+                knownUnhandled=["double-listed"],
+                notApplicable={"double-listed": {
+                    "identity.user.created": "sparse store; new user needs zero rows and inherits from parent scope",
+                    "identity.org.created": "sparse store; new org needs zero rows and inherits from parent scope",
+                }},
+            ))
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("mutually exclusive", r.stdout)
+
+    def test_not_applicable_for_undiscovered_service_FAILS(self):
+        """A declaration cannot outlive the service it names."""
+        with tempfile.TemporaryDirectory() as root:
+            make_identity_pkg(root)
+            make_service(root, "services", "real", topics=ALL_FOUR)
+            r = run_gate(root, write_policy(root, notApplicable={
+                "ghost-service": {"identity.user.created": "this service does not exist anywhere in the tree at all"}
+            }))
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("not a discovered microservice", r.stdout)
+
+    def test_not_applicable_does_NOT_excuse_a_noop_deleted_handler(self):
+        """Anti-vacuity still bites: a subscribed topic must still seed."""
+        with tempfile.TemporaryDirectory() as root:
+            make_identity_pkg(root)
+            make_service(
+                root, "services", "lazy-deleter",
+                topics=["identity.user.deleted", "identity.org.deleted"], effect=False,
+            )
+            r = run_gate(root, write_policy(root, notApplicable={
+                "lazy-deleter": {
+                    "identity.user.created": "sparse store; a new user needs zero rows and inherits from parent",
+                    "identity.org.created": "sparse store; a new org needs zero rows and inherits from parent",
+                }
+            }))
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("no handler writes anything", r.stdout)
+
     def test_ANTI_VACUITY_real_repo_passes(self):
         """The committed tree + committed policy must be green, or the ratchet is wrong."""
         r = run_gate(

@@ -300,7 +300,7 @@ function recordReveal(
     scope: args.scope,
     action: 'reveal',
     redacted: true,
-    actor: { actorType: 'user', actorId: args.actorId },
+    actor: { actorType: 'user', actorId: args.actorId, actorRedacted: false },
     reason: args.reason,
   });
 }
