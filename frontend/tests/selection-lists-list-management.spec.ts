@@ -1,9 +1,9 @@
 /**
- * SELECTION LISTS — LIST MANAGEMENT FLOW — INDEPENDENT, PRE-PRODUCTION, RED-by-design UI e2e.
+ * SELECTION LISTS — LIST MANAGEMENT FLOW — INDEPENDENT, PRE-PRODUCTION UI e2e.
  * (frontend-test-engineer — independent verification, NOT the implementer.)
  *
  * ── What this file is ────────────────────────────────────────────────────────
- * TDD RED specs for the list-management flow of EPIC-17 / FFRNT-188 (Selection
+ * Playwright specs for the list-management flow of EPIC-17 / FFRNT-188 (Selection
  * Lists). They are derived STRICTLY from the approved visual contract:
  *
  *   design/frames/selection-lists/manifest.json  (build inventory + test hooks)
@@ -30,22 +30,18 @@
  *   package     @fuzeone/selection-lists-ui
  *   components  SelectionListIndex, SelectionListDetail, ValueEditor, QuotaWarning
  *
- * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
- * The route /settings/selection-lists and @fuzeone/selection-lists-ui do NOT
- * exist yet. Every test below is EXPECTED to fail today, and must fail for the
- * RIGHT reason: the panels / modals / states are ABSENT from the DOM — not a
- * harness/config error. That RED state proves this is TDD (specs written against
- * the approved design before implementation), not tests retrofitted to shipped UI.
- *
- * Tests are deliberately NOT test.skip / test.fixme — hiding RED defeats the
- * point. They go GREEN when frontend-engineer lands @fuzeone/selection-lists-ui
- * and wires the /settings/selection-lists route.
+ * ── Status ───────────────────────────────────────────────────────────────────
+ * These began as TDD-red specs written against the approved design before
+ * @fuzeone/selection-lists-ui existed. The UI has landed and they are GREEN; they
+ * are now a blocking CI gate (job `selection-list-service-e2e`, rolled into
+ * `Notify Team`). A failure here is a real regression — fix the UI or the spec,
+ * never test.skip / test.fixme it away.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
- *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-list-management.red
+ *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-list-management.spec.ts
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
@@ -980,7 +976,7 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     })
     await injectListDetailData(page)
     await gotoListDetail(page)
-    // Wait for the value editor to render — this fails in RED state (no UI) and
+    // Wait for the value editor to render — this fails when the UI is absent and
     // avoids the count()==0 false-GREEN that a bare handles.count() check creates.
     await expect(
       page.locator("[data-panel='value-editor']"),
@@ -1200,8 +1196,8 @@ test.describe('Selection Lists list-management — flag-gated deep links (shell)
   // a refresh, a link from an email — with `fuzefront.selection-lists.service` ON.
   // Known gap (frontend/src/App.tsx SelectionListsRoute & siblings): useFlag() returns
   // its OFF default until GET /api/flags settles, so the route renders
-  // <Navigate to="/dashboard"> before the flag can say ON. RED until the gate waits for
-  // `loaded` (or renders a pending state) instead of redirecting on the default.
+  // <Navigate to="/dashboard"> before the flag can say ON. The gate must wait for
+  // `loaded` (or render a pending state) instead of redirecting on the default.
   for (const [name, route, hook] of [
     ['list index', LIST_INDEX_ROUTE, "[data-panel='list-index']"],
     ['list detail', LIST_DETAIL_ROUTE, "[data-panel='value-editor']"],
@@ -1248,7 +1244,7 @@ test.describe('Selection Lists list-management — runtime console-clean gate (u
 
     await injectListIndexData(page)
     await gotoListIndex(page)
-    // The panel must be present for this gate to be meaningful — RED until it exists.
+    // The panel must be present for this gate to be meaningful — it must mount.
     await expect(page.locator("[data-panel='list-index']")).toBeVisible()
 
     expect(consoleErrors, `console errors on list-index:\n${consoleErrors.join('\n')}`).toEqual([])
