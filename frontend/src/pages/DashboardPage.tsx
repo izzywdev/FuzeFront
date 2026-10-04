@@ -27,6 +27,26 @@ export function isAppVisibleForOrg(
     return true
   }
 
+  // Public / marketplace apps are visible to EVERY authenticated caller,
+  // regardless of which org is active. This mirrors the server's own BOLA rule
+  // (backend/applications/src/app-registry/service.ts `canRead`/`list()`, and
+  // backend/src/routes/apps.ts `scopeAppsQuery`): visibility public|marketplace
+  // ⇒ everyone. It became REQUIRED here after the 2026-08-25 owner ruling
+  // backfilled every first-party app's org from null to ROOT_ORG_ID
+  // (backend/applications/src/migrations/011_apps_organization_id_not_null.ts):
+  // Clock ships `visibility: 'public'` but now carries
+  // `organizationId: ROOT_ORG_ID`, so the `organizationId === null` branch
+  // below no longer recognizes it as platform-global. Without this check a
+  // public app was wrongly hidden from every user whose active org isn't ROOT —
+  // e.g. a brand-new account with no org, or any member of their own org — who
+  // then saw an empty dashboard while the registry (and the sidebar, which does
+  // NOT apply this org filter) correctly listed it. The post-prod live smoke
+  // (frontend/e2e/post-prod/live-smoke.spec.ts test 7) hit exactly this: its
+  // org-less synthetic got Clock from /api/apps (same visibility filter) yet no
+  // `.app-card` rendered, because the dashboard dropped it here.
+  const visibility = app.manifest?.visibility
+  if (visibility === 'public' || visibility === 'marketplace') return true
+
   const orgRequired =
     app.manifest?.requiresOrgContext === true ||
     app.manifest?.visibility === 'organization'
