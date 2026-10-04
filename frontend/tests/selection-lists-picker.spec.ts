@@ -1,9 +1,9 @@
 /**
- * SELECTION LISTS — PICKER FLOW — INDEPENDENT, PRE-PRODUCTION, RED-by-design UI e2e.
+ * SELECTION LISTS — PICKER FLOW — INDEPENDENT, PRE-PRODUCTION UI e2e.
  * (frontend-test-engineer — independent verification, NOT the implementer.)
  *
  * ── What this file is ────────────────────────────────────────────────────────
- * TDD RED specs for the picker flow of EPIC-17 / FFRNT-188 (Selection Lists).
+ * Playwright specs for the picker flow of EPIC-17 / FFRNT-188 (Selection Lists).
  * They are derived STRICTLY from the approved visual contract:
  *
  *   design/frames/selection-lists/manifest.json  (build inventory + test hooks)
@@ -29,22 +29,18 @@
  * picker in isolation. The shipped component is imported, not navigated to.
  * This is noted in [data-note="embeddable"] per the approved frame.
  *
- * ── These were RED by design; they are GREEN now (the name is history) ───────
- * Written before the harness route /embed/selection-list-picker and
- * @fuzeone/selection-lists-ui existed, so that the approved design — not the
- * implementation — fixed what "correct" means. Both have since landed and every
- * test here passes, so the job that runs them (`selection-list-service-e2e` in
- * ci.yml) is a HARD GATE with no continue-on-error: a failure is a regression,
- * never "expected TDD red". The `.red.` in the filename records the origin.
- *
- * Tests are deliberately NOT test.skip / test.fixme — hiding a failure defeats
- * the point.
+ * ── Status ───────────────────────────────────────────────────────────────────
+ * These began as TDD-red specs written against the approved design before
+ * @fuzeone/selection-lists-ui existed. The UI has landed and they are GREEN; they
+ * are now a blocking CI gate (job `selection-list-service-e2e`, rolled into
+ * `Notify Team`). A failure here is a real regression — fix the UI or the spec,
+ * never test.skip / test.fixme it away.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
- *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-picker.red
+ *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-picker.spec.ts
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
@@ -99,34 +95,64 @@ async function openComboMenu(page: Page) {
   await expect(menu, '[data-combo-menu] must be open').toBeVisible()
 }
 
+/**
+ * Contract-faithful stub of the two reads the picker makes (frozen openapi.yaml):
+ *
+ *   1. GET /v1/selection-lists            -> { items: SelectionList[], page }   (key -> list ID lookup)
+ *   2. GET /v1/selection-lists/{listId}/items -> { items: Item[], page }        (read by list ID, never by key)
+ *
+ * The list `key` ("sales-regions") is NOT a valid path segment for `{listId}`; the
+ * service mints a `front_sl_…` id and the picker must use it. An earlier version of
+ * this helper matched `/items` URLs by `url.includes(key)` and answered a single
+ * list object on a key-shaped GET — i.e. it modelled the picker calling the items
+ * endpoint with the KEY, which violates the contract and is exactly the bug the
+ * picker had. Requests for any other list id fall through (route.continue()) so a
+ * picker that sends the key as the id fails loudly instead of being served.
+ */
+function listIdForKey(key: string) {
+  return `front_sl_${key.replace(/-/g, '_')}`
+}
+
 /** Inject items for a given list key. */
 async function injectListItems(page: Page, key: string, items: typeof MOCK_SALES_REGION_ITEMS) {
+  const listId = listIdForKey(key)
   await page.route(`**/v1/selection-lists**`, async route => {
-    const url = route.request().url()
-    if (url.includes('/items') && url.includes(key)) {
-      await route.fulfill({
+    if (route.request().method() !== 'GET') return route.continue()
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace(/\/+$/, '')
+
+    if (path.endsWith('/v1/selection-lists')) {
+      // List lookup. The contract's `?key=` filter returns a page of at most one row;
+      // the picker may also page through all lists, so serve the list whenever it is
+      // unfiltered or the filter matches.
+      const wanted = url.searchParams.get('key')
+      const rows = !wanted || wanted === key
+        ? [{
+            id: listId,
+            key,
+            name: key === 'sales-regions' ? 'Sales Regions' : 'Countries',
+            is_machine: false,
+            status: 'active',
+            item_count: items.length,
+            source_locale: 'en',
+          }]
+        : []
+      return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ data: items, next_cursor: null, total: items.length }),
+        body: JSON.stringify({ items: rows, page: { nextCursor: null, hasMore: false } }),
       })
-    } else if (!url.includes('/items') && url.includes(key) && route.request().method() === 'GET') {
-      // List metadata lookup by key.
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: 'sl_sales_regions',
-          key,
-          name: key === 'sales-regions' ? 'Sales Regions' : 'Countries',
-          is_machine: false,
-          status: 'active',
-          item_count: items.length,
-          source_locale: 'en',
-        }),
-      })
-    } else {
-      await route.continue()
     }
+
+    if (path.endsWith(`/v1/selection-lists/${listId}/items`)) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items, page: { nextCursor: null, hasMore: false, total: items.length } }),
+      })
+    }
+
+    return route.continue()
   })
 }
 
@@ -259,17 +285,8 @@ test.describe('Selection Lists picker — frame 12-picker-single', () => {
   })
 
   test('[data-state="empty"] disables the combobox with "No options available" when no active items exist', async ({ page }) => {
-    await page.route('**/v1/selection-lists**', async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ data: [], next_cursor: null, total: 0 }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
+    // The list EXISTS (key lookup succeeds) but has no active values.
+    await injectListItems(page, 'sales-regions', [])
     await gotoPickerHarness(page, { list: 'sales-regions', mode: 'single' })
     await expect(
       page.locator("[data-state='empty']"),
@@ -487,15 +504,14 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     // { label, locale, is_machine, status:"archived" } and render greyed with an archived badge.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        {
-          id: ARCHIVED_ITEM_ID,
+      results: {
+        [ARCHIVED_ITEM_ID]: {
           label: 'Old Country',
           locale: 'en',
           is_machine: false,
           status: 'archived',
         },
-      ],
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -512,9 +528,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
   test('[data-selected-label][data-archived="true"] renders the real label greyed with an archived badge', async ({ page }) => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -529,9 +545,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
   test('[data-status="archived"] marks the archived item in the selected display', async ({ page }) => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -545,9 +561,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     // The archived item must be ABSENT from the dropdown — readable but not newly selectable.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS) // active items only (no ARCHIVED_ITEM_ID)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -574,7 +590,7 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     // so re-saving does NOT silently drop data the user never chose to change.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [],
+      results: {},
       missing: [PURGED_ITEM_ID],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: PURGED_ITEM_ID })
@@ -600,15 +616,75 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     ).toBe(true)
   })
 
+  test('a purged value can be replaced: picking an active item swaps the id, clears the missing notice and restores frame 12', async ({ page }) => {
+    await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
+    await injectResolve(page, { results: {}, missing: [PURGED_ITEM_ID] })
+    await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: PURGED_ITEM_ID })
+    await expect(page.locator("[data-state='missing']")).toBeVisible()
+
+    await openComboMenu(page)
+    await page.locator(`[data-item='${ITEM_ID_MULTI}']`).click()
+
+    await expect(
+      page.locator('[data-persisted]'),
+      '[data-persisted] must carry the replacement id and no longer the purged one',
+    ).toHaveAttribute('data-persisted', ITEM_ID_MULTI)
+    await expect(page.locator("[data-state='missing']")).toHaveCount(0)
+    await expect(page.locator("[data-missing='true']")).toHaveCount(0)
+    await expect(page.locator("[data-error='missing']")).toHaveCount(0)
+    await expect(page.locator("[data-frame='12-picker-single']")).toBeVisible()
+    await expect(page.locator('[data-selected-label]')).toContainText('United States')
+  })
+
+  test('multi: an array of stored ids (active + archived + purged) is resolved together, kept in the form, and a pick swaps out the purged id', async ({ page }) => {
+    await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
+    let resolveCalls = 0
+    await page.route('**/v1/resolve*', async route => {
+      resolveCalls += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          results: {
+            [ITEM_ID_MULTI]: { label: 'United States', locale: 'en', is_machine: false, status: 'active' },
+            [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+          },
+          missing: [PURGED_ITEM_ID],
+        }),
+      })
+    })
+    await gotoPickerHarness(page, {
+      list: 'countries',
+      mode: 'multi',
+      value: [ITEM_ID_MULTI, ARCHIVED_ITEM_ID, PURGED_ITEM_ID].join(','),
+    })
+    await expect(page.locator("[data-frame='14-picker-archived']")).toBeVisible()
+    await expect(page.locator(`[data-chip='${ARCHIVED_ITEM_ID}']`)).toHaveAttribute('data-archived', 'true')
+    await expect(page.locator(`[data-chip='${PURGED_ITEM_ID}']`)).toHaveAttribute('data-missing', 'true')
+    await expect(page.locator('[data-persisted]')).toHaveAttribute(
+      'data-persisted',
+      [ITEM_ID_MULTI, ARCHIVED_ITEM_ID, PURGED_ITEM_ID].join(','),
+    )
+    expect(resolveCalls, 'all stored ids must be resolved in ONE POST /v1/resolve').toBe(1)
+
+    await openComboMenu(page)
+    await page.locator("[data-item='sli_05h455vb4pex5vsknk084sn02q']").click()
+    await expect(page.locator('[data-persisted]')).toHaveAttribute(
+      'data-persisted',
+      [ITEM_ID_MULTI, 'sli_05h455vb4pex5vsknk084sn02q', ARCHIVED_ITEM_ID].join(','),
+    )
+    await expect(page.locator("[data-error='missing']")).toHaveCount(0)
+  })
+
   test('[data-panel="resolve-matrix"] shows locale resolution: ja falls back to source locale (never empty string)', async ({ page }) => {
     // The resolution matrix asserts one id renders per viewer locale,
     // with ja falling back to the source locale rather than an empty string.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
         // ja falls back to en (source locale) — there is no Japanese label.
-      ],
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -626,9 +702,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
   test('[data-persisted] carries the resolved archived id throughout the session', async ({ page }) => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -724,9 +800,9 @@ test.describe('Selection Lists picker — runtime console-clean gate (ui-runtime
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          resolved: [
-            { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-          ],
+          results: {
+            [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+          },
           missing: [],
         }),
       })

@@ -71,6 +71,13 @@ vi.mock('../platform/featureFlags', async () => {
   return {
     ...actual,
     useFlag: (key: string, fallback: boolean) => (key in flags ? flags[key] : fallback),
+    // Route guards use the opt-in {enabled, ready} hook; this file pins the
+    // settled state (loading / fetch-error are covered in
+    // App.selection-lists-flag-ready.test.tsx against the real provider).
+    useFlagState: (key: string, fallback: boolean) => ({
+      enabled: key in flags ? flags[key] : fallback,
+      ready: true,
+    }),
   }
 })
 

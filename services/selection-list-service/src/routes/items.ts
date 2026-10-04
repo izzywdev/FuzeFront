@@ -18,24 +18,44 @@
 // IMPORTANT: route /:listId/items/reorder MUST be declared BEFORE
 // /:listId/items/:itemId so Express does not match "reorder" as an itemId.
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
+import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
-import { requireAuthzCheck } from '../middleware/authz';
+import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
+import { lockOrgOutbox } from '../events/outbox';
+import { refreshItemUserModified } from '../seed/content';
+import {
+  eventContextFromRequest,
+  emitItemChanged,
+  emitItemCreated,
+  emitItemDeleted,
+  emitItemReordered,
+  readItem,
+} from '../events/emitters';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 
+// Must equal the openapi `Locale` enum / i18n.languages.json (and the Zod
+// `SELECTION_LIST_LOCALES` the published events validate against).
 const SUPPORTED_LOCALES = new Set([
-  'en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'ja', 'zh',
+  'en', 'es', 'fr', 'de', 'pt', 'ru', 'zh', 'ja', 'hi', 'ar', 'he',
 ]);
+
+// openapi SelectionListItemCode (the event schemas use the same rule).
+const ITEM_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
+const DESCRIPTION_MAX = 2000;
 
 // ─── Pagination helpers ───────────────────────────────────────────────────────
 
@@ -115,10 +135,25 @@ interface ItemRow {
   created_by: string;
   created_at: Date | string;
   updated_at: Date | string;
+  seed_source?: string | null;
+  seed_key?: string | null;
+  seed_version?: number | string | null;
+  seed_user_modified?: boolean | null;
   label: string | null;
   description: string | null;
   resolved_locale: string | null;
   is_machine: boolean | null;
+}
+
+/** openapi `SeedProvenance`: `null` for a user-authored row, else where the row came from. */
+function formatSeed(row: ItemRow) {
+  if (row.seed_source === null || row.seed_source === undefined) return null;
+  return {
+    source: row.seed_source,
+    pack_key: row.seed_key as string,
+    pack_version: Number(row.seed_version),
+    user_modified: Boolean(row.seed_user_modified),
+  };
 }
 
 function formatItem(row: ItemRow) {
@@ -133,6 +168,7 @@ function formatItem(row: ItemRow) {
     resolved_locale: row.resolved_locale ?? 'en',
     is_machine: row.is_machine ?? false,
     created_by: row.created_by,
+    seed: formatSeed(row),
     created_at: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -229,6 +265,7 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         ${labelCoalesce} AS label,
@@ -272,7 +309,10 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
       },
     });
   } catch (err) {
-    console.error('[items] GET /:listId/items error:', err);
+    getLog(req).error(
+      { err, op: 'items GET /:listId/items error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items GET /:listId/items error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -312,6 +352,17 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'code is required.' });
     return;
   }
+  if (!ITEM_CODE_PATTERN.test(code.trim())) {
+    res.status(400).json({
+      code: 'VALIDATION_ERROR',
+      message: 'code must be 1-63 characters: letters, digits, dot, underscore or hyphen, starting with a letter or digit.',
+    });
+    return;
+  }
+  if (description !== undefined && description !== null && (typeof description !== 'string' || description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
+    return;
+  }
   if (!label || typeof label !== 'string' || label.trim().length === 0) {
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'label is required.' });
     return;
@@ -345,6 +396,8 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
 
   try {
     await db.transaction(async (trx) => {
+      // Lock order is ALWAYS org outbox lock -> quota lock -> list row (events/outbox.ts).
+      await lockOrgOutbox(trx, req.orgId as string);
       // Exact quota enforcement: serialise creates for this list, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
       await lockQuotaScope(trx, `list_items:${listId}`);
@@ -386,6 +439,9 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
           hashText(label.trim()),
         ],
       );
+
+      // Outbox, same transaction: item.created (event-carried snapshot, own revision).
+      await emitItemCreated(trx, eventContextFromRequest(req), listId, id);
     });
 
     // Fetch the created item
@@ -398,6 +454,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
@@ -422,7 +479,10 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
       res.status(409).json({ code: 'CONFLICT', message: `An item with code '${code}' already exists in this list.` });
       return;
     }
-    console.error('[items] POST /:listId/items error:', err);
+    getLog(req).error(
+      { err, op: 'items POST /:listId/items error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items POST /:listId/items error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -484,12 +544,15 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
 
     // Apply new sort_order in a transaction (100-gap convention)
     await db.transaction(async (trx) => {
+      await lockOrgOutbox(trx, req.orgId as string);
       for (let i = 0; i < item_ids.length; i++) {
         await trx.raw(
           `UPDATE selection_list_items SET sort_order = ?, updated_at = now() WHERE id = ?`,
           [(i + 1) * 100, item_ids[i]],
         );
       }
+      // Outbox, same transaction: item.reordered carries the full resulting order.
+      await emitItemReordered(trx, eventContextFromRequest(req), listId);
     });
 
     // Return the reordered items with source-locale translations
@@ -502,6 +565,7 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
@@ -518,7 +582,10 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
 
     res.status(200).json({ items: result.rows.map(formatItem) });
   } catch (err) {
-    console.error('[items] PUT /:listId/items/reorder error:', err);
+    getLog(req).error(
+      { err, op: 'items PUT /:listId/items/reorder error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items PUT /:listId/items/reorder error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -567,6 +634,10 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'status must be active or archived.' });
     return;
   }
+  if (body.description !== undefined && body.description !== null && (typeof body.description !== 'string' || body.description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
+    return;
+  }
   if (body.sort_order !== undefined) {
     const so = parseInt(String(body.sort_order), 10);
     if (isNaN(so) || so < 0) {
@@ -583,17 +654,17 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
   }
 
   try {
-    // Verify item exists and belongs to this list
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ?`,
-      [itemId, listId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
-      return;
-    }
+    const found = await db.transaction(async (trx): Promise<boolean> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      // Verify item exists and belongs to this list (inside the txn: it is also
+      // the `before` state the event diff is taken against).
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+        [itemId, listId],
+      );
+      if (!existing.rows[0]) return false;
+      const before = await readItem(trx, itemId);
 
-    await db.transaction(async (trx) => {
       // Update item row — always bump updated_at (plus any changed scalars)
       const itemUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
       if (body.sort_order !== undefined) itemUpdates.sort_order = parseInt(String(body.sort_order), 10);
@@ -644,7 +715,19 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
           );
         }
       }
+
+      // A human edited this item: if it is a seeded one whose content no longer hashes to
+      // `seed_hash`, persist seed_user_modified (before the emit, so the snapshot carries it).
+      await refreshItemUserModified(trx, itemId);
+
+      // Outbox, same transaction: item.updated (diffed) and/or item.archived.
+      await emitItemChanged(trx, eventContextFromRequest(req), listId, itemId, before);
+      return true;
     });
+    if (!found) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
+      return;
+    }
 
     // Return the updated item
     const result = await db.raw<{ rows: ItemRow[] }>(
@@ -656,6 +739,7 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
@@ -671,14 +755,28 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
 
     res.status(200).json(formatItem(result.rows[0]));
   } catch (err) {
-    console.error('[items] PATCH /:listId/items/:itemId error:', err);
+    getLog(req).error(
+      { err, op: 'items PATCH /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items PATCH /:listId/items/:itemId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── DELETE /:listId/items/:itemId — archive or purge ────────────────────────
 
-router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remove_value'), async (req: Request, res: Response): Promise<void> => {
+// Purge is irreversible and orphans every consumer row that stores the item id,
+// so it is owner-only (openapi §"Archive is the default; purge is explicit"):
+// `?purge=true` additionally needs `delete` on the parent list (list-owner), on
+// top of the route's base `remove_value` (which is all an archive needs).
+// Review M-1.
+const requireDeleteOnPurge = requireAuthzCheckWhen(
+  (req) => req.query.purge === 'true',
+  'SelectionList',
+  'delete',
+);
+
+router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remove_value'), requireDeleteOnPurge, async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -700,31 +798,40 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
   }
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ?`,
-      [itemId, listId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
-      return;
-    }
+    const found = await db.transaction(async (trx): Promise<boolean> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string; code: string }] }>(
+        `SELECT id, code FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+        [itemId, listId],
+      );
+      if (!existing.rows[0]) return false;
 
-    if (purge) {
-      await db.transaction(async (trx) => {
+      const ctx = eventContextFromRequest(req);
+      if (purge) {
         await trx.raw(
           `DELETE FROM selection_list_item_translations WHERE item_id = ?`,
           [itemId],
         );
         await trx.raw(`DELETE FROM selection_list_items WHERE id = ?`, [itemId]);
-      });
+        // item.deleted only: it implies the item's translations (no translation events).
+        await emitItemDeleted(trx, ctx, listId, { itemId, code: existing.rows[0].code });
+      } else {
+        // Soft delete: archive (no event if it already was archived)
+        const before = await readItem(trx, itemId);
+        await trx.raw(`UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`, [itemId]);
+        await refreshItemUserModified(trx, itemId);
+        await emitItemChanged(trx, ctx, listId, itemId, before);
+      }
+      return true;
+    });
+    if (!found) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
+      return;
+    }
+
+    if (purge) {
       res.status(204).send();
     } else {
-      // Soft delete: archive
-      await db.raw(
-        `UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`,
-        [itemId],
-      );
-
       const result = await db.raw<{ rows: ItemRow[] }>(
         `
         SELECT
@@ -734,6 +841,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
           i.sort_order,
           i.status,
           i.created_by,
+          i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
           i.created_at,
           i.updated_at,
           t.label,
@@ -749,7 +857,10 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
       res.status(200).json(formatItem(result.rows[0]));
     }
   } catch (err) {
-    console.error('[items] DELETE /:listId/items/:itemId error:', err);
+    getLog(req).error(
+      { err, op: 'items DELETE /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items DELETE /:listId/items/:itemId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -777,19 +888,24 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
   }
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ?`,
-      [itemId, listId],
-    );
-    if (!existing.rows[0]) {
+    const found = await db.transaction(async (trx): Promise<boolean> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+        [itemId, listId],
+      );
+      if (!existing.rows[0]) return false;
+
+      const before = await readItem(trx, itemId);
+      await trx.raw(`UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`, [itemId]);
+      await refreshItemUserModified(trx, itemId);
+      await emitItemChanged(trx, eventContextFromRequest(req), listId, itemId, before);
+      return true;
+    });
+    if (!found) {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
       return;
     }
-
-    await db.raw(
-      `UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`,
-      [itemId],
-    );
 
     const result = await db.raw<{ rows: ItemRow[] }>(
       `
@@ -800,6 +916,7 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
@@ -815,7 +932,10 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
 
     res.status(200).json(formatItem(result.rows[0]));
   } catch (err) {
-    console.error('[items] POST /:listId/items/:itemId/archive error:', err);
+    getLog(req).error(
+      { err, op: 'items POST /:listId/items/:itemId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items POST /:listId/items/:itemId/archive error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });

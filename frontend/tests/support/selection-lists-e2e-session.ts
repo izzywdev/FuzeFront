@@ -1,7 +1,7 @@
 import type { ConsoleMessage, Page } from '@playwright/test'
 
 /**
- * Selection List red-spec harness — authenticated-session mock for a
+ * Selection List e2e harness — authenticated-session mock for a
  * backend-less run (the `selection-list-service-e2e` CI job serves the
  * frontend with `vite preview`, no backend, no Authentik).
  *
@@ -9,7 +9,7 @@ import type { ConsoleMessage, Page } from '@playwright/test'
  * mobile-layout.spec.ts, clock-load.spec.ts, ...) signs in against a REAL
  * backend + Authentik on a full local-up stack. This job intentionally does
  * not run that stack — it only builds and serves the static frontend bundle,
- * so the selection-list red specs mock the shell's session/flag/org
+ * so the selection-list e2e specs mock the shell's session/flag/org
  * dependencies directly instead. Without this, `/settings/selection-lists`
  * (and its /translations, /access siblings) redirect straight to
  * `/dashboard` before any UI under test ever mounts — regardless of how
@@ -132,7 +132,7 @@ export function isShellHarnessNoise(msg: ConsoleMessage): boolean {
  * signed-in user does — load the shell, let the flags settle, then navigate
  * client-side — so that a defect in the HARD-LOAD path is isolated to the one spec
  * that asserts it ("flag-gated deep links" in
- * selection-lists-list-management.red.spec.ts) instead of masking every other
+ * selection-lists-list-management.spec.ts) instead of masking every other
  * assertion in the four selection-lists specs.
  *
  * That is not hypothetical: on a hard load the shell mounts the route tree before

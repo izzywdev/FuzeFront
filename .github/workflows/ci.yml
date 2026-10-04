@@ -431,10 +431,27 @@ jobs:
     timeout-minutes: 30
     needs: build
 
-    # selection-list-service is a root workspace member. Its tests mock the DB
-    # (jest.mock('../src/db', ...)) so no Postgres service container is needed.
+    # selection-list-service is a root workspace member. Most of its tests mock
+    # the DB (jest.mock('../src/db', ...)); tests/handlers.db.test.ts runs the
+    # Kafka lifecycle handlers against REAL Postgres (a mocked knex cannot catch a
+    # wrong column name -- review M-3), so a postgres service container is
+    # provided and SLS_TEST_DATABASE_URL points the suite at it (CI=true makes a
+    # missing DB a failure, never a skip).
     # It imports @fuzefront/auth (file: dep) whose types point at dist/index.d.ts,
     # so @fuzefront/auth must be built before the type-check and jest run.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: selection_list_service_unit
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
       - name: Checkout code
@@ -463,38 +480,44 @@ jobs:
         # pattern as @fuzefront/auth.
         run: npm run -w @fuzefront/shared build
 
+      - name: Build @fuzefront/security-client + @fuzefront/service-auth (d.ts for type-check)
+        # src/lib/machineIdentity.ts mints the service's client_credentials token
+        # with @fuzefront/service-auth (grant/revoke no longer use the end user's
+        # token). Its types point at dist/index.d.ts, which in turn re-exports
+        # types from @fuzefront/security-client's dist.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+
       - name: Type-check selection-list-service
         run: npm run -w selection-list-service build
 
       - name: Run selection-list-service unit tests
-        # 9 test files covering all routes, middleware, and the quota service.
-        # Tests mock the DB and the feature-flag client — no external services.
+        # Route/middleware/quota/handler/flag/probe suites mock the DB and the
+        # flag + token clients (no Unleash / Security API); the lifecycle
+        # handlers additionally run against the postgres service above.
+        env:
+          SLS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/selection_list_service_unit
         run: npm run -w selection-list-service test
 
   selection-list-service-e2e:
-    name: Selection list E2E red specs (TDD — expected to fail until UI lands)
+    name: Selection list E2E
     runs-on: ubuntu-latest
     needs: build
     # Hard bound. Without it this job inherits GitHub's 6-hour default, and a
-    # job that sits for hours holds `mergeable_state: blocked` on the PR even
-    # with every required context already green — observed stalling #1156 and
-    # #1180 for 40+ minutes each. 30 is well above the worst case (~5 min
-    # serial for the 141 specs) and far under 6 hours.
+    # job that sits for hours holds `mergeable_state: blocked` on the PR —
+    # observed stalling #1156 and #1180 for 40+ minutes each with every
+    # required context already green. 30 is well above the worst case
+    # (~19 min at 4 workers) and far under 6 hours.
     timeout-minutes: 30
-    # NO continue-on-error: this is a REAL gate now. These 4 specs were
-    # RED-by-design TDD specs written before @fuzeone/selection-lists-ui and the
-    # /settings/selection-lists route existed (EPIC-17 / FFRNT-188). The UI has
-    # landed and all 141 specs pass, so the escape hatch is retired — along with
-    # its `governance/vacuous-check-policy.json` allowlist entry and the `notify`
-    # exclusion. A failure here now blocks the PR, which is the point.
+    # A REAL gate: the selection-lists UI (@fuzeone/selection-lists-ui, mounted at
+    # /settings/selection-lists; EPIC-17 / FFRNT-188) has landed and all specs pass,
+    # so a regression must fail the build and `notify` below treats this job as a
+    # required result. These specs began as TDD-red; they are green now. The
+    # escape hatch (continue-on-error, the `notify` exclusion, and the
+    # `governance/vacuous-check-policy.json` allowlist entry) is retired.
     # Specs: frontend/tests/selection-lists-{list-management,picker,access-control,
-    #        translation-workbench}.red.spec.ts
-    #
-    # The job's `name:` (its check-run context) deliberately still says "red
-    # specs": that string may be wired into master's required-status-check list,
-    # and renaming a required context blocks every PR until branch protection is
-    # updated in the same change. Rename it together with that setting.
-    #
+    #        translation-workbench}.spec.ts
     # (timeout-minutes is set once, above. A second `timeout-minutes: 90` merged
     # in here from a concurrent PR made the key duplicate, and GitHub rejected
     # the whole file — no ci.yml job ran anywhere for three days.)
@@ -558,31 +581,36 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run selection-list UI specs (hard gate — must pass)
+      - name: Run selection-list e2e specs
+        # Drives a static `vite preview` build with the shell session/flag/org
+        # endpoints mocked in-browser (frontend/tests/support/selection-lists-e2e-session.ts);
+        # no backend is involved. A failure here fails the job and, via
+        # `notify`, the build.
         working-directory: frontend
         env:
           BASE_URL: http://localhost:4173
           CI: 'true'
-        # `--retries=0 --workers=4` used to override playwright.config.ts here,
-        # because retrying a test DECLARED to fail yields no information and
-        # tripled the runtime (155 red tests x 3 attempts x the 30s timeout, run
-        # serially, was a ~3h52m worst case). The specs pass now, so the config's
-        # CI defaults (`retries: 2`, `workers: 1`) earn their keep again: retries
-        # absorb genuine flake instead of multiplying a declared failure, and the
-        # serial run is ~5 min — well inside the 30 min job bound above.
+        # --workers=4 OVERRIDES playwright.config.ts for these specs only. The
+        # config sets `workers: 1` when CI is set; nothing in these specs shares
+        # state (static preview build, no backend, no fixtures between them), so
+        # serial execution buys nothing and 4 workers keeps the job well inside
+        # the timeout above. The config's `retries: 2` is left in force (no
+        # --retries override) so genuine flake is absorbed like in every other
+        # Playwright gate.
         run: |
           npx playwright test \
-            tests/selection-lists-list-management.red.spec.ts \
-            tests/selection-lists-picker.red.spec.ts \
-            tests/selection-lists-access-control.red.spec.ts \
-            tests/selection-lists-translation-workbench.red.spec.ts \
-            --project=chromium --reporter=list,html
+            tests/selection-lists-list-management.spec.ts \
+            tests/selection-lists-picker.spec.ts \
+            tests/selection-lists-access-control.spec.ts \
+            tests/selection-lists-translation-workbench.spec.ts \
+            --project=chromium --reporter=list,html \
+            --workers=4
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: selection-lists-red-spec-report
+          name: selection-lists-e2e-report
           path: frontend/playwright-report/
           retention-days: 14
 
@@ -628,6 +656,10 @@ jobs:
         run: npm run -w @fuzefront/auth build
       - name: Build @fuzefront/shared (d.ts for Kafka consumer type-check)
         run: npm run -w @fuzefront/shared build
+      - name: Build @fuzefront/security-client + @fuzefront/service-auth (d.ts for type-check)
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
       - name: Build selection-list-service
         run: npm run -w selection-list-service build
       - name: Run DB migrations
@@ -698,6 +730,12 @@ jobs:
           FLAGS_FORCE_ON: fuzefront.selection-lists.service
           SECURITY_SERVICE_URL: http://localhost:3002
           FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
+          # Machine identity for Security API grant/revoke (lib/machineIdentity.ts).
+          # CI-only FIXTURE values the stand-in Security API recognises
+          # (helpers/fake-security-api.mjs); not credentials for anything real. The
+          # stand-in answers 403 to any grant written with a user token.
+          SELECTION_LIST_SERVICE_CLIENT_ID: selection-list-service-ci
+          SELECTION_LIST_SERVICE_CLIENT_SECRET: ci-only-fixture-client-secret
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'
@@ -1375,10 +1413,11 @@ jobs:
     # its own and its runner pod pins a scale-set slot until a human drains
     # the pool. 30 min is >10x every observed runtime in this workflow.
     timeout-minutes: 30
-    # selection-list-service-e2e and selection-list-service-integration-tests are
-    # both REAL gates now — each appears in the success/failure conditions below.
-    # The e2e job was the last holdout: its specs were RED-by-design (TDD) and it
-    # carried continue-on-error until the UI landed. Both are retired.
+    # selection-list-service-e2e and selection-list-service-integration-tests are both
+    # REAL gates: each is in needs (so notify waits for it) and in the
+    # success/failure conditions below — both suites are green. The e2e job was
+    # the last holdout (its specs were RED-by-design TDD and it carried
+    # continue-on-error until the UI landed); that escape hatch is now retired.
     needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, gate-website-canonical-host, config-service-tests]
     if: always()
 

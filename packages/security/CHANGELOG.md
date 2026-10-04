@@ -1,5 +1,41 @@
 # Changelog — @fuzefront/security-client
 
+## 0.9.1 — AuthZ: human callers are authorized per tenant on grant/revoke, member/role management and cross-subject reads (security fix, unreleased)
+
+**Behavior tightening, no shape change.** `info.version` 0.9.0 -> 0.9.1,
+`SECURITY_CONTRACT_VERSION` 0.9.0 -> 0.9.1. Request and response schemas are
+unchanged; the only wire-visible change is that operations which previously
+admitted ANY authenticated human session now return the documented `403
+FORBIDDEN` (and `502` when the authorization provider cannot be reached to
+decide — fail-closed, never allow) for callers without standing.
+
+### Changed (authorization)
+
+- `POST /authz/grants` and `DELETE /authz/grants`: a human (session) caller
+  must administer the TARGET tenant, or hold `manage_access` on the exact
+  resource instance for an instance-scoped grant of a non-tenant-level role. A
+  caller cannot grant/revoke a role broader than the one that authorizes them
+  and has no standing in a tenant they do not administer. A `grantId` is
+  authorized against the tenant it names. Machine callers are unchanged
+  (`authz:admin` scope).
+- `GET /authz/grants` and `GET /authz/permissions`: reading ANOTHER subject's
+  data requires administering the tenant; a caller may always read their own.
+- `PATCH /authz/subjects/{subjectType}/{subjectKey}/attributes`: machine
+  callers only (`authz:admin`); human sessions are always `403`.
+- `GET /tenants/{id}`, `GET .../members`, `GET .../roles`: require read-level
+  standing in that tenant. `POST .../members`, `DELETE .../members/{userId}`,
+  `PUT .../members/{userId}/roles`: require tenant administration. The check
+  runs before the tenant lookup, so an unauthorized caller gets `403` whether
+  or not the tenant exists.
+- Documented `403` (and `502` where missing) on the operations above.
+
+### Consumers
+
+A service that calls grant/revoke on behalf of an end user with that user's
+token (e.g. to grant the creator of a resource its owner role) is now denied
+unless that user already administers the tenant/resource. Such a service must
+use a machine (`client_credentials`) identity carrying the `authz:admin` scope.
+
 ## 0.9.0 — AuthZ: subject ABAC attribute writes (contract slice, F1 of billing-service migration, unreleased)
 
 Freezes the ATTRIBUTE-WRITE surface the `billing-service` → `backend/security`

@@ -41,6 +41,15 @@ const renderEditor = (locale = 'fr') =>
 const q = (sel: string, root: ParentNode = document) => root.querySelector(sel)
 const qa = (sel: string, root: ParentNode = document) => Array.from(root.querySelectorAll(sel))
 
+/** A contract-shaped SelectionListAutofillResult. */
+const RESULT = (items_translated: number, items_skipped: number) => ({
+  locale: 'fr',
+  source_locale: 'en',
+  list_translated: false,
+  items_translated,
+  items_skipped,
+})
+
 const SOURCE = makeLocale({ locale: 'en', is_source: true, translated: 4, total: 4 })
 
 beforeEach(() => {
@@ -193,7 +202,7 @@ describe('frame 09 — autofill modal', () => {
   })
 
   it('overwrite_machine defaults to false and is sent as chosen', async () => {
-    m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 0 })
+    m.autofillTranslations.mockResolvedValue(RESULT(3, 0))
     const { user, dialog } = await openAutofill()
     const box = within(dialog).getByRole('checkbox', { name: /Overwrite existing machine translations/ })
     expect(box).not.toBeChecked()
@@ -205,7 +214,7 @@ describe('frame 09 — autofill modal', () => {
   })
 
   it('sends overwrite_machine: true only when the box is ticked', async () => {
-    m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 0 })
+    m.autofillTranslations.mockResolvedValue(RESULT(3, 0))
     const { user, dialog } = await openAutofill()
     await user.click(within(dialog).getByRole('checkbox'))
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
@@ -215,7 +224,7 @@ describe('frame 09 — autofill modal', () => {
   })
 
   it('disables the run button and checkbox while running', async () => {
-    const d = deferred<{ filled: number; skipped: number }>()
+    const d = deferred<ReturnType<typeof RESULT>>()
     m.autofillTranslations.mockReturnValue(d.promise)
     const { user, dialog } = await openAutofill()
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
@@ -225,12 +234,12 @@ describe('frame 09 — autofill modal', () => {
     expect(q('[data-state="running"]', dialog)).toHaveTextContent('Running autofill')
     expect(m.autofillTranslations).toHaveBeenCalledTimes(1)
 
-    d.resolve({ filled: 3, skipped: 0 })
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Run autofill' })).toBeEnabled())
+    d.resolve(RESULT(3, 0))
+    expect(await within(dialog).findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
   })
 
-  it('on completion keeps the dialog open and refreshes the locale index', async () => {
-    m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 1 })
+  it('on completion refreshes the locale index behind the still-open dialog; Close dismisses it', async () => {
+    m.autofillTranslations.mockResolvedValue(RESULT(3, 1))
     const { user, dialog } = await openAutofill()
     expect(m.getLocaleIndex).toHaveBeenCalledTimes(1)
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
@@ -238,12 +247,29 @@ describe('frame 09 — autofill modal', () => {
     // Frame 09 requires the run's summary to be readable, so completion refreshes
     // the index BEHIND the modal and leaves the modal up; Close dismisses it.
     await waitFor(() => expect(m.getLocaleIndex).toHaveBeenCalledTimes(2))
+    // the result is on screen and the dialog survived the refresh
+    expect(await within(dialog).findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+    // a finished run cannot be re-run from the same dialog
+    expect(within(dialog).getByRole('button', { name: 'Run autofill' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('a failed background refresh after completion does not unmount the dialog', async () => {
+    m.autofillTranslations.mockResolvedValue(RESULT(3, 1))
+    const { user, dialog } = await openAutofill()
+    m.getLocaleIndex.mockRejectedValue(new Error('index down'))
+    await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
+    expect(await within(dialog).findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
+    await waitFor(() => expect(m.getLocaleIndex).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByText('index down')).toBeNull()
   })
 
   // Frame 09: "On completion the result reports items_translated, items_skipped…".
   it('shows the autofill result (translated / skipped) after completion', async () => {
-    m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 1 })
+    m.autofillTranslations.mockResolvedValue(RESULT(3, 1))
     const { user, dialog } = await openAutofill()
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
     expect(await screen.findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
@@ -257,7 +283,7 @@ describe('frame 09 — autofill modal', () => {
   // in jsdom with an already-resolved mock, so only a real network round-trip
   // exposed it — hence the deferred refresh here.
   it('the post-run refresh does not tear down the modal or flash a loading skeleton', async () => {
-    m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 1 })
+    m.autofillTranslations.mockResolvedValue(RESULT(3, 1))
     const { user, dialog } = await openAutofill()
     const refresh = deferred<{ locales: ReturnType<typeof makeLocale>[] }>()
     m.getLocaleIndex.mockReturnValue(refresh.promise)
@@ -273,7 +299,7 @@ describe('frame 09 — autofill modal', () => {
   })
 
   it('shows "all strings already translated" when nothing was filled', async () => {
-    m.autofillTranslations.mockResolvedValue({ filled: 0, skipped: 0 })
+    m.autofillTranslations.mockResolvedValue(RESULT(0, 0))
     const { user, dialog } = await openAutofill()
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
     expect(await screen.findByText('All strings are already translated.')).toBeInTheDocument()

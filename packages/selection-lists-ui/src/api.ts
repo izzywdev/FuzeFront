@@ -11,8 +11,11 @@ import type {
   LocaleEditorResponse,
   AccessGrant,
   ResolveResponse,
+  ResolveWireResponse,
+  ResolvedItem,
   PagedResponse,
   ApiError,
+  AutofillResult,
 } from './types'
 
 const BASE = '/api/v1/selection-lists'
@@ -51,10 +54,17 @@ async function request<T>(
 export async function listSelectionLists(params: {
   cursor?: string | null
   status?: string
+  /**
+   * Exact-match filter on the org-unique list `key` (GET /v1/selection-lists
+   * `key` query parameter). The service answers a page of at most one row, so a
+   * caller can look a list up by its slug without walking pages.
+   */
+  key?: string
 } = {}): Promise<PagedResponse<SelectionList>> {
   const qs = new URLSearchParams()
   if (params.cursor) qs.set('cursor', params.cursor)
   if (params.status) qs.set('status', params.status)
+  if (params.key) qs.set('key', params.key)
   const url = `${BASE}${qs.toString() ? '?' + qs.toString() : ''}`
   const { data } = await request<PagedResponse<SelectionList>>(url)
   return data
@@ -172,29 +182,26 @@ export async function saveTranslation(
 /**
  * POST …/translations/{locale}/autofill.
  *
- * The contract (SelectionListAutofillResult, services/selection-list-service/openapi.yaml)
- * names the wire fields `items_translated` / `items_skipped` / `list_translated` — NOT
- * `filled` / `skipped`. Reading `data.filled` straight off the response yielded
- * `undefined` for both counts, so the completion summary rendered
- * `data-items-skipped={undefined}` (attribute absent) and the "nothing to do" branch
- * (`filled === 0 && skipped === 0`) could never be true. Map explicitly.
+ * Returns the response as-is, typed against the contract
+ * (SelectionListAutofillResult, services/selection-list-service/openapi.yaml),
+ * whose wire fields are `items_translated` / `items_skipped` / `list_translated`
+ * — NOT `filled` / `skipped`. An earlier version of this function re-typed the
+ * response as `{ filled, skipped }`, which doesn't exist on the wire: both
+ * counts came back `undefined`, so the completion summary rendered
+ * `data-items-skipped={undefined}` (attribute absent) and the "nothing to do"
+ * branch could never be true. Consume the contract's own field names instead
+ * of re-mapping them.
  */
 export async function autofillTranslations(
   listId: string,
   locale: string,
   body: { overwrite_machine: boolean },
-): Promise<{ filled: number; skipped: number }> {
-  const { data } = await request<{
-    items_translated: number
-    items_skipped: number
-  }>(`${BASE}/${listId}/translations/${locale}/autofill`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-  return {
-    filled: data?.items_translated ?? 0,
-    skipped: data?.items_skipped ?? 0,
-  }
+): Promise<AutofillResult> {
+  const { data } = await request<AutofillResult>(
+    `${BASE}/${listId}/translations/${locale}/autofill`,
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+  return data
 }
 
 // ── Access ────────────────────────────────────────────────────────────────────
@@ -225,12 +232,37 @@ export async function revokeAccessGrant(
 
 // ── Resolve ───────────────────────────────────────────────────────────────────
 
+/** `POST /v1/resolve` accepts at most this many ids per call (ResolveRequest.ids.maxItems). */
+export const RESOLVE_MAX_IDS = 500
+
+/**
+ * Bulk-resolve item ids to labels (`POST /v1/resolve`).
+ *
+ * The wire contract answers `{ results: { [id]: { label, locale, is_machine,
+ * status } }, missing: string[] }`; this normalises it to the array form the UI
+ * works with (`resolved[]`, each carrying its own `id`). A legacy
+ * `{ resolved: [...] }` body is also accepted. Ids are de-duplicated (the
+ * request schema is `uniqueItems`) and sent in ONE call; only a batch over the
+ * contract's 500-id cap is split, each chunk being a call of its own. An empty
+ * batch makes no call (the contract requires at least one id).
+ */
 export async function resolveItems(ids: string[]): Promise<ResolveResponse> {
-  const { data } = await request<ResolveResponse>('/api/v1/resolve', {
-    method: 'POST',
-    body: JSON.stringify({ ids }),
-  })
-  return data
+  const unique = Array.from(new Set(ids))
+  if (unique.length === 0) return { resolved: [], missing: [] }
+
+  const resolved: ResolvedItem[] = []
+  const missing: string[] = []
+  for (let i = 0; i < unique.length; i += RESOLVE_MAX_IDS) {
+    const chunk = unique.slice(i, i + RESOLVE_MAX_IDS)
+    const { data } = await request<ResolveWireResponse>('/api/v1/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ ids: chunk }),
+    })
+    if (Array.isArray(data.resolved)) resolved.push(...data.resolved)
+    for (const [id, r] of Object.entries(data.results ?? {})) resolved.push({ ...r, id })
+    missing.push(...(data.missing ?? []))
+  }
+  return { resolved, missing }
 }
 
 // ── Users search ──────────────────────────────────────────────────────────────

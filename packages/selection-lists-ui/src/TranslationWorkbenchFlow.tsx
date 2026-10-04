@@ -13,6 +13,7 @@ import type {
   LocaleIndexEntry,
   TranslationEntry,
   ApiError,
+  AutofillResult,
 } from './types'
 import {
   getLocaleIndex,
@@ -78,10 +79,14 @@ function AutofillModal({
 }) {
   const [overwriteMachine, setOverwriteMachine] = useState(false)
   const [running, setRunning] = useState(false)
-  const [result, setResult] = useState<{ filled: number; skipped: number } | null>(null)
+  const [result, setResult] = useState<AutofillResult | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [forbidden, setForbidden] = useState(false)
   const [nothingToDo, setNothingToDo] = useState(false)
+
+  // The run finished: keep the dialog open so the summary / "nothing to do"
+  // note is actually seen (frame 09). The user dismisses it with Close.
+  const done = result !== null || nothingToDo
 
   const handleConfirm = async () => {
     setRunning(true)
@@ -90,7 +95,7 @@ function AutofillModal({
     setNothingToDo(false)
     try {
       const res = await autofillTranslations(listId, locale, { overwrite_machine: overwriteMachine })
-      if (res.filled === 0 && res.skipped === 0) {
+      if (res.items_translated === 0 && res.items_skipped === 0 && !res.list_translated) {
         setNothingToDo(true)
       } else {
         setResult(res)
@@ -155,8 +160,8 @@ function AutofillModal({
         {/* Result */}
         {result && (
           <div data-result="autofill" style={{ marginBottom: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--success-soft)', borderRadius: 'var(--radius-md)' }}>
-            Autofill complete: {result.filled} translated,{' '}
-            <span data-items-skipped={result.skipped}>{result.skipped}</span> skipped.
+            Autofill complete: {result.items_translated} translated,{' '}
+            <span data-items-skipped={result.items_skipped}>{result.items_skipped}</span> skipped.
           </div>
         )}
 
@@ -168,7 +173,7 @@ function AutofillModal({
               type="checkbox"
               checked={overwriteMachine}
               onChange={e => setOverwriteMachine(e.target.checked)}
-              disabled={running}
+              disabled={running || done}
             />
             Overwrite existing machine translations
           </label>
@@ -178,8 +183,8 @@ function AutofillModal({
           <button
             data-action="confirm-autofill"
             onClick={handleConfirm}
-            disabled={running || forbidden}
-            style={{ ...s.btn, opacity: running || forbidden ? 0.6 : 1 }}
+            disabled={running || forbidden || done}
+            style={{ ...s.btn, opacity: running || forbidden || done ? 0.6 : 1 }}
           >
             {running ? 'Running…' : 'Run autofill'}
           </button>
@@ -534,6 +539,7 @@ function LocaleEditor({
             >
               <input
                 type="text"
+                aria-label={`${locale.toUpperCase()} translation for ${t.item_id}`}
                 value={currentLabel}
                 onChange={e => setLocalEdits(prev => ({ ...prev, [t.item_id]: e.target.value }))}
                 disabled={forbiddenAll}

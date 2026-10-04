@@ -1,9 +1,9 @@
 /**
- * SELECTION LISTS — LIST MANAGEMENT FLOW — INDEPENDENT, PRE-PRODUCTION, RED-by-design UI e2e.
+ * SELECTION LISTS — LIST MANAGEMENT FLOW — INDEPENDENT, PRE-PRODUCTION UI e2e.
  * (frontend-test-engineer — independent verification, NOT the implementer.)
  *
  * ── What this file is ────────────────────────────────────────────────────────
- * TDD RED specs for the list-management flow of EPIC-17 / FFRNT-188 (Selection
+ * Playwright specs for the list-management flow of EPIC-17 / FFRNT-188 (Selection
  * Lists). They are derived STRICTLY from the approved visual contract:
  *
  *   design/frames/selection-lists/manifest.json  (build inventory + test hooks)
@@ -30,22 +30,18 @@
  *   package     @fuzeone/selection-lists-ui
  *   components  SelectionListIndex, SelectionListDetail, ValueEditor, QuotaWarning
  *
- * ── These were RED by design; they are GREEN now (the name is history) ───────
- * Written before the route /settings/selection-lists and
- * @fuzeone/selection-lists-ui existed, so that the approved design — not the
- * implementation — fixed what "correct" means. Both have since landed and every
- * test here passes, so the job that runs them (`selection-list-service-e2e` in
- * ci.yml) is a HARD GATE with no continue-on-error: a failure is a regression,
- * never "expected TDD red". The `.red.` in the filename records the origin.
- *
- * Tests are deliberately NOT test.skip / test.fixme — hiding a failure defeats
- * the point.
+ * ── Status ───────────────────────────────────────────────────────────────────
+ * These began as TDD-red specs written against the approved design before
+ * @fuzeone/selection-lists-ui existed. The UI has landed and they are GREEN; they
+ * are now a blocking CI gate (job `selection-list-service-e2e`, rolled into
+ * `Notify Team`). A failure here is a real regression — fix the UI or the spec,
+ * never test.skip / test.fixme it away.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
- *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-list-management.red
+ *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-list-management.spec.ts
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
@@ -980,8 +976,8 @@ test.describe('Selection Lists list-management — frame 05-reorder', () => {
     })
     await injectListDetailData(page)
     await gotoListDetail(page)
-    // Wait for the value editor to render — this avoids the count()==0
-    // false-GREEN that a bare handles.count() check creates.
+    // Wait for the value editor to render — this fails when the UI is absent and
+    // avoids the count()==0 false-GREEN that a bare handles.count() check creates.
     await expect(
       page.locator("[data-panel='value-editor']"),
       '[data-panel="value-editor"] must render before checking handle absence',
@@ -1251,7 +1247,7 @@ test.describe('Selection Lists list-management — runtime console-clean gate (u
 
     await injectListIndexData(page)
     await gotoListIndex(page)
-    // The panel must be present for this gate to be meaningful — RED until it exists.
+    // The panel must be present for this gate to be meaningful — it must mount.
     await expect(page.locator("[data-panel='list-index']")).toBeVisible()
 
     expect(consoleErrors, `console errors on list-index:\n${consoleErrors.join('\n')}`).toEqual([])

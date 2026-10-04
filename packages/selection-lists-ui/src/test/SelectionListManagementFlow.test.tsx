@@ -351,11 +351,8 @@ describe('frame 02 — new list', () => {
     expect(q('[data-frame="02-new-list"]')).toBeNull()
   })
 
-  // a11y: each visible <label> should be programmatically tied to its control.
-  // Today the labels are plain siblings (no htmlFor / nesting), so assistive
-  // tech cannot name the inputs. `it.fails` pins the defect: when the labels are
-  // associated this test starts passing and vitest will force the marker off.
-  it.fails('a11y: the key and locale controls are named by their labels (KNOWN GAP)', async () => {
+  // a11y: each visible <label> is programmatically tied to its control.
+  it('a11y: the key and locale controls are named by their labels', async () => {
     await openNewList()
     expect(screen.getByLabelText('Key (slug)')).toBeInTheDocument()
     expect(screen.getByLabelText('Source locale')).toBeInTheDocument()
@@ -666,7 +663,7 @@ describe('frame 03 — list detail / value editor', () => {
       expect(live()).toHaveAttribute('aria-live', 'polite')
     })
 
-    it('Space lifts, arrows move, Space drops: PUTs the FULL permutation and announces each step', async () => {
+    it('Space lifts, arrows move, Space drops: PUTs the full non-archived permutation and announces each step', async () => {
       m.reorderItems.mockResolvedValue(undefined)
       await renderLoadedDetail()
 
@@ -699,14 +696,18 @@ describe('frame 03 — list detail / value editor', () => {
     // list's non-archived item ids", and the endpoint rejects anything else with
     // 400 VALIDATION_ERROR. Archived rows stay visible (greyed) and keep their
     // handle, but they carry no sort position, so their id must NOT be sent.
-    it('excludes archived rows from the permutation (contract: non-archived ids only)', async () => {
+    it('keeps archived rows on screen but leaves them out of the PUT (contract: non-archived ids only)', async () => {
       m.reorderItems.mockResolvedValue(undefined)
       await renderLoadedDetail([A, { ...B, status: 'archived' }, C])
       fireEvent.keyDown(handle('AT'), { key: ' ' })
       fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
       fireEvent.keyDown(handle('AT'), { key: ' ' })
-      await waitFor(() => expect(m.reorderItems).toHaveBeenCalledTimes(1))
-      expect(m.reorderItems).toHaveBeenCalledWith('sl_01', ['sli_1', 'sli_3'])
+      await waitFor(() =>
+        expect(m.reorderItems).toHaveBeenCalledWith('sl_01', ['sli_1', 'sli_3']),
+      )
+      expect(m.reorderItems).toHaveBeenCalledTimes(1)
+      // the archived row is still rendered, in its dragged position
+      expect(itemOrder()).toEqual(['sli_2', 'sli_1', 'sli_3'])
     })
 
     it('reorders the active rows around an archived one without sending its id', async () => {
@@ -786,17 +787,47 @@ describe('frame 03 — list detail / value editor', () => {
       expect(itemOrder()).toEqual(['sli_1', 'sli_2', 'sli_3'])
     })
 
-    // Frame 05 says a VALIDATION_ERROR reload "reloads the list" so the user sees
-    // the server's current order. The flow only restores its stale local copy.
-    it.fails('a 400 VALIDATION_ERROR reloads the list from the server (KNOWN GAP vs frame 05)', async () => {
+    // Frame 05: a VALIDATION_ERROR "reloads the list" so the user sees the
+    // server's current order — and the error stays visible while it does.
+    it('a 400 VALIDATION_ERROR reloads the list from the server and shows its order', async () => {
       m.reorderItems.mockRejectedValue(apiError(400, 'VALIDATION_ERROR', 'Not a full permutation'))
       await renderLoadedDetail()
       expect(m.listItems).toHaveBeenCalledTimes(1)
+      // the server's current order differs (a value was added elsewhere)
+      const D = makeItem({ id: 'sli_4', code: 'DK', label: 'Denmark', sort_order: 0 })
+      m.listItems.mockResolvedValue({ data: [A, B, C, D] })
       fireEvent.keyDown(handle('AT'), { key: ' ' })
       fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
       fireEvent.keyDown(handle('AT'), { key: ' ' })
       await screen.findByText('Not a full permutation')
-      expect(m.listItems).toHaveBeenCalledTimes(2)
+      await waitFor(() => expect(m.listItems).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(itemOrder()).toEqual(['sli_4', 'sli_1', 'sli_2', 'sli_3']))
+      expect(q('[data-error="VALIDATION_ERROR"]')).toBeInTheDocument()
+    })
+
+    it('a failed reload after VALIDATION_ERROR keeps the restored local order', async () => {
+      m.reorderItems.mockRejectedValue(apiError(400, 'VALIDATION_ERROR', 'Not a full permutation'))
+      await renderLoadedDetail()
+      m.listItems.mockRejectedValue(new Error('offline'))
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      await screen.findByText('Not a full permutation')
+      await waitFor(() => expect(m.listItems).toHaveBeenCalledTimes(2))
+      expect(itemOrder()).toEqual(['sli_1', 'sli_2', 'sli_3'])
+    })
+
+    it('sends NON-ARCHIVED item ids only (contract SelectionListItemReorder)', async () => {
+      m.reorderItems.mockResolvedValue(undefined)
+      await renderLoadedDetail([A, { ...B, status: 'archived' }, C])
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
+      fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      await waitFor(() => expect(m.reorderItems).toHaveBeenCalledTimes(1))
+      const ids = m.reorderItems.mock.calls[0][1] as string[]
+      expect(ids).toEqual(['sli_3', 'sli_1'])
+      expect(ids).not.toContain('sli_2')
     })
 
     it('fail-closed: roles without update_value get NO drag handles and a FORBIDDEN notice', async () => {

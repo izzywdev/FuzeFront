@@ -78,6 +78,49 @@ describe('isAppVisibleForOrg (BUG 2 filter unit)', () => {
   it('hides an app scoped to a DIFFERENT organization', () => {
     expect(isAppVisibleForOrg({ organizationId: 'org-2' }, 'org-1')).toBe(false)
   })
+
+  // Regression for the post-prod live-smoke failure (test 7, empty dashboard):
+  // after the 2026-08-25 backfill, first-party apps are owned by ROOT_ORG_ID
+  // rather than organizationId:null, so the organizationId===null branch stops
+  // recognizing them. A `public`/`marketplace` app must still be visible to
+  // everyone (server rule: canRead / scopeAppsQuery), regardless of active org.
+  const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
+
+  it('shows a PUBLIC app owned by ROOT_ORG_ID to a user with no active org', () => {
+    expect(
+      isAppVisibleForOrg(
+        { organizationId: ROOT_ORG_ID, manifest: { visibility: 'public' } },
+        null
+      )
+    ).toBe(true)
+  })
+
+  it('shows a PUBLIC app owned by ROOT_ORG_ID to a user whose active org is a DIFFERENT org', () => {
+    expect(
+      isAppVisibleForOrg(
+        { organizationId: ROOT_ORG_ID, manifest: { visibility: 'public' } },
+        'org-1'
+      )
+    ).toBe(true)
+  })
+
+  it('shows a MARKETPLACE app regardless of org ownership/active org', () => {
+    expect(
+      isAppVisibleForOrg(
+        { organizationId: 'org-2', manifest: { visibility: 'marketplace' } },
+        'org-1'
+      )
+    ).toBe(true)
+  })
+
+  it('still hides an ORGANIZATION-visibility app owned by a DIFFERENT org', () => {
+    expect(
+      isAppVisibleForOrg(
+        { organizationId: 'org-2', manifest: { visibility: 'organization' } },
+        'org-1'
+      )
+    ).toBe(false)
+  })
 })
 
 describe('DashboardPage (BUG 2 regression)', () => {
@@ -138,6 +181,38 @@ describe('DashboardPage (BUG 2 regression)', () => {
     render(<DashboardPage />)
 
     await waitFor(() => expect(screen.getByText('Clock')).toBeTruthy())
+  })
+
+  it('renders a PUBLIC app owned by ROOT_ORG_ID even for an org-less user (post-prod smoke repro)', async () => {
+    // The prod-realistic shape: Clock is visibility:'public' but owned by
+    // ROOT_ORG_ID after the backfill, and the synthetic smoke user has no org.
+    vi.mocked(sharedMock.useOrganizations).mockReturnValue({
+      organizations: [],
+      activeOrganizationId: null,
+      activeOrganization: null,
+      setActiveOrganization: vi.fn(),
+    } as any)
+    mockUseRegisteredApps.mockReturnValue({
+      apps: [
+        makeApp({
+          slug: 'clock',
+          organizationId: '00000000-0000-0000-0000-000000000010',
+          manifest: {
+            ...makeApp().manifest,
+            menuLabel: 'Clock',
+            visibility: 'public',
+          } as any,
+        }),
+      ],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+    })
+
+    render(<DashboardPage />)
+
+    await waitFor(() => expect(screen.getByText('Clock')).toBeTruthy())
+    expect(screen.queryByText(/No applications available/i)).toBeNull()
   })
 
   it('shows the empty state when the registry genuinely has no visible apps', async () => {

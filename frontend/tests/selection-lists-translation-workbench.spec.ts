@@ -1,9 +1,9 @@
 /**
- * SELECTION LISTS — TRANSLATION WORKBENCH FLOW — INDEPENDENT, PRE-PRODUCTION, RED-by-design UI e2e.
+ * SELECTION LISTS — TRANSLATION WORKBENCH FLOW — INDEPENDENT, PRE-PRODUCTION UI e2e.
  * (frontend-test-engineer — independent verification, NOT the implementer.)
  *
  * ── What this file is ────────────────────────────────────────────────────────
- * TDD RED specs for the translation-workbench flow of EPIC-17 / FFRNT-188 (Selection
+ * Playwright specs for the translation-workbench flow of EPIC-17 / FFRNT-188 (Selection
  * Lists). They are derived STRICTLY from the approved visual contract:
  *
  *   design/frames/selection-lists/manifest.json  (build inventory + test hooks)
@@ -24,22 +24,18 @@
  *   package     @fuzeone/selection-lists-ui
  *   components  TranslationWorkbench, LocaleEditor
  *
- * ── These were RED by design; they are GREEN now (the name is history) ───────
- * Written before the route /settings/selection-lists/:listId/translations and
- * @fuzeone/selection-lists-ui existed, so that the approved design — not the
- * implementation — fixed what "correct" means. Both have since landed and every
- * test here passes, so the job that runs them (`selection-list-service-e2e` in
- * ci.yml) is a HARD GATE with no continue-on-error: a failure is a regression,
- * never "expected TDD red". The `.red.` in the filename records the origin.
- *
- * Tests are deliberately NOT test.skip / test.fixme — hiding a failure defeats
- * the point.
+ * ── Status ───────────────────────────────────────────────────────────────────
+ * These began as TDD-red specs written against the approved design before
+ * @fuzeone/selection-lists-ui existed. The UI has landed and they are GREEN; they
+ * are now a blocking CI gate (job `selection-list-service-e2e`, rolled into
+ * `Notify Team`). A failure here is a real regression — fix the UI or the spec,
+ * never test.skip / test.fixme it away.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
- *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-translation-workbench.red
+ *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-translation-workbench.spec.ts
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'

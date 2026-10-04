@@ -1,0 +1,240 @@
+{
+  "$comment": "One valid example payload per selection-lists.* topic, keyed by topic. Validated against the registry by shared/tests/kafka/selection-lists.schemas.test.ts and quoted by docs/guides/SELECTION_LIST_EVENTS.md.",
+  "selection-lists.list.created": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e01",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "system", "principal": "selection-list-service", "seedSource": "platform" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 1,
+    "list": {
+      "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+      "key": "priority",
+      "sourceLocale": "en",
+      "status": "active",
+      "name": "Priority",
+      "description": null,
+      "seed": { "source": "platform", "packKey": "platform-defaults", "packVersion": 1, "userModified": false },
+      "createdAt": "2026-10-04T12:00:00.000Z",
+      "updatedAt": "2026-10-04T12:00:00.000Z"
+    }
+  },
+  "selection-lists.list.updated": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e02",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "ticket-priority",
+    "listRevision": 7,
+    "list": {
+      "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+      "key": "ticket-priority",
+      "sourceLocale": "en",
+      "status": "active",
+      "name": "Ticket priority",
+      "description": null,
+      "seed": { "source": "platform", "packKey": "platform-defaults", "packVersion": 1, "userModified": true },
+      "createdAt": "2026-10-04T12:00:00.000Z",
+      "updatedAt": "2026-10-05T09:30:00.000Z"
+    },
+    "changedFields": ["key", "name"],
+    "previousKey": "priority"
+  },
+  "selection-lists.list.archived": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e03",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "ticket-priority",
+    "listRevision": 8,
+    "list": {
+      "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+      "key": "ticket-priority",
+      "sourceLocale": "en",
+      "status": "archived",
+      "name": "Ticket priority",
+      "description": null,
+      "seed": null,
+      "createdAt": "2026-10-04T12:00:00.000Z",
+      "updatedAt": "2026-10-06T09:30:00.000Z"
+    }
+  },
+  "selection-lists.list.deleted": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e04",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "ticket-priority",
+    "listRevision": 9
+  },
+  "selection-lists.item.created": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e05",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 2,
+    "item": {
+      "itemId": "front_sli_01h455vb4pex5vsknk084sn02r",
+      "code": "CRITICAL",
+      "label": "Critical",
+      "description": null,
+      "sortOrder": 500,
+      "status": "active",
+      "seed": null,
+      "createdAt": "2026-10-04T12:05:00.000Z",
+      "updatedAt": "2026-10-04T12:05:00.000Z"
+    }
+  },
+  "selection-lists.item.updated": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e06",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 3,
+    "item": {
+      "itemId": "front_sli_01h455vb4pex5vsknk084sn02r",
+      "code": "CRITICAL",
+      "label": "Critical (P0)",
+      "description": null,
+      "sortOrder": 500,
+      "status": "active",
+      "seed": null,
+      "createdAt": "2026-10-04T12:05:00.000Z",
+      "updatedAt": "2026-10-04T12:06:00.000Z"
+    },
+    "changedFields": ["label"]
+  },
+  "selection-lists.item.archived": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e07",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 4,
+    "item": {
+      "itemId": "front_sli_01h455vb4pex5vsknk084sn02r",
+      "code": "CRITICAL",
+      "label": "Critical (P0)",
+      "description": null,
+      "sortOrder": 500,
+      "status": "archived",
+      "seed": null,
+      "createdAt": "2026-10-04T12:05:00.000Z",
+      "updatedAt": "2026-10-04T12:07:00.000Z"
+    }
+  },
+  "selection-lists.item.deleted": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e08",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 5,
+    "itemId": "front_sli_01h455vb4pex5vsknk084sn02r",
+    "code": "CRITICAL"
+  },
+  "selection-lists.item.reordered": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e09",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 6,
+    "order": [
+      { "itemId": "front_sli_01h455vb4pex5vsknk084sn02s", "code": "HIGH", "sortOrder": 100 },
+      { "itemId": "front_sli_01h455vb4pex5vsknk084sn02t", "code": "LOW", "sortOrder": 200 }
+    ]
+  },
+  "selection-lists.translation.upserted": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e0a",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 7,
+    "locale": "fr",
+    "isMachine": true,
+    "target": {
+      "kind": "item",
+      "itemId": "front_sli_01h455vb4pex5vsknk084sn02s",
+      "itemCode": "HIGH",
+      "label": "Haute",
+      "description": null
+    }
+  },
+  "selection-lists.translation.deleted": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e0b",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "listRevision": 8,
+    "locale": "fr",
+    "target": { "kind": "list" }
+  },
+  "selection-lists.access.granted": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e0c",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "userId": "usr_01h455vb4pex5vsknk084sn02z",
+    "role": "list-editor",
+    "previousRole": "list-viewer"
+  },
+  "selection-lists.access.revoked": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e0d",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "actor": { "type": "user", "userId": "usr_01h455vb4pex5vsknk084sn02q" },
+    "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+    "listKey": "priority",
+    "userId": "usr_01h455vb4pex5vsknk084sn02z",
+    "role": "list-editor"
+  },
+  "selection-lists.seed.completed": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e0e",
+    "requestId": "fuzecrm:org_01h455vb4pex5vsknk084sn02q:crm-defaults:v2",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "scope": "org",
+    "source": { "app": "fuzecrm", "service": "crm-service" },
+    "pack": { "key": "crm-defaults", "version": 2 },
+    "trigger": "app-installed",
+    "outcome": "upgraded",
+    "appliedVersion": 2,
+    "lists": [
+      {
+        "listId": "front_sl_01h455vb4pex5vsknk084sn02q",
+        "key": "fuzecrm-deal-stages",
+        "action": "updated",
+        "itemsCreated": 1,
+        "itemsUpdated": 0,
+        "itemsArchived": 0,
+        "itemsSkipped": 1
+      },
+      {
+        "listId": null,
+        "key": "fuzecrm-lead-sources",
+        "action": "skipped-user-deleted",
+        "itemsCreated": 0,
+        "itemsUpdated": 0,
+        "itemsArchived": 0,
+        "itemsSkipped": 0
+      }
+    ]
+  },
+  "selection-lists.seed.failed": {
+    "eventId": "0195a8f2-7c1e-7b3a-9f00-1a2b3c4d5e0f",
+    "requestId": "fuzecrm:org_01h455vb4pex5vsknk084sn02q:crm-defaults:v2",
+    "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+    "scope": "org",
+    "source": { "app": "fuzecrm", "service": "crm-service" },
+    "pack": { "key": "crm-defaults", "version": 2 },
+    "trigger": "app-installed",
+    "reason": "QUOTA_EXCEEDED",
+    "message": "Seeding 2 lists would exceed the organization's list quota (99 of 100 used).",
+    "retryable": true,
+    "details": [{ "quotaScope": "org_lists", "limit": 100, "current": 99, "requested": 2 }]
+  }
+}

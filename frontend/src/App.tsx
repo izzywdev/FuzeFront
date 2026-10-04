@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import { Button } from '@fuzefront/design-system'
 import {
@@ -18,7 +18,7 @@ import { AccountsProvider } from './contexts/AccountsContext'
 import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
-import { FeatureFlagProvider, useFlag, useFlagsLoaded } from './platform/featureFlags'
+import { FeatureFlagProvider, useFlag, useFlagsLoaded, useFlagState } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
 import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
@@ -574,7 +574,40 @@ function ConfigAuditHistoryRoute() {
  * render-time crash from unmounting the whole React tree (which caused the
  * Back button to also show a blank page).
  */
+const SELECTION_LISTS_FLAG = 'fuzefront.selection-lists.service'
+
+/**
+ * Route guard for the selection-list routes. Unlike `useFlag`, it waits for
+ * `/api/flags` to settle before deciding: deciding on the pre-fetch fallback
+ * (OFF) bounced hard loads / refreshes / bookmarks of these URLs to
+ * /dashboard even when the flag was ON. Loading renders a status placeholder
+ * (no redirect); settled OFF — including a failed fetch — redirects (fail-closed).
+ *
+ * Belt-and-suspenders with `FlagGatedRoute` below: both read the same
+ * `FeatureFlagContext`, so they can never disagree — this one is kept because
+ * `App.selection-lists-flag-ready.test.tsx` pins its specific loading testid.
+ */
+function useSelectionListsGate(): ReactNode | null {
+  const { enabled, ready } = useFlagState(SELECTION_LISTS_FLAG, false)
+  if (!ready) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="selection-lists-flag-loading"
+        style={{ padding: 'var(--space-6)', color: 'var(--text-secondary)' }}
+      >
+        Loading...
+      </div>
+    )
+  }
+  if (!enabled) return <Navigate to="/dashboard" replace />
+  return null
+}
+
 function SelectionListsRoute() {
+  const gate = useSelectionListsGate()
+  if (gate) return gate
   return (
     <FlagGatedRoute flag="fuzefront.selection-lists.service" redirectTo="/dashboard">
       <FederatedAppErrorBoundary appName="Selection Lists">
@@ -585,6 +618,8 @@ function SelectionListsRoute() {
 }
 
 function TranslationWorkbenchRoute() {
+  const gate = useSelectionListsGate()
+  if (gate) return gate
   return (
     <FlagGatedRoute flag="fuzefront.selection-lists.service" redirectTo="/dashboard">
       <FederatedAppErrorBoundary appName="Translation Workbench">
@@ -595,6 +630,8 @@ function TranslationWorkbenchRoute() {
 }
 
 function SelectionListAccessRoute() {
+  const gate = useSelectionListsGate()
+  if (gate) return gate
   return (
     <FlagGatedRoute flag="fuzefront.selection-lists.service" redirectTo="/dashboard">
       <FederatedAppErrorBoundary appName="Selection List Access">
