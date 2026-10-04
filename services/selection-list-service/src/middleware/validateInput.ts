@@ -28,10 +28,21 @@ import { getLog } from '../lib/logger';
 
 const MAX_ID_LENGTH = 255;
 
-/** Build the contract's `^<prefix>_[0-9a-z]+$` (maxLength 255) matcher for a registered prefix. */
+/** The contract's suffix rule: one or more of [0-9a-z]. A literal regex, never built from input. */
+const ID_SUFFIX = /^[0-9a-z]+$/;
+
+/**
+ * Build the contract's `^<prefix>_[0-9a-z]+$` (maxLength 255) matcher for a registered
+ * prefix. The prefix is compared with startsWith and only the suffix goes through a
+ * hardcoded regex, so no RegExp is ever constructed from a variable.
+ */
 function idMatcher(prefix: string): (raw: unknown) => boolean {
-  const re = new RegExp(`^${prefix}_[0-9a-z]+$`);
-  return (raw) => typeof raw === 'string' && raw.length <= MAX_ID_LENGTH && re.test(raw);
+  const head = `${prefix}_`;
+  return (raw) =>
+    typeof raw === 'string' &&
+    raw.length <= MAX_ID_LENGTH &&
+    raw.startsWith(head) &&
+    ID_SUFFIX.test(raw.slice(head.length));
 }
 
 export const isListId = idMatcher(ENTITY_PREFIXES.selectionList);
