@@ -28,6 +28,12 @@ Quick start::
 """
 
 from ._paginator import paginate
+from .changed import (
+    CONFIG_CHANGED_TOPIC,
+    ConfigCache,
+    ConfigChangedPayload,
+    parse_config_changed_event,
+)
 from .client import (
     NOT_MODIFIED,
     ConditionalEffectiveConfig,
@@ -41,8 +47,12 @@ from .types import (
     KEY_DEFINITION_ID_PREFIX,
     NAMESPACE_ID_PREFIX,
     SCOPE_CHAIN,
+    Actor,
     ConfigErrorBody,
     ConfigErrorCode,
+    ConfigHistoryAction,
+    ConfigHistoryEntry,
+    RevealSecretResult,
     ConfigErrorDetail,
     ConfigOperation,
     ConfigOperationType,
@@ -64,9 +74,17 @@ from .types import (
     ValueType,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
+    "CONFIG_CHANGED_TOPIC",
+    "Actor",
+    "ConfigCache",
+    "ConfigChangedPayload",
+    "ConfigHistoryAction",
+    "ConfigHistoryEntry",
+    "RevealSecretResult",
+    "parse_config_changed_event",
     "KEY_DEFINITION_ID_PREFIX",
     # Identifier constants
     "NAMESPACE_ID_PREFIX",

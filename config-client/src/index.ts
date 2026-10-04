@@ -24,6 +24,13 @@ export {
 } from './types'
 
 export type {
+  Actor,
+  ConfigHistoryAction,
+  ConfigHistoryEntry,
+  ConfigHistoryEntryId,
+  ListConfigHistoryParams,
+  RevealSecretRequest,
+  RevealSecretResult,
   ConfigErrorBody,
   ConfigErrorCode,
   ConfigErrorDetail,
@@ -52,3 +59,14 @@ export type {
   ScopeType,
   ValueType,
 } from './types'
+
+export {
+  CONFIG_CHANGED_TOPIC,
+  ConfigCache,
+  parseConfigChangedEvent,
+} from './changed'
+export type {
+  ConfigCacheOptions,
+  ConfigChangedEvent,
+  ConfigChangedPayload,
+} from './changed'
