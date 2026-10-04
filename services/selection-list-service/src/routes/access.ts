@@ -29,6 +29,7 @@
 //   - Deterministic order: user_id ASC (stable under concurrent writes).
 
 import { Router, Request, Response } from 'express';
+import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
 import { authMiddleware } from '../middleware/auth';
@@ -153,7 +154,10 @@ router.get(
         },
       });
     } catch (err) {
-      console.error('[access.GET] DB error', err);
+      getLog(req).error(
+      { err, op: 'access.GET DB error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'access.GET DB error failed',
+    );
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to list access grants.' });
     }
   },
@@ -319,7 +323,10 @@ router.put(
         res.status(err.status).json(err.body);
         return;
       }
-      console.error('[access.PUT] error', err);
+      getLog(req).error(
+      { err, op: 'access.PUT error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'access.PUT error failed',
+    );
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to grant access.' });
     }
   },
@@ -402,7 +409,10 @@ router.delete(
         res.status(err.status).json(err.body);
         return;
       }
-      console.error('[access.DELETE] error', err);
+      getLog(req).error(
+      { err, op: 'access.DELETE error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'access.DELETE error failed',
+    );
       res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to revoke access.' });
     }
   },

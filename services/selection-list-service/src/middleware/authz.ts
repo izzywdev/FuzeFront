@@ -58,6 +58,7 @@ import { AuthzClient, createAuthzClient } from '@fuzefront/auth';
 import type { Knex } from 'knex';
 import { db } from '../db';
 import { getBooleanFlag, FLAGS, FlagContext } from './authz.flags';
+import { createLoggedFetch, getLog, timed } from '../lib/logger';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -124,7 +125,9 @@ function makeNoOpProxy(): AuthzClient {
 
 let _authzClient: AuthzClient = isNoOpMode
   ? makeNoOpProxy()
-  : createAuthzClient({ baseUrl: SECURITY_SERVICE_URL });
+  : // createLoggedFetch: boundary logging (start/end/elapsedMs) + x-request-id
+    // propagation on every Security API call; behaviour is otherwise unchanged.
+    createAuthzClient({ baseUrl: SECURITY_SERVICE_URL, fetch: createLoggedFetch() });
 
 /** Returns the active authz client (real or no-op). */
 export function getAuthzClient(): AuthzClient {
@@ -190,9 +193,9 @@ export function requireAuthzCheck(resource: string, action: string) {
     const authzEnabled = await getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, flagCtx);
 
     if (!authzEnabled) {
-      console.warn(
-        '[authz] authz-enabled flag is OFF — passing through without a Security API check.',
-        { userId, orgId, resource, action },
+      getLog(req).warn(
+        { userId, orgId, resource, action, flag: FLAGS.AUTHZ_ENABLED },
+        'authz-enabled flag is OFF — passing through without a Security API check',
       );
       next();
       return;
@@ -212,10 +215,14 @@ export function requireAuthzCheck(resource: string, action: string) {
       // indistinguishable (no cross-org existence oracle), and the Security API
       // is never asked to rule on an id the caller's tenant does not own.
       if (listId) {
-        const exists = await db('selection_lists')
-          .where({ id: listId, organization_id: orgId })
-          .first('id');
+        const exists = await timed(
+          getLog(req),
+          'db.selection_lists.exists',
+          () => db('selection_lists').where({ id: listId, organization_id: orgId }).first('id'),
+          { listId, orgId },
+        );
         if (!exists) {
+          getLog(req).debug({ listId, orgId }, 'authz precheck: list not in caller org — 404');
           res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
           return;
         }
@@ -231,6 +238,10 @@ export function requireAuthzCheck(resource: string, action: string) {
         token,
       );
       if (!decision.allow) {
+        getLog(req).info(
+          { userId, orgId, resource, action, listId, allow: false },
+          'authz decision: denied',
+        );
         if (action === 'read' && listId) {
           // A read the caller is not entitled to is a 404, not a 403, so the
           // API is not an existence oracle (openapi §Authorization).
@@ -245,7 +256,10 @@ export function requireAuthzCheck(resource: string, action: string) {
       // Fail CLOSED: any Security API error (including a thrown
       // AuthzError('DECISION_UNAVAILABLE') for a timeout/non-200) must never
       // grant access.
-      console.error('[authz] Security API check threw — failing closed.', { err, userId, orgId, resource, action });
+      getLog(req).error(
+        { err, userId, orgId, resource, action, listId },
+        'Security API check threw — failing closed',
+      );
       res.status(403).json({ code: 'FORBIDDEN', message: 'Authorization service unavailable.' });
     }
   };

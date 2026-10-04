@@ -22,6 +22,7 @@
 //   POST   /:listId/archive   — always archives (soft-delete)
 
 import { Router, Request, Response } from 'express';
+import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { isSelectionListsEnabled } from '../flags';
@@ -368,7 +369,10 @@ router.get('/', requireAuthzCheck('SelectionList', 'read'), async (req: Request,
       page: authzEnforced ? { nextCursor, hasMore } : { nextCursor, hasMore, total },
     });
   } catch (err) {
-    console.error('[lists] GET / error:', err);
+    getLog(req).error(
+      { err, op: 'lists GET / error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists GET / error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -513,7 +517,10 @@ router.post('/', requireAuthzCheck('SelectionList', 'add_value'), enforceListQuo
       res.status(409).json({ code: 'CONFLICT', message: `A list with key '${key}' already exists.` });
       return;
     }
-    console.error('[lists] POST / error:', err);
+    getLog(req).error(
+      { err, op: 'lists POST / error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists POST / error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -592,7 +599,10 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
 
     res.status(200).json(formatList(row));
   } catch (err) {
-    console.error('[lists] GET /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists GET /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists GET /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -762,7 +772,10 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), async (re
       res.status(409).json({ code: 'CONFLICT', message: 'A list with that key already exists.' });
       return;
     }
-    console.error('[lists] PATCH /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists PATCH /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists PATCH /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -853,7 +866,10 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
       res.status(200).json(formatList(result.rows[0]));
     }
   } catch (err) {
-    console.error('[lists] DELETE /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists DELETE /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists DELETE /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -916,7 +932,10 @@ router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), as
 
     res.status(200).json(formatList(result.rows[0]));
   } catch (err) {
-    console.error('[lists] POST /:listId/archive error:', err);
+    getLog(req).error(
+      { err, op: 'lists POST /:listId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists POST /:listId/archive error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });

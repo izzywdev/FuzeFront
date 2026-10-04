@@ -11,6 +11,7 @@
 // Return 404 when the flag is OFF so the service is invisible until enabled.
 
 import { Router, Request, Response } from 'express';
+import { getLog } from '../lib/logger';
 import { getQuotaUsage } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
 import { requireAuthzCheck } from '../middleware/authz';
@@ -45,7 +46,10 @@ router.get('/quota', requireAuthzCheck('SelectionList', 'read'), async (req: Req
     const usage = await getQuotaUsage(req.orgId, req.userId);
     res.status(200).json(usage);
   } catch (err) {
-    console.error('[quota] getQuotaUsage error:', err);
+    getLog(req).error(
+      { err, op: 'quota getQuotaUsage error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'quota getQuotaUsage error failed',
+    );
     res.status(500).json({
       code: 'INTERNAL_ERROR',
       message: 'An unexpected error occurred retrieving quota usage.',

@@ -14,8 +14,9 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import type { SelectionListItem, ResolvedItem, ApiError } from './types'
+import type { SelectionListItem, ApiError } from './types'
 import {
+  listSelectionLists,
   listItems,
   resolveItems,
   unwrapItems,
@@ -50,13 +51,13 @@ const s = {
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: '2.5rem',
-    textAlign: 'left' as const,
+    textAlign: 'start' as const,
   } as React.CSSProperties,
   comboMenu: {
     position: 'absolute' as const,
     top: 'calc(100% + var(--space-1))',
-    left: 0,
-    right: 0,
+    insetInlineStart: 0,
+    insetInlineEnd: 0,
     background: 'var(--bg-surface)',
     borderRadius: 'var(--radius-md)',
     border: '1px solid var(--border-color)',
@@ -120,7 +121,7 @@ const s = {
     background: 'var(--danger-soft)',
     color: 'var(--danger)',
     fontSize: 'var(--text-xs)',
-    marginLeft: 'var(--space-2)',
+    marginInlineStart: 'var(--space-2)',
   } as React.CSSProperties,
   infoNote: {
     padding: 'var(--space-2) var(--space-3)',
@@ -146,12 +147,55 @@ const DISPLAY_LOCALES = ['en', 'ja', 'fr', 'de']
 // ─────────────────────────────────────────────────────────────────────────────
 // SelectionListPicker — the embeddable component
 // ─────────────────────────────────────────────────────────────────────────────
-interface SelectionListPickerProps {
+
+/**
+ * Public API of the embeddable picker.
+ *
+ * The picker is UNCONTROLLED: `initialValue` seeds the selection (it is read on
+ * mount and again only if the host passes a different `initialValue`), after
+ * which the picker owns the state and reports every USER change through
+ * `onChange`. Seeding from `initialValue` never fires `onChange` — the host
+ * already has that value.
+ *
+ * Values are ALWAYS item ids (`front_sli_…`), never an item `code` or a label:
+ * the contract says consumers persist the id and resolve labels at render time
+ * (the label shown comes from the service, already resolved for the viewer's
+ * locale). `onChange` emits exactly what the hidden `[data-persisted]` slot
+ * carries (multi: the same ids, in the list's `sort_order`, not click order).
+ */
+interface SelectionListPickerBaseProps {
+  /**
+   * The list's org-unique `key` (e.g. "sales-regions"). The picker looks the
+   * list up by key (`GET /v1/selection-lists`, matching `key`) and then reads
+   * items by the list `id` the contract requires. A `front_sl_…` list id is
+   * also accepted and used as-is.
+   */
   listKey: string
-  mode: 'single' | 'multi'
-  initialValue?: string   // pre-selected item ID (may be archived/missing)
-  max?: number            // max selections (multi mode)
+  /** Stored item id to pre-select. May be active, archived or purged (frame 14). */
+  initialValue?: string
 }
+
+export interface SingleSelectionListPickerProps extends SelectionListPickerBaseProps {
+  mode: 'single'
+  /** Called with the newly chosen item id when the user picks a different value. */
+  onChange?: (value: string) => void
+  /** Has no meaning in single mode. */
+  max?: undefined
+}
+
+export interface MultiSelectionListPickerProps extends SelectionListPickerBaseProps {
+  mode: 'multi'
+  /**
+   * Called with the full selection (item ids in the list's `sort_order`) after
+   * every select / deselect / chip removal / "Clear all". Refused selections
+   * (max reached) do not call it.
+   */
+  onChange?: (value: string[]) => void
+  /** Host-supplied cap on selections (0 / undefined = unlimited). */
+  max?: number
+}
+
+export type SelectionListPickerProps = SingleSelectionListPickerProps | MultiSelectionListPickerProps
 
 type LoadState = 'loading' | 'error' | 'not-found' | 'loaded'
 
@@ -163,11 +207,54 @@ interface ResolvedValueState {
   status?: string
 }
 
-export function SelectionListPicker({ listKey, mode, initialValue, max }: SelectionListPickerProps) {
+/** Contract list ids carry the `front_sl_` prefix; anything else is a list KEY. */
+const LIST_ID_PREFIX = 'front_sl_'
+/** Safety cap for cursor walking (lists/org and items/list are quota-bounded well below this). */
+const MAX_PAGES = 20
+
+class ListNotFoundError extends Error {
+  status = 404
+  code = 'NOT_FOUND'
+}
+
+/** key -> list id via the contract's list endpoint (a list the caller cannot see is simply absent). */
+async function findListId(listKey: string): Promise<string> {
+  if (listKey.startsWith(LIST_ID_PREFIX)) return listKey
+  let cursor: string | null = null
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await listSelectionLists(cursor ? { cursor } : {})
+    const hit = unwrapItems(res).find(l => l.key === listKey)
+    if (hit) return hit.id
+    cursor = unwrapCursor(res)
+    if (!cursor) break
+  }
+  throw new ListNotFoundError(`List "${listKey}" not found`)
+}
+
+/**
+ * The value the host form holds for a given selection — the single source of
+ * truth for BOTH the `[data-persisted]` slot and `onChange`.
+ * Purged: keep the unknown id. Otherwise the selected ACTIVE ids in sort_order;
+ * if none, an archived stored id stays (never silently dropped).
+ */
+function valueFor(
+  selectedIds: string[],
+  resolved: ResolvedValueState | null,
+  activeItems: SelectionListItem[],
+): string[] {
+  if (resolved?.kind === 'missing') return [resolved.id]
+  const ids = activeItems
+    .filter(it => selectedIds.includes(it.id))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map(it => it.id)
+  if (ids.length === 0 && resolved?.kind === 'archived') return [resolved.id]
+  return ids
+}
+
+export function SelectionListPicker(props: SelectionListPickerProps) {
+  const { listKey, mode, initialValue, max } = props
   const [items, setItems] = useState<SelectionListItem[]>([])
   const [loadState, setLoadState] = useState<LoadState>('loading')
-  const [hasMore, setHasMore] = useState(false)
-  const [cursor, setCursor] = useState<string | null>(null)
 
   // Combobox state
   const [open, setOpen] = useState(false)
@@ -179,6 +266,10 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
   // Resolved initial value (archived / missing)
   const [resolvedValue, setResolvedValue] = useState<ResolvedValueState | null>(null)
 
+  // True once the user has changed the value: a late /resolve of the initial
+  // value must not overwrite what the user (and, via onChange, the host) chose.
+  const touchedRef = useRef(false)
+
   const searchRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -186,15 +277,18 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
   const loadItems = useCallback(async () => {
     setLoadState('loading')
     try {
-      // Use the key as the list ID path segment (the test intercepts by key in URL)
-      const page = await listItems(listKey, {})
-      const loaded = unwrapItems(page)
-      // Sort by sort_order
-      loaded.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-      setItems(loaded)
-      const nextCursor = unwrapCursor(page)
-      setCursor(nextCursor)
-      setHasMore(!!nextCursor)
+      const listId = await findListId(listKey)
+      // Follow page.nextCursor until the collection is exhausted.
+      const all: SelectionListItem[] = []
+      let cursor: string | null = null
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const res = await listItems(listId, cursor ? { cursor } : {})
+        all.push(...unwrapItems(res))
+        cursor = unwrapCursor(res)
+        if (!cursor) break
+      }
+      all.sort((x, y) => (x.sort_order ?? 0) - (y.sort_order ?? 0))
+      setItems(all)
       setLoadState('loaded')
     } catch (err) {
       const apiErr = err as ApiError & { status?: number }
@@ -208,8 +302,10 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
 
   // ── Resolve initial value (for archived/missing) ──────────────────────────
   const resolveInitialValue = useCallback(async (valueId: string) => {
+    const stale = () => touchedRef.current
     try {
       const res = await resolveItems([valueId])
+      if (stale()) return
       const resolved = res.resolved.find(r => r.id === valueId)
       if (resolved && resolved.status === 'archived') {
         setResolvedValue({ kind: 'archived', id: valueId, label: resolved.label, locale: resolved.locale, status: resolved.status })
@@ -225,6 +321,7 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
       }
     } catch {
       // Resolve failure: treat as if the value is there (fail-open)
+      if (stale()) return
       setSelectedIds(valueId ? [valueId] : [])
     }
   }, [])
@@ -234,12 +331,12 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
   }, [loadItems])
 
   useEffect(() => {
+    // A new initialValue re-seeds the picker (uncontrolled: it is a seed, not a binding).
+    touchedRef.current = false
     if (initialValue) {
       resolveInitialValue(initialValue)
-    } else if (mode === 'multi') {
-      // No initial value; start with empty selection
     }
-  }, [initialValue, mode, resolveInitialValue])
+  }, [initialValue, resolveInitialValue])
 
   // ── Close menu on outside click ───────────────────────────────────────────
   useEffect(() => {
@@ -275,11 +372,7 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 
   // The persisted value: IDs in sort_order order (comma-separated)
-  const persistedValue = (() => {
-    if (resolvedValue?.kind === 'missing') return resolvedValue.id
-    return selectedItemsOrdered.map(it => it.id).join(',') ||
-      (resolvedValue?.kind === 'archived' ? resolvedValue.id : '')
-  })()
+  const persistedValue = valueFor(selectedIds, resolvedValue, activeItems).join(',')
 
   const noMatches = searchText.trim() && filteredItems.length === 0
   const maxReached = mode === 'multi' && max !== undefined && max > 0 && selectedIds.filter(id => activeItems.some(it => it.id === id)).length >= max
@@ -295,29 +388,45 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
     setSearchText('')
   }
 
+  /** Report a user-initiated change to the host (never called while seeding). */
+  const emit = (nextSelected: string[], nextResolved: ResolvedValueState | null) => {
+    touchedRef.current = true
+    const value = valueFor(nextSelected, nextResolved, activeItems)
+    if (props.mode === 'single') {
+      if (value.length > 0) props.onChange?.(value[0])
+    } else {
+      props.onChange?.(value)
+    }
+  }
+
   const handleSelectItem = (item: SelectionListItem) => {
     if (mode === 'single') {
+      const unchanged = resolvedValue === null && selectedIds.length === 1 && selectedIds[0] === item.id
       setSelectedIds([item.id])
       setResolvedValue(null) // clear archived/missing when user picks a new item
       setOpen(false)
       setSearchText('')
+      if (!unchanged) emit([item.id], null)
     } else {
       if (maxReached && !selectedIds.includes(item.id)) return
-      setSelectedIds(prev =>
-        prev.includes(item.id)
-          ? prev.filter(id => id !== item.id)
-          : [...prev, item.id]
-      )
+      const next = selectedIds.includes(item.id)
+        ? selectedIds.filter(id => id !== item.id)
+        : [...selectedIds, item.id]
+      setSelectedIds(next)
+      emit(next, resolvedValue)
     }
   }
 
   const handleRemoveChip = (id: string) => {
-    setSelectedIds(prev => prev.filter(sid => sid !== id))
+    const next = selectedIds.filter(sid => sid !== id)
+    setSelectedIds(next)
+    emit(next, resolvedValue)
   }
 
   const handleClearAll = () => {
     setSelectedIds([])
     setResolvedValue(null)
+    emit([], null)
   }
 
   // ── Persisted value element ───────────────────────────────────────────────
@@ -377,7 +486,7 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
           Failed to load options.
           <button
             onClick={loadItems}
-            style={{ marginLeft: 'var(--space-2)', cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'none', border: 'none', color: 'var(--accent)', textDecoration: 'underline' }}
+            style={{ marginInlineStart: 'var(--space-2)', cursor: 'pointer', fontSize: 'var(--text-sm)', background: 'none', border: 'none', color: 'var(--accent)', textDecoration: 'underline' }}
             type="button"
           >
             Retry
@@ -442,7 +551,6 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
 
   // ── Archived value frame (frame 14) ───────────────────────────────────────
   if (resolvedValue?.kind === 'archived') {
-    const archivedId = resolvedValue.id
     const archivedLabel = resolvedValue.label ?? 'Archived value'
     const archivedLocale = resolvedValue.locale ?? 'en'
 
@@ -539,7 +647,7 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
               <span>
                 {archivedLabel}
                 {locale !== archivedLocale && (
-                  <span style={{ color: 'var(--text-tertiary)', marginLeft: 'var(--space-1)' }}>
+                  <span style={{ color: 'var(--text-tertiary)', marginInlineStart: 'var(--space-1)' }}>
                     (fallback from {archivedLocale})
                   </span>
                 )}
@@ -550,7 +658,7 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
 
         {/* Persisted value */}
         <div
-          data-persisted={archivedId}
+          data-persisted={persistedValue}
           aria-hidden="true"
           style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap' }}
         />
@@ -732,12 +840,11 @@ export function SelectionListPickerHarness() {
       </div>
 
       {listKey ? (
-        <SelectionListPicker
-          listKey={listKey}
-          mode={mode}
-          initialValue={initialValue}
-          max={max}
-        />
+        mode === 'multi' ? (
+          <SelectionListPicker listKey={listKey} mode="multi" initialValue={initialValue} max={max} />
+        ) : (
+          <SelectionListPicker listKey={listKey} mode="single" initialValue={initialValue} />
+        )
       ) : (
         <div style={{ color: 'var(--danger)' }}>
           Missing <code>?list=</code> query parameter.

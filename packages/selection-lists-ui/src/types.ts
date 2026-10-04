@@ -101,3 +101,12 @@ export interface ApiError {
   current?: number
   limit?: number
 }
+
+/** Mirrors contract `SelectionListAutofillResult`. */
+export interface AutofillResult {
+  locale: string
+  source_locale: string
+  list_translated: boolean
+  items_translated: number
+  items_skipped: number
+}
