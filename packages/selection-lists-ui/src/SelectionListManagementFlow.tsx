@@ -640,7 +640,7 @@ function SortableItemList({
           Saving order…
         </div>
       )}
-      {reorderError && reorderErrorCode === 'reorder-failed' && (
+      {reorderError && reorderErrorCode !== 'VALIDATION_ERROR' && (
         <div data-error="reorder-failed" style={s.errorBox}>{reorderError}</div>
       )}
       {reorderError && reorderErrorCode === 'VALIDATION_ERROR' && (
