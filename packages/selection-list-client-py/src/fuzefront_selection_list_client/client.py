@@ -30,6 +30,7 @@ from .errors import SelectionListApiError, _code_from_status
 from .types import (
     AccessEntry,
     AutofillResult,
+    ItemTranslationLocaleStatus,
     LifecycleStatus,
     Page,
     PagedResponse,
@@ -43,6 +44,7 @@ from .types import (
     SelectionListItemTranslation,
     SelectionListQuotaStatus,
     Translation,
+    TranslationLocaleStatus,
 )
 
 TokenProvider = str | Callable[[], str]
@@ -126,6 +128,23 @@ def _parse_item_translation(raw: dict) -> SelectionListItemTranslation:
         updated_at=raw["updated_at"],
         description=raw.get("description"),
         source_hash=raw.get("source_hash"),
+    )
+
+
+def _parse_translation_locale_status(raw: dict) -> TranslationLocaleStatus:
+    return TranslationLocaleStatus(
+        locale=raw["locale"],
+        completeness_pct=raw["completeness_pct"],
+        machine_translated=raw["machine_translated"],
+        source_changed=raw["source_changed"],
+    )
+
+
+def _parse_item_translation_locale_status(raw: dict) -> ItemTranslationLocaleStatus:
+    return ItemTranslationLocaleStatus(
+        locale=raw["locale"],
+        machine_translated=raw["machine_translated"],
+        source_changed=raw["source_changed"],
     )
 
 
@@ -314,6 +333,21 @@ class SelectionListClient:
             )
 
         return parsed
+
+    def _request_array(self, method: str, path: str) -> list[dict]:
+        """
+        Like ``_request`` but for the few bounded endpoints whose 200 body is a
+        bare JSON array (no pagination envelope). Raises ``SelectionListApiError``
+        if the body is not an array.
+        """
+        raw: object = self._request(method, path)
+        if not isinstance(raw, list):
+            raise SelectionListApiError(
+                code="UNKNOWN",
+                message=f"Expected a JSON array in response to {method} {path}",
+                status=200,
+            )
+        return raw
 
     # ------------------------------------------------------------------
     # Lists
@@ -575,6 +609,42 @@ class SelectionListClient:
     # Translations
     # ------------------------------------------------------------------
 
+    def list_translations(self, list_id: str) -> list[TranslationLocaleStatus]:
+        """
+        ``GET /v1/selection-lists/{listId}/translations`` -- one status entry per
+        locale that has a list-level translation (completeness, machine status,
+        staleness). The source locale is excluded.
+
+        Bounded by the supported locale count (max 11), so the response is a bare
+        array rather than a paginated envelope.
+        """
+        raw = self._request_array(
+            "GET",
+            f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/translations",
+        )
+        return [_parse_translation_locale_status(t) for t in raw]
+
+    def list_item_translations(
+        self,
+        list_id: str,
+        item_id: str,
+    ) -> list[ItemTranslationLocaleStatus]:
+        """
+        ``GET /v1/selection-lists/{listId}/items/{itemId}/translations`` -- one
+        status entry per locale that has an item-level translation, with machine
+        status and staleness. The source locale is excluded.
+
+        Bounded by the supported locale count (max 11); not paginated.
+        """
+        raw = self._request_array(
+            "GET",
+            (
+                f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/"
+                f"items/{urllib.parse.quote(item_id, safe='')}/translations"
+            ),
+        )
+        return [_parse_item_translation_locale_status(t) for t in raw]
+
     def upsert_list_translation(
         self,
         list_id: str,
@@ -625,6 +695,42 @@ class SelectionListClient:
         )
         assert raw is not None
         return _parse_item_translation(raw)
+
+    def delete_list_translation(self, list_id: str, locale: str) -> None:
+        """
+        ``DELETE /v1/selection-lists/{listId}/translations/{locale}`` -- remove one
+        locale's list-level translation.
+
+        Idempotent: deleting a translation that does not exist is not an error
+        (``204``). The source locale cannot be deleted (``400 VALIDATION_ERROR``).
+        Item-level translations in this locale are not touched. Returns ``None``.
+        """
+        self._request(
+            "DELETE",
+            (
+                f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/"
+                f"translations/{urllib.parse.quote(locale, safe='')}"
+            ),
+            allow_empty=True,
+        )
+
+    def delete_item_translation(self, list_id: str, item_id: str, locale: str) -> None:
+        """
+        ``DELETE /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}``
+        -- remove one locale's item-level translation.
+
+        Idempotent: deleting a translation that does not exist is not an error
+        (``204``). The source locale cannot be deleted. Returns ``None``.
+        """
+        self._request(
+            "DELETE",
+            (
+                f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/"
+                f"items/{urllib.parse.quote(item_id, safe='')}/"
+                f"translations/{urllib.parse.quote(locale, safe='')}"
+            ),
+            allow_empty=True,
+        )
 
     def autofill_translations(
         self,

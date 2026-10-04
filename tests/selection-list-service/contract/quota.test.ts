@@ -20,7 +20,7 @@
  *
  * Override with environment variables when the service uses different test values.
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';
@@ -123,6 +123,18 @@ describe('GET /v1/selection-lists/quota', () => {
 // ---------------------------------------------------------------------------
 
 describe('org_lists quota enforcement', () => {
+  // The fill lists hold this org AT its org_lists ceiling. Release them as soon
+  // as this test is done: the item-quota and concurrency tests below each need a
+  // list of their own and would otherwise be refused 403 QUOTA_EXCEEDED by the
+  // very ceiling this block just filled (test bug: cleanup was deferred to
+  // afterAll, which made those tests unsatisfiable at org_lists = 3).
+  afterEach(async () => {
+    const client = makeClient(ownerToken);
+    for (const id of createdListIds.splice(0)) {
+      await purgeList(client, id);
+    }
+  });
+
   it('creating a list when org_lists ceiling is reached → 403 QUOTA_EXCEEDED', async () => {
     const client = makeClient(ownerToken);
 
