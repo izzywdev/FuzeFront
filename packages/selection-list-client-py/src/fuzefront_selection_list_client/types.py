@@ -238,6 +238,33 @@ class SelectionListItemTranslation:
 
 
 @dataclass
+class TranslationLocaleStatus:
+    """
+    Translation workbench summary for one locale of a selection list.
+
+    Returned by ``GET /v1/selection-lists/{listId}/translations``.
+    """
+
+    locale: str
+    completeness_pct: int
+    machine_translated: bool
+    source_changed: bool
+
+
+@dataclass
+class ItemTranslationLocaleStatus:
+    """
+    Translation workbench summary for one locale of a selection-list item.
+
+    Returned by ``GET /v1/selection-lists/{listId}/items/{itemId}/translations``.
+    """
+
+    locale: str
+    machine_translated: bool
+    source_changed: bool
+
+
+@dataclass
 class UpsertListTranslationRequest:
     """Human-authored list text for one locale."""
 
