@@ -198,7 +198,7 @@ Build/consume rules: use design-system tokens only (no raw hex/spacing); the UI'
 
 **(gap) Code vs. contract, as shipped @ `a0de54f2`** — do not describe the matrix in the spec as fully enforced:
 - Per-role Security-API checks (`requireAuthzCheck`) are wired **only on the three `/access` routes**; list/item/translation routes enforce **org scope** but not the per-role matrix.
-- Those access routes check action `'admin'` for PUT/DELETE (spec's action name is `manage_access`), and the check is **skipped (pass-through + warning)** unless env flag `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true` (default OFF; `src/middleware/authz.flags.ts`).
+- Those access routes check action `manage_access`. Authorization is **always enforced when `NODE_ENV=production`** (`isAuthzEnforced()` in `src/middleware/authz.flags.ts` never reads the env var there); `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true` is only a dev/test switch outside production (default OFF = pass-through + warning). Grant/revoke WRITES are authenticated with the service's own machine identity (`src/lib/machineIdentity.ts`, client_credentials, scope `authz:admin`), never the end user's token.
 - `grantListOwner()` (writes the creator's `list-owner` grant) is defined in `src/middleware/authz.ts` but **no route calls it** (grep), so creating a list does not currently seed an owner grant.
 - `/v1/resolve` **requires a Bearer token** with an `orgId` claim (spec v2.0.0 closed the earlier anonymous-resolve gap; clients send the token on `resolveIds`).
 - Spec says purge needs `delete` (list-owner only); no per-role check exists on the purge path in the route handlers.

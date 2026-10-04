@@ -152,7 +152,8 @@ export function createRequestLogger(root: Logger = logger) {
     req.log = log;
     res.setHeader('x-request-id', reqId);
 
-    const isProbe = path === '/health' || path.startsWith('/health/');
+    const isProbe =
+      path === '/health' || path.startsWith('/health/') || path === '/ready' || path === '/metrics';
     const started = performance.now();
     log.debug('request received');
 

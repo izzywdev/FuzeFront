@@ -973,17 +973,23 @@ notificationService:
 #      deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
 #   2. In a LATER merge, flip `enabled` to true here via GitOps in a deploy window
 #      (the pre-sync Job then creates role selection_list_svc + its database).
+#      (The service also needs SERVICE_CLIENT_ID / SERVICE_CLIENT_SECRET sealed into the same
+#      Secret: its OAuth client_credentials identity (scope authz:admin) for Security API
+#      grant/revoke. Without them list creation / access grants fail closed.)
 # The tag: line MUST stay immediately after repository: — release.yml's GitOps
 # bump step only rewrites a tag: found on the line directly following a matched
 # repository: anchor.
 selectionListService:
   enabled: false
+  # Authorization is ALWAYS enforced in production (code-level, review H-1); the
+  # explicit true keeps the rendered manifest honest. Do not set false.
+  authzEnabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: f6d703c9ba49
   # Unleash CLIENT token read from the Unleash chart's own sealed Secret (same
   # wiring as applicationsService/securityService/chatService above); server-side
-  # only. Inert until the service calls @fuzefront/feature-flags init().
+  # only. The service now calls @fuzefront/feature-flags init() at startup.
   featureFlags:
     unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
     appName: "selection-list-service"

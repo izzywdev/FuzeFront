@@ -31,7 +31,10 @@ jest.mock('../src/db', () => ({
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
 
+// Only mintId is stubbed (deterministic ids); the registry (ENTITY_PREFIXES, used
+// by the edge id validation in src/middleware/validateInput.ts) stays REAL.
 jest.mock('@izzywdev/fuzefront-identity', () => ({
+  ...jest.requireActual('@izzywdev/fuzefront-identity'),
   mintId: (type: string) =>
     type === 'selectionList'
       ? 'front_sl_01testlistid000000000000'
@@ -345,7 +348,8 @@ describe('POST /v1/selection-lists', () => {
       TEST_ORG_ID,
       'front_sl_01testlistid000000000000',
       TEST_USER_ID,
-      expect.any(String), // the caller's bearer token — never a service credential
+      // No caller token argument any more: the grant is written with the
+      // service's MACHINE identity inside grantListOwner (lib/machineIdentity.ts).
       mockTrx,
     );
     // The grant runs after both INSERTs (so a thrown grant rolls the list back).

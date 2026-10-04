@@ -31,7 +31,10 @@ jest.mock('../src/db', () => ({
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
 
+// Only mintId is stubbed (deterministic ids); the registry (ENTITY_PREFIXES, used
+// by the edge id validation in src/middleware/validateInput.ts) stays REAL.
 jest.mock('@izzywdev/fuzefront-identity', () => ({
+  ...jest.requireActual('@izzywdev/fuzefront-identity'),
   mintId: (type: string) =>
     type === 'selectionListItem'
       ? 'front_sli_01testitemid0000000000000'

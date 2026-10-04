@@ -25,11 +25,11 @@
 //     denial, a thrown DECISION_UNAVAILABLE, asserting the exact request
 //     body) inject a mock via `_setAuthzClientForTesting()`.
 //
-//  3. Feature flag gate: requireAuthzCheck() checks the authz-enabled flag
-//     first. If OFF, the middleware passes through with a warning log (dark
-//     deploy / kill-switch mode). If ON, it does a real Security API check.
-//     Unchanged by this migration — same flag, same env var, same
-//     dark-deploy semantics; only what happens when the flag is ON changed.
+//  3. Enforcement gate: requireAuthzCheck() asks `isAuthzEnforced()` first.
+//     In NODE_ENV=production authz is ALWAYS enforced (the env var is never
+//     consulted — review H-1). Outside production the authz-enabled env var is
+//     honoured as a dev/test convenience: OFF passes through with a warning
+//     log, ON does a real Security API check.
 //
 //  4. The selection_list_access table is a READ-MODEL MIRROR — it is never
 //     consulted for authorization. It is updated by grantListOwner() and
@@ -57,8 +57,9 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthzClient, createAuthzClient } from '@fuzefront/auth';
 import type { Knex } from 'knex';
 import { db } from '../db';
-import { getBooleanFlag, FLAGS, FlagContext } from './authz.flags';
+import { isAuthzEnforced, FLAGS, FlagContext } from './authz.flags';
 import { createLoggedFetch, getLog, timed } from '../lib/logger';
+import { getGrantToken } from '../lib/machineIdentity';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -172,8 +173,9 @@ export function bearer(req: Request): string | null {
  * The listId is extracted from req.params.listId.  If absent, the check is
  * performed without a resource-instance key (tenant-level check only).
  *
- * Flag OFF → pass-through with a warning log (dark deploy / kill-switch).
- * Flag ON  → perform a real check, fail closed on any error.
+ * Production → ALWAYS a real check (fail closed on any error).
+ * Non-production, env switch OFF → pass-through with a warning log (dev/test).
+ * Non-production, env switch ON  → real check, fail closed on any error.
  */
 export function requireAuthzCheck(resource: string, action: string) {
   return async function authzMiddleware(
@@ -190,7 +192,7 @@ export function requireAuthzCheck(resource: string, action: string) {
     }
 
     const flagCtx: FlagContext = { userId, orgId, appId: req.appId };
-    const authzEnabled = await getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, flagCtx);
+    const authzEnabled = await isAuthzEnforced(flagCtx);
 
     if (!authzEnabled) {
       getLog(req).warn(
@@ -269,9 +271,9 @@ export function requireAuthzCheck(resource: string, action: string) {
 // isAuthzEnabled / filterReadable — instance-level filtering of collections
 // ---------------------------------------------------------------------------
 
-/** True when authz decisions are enforced (release flag ON). */
+/** True when authz decisions are enforced (always in production; see authz.flags.ts). */
 export async function isAuthzEnabled(req: Request): Promise<boolean> {
-  return getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, {
+  return isAuthzEnforced({
     userId: req.userId,
     orgId: req.orgId,
     appId: req.appId,
@@ -324,18 +326,21 @@ export async function filterReadable<T extends { id: string }>(
  * the mirror row is only reached — and only written — once the grant
  * succeeded, so a thrown grant can never leave a mirror row claiming success.
  *
- * @param token  The ACTING caller's bearer token — the Security API decides
- *               (and records) the grant for the real principal, never a
- *               service-wide credential.
+ * AUTHENTICATION OF THE WRITE. The grant is made with this service's MACHINE
+ * identity (`getGrantToken()`: OAuth client_credentials, scope `authz:admin`),
+ * never the end user's token: the end user has no standing to write their own
+ * role, and the Security API denies non-admin human grant calls (review C-1).
+ * `grantedBy` is recorded on the mirror row as the acting user; the Security API
+ * sees the machine principal. Fail closed: no/failed machine token -> throws.
  */
 export async function grantListOwner(
   userId: string,
   orgId: string,
   listId: string,
   grantedBy: string,
-  token: string,
   executor: Knex | Knex.Transaction = db,
 ): Promise<void> {
+  const machineToken = await getGrantToken();
   await getAuthzClient().grant(
     {
       subject: userId,
@@ -343,7 +348,7 @@ export async function grantListOwner(
       role: 'list-owner',
       resource: { type: 'SelectionList', key: listId },
     },
-    token,
+    machineToken,
   );
 
   // Upsert the mirror row. Only reached if the grant above succeeded.

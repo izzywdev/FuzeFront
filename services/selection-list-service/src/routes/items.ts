@@ -18,7 +18,9 @@
 // IMPORTANT: route /:listId/items/reorder MUST be declared BEFORE
 // /:listId/items/:itemId so Express does not match "reorder" as an itemId.
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
@@ -27,7 +29,8 @@ import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
