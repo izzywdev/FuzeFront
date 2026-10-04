@@ -187,6 +187,8 @@ function NewListPanel({
   onCreated: (list: SelectionList) => void
   onClose: () => void
 }) {
+  const keyId = useId()
+  const localeId = useId()
   const [key, setKey] = useState('')
   const [sourceLoc, setSourceLoc] = useState('en')
   const [submitting, setSubmitting] = useState(false)
@@ -253,10 +255,11 @@ function NewListPanel({
       )}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
         <div>
-          <label style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>
+          <label htmlFor={keyId} style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>
             Key (slug)
           </label>
           <input
+            id={keyId}
             data-field="key"
             type="text"
             value={key}
@@ -272,10 +275,11 @@ function NewListPanel({
           )}
         </div>
         <div>
-          <label style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>
+          <label htmlFor={localeId} style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>
             Source locale
           </label>
           <select
+            id={localeId}
             data-field="source_locale"
             value={sourceLoc}
             onChange={e => setSourceLoc(e.target.value)}
@@ -324,6 +328,8 @@ function ValueModal({
   onSaved: (item: SelectionListItem) => void
   onForbidden: () => void
 }) {
+  const codeId = useId()
+  const labelId = useId()
   const [code, setCode] = useState(item?.code ?? '')
   const [label, setLabel] = useState(item?.label ?? '')
   const [submitting, setSubmitting] = useState(false)
@@ -393,8 +399,9 @@ function ValueModal({
         )}
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           <div>
-            <label style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>Code</label>
+            <label htmlFor={codeId} style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>Code</label>
             <input
+              id={codeId}
               data-field="code"
               type="text"
               value={code}
@@ -404,8 +411,9 @@ function ValueModal({
             />
           </div>
           <div>
-            <label style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>Label</label>
+            <label htmlFor={labelId} style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>Label</label>
             <input
+              id={labelId}
               data-field="label"
               type="text"
               value={label}
@@ -440,6 +448,7 @@ function PurgeModal({
   onPurged: (itemId: string) => void
   onArchiveInstead: () => void
 }) {
+  const confirmId = useId()
   const [confirmText, setConfirmText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [apiError, setApiError] = useState<ApiError | null>(null)
@@ -486,10 +495,11 @@ function PurgeModal({
         )}
         <form onSubmit={handlePurge} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           <div>
-            <label style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>
+            <label htmlFor={confirmId} style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: 'var(--space-1)' }}>
               Type the code <strong>{item.code}</strong> to confirm:
             </label>
             <input
+              id={confirmId}
               data-confirm-input
               type="text"
               value={confirmText}
@@ -528,6 +538,7 @@ function SortableItemList({
   onArchive,
   onPurge,
   onReordered,
+  onReloadRequested,
 }: {
   items: SelectionListItem[]
   listId: string
@@ -537,6 +548,7 @@ function SortableItemList({
   onArchive: (item: SelectionListItem) => void
   onPurge: (item: SelectionListItem) => void
   onReordered: (newOrder: SelectionListItem[]) => void
+  onReloadRequested: () => void
 }) {
   const [orderedItems, setOrderedItems] = useState(items)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
@@ -573,8 +585,10 @@ function SortableItemList({
         setReorderError(null)
         setReorderErrorCode(null)
         try {
+          // Contract SelectionListItemReorder: item_ids is the full set of
+          // NON-ARCHIVED items only — archived ids make the request invalid.
           const nonArchived = newOrder.filter(i => i.status !== 'archived')
-          await reorderItems(listId, newOrder.map(i => i.id))
+          await reorderItems(listId, nonArchived.map(i => i.id))
           onReordered(newOrder)
         } catch (err) {
           const e = err as ApiError
@@ -582,6 +596,10 @@ function SortableItemList({
           setReorderErrorCode(e.code ?? 'reorder-failed')
           // Restore original order on error
           setOrderedItems(items)
+          // The list changed under the user (not a full permutation): show the
+          // server's current order (frame 05) without unmounting this panel, so
+          // the error message stays visible.
+          if (e.code === 'VALIDATION_ERROR') onReloadRequested()
         } finally {
           setSaving(false)
         }
@@ -640,7 +658,7 @@ function SortableItemList({
           Saving order…
         </div>
       )}
-      {reorderError && reorderErrorCode === 'reorder-failed' && (
+      {reorderError && reorderErrorCode !== 'VALIDATION_ERROR' && (
         <div data-error="reorder-failed" style={s.errorBox}>{reorderError}</div>
       )}
       {reorderError && reorderErrorCode === 'VALIDATION_ERROR' && (
@@ -773,6 +791,17 @@ function SelectionListDetail({
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Silent refresh of just the items (no loading skeleton), used after a
+  // reorder VALIDATION_ERROR so the user sees the server's current order.
+  const reloadItems = useCallback(async () => {
+    try {
+      const resp = await listItems(listId)
+      setItems(unwrapItems(resp).sort((a, b) => a.sort_order - b.sort_order))
+    } catch {
+      // keep the local copy; the reorder error is already shown
+    }
+  }, [listId])
+
   if (notFound) {
     return (
       <div data-frame="03-list-detail" data-state="not-found" style={s.frame}>
@@ -863,6 +892,7 @@ function SelectionListDetail({
             }}
             onPurge={item => setPurgeModal(item)}
             onReordered={newOrder => setItems(newOrder)}
+            onReloadRequested={reloadItems}
           />
         )}
       </div>
@@ -987,6 +1017,7 @@ function SelectionListIndex({
       {/* Status filter */}
       <select
         data-filter="status"
+        aria-label="Filter by status"
         value={statusFilter}
         onChange={e => setStatusFilter(e.target.value)}
         style={{ ...s.input, width: 'auto', marginBottom: 'var(--space-3)' }}

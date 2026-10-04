@@ -304,8 +304,17 @@ Assign roles and manage org membership through the same live API used in Step 4.
 > explicitly-provisioned set of operator service accounts should carry that
 > scope (see `docs/runbooks/s2s-client-credentials.md` step 5). `authz/check`
 > has no such restriction: any authenticated caller — human or machine — may
-> ask it a question, since a check can't change what's true. Human callers are
-> unaffected by this gate.
+> ask it a question, since a check can't change what's true.
+>
+> A **human (session) caller** is authorized per target: grant/revoke (and
+> member/role management under `/tenants/*`) require administering the TARGET
+> tenant, or — for an instance-scoped grant of a non-tenant-level role —
+> `manage_access` on that exact resource instance; otherwise `403 FORBIDDEN`
+> (`502` if the authorization provider cannot decide; never allow). Listing
+> another subject's grants/permissions needs tenant admin; your own is always
+> readable. A service that grants on behalf of an end user (e.g. creator
+> becomes owner) must use a machine identity with `authz:admin`, not the
+> end user's token.
 
 ```ts
 // make a user a seller in a tenant (tenant-wide RBAC grant)

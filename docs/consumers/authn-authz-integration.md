@@ -255,6 +255,11 @@ Fail-closed: any provider/transport error returns `{ allow: false }`.
   even if absent).
 - `GET ?subject&tenant` — list a subject's grants (cursor-paginated `GrantPage`,
   because ReBAC grants across many resource instances are potentially unbounded).
+- **Authorization:** a human caller must administer the target tenant (or hold
+  `manage_access` on the exact instance for an instance-scoped, non-tenant-level
+  role) to `POST`/`DELETE`; listing another subject needs tenant admin (own is
+  always allowed). Denied → `403 FORBIDDEN`; provider unreachable → `502`
+  (fail-closed). Machine callers need the `authz:admin` scope.
 
 ### 4.4 Tenants, members, roles — `/api/v1/security/tenants/*`
 

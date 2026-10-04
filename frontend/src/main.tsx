@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { I18nProvider } from '@fuzefront/i18n'
+import { initBrowserTelemetry } from '@fuzefront/telemetry/browser'
 import { AppProvider } from './lib/shared'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { LanguageProvider } from './contexts/LanguageContext'
@@ -16,6 +17,17 @@ import '@fuzefront/design-system/styles.css'
 import '@fuzefront/auth-ui/styles.css'
 import './index.css'
 import { registerServiceWorker } from './registerServiceWorker'
+
+// As early as possible — before any fetch/XHR call this shell or a federated
+// remote makes — so outgoing calls to the backend get a `traceparent` header
+// attached and correlate with that request's server-side trace. Sends OTLP
+// to FuzeInfra's Collector (never Tempo/Loki directly); see
+// `@fuzefront/telemetry`'s `docs/TRACE_CONTRACT.md#browser-transport` for the
+// same-origin `/v1/traces` default and what it assumes about the ingress.
+initBrowserTelemetry({
+  serviceName: 'fuzefront-frontend',
+  otlpEndpoint: import.meta.env.VITE_OTEL_EXPORTER_OTLP_ENDPOINT,
+})
 
 // Enhanced console logging for debugging
 const originalConsole = {

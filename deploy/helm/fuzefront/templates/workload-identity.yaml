@@ -1,19 +1,72 @@
+{{/*
+workload-identity.yaml — Kubernetes workload identity for the security service.
+
+`POST /api/v1/security/tokens/workload` (backend/security/src/routes/security.ts)
+exchanges a projected ServiceAccount token for a short-lived Fuze workload token.
+backend/security/src/services/workload-identity.ts does exactly two Kubernetes
+API calls, and they need DIFFERENT scopes — which is the whole point of the split
+below:
+
+  line 54  POST /apis/authentication.k8s.io/v1/tokenreviews
+           TokenReview is a NON-NAMESPACED virtual resource. RBAC for it can only
+           be a ClusterRole; there is no namespaced form. IRREDUCIBLE.
+
+  line 69  GET /api/v1/namespaces/<ns>/configmaps?labelSelector=
+             security.fuze.dev%2Fworkload-identity%3Dtrue
+           ALWAYS a single namespace, and that namespace comes from the
+           TokenReview result (line 65) — i.e. wherever the calling workload's
+           ServiceAccount lives. Granted as a ClusterRole this reads ConfigMaps
+           in EVERY namespace in the cluster to serve a lookup that is always
+           scoped to one. So it is a namespaced Role here instead.
+
+Why this file is shaped this way (FuzeFront live incident, 2026-09-28): it
+previously put BOTH rules in one ClusterRole, and the `fuzefront` Argo AppProject
+permitted only `{group: '', kind: Namespace}` cluster-scoped. Argo does not skip
+an unpermitted resource — it invalidates the sync task and ABORTS THE WHOLE SYNC
+OPERATION, so two RBAC objects froze every deploy of this Application, image-tag
+bumps included, for hours. Analysis, and the target architecture that removes the
+remaining ClusterRole from this repo entirely (a FuzeInfra-owned identity broker
+on workload-identity.fuzeinfra.svc.cluster.local), are in
+docs/planning/workload-identity-layering.md.
+
+`deploy/scripts/check-cluster-scoped-whitelist.sh` (helm-validate.yml) now fails
+a PR whose rendered cluster-scoped kinds are not permitted by
+deploy/argocd/project.yaml, so that specific freeze cannot recur silently.
+*/}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: fuzefront-security
+{{- if and .Values.securityService.enabled .Values.securityService.workloadIdentity.clusterRbac.enabled }}
 ---
+# ── THE ONLY CLUSTER-SCOPED GRANT THIS CHART HOLDS ──────────────────────────
+# Gated so the flip to FuzeInfra's identity broker is a one-line values change
+# rather than a template rewrite under time pressure. Default ON because the
+# broker DOES NOT EXIST YET: `POST /tokens/workload` is a live route, and
+# turning this off today breaks workload identity and the FuzeKeys registration
+# that PR #1198 was merged to unblock. Set
+# `securityService.workloadIdentity.clusterRbac.enabled: false` once the broker
+# is serving — and remove ClusterRole/ClusterRoleBinding from
+# `clusterResourceWhitelist` in deploy/argocd/project.yaml in the SAME change
+# (the whitelist-vs-rendered closed-set layer of
+# check-cluster-scoped-whitelist.sh will fail the PR until you do, which is
+# deliberate: it makes retiring the grant an enforced step, not a remembered one).
+#
+# Also gated on securityService.enabled: this used to render unconditionally, so
+# a deployment with the security service switched OFF — which is the base
+# values.yaml default — still granted cluster-wide TokenReview to a
+# ServiceAccount no running pod used.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ .Release.Name }}-workload-authenticator
 rules:
+  # TokenReview only. The `configmaps` rule that used to sit here is now the
+  # namespaced Role below — see the header comment for why it never needed
+  # cluster scope.
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
     verbs: ["create"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -27,6 +80,45 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ .Release.Name }}-workload-authenticator
+{{- end }}
+{{- if .Values.securityService.enabled }}
+---
+# Namespaced replacement for the former cluster-wide `configmaps: get, list`.
+# Every FuzeWorkloadIdentity registration ConfigMap this chart renders lives in
+# the release namespace, and the service only ever lists ONE namespace per
+# request (the calling workload's own). So a Role here is sufficient and removes
+# "read every ConfigMap in the cluster" — including other products' — from this
+# ServiceAccount.
+#
+# LIMIT, stated rather than hidden: this only covers workloads whose
+# ServiceAccount lives in THIS namespace. A workload authenticating from another
+# product's namespace needs a Role there, which this chart cannot create — that
+# namespace is not a destination in the `fuzefront` AppProject, and it should
+# not be. That ceiling is not a gap to engineer around here; it is the
+# architectural signal that cross-namespace workload identity is a PLATFORM
+# function. See docs/planning/workload-identity-layering.md.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-workload-identity-registry
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-workload-identity-registry
+subjects:
+  - kind: ServiceAccount
+    name: fuzefront-security
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-workload-identity-registry
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount

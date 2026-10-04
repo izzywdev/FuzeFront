@@ -47,7 +47,7 @@ flags:
 
   - key: fuzefront.apps.org-context-hidden
     type: release
-    default: false
+    default: true
     description: >
       Controls whether federated apps requiring active organization context are
       completely hidden from navigation and launchers when in personal context.
@@ -282,18 +282,24 @@ flags:
     type: release
     default: false
     description: >
-      Gates the selection-list-service and its management UI.
-      Enable per-org as the service rolls out. Checked on both the
-      service side (Helm deployment enabled flag) and the UI side
-      (Selection Lists entry in the FuzeFront shell left sidebar, S9).
+      Gates ALL selection-list surface, server and client. Enable per-org
+      (or by percentage) as the service rolls out.
+      Server: every /v1/selection-lists/* route in selection-list-service
+      answers 404 while OFF (router-level gate in src/app.ts
+      middleware/flagGate.ts, plus per-handler checks and /v1/resolve).
+      Client: the "Selection Lists" shell sidebar entry (SidePanel) and the
+      /settings/selection-lists* routes (App.tsx redirect to /dashboard).
+      Runbook: docs/runbooks/selection-lists-flag-rollout.md.
     owner: platform team
     removal_criterion: >
-      When the service is GA and enabled for 100% of orgs. Remove the
-      flag check in the sidebar nav (S9) and drop the service-side guard
-      in selection-list-service/flags.ts.
+      When the service is GA and enabled for 100% of orgs and stable for
+      one release cycle. Delete the flag, the SidePanel/App.tsx useFlag
+      guards, and selection-list-service flags.ts + middleware/flagGate.ts
+      + per-handler checks in one cleanup PR.
     gates:
-      - selection-list-service Helm deployment (service-side)
+      - selection-list-service API (all /v1/selection-lists/* + /v1/resolve, server-side)
       - '"Selection Lists" shell left-sidebar nav entry (UI-side, S9)'
+      - '/settings/selection-lists* shell routes (UI-side)'
     web_exposed: true
     jira: FFRNT-201
     sub_tasks:
@@ -315,6 +321,38 @@ flags:
                   name: developers
           # No org/user targeting at creation — enable per-org via Unleash
           # targeting rules once the service is ready for a given org.
+
+  - key: fuzefront.selection-lists.seed-defaults
+    type: release
+    default: false
+    description: >
+      Gates BOTH selection-list-service seeding consumers (SL5 event contract,
+      docs/planning/selection-lists-events.md section 11): the
+      `identity.org.created` seeding consumer and the
+      `selection-lists.seed.requested` handler, plus the reconciler/backfill.
+      Evaluated per message with context { orgId, app: 'selection-list-service' }.
+      OFF behaviour: org.created is skipped (the reconciler catches up once
+      ON); seed.requested answers `selection-lists.seed.failed` with reason
+      SEEDING_DISABLED, retryable: true. Independent of (and additionally
+      requires) the master gate fuzefront.selection-lists.service. Publishing
+      of the change events is NOT flagged. Server-side only; fails closed
+      (no client or any evaluation error => OFF). Created OFF in every
+      Unleash environment — it is never enabled by this registry entry;
+      enablement is a deliberate per-org ramp by the owner.
+    owner: izzywdev
+    removal_criterion: >
+      Remove once seeding has been ON for all orgs for 30 consecutive days
+      with zero `selection-lists.seed.failed` events in that window (and the
+      reconciler has backfilled every existing org). Delete the flag in
+      Unleash, FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS, and
+      isSeedDefaultsEnabled() with both consumer guards in one cleanup PR.
+    gates:
+      - selection-list-service identity.org.created seeding consumer (server-side)
+      - selection-list-service selection-lists.seed.requested handler (server-side)
+      - selection-list-service seeding reconciler / backfill (server-side)
+    web_exposed: false
+    jira: ~
+    epic: FF-EPIC-17
 
   # ---------------------------------------------------------------------------
   # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /

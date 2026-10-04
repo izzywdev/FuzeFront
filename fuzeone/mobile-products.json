@@ -16,6 +16,6 @@
     { "repo": "FuzeService", "frontendUrl": "https://fuzeservice.fuzefront.com/" },
     { "repo": "FuzeSocial", "frontendUrl": "https://fuzesocial.fuzefront.com/" },
     { "repo": "FuzeFront", "frontendUrl": "https://app.fuzefront.com/" },
-    { "repo": "MendysRobotics", "frontendUrl": "https://live.mendysrobotics.com/" }
+    { "repo": "MendysRobotics", "frontendUrl": "https://live.mendysrobotics.com/", "manifestPath": "/manifest.json" }
   ]
 }

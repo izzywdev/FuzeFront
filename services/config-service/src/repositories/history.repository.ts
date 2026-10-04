@@ -102,6 +102,7 @@ interface HistoryRow {
   redacted: boolean;
   actor_type: ActorType;
   actor_id: string | null;
+  actor_redacted: boolean;
   reason: string | null;
   revert_of: string | null;
   occurred_at: Date;
@@ -117,7 +118,7 @@ function mapRow(r: HistoryRow): ConfigHistoryEntry {
     oldValue: r.redacted ? null : (r.old_value ?? null),
     newValue: r.redacted ? null : (r.new_value ?? null),
     redacted: r.redacted,
-    actor: { actorType: r.actor_type, actorId: r.actor_id },
+    actor: { actorType: r.actor_type, actorId: r.actor_id, actorRedacted: r.actor_redacted },
     reason: r.reason,
     revertOf: r.revert_of ? fromUuid('configHistory', r.revert_of) : null,
     occurredAt: r.occurred_at.toISOString(),
@@ -131,7 +132,7 @@ interface HistoryCursor {
 
 const SELECT_COLUMNS = `
   id, namespace, key, scope_type, scope_id, action, old_value, new_value,
-  redacted, actor_type, actor_id, reason, revert_of, occurred_at
+  redacted, actor_type, actor_id, actor_redacted, reason, revert_of, occurred_at
 `;
 
 export class PgHistoryRepository implements HistoryRepository {

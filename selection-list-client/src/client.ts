@@ -47,9 +47,10 @@ export interface SelectionListClientOptions {
    */
   baseUrl: string
   /**
-   * Bearer token, or a provider for one. Optional: `resolveIds` may be called
-   * unauthenticated by a trusted in-cluster caller that has already authorized
-   * its own end user.
+   * Bearer token, or a provider for one. Every operation — `resolveIds`
+   * included (spec 2.0.0) — requires it; the type stays optional only so a
+   * client can be constructed before a token exists. Without one, calls fail
+   * with a `401` {@link SelectionListApiError}.
    */
   token?: TokenProvider
   /** Injected `fetch`, for tests or a non-global runtime. Defaults to `globalThis.fetch`. */
@@ -74,7 +75,7 @@ interface RequestOptions {
  * Typed client for the FuzeFront selection-list-service.
  *
  * One method per endpoint of `services/selection-list-service/openapi.yaml`
- * v1.0.0, plus {@link SelectionListClient.paginate} for walking a cursor.
+ * v4.0.0, plus {@link SelectionListClient.paginate} for walking a cursor.
  * Zero runtime dependencies — it uses the platform `fetch`.
  */
 export class SelectionListClient {
@@ -153,7 +154,13 @@ export class SelectionListClient {
     })
   }
 
-  /** `PATCH /v1/selection-lists/{listId}` — partial update. */
+  /**
+   * `PATCH /v1/selection-lists/{listId}` — partial update.
+   *
+   * Requires `update` on the list; a body with `status: 'archived'` also
+   * requires `delete` (contract 4.0.0, `x-permit-additional-actions`), so a
+   * `list-editor` gets a `FORBIDDEN` error for it — same as {@link archiveList}.
+   */
   async updateList(
     listId: SelectionListId,
     body: SelectionListUpdate,
@@ -526,6 +533,11 @@ export class SelectionListClient {
    * URL). Archived ids resolve normally with `status: 'archived'`; only purged
    * or never-existent ids come back in `missing`. Bounded at 500 ids per call —
    * chunk larger batches yourself so the cap stays visible at the call site.
+   *
+   * Authenticated like every other operation (spec 2.0.0): the Bearer token
+   * must carry an organization claim, and resolution is scoped to that org —
+   * another org's ids land in `missing`. There is no anonymous mode; a missing
+   * or org-less token throws a `401` {@link SelectionListApiError}.
    */
   async resolveIds(
     ids: SelectionListItemId[],

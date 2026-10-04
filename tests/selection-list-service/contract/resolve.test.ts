@@ -11,13 +11,15 @@
  *   - Cross-org: resolving an id from another org's list → appears in missing
  *   - The response always accounts for every requested id (results + missing = ids)
  *   - Locale fallback chain operates on the resolve endpoint
- *   - Unauthenticated call from trusted in-cluster caller is accepted
+ *   - Authentication is REQUIRED (spec 2.0.0): no token, an invalid token, or a
+ *     token without an organization claim → 401 UNAUTHENTICATED, nothing resolved
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';
-import { mintTestToken } from '../helpers/auth';
+import jwt from 'jsonwebtoken';
+import { mintTestToken, TEST_JWT_SECRET } from '../helpers/auth';
 import { createTestList, createTestListWithItems, purgeList } from '../helpers/factories';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
 
@@ -214,26 +216,71 @@ describe('POST /v1/resolve — cross-org id isolation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Unauthenticated access (trusted in-cluster callers)
+// Authentication is required (spec 2.0.0 — fail closed, no anonymous mode)
 // ---------------------------------------------------------------------------
 
-describe('POST /v1/resolve — unauthenticated', () => {
-  it('unauthenticated call is accepted (spec allows security: [])', async () => {
-    // The spec declares `security: [bearerAuth: [], {}]` — {} means optional.
-    // A trusted in-cluster caller may call without a token.
+describe('POST /v1/resolve — authentication required', () => {
+  // A real org-A item, so a 401 proves the request was refused rather than
+  // merely finding nothing to resolve.
+  let realItemId: SelectionListItemId;
+
+  beforeAll(async () => {
+    const client = makeClient(orgAToken);
+    const { list, items } = await createTestListWithItems(client, 1, {
+      key: 'resolve-auth-' + Math.random().toString(16).slice(2, 8),
+    });
+    createdByA.push(list.id as SelectionListId);
+    realItemId = items[0].id as SelectionListItemId;
+  });
+
+  function expectUnauthenticated(status: number, body: unknown): void {
+    expect(status).toBe(401);
+    expect((body as { code?: string } | null)?.code).toBe('UNAUTHENTICATED');
+    // A refusal must never carry resolved data.
+    expect((body as { results?: unknown } | null)?.results).toBeUndefined();
+  }
+
+  it('no Bearer token → 401 UNAUTHENTICATED (spec declares bearerAuth only)', async () => {
+    const { status, body } = await rawFetch('/v1/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ ids: [realItemId] }),
+    });
+    expectUnauthenticated(status, body);
+  });
+
+  it('typed client with no token → SelectionListApiError status 401', async () => {
     const client = makeClient(); // no token
-    // We expect either 200 (accepted) or 401 (if the test instance requires auth)
-    // Document both outcomes — the spec explicitly allows unauthenticated calls.
-    // This test FAILS if the service returns any other status code.
-    let status: number;
+    let status: number | undefined;
     try {
-      await client.resolveIds(['sli_01hanyid00000000000000000' as SelectionListItemId]);
-      status = 200;
+      await client.resolveIds([realItemId]);
     } catch (err: unknown) {
-      // SelectionListApiError carries the HTTP status
-      status = (err as { status?: number }).status ?? 500;
+      status = (err as { status?: number }).status;
     }
-    expect([200, 401]).toContain(status);
+    expect(status).toBe(401);
+  });
+
+  it('invalid Bearer token → 401 UNAUTHENTICATED', async () => {
+    const { status, body } = await rawFetch('/v1/resolve', {
+      method: 'POST',
+      token: 'not-a-jwt',
+      body: JSON.stringify({ ids: [realItemId] }),
+    });
+    expectUnauthenticated(status, body);
+  });
+
+  it('valid token without an organization claim → 401 (resolution is org-scoped)', async () => {
+    const { status, body } = await rawFetch('/v1/resolve', {
+      method: 'POST',
+      // Same shape as mintTestToken() minus organization_id: a genuinely
+      // signed, unexpired token that names a user but no org.
+      token: jwt.sign(
+        { sub: USER_A, email: `${USER_A}@test.fuzefront.invalid`, roles: [] },
+        TEST_JWT_SECRET,
+        { issuer: 'test-harness', expiresIn: '1h' }
+      ),
+      body: JSON.stringify({ ids: [realItemId] }),
+    });
+    expectUnauthenticated(status, body);
   });
 });
 
@@ -275,10 +322,10 @@ describe('POST /v1/resolve — response envelope', () => {
       token: orgAToken(),
       body: JSON.stringify({ ids: ['sli_01hanyid00000000000000000'] }),
     });
-    expect([200, 401]).toContain(status);
-    if (status === 200) {
-      const keys = Object.keys(body as object);
-      expect(keys.sort()).toEqual(['missing', 'results']);
-    }
+    // Authenticated with an org-scoped token, so 200 is the only valid answer
+    // (spec 2.0.0); a 401 here would mean a valid caller was refused.
+    expect(status).toBe(200);
+    const keys = Object.keys(body as object);
+    expect(keys.sort()).toEqual(['missing', 'results']);
   });
 });

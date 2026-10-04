@@ -17,13 +17,30 @@ Quick start::
 from ._paginator import paginate
 from .client import SelectionListClient, TokenProvider
 from .errors import SelectionListApiError
+from .seed import (
+    SEED_COMPLETED_TOPIC,
+    SEED_FAILED_TOPIC,
+    SEED_LIMITS,
+    SEED_REQUESTED_SCHEMA_VERSION,
+    SEED_REQUESTED_TOPIC,
+    SeedRequestValidationError,
+    build_seed_request,
+    build_seed_request_envelope,
+    seed_request_kafka_key,
+)
 from .types import (
+    DELETED_USER_SENTINEL,
+    SYSTEM_PRINCIPAL_PREFIX,
+    USER_ID_PREFIX,
     # Access
     AccessEntry,
+    # Authorship
+    AuthorPrincipalKind,
     AutofillRequest,
     AutofillResult,
     CreateItemRequest,
     CreateListRequest,
+    ItemTranslationLocaleStatus,
     # Enums
     LifecycleStatus,
     # Pagination
@@ -35,6 +52,7 @@ from .types import (
     ResolveResponse,
     # Resolve
     ResolveResult,
+    SeedProvenance,
     # Selection lists
     SelectionList,
     SelectionListAccessRole,
@@ -46,18 +64,32 @@ from .types import (
     StatusFilter,
     # Translations
     Translation,
+    TranslationLocaleStatus,
     UpdateItemRequest,
     UpdateListRequest,
     UpsertItemTranslationRequest,
     UpsertListTranslationRequest,
+    author_principal_kind,
+    is_user_author,
 )
 
 __all__ = [
+    "DELETED_USER_SENTINEL",
+    # Seed requests (Kafka contract: selection-lists.seed.requested)
+    "SEED_COMPLETED_TOPIC",
+    "SEED_FAILED_TOPIC",
+    "SEED_LIMITS",
+    "SEED_REQUESTED_SCHEMA_VERSION",
+    "SEED_REQUESTED_TOPIC",
+    "SYSTEM_PRINCIPAL_PREFIX",
+    "USER_ID_PREFIX",
     "AccessEntry",
+    "AuthorPrincipalKind",
     "AutofillRequest",
     "AutofillResult",
     "CreateItemRequest",
     "CreateListRequest",
+    "ItemTranslationLocaleStatus",
     # Enums
     "LifecycleStatus",
     # Types
@@ -67,6 +99,8 @@ __all__ = [
     "QuotaScope",
     "ResolveResponse",
     "ResolveResult",
+    "SeedProvenance",
+    "SeedRequestValidationError",
     "SelectionList",
     "SelectionListAccessRole",
     # Errors
@@ -80,10 +114,16 @@ __all__ = [
     "StatusFilter",
     "TokenProvider",
     "Translation",
+    "TranslationLocaleStatus",
     "UpdateItemRequest",
     "UpdateListRequest",
     "UpsertItemTranslationRequest",
     "UpsertListTranslationRequest",
+    "author_principal_kind",
+    "build_seed_request",
+    "build_seed_request_envelope",
+    "is_user_author",
     # Paginator
     "paginate",
+    "seed_request_kafka_key",
 ]

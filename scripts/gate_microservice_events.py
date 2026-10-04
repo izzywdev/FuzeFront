@@ -36,6 +36,42 @@ imports".
 
 Run with --report to see the classification for every candidate directory,
 including the rejects and which signal each one is missing.
+
+DECLARED NOT-APPLICABLE — the narrow, non-abusable exemption
+------------------------------------------------------------
+Some stores genuinely have nothing to seed for a `created` event. config-service
+is a SPARSE override store: a brand-new org or user needs zero rows, because
+resolution walks platform->portal->org->user and inherits (its
+src/resolver/resolve.ts). Writing an empty created-handler to clear the ratchet
+is exactly the "subscribes but seeds nothing" failure this gate rejects. So
+there has to be a way to say "this topic does not apply here" that a reviewer
+can see and disagree with — not silence.
+
+`policy.notApplicable` is that way, and it is deliberately hard to abuse:
+
+  notApplicable: { "<service>": { "<topic>": "<reason >= 40 chars>" } }
+
+  * PER-TOPIC, never per-service. A service may NOT declare all four topics
+    N/A — a service with no identity lifecycle at all is `exempt`, a different
+    and separately-reviewed decision. In practice this keeps the two `deleted`
+    topics effectively mandatory: any store that can ever hold a row can strand
+    one, so "nothing to do on delete" is not a claim this gate will accept.
+  * REASON IS MANDATORY and must be substantive (>= 40 chars). A one-word
+    reason fails. The reason rides in the policy diff and in every --report.
+  * MUTUALLY EXCLUSIVE with knownUnhandled and exempt. A service in two lists
+    fails — so moving a service to notApplicable means removing it from the
+    ratchet in the same PR.
+  * CONTRADICTION FAILS. If a service both declares a topic N/A and binds a
+    handler for it, that is an error — either it is handled or it is not
+    applicable, not both.
+  * STALE DECLARATION FAILS. A notApplicable key that names no discovered
+    service fails, so a declaration cannot outlive its service.
+  * ANTI-VACUITY IS UNTOUCHED. The seeds/effect check still runs over the
+    topics a service DOES subscribe to; declaring `created` N/A never excuses a
+    `deleted` handler that logs and returns.
+
+A policy error is a gate FAILURE (exit 1), not a warning — a malformed
+exemption must not pass silently, exactly like the vacuity rule below.
 """
 from __future__ import annotations
 
@@ -238,6 +274,51 @@ def load_policy(path: str) -> dict:
         return json.load(fh)
 
 
+# A reason short enough to be a label ("sparse", "n/a") is not a reason. The
+# floor forces a sentence that a reviewer can agree or disagree with.
+MIN_REASON_LEN = 40
+
+
+def validate_not_applicable(
+    not_applicable: object, known: set[str], exempt: set[str], discovered: set[str]
+) -> list[str]:
+    """Structural validation of policy.notApplicable. Returns error strings (empty == valid).
+
+    Every undecidable or malformed shape is an error, never a silent skip — a
+    broken exemption must fail the gate, not widen it.
+    """
+    errors: list[str] = []
+    if not isinstance(not_applicable, dict):
+        return ["notApplicable must be an object of { service: { topic: reason } }."]
+
+    for name, topics in not_applicable.items():
+        if not isinstance(topics, dict) or not topics:
+            errors.append(f"notApplicable[{name}] must be a non-empty object of {{ topic: reason }}.")
+            continue
+        if name in known:
+            errors.append(f"{name}: in BOTH notApplicable and knownUnhandled — mutually exclusive. "
+                          f"Moving a service to notApplicable means removing it from the ratchet in the same PR.")
+        if name in exempt:
+            errors.append(f"{name}: in BOTH notApplicable and exempt — mutually exclusive.")
+        if name not in discovered:
+            errors.append(f"{name}: declared in notApplicable but is not a discovered microservice — "
+                          f"a stale declaration cannot outlive its service.")
+        unknown = sorted(set(topics) - set(REQUIRED_EVENTS))
+        if unknown:
+            errors.append(f"{name}: notApplicable names unknown topic(s) {', '.join(unknown)} — "
+                          f"only {', '.join(sorted(REQUIRED_EVENTS))} are gated.")
+        declared = set(topics) & set(REQUIRED_EVENTS)
+        if declared == set(REQUIRED_EVENTS):
+            errors.append(f"{name}: declares ALL FOUR identity events not-applicable. A service with no "
+                          f"identity lifecycle at all belongs in `exempt` (a separately-reviewed decision), "
+                          f"not notApplicable, which is per-topic by design.")
+        for topic, reason in topics.items():
+            if not isinstance(reason, str) or len(reason.strip()) < MIN_REASON_LEN:
+                errors.append(f"{name}.{topic}: reason must be a substantive string (>= {MIN_REASON_LEN} "
+                              f"chars). A label is not a reason — state why the topic does not apply.")
+    return errors
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--repo", default=REPO_ROOT)
@@ -258,17 +339,31 @@ def main() -> int:
     owner = policy.get("owner", "(unset)")
 
     services, rejects = discover(args.repo)
+    not_applicable = policy.get("notApplicable", {}) if isinstance(policy.get("notApplicable", {}), dict) else {}
+    discovered_names = {s["name"] for s in services}
 
     if args.report:
         print("DISCOVERED MICROSERVICES")
         for s in services:
             a = audit(s, args.repo)
-            state = "exempt" if s["name"] in exempt else ("OK" if not a["missing"] else "missing")
+            na = set(not_applicable.get(s["name"], {})) & set(REQUIRED_EVENTS)
+            missing = sorted(set(REQUIRED_EVENTS) - set(a["subscribed"]) - na)
+            if s["name"] in exempt:
+                state = "exempt"
+            elif na and not missing:
+                state = "OK(N/A)"
+            elif not missing:
+                state = "OK"
+            else:
+                state = "missing"
             print(f"  {s['name']:<26} {state:<8} entry={s['entrypoint']}")
             if a["subscribed"]:
                 print(f"      subscribes: {', '.join(a['subscribed'])}")
-            if a["missing"]:
-                print(f"      MISSING:    {', '.join(a['missing'])}")
+            if na:
+                for topic in sorted(na):
+                    print(f"      not-applicable: {topic} — {not_applicable[s['name']][topic]}")
+            if missing:
+                print(f"      MISSING:    {', '.join(missing)}")
             if a["mentioned_only"]:
                 print(f"      named but not bound to a handler: {', '.join(a['mentioned_only'])}")
         print("\nREJECTED (not a deployable service)")
@@ -298,6 +393,20 @@ def main() -> int:
         )
         return 1
 
+    # ── Policy well-formedness ───────────────────────────────────────────────
+    #
+    # A malformed exemption must FAIL, not silently widen the gate. Validated
+    # here (after discovery, so stale-declaration checks have the real service
+    # set) and before any per-service verdict.
+    policy_errors = validate_not_applicable(
+        not_applicable, known, set(exempt), discovered_names
+    )
+    if policy_errors:
+        for e in policy_errors:
+            print(f"::error title=gate-microservice-events::{e}")
+        print("\ngate-microservice-events: FAILING — notApplicable policy is malformed (see above).")
+        return 1
+
     failures, warnings = [], []
 
     for s in services:
@@ -305,10 +414,26 @@ def main() -> int:
         if name in exempt:
             continue
         a = audit(s, args.repo)
+        na = set(not_applicable.get(name, {})) & set(REQUIRED_EVENTS)
 
-        if a["missing"]:
+        # Contradiction: a topic cannot be both declared not-applicable and
+        # actually bound to a handler. One or the other, never both.
+        contradiction = sorted(set(a["subscribed"]) & na)
+        if contradiction:
+            failures.append(
+                f"{name}: declares {', '.join(contradiction)} not-applicable but also binds a handler "
+                f"for it. Either it is handled or it is not applicable, not both — drop the "
+                f"notApplicable entry."
+            )
+            continue
+
+        # N/A topics are a satisfied obligation, not a gap: subtract them from
+        # what the service must subscribe to.
+        missing = sorted(set(REQUIRED_EVENTS) - set(a["subscribed"]) - na)
+
+        if missing:
             detail = (
-                f"{name}: does not subscribe to {', '.join(a['missing'])}. "
+                f"{name}: does not subscribe to {', '.join(missing)}. "
                 f"It cannot seed itself for a user or org it never hears about."
             )
             if a["mentioned_only"]:
@@ -339,9 +464,11 @@ def main() -> int:
     for f in failures:
         print(f"::error title=gate-microservice-events::{f}")
 
+    na_services = sum(1 for n in not_applicable if n in discovered_names)
     print()
     print(f"gate-microservice-events: {len(services)} microservice(s) discovered, "
-          f"{len(exempt)} exempt, {len(failures)} failing, {len(warnings)} known-unhandled (warn).")
+          f"{len(exempt)} exempt, {na_services} with not-applicable declaration(s), "
+          f"{len(failures)} failing, {len(warnings)} known-unhandled (warn).")
 
     if warnings:
         print(
