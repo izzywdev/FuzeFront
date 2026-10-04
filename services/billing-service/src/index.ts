@@ -27,6 +27,7 @@ import { KafkaBillingEmitter } from './kafka/producer';
 import { startUsageConsumer } from './kafka/consumer';
 import { startRefIndexConsumer } from './kafka/ref-index.consumer';
 import { startOrgDeletedConsumer } from './kafka/org-deleted.consumer';
+import { startUserDeletedConsumer } from './kafka/user-deleted.consumer';
 import { HandlerContext } from './handlers/types';
 
 const FLUSH_INTERVAL_SEC = parseInt(process.env.BILLING_METER_FLUSH_INTERVAL_SEC || '60', 10);
@@ -112,6 +113,18 @@ async function main() {
     producer,
   ).catch((err) =>
     console.error('[billing-service] org-deleted consumer failed to start:', err),
+  );
+
+  // --- identity.user.deleted -> cancel any user-scoped Stripe subscription ---
+  // Its OWN consumer group: keeps offsets independent of org-deleted / ref-index
+  // so a user.deleted replay cannot re-trigger org-deleted logic.
+  const userDeletedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-user-deleted`);
+  startUserDeletedConsumer(
+    userDeletedConsumer,
+    { customers: customerRepo, subscriptions: subscriptionRepo, subscriptionService },
+    producer,
+  ).catch((err) =>
+    console.error('[billing-service] user-deleted consumer failed to start:', err),
   );
 
   // --- Metering flush loop ---
