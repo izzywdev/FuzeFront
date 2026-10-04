@@ -301,6 +301,15 @@ Two rules, and one is not enough without the other:
 
 Packages: **`@izzywdev/fuzefront-identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — same prefixes, same codec, same error codes — and `gate_identifier.py --registry-parity` fails CI if they drift, because a mismatch means a reference minted by one language is rejected by the other.
 
+## Data ownership & read models — single writer, outbox, projections per BFF
+
+Full standard: FuzeSDLC **`governance/data-consistency-standard.md`** (baseline §4.4), skill `data-consistency`. Applied to FuzeFront, with the current-state inventory and the phased roadmap: `docs/planning/data-consistency-and-read-models.md`.
+
+- **Only the owning service writes an entity.** No central write path, no 2PC; multi-service operations are sagas.
+- **Domain events go through the outbox** (`backend/core/src/events/outbox.ts`), never a direct producer call, and consumers dedupe + version-guard.
+- **Every cross-service id is declared** in the service's `data-contract.json` with its validation level (identifier standard §5) and on-delete policy.
+- **No browser-side cross-service joins for lists.** A list that sorts, filters or paginates across services reads a projection owned by its UI's BFF. For the shell, that BFF is the host `backend/` (`/api/v1/views/*`); each product has its own; a new screen is a new view, not a new service.
+
 ## Branch lifecycle policy
 
 Every agent-created branch must reach one of these terminal states — never left open indefinitely:
