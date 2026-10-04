@@ -226,31 +226,53 @@ describe('frame 09 — autofill modal', () => {
     expect(m.autofillTranslations).toHaveBeenCalledTimes(1)
 
     d.resolve({ filled: 3, skipped: 0 })
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Run autofill' })).toBeEnabled())
   })
 
-  it('on completion closes the dialog and refreshes the locale index', async () => {
+  it('on completion keeps the dialog open and refreshes the locale index', async () => {
     m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 1 })
     const { user, dialog } = await openAutofill()
     expect(m.getLocaleIndex).toHaveBeenCalledTimes(1)
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
 
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // Frame 09 requires the run's summary to be readable, so completion refreshes
+    // the index BEHIND the modal and leaves the modal up; Close dismisses it.
     await waitFor(() => expect(m.getLocaleIndex).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   // Frame 09: "On completion the result reports items_translated, items_skipped…".
-  // The flow calls onComplete() right after the API resolves, and the parent
-  // unmounts the modal in that same tick, so the result panel / the
-  // "nothing to do" note can never be seen. `it.fails` pins the gap.
-  it.fails('shows the autofill result (translated / skipped) after completion (KNOWN GAP vs frame 09)', async () => {
+  it('shows the autofill result (translated / skipped) after completion', async () => {
     m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 1 })
     const { user, dialog } = await openAutofill()
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
     expect(await screen.findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
+    expect(q('[data-result="autofill"]', screen.getByRole('dialog'))).toBeInTheDocument()
+    expect(q('[data-items-skipped]', screen.getByRole('dialog'))).toHaveAttribute('data-items-skipped', '1')
   })
 
-  it.fails('shows "all strings already translated" when nothing was filled (KNOWN GAP vs frame 09)', async () => {
+  // Regression: the refresh used to run in the FOREGROUND, so `setLoading(true)`
+  // replaced the whole panel with [data-state="loading"] and unmounted the modal
+  // (and its result state) the instant the run finished. React batched that away
+  // in jsdom with an already-resolved mock, so only a real network round-trip
+  // exposed it — hence the deferred refresh here.
+  it('the post-run refresh does not tear down the modal or flash a loading skeleton', async () => {
+    m.autofillTranslations.mockResolvedValue({ filled: 3, skipped: 1 })
+    const { user, dialog } = await openAutofill()
+    const refresh = deferred<{ locales: ReturnType<typeof makeLocale>[] }>()
+    m.getLocaleIndex.mockReturnValue(refresh.promise)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))
+    expect(await screen.findByText(/Autofill complete: 3 translated/)).toBeInTheDocument()
+    expect(q('[data-state="loading"]')).toBeNull()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    refresh.resolve({ locales: [SOURCE, makeLocale({ locale: 'fr', translated: 4, total: 4 })] })
+    await waitFor(() => expect(screen.getByText(/Autofill complete: 3 translated/)).toBeInTheDocument())
+    expect(q('[data-state="loading"]')).toBeNull()
+  })
+
+  it('shows "all strings already translated" when nothing was filled', async () => {
     m.autofillTranslations.mockResolvedValue({ filled: 0, skipped: 0 })
     const { user, dialog } = await openAutofill()
     await user.click(within(dialog).getByRole('button', { name: 'Run autofill' }))

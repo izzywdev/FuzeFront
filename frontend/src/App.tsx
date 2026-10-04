@@ -18,7 +18,7 @@ import { AccountsProvider } from './contexts/AccountsContext'
 import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
-import { FeatureFlagProvider, useFlag } from './platform/featureFlags'
+import { FeatureFlagProvider, useFlag, useFlagsLoaded } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
 import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
@@ -441,14 +441,59 @@ function OrganizationsRoute() {
 }
 
 /**
+ * Shared gate for a flag-gated route that REDIRECTS when the flag is OFF.
+ *
+ * The naive `useFlag(flag) ? <Page/> : <Navigate/>` is broken on a hard load:
+ * `useFlag()` reports its OFF default until `GET /api/flags` settles, and the
+ * router mounts the route tree first, so the redirect fires before the flag can
+ * say ON. Every bookmark, refresh, email link and shared URL into a flagged
+ * route bounced to the fallback — the route only worked when reached by
+ * client-side navigation from an already-loaded shell.
+ *
+ * So: hold until the flags have settled, THEN decide. `useFlagsLoaded()` always
+ * settles (no token and every fetch failure both resolve it), so this cannot
+ * hang. The OFF decision itself is unchanged — redirect, never a dead end.
+ */
+function FlagGatedRoute({
+  flag,
+  redirectTo,
+  children,
+}: {
+  flag: string
+  redirectTo: string
+  children: React.ReactNode
+}) {
+  const enabled = useFlag(flag, false)
+  const flagsLoaded = useFlagsLoaded()
+
+  if (!flagsLoaded) {
+    return (
+      <div
+        data-flag-gate="pending"
+        role="status"
+        aria-live="polite"
+        style={{ padding: '2rem', color: 'var(--text-secondary)' }}
+      >
+        Loading…
+      </div>
+    )
+  }
+  if (!enabled) return <Navigate to={redirectTo} replace />
+  return <>{children}</>
+}
+
+/**
  * `/organizations/:id` — net-new (design/frames/identity-context-switcher,
  * 02-org-context.html). Only reachable/linked once the reconciled switcher
  * is on; flag OFF redirects to `/organizations` (today's app never linked
  * this route, so there is no legacy behavior to preserve here).
  */
 function OrganizationDetailRoute() {
-  const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
-  return personalContextEnabled ? <OrganizationDetailPage /> : <Navigate to="/organizations" replace />
+  return (
+    <FlagGatedRoute flag="fuzefront.identity.personal-context" redirectTo="/organizations">
+      <OrganizationDetailPage />
+    </FlagGatedRoute>
+  )
 }
 
 /**
@@ -461,11 +506,13 @@ function OrganizationDetailRoute() {
  */
 function MemberDirectoryRoute() {
   const { id } = useParams<{ id: string }>()
-  const memberDirectoryEnabled = useFlag('fuzefront.identity.member-directory', false)
-  return memberDirectoryEnabled ? (
-    <MemberDirectoryPage />
-  ) : (
-    <Navigate to={id ? `/organizations/${id}` : '/organizations'} replace />
+  return (
+    <FlagGatedRoute
+      flag="fuzefront.identity.member-directory"
+      redirectTo={id ? `/organizations/${id}` : '/organizations'}
+    >
+      <MemberDirectoryPage />
+    </FlagGatedRoute>
   )
 }
 
@@ -479,8 +526,11 @@ function MemberDirectoryRoute() {
  * fetch) never dead-ends the user.
  */
 function ConfigRoute() {
-  const enabled = useFlag('fuzefront.config.management-console', false)
-  return enabled ? <ConfigPage /> : <Navigate to="/dashboard" replace />
+  return (
+    <FlagGatedRoute flag="fuzefront.config.management-console" redirectTo="/dashboard">
+      <ConfigPage />
+    </FlagGatedRoute>
+  )
 }
 
 /**
@@ -488,14 +538,20 @@ function ConfigRoute() {
  * flow `key-catalog`), flag `fuzefront.config.key-catalog` (default OFF).
  */
 function ConfigCatalogRoute() {
-  const enabled = useFlag('fuzefront.config.key-catalog', false)
-  return enabled ? <ConfigCatalogPage /> : <Navigate to="/dashboard" replace />
+  return (
+    <FlagGatedRoute flag="fuzefront.config.key-catalog" redirectTo="/dashboard">
+      <ConfigCatalogPage />
+    </FlagGatedRoute>
+  )
 }
 
 /** `/admin/config/catalog/:key` — one key's definition + resolution chain, same flag as the catalog list. */
 function ConfigKeyDefinitionRoute() {
-  const enabled = useFlag('fuzefront.config.key-catalog', false)
-  return enabled ? <ConfigKeyDefinitionPage /> : <Navigate to="/admin/config/catalog" replace />
+  return (
+    <FlagGatedRoute flag="fuzefront.config.key-catalog" redirectTo="/admin/config/catalog">
+      <ConfigKeyDefinitionPage />
+    </FlagGatedRoute>
+  )
 }
 
 /**
@@ -503,8 +559,11 @@ function ConfigKeyDefinitionRoute() {
  * flow `secret-audit`), flag `fuzefront.config.secrets-audit` (default OFF).
  */
 function ConfigAuditHistoryRoute() {
-  const enabled = useFlag('fuzefront.config.secrets-audit', false)
-  return enabled ? <ConfigAuditHistoryPage /> : <Navigate to="/dashboard" replace />
+  return (
+    <FlagGatedRoute flag="fuzefront.config.secrets-audit" redirectTo="/dashboard">
+      <ConfigAuditHistoryPage />
+    </FlagGatedRoute>
+  )
 }
 
 /**
@@ -516,32 +575,32 @@ function ConfigAuditHistoryRoute() {
  * Back button to also show a blank page).
  */
 function SelectionListsRoute() {
-  const enabled = useFlag('fuzefront.selection-lists.service', false)
-  if (!enabled) return <Navigate to="/dashboard" replace />
   return (
-    <FederatedAppErrorBoundary appName="Selection Lists">
-      <SelectionListManagementFlow />
-    </FederatedAppErrorBoundary>
+    <FlagGatedRoute flag="fuzefront.selection-lists.service" redirectTo="/dashboard">
+      <FederatedAppErrorBoundary appName="Selection Lists">
+        <SelectionListManagementFlow />
+      </FederatedAppErrorBoundary>
+    </FlagGatedRoute>
   )
 }
 
 function TranslationWorkbenchRoute() {
-  const enabled = useFlag('fuzefront.selection-lists.service', false)
-  if (!enabled) return <Navigate to="/dashboard" replace />
   return (
-    <FederatedAppErrorBoundary appName="Translation Workbench">
-      <TranslationWorkbenchFlow />
-    </FederatedAppErrorBoundary>
+    <FlagGatedRoute flag="fuzefront.selection-lists.service" redirectTo="/dashboard">
+      <FederatedAppErrorBoundary appName="Translation Workbench">
+        <TranslationWorkbenchFlow />
+      </FederatedAppErrorBoundary>
+    </FlagGatedRoute>
   )
 }
 
 function SelectionListAccessRoute() {
-  const enabled = useFlag('fuzefront.selection-lists.service', false)
-  if (!enabled) return <Navigate to="/dashboard" replace />
   return (
-    <FederatedAppErrorBoundary appName="Selection List Access">
-      <SelectionListAccessFlow />
-    </FederatedAppErrorBoundary>
+    <FlagGatedRoute flag="fuzefront.selection-lists.service" redirectTo="/dashboard">
+      <FederatedAppErrorBoundary appName="Selection List Access">
+        <SelectionListAccessFlow />
+      </FederatedAppErrorBoundary>
+    </FlagGatedRoute>
   )
 }
 

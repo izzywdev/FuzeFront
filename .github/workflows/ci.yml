@@ -477,25 +477,27 @@ jobs:
     needs: build
     # Hard bound. Without it this job inherits GitHub's 6-hour default, and a
     # job that sits for hours holds `mergeable_state: blocked` on the PR even
-    # though it is continue-on-error — observed stalling #1156 and #1180 for
-    # 40+ minutes each with every required context already green. 30 is well
-    # above the worst case below (~19 min) and far under 6 hours.
+    # with every required context already green — observed stalling #1156 and
+    # #1180 for 40+ minutes each. 30 is well above the worst case (~5 min
+    # serial for the 141 specs) and far under 6 hours.
     timeout-minutes: 30
-    # continue-on-error: true — these 4 specs are RED-by-design TDD specs written
-    # before @fuzeone/selection-lists-ui and the /settings/selection-lists route
-    # exist (EPIC-17 / FFRNT-188). They are expected to fail until frontend-engineer
-    # lands the UI. Running them in CI now means:
-    #   (a) they are visible in every PR's check list, not silently skipped;
-    #   (b) they will automatically turn GREEN once the UI is implemented.
-    # Remove `continue-on-error` once the specs are consistently GREEN.
+    # NO continue-on-error: this is a REAL gate now. These 4 specs were
+    # RED-by-design TDD specs written before @fuzeone/selection-lists-ui and the
+    # /settings/selection-lists route existed (EPIC-17 / FFRNT-188). The UI has
+    # landed and all 141 specs pass, so the escape hatch is retired — along with
+    # its `governance/vacuous-check-policy.json` allowlist entry and the `notify`
+    # exclusion. A failure here now blocks the PR, which is the point.
     # Specs: frontend/tests/selection-lists-{list-management,picker,access-control,
     #        translation-workbench}.red.spec.ts
-    continue-on-error: true
+    #
+    # The job's `name:` (its check-run context) deliberately still says "red
+    # specs": that string may be wired into master's required-status-check list,
+    # and renaming a required context blocks every PR until branch protection is
+    # updated in the same change. Rename it together with that setting.
+    #
     # (timeout-minutes is set once, above. A second `timeout-minutes: 90` merged
     # in here from a concurrent PR made the key duplicate, and GitHub rejected
-    # the whole file — no ci.yml job ran anywhere for three days. The 90 was
-    # sized for 155 specs run serially; the run step overrides to --workers=4,
-    # which is the ~19 min worst case the 30 above is sized against.)
+    # the whole file — no ci.yml job ran anywhere for three days.)
 
     steps:
       - name: Checkout code
@@ -556,40 +558,25 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      - name: Run selection-list red specs (expected to fail — UI not yet implemented)
-        # These 4 specs will fail until frontend-engineer implements
-        # @fuzeone/selection-lists-ui and wires /settings/selection-lists.
-        # The job is continue-on-error: true so failure here does NOT block
-        # the notify gate or any other job.
+      - name: Run selection-list UI specs (hard gate — must pass)
         working-directory: frontend
         env:
           BASE_URL: http://localhost:4173
           CI: 'true'
-        # --retries=0 and --workers=4 OVERRIDE playwright.config.ts for these
-        # specs only. The config sets `retries: 2` and `workers: 1` when CI is
-        # set, which is right for suites expected to PASS — absorb flake, keep
-        # ordering deterministic. It is exactly wrong here:
-        #
-        #   155 red-by-design tests x 3 attempts x the 30s config timeout,
-        #   run serially, is a worst case of ~3h52m.
-        #
-        # Retrying a test that is DECLARED to fail yields no information and
-        # triples the runtime, and nothing in these specs shares state — they
-        # drive a static `vite preview` build, with no backend and no fixtures
-        # between them — so serial execution buys nothing either. Together:
-        # ~19 min worst case, bounded by the job timeout-minutes above.
-        #
-        # Both overrides should COME OFF once the UI lands and these specs are
-        # consistently green (same trigger as the `continue-on-error` above):
-        # at that point retries earn their keep again.
+        # `--retries=0 --workers=4` used to override playwright.config.ts here,
+        # because retrying a test DECLARED to fail yields no information and
+        # tripled the runtime (155 red tests x 3 attempts x the 30s timeout, run
+        # serially, was a ~3h52m worst case). The specs pass now, so the config's
+        # CI defaults (`retries: 2`, `workers: 1`) earn their keep again: retries
+        # absorb genuine flake instead of multiplying a declared failure, and the
+        # serial run is ~5 min — well inside the 30 min job bound above.
         run: |
           npx playwright test \
             tests/selection-lists-list-management.red.spec.ts \
             tests/selection-lists-picker.red.spec.ts \
             tests/selection-lists-access-control.red.spec.ts \
             tests/selection-lists-translation-workbench.red.spec.ts \
-            --project=chromium --reporter=list,html \
-            --retries=0 --workers=4
+            --project=chromium --reporter=list,html
 
       - name: Upload Playwright report
         if: always()
@@ -1388,25 +1375,21 @@ jobs:
     # its own and its runner pod pins a scale-set slot until a human drains
     # the pool. 30 min is >10x every observed runtime in this workflow.
     timeout-minutes: 30
-    # selection-list-service-e2e and selection-list-service-integration-tests are both
-    # listed in needs so notify waits for them to complete. They are treated differently:
-    #  - selection-list-service-integration-tests is a REAL gate (it is in the
-    #    success/failure conditions below) — the suite is green against the service.
-    #  - selection-list-service-e2e is still intentionally EXCLUDED: it has
-    #    continue-on-error: true and its specs are RED-by-design (TDD — the UI has not
-    #    landed). Its failures must never block the gate. Once it goes GREEN, add it to
-    #    the conditions and remove its continue-on-error flag.
+    # selection-list-service-e2e and selection-list-service-integration-tests are
+    # both REAL gates now — each appears in the success/failure conditions below.
+    # The e2e job was the last holdout: its specs were RED-by-design (TDD) and it
+    # carried continue-on-error until the UI landed. Both are retired.
     needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, gate-website-canonical-host, config-service-tests]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.selection-list-service-integration-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.gate-website-canonical-host.result == 'success' && needs.config-service-tests.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.selection-list-service-e2e.result == 'success' && needs.selection-list-service-integration-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.gate-website-canonical-host.result == 'success' && needs.config-service-tests.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.selection-list-service-integration-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.gate-website-canonical-host.result == 'failure' || needs.config-service-tests.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.selection-list-service-e2e.result == 'failure' || needs.selection-list-service-integration-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.gate-website-canonical-host.result == 'failure' || needs.config-service-tests.result == 'failure' }}
 
         run: |
           echo "❌ Some checks failed. Please review the logs."

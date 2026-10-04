@@ -24,17 +24,16 @@
  *   package     @fuzeone/selection-lists-ui
  *   components  TranslationWorkbench, LocaleEditor
  *
- * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
- * The route /settings/selection-lists/:listId/translations and
- * @fuzeone/selection-lists-ui do NOT exist yet. Every test below is EXPECTED
- * to fail today, and must fail for the RIGHT reason: the panels / editor /
- * modals are ABSENT from the DOM — not a harness/config error. That RED state
- * proves this is TDD (specs written against the approved design before
- * implementation), not tests retrofitted to shipped UI.
+ * ── These were RED by design; they are GREEN now (the name is history) ───────
+ * Written before the route /settings/selection-lists/:listId/translations and
+ * @fuzeone/selection-lists-ui existed, so that the approved design — not the
+ * implementation — fixed what "correct" means. Both have since landed and every
+ * test here passes, so the job that runs them (`selection-list-service-e2e` in
+ * ci.yml) is a HARD GATE with no continue-on-error: a failure is a regression,
+ * never "expected TDD red". The `.red.` in the filename records the origin.
  *
- * Tests are deliberately NOT test.skip / test.fixme — hiding RED defeats the
- * point. They go GREEN when frontend-engineer lands @fuzeone/selection-lists-ui
- * and wires the translations route.
+ * Tests are deliberately NOT test.skip / test.fixme — hiding a failure defeats
+ * the point.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.

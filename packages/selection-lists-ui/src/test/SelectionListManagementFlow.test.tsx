@@ -695,15 +695,30 @@ describe('frame 03 — list detail / value editor', () => {
       expect(itemOrder()).toEqual(['sli_2', 'sli_1', 'sli_3'])
     })
 
-    it('includes archived rows in the permutation (full list, not just active)', async () => {
+    // SelectionListItemReorder: "`item_ids` must be a permutation of exactly the
+    // list's non-archived item ids", and the endpoint rejects anything else with
+    // 400 VALIDATION_ERROR. Archived rows stay visible (greyed) and keep their
+    // handle, but they carry no sort position, so their id must NOT be sent.
+    it('excludes archived rows from the permutation (contract: non-archived ids only)', async () => {
       m.reorderItems.mockResolvedValue(undefined)
       await renderLoadedDetail([A, { ...B, status: 'archived' }, C])
       fireEvent.keyDown(handle('AT'), { key: ' ' })
       fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
       fireEvent.keyDown(handle('AT'), { key: ' ' })
-      await waitFor(() =>
-        expect(m.reorderItems).toHaveBeenCalledWith('sl_01', ['sli_2', 'sli_1', 'sli_3']),
-      )
+      await waitFor(() => expect(m.reorderItems).toHaveBeenCalledTimes(1))
+      expect(m.reorderItems).toHaveBeenCalledWith('sl_01', ['sli_1', 'sli_3'])
+    })
+
+    it('reorders the active rows around an archived one without sending its id', async () => {
+      m.reorderItems.mockResolvedValue(undefined)
+      await renderLoadedDetail([A, { ...B, status: 'archived' }, C])
+      // AT (sli_1) past the archived row AND past CH (sli_3): the active order flips.
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
+      fireEvent.keyDown(handle('AT'), { key: 'ArrowDown' })
+      fireEvent.keyDown(handle('AT'), { key: ' ' })
+      await waitFor(() => expect(m.reorderItems).toHaveBeenCalledTimes(1))
+      expect(m.reorderItems).toHaveBeenCalledWith('sl_01', ['sli_3', 'sli_1'])
     })
 
     it('shows "Saving order…" while the PUT is in flight', async () => {

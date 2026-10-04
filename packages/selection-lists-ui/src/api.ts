@@ -169,16 +169,32 @@ export async function saveTranslation(
   })
 }
 
+/**
+ * POST …/translations/{locale}/autofill.
+ *
+ * The contract (SelectionListAutofillResult, services/selection-list-service/openapi.yaml)
+ * names the wire fields `items_translated` / `items_skipped` / `list_translated` — NOT
+ * `filled` / `skipped`. Reading `data.filled` straight off the response yielded
+ * `undefined` for both counts, so the completion summary rendered
+ * `data-items-skipped={undefined}` (attribute absent) and the "nothing to do" branch
+ * (`filled === 0 && skipped === 0`) could never be true. Map explicitly.
+ */
 export async function autofillTranslations(
   listId: string,
   locale: string,
   body: { overwrite_machine: boolean },
 ): Promise<{ filled: number; skipped: number }> {
-  const { data } = await request<{ filled: number; skipped: number }>(
-    `${BASE}/${listId}/translations/${locale}/autofill`,
-    { method: 'POST', body: JSON.stringify(body) },
-  )
-  return data
+  const { data } = await request<{
+    items_translated: number
+    items_skipped: number
+  }>(`${BASE}/${listId}/translations/${locale}/autofill`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return {
+    filled: data?.items_translated ?? 0,
+    skipped: data?.items_skipped ?? 0,
+  }
 }
 
 // ── Access ────────────────────────────────────────────────────────────────────

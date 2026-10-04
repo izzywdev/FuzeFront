@@ -573,8 +573,12 @@ function SortableItemList({
         setReorderError(null)
         setReorderErrorCode(null)
         try {
+          // SelectionListItemReorder: `item_ids` is a permutation of exactly the
+          // list's NON-ARCHIVED item ids. Archived rows are rendered (greyed) but
+          // carry no sort position, so sending their ids makes the body neither a
+          // permutation nor accepted by the service.
           const nonArchived = newOrder.filter(i => i.status !== 'archived')
-          await reorderItems(listId, newOrder.map(i => i.id))
+          await reorderItems(listId, nonArchived.map(i => i.id))
           onReordered(newOrder)
         } catch (err) {
           const e = err as ApiError
