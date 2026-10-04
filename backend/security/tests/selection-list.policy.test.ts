@@ -30,7 +30,7 @@ app.use('/api/v1/security', authzRoutes)
 
 beforeEach(() => {
   jest.clearAllMocks()
-  setIdentityProvider({ getUserInfo: async () => ({ user: { id: 'caller' } }) } as any)
+  setIdentityProvider({ getUserInfo: async () => ({ user: { id: 'usr_00000000000000000000000001' } }) } as any)
   setAuthorizationProvider(authz as any)
   membership.mockResolvedValue({ status: 'active' })
   introspect.mockResolvedValue({ active: false })
@@ -45,7 +45,7 @@ afterEach(() => {
 })
 
 const listGrant = {
-  subject: 'target', tenant: 'tenant', role: 'list-editor',
+  subject: 'usr_00000000000000000000000002', tenant: 'org_00000000000000000000000001', role: 'list-editor',
   resource: { type: 'SelectionList', key: 'list-a' },
 }
 
@@ -84,7 +84,7 @@ test('schema sync sends resource roles to Permit', async () => {
 test('human cannot self-grant list ownership without manage_access', async () => {
   await request(app).post('/api/v1/security/authz/grants')
     .set('Authorization', 'Bearer valid')
-    .send({ ...listGrant, subject: 'caller', role: 'list-owner' })
+    .send({ ...listGrant, subject: 'usr_00000000000000000000000001', role: 'list-owner' })
     .expect(403)
   expect(authz.grant).not.toHaveBeenCalled()
 })
@@ -99,9 +99,9 @@ test('management permission on a different list cannot grant this list', async (
 test('human cannot bypass list policy by granting themselves tenant admin', async () => {
   await request(app).post('/api/v1/security/authz/grants')
     .set('Authorization', 'Bearer valid')
-    .send({ subject: 'caller', tenant: 'tenant', role: 'admin' }).expect(403)
+    .send({ subject: 'usr_00000000000000000000000001', tenant: 'org_00000000000000000000000001', role: 'admin' }).expect(403)
   expect(authz.check).toHaveBeenCalledWith({
-    subject: 'caller', tenant: 'tenant',
+    subject: 'usr_00000000000000000000000001', tenant: 'org_00000000000000000000000001',
     resource: { type: 'Organization' }, action: 'manage',
   })
   expect(authz.grant).not.toHaveBeenCalled()
@@ -112,7 +112,7 @@ test('list owner can grant an active member on that list only', async () => {
   await request(app).post('/api/v1/security/authz/grants')
     .set('Authorization', 'Bearer valid').send(listGrant).expect(201)
   expect(authz.check).toHaveBeenCalledWith({
-    subject: 'caller', tenant: 'tenant',
+    subject: 'usr_00000000000000000000000001', tenant: 'org_00000000000000000000000001',
     resource: { type: 'SelectionList', key: 'list-a' }, action: 'manage_access',
   })
   expect(authz.grant).toHaveBeenCalledTimes(1)
@@ -124,7 +124,7 @@ test('inactive target member and unscoped list role are denied', async () => {
     .set('Authorization', 'Bearer valid').send(listGrant).expect(403)
   await request(app).post('/api/v1/security/authz/grants')
     .set('Authorization', 'Bearer valid')
-    .send({ subject: 'target', tenant: 'tenant', role: 'list-owner' }).expect(403)
+    .send({ subject: 'usr_00000000000000000000000002', tenant: 'org_00000000000000000000000001', role: 'list-owner' }).expect(403)
   expect(authz.grant).not.toHaveBeenCalled()
 })
 
@@ -174,4 +174,30 @@ test.each([
     if (previous === undefined) delete process.env.JWT_SECRET
     else process.env.JWT_SECRET = previous
   }
+})
+
+test.each([
+  ['malformed user', 'not-a-user', 'org_00000000000000000000000001'],
+  ['wrong user prefix', 'org_00000000000000000000000002', 'org_00000000000000000000000001'],
+  ['malformed tenant', 'usr_00000000000000000000000002', 'not-an-org'],
+  ['wrong tenant prefix', 'usr_00000000000000000000000002', 'usr_00000000000000000000000001'],
+])('list grant/revoke reject %s before membership lookup', async (_name, subject, tenant) => {
+  for (const method of ['post', 'delete'] as const) {
+    await request(app)[method]('/api/v1/security/authz/grants')
+      .set('Authorization', 'Bearer valid')
+      .send({ ...listGrant, subject, tenant }).expect(400)
+  }
+  expect(membership).not.toHaveBeenCalled()
+  expect(authz.grant).not.toHaveBeenCalled()
+  expect(authz.revoke).not.toHaveBeenCalled()
+})
+
+test('UUID grant tuples validate and convert membership references without changing provider tuple', async () => {
+  const subject = '33333333-3333-4333-8333-333333333333'
+  const tenant = '11111111-1111-4111-8111-111111111111'
+  authz.check.mockImplementation(async query => query.resource.type === 'SelectionList')
+  await request(app).post('/api/v1/security/authz/grants')
+    .set('Authorization', 'Bearer valid').send({ ...listGrant, subject, tenant }).expect(201)
+  expect(membership).toHaveBeenCalledWith(expect.stringMatching(/^usr_/), expect.stringMatching(/^org_/))
+  expect(authz.grant).toHaveBeenCalledWith(expect.objectContaining({ subject, tenant }))
 })

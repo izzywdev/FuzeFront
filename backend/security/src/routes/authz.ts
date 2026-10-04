@@ -56,7 +56,7 @@ import { withReqId } from '../lib/logger'
 import { introspectMachineToken } from '../services/machine-identity'
 import jwt from 'jsonwebtoken'
 import { findMembershipByUserAndOrg } from '../repositories/organizationRepository'
-import type { EntityId } from '@izzywdev/fuzefront-identity'
+import { parseId, fromUuid, type EntityType } from '@izzywdev/fuzefront-identity'
 import {
   AUTHZ_ADMIN_SCOPE,
   authorizeGrantMutation,
@@ -76,6 +76,22 @@ const selectionListRoles = new Set([
   'list-owner', 'list-editor', 'list-contributor', 'list-translator', 'list-viewer',
 ])
 
+/** Authz provider tuples retain UUID compatibility; repository references are typed. */
+function parseMembershipRef<T extends EntityType>(type: T, raw: unknown) {
+  return parseId(type, typeof raw === 'string' && !raw.includes('_') ? fromUuid(type, raw) : raw)
+}
+
+function validateListMemberRefs(subject: unknown, tenant: unknown, res: Response): boolean {
+  try {
+    parseMembershipRef('user', subject)
+    parseMembershipRef('organization', tenant)
+    return true
+  } catch {
+    res.status(400).json({ error: 'List grant requires valid user and organization references', code: 'MALFORMED' })
+    return false
+  }
+}
+
 /** List grants are constrained to the caller's list and an active org member. */
 async function authorizeSelectionListGrant(
   c: ResolvedCaller,
@@ -86,8 +102,8 @@ async function authorizeSelectionListGrant(
   if (!body.resource.key || !selectionListRoles.has(body.role) || !body.subject || !body.tenant) return false
 
   const membership = await findMembershipByUserAndOrg(
-    body.subject as EntityId<'user'>,
-    body.tenant as EntityId<'organization'>,
+    parseMembershipRef('user', body.subject),
+    parseMembershipRef('organization', body.tenant),
   )
   if (membership?.status !== 'active') return false
 
@@ -378,6 +394,7 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
   const isListGrant = resource?.type === 'SelectionList' || selectionListRoles.has(role)
   let gate: GateResult
   if (isListGrant) {
+    if (!validateListMemberRefs(subject, tenant, res)) return
     try {
       gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, false), status: 403, code: 'FORBIDDEN', error: 'List grant forbidden' }
     } catch {
@@ -431,6 +448,7 @@ router.delete('/authz/grants', async (req: Request, res: Response) => {
   const provider = getAuthorizationProvider()
   let gate: GateResult
   if (resource?.type === 'SelectionList' || selectionListRoles.has(role)) {
+    if (!validateListMemberRefs(subject, tenant, res)) return
     try {
       gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, true), status: 403, code: 'FORBIDDEN', error: 'List revoke forbidden' }
     } catch {
