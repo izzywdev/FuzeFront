@@ -3,7 +3,7 @@
 // All routes require a valid JWT (authMiddleware upstream).
 // All DB queries are scoped to req.orgId via the parent list — never cross-org.
 //
-// TODO(S7): add permit.check() before each mutating operation.
+// Authorization: every route carries requireAuthzCheck per the contract x-permit-action.
 //
 // Pagination: cursor-based (opaque base64url JSON cursor), sort_order ASC.
 //   DEFAULT_PAGE_SIZE = 50, MAX_PAGE_SIZE = 200.
@@ -21,8 +21,10 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
+import { requireAuthzCheck } from '../middleware/authz';
 import { isSelectionListsEnabled } from '../flags';
-import { enforceItemQuota } from '../middleware/quota';
+import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
+import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
 
 const router = Router();
 
@@ -155,7 +157,7 @@ async function getListSourceLocale(
 
 // ─── GET /:listId/items ───────────────────────────────────────────────────────
 
-router.get('/:listId/items', async (req: Request, res: Response): Promise<void> => {
+router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -165,8 +167,6 @@ router.get('/:listId/items', async (req: Request, res: Response): Promise<void> 
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'read', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId } = req.params;
 
@@ -279,7 +279,7 @@ router.get('/:listId/items', async (req: Request, res: Response): Promise<void> 
 
 // ─── POST /:listId/items — create an item ────────────────────────────────────
 
-router.post('/:listId/items', enforceItemQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), enforceItemQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag is also checked by enforceItemQuota, but we re-check here so that tests
   // which mock the middleware as a pass-through still see the correct 404 behavior.
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
@@ -291,8 +291,6 @@ router.post('/:listId/items', enforceItemQuota, async (req: Request, res: Respon
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'add_value', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId } = req.params;
   const body = req.body ?? {};
@@ -330,22 +328,16 @@ router.post('/:listId/items', enforceItemQuota, async (req: Request, res: Respon
     return;
   }
 
-  // Determine sort_order: explicit or max+100
-  let resolvedSortOrder: number;
+  // Validate an explicit sort_order up front; the implicit "append" order is
+  // computed inside the transaction (below) so concurrent creates cannot read
+  // the same MAX().
+  let explicitSortOrder: number | undefined;
   if (sort_order !== undefined) {
-    resolvedSortOrder = parseInt(String(sort_order), 10);
-    if (isNaN(resolvedSortOrder) || resolvedSortOrder < 0) {
+    explicitSortOrder = parseInt(String(sort_order), 10);
+    if (isNaN(explicitSortOrder) || explicitSortOrder < 0) {
       res.status(400).json({ code: 'VALIDATION_ERROR', message: 'sort_order must be a non-negative integer.' });
       return;
     }
-  } else {
-    // Append: max(sort_order) + 100, or 100 if empty
-    const maxResult = await db.raw<{ rows: [{ max_order: string | null }] }>(
-      `SELECT MAX(sort_order) AS max_order FROM selection_list_items WHERE list_id = ?`,
-      [listId],
-    );
-    const maxOrder = maxResult.rows[0]?.max_order;
-    resolvedSortOrder = maxOrder !== null && maxOrder !== undefined ? parseInt(String(maxOrder), 10) + 100 : 100;
   }
 
   // Mint the id — never accept one from the client
@@ -353,6 +345,25 @@ router.post('/:listId/items', enforceItemQuota, async (req: Request, res: Respon
 
   try {
     await db.transaction(async (trx) => {
+      // Exact quota enforcement: serialise creates for this list, re-check the
+      // ceiling under the lock, then insert (see quota.service.ts header).
+      await lockQuotaScope(trx, `list_items:${listId}`);
+      await checkItemQuota(listId, req.orgId as string, trx);
+
+      let resolvedSortOrder: number;
+      if (explicitSortOrder !== undefined) {
+        resolvedSortOrder = explicitSortOrder;
+      } else {
+        // Append: max(sort_order) + 100, or 100 if empty
+        const maxResult = await trx.raw<{ rows: [{ max_order: string | null }] }>(
+          `SELECT MAX(sort_order) AS max_order FROM selection_list_items WHERE list_id = ?`,
+          [listId],
+        );
+        const maxOrder = maxResult.rows[0]?.max_order;
+        resolvedSortOrder =
+          maxOrder !== null && maxOrder !== undefined ? parseInt(String(maxOrder), 10) + 100 : 100;
+      }
+
       await trx.raw(
         `
         INSERT INTO selection_list_items (id, list_id, code, sort_order, status, created_by)
@@ -402,6 +413,10 @@ router.post('/:listId/items', enforceItemQuota, async (req: Request, res: Respon
 
     res.status(201).json(formatItem(result.rows[0]));
   } catch (err: unknown) {
+    if (err instanceof QuotaExceededError) {
+      sendQuotaExceeded(res, err);
+      return;
+    }
     const pg = err as { code?: string };
     if (pg?.code === '23505') {
       res.status(409).json({ code: 'CONFLICT', message: `An item with code '${code}' already exists in this list.` });
@@ -415,7 +430,7 @@ router.post('/:listId/items', enforceItemQuota, async (req: Request, res: Respon
 // ─── PUT /:listId/items/reorder — whole-collection reorder ───────────────────
 // MUST be declared before /:listId/items/:itemId to prevent "reorder" matching as itemId
 
-router.put('/:listId/items/reorder', async (req: Request, res: Response): Promise<void> => {
+router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -425,8 +440,6 @@ router.put('/:listId/items/reorder', async (req: Request, res: Response): Promis
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'edit', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId } = req.params;
   const { item_ids } = req.body ?? {};
@@ -512,7 +525,7 @@ router.put('/:listId/items/reorder', async (req: Request, res: Response): Promis
 
 // ─── PATCH /:listId/items/:itemId — partial update ───────────────────────────
 
-router.patch('/:listId/items/:itemId', async (req: Request, res: Response): Promise<void> => {
+router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'update_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -522,8 +535,6 @@ router.patch('/:listId/items/:itemId', async (req: Request, res: Response): Prom
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'edit', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId, itemId } = req.params;
   const body = req.body ?? {};
@@ -667,7 +678,7 @@ router.patch('/:listId/items/:itemId', async (req: Request, res: Response): Prom
 
 // ─── DELETE /:listId/items/:itemId — archive or purge ────────────────────────
 
-router.delete('/:listId/items/:itemId', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remove_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -677,8 +688,6 @@ router.delete('/:listId/items/:itemId', async (req: Request, res: Response): Pro
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'delete', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId, itemId } = req.params;
   const purge = req.query.purge === 'true';
@@ -747,7 +756,7 @@ router.delete('/:listId/items/:itemId', async (req: Request, res: Response): Pro
 
 // ─── POST /:listId/items/:itemId/archive — explicit archive ──────────────────
 
-router.post('/:listId/items/:itemId/archive', async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList', 'remove_value'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -757,8 +766,6 @@ router.post('/:listId/items/:itemId/archive', async (req: Request, res: Response
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'delete', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId, itemId } = req.params;
 

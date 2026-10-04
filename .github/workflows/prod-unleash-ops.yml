@@ -26,6 +26,7 @@ on:
             portals-directory   — fuzefront.platform.portals-directory + multi-tenant-portals (100%)
             portal-console      — fuzefront.identity.portal-scoped-users + fuzefront.apps.portal-catalog + fuzefront.billing.reseller-connect (100%)
             org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
+            selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
         required: true
         default: billing-portal
         type: choice
@@ -34,6 +35,19 @@ on:
           - portals-directory
           - portal-console
           - org-context-gating
+          - selection-lists
+      rollout:
+        description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
+        required: false
+        default: '10'
+      action:
+        description: 'selection-lists ONLY — enable (env on + strategy at `rollout`%) or disable (env off = fast rollback, strategy kept). Ignored by other sets.'
+        required: false
+        default: 'enable'
+        type: choice
+        options:
+          - enable
+          - disable
 
 permissions:
   contents: read
@@ -47,6 +61,8 @@ jobs:
       - name: Apply flags
         env:
           FLAGS_SET: ${{ inputs.flags }}
+          ROLLOUT: ${{ inputs.rollout }}
+          ACTION: ${{ inputs.action }}
           UNLEASH: http://fuzefront-unleash.fuzefront.svc.cluster.local:4242
           PROJECT: default
           ENVIRONMENT: production
@@ -168,12 +184,68 @@ jobs:
               -H "Authorization: $TOKEN" || true
           }
 
+          # ── Selection Lists (staged ramp / rollback) ───────────────────────
+          # Release flag, default OFF. Unlike the GA-only sets above this takes a
+          # percentage so it can be ramped 10 -> 25 -> 50 -> 100, and `disable`
+          # turns the environment off (strategy kept, so re-enable is clean).
+          # Inputs arrive via env (never inlined into the script) and are
+          # validated before use.
+          apply_selection_lists() {
+            local FLAG="fuzefront.selection-lists.service"
+            local DESC="Release flag, default OFF. Gates ALL selection-list UI (shell nav + /settings/selection-lists routes) and the selection-list-service API (404 when OFF). Owner: platform team (feature-flags-engineer admin). Removal: when GA at 100% of orgs and stable; delete the flag, the SidePanel/App.tsx guards and services/selection-list-service/src/flags.ts gate."
+            if [ "$ACTION" = "disable" ]; then
+              curl -sfX POST \
+                "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/off" \
+                -H "Authorization: $TOKEN" \
+                && echo "  $FLAG environment OFF (rollback; strategy kept)"
+              return 0
+            fi
+            case "$ROLLOUT" in ''|*[!0-9]*) echo "::error::rollout must be an integer 1-100"; return 1 ;; esac
+            if [ "$ROLLOUT" -lt 1 ] || [ "$ROLLOUT" -gt 100 ]; then echo "::error::rollout must be 1-100"; return 1; fi
+            echo "=== $FLAG -> ${ROLLOUT}% ($ENVIRONMENT) ==="
+            local CREATE_BODY
+            CREATE_BODY=$(FLAG="$FLAG" DESC="$DESC" python3 -c 'import json,os;print(json.dumps({"name":os.environ["FLAG"],"type":"release","description":os.environ["DESC"]}))')
+            STATUS=$(curl -sS -o /tmp/resp_sl.json -w '%{http_code}' -X POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features" \
+              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "$CREATE_BODY")
+            echo "$STATUS" | grep -qE '^(201|409)$' || { echo "  create: FAILED ($STATUS)"; cat /tmp/resp_sl.json; return 1; }
+            curl -sfX POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/on" \
+              -H "Authorization: $TOKEN" && echo "  environment on: ok"
+            curl -sf \
+              "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
+              -H "Authorization: $TOKEN" -o /tmp/strats_sl.json 2>/dev/null || echo '[]' > /tmp/strats_sl.json
+            SID=$(python3 -c "
+          import json
+          try:
+            xs=[s for s in json.load(open('/tmp/strats_sl.json')) if s.get('name')=='flexibleRollout']
+            print(xs[0]['id'] if xs else '')
+          except Exception:
+            print('')
+          ")
+            local BODY
+            if [ -n "$SID" ]; then
+              BODY=$(FLAG="$FLAG" ROLLOUT="$ROLLOUT" python3 -c 'import json,os;print(json.dumps({"parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
+              curl -sfX PUT \
+                "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies/$SID" \
+                -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "$BODY" \
+                && echo "  strategy patched -> ${ROLLOUT}%"
+            else
+              BODY=$(FLAG="$FLAG" ROLLOUT="$ROLLOUT" python3 -c 'import json,os;print(json.dumps({"name":"flexibleRollout","parameters":{"rollout":os.environ["ROLLOUT"],"stickiness":"default","groupId":os.environ["FLAG"]}}))')
+              curl -sfX POST \
+                "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT/strategies" \
+                -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "$BODY" \
+                && echo "  strategy added -> ${ROLLOUT}%"
+            fi
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
             billing-portal)      apply_billing ;;
             portals-directory)   apply_portals_directory ;;
             portal-console)      apply_portal_console ;;
             org-context-gating)  apply_org_context_gating ;;
+            selection-lists)     apply_selection_lists ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -233,4 +305,6 @@ jobs:
             org-context-gating)
               check_flag "fuzefront.apps.org-context-disabled"
               check_flag "fuzefront.apps.org-context-hidden" ;;
+            selection-lists)
+              check_flag "fuzefront.selection-lists.service" ;;
           esac

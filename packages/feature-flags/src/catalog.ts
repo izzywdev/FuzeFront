@@ -49,13 +49,18 @@ export const FLAG_KEYS = {
   APPS_ORG_CONTEXT_HIDDEN: 'fuzefront.apps.org-context-hidden',
   /**
    * FF-EPIC-17 / FFRNT-201 — S15
-   * Gates the selection-list-service and its management UI. Enable per-org
+   * Gates ALL selection-list surface, server and client. Enable per-org
    * as the service rolls out. Default OFF. Release flag.
    * Owner: platform team.
-   * Removal criterion: when the service is GA and enabled for 100% of orgs.
+   * Removal criterion: when the service is GA and enabled for 100% of orgs
+   * and stable for one release cycle (then delete flag + every guard below).
    * Gates:
-   *   1. selection-list-service Helm deployment (service-side)
+   *   1. selection-list-service API — every /v1/selection-lists/* route and
+   *      /v1/resolve answer 404 while OFF (service-side)
    *   2. "Selection Lists" entry in the shell left sidebar (UI-side, S9)
+   *   3. /settings/selection-lists* shell routes (UI-side redirect)
+   * Web-exposed (WEB_EXPOSED_FLAGS) — required for the browser to see it.
+   * Runbook: docs/runbooks/selection-lists-flag-rollout.md
    */
   SELECTION_LISTS_SERVICE: 'fuzefront.selection-lists.service',
   /**
