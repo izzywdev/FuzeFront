@@ -31,6 +31,12 @@ vi.mock('@fuzefront/i18n', () => ({
 }))
 
 vi.mock('../../lib/shared', () => ({
+  // The organization-switcher dropdown renders OrganizationSwitcherSection,
+  // which calls useCurrentUser() and gates the root org on
+  // isEmployeeUser(user?.roles). #1188 added that call without updating this
+  // mock, so opening the dropdown threw "No useCurrentUser export is defined on
+  // the mock". Mock an employee user so the root org stays visible.
+  useCurrentUser: () => ({ user: { roles: ['employee'] }, setUser: vi.fn() }),
   useOrganizations: () => ({
     organizations: fixtures.organizations,
     activeOrganizationId: fixtures.switcherState.activeOrganizationId,
