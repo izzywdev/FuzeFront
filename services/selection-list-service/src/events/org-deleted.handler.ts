@@ -2,6 +2,7 @@ import { FuzeEvent, IdentityOrgDeletedPayloadV1 } from '@fuzefront/shared/kafka'
 import { fromUuid } from '@izzywdev/fuzefront-identity';
 import { db } from '../db';
 import { logger, timed } from '../lib/logger';
+import { markOrgProjectionDeleted } from './orgProjection';
 
 /**
  * The stored `organization_id` is TEXT and is whatever the caller's token
@@ -41,6 +42,11 @@ function orgIdForms(organizationId: string): string[] {
  *   'hard' — purge (delete all rows, in foreign-key dependency order, in ONE
  *            transaction; also removes the org's quota override row)
  *
+ * BEFORE cascading, the org is tombstoned in the org projection (`selection_list_ref_index`,
+ * plan section 7.1): the seed algorithm refuses a deleted org with ORG_INACTIVE, so a late
+ * `identity.org.created` / `seed.requested` can never resurrect lists in a deleted org. The
+ * tombstone is written even for an org never seen (delete-before-create) and is never reverted.
+ *
  * Idempotent: replaying the same event is a no-op (soft: nothing left 'active';
  * hard: nothing left to delete). Never touches the DLQ — a failure is thrown to
  * the consumer loop, success returns normally.
@@ -53,6 +59,9 @@ export async function handleOrgDeleted(
   // The event's correlationId is this thread's reqId so one event is one grep.
   const log = logger.child({ reqId: event.correlationId, component: 'org-deleted' });
   log.info({ organizationId, cascade }, 'identity.org.deleted received');
+
+  // Tombstone the projection FIRST (infra faults throw -> the message is retried).
+  await timed(log, 'db.tombstone-org-projection', () => markOrgProjectionDeleted(db, organizationId), { organizationId });
 
   if (cascade === 'hard') {
     const removed = await timed(
