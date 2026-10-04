@@ -1073,6 +1073,12 @@ unleash:
   ciRunner:
     serviceAccountNamespace: arc-runners
     serviceAccountName: arc-runner-sa
+    # prod-synthetic-admin.yml reads INTERNAL_PROVISION_SECRET from
+    # `fuzefront-secrets` via the k8s API (same mechanism prod-unleash-ops.yml
+    # uses for `unleash-secrets`). The runner Role is resourceName-scoped, so
+    # without this the get 403s ("Could not read INTERNAL_PROVISION_SECRET").
+    extraSecretNames:
+      - fuzefront-secrets
 
 # ── Cloudflare cache purge (prod) ────────────────────────────────────────────
 # Sealed for the Contabo k3s cluster; reseal per the template header if the

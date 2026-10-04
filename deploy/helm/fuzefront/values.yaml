@@ -1141,9 +1141,11 @@ unleash:
   nodeSelector: {}
   affinity: {}
   tolerations: []
-  # RBAC for prod-unleash-ops.yml: the workflow reads the admin token from
-  # `unleash-secrets` via the k8s API using the runner pod's mounted service
-  # account token. The Role below grants `get` on that one secret; the
+  # RBAC for the in-cluster ops workflows: they read secrets from the
+  # `fuzefront` namespace via the k8s API using the runner pod's mounted
+  # service account token (ARC runners have no kubectl). The Role below grants
+  # `get` on `unleash.secretName` (prod-unleash-ops.yml reads the admin token
+  # from `unleash-secrets`) PLUS every name in `ciRunner.extraSecretNames`; the
   # RoleBinding attaches it to the ARC runner SA.
   #
   # serviceAccountName is the ServiceAccount the runner PODS run as — NOT the
@@ -1157,6 +1159,11 @@ unleash:
     enabled: true
     serviceAccountName: arc-runner-sa
     serviceAccountNamespace: ""   # defaults to the release namespace
+    # Additional Secret names (beyond unleash.secretName) in THIS namespace the
+    # runner SA may `get`. prod-synthetic-admin.yml needs `fuzefront-secrets`
+    # for INTERNAL_PROVISION_SECRET — declared in values-prod.yaml, not here, so
+    # the dev/local default stays least-privilege (unleash-secrets only).
+    extraSecretNames: []
 
 authentik:
   enabled: true

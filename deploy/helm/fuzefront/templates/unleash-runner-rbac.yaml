@@ -1,10 +1,13 @@
 {{/*
-Minimal RBAC so the ARC self-hosted runner pod can read the Unleash admin
-token at workflow runtime without a GitHub secret.
+Minimal RBAC so the ARC self-hosted runner pod can read specific secrets in
+this namespace at workflow runtime without a GitHub secret and without kubectl.
 
-prod-unleash-ops.yml reads INIT_ADMIN_API_TOKENS from `unleash-secrets` via
-the k8s API using the runner pod's mounted service account token.  Without
-this Role + RoleBinding the curl call returns 403 and the workflow fails.
+prod-unleash-ops.yml reads INIT_ADMIN_API_TOKENS from `unleash-secrets`, and
+prod-synthetic-admin.yml reads INTERNAL_PROVISION_SECRET from `fuzefront-secrets`
+(added via unleash.ciRunner.extraSecretNames) — both via the k8s API using the
+runner pod's mounted service account token. Without this Role + RoleBinding (or
+with the target secret missing from resourceNames) the GET returns 403 and the
+workflow fails.
 
 The runner service account name is set by:
   unleash.ciRunner.serviceAccountName   (values.yaml, default: "arc-runner-sa")
@@ -30,7 +33,15 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: [{{ .Values.unleash.secretName | quote }}]
+    # unleash.secretName (the admin token for prod-unleash-ops.yml) plus any
+    # ciRunner.extraSecretNames — e.g. fuzefront-secrets, which
+    # prod-synthetic-admin.yml reads for INTERNAL_PROVISION_SECRET. Named
+    # explicitly (never a blanket secrets:get) to keep the grant least-privilege.
+    resourceNames:
+      - {{ .Values.unleash.secretName | quote }}
+      {{- range .Values.unleash.ciRunner.extraSecretNames }}
+      - {{ . | quote }}
+      {{- end }}
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
