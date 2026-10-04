@@ -452,17 +452,23 @@ export interface paths {
         /**
          * List grants for a subject within a tenant
          * @description Lists grants for `subject` within `tenant`, optionally filtered by resource instance (`resourceType`/`resourceKey`). Because a subject can hold grants across MANY resource instances under ReBAC, this set is treated as potentially unbounded and is cursor-paginated per the family pagination standard.
+         *
+         *     **Authorization.** A caller may always list their OWN grants. Listing another subject's grants requires administering the tenant (`403 FORBIDDEN` otherwise); a machine caller needs `authz:admin`.
          */
         get: operations["listGrants"];
         put?: never;
         /**
          * Grant a role/permission to a subject (RBAC or resource-instance/ReBAC)
          * @description Grants a role (and/or permission) to a subject within a tenant. Omit `resource` for a tenant-wide (RBAC) grant; include `resource: { type, key }` to scope it to a specific resource instance (ReBAC). Returns the created `Grant`. A grant is a rollout/assignment convenience — the AUTHORITATIVE decision is always `POST /authz/check`. Fail-closed.
+         *
+         *     **Authorization.** A human (session) caller must be authorized to administer the TARGET tenant (tenant administrator), or — for a resource-instance-scoped grant of a non-tenant-level role — hold `manage_access` on that exact instance. A caller can never grant a role broader than the one that authorizes them, and has no standing in a tenant they do not administer: `403 FORBIDDEN`. A provider outage while deciding fails closed (`502 PROVIDER_UNAVAILABLE`), never allow. A machine caller must hold the `authz:admin` scope (unchanged).
          */
         post: operations["createGrant"];
         /**
          * Revoke a grant
          * @description Revokes a grant, identified EITHER by `{ grantId }` OR by its identity tuple `{ subject, tenant, role, resource? }` (supply one form). Idempotent — revoking an absent grant still returns 204. A revoke never changes the authoritative model beyond removing the assignment; `authz/check` remains the source of truth. Fail-closed.
+         *
+         *     **Authorization.** Same rule as `POST /authz/grants`: a human caller must administer the target tenant (or hold `manage_access` on the instance for an instance-scoped, non-tenant-level role), else `403 FORBIDDEN`; a machine caller must hold `authz:admin` (unchanged). A `grantId` is resolved to its `tenant:subject:role` tuple and authorized against THAT tenant.
          */
         delete: operations["revokeGrant"];
         options?: never;
@@ -492,6 +498,8 @@ export interface paths {
          *     **This is a WRITE, not a decision — failure must never look like success.** A provider outage, timeout, or rejection returns `502` (`code: PROVIDER_UNAVAILABLE`), never a fail-open/fail-silent `200`. This is deliberately the OPPOSITE of `authz/check`'s fail-closed-returns-`false` contract: there is no safe "assume it worked" default for a write whose caller (billing entitlement sync) needs to know whether the data actually reached the provider, so it can retry rather than believe a stale or absent attribute state.
          *
          *     `subjectType` names which of the provider's two subject kinds this write targets (`user` → `permit.api.users.update`, `tenant` → `permit.api.tenants.update` in the first, Permit-backed implementation — vendor name confined to the adapter, never this contract) — the type is load-bearing, not decoration, so no lookup ever resolves a bare subject id (identifier-standard.md, rule 2).
+         *
+         *     **Authorization — machine callers only.** Entitlement attributes may be written only by an operator machine identity holding the `authz:admin` scope. Human (session) callers are always denied (`403 FORBIDDEN`), including tenant administrators.
          */
         patch: operations["setSubjectAttributes"];
         trace?: never;
@@ -2490,6 +2498,8 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            502: components["responses"]["ProviderError"];
         };
     };
     createGrant: {
@@ -2516,6 +2526,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             502: components["responses"]["ProviderError"];
         };
     };
@@ -2541,6 +2552,8 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            502: components["responses"]["ProviderError"];
         };
     };
     setSubjectAttributes: {
@@ -2572,6 +2585,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             502: components["responses"]["ProviderError"];
         };
     };
@@ -2649,7 +2663,9 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     listTenantMembers: {
@@ -2678,7 +2694,9 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     addTenantMember: {
@@ -2707,7 +2725,9 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     removeTenantMember: {
@@ -2730,7 +2750,9 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     listTenantRoles: {
@@ -2756,7 +2778,9 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     assignMemberRoles: {
@@ -2786,7 +2810,9 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     exchangeWorkloadToken: {
