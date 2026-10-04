@@ -30,6 +30,51 @@ export const httpRequestDuration = new client.Histogram({
   registers: [registry],
 });
 
+// ---------------------------------------------------------------------------
+// Transactional-outbox relay (events/outboxRelay.ts). Labels are bounded: `topic`
+// is one of the ~15 selection-lists.* topics, `reason` one of two constants.
+// Never an org/list/event id (cardinality is an availability concern).
+// ---------------------------------------------------------------------------
+
+export const outboxPublishedTotal = new client.Counter({
+  name: 'selection_list_outbox_published_total',
+  help: 'Outbox events published to Kafka',
+  labelNames: ['topic'] as const,
+  registers: [registry],
+});
+
+export const outboxPublishFailuresTotal = new client.Counter({
+  name: 'selection_list_outbox_publish_failures_total',
+  help: 'Outbox publish attempts that failed (the row stays pending and is retried)',
+  labelNames: ['topic'] as const,
+  registers: [registry],
+});
+
+export const outboxParkedTotal = new client.Counter({
+  name: 'selection_list_outbox_parked_total',
+  help: 'Outbox events parked as failed and copied to <topic>.dlq - ALERT on any increase',
+  labelNames: ['topic', 'reason'] as const,
+  registers: [registry],
+});
+
+export const outboxPendingGauge = new client.Gauge({
+  name: 'selection_list_outbox_pending',
+  help: 'Outbox rows waiting to be published',
+  registers: [registry],
+});
+
+export const outboxOldestPendingAgeGauge = new client.Gauge({
+  name: 'selection_list_outbox_oldest_pending_age_seconds',
+  help: 'Age of the oldest pending outbox row (0 when none)',
+  registers: [registry],
+});
+
+export const outboxFailedGauge = new client.Gauge({
+  name: 'selection_list_outbox_failed',
+  help: 'Outbox rows currently parked as failed (dead-lettered) - ALERT when > 0',
+  registers: [registry],
+});
+
 /** Low-cardinality route label: the matched pattern, or "unmatched". */
 export function routeLabel(req: Request): string {
   const matched = req.route && typeof req.route.path === 'string' ? req.route.path : null;

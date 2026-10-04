@@ -35,6 +35,15 @@ import { isSelectionListsEnabled } from '../flags';
 import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkListQuota, QuotaExceededError } from '../services/quota.service';
 import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
+import { lockOrgOutbox, wireUserId } from '../events/outbox';
+import {
+  eventContextFromRequest,
+  emitAccessGranted,
+  emitListChanged,
+  emitListCreated,
+  emitListDeleted,
+  readList,
+} from '../events/emitters';
 
 const router = createRouter();
 registerIdParams(router);
@@ -44,9 +53,16 @@ registerIdParams(router);
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 
+// Must equal the openapi `Locale` enum / i18n.languages.json (and the Zod
+// `SELECTION_LIST_LOCALES` the published events validate against): a locale
+// outside it would be accepted here but make the list.* event invalid.
 const SUPPORTED_LOCALES = new Set([
-  'en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'ja', 'zh',
+  'en', 'es', 'fr', 'de', 'pt', 'ru', 'zh', 'ja', 'hi', 'ar', 'he',
 ]);
+
+// openapi SelectionListKey (the event schemas use the same rule).
+const LIST_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
+const DESCRIPTION_MAX = 2000;
 
 // ─── Pagination helpers ───────────────────────────────────────────────────────
 
@@ -411,11 +427,15 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'key is required.' });
     return;
   }
-  if (!/^[a-z0-9][a-z0-9_-]*$/.test(key)) {
+  if (!LIST_KEY_PATTERN.test(key.trim())) {
     res.status(400).json({
       code: 'VALIDATION_ERROR',
-      message: 'key must be lowercase alphanumeric with hyphens/underscores.',
+      message: 'key must be 2-64 characters of lowercase alphanumerics and hyphens, starting and ending with an alphanumeric.',
     });
+    return;
+  }
+  if (description !== undefined && description !== null && (typeof description !== 'string' || description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
     return;
   }
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -476,6 +496,17 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
       // nobody (but an org admin) can administer.
       // (Written with this service's machine identity, not the caller's token.)
       await grantListOwner(req.userId as string, req.orgId as string, id, req.userId as string, trx);
+
+      // Outbox, same transaction (docs/planning/selection-lists-events.md section 6):
+      // list.created (revision 1) then the creator's owner grant. Written AFTER the
+      // Security API call so the per-org outbox lock is held only for the commit.
+      const ctx = eventContextFromRequest(req);
+      await emitListCreated(trx, ctx, id);
+      await emitAccessGranted(trx, ctx, id, {
+        userId: wireUserId(req.userId as string),
+        role: 'list-owner',
+        previousRole: null,
+      });
     });
 
     // Fetch the newly created list (with translation) to return the canonical shape
@@ -660,13 +691,17 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
       res.status(400).json({ code: 'VALIDATION_ERROR', message: 'key must be a non-empty string.' });
       return;
     }
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(body.key)) {
+    if (!LIST_KEY_PATTERN.test(body.key.trim())) {
       res.status(400).json({
         code: 'VALIDATION_ERROR',
-        message: 'key must be lowercase alphanumeric with hyphens/underscores.',
+        message: 'key must be 2-64 characters of lowercase alphanumerics and hyphens, starting and ending with an alphanumeric.',
       });
       return;
     }
+  }
+  if (body.description !== undefined && body.description !== null && (typeof body.description !== 'string' || body.description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
+    return;
   }
   if (body.source_locale !== undefined && !SUPPORTED_LOCALES.has(body.source_locale)) {
     res.status(400).json({ code: 'VALIDATION_ERROR', message: `source_locale '${body.source_locale}' is not supported.` });
@@ -686,19 +721,21 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
   }
 
   try {
-    // Fetch the existing list row (scoped to org)
-    const existing = await db.raw<{ rows: [{ id: string; source_locale: string; status: string; key: string }] }>(
-      `SELECT id, source_locale, status, key FROM selection_lists WHERE id = ? AND organization_id = ?`,
-      [listId, req.orgId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
-      return;
-    }
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
+      // Lock order is ALWAYS org outbox lock -> list row (emitters/outbox.ts), so a
+      // concurrent item create / purge / access write on this org cannot deadlock.
+      await lockOrgOutbox(trx, req.orgId as string);
 
-    const current = existing.rows[0];
+      // Fetch the existing list row (scoped to org) inside the transaction; it is
+      // also the `before` state the event diff is taken against.
+      const existing = await trx.raw<{ rows: Array<{ id: string; source_locale: string; status: string; key: string }> }>(
+        `SELECT id, source_locale, status, key FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
+        [listId, req.orgId],
+      );
+      if (!existing.rows[0]) return 'not-found';
+      const current = existing.rows[0];
+      const before = await readList(trx, listId);
 
-    await db.transaction(async (trx) => {
       // Update the list row — always bump updated_at (plus any changed scalars)
       const listUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
       if (body.key !== undefined) listUpdates.key = body.key.trim();
@@ -750,7 +787,15 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
           );
         }
       }
+
+      // Outbox, same transaction: list.updated (what changed) and/or list.archived.
+      await emitListChanged(trx, eventContextFromRequest(req), listId, before);
+      return 'ok';
     });
+    if (outcome === 'not-found') {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
+      return;
+    }
 
     // Return the updated list with source-locale translation
     const updatedResult = await db.raw<{ rows: ListRow[] }>(
@@ -811,18 +856,22 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
   const purge = req.query.purge === 'true';
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ?`,
-      [listId, req.orgId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
-      return;
-    }
+    // One transaction for the existence check, the change and its outbox event.
+    // Lock order: org outbox lock -> list row (see events/outbox.ts).
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
+        [listId, req.orgId],
+      );
+      if (!existing.rows[0]) return 'not-found';
 
-    if (purge) {
-      // Hard delete — translations and items must be removed first
-      await db.transaction(async (trx) => {
+      const ctx = eventContextFromRequest(req);
+      if (purge) {
+        // list.deleted tombstone FIRST: it reads the key and bumps the revision,
+        // which needs the row. No per-item/translation/access events: it implies them.
+        await emitListDeleted(trx, ctx, listId);
+        // Hard delete — translations and items must be removed first
         // Delete item translations first (FK constraint)
         await trx.raw(
           `
@@ -842,15 +891,22 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
         await trx.raw(`DELETE FROM selection_list_access WHERE list_id = ?`, [listId]);
         // Delete the list
         await trx.raw(`DELETE FROM selection_lists WHERE id = ?`, [listId]);
-      });
+      } else {
+        // Soft delete: archive (no event if it already was archived)
+        const before = await readList(trx, listId);
+        await trx.raw(`UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`, [listId]);
+        await emitListChanged(trx, ctx, listId, before);
+      }
+      return 'ok';
+    });
+    if (outcome === 'not-found') {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
+      return;
+    }
+
+    if (purge) {
       res.status(204).send();
     } else {
-      // Soft delete: archive
-      await db.raw(
-        `UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`,
-        [listId],
-      );
-
       // Return the archived list
       const result = await db.raw<{ rows: ListRow[] }>(
         `
@@ -904,19 +960,23 @@ router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), as
   const { listId } = req.params;
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ?`,
-      [listId, req.orgId],
-    );
-    if (!existing.rows[0]) {
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
+        [listId, req.orgId],
+      );
+      if (!existing.rows[0]) return 'not-found';
+
+      const before = await readList(trx, listId);
+      await trx.raw(`UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`, [listId]);
+      await emitListChanged(trx, eventContextFromRequest(req), listId, before);
+      return 'ok';
+    });
+    if (outcome === 'not-found') {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
       return;
     }
-
-    await db.raw(
-      `UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`,
-      [listId],
-    );
 
     const result = await db.raw<{ rows: ListRow[] }>(
       `
