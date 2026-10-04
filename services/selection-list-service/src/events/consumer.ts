@@ -1,4 +1,8 @@
+import { z } from 'zod';
 import {
+  dlqTopic,
+  identityOrgCreatedSchemaV1,
+  IdentityOrgCreatedPayloadV1,
   TypedConsumer,
   TypedProducer,
   createKafkaClient,
@@ -11,8 +15,12 @@ import {
 } from '@fuzefront/shared/kafka';
 import { handleOrgDeleted } from './org-deleted.handler';
 import { handleUserDeleted } from './user-deleted.handler';
+import { handleOrgCreated } from './org-created.handler';
+import { handleSeedRequested } from './seed-requested.handler';
 
 interface LifecycleConsumers {
+  orgCreated: TypedConsumer;
+  seedRequested: TypedConsumer;
   orgDeleted: TypedConsumer;
   userDeleted: TypedConsumer;
   dlqProducer: TypedProducer;
@@ -22,11 +30,22 @@ interface LifecycleConsumers {
 /**
  * Starts Kafka consumers for user and organization lifecycle events.
  *
- * Consumer groups:
+ * Consumer groups (`${KAFKA_GROUP_ID}-<name>`):
+ *   selection-list-service-group-org-created     identity.org.created           (projection + platform seeding)
+ *   selection-list-service-group-seed-requested  selection-lists.seed.requested (app seeding, attested)
  *   selection-list-service-group-org-deleted
  *   selection-list-service-group-user-deleted
  *
- * Both share a single DLQ producer. A message that is not valid JSON or fails
+ * All share a single DLQ producer. The two seeding consumers are ALWAYS started when Kafka is
+ * configured; the seeding flag (`fuzefront.selection-lists.seed-defaults`) is evaluated per
+ * message inside the handlers (OFF: the org is still projected / the request is answered
+ * SEEDING_DISABLED), never by (not) starting a consumer.
+ *
+ * `selection-lists.seed.requested` is consumed with a PASSTHROUGH schema: the handler itself
+ * schema-parses so a payload that is valid JSON but fails the schema also gets a best-effort
+ * `seed.failed` / VALIDATION_ERROR before it is dead-lettered (with the attestation token
+ * redacted). Non-JSON still goes straight to the DLQ via TypedConsumer.
+ * A message that is not valid JSON or fails
  * schema validation is dead-lettered to `<topic>.dlq` by TypedConsumer (shared/
  * src/kafka/consumer.ts) so the offset still commits. A HANDLER that throws is
  * NOT dead-lettered: the error propagates to kafkajs (retry / consumer restart),
@@ -44,6 +63,36 @@ export async function startLifecycleConsumers(): Promise<LifecycleConsumers> {
 
   const dlqProducer = new TypedProducer(kafka);
   await dlqProducer.connect();
+
+  const orgCreatedConsumer = new TypedConsumer(kafka, `${baseGroupId}-org-created`);
+  await orgCreatedConsumer.connect();
+  await orgCreatedConsumer.subscribe(TOPICS.IDENTITY_ORG_CREATED);
+  await orgCreatedConsumer.run<IdentityOrgCreatedPayloadV1>(
+    async (event: FuzeEvent<IdentityOrgCreatedPayloadV1>) => {
+      await handleOrgCreated(event);
+    },
+    identityOrgCreatedSchemaV1,
+    dlqProducer,
+  );
+
+  const seedRequestedConsumer = new TypedConsumer(kafka, `${baseGroupId}-seed-requested`);
+  await seedRequestedConsumer.connect();
+  await seedRequestedConsumer.subscribe(TOPICS.SELECTION_LISTS_SEED_REQUESTED);
+  await seedRequestedConsumer.run<unknown>(
+    async (event: FuzeEvent<unknown>) => {
+      await handleSeedRequested(event, {
+        // Same envelope as TypedConsumer's own dead-letter (the token is already redacted).
+        deadLetter: async (topic, redactedEnvelope, reason) => {
+          await dlqProducer.raw.send({
+            topic: dlqTopic(topic),
+            messages: [{ value: JSON.stringify({ raw: JSON.stringify(redactedEnvelope), reason, sourceTopic: topic }) }],
+          });
+        },
+      });
+    },
+    z.unknown(),
+    dlqProducer,
+  );
 
   const orgDeletedConsumer = new TypedConsumer(kafka, `${baseGroupId}-org-deleted`);
   await orgDeletedConsumer.connect();
@@ -64,9 +113,21 @@ export async function startLifecycleConsumers(): Promise<LifecycleConsumers> {
   );
 
   const disconnect = async (): Promise<void> => {
-    await Promise.all([orgDeletedConsumer.disconnect(), userDeletedConsumer.disconnect()]);
+    await Promise.all([
+      orgCreatedConsumer.disconnect(),
+      seedRequestedConsumer.disconnect(),
+      orgDeletedConsumer.disconnect(),
+      userDeletedConsumer.disconnect(),
+    ]);
     await dlqProducer.disconnect();
   };
 
-  return { orgDeleted: orgDeletedConsumer, userDeleted: userDeletedConsumer, dlqProducer, disconnect };
+  return {
+    orgCreated: orgCreatedConsumer,
+    seedRequested: seedRequestedConsumer,
+    orgDeleted: orgDeletedConsumer,
+    userDeleted: userDeletedConsumer,
+    dlqProducer,
+    disconnect,
+  };
 }

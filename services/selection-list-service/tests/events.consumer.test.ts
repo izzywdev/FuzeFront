@@ -10,6 +10,10 @@
 //
 // Needs @fuzefront/shared built (the CI job builds it before the unit run).
 
+const mockHandleOrgCreated = jest.fn();
+const mockHandleSeedRequested = jest.fn();
+jest.mock('../src/events/org-created.handler', () => ({ handleOrgCreated: (...a: unknown[]) => mockHandleOrgCreated(...a) }));
+jest.mock('../src/events/seed-requested.handler', () => ({ handleSeedRequested: (...a: unknown[]) => mockHandleSeedRequested(...a) }));
 const mockHandleOrg = jest.fn();
 const mockHandleUser = jest.fn();
 jest.mock('../src/events/org-deleted.handler', () => ({ handleOrgDeleted: (...a: unknown[]) => mockHandleOrg(...a) }));
@@ -65,6 +69,8 @@ beforeEach(() => {
   jest.spyOn(console, 'error').mockImplementation(() => undefined);
   mockHandleOrg.mockReset().mockResolvedValue(undefined);
   mockHandleUser.mockReset().mockResolvedValue(undefined);
+  mockHandleOrgCreated.mockReset().mockResolvedValue(undefined);
+  mockHandleSeedRequested.mockReset().mockResolvedValue(undefined);
   dlqSend.mockClear();
   for (const k of Object.keys(runners)) delete runners[k];
 });
@@ -101,8 +107,13 @@ it('a handler FAILURE propagates to kafkajs (loud, retried) and is NOT dead-lett
   expect(dlqSend).not.toHaveBeenCalled();
 });
 
-it('subscribes both lifecycle topics and disconnect() tears everything down', async () => {
+it('subscribes all four topics (each in its own consumer group) and disconnect() tears everything down', async () => {
   const { disconnect } = await startLifecycleConsumers();
-  expect(Object.keys(runners).sort()).toEqual(['identity.org.deleted', 'identity.user.deleted']);
+  expect(Object.keys(runners).sort()).toEqual([
+    'identity.org.created',
+    'identity.org.deleted',
+    'identity.user.deleted',
+    'selection-lists.seed.requested',
+  ]);
   await expect(disconnect()).resolves.toBeUndefined();
 });
