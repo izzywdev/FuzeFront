@@ -219,6 +219,9 @@ export function SelectionListPicker({ listKey, mode, initialValue, max }: Select
         setResolvedValue({ kind: 'missing', id: valueId })
         // Keep the ID in the form even if purged
         setSelectedIds([valueId])
+      } else if (resolved) {
+        // Active value: pre-select it so the host form shows (and re-submits) it
+        setSelectedIds([valueId])
       }
     } catch {
       // Resolve failure: treat as if the value is there (fail-open)
