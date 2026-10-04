@@ -140,9 +140,13 @@ jobs:
     # still cuts in first, so an overrun fails as an attributable timeout.
     # This bounds the symptom; it does not fix the runner loss, which is
     # FuzeInfra's `fuzefront` scale set and delegated there.
-    # (Kept at 12 rather than #1126's 30 when the two PRs were consolidated —
-    # 12 is measured against 27 real run durations; 30 was a generic default.)
-    timeout-minutes: 12
+    # The JOB limit must sit ABOVE the `Run automated review` step's own 12-minute
+    # limit, not equal to it: checkout + context run first, so with both at 12 the
+    # job limit always fires first, kills the job outright (the step reports
+    # `cancelled`, not a failure `continue-on-error` can absorb), and `Decide
+    # verdict` never classifies the outage -- measured on #1234 (job cancelled at
+    # 12m10s with the step at 7m). 15 leaves room for the steps around the review.
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
