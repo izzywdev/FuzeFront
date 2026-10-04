@@ -118,14 +118,55 @@ describe('writeCredentialsEnvFile', () => {
   it.each([
     ['a newline', 'sek\nmore'],
     ['a carriage return', 'sek\rmore'],
+    ['a tab', 'sek\tmore'],
+    ['a space', 'sek more'],
+    ['a NUL', 'sek\u0000more'],
+    ['a DEL', 'sek\u007fmore'],
+    ['a non-ASCII character', 'sek\u00e9more'],
   ])('refuses a clientSecret containing %s', (_label, clientSecret) => {
-    // An env file cannot represent this: --from-env-file would read the
-    // remainder as a separate bogus KEY=value line, or drop it, yielding a
-    // TRUNCATED credential in the Secret rather than an error.
+    // These values come off Authentik's provider API response, i.e. they are
+    // NETWORK DATA reaching the filesystem (what CodeQL flags on this file, and
+    // it is right to). The concrete risk is LINE INJECTION: a CR or LF lets the
+    // remainder parse as an extra KEY=value line, so a hostile value could forge
+    // an entry or silently truncate the real credential into one that fails much
+    // later as an opaque 401 from the token endpoint.
     const path = join(dir(), 's2s.env')
     expect(() =>
       writeCredentialsEnvFile(path, { clientId: 'cid', clientSecret })
-    ).toThrow(/contains a newline/)
+    ).toThrow(/outside printable ASCII/)
+  })
+
+  it('applies the allowlist to clientId too, not just the secret', () => {
+    // clientId is equally network data, and a newline HERE is the more
+    // interesting attack: it would forge the AUTHENTIK_CLIENT_SECRET line that
+    // follows it in the file.
+    const path = join(dir(), 's2s.env')
+    expect(() =>
+      writeCredentialsEnvFile(path, {
+        clientId: 'cid\nAUTHENTIK_CLIENT_SECRET=forged',
+        clientSecret: 'sek',
+      })
+    ).toThrow(/clientId contains a character outside printable ASCII/)
+  })
+
+  it.each([
+    ['alphanumeric, as Authentik actually mints them', 'AbC123xyz789'],
+    ['hyphens, as the existing test fixtures use', 's2s-client-id-xyz'],
+    ['URL-safe base64 with padding', 'YWJjZGVmZ2g='],
+    [
+      'punctuation across the printable range',
+      "a!#$%&'()*+,-./:;<=>?@[]^_`{|}~b",
+    ],
+  ])('accepts a credential made of %s', (_label, clientSecret) => {
+    // The allowlist is deliberately GENEROUS (0x21-0x7E). Authentik mints these
+    // from an alphanumeric alphabet today, but a tighter rule would false-reject
+    // a legitimate credential if that ever widened -- and a false rejection here
+    // aborts the cutover's PreSync Job.
+    const path = join(dir(), 's2s.env')
+    writeCredentialsEnvFile(path, { clientId: 'cid', clientSecret })
+    expect(readFileSync(path, 'utf8')).toBe(
+      `AUTHENTIK_CLIENT_ID=cid\nAUTHENTIK_CLIENT_SECRET=${clientSecret}\n`
+    )
   })
 
   it('does not leave a partial file behind when validation fails', () => {

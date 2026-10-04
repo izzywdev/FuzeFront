@@ -53,12 +53,24 @@ export function parseArgs(argv: string[]): {
  * shared only between containers of one pod. Nothing here is printed: the only
  * thing written to stdout about the secret is its length, via mask().
  *
- * A secret containing a newline would corrupt an env file (the remainder would
- * parse as a bogus KEY=value line, or be silently dropped). Authentik's
- * client_secret is generated from a URL-safe alphabet and cannot contain one,
- * but asserting beats assuming — a malformed handoff must fail here, loudly,
- * not produce a Secret with a truncated credential that fails later as an
- * opaque 401 from the token endpoint.
+ * VALIDATED AGAINST A POSITIVE ALLOWLIST, not a denylist. These two values come
+ * straight off Authentik's provider API response
+ * (provision-s2s-clients.ts's readCredentials → res.data.client_id /
+ * client_secret), so they are network data reaching the filesystem — CodeQL
+ * flags exactly that flow, and it is right to. The concrete risk is LINE
+ * INJECTION: a value containing CR or LF would let the remainder of it parse as
+ * an additional `KEY=value` line, so a hostile or malformed `client_id` could
+ * forge the `AUTHENTIK_CLIENT_SECRET` entry, or silently truncate the real one
+ * into a credential that fails much later as an opaque 401 from the token
+ * endpoint.
+ *
+ * The allowlist is printable ASCII excluding space (0x21-0x7E), chosen to be
+ * GENEROUS rather than tight: Authentik mints these from an alphanumeric
+ * alphabet today, but a narrower allowlist would false-reject a legitimate
+ * credential if that ever widened — and a false rejection here aborts the
+ * cutover's PreSync Job. 0x21-0x7E still excludes every character that can
+ * corrupt an env file (CR, LF, tab, space and all control characters), which is
+ * the whole attack surface.
  */
 export function writeCredentialsEnvFile(
   path: string,
@@ -68,9 +80,11 @@ export function writeCredentialsEnvFile(
     if (!value) {
       throw new Error(`refusing to write ${path}: ${name} is empty`)
     }
-    if (/[\r\n]/.test(value)) {
+    if (!/^[\x21-\x7E]+$/.test(value)) {
       throw new Error(
-        `refusing to write ${path}: ${name} contains a newline, which an env file cannot represent`
+        `refusing to write ${path}: ${name} contains a character outside printable ASCII ` +
+          `(0x21-0x7E). A control character, newline or space here could forge or truncate ` +
+          `an entry in the env file this becomes.`
       )
     }
   }
