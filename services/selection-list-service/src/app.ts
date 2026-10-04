@@ -5,10 +5,8 @@
 //   /health — unauthenticated (k8s liveness/readiness probes)
 //   /v1/*   — all require a valid JWT (authMiddleware mounted once at /v1)
 //
-// The /v1/resolve route is special: per the OpenAPI spec it accepts both an
-// authenticated Bearer token AND unauthenticated in-cluster calls. That nuance
-// is handled inside the resolve route itself in S8; for now the stub is gated
-// behind authMiddleware like all other /v1 routes.
+// /v1/resolve is authenticated like every other /v1 route: the spec (v2.0.0)
+// requires a Bearer token carrying an orgId claim, so resolution is org-scoped.
 
 import express, { Application } from 'express';
 import { requestLogger } from './lib/logger';

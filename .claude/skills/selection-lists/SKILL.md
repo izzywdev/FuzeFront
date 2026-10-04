@@ -7,7 +7,7 @@ description: Use when building on, calling, extending, testing, or documenting t
 
 A **selection list** is a named, **org-scoped**, ordered set of **translatable** choices (`countries`, `ticket-priorities`) that consuming apps render in dropdowns and persist **by item id**. `selection-list-service` owns exactly three things: list/item structure, per-locale translations of both, and per-list access grants.
 
-**Verified against** `origin/master` @ `a0de54f2` (2026-10-04). Everything below is read from code unless marked **(inferred)** or **(gap)**. If the spec and any other file disagree, **the spec wins** (`services/selection-list-service/openapi.yaml`, v1.0.0, FROZEN — FFRNT-187).
+**Verified against** `origin/master` @ `a0de54f2` (2026-10-04). Everything below is read from code unless marked **(inferred)** or **(gap)**. If the spec and any other file disagree, **the spec wins** (`services/selection-list-service/openapi.yaml`, v2.0.0, FROZEN — FFRNT-187).
 
 ## Where things live
 
@@ -184,7 +184,7 @@ export function RegionField() {
 
 Build/consume rules: use design-system tokens only (no raw hex/spacing); the UI's own `src/api.ts` calls the **same-origin** base `/api/v1/selection-lists` and `/api/v1/resolve`; changing UI behaviour needs an approved frame first (`gate-frames-first`; frames are authored only by `product-designer`, in `design/frames/selection-lists/` in this repo).
 
-**(gap) Picker today** — verified in `SelectionListPickerHarness.tsx`: `SelectionListPicker` has **no `onChange`/value callback prop**, so a host form cannot read the selection yet; and it passes `listKey` straight into `GET /v1/selection-lists/{listId}/items`, whose path param is the `front_sl_…` **id**, not the `key`. Treat the picker as a design-approved harness, not a finished embeddable, until both are addressed (UI change → `frontend-engineer`, after a frames update if the interaction changes).
+**Picker** — `SelectionListPicker` takes `onChange` (single: `string`; multi: `string[]`), accepts the list **key** (looked up to the `front_sl_…` id before listing items), and seeding from `initialValue` never fires `onChange`. Not yet done: a multi-mode `initialValue` array, and replacing a purged stored value.
 
 ## Authorization and ownership rules
 
@@ -198,7 +198,7 @@ Build/consume rules: use design-system tokens only (no raw hex/spacing); the UI'
 - Per-role Security-API checks (`requireAuthzCheck`) are wired **only on the three `/access` routes**; list/item/translation routes enforce **org scope** but not the per-role matrix.
 - Those access routes check action `'admin'` for PUT/DELETE (spec's action name is `manage_access`), and the check is **skipped (pass-through + warning)** unless env flag `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true` (default OFF; `src/middleware/authz.flags.ts`).
 - `grantListOwner()` (writes the creator's `list-owner` grant) is defined in `src/middleware/authz.ts` but **no route calls it** (grep), so creating a list does not currently seed an owner grant.
-- Spec says `/v1/resolve` may be called unauthenticated from a trusted in-cluster caller; `src/app.ts` mounts `authMiddleware` on all `/v1/*`, and the route needs an `orgId` claim — it **requires a Bearer token** today.
+- `/v1/resolve` **requires a Bearer token** with an `orgId` claim (spec v2.0.0 closed the earlier anonymous-resolve gap; clients send the token on `resolveIds`).
 - Spec says purge needs `delete` (list-owner only); no per-role check exists on the purge path in the route handlers.
 These belong to `backend-engineer` (and `contract-designer` if the *spec* should change instead). Do not paper over them in docs.
 
@@ -209,7 +209,7 @@ These belong to `backend-engineer` (and `contract-designer` if the *spec* should
 - **Server:** `isSelectionListsEnabled()` in `services/selection-list-service/src/flags.ts`, called at the top of every list/item/translation/quota/resolve handler. OFF → `404 NOT_FOUND` (body message "Not found." or "Service not enabled."). Fails closed: no flag client or any client error → OFF. Org-targeted: context carries `orgId`.
 - **Local/CI only:** `FLAGS_FORCE_ON=fuzefront.selection-lists.service` forces ON, hard-disabled when `NODE_ENV=production`. Prod targeting is Unleash only (`unleash-flag-enable` skill; flag administration is `feature-flags-engineer`).
 - **UI:** sidebar entry + each `/settings/selection-lists/*` route gated by `useFlag(...)`.
-- **Deploy gate (separate from the flag):** Helm `selectionListService.enabled` and `selectionListsMcp.enabled` are `false` in `values.yaml`; `values-prod.yaml` sets `selectionListService.enabled: false` (image tag pinned). **(gap)** No Ingress/IngressRoute template in `deploy/helm/fuzefront/templates/` routes `/api/v1/selection-lists` to the service (grep), so the same-origin path the UI and a browser `baseUrl: '/api'` rely on is not wired in-chart. That is `devops-engineer` scope.
+- **Deploy gate (separate from the flag):** Helm `selectionListService.enabled` and `selectionListsMcp.enabled` are `false` in `values.yaml`; `values-prod.yaml` sets `selectionListService.enabled: false` (image tag pinned). The chart routes `/api/v1/selection-lists` and `/api/v1/resolve` to the service via `templates/ingress.yaml` (nginx rewrite annotation; a `selection-list-service-stripprefix` Middleware under Traefik), gated on `selectionListService.enabled`.
 - Plan any new work on this feature behind this flag (default OFF), test **both** states (`services/selection-list-service/tests/flags.force-on.test.ts` shows the pattern), and see the `feature-flags` skill for the family rules.
 
 ## MCP surface
