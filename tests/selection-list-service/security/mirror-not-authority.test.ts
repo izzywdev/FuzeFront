@@ -16,9 +16,12 @@
  *      that is the regression this test catches.
  *
  * PRECONDITION:
- *   TEST_DB_URL (or DB_* env vars) must point to the test database.
- *   If the DB is not available, the tests are SKIPPED (explicitly, with a gap
- *   marker) — not silently passed.
+ *   A migrated test database must be reachable (TEST_DB_URL, or the DB_* env
+ *   vars). CI wires one via the `postgres:15` service + migration step in
+ *   `selection-list-service-integration-tests`, so this always holds there —
+ *   the earlier "DB unavailable" gap is closed. If the DB is unreachable (e.g.
+ *   a local run with no test database) each test FAILS LOUDLY; it is never
+ *   silently skipped, so an unverified run can never report a false green.
  *
  * This test does NOT verify implementation internals. It verifies OBSERVABLE
  * BEHAVIOUR: USER_B's API calls are denied even though a mirror row grants them
@@ -52,7 +55,7 @@ function userBToken(): string {
 }
 
 // ---------------------------------------------------------------------------
-// DB availability check — run once and conditionally skip all tests
+// DB reachability check — run once; an unreachable DB fails every test loudly
 // ---------------------------------------------------------------------------
 
 let dbAvailable = false;
@@ -69,11 +72,12 @@ beforeAll(async () => {
   }
 
   if (!dbAvailable) {
-    // Emit a visible gap marker — a silent return would be a false green.
-    // Tests below use `test.skipIf` at the describe level.
+    // Do not set up fixtures. Every test below then fails loudly (see
+    // requireDbTest) rather than skip — a silent pass here would be a false
+    // green on the mirror-not-authority regression.
     console.warn(
-      '[FLAGGED GAP] FFRNT-242 mirror-not-authority: DB unavailable — all tests SKIPPED. ' +
-      'Set TEST_DB_URL (or DB_* env vars) to run this suite against a real DB.'
+      'mirror-not-authority: test database unreachable — the suite will FAIL ' +
+      '(not skip). Set TEST_DB_URL (or DB_* env vars) to a migrated test database.'
     );
     return;
   }
@@ -97,21 +101,20 @@ afterAll(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Helper: skip when DB not available (produces visible SKIP in Jest output)
+// Helper: require a reachable DB; fail the test loudly if it is not
 // ---------------------------------------------------------------------------
 
-function skipIfNoDb(name: string, fn: () => Promise<void>) {
-  // Test bug fixed: this used to branch on `dbAvailable` at *definition* time,
-  // but `dbAvailable` is only set later, in beforeAll, so it was always false
-  // here and every test below was registered as `test.todo`. The whole file
-  // reported green while asserting nothing (a vacuous pass on the suite's
-  // central security regression). The decision must be made when the test RUNS.
-  // Jest has no runtime skip, and a silent `return` would be a false green, so
-  // an unavailable DB fails the test loudly instead.
+function requireDbTest(name: string, fn: () => Promise<void>) {
+  // The DB decision must be made when the test RUNS: `dbAvailable` is only set
+  // later, in beforeAll. (An earlier version branched at *definition* time, when
+  // it was always false, registering every test as `test.todo` — the file
+  // reported green while asserting nothing, a vacuous pass on the suite's
+  // central security regression.) Jest has no runtime skip, and a silent
+  // `return` would be a false green, so an unreachable DB fails the test loudly.
   test(name, async () => {
     if (!dbAvailable) {
       throw new Error(
-        '[FFRNT-242 gap] DB unavailable - mirror-not-authority cannot run. ' +
+        'mirror-not-authority cannot run: test database unreachable. ' +
           'Set TEST_DB_URL (or DB_* env vars) to a migrated test database.'
       );
     }
@@ -140,7 +143,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     await removeDirectAccessGrant(testListId, USER_B).catch(() => { /* already gone */ });
   });
 
-  skipIfNoDb('USER_B cannot read the list despite the injected mirror row', async () => {
+  requireDbTest('USER_B cannot read the list despite the injected mirror row', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(testListId)}`,
       { method: 'GET', token: userBToken() }
@@ -151,7 +154,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     expect(status).not.toBe(200);
   });
 
-  skipIfNoDb('USER_B cannot update the list despite the injected mirror row', async () => {
+  requireDbTest('USER_B cannot update the list despite the injected mirror row', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(testListId)}`,
       {
@@ -164,7 +167,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     expect(status).not.toBe(200);
   });
 
-  skipIfNoDb('USER_B cannot add items to the list despite the injected mirror row', async () => {
+  requireDbTest('USER_B cannot add items to the list despite the injected mirror row', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(testListId)}/items`,
       {
@@ -176,7 +179,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     expect(status).toBe(403);
   });
 
-  skipIfNoDb('USER_B cannot manage access despite the injected mirror row', async () => {
+  requireDbTest('USER_B cannot manage access despite the injected mirror row', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(testListId)}/access`,
       { method: 'GET', token: userBToken() }
@@ -185,7 +188,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     expect(status).not.toBe(200);
   });
 
-  skipIfNoDb('USER_B cannot delete the list despite the injected mirror row', async () => {
+  requireDbTest('USER_B cannot delete the list despite the injected mirror row', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(testListId)}`,
       { method: 'DELETE', token: userBToken() }
@@ -195,7 +198,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     expect(status).not.toBe(204); // 204 = purged = unauthorized success
   });
 
-  skipIfNoDb('USER_B cannot translate the list despite the injected mirror row', async () => {
+  requireDbTest('USER_B cannot translate the list despite the injected mirror row', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(testListId)}/translations/fr`,
       {
@@ -207,7 +210,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     expect(status).toBe(403);
   });
 
-  skipIfNoDb('USER_A requests are still served normally (no collateral damage)', async () => {
+  requireDbTest('USER_A requests are still served normally (no collateral damage)', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(testListId)}`,
       { method: 'GET', token: userAToken() }
@@ -221,7 +224,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
 // ---------------------------------------------------------------------------
 
 describe('FFRNT-242: PDP is consulted on every mutating request', () => {
-  skipIfNoDb(
+  requireDbTest(
     'revoking Permit grant immediately revokes access (PDP is live, not cached)',
     async () => {
       const clientA = makeClient(userAToken);

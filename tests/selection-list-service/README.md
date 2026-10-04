@@ -104,9 +104,14 @@ It directly inserts a row into `selection_list_access` (bypassing Permit) and as
 that the service still denies all requests from that user. This test REQUIRES a DB
 connection to the test database.
 
-If the DB connection is unavailable, the tests are **SKIPPED** with a warning (not
-silently passed). The skip is a flagged gap — it means FFRNT-242 is not verified in
-that run.
+In CI, `selection-list-service-integration-tests` provides exactly that: a
+`postgres:15` service with the service's migrations applied, plus the stand-in
+Security API (`helpers/fake-security-api.mjs`) so authorization gets a real decision.
+The suite runs against both and passes — the earlier "DB unavailable" gap is closed.
+
+If the DB connection is unreachable (e.g. a local run with no test database), the
+tests **FAIL LOUDLY** — they are never silently skipped, so an unverified run can
+never report a false green.
 
 ## What these tests do NOT cover
 
