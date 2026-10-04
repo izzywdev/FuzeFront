@@ -90,6 +90,9 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     expect(keys).toContain('fuzefront.identity.personal-context');
     expect(keys).toContain('fuzefront.identity.member-directory');
     expect(keys).toContain('fuzefront.identity.employee-console');
+    // Selection Lists UI is browser-gated by useFlag(); without this entry the
+    // flag reads permanently OFF in the browser no matter what Unleash says.
+    expect(keys).toContain('fuzefront.selection-lists.service');
     // root-membership is server-only (security-service provisioning) — the
     // browser must never see it.
     expect(keys).not.toContain('fuzefront.identity.root-membership');

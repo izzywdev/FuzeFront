@@ -15,7 +15,7 @@
 //   A list not owned by the caller's org returns 404, not 403 — not an oracle.
 //
 // Feature flag:
-//   isSelectionListsEnabled() (fuzefront.selection-list.enabled, release, default
+//   isSelectionListsEnabled() (fuzefront.selection-lists.service, release, default
 //   OFF) is checked at the top of every handler; returns 404 when OFF. Both flag
 //   states are exercised in tests/translations.test.ts.
 //
@@ -60,8 +60,10 @@ async function getItemByList(itemId: string, listId: string) {
     .first();
 }
 
-async function requireFeatureEnabled(res: Response): Promise<boolean> {
-  const enabled = await isSelectionListsEnabled();
+async function requireFeatureEnabled(req: Request, res: Response): Promise<boolean> {
+  // Pass the request context so per-org / percentage rollout targets correctly
+  // (a context-less evaluation can only ever see the default).
+  const enabled = await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId });
   if (!enabled) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return false;
@@ -82,7 +84,7 @@ function requireAuth(req: Request, res: Response): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get('/:listId/translations', async (req: Request, res: Response) => {
-  if (!await requireFeatureEnabled(res)) return;
+  if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
   const { listId } = req.params;
@@ -153,7 +155,7 @@ router.get('/:listId/translations', async (req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.put('/:listId/translations/:locale', async (req: Request, res: Response) => {
-  if (!await requireFeatureEnabled(res)) return;
+  if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
   const { listId, locale } = req.params;
@@ -230,7 +232,7 @@ router.put('/:listId/translations/:locale', async (req: Request, res: Response) 
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.delete('/:listId/translations/:locale', async (req: Request, res: Response) => {
-  if (!await requireFeatureEnabled(res)) return;
+  if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
   const { listId, locale } = req.params;
@@ -269,7 +271,7 @@ router.delete('/:listId/translations/:locale', async (req: Request, res: Respons
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get('/:listId/items/:itemId/translations', async (req: Request, res: Response) => {
-  if (!await requireFeatureEnabled(res)) return;
+  if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
   const { listId, itemId } = req.params;
@@ -318,7 +320,7 @@ router.get('/:listId/items/:itemId/translations', async (req: Request, res: Resp
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.put('/:listId/items/:itemId/translations/:locale', async (req: Request, res: Response) => {
-  if (!await requireFeatureEnabled(res)) return;
+  if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
   const { listId, itemId, locale } = req.params;
@@ -398,7 +400,7 @@ router.put('/:listId/items/:itemId/translations/:locale', async (req: Request, r
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.delete('/:listId/items/:itemId/translations/:locale', async (req: Request, res: Response) => {
-  if (!await requireFeatureEnabled(res)) return;
+  if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
   const { listId, itemId, locale } = req.params;
@@ -445,7 +447,7 @@ router.delete('/:listId/items/:itemId/translations/:locale', async (req: Request
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.post('/:listId/translations/:locale/autofill', async (req: Request, res: Response) => {
-  if (!await requireFeatureEnabled(res)) return;
+  if (!await requireFeatureEnabled(req, res)) return;
   if (!requireAuth(req, res)) return;
 
   const { listId, locale } = req.params;
