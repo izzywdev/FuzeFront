@@ -317,6 +317,22 @@ outputs:
       outage" exception on it (fuze-code-review.yml) fails CLOSED on an unknown
       failure, treating it as real rather than as an outage.
     value: ${{ steps.finish.outputs.availability }}
+  subscription-rung:
+    description: >-
+      ran | skipped-no-token — whether rung 1a (claude-code-action on the Anthropic
+      SUBSCRIPTION, via claude-code-oauth-token) was attempted at all.
+
+      It exists because `availability=true` is ambiguous about WHOSE credits ran out,
+      and that ambiguity has a standing failure mode: with no subscription token the
+      rung is skipped, EVERY run silently falls to the metered rungs, and the first
+      metered provider to exhaust its prepaid balance reports a generic "vendor
+      credit/quota exhausted" outage. A reader then goes looking at vendor billing,
+      when the actual cause is that the subscription path was never wired up. This
+      output makes the difference machine-readable so a caller can say which it was.
+
+      `skipped-no-token` is a CONFIGURATION fact, not a vendor fact: it says this run
+      was billed per token, whatever it reports about credits.
+    value: ${{ steps.finish.outputs.subscription-rung }}
   result-text:
     description: 'Best-effort textual result from whichever rung succeeded.'
     value: ${{ steps.finish.outputs.result-text }}
@@ -393,6 +409,28 @@ runs:
         allowed_bots: ${{ inputs.allowed-bots }}
         additional_permissions: ${{ inputs.additional-permissions }}
         settings: ${{ inputs.settings }}
+
+    # Rung 1a's absence was the ONLY silent one, and it is the most consequential.
+    #
+    # The openai and gemini rungs each emit a "skipped — key empty" notice (see
+    # below), so a reader can tell they were not attempted. Rung 1a had no such
+    # step: with `claude-code-oauth-token` empty the `if:` above simply skipped it
+    # and nothing anywhere said so. The run then proceeded on the METERED rungs and,
+    # when a metered provider's prepaid balance was exhausted, reported a generic
+    # "vendor credit/quota exhausted" availability outage — pointing the reader at
+    # that vendor's billing page rather than at the missing subscription token that
+    # put the run on the metered path to begin with.
+    #
+    # A WARNING rather than a notice, deliberately, and unlike the openai/gemini
+    # steps: those rungs are optional extras whose absence costs nothing. This one
+    # changes the BILLING MODEL of every run through this action, and its absence is
+    # what converts a third party's exhausted credits into a review that never
+    # happened.
+    - name: 'Rung 1a skipped — no claude-code-oauth-token'
+      if: inputs.claude-code-oauth-token == ''
+      shell: bash
+      run: |
+        echo "::warning title=fuze-code-action::rung=claude-oauth SKIPPED — claude-code-oauth-token is empty, so this run is billed PER TOKEN on the metered rungs (LiteLLM / Anthropic API key) instead of against the Anthropic subscription. Consequence: when a metered provider's prepaid balance runs out, this action reports an AVAILABILITY outage and no review is performed — a symptom of this missing token, not of a problem in the reviewed change. Fix: mint a token with \`claude setup-token\` and set it as the CLAUDE_CODE_OAUTH_TOKEN repository secret; it is already wired to this input by every caller."
 
     # DERIVE the conclusion + result text from the execution file, because
     # claude-code-action does NOT expose a `conclusion` output. It is a COMPOSITE
@@ -833,6 +871,18 @@ runs:
         if [ "${OAUTH_CODE:-}" != "2" ] && [ "${CLAUDE_CODE:-}" != "2" ]; then
           AVAIL=true
         fi
+        # An empty OAUTH_CODE means rung 1a never ran, which (given the `if:` on it)
+        # means claude-code-oauth-token was empty. Emitted as an output on EVERY exit
+        # path below, not just the failures: a caller reporting "this review was
+        # billed per token" wants it on the green runs too.
+        if [ -n "${OAUTH_CODE:-}" ]; then
+          SUBSCRIPTION_RUNG=ran
+          SUBSCRIPTION_NOTE=''
+        else
+          SUBSCRIPTION_RUNG=skipped-no-token
+          SUBSCRIPTION_NOTE=' ROOT CAUSE, most likely: rung 1a (Anthropic SUBSCRIPTION) never ran because claude-code-oauth-token is empty, so every rung attempted above was METERED. A metered provider running out of prepaid credits is a SYMPTOM of that, not the cause — set the CLAUDE_CODE_OAUTH_TOKEN repository secret (`claude setup-token`) to bill against the subscription instead.'
+        fi
+        echo "subscription-rung=${SUBSCRIPTION_RUNG}" >> "$GITHUB_OUTPUT"
         # RUNG 1a (subscription OAuth) is settled FIRST, and only codes 0/2/3 are
         # terminal here. Code 1 deliberately falls past this block: an availability
         # failure is the one verdict that licenses the metered path below, so the
@@ -935,5 +985,8 @@ runs:
           echo "availability=${AVAIL}"
           echo "result-text="
         } >> "$GITHUB_OUTPUT"
-        echo "::error title=fuze-code-action::All configured rungs failed or were unreachable (availability=${AVAIL}). See the per-rung notices above for which classification (availability vs task) applied at each step."
+        # ${SUBSCRIPTION_NOTE} is empty whenever rung 1a actually ran, so this reads
+        # exactly as before on a genuine vendor outage and only grows the extra
+        # sentence in the case where the subscription path was never attempted.
+        echo "::error title=fuze-code-action::All configured rungs failed or were unreachable (availability=${AVAIL}).${SUBSCRIPTION_NOTE} See the per-rung notices above for which classification (availability vs task) applied at each step."
         exit 1
