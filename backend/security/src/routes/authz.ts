@@ -47,11 +47,47 @@ import { getAuthorizationProvider } from '../providers/authzFactory'
 import type { AttributeValue, AuthzQuery, SubjectType } from '../providers/AuthorizationProvider'
 import { withReqId } from '../lib/logger'
 import { introspectMachineToken } from '../services/machine-identity'
+import jwt from 'jsonwebtoken'
+import { findMembershipByUserAndOrg } from '../repositories/organizationRepository'
+import type { EntityId } from '@izzywdev/fuzefront-identity'
 
 const router = express.Router()
 
 /** Scope a machine caller must hold to create/revoke grants (see file header). */
 export const AUTHZ_ADMIN_SCOPE = 'authz:admin'
+export const SELECTION_LIST_OWNER_GRANT_SCOPE = 'selection-list:owner-grant'
+
+const selectionListRoles = new Set([
+  'list-owner', 'list-editor', 'list-contributor', 'list-translator', 'list-viewer',
+])
+
+/** List grants are constrained to the caller's list and an active org member. */
+async function authorizeSelectionListGrant(
+  c: ResolvedCaller,
+  body: any,
+  revoke: boolean,
+): Promise<boolean> {
+  if (body?.resource?.type !== 'SelectionList') return false
+  if (!body.resource.key || !selectionListRoles.has(body.role) || !body.subject || !body.tenant) return false
+
+  const membership = await findMembershipByUserAndOrg(
+    body.subject as EntityId<'user'>,
+    body.tenant as EntityId<'organization'>,
+  )
+  if (membership?.status !== 'active') return false
+
+  if (c.kind === 'machine') {
+    if ((c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE)) return true
+    return !revoke && c.id === 'service:selection-list-service' && body.role === 'list-owner' &&
+      (c.scopes ?? []).includes(SELECTION_LIST_OWNER_GRANT_SCOPE)
+  }
+  return getAuthorizationProvider().check({
+    subject: c.id,
+    tenant: body.tenant,
+    resource: { type: 'SelectionList', key: body.resource.key },
+    action: 'manage_access',
+  })
+}
 
 function bearer(req: Request): string | null {
   const h = req.headers['authorization']
@@ -88,6 +124,25 @@ async function caller(req: Request): Promise<ResolvedCaller | null> {
   if (!token) {
     log.debug('authz: caller resolution failed — no bearer token')
     return null
+  }
+  // Workload tokens come from Security's Kubernetes TokenReview-backed
+  // /tokens/workload endpoint. Verify their issuer, audience and signature
+  // here; Authentik introspection does not recognize this token kind.
+  const signingKey = process.env.DELEGATION_SIGNING_KEY || process.env.JWT_SECRET
+  if (signingKey) {
+    try {
+      const claims = jwt.verify(token, signingKey, {
+        algorithms: ['HS256'],
+        issuer: 'fuzefront-security',
+        audience: 'fuzefront-services',
+      }) as jwt.JwtPayload
+      if (claims.kind === 'fuze-workload' && typeof claims.sub === 'string' &&
+          typeof claims.scope === 'string') {
+        return { id: claims.sub, kind: 'machine', scopes: claims.scope.split(' ').filter(Boolean) }
+      }
+    } catch {
+      // Other token kinds follow the existing human / Authentik machine paths.
+    }
   }
   try {
     const { user } = await getIdentityProvider().getUserInfo(token)
@@ -244,12 +299,16 @@ router.get('/authz/permissions', async (req: Request, res: Response) => {
 router.post('/authz/grants', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  if (!requireAuthzAdmin(c, res)) return
   const b = req.body || {}
   if (!b.subject || !b.tenant || !b.role) {
     return res.status(400).json({ error: 'subject, tenant and role are required', code: 'MALFORMED' })
   }
   try {
+    if (b.resource?.type === 'SelectionList' || selectionListRoles.has(b.role)) {
+      if (!(await authorizeSelectionListGrant(c, b, false))) {
+        return res.status(403).json({ error: 'List grant forbidden', code: 'FORBIDDEN' })
+      }
+    } else if (!requireAuthzAdmin(c, res)) return
     const grant = await getAuthorizationProvider().grant({
       subject: String(b.subject),
       tenant: String(b.tenant),
@@ -266,12 +325,16 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
 router.delete('/authz/grants', async (req: Request, res: Response) => {
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  if (!requireAuthzAdmin(c, res)) return
   const b = req.body || {}
   if (!b.grantId && !(b.subject && b.tenant && b.role)) {
     return res.status(400).json({ error: 'grantId or subject+tenant+role required', code: 'MALFORMED' })
   }
   try {
+    if (b.resource?.type === 'SelectionList' || selectionListRoles.has(b.role)) {
+      if (!(await authorizeSelectionListGrant(c, b, true))) {
+        return res.status(403).json({ error: 'List revoke forbidden', code: 'FORBIDDEN' })
+      }
+    } else if (!requireAuthzAdmin(c, res)) return
     await getAuthorizationProvider().revoke(b)
     res.status(204).end()
   } catch (err) {

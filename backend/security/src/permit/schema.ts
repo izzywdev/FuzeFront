@@ -132,6 +132,47 @@ export const permitSchema: PermitSchema = {
         manage: action('Manage'),
       },
     },
+    {
+      key: 'SelectionList',
+      name: 'Selection List',
+      actions: {
+        list: action('List visible lists'),
+        create: action('Create'),
+        read: action('Read'),
+        add_value: action('Add value'),
+        update_value: action('Update value'),
+        remove_value: action('Remove value'),
+        translate: action('Translate'),
+        update: action('Update'),
+        delete: action('Delete'),
+        manage_access: action('Manage access'),
+      },
+      // Per-list assignments use SelectionList:<id>. Tenant roles receive
+      // only collection access and creation below; they cannot read a list
+      // merely because they can enumerate the collection.
+      roles: {
+        'list-owner': {
+          name: 'List Owner',
+          permissions: ['read', 'add_value', 'update_value', 'remove_value', 'translate', 'update', 'delete', 'manage_access'],
+        },
+        'list-editor': {
+          name: 'List Editor',
+          permissions: ['read', 'add_value', 'update_value', 'remove_value', 'translate', 'update'],
+        },
+        'list-contributor': {
+          name: 'List Contributor',
+          permissions: ['read', 'add_value', 'update_value', 'translate'],
+        },
+        'list-translator': {
+          name: 'List Translator',
+          permissions: ['read', 'translate'],
+        },
+        'list-viewer': {
+          name: 'List Viewer',
+          permissions: ['read'],
+        },
+      },
+    },
     // docs/planning/developers-portal.md §5.3 — developers.fuzefront.com.
     // Deliberately separate from Organization/App/etc.: a `developer`
     // root-org sign-in grants ONLY these two resources, never
@@ -165,6 +206,10 @@ export const permitSchema: PermitSchema = {
         'UserManagement:update_role', 'UserManagement:view_members',
         'Docs:read',
         'Chat:stream', 'Chat:manage',
+        'SelectionList:list', 'SelectionList:create', 'SelectionList:read',
+        'SelectionList:add_value', 'SelectionList:update_value', 'SelectionList:remove_value',
+        'SelectionList:translate', 'SelectionList:update', 'SelectionList:delete',
+        'SelectionList:manage_access',
       ],
     },
     {
@@ -176,6 +221,7 @@ export const permitSchema: PermitSchema = {
         'UserManagement:view_members',
         'Docs:read',
         'Chat:stream',
+        'SelectionList:list', 'SelectionList:create',
       ],
     },
     {
@@ -187,6 +233,7 @@ export const permitSchema: PermitSchema = {
         'UserManagement:view_members',
         'Docs:read',
         'Chat:stream',
+        'SelectionList:list',
       ],
     },
     {
