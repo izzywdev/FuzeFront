@@ -83,7 +83,11 @@ export class KafkaConfigChangePublisher implements ConfigChangeNotifier {
       // carry on — consumers recover via the version poll.
       // eslint-disable-next-line no-console
       console.error(
-        `[config-service] config.changed publish FAILED (write committed; consumers will catch up via ETag poll) namespace=${payload.namespace} scope=${payload.scope.scopeType}:${payload.scope.scopeId ?? 'singleton'} keys=${payload.changedKeys.join(',')}:`,
+        '[config-service] config.changed publish FAILED (write committed; consumers will catch up via ETag poll) namespace=%s scope=%s:%s keys=%s:',
+        payload.namespace,
+        payload.scope.scopeType,
+        payload.scope.scopeId ?? 'singleton',
+        payload.changedKeys.join(','),
         err,
       );
     }
