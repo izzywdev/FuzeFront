@@ -66,6 +66,13 @@ spec:
             {{- if .Values.devportalService.enabled }}
             {{- $extraDbs = append $extraDbs .Values.devportalService.dbName }}
             {{- end }}
+            {{- /*
+            NOTE: selection-list-service is deliberately NOT listed here. Its DB is
+            not "co-located and owned by the shared role" like the databases above;
+            it is provisioned by templates/service-db-bootstrap-job.yaml with its OWN
+            owner role, and the shared `database.user` role is explicitly denied
+            access to it. Do not add per-service databases to EXTRA_DATABASES.
+            */}}
             {{- if $extraDbs }}
             - name: EXTRA_DATABASES
               value: {{ join "," $extraDbs | quote }}
