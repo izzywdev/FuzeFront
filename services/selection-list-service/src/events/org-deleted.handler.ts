@@ -25,7 +25,7 @@ function orgIdForms(organizationId: string): string[] {
 /**
  * Reacts to `identity.org.deleted` by cascading the deletion through all
  * selection-list-service tables that hold per-org data:
- *   access grants → audit rows → items → translations → lists → quota
+ *   access grants → audit rows → items → translations → lists → quota → seed ledger (hard only)
  *
  * Column truth (src/db/migrations): selection_lists.organization_id / .status
  * ('active' | 'archived'); selection_list_org_quota.organization_id;
@@ -84,6 +84,9 @@ export async function handleOrgDeleted(
           }
           // 7. Quota override row (independent of whether any list remains)
           await trx('selection_list_org_quota').whereIn('organization_id', orgIds).delete();
+          // 8. Seed ledger (plan section 13: the HARD purge deletes the org's ledger rows; the soft
+          //    cascade keeps them so a restore does not re-seed). Independent of whether any list remains.
+          await trx('selection_list_seed_ledger').whereIn('organization_id', orgIds).delete();
           return listIds.length;
         }),
       { organizationId },

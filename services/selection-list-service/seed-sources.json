@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "attestationScope": "selection-lists:seed",
+  "sources": [
+    {
+      "app": "platform",
+      "kind": "internal",
+      "maxListsPerRequest": 20,
+      "maxItemsPerRequest": 2000,
+      "enabled": true
+    }
+  ]
+}
