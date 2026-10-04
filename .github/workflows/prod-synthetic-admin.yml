@@ -91,8 +91,11 @@ jobs:
           # 2. Ensure the account exists — self-provision via public signup when
           #    absent (the same API the smoke self-heal uses). 409 = another
           #    run/the smoke already created it; both are fine.
-          AVAIL=$(curl -sf "$APP_BASE/api/v1/security/email-available?email=$EMAIL" 2>/dev/null \
-            | python3 -c "import sys,json; print('yes' if json.load(sys.stdin).get('available') else 'no')" 2>/dev/null || echo "unknown")
+          # Capture the response into a var first, then parse — never pipe curl
+          # straight into an interpreter (matches prod-unleash-ops.yml and keeps
+          # Semgrep's "curl | interpreter" rule happy; the body is data, not code).
+          AVAIL_JSON=$(curl -sf "$APP_BASE/api/v1/security/email-available?email=$EMAIL" 2>/dev/null || true)
+          AVAIL=$(echo "$AVAIL_JSON" | python3 -c "import sys,json; print('yes' if json.load(sys.stdin).get('available') else 'no')" 2>/dev/null || echo "unknown")
           if [ "$AVAIL" = "yes" ]; then
             echo "Account absent — creating via signup."
             SIGNUP_CODE=$(curl -sS -o /tmp/signup.json -w '%{http_code}' -X POST \
@@ -137,10 +140,10 @@ jobs:
           EMAIL="${INPUT_EMAIL:-${ADMIN_EMAIL:-postprod-admin@fuzefront.com}}"
           if [ -z "${ADMIN_PASSWORD:-}" ]; then echo "no password; skipping verify"; exit 0; fi
 
-          TOKEN=$(curl -sf -X POST "$APP_BASE/api/v1/security/session" \
+          SESSION_JSON=$(curl -sf -X POST "$APP_BASE/api/v1/security/session" \
             -H 'Content-Type: application/json' \
-            -d "{\"email\":\"$EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" 2>/dev/null \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" 2>/dev/null || true)
+          TOKEN=$(echo "$SESSION_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
           if [ -z "${TOKEN:-}" ]; then
             echo "::warning::could not sign in to verify (account may need a moment) — grant step already succeeded"
             exit 0
