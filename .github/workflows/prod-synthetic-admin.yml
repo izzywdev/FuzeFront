@@ -1,0 +1,162 @@
+name: Prod synthetic admin (provision post-prod master-admin)
+
+# Provisions the post-production master-admin synthetic used by the Portals
+# directory smoke (frontend/e2e/post-prod/portals-directory-smoke.spec.ts
+# test 2). It removes the one manual step that otherwise needs a human:
+# granting the account the `admin` role, which is a prod DB write because the
+# platform has no self-serve admin grant (public signup only mints ["user"]).
+#
+# What it does, idempotently:
+#   1. Ensures the account exists — self-provisions via the public signup API
+#      (the same surface the smoke's self-heal uses) when absent.
+#   2. Grants it `admin` via the cluster-internal POST /internal/set-roles
+#      (gated by INTERNAL_PROVISION_SECRET, read from the cluster at runtime —
+#      no GitHub secret for it, same pattern as prod-unleash-ops.yml).
+#   3. Verifies: the grant response carries `admin`, and the account can now
+#      read the master-admin directory (GET /api/v1/admin/portals → 200).
+#
+# The runner is the in-cluster `fuzefront` ARC runner so it can reach the
+# cluster-only backend (fuzefront-backend:3001/internal/*, never ingress-
+# exposed) and read the Secret via the k8s API.
+#
+# PREREQUISITE (owner-only, unavoidable): the POST_PROD_ADMIN_EMAIL /
+# POST_PROD_ADMIN_PASSWORD repo secrets must be set first — this workflow uses
+# them to create + sign in the account, and the smoke reads the same pair.
+# Writing GitHub secrets is not something this workflow can do.
+#
+# Trigger via GitHub Actions → "Run workflow". Safe to re-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'Synthetic admin email (defaults to the POST_PROD_ADMIN_EMAIL secret, else postprod-admin@fuzefront.com)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-synthetic-admin
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision + grant master-admin
+    runs-on: fuzefront
+    timeout-minutes: 5
+    steps:
+      - name: Provision the synthetic master-admin
+        env:
+          APP_BASE: https://app.fuzefront.com
+          BACKEND: http://fuzefront-backend.fuzefront.svc.cluster.local:3001
+          INPUT_EMAIL: ${{ inputs.email }}
+          ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          EMAIL="${INPUT_EMAIL:-${ADMIN_EMAIL:-postprod-admin@fuzefront.com}}"
+          if [ -z "${ADMIN_PASSWORD:-}" ]; then
+            echo "::error title=prod-synthetic-admin::POST_PROD_ADMIN_PASSWORD secret is not set. " \
+              "Set POST_PROD_ADMIN_EMAIL + POST_PROD_ADMIN_PASSWORD first (owner-only), then re-run."
+            exit 1
+          fi
+          echo "Target synthetic: $EMAIL"
+
+          # 1. Read INTERNAL_PROVISION_SECRET from the cluster via the k8s API
+          #    using the runner pod's mounted service account (ARC runners lack
+          #    kubectl). Same mechanism as prod-unleash-ops.yml.
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          _SECRET_JSON=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/fuzefront-secrets" \
+            2>/dev/null || true)
+          INTERNAL_SECRET=$(echo "$_SECRET_JSON" | python3 -c "
+          import sys, json, base64
+          try:
+            d = json.load(sys.stdin)
+            print(base64.b64decode(d['data']['INTERNAL_PROVISION_SECRET']).decode().strip())
+          except Exception:
+            sys.exit(0)
+          " 2>/dev/null || true)
+          if [ -z "${INTERNAL_SECRET:-}" ]; then
+            echo "::error title=prod-synthetic-admin::Could not read INTERNAL_PROVISION_SECRET from the fuzefront-secrets Secret. " \
+              "Check the runner SA can get secret/fuzefront-secrets in the fuzefront namespace (same RBAC as unleash-secrets)."
+            exit 1
+          fi
+
+          # 2. Ensure the account exists — self-provision via public signup when
+          #    absent (the same API the smoke self-heal uses). 409 = another
+          #    run/the smoke already created it; both are fine.
+          AVAIL=$(curl -sf "$APP_BASE/api/v1/security/email-available?email=$EMAIL" 2>/dev/null \
+            | python3 -c "import sys,json; print('yes' if json.load(sys.stdin).get('available') else 'no')" 2>/dev/null || echo "unknown")
+          if [ "$AVAIL" = "yes" ]; then
+            echo "Account absent — creating via signup."
+            SIGNUP_CODE=$(curl -sS -o /tmp/signup.json -w '%{http_code}' -X POST \
+              "$APP_BASE/api/v1/security/signup" \
+              -H 'Content-Type: application/json' \
+              -d "{\"email\":\"$EMAIL\",\"password\":\"$ADMIN_PASSWORD\",\"firstName\":\"Post-prod\",\"lastName\":\"Admin\"}")
+            if echo "$SIGNUP_CODE" | grep -qE '^(201|409)$'; then
+              echo "  signup: ok ($SIGNUP_CODE)"
+            else
+              echo "::error::signup failed ($SIGNUP_CODE)"; cat /tmp/signup.json; exit 1
+            fi
+          else
+            echo "Account present (available=$AVAIL) — skipping signup."
+          fi
+
+          # 3. Grant admin via the cluster-internal endpoint.
+          GRANT_CODE=$(curl -sS -o /tmp/grant.json -w '%{http_code}' -X POST \
+            "$BACKEND/internal/set-roles" \
+            -H "x-internal-secret: $INTERNAL_SECRET" \
+            -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$EMAIL\",\"roles\":[\"admin\"]}")
+          if [ "$GRANT_CODE" != "200" ]; then
+            echo "::error::POST /internal/set-roles -> $GRANT_CODE"; cat /tmp/grant.json; exit 1
+          fi
+          echo "  set-roles: ok"
+          python3 -c "import json; d=json.load(open('/tmp/grant.json')); print('  resulting roles:', d.get('roles'))"
+          python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/grant.json'))
+          sys.exit(0 if 'admin' in (d.get('roles') or []) else 1)
+          " || { echo "::error::grant response did not include the admin role"; exit 1; }
+
+      - name: Verify the synthetic can read the master-admin directory
+        if: always()
+        env:
+          APP_BASE: https://app.fuzefront.com
+          INPUT_EMAIL: ${{ inputs.email }}
+          ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
+        run: |
+          set -uo pipefail
+          EMAIL="${INPUT_EMAIL:-${ADMIN_EMAIL:-postprod-admin@fuzefront.com}}"
+          if [ -z "${ADMIN_PASSWORD:-}" ]; then echo "no password; skipping verify"; exit 0; fi
+
+          TOKEN=$(curl -sf -X POST "$APP_BASE/api/v1/security/session" \
+            -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::warning::could not sign in to verify (account may need a moment) — grant step already succeeded"
+            exit 0
+          fi
+          DIR_CODE=$(curl -sS -o /tmp/dir.json -w '%{http_code}' \
+            "$APP_BASE/api/v1/admin/portals" -H "Authorization: Bearer $TOKEN")
+          echo "GET /api/v1/admin/portals -> $DIR_CODE"
+          if [ "$DIR_CODE" = "200" ]; then
+            python3 -c "
+          import json
+          d = json.load(open('/tmp/dir.json'))
+          items = d.get('items') or d.get('portals') or (d if isinstance(d, list) else [])
+          slugs = [p.get('slug') for p in items]
+          print('  portals visible to the synthetic admin:', slugs)
+          " || true
+            echo "✅ synthetic is a working master-admin."
+          else
+            echo "::warning::directory returned $DIR_CODE — if 403, the grant has not propagated to this session yet; re-run the smoke shortly."
+          fi

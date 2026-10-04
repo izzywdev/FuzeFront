@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import express from 'express'
+import { db } from '../config/database'
 import {
   runInternalProvision,
   ensureDeveloperMembership,
@@ -7,6 +8,28 @@ import {
 import { isDevportalEnabled } from '../utils/devportalFlag'
 
 const router = express.Router()
+
+/**
+ * Shared-secret gate for the internal (cluster-only, never ingress-exposed)
+ * endpoints. Constant-time compare against INTERNAL_PROVISION_SECRET; fails
+ * closed when the secret is unset. Returns true when the caller is authorised.
+ */
+function internalSecretOk(req: express.Request): boolean {
+  const expected = process.env.INTERNAL_PROVISION_SECRET
+  const provided = req.header('x-internal-secret')
+  const a = Buffer.from(provided || '')
+  const b = Buffer.from(expected || '')
+  return Boolean(
+    expected && provided && a.length === b.length && crypto.timingSafeEqual(a, b)
+  )
+}
+
+/** Roles a caller may assign via /internal/set-roles. Keep this list TIGHT —
+ * each entry is a privilege this endpoint can hand out behind the shared
+ * secret. `admin` is here solely so synthetic/break-glass accounts (e.g. the
+ * post-prod master-admin smoke) can be provisioned without a manual prod DB
+ * write; real per-resource authorization still lives in Permit. */
+const ASSIGNABLE_ROLES = new Set(['user', 'admin', 'developer', 'employee'])
 
 /**
  * Neutralise a value before it reaches a log line.
@@ -131,6 +154,82 @@ router.post('/devportal-provision', async (req, res) => {
     return res
       .status(500)
       .json({ error: 'Provisioning failed', detail: String(error?.message ?? error) })
+  }
+})
+
+/**
+ * Internal, service-to-service role-assignment endpoint.
+ *
+ * Sets a user's `users.roles` by email. Its reason to exist: the platform has
+ * NO self-serve admin grant — public signup only ever mints `["user"]`, and the
+ * master-admin directory (`GET /api/v1/admin/portals`) gates on
+ * `requireRole(['admin'])`. Provisioning a synthetic/break-glass admin (e.g. the
+ * post-prod Portals smoke's `postprod-admin@…`) otherwise means a hand-run prod
+ * DB `UPDATE`. This endpoint single-sources that write behind the same
+ * `x-internal-secret` gate as `/provision`, so a dispatchable in-cluster ops
+ * workflow can do it instead of a human touching the database.
+ *
+ *   POST /internal/set-roles
+ *   Headers: x-internal-secret: <INTERNAL_PROVISION_SECRET>
+ *   Body:    { "email": "<address>", "roles": ["admin"] }
+ *   200 { ok: true, userId, email, roles }   (roles normalised: `user` always included, deduped)
+ *   400 { error }  missing email / roles not a non-empty string[] / unknown role
+ *   401 { error }  bad/missing secret (or secret not configured)
+ *   404 { error }  no user with that email
+ *
+ * Cluster-internal ONLY (never ingress-exposed — see templates/ingress.yaml and
+ * index.ts's `/internal` mount). `roles` is validated against ASSIGNABLE_ROLES
+ * so the shared secret cannot hand out an arbitrary/unknown role. Idempotent.
+ * Authorization for real actions still comes from the token + Permit; a role in
+ * `users.roles` is a rollout/break-glass marker, never the capability itself.
+ */
+router.post('/set-roles', async (req, res) => {
+  if (!internalSecretOk(req)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const { email, roles } = req.body || {}
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'email is required' })
+  }
+  if (
+    !Array.isArray(roles) ||
+    roles.length === 0 ||
+    !roles.every(r => typeof r === 'string')
+  ) {
+    return res.status(400).json({ error: 'roles must be a non-empty array of strings' })
+  }
+  const invalid = roles.filter(r => !ASSIGNABLE_ROLES.has(r))
+  if (invalid.length > 0) {
+    return res
+      .status(400)
+      .json({ error: `unknown role(s): ${invalid.map(sanitizeForLog).join(', ')}` })
+  }
+
+  // Normalise: `user` is the base role every account carries; dedupe so a
+  // re-run is a no-op rather than appending.
+  const normalized = Array.from(new Set(['user', ...roles]))
+
+  try {
+    const user = await db('users')
+      .whereRaw('LOWER(email) = LOWER(?)', [email])
+      .first()
+    if (!user) {
+      return res.status(404).json({ error: 'user not found' })
+    }
+    await db('users')
+      .where({ id: user.id })
+      .update({ roles: JSON.stringify(normalized), updated_at: db.fn.now() })
+    return res.status(200).json({ ok: true, userId: user.id, email: user.email, roles: normalized })
+  } catch (error: any) {
+    console.error(
+      'Internal set-roles failed for %s: %s',
+      sanitizeForLog(email),
+      sanitizeForLog(error?.stack ?? error?.message ?? error)
+    )
+    return res
+      .status(500)
+      .json({ error: 'set-roles failed', detail: String(error?.message ?? error) })
   }
 })
 
