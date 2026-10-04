@@ -57,6 +57,67 @@ flags:
       - "FuzeFront host SidePanel & AppSelector org-context gating"
     web_exposed: true
 
+  # "Build your application" + app ownership/publishing (applications-service).
+  # All three are release flags, default OFF, read by the server
+  # (backend/applications/src/app-registry/flags.ts) AND by the UI (the
+  # Applications page "Build with FuzeAgent" card, the creator contact line and
+  # the publishing controls), hence web_exposed: true. Never a substitute for
+  # Permit: authority over an app stays in Permit + the org role.
+  - key: fuzefront.apps.build-with-agent
+    type: release
+    default: false
+    description: >
+      Gates the build-session API (POST/GET /api/v1/app-registry/build-sessions*)
+      that starts a FuzeAgent session which develops and deploys an app into the
+      caller's personal account or an organization, and (later) the "Build your
+      application" card on the Applications page. OFF => every build-session
+      endpoint answers 503 feature_disabled.
+    owner: backend-engineer
+    removal_criterion: >
+      Delete this flag and the off-path 503 branch once build-with-agent is
+      rolled out to 100% of orgs and stable for one release cycle.
+    gates:
+      - "applications-service build-sessions API"
+      - "Applications page: Build your application card"
+    web_exposed: true
+
+  - key: fuzefront.apps.creator-ownership
+    type: release
+    default: false
+    description: >
+      Gates the "org-held, user-originated" ownership model: writing
+      apps.created_by_user_id, assigning the creator's App#creator Permit
+      resource-instance role, and exposing createdBy / creator on App DTOs.
+      OFF => created_by_user_id is never written and the App shape is
+      byte-identical to before.
+    owner: backend-engineer
+    removal_criterion: >
+      Delete this flag and the off-path once creator ownership is rolled out to
+      100% of orgs, the Permit App#creator policy is live, and the flag-OFF path
+      is no longer exercised.
+    gates:
+      - "applications-service created_by_user_id write + creator Permit role"
+      - "App DTO createdBy/creator fields"
+      - "Application detail: creator contact line"
+    web_exposed: true
+
+  - key: fuzefront.apps.marketplace-publishing
+    type: release
+    default: false
+    description: >
+      Gates the marketplace publication-request endpoints
+      (POST /apps/{slug}/publication-requests[/approve|/reject],
+      GET /apps/{slug}/publication) and the publish controls in the UI.
+      OFF => those endpoints answer 503 feature_disabled.
+    owner: backend-engineer
+    removal_criterion: >
+      Delete this flag and the off-path 503 branch once marketplace publishing
+      is rolled out to 100% of orgs and stable for one release cycle.
+    gates:
+      - "applications-service publication-requests API"
+      - "Application detail: publish to marketplace controls"
+    web_exposed: true
+
   # ---------------------------------------------------------------------------
   # fuzefront.authz.*
   # ---------------------------------------------------------------------------
