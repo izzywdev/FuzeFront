@@ -75,6 +75,50 @@ export const outboxFailedGauge = new client.Gauge({
   registers: [registry],
 });
 
+// ---------------------------------------------------------------------------
+// Seed reconciler (seed/reconciler.ts). Labels are bounded constants (never an
+// org id): `reason` is one of a handful of skip reasons, `retryable` is true/false.
+// ---------------------------------------------------------------------------
+
+export const reconcilerOrgsSeededTotal = new client.Counter({
+  name: 'selection_list_seed_reconciler_orgs_seeded_total',
+  help: 'Organizations the seed reconciler applied (or upgraded) platform defaults for',
+  registers: [registry],
+});
+
+export const reconcilerSkippedFlagOffTotal = new client.Counter({
+  name: 'selection_list_seed_reconciler_skipped_flag_off_total',
+  help: 'Organizations the seed reconciler skipped because seeding is flagged OFF for them',
+  registers: [registry],
+});
+
+export const reconcilerSkippedOtherTotal = new client.Counter({
+  name: 'selection_list_seed_reconciler_skipped_total',
+  help: 'Organizations the seed reconciler skipped for a reason other than the flag (backoff, locked, up-to-date, ...)',
+  labelNames: ['reason'] as const,
+  registers: [registry],
+});
+
+export const reconcilerFailedTotal = new client.Counter({
+  name: 'selection_list_seed_reconciler_failed_total',
+  help: 'Organizations whose reconcile attempt failed (backed off before the next try)',
+  labelNames: ['retryable'] as const,
+  registers: [registry],
+});
+
+export const reconcilerSweepsTotal = new client.Counter({
+  name: 'selection_list_seed_reconciler_sweeps_total',
+  help: 'Reconciler ticks finished, by result (ok | error)',
+  labelNames: ['result'] as const,
+  registers: [registry],
+});
+
+export const reconcilerLastSweepGauge = new client.Gauge({
+  name: 'selection_list_seed_reconciler_last_sweep_timestamp_seconds',
+  help: 'Unix time the last reconciler tick finished (0 = never)',
+  registers: [registry],
+});
+
 /** Low-cardinality route label: the matched pattern, or "unmatched". */
 export function routeLabel(req: Request): string {
   const matched = req.route && typeof req.route.path === 'string' ? req.route.path : null;

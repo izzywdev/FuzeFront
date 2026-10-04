@@ -10,22 +10,27 @@
 # and falls back to the GHSA ID for advisories not yet assigned a CVE.  Both
 # forms are listed below so suppression works regardless.  The CVE list mirrors
 # the alerts Trivy actually emits for these same pre-existing vulnerabilities
-# (services/email-service: express@4.19.2 transitive deps + nodemailer@6.9.14,
-# identical versions on master).
+# (services/email-service: express@4.19.2 transitive deps, identical versions
+# on master).
+#
+# The nodemailer@6.9.14 entries that used to sit in this block (CVE-2025-13033,
+# CVE-2025-14874, GHSA-mm7p-fcc7-pg87, GHSA-c7w3-x93f-qmm8, GHSA-vvjj-xcjg-gr5g,
+# GHSA-268h-hp4c-crq3, GHSA-wqvq-jvpq-h66f, GHSA-r7g4-qg5f-qqm2,
+# GHSA-rcmh-qjqh-p98v, GHSA-p6gq-j5cr-w38f) were removed when nodemailer moved
+# to 10.0.11 in every lockfile: each is fixed at <= 9.0.1, so they matched
+# nothing and only served to hide a future regression. Do NOT add nodemailer
+# advisories here — bump the package instead (root `overrides` admits 10.x).
 CVE-2024-45590
-CVE-2025-14874
 CVE-2024-45296
 CVE-2024-52798
 CVE-2026-4867
 CVE-2024-43796
-CVE-2025-13033
 CVE-2024-43799
 CVE-2024-43800
 CVE-2024-47764
 CVE-2025-15284
 CVE-2026-2391
 GHSA-23c5-xmqv-rm74
-GHSA-268h-hp4c-crq3
 GHSA-37ch-88jc-xwx2
 GHSA-3ppc-4f35-3m26
 GHSA-4w7w-66w2-5vf9
@@ -34,25 +39,18 @@ GHSA-67mh-4wv8-2f99
 GHSA-6rw7-vpxm-498p
 GHSA-7r86-cg39-jmmj
 GHSA-9wv6-86v2-598j
-GHSA-c7w3-x93f-qmm8
 GHSA-cm22-4g7w-348p
 GHSA-fx2h-pf6j-xcff
 GHSA-g7r4-m6w7-qqqr
 GHSA-m6fv-jmcg-4jfg
-GHSA-mm7p-fcc7-pg87
-GHSA-p6gq-j5cr-w38f
 GHSA-pxg6-pf52-xh8x
 GHSA-qw6h-vgh9-j6wx
 GHSA-qwcr-r2fm-qrc7
-GHSA-r7g4-qg5f-qqm2
-GHSA-rcmh-qjqh-p98v
 GHSA-rhx6-c78j-4q9w
 GHSA-v6wh-96g9-6wx3
 GHSA-vpq2-c234-7xj6
-GHSA-vvjj-xcjg-gr5g
 GHSA-w5hq-g745-h8pq
 GHSA-w7fw-mjwx-w883
-GHSA-wqvq-jvpq-h66f
 # Pre-existing advisories for packages already on master — newly published to
 # Trivy's advisory DB after master was last scanned, so they show as "new"
 # alerts in the PR diff even though the same package versions are on master.
