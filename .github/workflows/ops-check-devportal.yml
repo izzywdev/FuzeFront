@@ -99,10 +99,11 @@ jobs:
           echo "--- Endpoints behind the Service (k8s API, read-only) ---"
           _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null)
           _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-          curl -sS --cacert "$_K8S_CA" \
+          _ENDPOINTS_JSON=$(curl -sS --cacert "$_K8S_CA" \
             -H "Authorization: Bearer $_SA_TOKEN" \
             "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/endpoints/fuzefront-devportal-service" \
-            2>/dev/null | python3 -c "
+            2>/dev/null)
+          echo "$_ENDPOINTS_JSON" | python3 -c "
           import sys, json
           try:
             d = json.load(sys.stdin)
