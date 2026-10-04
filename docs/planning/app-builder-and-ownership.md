@@ -80,8 +80,10 @@ wired, without leaving stranded rows.
 **FuzeAgent-side dependency (cross-repo):** FuzeAgent must expose the build
 endpoint the launcher calls, and must call back with the platform service
 identity. This is delegated to the FuzeAgent repo via `@fuze`; FuzeFront only
-owns the client side and the contract it expects (in
-`services/app-registry-service/openapi.yaml`, `x-fuzeagent-launch` payload).
+owns the client side: the launch payload is defined in
+`backend/applications/src/app-registry/builder-launcher.ts`, and the callback
+is `POST /build-sessions/{id}/status` in
+`services/app-registry-service/openapi.yaml`.
 
 ### Session states
 
@@ -226,7 +228,7 @@ real authority; a flag only rolls a capability out.
 
 | # | Item | Owner | State |
 |---|---|---|---|
-| 1 | Plan, flags, migration, contract, backend routes, tests | backend-engineer | **this PR** |
+| 1 | Plan, flags, migration 018, contract (app-registry 1.2.0), backend routes, tests | backend-engineer | **this PR** |
 | 2 | Frames `design/frames/app-builder/`: the card, the build form, session-in-progress, deployed, failed/cancelled/builder-unavailable, the creator/"former member" block, the publish request, the admin review queue | product-designer | frames-only PR, needs owner approval per flow |
 | 3 | UI: card + build flow on `ApplicationsPage.tsx` (covered by `app-management` frames, so `gate-frames-first` blocks it until item 2 is approved), creator block, publish action | frontend-engineer | blocked on 2 |
 | 4 | Permit policy: define `App#creator` (apps:write, apps:activate) and verify instance roles drop on tenant-membership removal | security / platform | config, before enabling `creator-ownership` in prod |
