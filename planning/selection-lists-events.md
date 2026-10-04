@@ -2,9 +2,10 @@
 
 **Status:** contract FROZEN on merge of this PR. **No implementation exists yet** — the
 selection-list-service does not publish any of these events, does not consume
-`identity.org.created` or `selection-lists.seed.requested`, and the
-`fuzefront.selection-lists.seed-defaults` flag is not registered. A later wave builds
-all of that against this contract (see [§14](#14-implementation-wave-for-the-orchestrator)).
+`identity.org.created` or `selection-lists.seed.requested`. (The `fuzefront.selection-lists.seed-defaults` flag IS now registered —
+`packages/feature-flags/flag-registry.yaml`, `FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS`,
+`isSeedDefaultsEnabled()` in the service — default OFF, never enabled by registration.)
+A later wave builds all of that against this contract (see [§14](#14-implementation-wave-for-the-orchestrator)).
 
 | Artifact | Path |
 |---|---|
@@ -408,10 +409,13 @@ read-only list type. Open question Q2.
 | Gates | **both** new consumers: `identity.org.created` seeding and `seed.requested` handling, plus the reconciler |
 | OFF behaviour | `org.created`: skip (reconciler catches up when ON). `seed.requested`: `seed.failed` / `SEEDING_DISABLED`, `retryable: true` |
 | Independent of | `fuzefront.selection-lists.service` (master gate). Seeding also requires the master gate ON for the org. |
-| Owner / removal | platform team; remove when seeding is GA for 100 % of orgs and the reconciler has backfilled every existing org |
+| Owner / removal | izzywdev; remove once seeding has been ON for all orgs for 30 days with zero `selection-lists.seed.failed` in that window (and the reconciler has backfilled every existing org) |
 
-Registration in Unleash + the `FLAG_KEYS` constant are `feature-flags-engineer`; this
-contract only names it.
+Registered by `feature-flags-engineer`: `packages/feature-flags/flag-registry.yaml` entry,
+`FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS` (server-only — deliberately not in
+`WEB_EXPOSED_FLAGS`), and the service helper `isSeedDefaultsEnabled(ctx)` in
+`services/selection-list-service/src/flags.ts` (fails closed). Both consumers must call the
+helper per message with `{ organizationId }`.
 
 Publishing of the change events (§4) is **not** flagged: it is a pure side effect with no
 user-visible behaviour, and gating it would leave holes in consumers' read models.
@@ -499,6 +503,24 @@ CREATE TABLE selection_list_seed_sources (
 
 The org-deleted **hard** purge must also delete the org's ledger rows; the **soft**
 cascade keeps them (a restore must not re-seed).
+
+### 13.0 As implemented (SL6 data tier)
+
+Knex migrations `20260810_000006`–`000009` in `services/selection-list-service/src/db/migrations/`
+(each file's header documents every column; test: `tests/migrations.seed-events.db.test.ts`).
+Deviations from the sketch above, all deliberate:
+
+- `event_outbox` gains `seq BIGINT IDENTITY` (strict per-org tiebreak: `created_at` is the
+  transaction start time, so rows from one transaction tie) and uses `TEXT`+`CHECK` for
+  `status`; `id` (the `eventId`) has no default. Relay order: `(organization_id, created_at, seq)`.
+- Provenance is an all-or-nothing `CHECK` (all `seed_*` NULL, or all set); `seed_user_modified`
+  requires a seeded row; `revision >= 1` and a trigger forbids it decreasing. The writer still
+  owns the bump.
+- The ref-index store is `selection_list_ref_index`, with `wire_id` / `org_type` / `is_active`
+  so the reconciler can join to the ledger and apply `appliesTo` / `isActive`.
+- `created_by` / `granted_by` / `actor_id` are unconstrained `TEXT`, so `system:…` and
+  `[deleted-user]` already fit; nothing was relaxed. No RLS (none exists in this service; the
+  DB is per-service and owned by `selection_list_svc`), no extra grants.
 
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
