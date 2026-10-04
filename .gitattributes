@@ -49,6 +49,15 @@ lerna.json      text eol=lf
 package-lock.json    text eol=lf
 **/package-lock.json text eol=lf
 
+# Shell scripts run inside Linux containers, where a CRLF shebang is fatal: a
+# Windows checkout (core.autocrlf=true, git's Windows default) writes
+# deploy/e2e/init-postgres.sh as CRLF, the postgres image executes it from
+# /docker-entrypoint-initdb.d, and it dies with `env: can't execute 'bash\r'`
+# (exit 127) -- so `docker compose -f docker-compose.e2e.yml up` never gets
+# past postgres on Windows. The same applies to every script a container or CI
+# runner executes, so pin them all.
+*.sh text eol=lf
+
 # Same pre-existing-CRLF-before-gate-line-endings-existed story as CLAUDE.md
 # above: these files were already stored as CRLF and tripped the gate the
 # first time a PR touched them. Pin them to LF so it doesn't recur.

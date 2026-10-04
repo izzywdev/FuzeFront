@@ -224,6 +224,12 @@ COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/selection-list-service/openapi.yaml ./services/selection-list-service/openapi.yaml
+# Seeding assets (docs/planning/selection-lists-events.md sections 8 and 10): the reviewed
+# seed-source allowlist and the platform default packs. src/index.ts validates both at boot
+# (initSeeding) and refuses to start if they are missing or invalid, so they must ship in the
+# image; they are resolved relative to dist/ (../seed-sources.json, ../seed-packs/platform).
+COPY --from=build /app/services/selection-list-service/seed-sources.json ./services/selection-list-service/seed-sources.json
+COPY --from=build /app/services/selection-list-service/seed-packs ./services/selection-list-service/seed-packs
 
 # Remove declaration files from production image
 RUN find ./services/selection-list-service/dist -name "*.d.ts" -type f -delete
