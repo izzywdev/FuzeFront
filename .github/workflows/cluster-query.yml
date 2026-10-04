@@ -1,0 +1,99 @@
+# ===========================================================================
+# cluster-query (CONSUMER side)  —  part of the FuzeOne standard stack
+# ===========================================================================
+# Lives in a CONSUMER repo (FuzeFront, MendysRobotics, future services), NOT in
+# FuzeInfra. Drop it at `.github/workflows/cluster-query.yml`.
+#
+# Ask FuzeInfra a read-only kubectl question about the PROD cluster and get the
+# answer back in THIS repo's job log — no kubeconfig, no human relaying output.
+# FuzeInfra runs the query with its own credential and its own guard; you get
+# output, not access. See docs/consuming-repos/CLUSTER_QUERY.md (FuzeInfra).
+#
+# CREDENTIAL: reuses the SAME `FUZEINFRA_DISPATCH_TOKEN` already held for
+# infra-requests (Contents:write → authorizes repository_dispatch, see
+# infra-dispatch.yml). Nothing new to mint. A token that can trigger
+# infra-request can already apply Terraform and create nodes, so a guarded
+# read-only kubectl is strictly less powerful.
+#
+# READING the result needs NO credential at all — FuzeInfra is a public repo, so
+# its run metadata and logs are world-readable. Which is also the warning: your
+# query and its output are PUBLIC. Never ask for anything whose output is a
+# secret. FuzeInfra refuses `Secret` reads and `--raw` for exactly this reason,
+# but it cannot know that YOUR app logs a token — `logs` is on you.
+# ===========================================================================
+name: cluster-query
+
+on:
+  workflow_dispatch:
+    inputs:
+      kubectl_args:
+        description: 'Read-only kubectl args, e.g. "-n my-namespace get pods -o wide"'
+        required: true
+        default: '-n my-namespace get pods -o wide'
+
+permissions:
+  contents: read
+
+jobs:
+  query:
+    name: ask FuzeInfra to read the cluster
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the query to FuzeInfra
+        env:
+          GH_TOKEN: ${{ secrets.FUZEINFRA_DISPATCH_TOKEN }}
+          ARGS: ${{ github.event.inputs.kubectl_args }}
+        run: |
+          set -euo pipefail
+          # Stamp BEFORE dispatching — used below to pick out our run. Second
+          # precision is enough: cluster-query has a `concurrency` group, so runs
+          # serialize rather than interleave.
+          date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/dispatched_at
+
+          jq -nc --arg args "$ARGS" \
+            '{event_type:"cluster-query", client_payload:{kubectl_args:$args}}' \
+            | gh api --method POST repos/izzywdev/FuzeInfra/dispatches --input -
+
+          echo "Dispatched: kubectl $ARGS"
+
+      - name: Wait for the run and print its output
+        env:
+          # The repo's own token is fine here: FuzeInfra is public, so reading
+          # runs/logs needs no grant on it. The dispatch token is NOT reused —
+          # it has no Actions scope and does not need one.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SINCE=$(cat /tmp/dispatched_at)
+
+          # Poll for the run our dispatch created.
+          for _ in $(seq 1 40); do
+            RUN=$(gh run list --repo izzywdev/FuzeInfra \
+                    --workflow=cluster-query.yml --event=repository_dispatch \
+                    --limit 10 --json databaseId,createdAt,status,conclusion,url \
+                  | jq -r --arg since "$SINCE" \
+                      '[.[] | select(.createdAt >= $since)] | sort_by(.createdAt) | .[0] // empty')
+            [ -n "$RUN" ] && [ "$(jq -r .status <<<"$RUN")" = "completed" ] && break
+            sleep 15
+          done
+
+          if [ -z "${RUN:-}" ]; then
+            echo "::error::No cluster-query run appeared within ~10min. Check https://github.com/izzywdev/FuzeInfra/actions/workflows/cluster-query.yml"
+            exit 1
+          fi
+
+          ID=$(jq -r .databaseId <<<"$RUN")
+          echo "FuzeInfra run: $(jq -r .url <<<"$RUN")"
+          echo '--- cluster output ------------------------------------------'
+          # Print only the kubectl output, not the whole guard script echo.
+          gh run view "$ID" --repo izzywdev/FuzeInfra --log \
+            | sed -n '/### kubectl/,$p' | head -c 100000
+          echo
+          echo '-------------------------------------------------------------'
+
+          # A refusal (bad verb, Secret read, --raw) fails the FuzeInfra run;
+          # surface that as a failure here rather than an empty success.
+          [ "$(jq -r .conclusion <<<"$RUN")" = "success" ] || {
+            echo "::error::FuzeInfra refused or failed the query — see the run above."
+            exit 1
+          }

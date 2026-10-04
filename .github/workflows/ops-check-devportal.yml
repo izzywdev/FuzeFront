@@ -1,0 +1,119 @@
+name: ops-check-devportal
+
+# Read-only diagnostics for developers.fuzefront.com: the live
+# `fuzefront.devportal.enabled` Unleash flag state, and whether
+# devportal-service is reachable from INSIDE the cluster (bypassing nginx and
+# Cloudflare, to tell "the service has no healthy pod" apart from "only the
+# public-facing proxy path is broken").
+#
+# GET-only against both Unleash and devportal-service — never mutates
+# anything. Runs on the `fuzefront` self-hosted in-cluster runner so it can
+# reach cluster-internal DNS the same way prod-unleash-ops.yml does, and reads
+# the Unleash admin token from unleash-secrets via the k8s API (no GitHub
+# secret, no kubectl).
+
+on:
+  workflow_dispatch:
+    inputs:
+      flag:
+        description: 'Unleash flag key to check'
+        required: true
+        default: fuzefront.devportal.enabled
+      environment:
+        description: 'Unleash environment'
+        required: true
+        default: production
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check Unleash flag + devportal-service reachability
+    runs-on: fuzefront
+    timeout-minutes: 5
+    steps:
+      - name: Unleash flag state
+        env:
+          FLAG: ${{ inputs.flag }}
+          UNLEASH: http://fuzefront-unleash.fuzefront.svc.cluster.local:4242
+          PROJECT: default
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          echo "=== Unleash: $FLAG ($ENVIRONMENT) ==="
+
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          _SECRET_JSON=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/unleash-secrets" \
+            2>/dev/null || true)
+          TOKEN=$(echo "$_SECRET_JSON" | python3 -c "
+          import sys, json, base64
+          try:
+            d = json.load(sys.stdin)
+            print(base64.b64decode(d['data']['INIT_ADMIN_API_TOKENS']).decode().strip())
+          except Exception:
+            sys.exit(0)
+          " 2>/dev/null || true)
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error title=ops-check-devportal::Could not read INIT_ADMIN_API_TOKENS from unleash-secrets."
+            exit 1
+          fi
+
+          HTTP_CODE=$(curl -sS -o /tmp/flag_state.json -w '%{http_code}' \
+            "$UNLEASH/api/admin/projects/$PROJECT/features/$FLAG/environments/$ENVIRONMENT" \
+            -H "Authorization: $TOKEN")
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "flag: NOT FOUND in Unleash (never created, or wrong key/environment)"
+          elif [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Unleash returned HTTP $HTTP_CODE"
+            cat /tmp/flag_state.json
+            exit 1
+          else
+            python3 -c "
+          import json
+          d = json.load(open('/tmp/flag_state.json'))
+          print('flag enabled:', d.get('enabled'))
+          strategies = d.get('strategies', [])
+          if not strategies:
+            print('strategies: NONE — enabled=true with no strategy still evaluates OFF for everyone')
+          for s in strategies:
+            print('strategy:', s.get('name'), s.get('parameters', {}))
+          "
+          fi
+
+      - name: devportal-service in-cluster reachability
+        if: always()
+        run: |
+          set +e
+          echo ""
+          echo "=== devportal-service (in-cluster, bypassing nginx/Cloudflare) ==="
+          echo "--- Service DNS + /health ---"
+          curl -sS -o /tmp/dp_health.txt -w 'HTTP %{http_code} (%{time_total}s)\n' \
+            --max-time 8 \
+            "http://fuzefront-devportal-service.fuzefront.svc.cluster.local:3012/health"
+          cat /tmp/dp_health.txt
+          echo ""
+          echo "--- Endpoints behind the Service (k8s API, read-only) ---"
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          curl -sS --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/endpoints/fuzefront-devportal-service" \
+            2>/dev/null | python3 -c "
+          import sys, json
+          try:
+            d = json.load(sys.stdin)
+          except Exception as e:
+            print('could not read Endpoints (RBAC scope, or resource absent):', e)
+            sys.exit(0)
+          subsets = d.get('subsets') or []
+          if not subsets:
+            print('NO ready addresses behind fuzefront-devportal-service — zero healthy pods')
+          for s in subsets:
+            ready = [a.get('ip') for a in s.get('addresses', [])]
+            notready = [a.get('ip') for a in s.get('notReadyAddresses', [])]
+            print('ready:', ready, ' notReady:', notready)
+          " || echo "  (endpoints read failed — RBAC likely does not grant this; see workflow comment)"
