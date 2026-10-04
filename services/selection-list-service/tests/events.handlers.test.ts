@@ -177,6 +177,7 @@ describe('handleOrgDeleted — soft cascade', () => {
       return b;
     };
     failing.fn = original.fn;
+    failing.raw = original.raw;
     state.rec = { ...state.rec, db: failing };
     await expect(handleOrgDeleted(orgEvent('soft'))).rejects.toThrow('db down');
   });
