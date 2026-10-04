@@ -196,10 +196,15 @@ describe('x-permit-* annotations equal the documented 3.0.0 authorization matrix
 // ---------------------------------------------------------------------------------------------
 
 function fakeConst(name: string): Record<string, string[]> {
-  const m = new RegExp(`const ${name} = (\\{[\\s\\S]*?\\n\\});`).exec(FAKE_SRC);
-  if (!m) throw new Error(`const ${name} not found in helpers/fake-security-api.mjs`);
+  // Plain string search (no dynamic RegExp): the object literal runs from `const NAME = {` to the
+  // first line that is exactly `};`.
+  const head = `const ${name} = {`;
+  const start = FAKE_SRC.indexOf(head);
+  const end = start < 0 ? -1 : FAKE_SRC.indexOf('\n};', start);
+  if (start < 0 || end < 0) throw new Error(`const ${name} not found in helpers/fake-security-api.mjs`);
+  const literal = FAKE_SRC.slice(start + head.length - 1, end + 2);
   // eslint-disable-next-line no-new-func
-  return new Function(`return (${m[1]});`)() as Record<string, string[]>;
+  return new Function(`return (${literal});`)() as Record<string, string[]>;
 }
 
 describe('helpers/fake-security-api.mjs implements the documented policy (so the authz suites verify the real contract)', () => {
