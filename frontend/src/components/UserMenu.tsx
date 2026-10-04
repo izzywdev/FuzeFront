@@ -10,6 +10,7 @@ import {
   type OrgTreeNode,
 } from '@fuzefront/identity-ui'
 import { User, useCurrentUser, useOrganizations, useAppContext, ROOT_ORG_ID } from '../lib/shared'
+import { isSwitcherContextOrg } from '../lib/orgMembership'
 import { isEmployeeUser } from '../utils/employee'
 import { useAccounts } from '../contexts/AccountsContext'
 import { usePermissions } from './PermissionGate'
@@ -387,9 +388,13 @@ export function OrganizationSwitcherSection({
   const rawOrganizations =
     contextOrganizations.length > 0 ? contextOrganizations : (fetched ?? [])
 
-  // Non-employees ("facebook members") cannot switch to the root platform org
+  // Non-employees ("facebook members") cannot switch to the root platform org.
+  // The reconciled switcher additionally offers only real, non-personal
+  // memberships (isSwitcherContextOrg) — Personal is its own row above.
   const organizations = rawOrganizations.filter(
-    org => isEmployee || org.id !== ROOT_ORG_ID
+    org =>
+      (isEmployee || org.id !== ROOT_ORG_ID) &&
+      (!personalContextEnabled || isSwitcherContextOrg(org))
   )
 
   const load = useCallback(async () => {
