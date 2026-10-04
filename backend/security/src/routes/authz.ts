@@ -89,6 +89,16 @@ async function authorizeSelectionListGrant(
   })
 }
 
+async function authorizeTenantGrant(c: ResolvedCaller, tenant: string): Promise<boolean> {
+  if (c.kind === 'machine') return (c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE)
+  return getAuthorizationProvider().check({
+    subject: c.id,
+    tenant,
+    resource: { type: 'Organization', key: tenant },
+    action: 'manage',
+  })
+}
+
 function bearer(req: Request): string | null {
   const h = req.headers['authorization']
   if (!h || Array.isArray(h)) return null
@@ -308,7 +318,9 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
       if (!(await authorizeSelectionListGrant(c, b, false))) {
         return res.status(403).json({ error: 'List grant forbidden', code: 'FORBIDDEN' })
       }
-    } else if (!requireAuthzAdmin(c, res)) return
+    } else if (!(await authorizeTenantGrant(c, String(b.tenant)))) {
+      return res.status(403).json({ error: 'Grant forbidden', code: 'FORBIDDEN' })
+    }
     const grant = await getAuthorizationProvider().grant({
       subject: String(b.subject),
       tenant: String(b.tenant),
@@ -330,11 +342,36 @@ router.delete('/authz/grants', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'grantId or subject+tenant+role required', code: 'MALFORMED' })
   }
   try {
+    // The Permit adapter emits tenant:subject:role IDs. Resolve that same
+    // tuple here before the policy check; reject opaque IDs that cannot be
+    // authorized. Explicit tuple fields must agree with the ID.
+    if (b.grantId && c.kind === 'human') {
+      const first = b.grantId.indexOf(':')
+      const last = b.grantId.lastIndexOf(':')
+      if (first <= 0 || last <= first + 1 || last === b.grantId.length - 1) {
+        return res.status(403).json({ error: 'Revoke requires a scoped tenant', code: 'FORBIDDEN' })
+      }
+      const parsed = {
+        tenant: b.grantId.slice(0, first),
+        subject: b.grantId.slice(first + 1, last),
+        role: b.grantId.slice(last + 1),
+      }
+      if ((b.tenant && b.tenant !== parsed.tenant) ||
+          (b.subject && b.subject !== parsed.subject) ||
+          (b.role && b.role !== parsed.role)) {
+        return res.status(403).json({ error: 'Grant ID does not match tuple', code: 'FORBIDDEN' })
+      }
+      b.tenant = parsed.tenant
+      b.subject = parsed.subject
+      b.role = parsed.role
+    }
     if (b.resource?.type === 'SelectionList' || selectionListRoles.has(b.role)) {
       if (!(await authorizeSelectionListGrant(c, b, true))) {
         return res.status(403).json({ error: 'List revoke forbidden', code: 'FORBIDDEN' })
       }
-    } else if (!requireAuthzAdmin(c, res)) return
+    } else if (!(await authorizeTenantGrant(c, String(b.tenant || '')))) {
+      return res.status(403).json({ error: 'Revoke forbidden', code: 'FORBIDDEN' })
+    }
     await getAuthorizationProvider().revoke(b)
     res.status(204).end()
   } catch (err) {

@@ -476,6 +476,7 @@ describe('Security API OpenAPI authorization contracts', () => {
   describe('POST /api/v1/security/authz/grants', () => {
     it('returns 201 application/json for an authorized application/json grant without a 403 forbidden result', async () => {
       // @fuzequality api createGrant
+      authorizationProvider.check.mockResolvedValueOnce(true)
       const response = await request(buildApp())
         .post('/api/v1/security/authz/grants')
         .set('Authorization', 'Bearer valid-token')
@@ -534,6 +535,7 @@ describe('Security API OpenAPI authorization contracts', () => {
 
     it('returns 502 application/json when the grant provider rejects the request', async () => {
       // @fuzequality api createGrant
+      authorizationProvider.check.mockResolvedValueOnce(true)
       authorizationProvider.grant.mockRejectedValueOnce(new Error('provider unavailable'))
 
       const response = await request(buildApp())
@@ -593,13 +595,36 @@ describe('Security API OpenAPI authorization contracts', () => {
   describe('DELETE /api/v1/security/authz/grants', () => {
     it('returns 204 for an authorized application/json revoke without a 403 forbidden result', async () => {
       // @fuzequality api revokeGrant
+      authorizationProvider.check.mockResolvedValueOnce(true)
       await request(buildApp())
         .delete('/api/v1/security/authz/grants')
         .set('Authorization', 'Bearer valid-token')
-        .send({ grantId: 'grant-1' })
+        .send({ subject: 'user-2', tenant: 'tenant-1', role: 'viewer' })
         .expect(204)
 
-      expect(authorizationProvider.revoke).toHaveBeenCalledWith({ grantId: 'grant-1' })
+      expect(authorizationProvider.revoke).toHaveBeenCalledWith({ subject: 'user-2', tenant: 'tenant-1', role: 'viewer' })
+    })
+
+    it('authorizes a tenant-scoped grantId against the resolved tenant', async () => {
+      authorizationProvider.check.mockResolvedValueOnce(true)
+      await request(buildApp())
+        .delete('/api/v1/security/authz/grants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ grantId: 'tenant-1:user-2:viewer' })
+        .expect(204)
+      expect(authorizationProvider.check).toHaveBeenCalledWith({
+        subject: 'user-1', tenant: 'tenant-1',
+        resource: { type: 'Organization', key: 'tenant-1' }, action: 'manage',
+      })
+    })
+
+    it('rejects an opaque grantId with no trusted tenant', async () => {
+      await request(buildApp())
+        .delete('/api/v1/security/authz/grants')
+        .set('Authorization', 'Bearer valid-token')
+        .send({ grantId: 'opaque-grant-id' })
+        .expect(403)
+      expect(authorizationProvider.revoke).not.toHaveBeenCalled()
     })
 
     it('returns 401 when grant revocation is attempted without authentication', async () => {

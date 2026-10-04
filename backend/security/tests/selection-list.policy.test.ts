@@ -96,6 +96,17 @@ test('management permission on a different list cannot grant this list', async (
   expect(authz.grant).not.toHaveBeenCalled()
 })
 
+test('human cannot bypass list policy by granting themselves tenant admin', async () => {
+  await request(app).post('/api/v1/security/authz/grants')
+    .set('Authorization', 'Bearer valid')
+    .send({ subject: 'caller', tenant: 'tenant', role: 'admin' }).expect(403)
+  expect(authz.check).toHaveBeenCalledWith({
+    subject: 'caller', tenant: 'tenant',
+    resource: { type: 'Organization', key: 'tenant' }, action: 'manage',
+  })
+  expect(authz.grant).not.toHaveBeenCalled()
+})
+
 test('list owner can grant an active member on that list only', async () => {
   authz.check.mockResolvedValue(true)
   await request(app).post('/api/v1/security/authz/grants')
