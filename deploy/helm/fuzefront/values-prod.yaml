@@ -968,7 +968,10 @@ notificationService:
 # config-service was step 1; see the configService comment below for that
 # precedent). GO-LIVE steps:
 #   1. Seal DATABASE_URL, JWT_SECRET into selection-list-secrets
-#      (see deploy/contabo/sealed/selection-list-service-secrets.yaml.template).
+#      (see deploy/contabo/sealed/selection-list-service-secrets.yaml.template),
+#      plus SERVICE_CLIENT_ID / SERVICE_CLIENT_SECRET: the service's OAuth
+#      client_credentials identity (scope authz:admin) for Security API
+#      grant/revoke. Without them list creation / access grants fail closed.
 #   2. Flip `enabled` to true here via GitOps in a deploy window.
 # The tag: line MUST stay immediately after repository: — release.yml's GitOps
 # bump step only rewrites a tag: found on the line directly following a matched
