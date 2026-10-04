@@ -170,6 +170,23 @@ This is the most commonly missing dimension. Every service that holds per-org or
 
 ---
 
+### 9a. Data ownership & consistency
+
+Standard: FuzeSDLC `governance/data-consistency-standard.md` (baseline §4.4); skill `data-consistency`. Dimension 9 checks the lifecycle *handlers*. This one checks that the service's integrity posture is declared and built on the shared machinery.
+
+- [ ] `services/<service>/data-contract.json` exists and validates against `governance/data-contract.schema.json`
+- [ ] `owns[]` lists exactly the entity types this service mints, and no other service claims them
+- [ ] Every column holding another service's id (`*_id` columns in migrations whose type the service does not own) is in `references[]` with `validation` and `onDelete`
+- [ ] Every `emits[]` topic is enqueued through the outbox (`enqueueEvent(trx, …)`), not published directly
+- [ ] Consumers dedupe (inbox) and version-guard. Note "handlers idempotent by construction" as a gap until the shared consumer runtime exists
+- [ ] Every `references[].targetType` has a consumed `*.deleted` topic whose handler implements the declared `onDelete`, soft and hard
+- [ ] List endpoints follow the pagination envelope; any list combining another service's data is served from a declared projection, not a client-side join
+- [ ] For a BFF: each `projections[]` entry has a rebuild path, a version guard, a lag metric and a replay test
+
+**Fix if missing:** write `data-contract.json` first (contract-designer). Every other gap then follows from what it declares.
+
+---
+
 ### 10. Helm / Deploy
 
 Look in `deploy/helm/fuzefront/templates/` and `values.yaml`:
@@ -235,6 +252,7 @@ Produce a **status table** and a **gap fix list**:
 | OpenAPI spec | Complete | None |
 | MCP server | Missing | No tools registered in gateway or mcp/ dir |
 | User/org events | Missing | No Kafka consumer; org deletion leaks rows |
+| Data contract | Missing | No data-contract.json; 2 org_id references undeclared |
 | Helm deploy | Complete | None |
 | CI | Gap | Service unit + contract tests not gated |
 | Feature flag | Complete | None |

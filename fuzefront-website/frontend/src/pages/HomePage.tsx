@@ -16,7 +16,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Caption, Center, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -248,10 +248,10 @@ export const HomePage: React.FC = () => {
             className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto"
           >
             {socialProof.map((item) => (
-              <div key={item.label} className="text-center">
+              <Center key={item.label}>
                 <div className="text-3xl font-bold text-white">{item.metric}</div>
                 <div className="text-secondary-300 text-sm mt-1">{item.label}</div>
-              </div>
+              </Center>
             ))}
           </motion.div>
         </Container>
@@ -503,9 +503,9 @@ export const HomePage: React.FC = () => {
                   Talk to sales
                 </Link>
               </div>
-              <p className="mt-6 text-sm text-gray-600">
+              <Caption space="lg" tone="primary">
                 No credit card required &middot; Free for 14 days &middot; Scales as you grow
-              </p>
+              </Caption>
             </motion.div>
           </SectionWrapper>
         </div>

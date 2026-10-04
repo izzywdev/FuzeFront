@@ -71,6 +71,9 @@ spec:
                 --topic {{ .name | quote }} \
                 --partitions {{ .partitions }} \
                 --replication-factor {{ .replicationFactor }} \
+                {{- with .cleanupPolicy }}
+                --config cleanup.policy={{ . }} \
+                {{- end }}
                 --config retention.ms={{ .retentionMs | default $kt.defaultRetentionMs | int64 }}
               {{- end }}
               echo "Topic reconciliation complete."

@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@fuzefront/auth": "file:../../packages/auth",
-    "@fuzefront/feature-flags": "1.0.0",
+    "@fuzefront/feature-flags": "file:../../packages/feature-flags",
     "@fuzefront/service-auth": "file:../../packages/service-auth",
     "@fuzefront/shared": "file:../../shared",
     "@izzywdev/fuzefront-identity": "file:../../packages/identity",

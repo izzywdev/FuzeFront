@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS config.config_history (
   redacted        BOOLEAN     NOT NULL DEFAULT FALSE,
   actor_type      TEXT        NOT NULL CHECK (actor_type IN ('user', 'system')),
   -- NULL exactly when actor_type = 'system' (openapi.yaml Actor.actorId).
+  -- RELAXED by migration 005: also NULL (with actor_redacted = TRUE) when a
+  -- 'user' actor was erased under right-to-erasure. The three-way invariant is
+  -- CHECK-enforced in 005; 004 left it as a comment only.
   actor_id        UUID,
   reason          TEXT,
   -- Self-referential: the history entry a revert replayed (openapi.yaml

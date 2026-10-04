@@ -623,40 +623,6 @@ kbd,
    (design-system/components/layout/AuthCard.jsx) — see #892. Removed here;
    `.provisioning-card` below is a separate, still-in-use class. */
 
-.form-group {
-  margin-bottom: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: var(--text-secondary);
-}
-
-.form-group input {
-  width: 100%;
-  padding: 0.75rem 0.875rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background-color: var(--bg-secondary);
-  color: var(--text-primary);
-  transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    color 0.2s ease;
-}
-
-.form-group input::placeholder {
-  color: var(--text-tertiary);
-}
-
-.form-group input:focus {
-  outline: none;
-  border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
 .btn {
   padding: 0.75rem 1.5rem;
   border: 1px solid transparent;

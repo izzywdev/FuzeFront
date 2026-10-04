@@ -163,7 +163,7 @@ const client = new SelectionListClient({
 | Option | Type | Required | Notes |
 |---|---|---|---|
 | `baseUrl` | `string` | Yes | Same-origin path in the browser; absolute URL in server-side callers |
-| `token` | `string \| () => string \| Promise<string>` | No | `resolveIds` may be called unauthenticated by trusted in-cluster callers |
+| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | Bearer token with an `orgId` claim. `resolveIds` also requires it (spec v2.0.0) |
 | `fetch` | `typeof fetch` | No | Inject for tests or non-global runtimes; defaults to `globalThis.fetch` |
 | `defaultLocale` | `Locale` | No | Applied to every request that doesn't supply its own |
 | `headers` | `Record<string, string>` | No | Merged into every request (tracing IDs, tenant hints) |
@@ -182,16 +182,23 @@ const client = new SelectionListClient({
 
 ## Feature flag
 
-The service is gated behind `fuzefront.selection-lists.service`.  Check it
-before initializing the client or rendering any selection-list UI:
+The service is gated behind release flag `fuzefront.selection-lists.service`
+(default OFF). While OFF every `/v1/selection-lists/*` route returns 404 and
+the shell hides the UI. In browser code read it with `useFlag` (the key is in
+`WEB_EXPOSED_FLAGS`); server-side use the OpenFeature client with the request's
+org/user context:
 
 ```ts
-import { featureFlags, FLAGS } from '@fuzefront/feature-flags'
+import { FLAG_KEYS, getClient } from '@fuzefront/feature-flags'
 
-if (await featureFlags.isEnabled(FLAGS.SELECTION_LISTS_SERVICE)) {
-  // show UI, initialize client
-}
+const enabled = await getClient().getBooleanValue(
+  FLAG_KEYS.SELECTION_LISTS_SERVICE,
+  false, // release flag: fail-safe OFF
+  { environment, organizationId, userId, app: 'my-service' },
+)
 ```
+
+Rollout/rollback procedure: `docs/runbooks/selection-lists-flag-rollout.md`.
 
 ---
 
@@ -426,8 +433,32 @@ for await (const grant of client.paginate((p) => client.getAccess(list.id, p))) 
 await client.revokeAccess(list.id, userId)
 ```
 
+### Tenant-level operations vs per-list actions
+
+Authorization has two levels, and the roles above only ever apply to the
+second:
+
+| Operation | Checked against | Action |
+|---|---|---|
+| `GET /v1/selection-lists` | `SelectionListCatalog` (tenant-level, keyless) | `list` |
+| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` |
+| `GET /v1/selection-lists/quota` | `SelectionListCatalog` | `read_quota` |
+| `POST /v1/resolve` | `SelectionListCatalog` | `resolve` |
+| everything addressed to one list | `SelectionList`, keyed on the list id | the per-list action in the table above |
+
+Tenant roles carry only the four catalog actions, never a per-list action, so
+being allowed to *list* does not let a caller read every list: `GET
+/v1/selection-lists` returns only the lists the caller holds an instance role
+on (a caller with none gets an empty page, not a `403`). Creating a list makes
+the creator its `list-owner` (granted by the service). Two actions are
+stricter than the table suggests: **purging an item** (`DELETE
+.../items/{itemId}?purge=true`) additionally needs `delete` on the list, so only
+a `list-owner` can purge (a `list-editor` can archive an item but gets `403` on
+purge); and **archiving a list via `PATCH` `status: "archived"`** needs the same
+`delete` as `POST .../archive`.
+
 > **Important:** an `id` is never a capability.  Knowing a list's `id` grants
-> nothing — every route re-checks the caller against Permit.  A resource the
+> nothing — every route re-checks the caller against the Security API / Permit.  A resource the
 > caller cannot read returns `404`, not `403`, so the API is not a cross-org
 > existence oracle.
 

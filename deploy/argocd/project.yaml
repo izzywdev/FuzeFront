@@ -8,9 +8,26 @@
 # documented as holding "Argo Application/AppProject manifests" and it runs
 # `kubectl apply -f "$DIR/"`), after which Argo polls and self-syncs from here.
 #
-# FuzeInfra's copy MUST BE DELETED once this lands. Until then both exist and
-# registration is last-write-wins, so whichever ran most recently is what the
-# cluster holds. Tracked in FuzeInfra#625.
+# FuzeInfra's copy MUST BE DELETED. Until then both exist and registration is
+# last-write-wins, so whichever ran most recently is what the cluster holds.
+# Ownership was settled by owner ruling FuzeInfra#639, which REVERSED the
+# ownership half of FuzeInfra#625: consumers own their AppProject, and
+# `argocd-register.yml` no longer skips `kind: AppProject` from a consumer path.
+# (#625's other outcome — the fleet-wide permission narrowing in #629 — stands.)
+# The deletion is step 4 of #639's own sequencing and has not happened yet.
+#
+# THIS IS NOT COSMETIC DEBT — IT IS AN ARMED RE-FREEZE (measured 2026-10-04):
+# FuzeInfra's copy still carries `clusterResourceWhitelist: [Namespace]` only,
+# and its `deploy-prod.yml` re-applies `argocd/projects/*.yaml` on any push
+# touching that directory. Nothing reconciles the AppProject continuously — the
+# app-of-apps watches `deploy/argocd/applications`, not `deploy/argocd` — so the
+# next such FuzeInfra push silently replaces this file's whitelist with the
+# narrow one. The chart renders a ClusterRole; Argo then invalidates the sync
+# task and ABORTS THE WHOLE SYNC rather than skipping that one resource, and
+# every FuzeFront deploy stops dead. That is the 2026-09-28 incident verbatim.
+# Delegated to FuzeInfra (this repo must never edit it). Analysis and the target
+# architecture that removes the ClusterRole entirely:
+# docs/planning/workload-identity-layering.md.
 #
 # ── THE ONE RULE THAT IS NOT NEGOTIABLE ─────────────────────────────────────
 # `fuzeinfra` IS DELIBERATELY NOT A DESTINATION, and this is the whole reason
@@ -35,10 +52,32 @@
 #
 # Measured instead: every `kind:` rendered by this repo's three charts
 # (deploy/helm/fuzefront, deploy/helm/unleash,
-# FuzeQuality/deploy/helm/fuzequality). The only cluster-scoped one is
-# Namespace. Role and RoleBinding are namespaced, not cluster-scoped.
-# So the whitelist is exactly Namespace. Re-derive it if a chart starts
-# rendering something new — do not widen it back to a wildcard.
+# FuzeQuality/deploy/helm/fuzequality). The chart also renders the
+# workload-authenticator ClusterRole and ClusterRoleBinding so the security
+# service can validate Kubernetes service-account identities. Those exact RBAC
+# kinds and Namespace are the complete cluster-scoped allow-list. Re-derive it if
+# a chart starts rendering something new — do not widen it back to a wildcard.
+#
+# THIS IS NO LONGER A HAND-MAINTAINED CLAIM. `deploy/scripts/
+# check-cluster-scoped-whitelist.sh`, run per values overlay by
+# helm-validate.yml, parses the list BELOW out of this very file and asserts it
+# both ways against the rendered charts: nothing cluster-scoped renders that is
+# not listed here (the 2026-09-28 freeze), and nothing is listed here that no
+# template renders (so a grant cannot outlive the template that justified it).
+#
+# THE TWO RBAC ENTRIES BELOW ARE TEMPORARY, AND ONLY ONE OF THEM IS IRREDUCIBLE.
+# `tokenreviews: create` genuinely requires a ClusterRole — TokenReview is a
+# non-namespaced virtual resource with no namespaced form. But a consumer holding
+# it means this product's ServiceAccount can verify ANY ServiceAccount token in
+# the cluster: FuzeFront's security service is acting as an identity provider for
+# the cluster, which is a PLATFORM role, not an application role. The AppProject
+# blocked it correctly; the mistake is the location of the function. The target
+# is a FuzeInfra-owned identity broker on
+# workload-identity.fuzeinfra.svc.cluster.local, after which these two entries
+# are deleted and this list returns to Namespace-only, permanently. Retirement is
+# a PAIRED change — set securityService.workloadIdentity.clusterRbac.enabled to
+# false AND delete these two entries in the same PR; the guard above fails if you
+# do only one. See docs/planning/workload-identity-layering.md.
 # =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
@@ -66,10 +105,14 @@ spec:
       server: https://kubernetes.default.svc
     # NOTE: `fuzeinfra` is deliberately absent. See the rule above.
   clusterResourceWhitelist:
-    # Narrowed from `*/*`. FuzeQuality's chart renders a Namespace; nothing in
-    # this repo renders any other cluster-scoped kind.
+    # Narrowed from `*/*` to the exact cluster-scoped resources rendered by
+    # this repo's charts.
     - group: ''
       kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
   namespaceResourceWhitelist:
     # Unrestricted is fine here — it is already scoped to the destinations above.
     - group: '*'

@@ -19,8 +19,20 @@
 //     removal criterion: when 100% of orgs are enabled → remove flag and both
 //     guards (route-level here + shell nav in S9).
 //
+//   fuzefront.selection-lists.seed-defaults       (SL5 / SL6)
+//     type: release | default: OFF | owner: izzywdev
+//     Gates BOTH default-seeding consumers (identity.org.created seeding and
+//     selection-lists.seed.requested handling, plus the reconciler). Server-side
+//     only (web_exposed: false). Independent of, and additionally requires, the
+//     master gate above. Read via isSeedDefaultsEnabled(); fails closed.
+//     Registry ref: packages/feature-flags/flag-registry.yaml
+//     removal criterion: seeding ON for all orgs for 30 days with zero
+//     selection-lists.seed.failed in the window -> remove flag + both guards.
+//
 // The in-code default is OFF (release fail-safe) so an Unleash outage degrades
 // safely: the route acts as if the service does not yet exist for the org.
+
+import { logger } from './lib/logger'
 
 export interface FlagContext {
   environment: string
@@ -46,6 +58,12 @@ export const FLAGS = {
    * Release flag, default OFF. See module doc above for full metadata.
    */
   SELECTION_LISTS_SERVICE: 'fuzefront.selection-lists.service',
+  /**
+   * Gates BOTH default-seeding consumers (org-created seeding + seed-requested).
+   * Release flag, default OFF, server-only. Mirrors
+   * `FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS` in @fuzefront/feature-flags.
+   */
+  SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
 } as const
 
 // Test/DI seam — pin flag values in unit tests with an in-memory client.
@@ -123,7 +141,32 @@ export async function isSelectionListsEnabled(
   if (!client) return false // fail-safe: release default OFF
   try {
     return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SERVICE, false, buildContext(ctx))
-  } catch {
+  } catch (err) {
+    logger.warn({ err, flag: FLAGS.SELECTION_LISTS_SERVICE }, 'flag evaluation failed — using fail-safe default OFF')
+    return false
+  }
+}
+
+/**
+ * Release flag (default OFF): is default-list seeding enabled for the org in
+ * `ctx`? Gates BOTH seeding consumers (identity.org.created and
+ * selection-lists.seed.requested) and the reconciler — each must call this per
+ * message with `{ organizationId }` so per-org rollout targeting works.
+ *
+ * Independent of `isSelectionListsEnabled` (seeding ALSO requires the master
+ * gate; callers check both). Fails closed: no client, or any client error,
+ * yields false. Never throws.
+ */
+export async function isSeedDefaultsEnabled(
+  ctx?: Partial<FlagContext>
+): Promise<boolean> {
+  if (isForcedOn(FLAGS.SELECTION_LISTS_SEED_DEFAULTS)) return true
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SEED_DEFAULTS, false, buildContext(ctx))
+  } catch (err) {
+    logger.warn({ err, flag: FLAGS.SELECTION_LISTS_SEED_DEFAULTS }, 'flag evaluation failed — using fail-safe default OFF')
     return false
   }
 }
