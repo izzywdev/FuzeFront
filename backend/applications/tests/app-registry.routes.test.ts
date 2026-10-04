@@ -224,6 +224,7 @@ import { fromUuid } from '@izzywdev/fuzefront-identity'
 import { setPermitClient } from '../src/app-registry/permit'
 import { setAppRegistryEmitter } from '../src/app-registry/events'
 import { setFlagClient, FLAGS } from '../src/app-registry/flags'
+import { setCreatorResolver } from '../src/app-registry/app-dto'
 import appRegistryRouter from '../src/routes/app-registry'
 import { NAV_SECTIONS } from '../src/app-registry/manifest.schema'
 
@@ -246,10 +247,12 @@ setAppRegistryEmitter(stubEmitter)
 // OFF-path test flips it), kafka kill-switch ON.
 let writeFlag = true
 let kafkaFlag = true
+let creatorFlag = false
 setFlagClient({
   getBooleanValue: async (key: string, def: boolean) => {
     if (key === FLAGS.V1_REGISTRY_WRITE) return writeFlag
     if (key === FLAGS.KAFKA_EVENTS_KILL_SWITCH) return kafkaFlag
+    if (key === FLAGS.CREATOR_OWNERSHIP) return creatorFlag
     return def
   },
 })
@@ -305,6 +308,7 @@ beforeEach(() => {
   permitGrant = true
   writeFlag = true
   kafkaFlag = true
+  creatorFlag = false
 })
 
 describe('registerApp', () => {
@@ -878,3 +882,133 @@ function mkRow(
     nav_order: nav?.order ?? 999,
   }
 }
+
+
+// ── Creator ownership ("org-held, user-originated") — flag
+// fuzefront.apps.creator-ownership. created_by_user_id is server-set,
+// informational, immutable; authority stays in Permit + org role.
+describe('creator ownership', () => {
+  const creatorUuid = '33333333-3333-4333-8333-333333333333'
+  const human = { id: creatorUuid, roles: ['user'] }
+  const assigned: any[] = []
+  const permitWithApi = {
+    check: async () => true,
+    api: {
+      users: { assignRole: async (d: any) => { assigned.push(d) } },
+      resourceInstances: { create: async () => undefined },
+    },
+  }
+  let creatorInfo = { isCurrentMember: true, displayName: 'Casey Creator' as string | null }
+
+  beforeEach(() => {
+    assigned.length = 0
+    creatorInfo = { isCurrentMember: true, displayName: 'Casey Creator' }
+    ;(store as any).memberships.push({ user_id: creatorUuid, organization_id: orgA, status: 'active', role: 'member' })
+    setPermitClient(permitWithApi as any)
+    setCreatorResolver({ resolve: async () => creatorInfo })
+  })
+  afterEach(() => {
+    setPermitClient({ check: async () => permitGrant })
+    setCreatorResolver(null)
+  })
+
+  const register = (user: any, extra: any = {}) =>
+    request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser(user))
+      .send({ manifest: manifest('mine'), organizationId: ORG_A_WIRE, ...extra })
+
+  it('flag ON: a human registrant becomes created_by, gets the creator role, DTO exposes createdBy/creator', async () => {
+    creatorFlag = true
+    const res = await register(human)
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBe(creatorUuid)
+    expect(assigned).toEqual([
+      { user: creatorUuid, role: 'creator', resource_instance: 'App:mine', tenant: orgA },
+    ])
+    expect(res.body.createdBy).toBe(fromUuid('user', creatorUuid))
+    expect(res.body.creator).toEqual({
+      userId: fromUuid('user', creatorUuid),
+      isCurrentMember: true,
+      displayName: 'Casey Creator',
+    })
+    expect(res.body).not.toHaveProperty('createdByUserId') // internal field never leaks
+  })
+
+  it('flag ON: a former member is reduced to a "former member" signal (no name/contact)', async () => {
+    creatorFlag = true
+    await register(human)
+    creatorInfo = { isCurrentMember: false, displayName: null }
+    const res = await request(app).get('/api/v1/app-registry/apps/mine').set(asUser(userA))
+    expect(res.body.creator).toEqual({ userId: fromUuid('user', creatorUuid), isCurrentMember: false })
+  })
+
+  it('flag OFF: nothing written, no role assigned, DTO byte-identical (no createdBy/creator keys)', async () => {
+    creatorFlag = false
+    const res = await register(human)
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBeUndefined()
+    expect(assigned).toHaveLength(0)
+    expect(res.body).not.toHaveProperty('createdBy')
+    expect(res.body).not.toHaveProperty('creator')
+    expect(res.body).not.toHaveProperty('createdByUserId')
+    const got = await request(app).get('/api/v1/app-registry/apps/mine').set(asUser(userA))
+    expect(got.body).not.toHaveProperty('creator')
+  })
+
+  it('flag ON: the consumer service account is never a creator; a platform-registered app has createdBy null', async () => {
+    creatorFlag = true
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser({ id: 'consumer-registration', roles: ['admin'] }))
+      .send({ manifest: manifest('first-party') })
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBeUndefined()
+    expect(assigned).toHaveLength(0)
+    expect(res.body.createdBy).toBeNull()
+    expect(res.body.creator).toBeNull()
+  })
+
+  it('never accepts createdBy / created_by_user_id from the body (strict -> 400)', async () => {
+    creatorFlag = true
+    for (const k of ['createdBy', 'created_by_user_id', 'createdByUserId']) {
+      const res = await register(human, { [k]: 'usr_x' })
+      expect(res.status).toBe(400)
+    }
+    const inManifest = await register(human, { manifest: { ...manifest('mine'), createdBy: 'usr_x' } })
+    expect(inManifest.status).toBe(400)
+    expect(store.rows).toHaveLength(0)
+  })
+
+  it('fail-soft: a Permit assignment error never fails registration', async () => {
+    creatorFlag = true
+    setPermitClient({
+      check: async () => true,
+      api: { users: { assignRole: async () => { throw new Error('permit down') } } },
+    } as any)
+    const res = await register(human)
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBe(creatorUuid)
+  })
+
+  it('PUT cannot change created_by_user_id and authority does not depend on it', async () => {
+    creatorFlag = true
+    await register(human)
+    const before = store.rows[0].created_by_user_id
+    // userA is an org admin in orgA but NOT the creator: still mutates (Permit + org role).
+    const put = await request(app)
+      .put('/api/v1/app-registry/apps/mine')
+      .set(asUser(userA))
+      .send(manifest('mine', { description: 'edited' }))
+    expect(put.status).toBe(200)
+    expect(store.rows[0].created_by_user_id).toBe(before)
+    // …and the creator is denied once Permit denies, regardless of the column.
+    permitGrant = false
+    setPermitClient({ check: async () => permitGrant })
+    const denied = await request(app)
+      .put('/api/v1/app-registry/apps/mine')
+      .set(asUser(human))
+      .send(manifest('mine', { description: 'again' }))
+    expect(denied.status).toBe(403)
+  })
+})

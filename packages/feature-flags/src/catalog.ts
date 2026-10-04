@@ -154,6 +154,27 @@ export const FLAG_KEYS = {
    */
   APPS_PORTAL_CATALOG: 'fuzefront.apps.portal-catalog',
   /**
+   * "Build your application" — the build-session API
+   * (/api/v1/app-registry/build-sessions*) and the Applications-page card.
+   * Default OFF. Release flag. Owner: backend-engineer.
+   * Removal criterion: build-with-agent is 100% rolled out and stable for one
+   * release cycle (then delete the flag + the off-path 503 branch).
+   */
+  APPS_BUILD_WITH_AGENT: 'fuzefront.apps.build-with-agent',
+  /**
+   * Creator ownership ("org-held, user-originated"): created_by_user_id, the
+   * App#creator Permit role, and createdBy/creator on App DTOs. Default OFF.
+   * Release flag. Owner: backend-engineer. Authority stays in Permit.
+   * Removal criterion: 100% rolled out and the Permit App#creator policy is live.
+   */
+  APPS_CREATOR_OWNERSHIP: 'fuzefront.apps.creator-ownership',
+  /**
+   * Marketplace publication requests (submit/approve/reject/status). Default
+   * OFF. Release flag. Owner: backend-engineer.
+   * Removal criterion: 100% rolled out and stable for one release cycle.
+   */
+  APPS_MARKETPLACE_PUBLISHING: 'fuzefront.apps.marketplace-publishing',
+  /**
    * FF-EPIC-14 — portal billing: the reseller Stripe-connect surface
    * (`PortalBillingFlow`, `/portal/admin/billing`). Read in the browser via
    * `useFlag()` in `frontend/src/pages/PortalBillingPage.tsx`. Default OFF.
@@ -291,6 +312,11 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   // would move server-side evaluation but leave the console/billing UI dark.
   { key: FLAG_KEYS.IDENTITY_PORTAL_SCOPED_USERS, type: 'release', default: false },
   { key: FLAG_KEYS.APPS_PORTAL_CATALOG, type: 'release', default: false },
+  // "Build your application" + creator ownership + marketplace publishing —
+  // read by the Applications page / app detail UI as well as the server.
+  { key: FLAG_KEYS.APPS_BUILD_WITH_AGENT, type: 'release', default: false },
+  { key: FLAG_KEYS.APPS_CREATOR_OWNERSHIP, type: 'release', default: false },
+  { key: FLAG_KEYS.APPS_MARKETPLACE_PUBLISHING, type: 'release', default: false },
   { key: FLAG_KEYS.BILLING_RESELLER_CONNECT, type: 'release', default: false },
 
   // ── Plan-tier permission flags ─────────────────────────────────────────────
