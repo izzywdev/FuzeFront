@@ -28,13 +28,16 @@
 //   from: md5(`${name}|${description ?? ''}`). When the source changes the hash
 //   no longer matches, marking the row stale and eligible for autofill refresh.
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
 import { createHash } from 'crypto';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
 import { requireAuthzCheck } from '../middleware/authz';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // Supported BCP-47 locales — must stay in sync with openapi.yaml Locale enum
 // and packages/i18n/src/languages.ts.

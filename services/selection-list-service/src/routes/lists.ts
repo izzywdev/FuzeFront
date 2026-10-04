@@ -21,16 +21,19 @@
 //   DELETE /:listId?purge=true — hard deletes the row (translations first)
 //   POST   /:listId/archive   — always archives (soft-delete)
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkListQuota, QuotaExceededError } from '../services/quota.service';
-import { requireAuthzCheck, grantListOwner, filterReadable, isAuthzEnabled, getAuthzClient, bearer } from '../middleware/authz';
+import { requireAuthzCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -432,12 +435,6 @@ router.post('/', requireAuthzCheck('SelectionList', 'add_value'), enforceListQuo
   // Mint the id — never accept one from the client (governance/identifier-standard.md §1)
   const id = mintId('selectionList');
 
-  const token = bearer(req);
-  if (!token) {
-    res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Missing bearer token.' });
-    return;
-  }
-
   try {
     // Insert list row + seed source-locale translation + grant the creator
     // list-owner, all in one transaction.
@@ -473,7 +470,8 @@ router.post('/', requireAuthzCheck('SelectionList', 'add_value'), enforceListQuo
       // truth), mirror row second, both inside this transaction — if the grant
       // throws, the list row rolls back, so no list is ever created that
       // nobody (but an org admin) can administer.
-      await grantListOwner(req.userId as string, req.orgId as string, id, req.userId as string, token, trx);
+      // (Written with this service's machine identity, not the caller's token.)
+      await grantListOwner(req.userId as string, req.orgId as string, id, req.userId as string, trx);
     });
 
     // Fetch the newly created list (with translation) to return the canonical shape

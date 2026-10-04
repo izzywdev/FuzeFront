@@ -1,23 +1,71 @@
 // index.ts — entry point for selection-list-service.
 //
 // Startup sequence:
+//   0. Install the process-level failure policy (lib/http.ts installProcessHandlers).
 //   1. Validate required env vars (JWT_SECRET).
 //   2. Run pending DB migrations (idempotent knex migrate:latest).
-//   3. Start the HTTP server on $PORT (default 3011).
-//   4. Register SIGTERM/SIGINT handlers for graceful shutdown.
+//   3. Initialize the family flag client (Unleash via @fuzefront/feature-flags;
+//      bounded, never fatal — fail-closed OFF when unreachable/unconfigured).
+//   4. Start the HTTP server on $PORT (default 3011).
+//   5. Start the Kafka lifecycle consumers (non-fatal).
+//   6. Register SIGTERM/SIGINT handlers for graceful shutdown.
 //
 // The migration step runs in-process so the pre-sync Helm Job (which runs
 // `node dist/db/migrate.js` directly) and the app start-up share the same
 // migration runner. If the Job is used the migration step here is a no-op
 // (knex skips already-applied migrations).
 
+import type { Server } from 'http';
 import { createApp } from './app';
 import { db } from './db';
 import { run as runMigrations } from './db/migrate';
 import { startLifecycleConsumers } from './events/consumer';
+import { closeFeatureFlags, initFeatureFlags } from './lib/featureFlags';
+import { installProcessHandlers } from './lib/http';
 import { logger } from './lib/logger';
+import { logMachineIdentityStatus } from './lib/machineIdentity';
+
+/** Hard ceiling on graceful shutdown; after this the process exits regardless. */
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+let server: Server | undefined;
+let disconnectConsumers: (() => Promise<void>) | null = null;
+let shuttingDown = false;
+
+/**
+ * Graceful shutdown: stop consuming, stop accepting connections and let
+ * in-flight requests finish, stop flag polling, close the DB pool, exit.
+ * Idempotent (a second signal or an exception during shutdown is a no-op) and
+ * bounded by SHUTDOWN_TIMEOUT_MS.
+ */
+async function shutdown(reason: string, exitCode = 0): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ reason, exitCode }, 'Shutting down');
+
+  const force = setTimeout(() => {
+    logger.error({ reason }, 'graceful shutdown timed out — forcing exit');
+    process.exit(exitCode || 1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  force.unref();
+
+  if (disconnectConsumers) {
+    await disconnectConsumers().catch((err) => logger.warn({ err }, 'Kafka disconnect failed during shutdown'));
+  }
+  await closeFeatureFlags();
+  await new Promise<void>((resolve) => {
+    if (!server) return resolve();
+    server.close(() => resolve());
+  });
+  await db.destroy().catch((err) => logger.warn({ err }, 'DB pool close failed during shutdown'));
+  process.exit(exitCode);
+}
 
 async function main(): Promise<void> {
+  // First: from here on, an unhandled rejection is logged (never silent, never
+  // fatal) and an uncaught exception shuts down gracefully with exit 1.
+  installProcessHandlers({ shutdown });
+
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
     logger.fatal('JWT_SECRET is not set — refusing to start');
@@ -38,16 +86,22 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Release flag provider (rollout runbook B4). Bounded and non-fatal: if Unleash
+  // is down/unconfigured every flag evaluates to its fail-safe default (OFF).
+  await initFeatureFlags();
+
+  // Make a missing machine identity (access-grant writes) loud at boot.
+  logMachineIdentityStatus();
+
   const app = createApp();
   const port = parseInt(process.env.PORT || '3011', 10);
 
-  const server = app.listen(port, () => {
+  server = app.listen(port, () => {
     logger.info({ port, logLevel: logger.level }, 'Listening');
   });
 
   // Start Kafka lifecycle consumers (fire-and-forget; errors are logged but do
   // not kill the HTTP server — a Kafka outage must not bring the API down).
-  let disconnectConsumers: (() => Promise<void>) | null = null;
   if (process.env.KAFKA_BROKERS || process.env.NODE_ENV === 'production') {
     startLifecycleConsumers()
       .then(({ disconnect }) => {
@@ -59,19 +113,8 @@ async function main(): Promise<void> {
       });
   }
 
-  const shutdown = async (): Promise<void> => {
-    logger.info('Shutting down');
-    if (disconnectConsumers) {
-      await disconnectConsumers().catch(() => {});
-    }
-    server.close(async () => {
-      await db.destroy().catch(() => {});
-      process.exit(0);
-    });
-  };
-
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
 main().catch((err) => {

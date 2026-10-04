@@ -16,6 +16,14 @@
 // (list_id, user_id, role, granted_by, granted_at, updated_at). Errors use the
 // contract's codes: 400 VALIDATION_ERROR, 404 NOT_FOUND, 409 CONFLICT.
 //
+// Who authenticates what. Decisions about the CALLER (and the membership probe
+// on the target user) use the end user's bearer token. Grant/revoke WRITES use
+// this service's machine identity (lib/machineIdentity.ts, client_credentials,
+// scope `authz:admin`) — never the end user's token: the Security API denies
+// non-admin human grant calls (review C-1), and the user must not authorize
+// their own role. The route-level `manage_access` check above is what decides
+// whether the human may ask for the change at all.
+//
 // Write ordering (a thrown Security API call must never leave the mirror
 // claiming a change that did not happen): every handler runs inside ONE
 // transaction that takes a row lock on the list's access rows, performs the
@@ -28,13 +36,17 @@
 //   - Cursor: opaque base64url encoding of the last user_id in the page.
 //   - Deterministic order: user_id ASC (stable under concurrent writes).
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
+import { getGrantToken } from '../lib/machineIdentity';
 import { authMiddleware } from '../middleware/auth';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -239,6 +251,10 @@ router.put(
         return;
       }
 
+      // Resolved BEFORE the transaction opens: a missing/failed machine identity
+      // fails closed (-> 500 below) without taking a row lock first.
+      const machineToken = await getGrantToken();
+
       const row = await db.transaction(async (trx) => {
         // Serialise every access mutation on this list (guard + writes).
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
@@ -274,7 +290,7 @@ router.put(
               role: existing['role'],
               resource: { type: 'SelectionList', key: listId },
             },
-            token,
+            machineToken,
           );
         }
 
@@ -289,7 +305,7 @@ router.put(
             role,
             resource: { type: 'SelectionList', key: listId },
           },
-          token,
+          machineToken,
         );
 
         // Mirror upsert. A previously revoked row is a NEW grant (granted_at
@@ -344,17 +360,14 @@ router.delete(
     const { listId, userId } = req.params;
     const orgId = req.orgId as string;
 
-    const token = bearer(req);
-    if (!token) {
-      res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Missing bearer token.' });
-      return;
-    }
-
     try {
       if (!(await listExistsInOrg(listId, orgId))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
         return;
       }
+
+      // Machine identity resolved BEFORE the transaction opens (fail closed).
+      const machineToken = await getGrantToken();
 
       await db.transaction(async (trx) => {
         // Serialise every access mutation on this list (guard + writes).
@@ -395,7 +408,7 @@ router.delete(
             role: existing['role'],
             resource: { type: 'SelectionList', key: listId },
           },
-          token,
+          machineToken,
         );
 
         await trx('selection_list_access')

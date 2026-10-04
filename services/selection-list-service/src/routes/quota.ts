@@ -10,13 +10,14 @@
 // Feature flag: fuzefront.selection-lists.service (release, default OFF).
 // Return 404 when the flag is OFF so the service is invisible until enabled.
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
 import { getLog } from '../lib/logger';
 import { getQuotaUsage } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
 import { requireAuthzCheck } from '../middleware/authz';
 
-const router = Router();
+const router = createRouter();
 
 /**
  * GET /v1/selection-lists/quota
