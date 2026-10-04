@@ -1,7 +1,7 @@
 # fuzefront-selection-list-client
 
 Python client for the FuzeFront SelectionList service. Peer of
-`@fuzefront/selection-list-client` (Node). Zero runtime dependencies —
+`@fuzeone/selection-list-client` (Node). Zero runtime dependencies —
 uses `urllib.request` (stdlib only).
 
 ## Install
