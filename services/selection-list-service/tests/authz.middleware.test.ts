@@ -49,6 +49,7 @@ import {
   filterReadable,
 } from '../src/middleware/authz';
 import { db } from '../src/db';
+import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -285,9 +286,17 @@ describe('requireAuthzCheck — flag ON', () => {
 // ─── grantListOwner ───────────────────────────────────────────────────────────
 describe('grantListOwner', () => {
   const mockDb = db as jest.MockedFunction<any>;
+  // Grants are written with the service's MACHINE token, never the caller's
+  // (review C-1 / lib/machineIdentity.ts). A mocked provider stands in for the
+  // client_credentials issuance.
+  const getToken = jest.fn();
+
+  afterAll(() => _setGrantTokenProviderForTesting(null));
 
   beforeEach(() => {
     jest.clearAllMocks();
+    getToken.mockResolvedValue('machine-token');
+    _setGrantTokenProviderForTesting({ getToken });
     // Restore Knex chain mock after clearAllMocks.
     mockDb.mockImplementation(() => mockDb);
     mockDb.insert = jest.fn(() => mockDb);
@@ -311,7 +320,7 @@ describe('grantListOwner', () => {
       listGrants: jest.fn(),
     } as unknown as AuthzClient);
 
-    await grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin', 'caller-token');
+    await grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin');
 
     // The resource MUST reach the wire — omitting it silently widens a
     // list-scoped grant to tenant-wide (the exact bug this test guards).
@@ -322,7 +331,8 @@ describe('grantListOwner', () => {
         role: 'list-owner',
         resource: { type: 'SelectionList', key: 'sl_mylist' },
       },
-      'caller-token',
+      // The MACHINE token — not any end-user token.
+      'machine-token',
     );
     expect(mockDb.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -354,12 +364,31 @@ describe('grantListOwner', () => {
     } as unknown as AuthzClient);
 
     await expect(
-      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin', 'caller-token'),
+      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin'),
     ).rejects.toThrow();
 
     // The mirror upsert must never be reached — a caller retrying/observing
     // this failure must not find a mirror row claiming a grant that never
     // actually happened in the authorization backend.
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it('fails closed — no grant call, no mirror write — when the machine token cannot be obtained', async () => {
+    getToken.mockRejectedValue(new Error('token issuance failed'));
+    const grantMock = jest.fn();
+    _setAuthzClientForTesting({
+      check: jest.fn(),
+      bulkCheck: jest.fn(),
+      grant: grantMock,
+      revoke: jest.fn(),
+      listGrants: jest.fn(),
+    } as unknown as AuthzClient);
+
+    await expect(
+      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin'),
+    ).rejects.toThrow('token issuance failed');
+
+    expect(grantMock).not.toHaveBeenCalled();
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 });

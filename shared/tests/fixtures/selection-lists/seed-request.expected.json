@@ -1,0 +1,33 @@
+{
+  "requestId": "fuzecrm:org_01h455vb4pex5vsknk084sn02q:crm-defaults:v2",
+  "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+  "scope": "org",
+  "source": { "app": "fuzecrm", "service": "crm-service" },
+  "pack": { "key": "crm-defaults", "version": 2 },
+  "trigger": "app-installed",
+  "attestation": { "kind": "service-token", "token": "opaque.service.token" },
+  "lists": [
+    {
+      "key": "fuzecrm-deal-stages",
+      "sourceLocale": "en",
+      "name": "Deal stages",
+      "description": "Pipeline stages for CRM deals.",
+      "translations": [{ "locale": "es", "name": "Etapas del trato" }],
+      "items": [
+        { "code": "LEAD", "label": "Lead" },
+        { "code": "QUALIFIED", "label": "Qualified", "translations": [{ "locale": "es", "label": "Calificado" }] },
+        { "code": "WON", "label": "Won", "description": "Closed and won." },
+        { "code": "LOST", "label": "Lost" }
+      ]
+    },
+    {
+      "key": "fuzecrm-lead-sources",
+      "sourceLocale": "en",
+      "name": "Lead sources",
+      "items": [
+        { "code": "WEB", "label": "Website" },
+        { "code": "REFERRAL", "label": "Referral" }
+      ]
+    }
+  ]
+}

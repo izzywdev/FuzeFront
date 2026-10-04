@@ -431,10 +431,27 @@ jobs:
     timeout-minutes: 30
     needs: build
 
-    # selection-list-service is a root workspace member. Its tests mock the DB
-    # (jest.mock('../src/db', ...)) so no Postgres service container is needed.
+    # selection-list-service is a root workspace member. Most of its tests mock
+    # the DB (jest.mock('../src/db', ...)); tests/handlers.db.test.ts runs the
+    # Kafka lifecycle handlers against REAL Postgres (a mocked knex cannot catch a
+    # wrong column name -- review M-3), so a postgres service container is
+    # provided and SLS_TEST_DATABASE_URL points the suite at it (CI=true makes a
+    # missing DB a failure, never a skip).
     # It imports @fuzefront/auth (file: dep) whose types point at dist/index.d.ts,
     # so @fuzefront/auth must be built before the type-check and jest run.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: selection_list_service_unit
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
       - name: Checkout code
@@ -463,12 +480,24 @@ jobs:
         # pattern as @fuzefront/auth.
         run: npm run -w @fuzefront/shared build
 
+      - name: Build @fuzefront/security-client + @fuzefront/service-auth (d.ts for type-check)
+        # src/lib/machineIdentity.ts mints the service's client_credentials token
+        # with @fuzefront/service-auth (grant/revoke no longer use the end user's
+        # token). Its types point at dist/index.d.ts, which in turn re-exports
+        # types from @fuzefront/security-client's dist.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+
       - name: Type-check selection-list-service
         run: npm run -w selection-list-service build
 
       - name: Run selection-list-service unit tests
-        # 9 test files covering all routes, middleware, and the quota service.
-        # Tests mock the DB and the feature-flag client — no external services.
+        # Route/middleware/quota/handler/flag/probe suites mock the DB and the
+        # flag + token clients (no Unleash / Security API); the lifecycle
+        # handlers additionally run against the postgres service above.
+        env:
+          SLS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/selection_list_service_unit
         run: npm run -w selection-list-service test
 
   selection-list-service-e2e:
@@ -625,6 +654,10 @@ jobs:
         run: npm run -w @fuzefront/auth build
       - name: Build @fuzefront/shared (d.ts for Kafka consumer type-check)
         run: npm run -w @fuzefront/shared build
+      - name: Build @fuzefront/security-client + @fuzefront/service-auth (d.ts for type-check)
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
       - name: Build selection-list-service
         run: npm run -w selection-list-service build
       - name: Run DB migrations
@@ -695,6 +728,12 @@ jobs:
           FLAGS_FORCE_ON: fuzefront.selection-lists.service
           SECURITY_SERVICE_URL: http://localhost:3002
           FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
+          # Machine identity for Security API grant/revoke (lib/machineIdentity.ts).
+          # CI-only FIXTURE values the stand-in Security API recognises
+          # (helpers/fake-security-api.mjs); not credentials for anything real. The
+          # stand-in answers 403 to any grant written with a user token.
+          SELECTION_LIST_SERVICE_CLIENT_ID: selection-list-service-ci
+          SELECTION_LIST_SERVICE_CLIENT_SECRET: ci-only-fixture-client-secret
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'

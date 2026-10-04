@@ -85,7 +85,8 @@ describe('PUT /v1/selection-lists/{listId}/translations/{locale}', () => {
 
   it('returns 404 for a non-existent list', async () => {
     const { status } = await rawFetch(
-      '/v1/selection-lists/sl_01hnonexistent000000000000/translations/fr',
+      // contract-valid, never-minted id (a malformed one is a 400 at the edge)
+      '/v1/selection-lists/front_sl_01hnonexistent000000000000/translations/fr',
       {
         method: 'PUT',
         token: ownerToken(),

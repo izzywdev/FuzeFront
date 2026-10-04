@@ -5,18 +5,20 @@
 // fixed set of four quota scopes, not a user-data collection.
 //
 // Auth: requires req.orgId from the JWT (authMiddleware must run first).
-// AuthZ: requireAuthzCheck(SelectionList, read) on the route.
+// AuthZ: requireCatalogCheck('read_quota') — tenant-level SelectionListCatalog
+// resource, keyless (review H-3); never the per-list `read` action.
 //
 // Feature flag: fuzefront.selection-lists.service (release, default OFF).
 // Return 404 when the flag is OFF so the service is invisible until enabled.
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
 import { getLog } from '../lib/logger';
 import { getQuotaUsage } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
-import { requireAuthzCheck } from '../middleware/authz';
+import { requireCatalogCheck } from '../middleware/authz';
 
-const router = Router();
+const router = createRouter();
 
 /**
  * GET /v1/selection-lists/quota
@@ -27,7 +29,7 @@ const router = Router();
  * x-pagination: exempt — a fixed, closed set of four quota scopes for one
  * org; not a user-data collection that grows over time.
  */
-router.get('/quota', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
+router.get('/quota', requireCatalogCheck('read_quota'), async (req: Request, res: Response): Promise<void> => {
   // Feature flag gate (release flag, default OFF — ships dark until enabled).
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });

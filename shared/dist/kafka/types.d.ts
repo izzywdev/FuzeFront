@@ -22,6 +22,23 @@ export declare const TOPICS: {
     readonly BILLING_TENANT_REGISTERED: "billing.tenant.registered";
     readonly BILLING_PAYMENT_METHOD_UPDATED: "billing.payment_method.updated";
     readonly PORTAL_CREATED: "portal.created";
+    readonly CHAT_RESPONSE_CHUNK: "chat.response.chunk";
+    readonly SELECTION_LISTS_LIST_CREATED: "selection-lists.list.created";
+    readonly SELECTION_LISTS_LIST_UPDATED: "selection-lists.list.updated";
+    readonly SELECTION_LISTS_LIST_ARCHIVED: "selection-lists.list.archived";
+    readonly SELECTION_LISTS_LIST_DELETED: "selection-lists.list.deleted";
+    readonly SELECTION_LISTS_ITEM_CREATED: "selection-lists.item.created";
+    readonly SELECTION_LISTS_ITEM_UPDATED: "selection-lists.item.updated";
+    readonly SELECTION_LISTS_ITEM_ARCHIVED: "selection-lists.item.archived";
+    readonly SELECTION_LISTS_ITEM_DELETED: "selection-lists.item.deleted";
+    readonly SELECTION_LISTS_ITEM_REORDERED: "selection-lists.item.reordered";
+    readonly SELECTION_LISTS_TRANSLATION_UPSERTED: "selection-lists.translation.upserted";
+    readonly SELECTION_LISTS_TRANSLATION_DELETED: "selection-lists.translation.deleted";
+    readonly SELECTION_LISTS_ACCESS_GRANTED: "selection-lists.access.granted";
+    readonly SELECTION_LISTS_ACCESS_REVOKED: "selection-lists.access.revoked";
+    readonly SELECTION_LISTS_SEED_REQUESTED: "selection-lists.seed.requested";
+    readonly SELECTION_LISTS_SEED_COMPLETED: "selection-lists.seed.completed";
+    readonly SELECTION_LISTS_SEED_FAILED: "selection-lists.seed.failed";
 };
 export type TopicName = (typeof TOPICS)[keyof typeof TOPICS];
 /** Envelope wrapping every event published on FuzeFront Kafka topics */
