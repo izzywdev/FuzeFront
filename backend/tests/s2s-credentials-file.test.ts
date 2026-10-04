@@ -110,8 +110,15 @@ describe('writeCredentialsEnvFile', () => {
     ['clientSecret', { clientId: 'cid', clientSecret: '' }],
   ])('refuses to write an empty %s', (name, creds) => {
     const path = join(dir(), 's2s.env')
+    // A plain string, not `new RegExp(...)`. Jest treats a string argument to
+    // toThrow() as a SUBSTRING match, which is exactly as strict as the
+    // unanchored, metacharacter-free regex this replaces — and it drops the
+    // dynamically-constructed RegExp that Semgrep's
+    // javascript.lang.security.audit.detect-non-literal-regexp rightly flags
+    // (alert 2328). Harmless here because `name` is a hardcoded table value,
+    // but there is no reason to build a regex at all.
     expect(() => writeCredentialsEnvFile(path, creds)).toThrow(
-      new RegExp(`${name} is empty`)
+      `${name} is empty`
     )
   })
 
