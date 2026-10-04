@@ -70,6 +70,15 @@ jest.mock('../src/middleware/authz', () => ({
   grantListOwner: (...args: any[]) => mockGrantListOwner(...args),
 }));
 
+// ─── Outbox emitters (events/*) ───────────────────────────────────────────────
+// The routes write their outbox events through events/emitters (same transaction).
+// These suites pin ROUTE behaviour against a mocked knex, so the event layer is a
+// stub here; its real behaviour (snapshots, revisions, atomicity with the data
+// change, exactly-one-topic-per-route) is covered against real Postgres in
+// tests/outbox.db.test.ts and tests/outbox.routes.db.test.ts.
+jest.mock('../src/events/outbox');
+jest.mock('../src/events/emitters');
+
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
 // Test-only signing secret (never a production credential); overridable via
@@ -507,11 +516,10 @@ describe('GET /v1/selection-lists/:listId', () => {
 
 describe('PATCH /v1/selection-lists/:listId', () => {
   it('updates name and returns 200', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }] }) // fetch existing
-      .mockResolvedValueOnce({ rows: [{ ...LIST_ROW, name: 'Countries Updated' }] }); // fetch after update
+    mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, name: 'Countries Updated' }] }); // fetch after update
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }] }) // fetch existing (in the txn)
       .mockResolvedValueOnce({ rows: [] }) // UPDATE selection_lists
       .mockResolvedValueOnce({ rows: [] }); // UPSERT translation
 
@@ -543,7 +551,7 @@ describe('PATCH /v1/selection-lists/:listId', () => {
   });
 
   it('returns 404 when list not found', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [] }); // fetch existing returns empty
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] }); // fetch existing returns empty
 
     const res = await request(app)
       .patch(`/v1/selection-lists/front_sl_nonexistent0000000000`)
@@ -555,10 +563,9 @@ describe('PATCH /v1/selection-lists/:listId', () => {
   });
 
   it('returns 409 on duplicate key', async () => {
-    mockRaw.mockResolvedValueOnce({
-      rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }],
-    });
-    mockTrxRaw.mockRejectedValueOnce({ code: '23505' });
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }] })
+      .mockRejectedValueOnce({ code: '23505' }); // UPDATE collides on (organization_id, key)
 
     const res = await request(app)
       .patch(`/v1/selection-lists/${TEST_LIST_ID}`)
@@ -574,10 +581,10 @@ describe('PATCH /v1/selection-lists/:listId', () => {
 
 describe('DELETE /v1/selection-lists/:listId', () => {
   it('archives (soft-delete) by default and returns 200', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists
-      .mockResolvedValueOnce({ rows: [] })                      // UPDATE archived
-      .mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists (in the txn)
+      .mockResolvedValueOnce({ rows: [] });                    // UPDATE archived
+    mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
 
     const res = await request(app)
       .delete(`/v1/selection-lists/${TEST_LIST_ID}`)
@@ -588,9 +595,8 @@ describe('DELETE /v1/selection-lists/:listId', () => {
   });
 
   it('hard-deletes with purge=true and returns 204', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }); // check exists
-
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists (in the txn)
       .mockResolvedValueOnce({ rows: [] }) // DELETE item translations
       .mockResolvedValueOnce({ rows: [] }) // DELETE items
       .mockResolvedValueOnce({ rows: [] }) // DELETE list translations
@@ -611,7 +617,7 @@ describe('DELETE /v1/selection-lists/:listId', () => {
   });
 
   it('returns 404 when list not found', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [] }); // check exists returns empty
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] }); // check exists returns empty
 
     const res = await request(app)
       .delete(`/v1/selection-lists/front_sl_nonexistent0000000000`)
@@ -626,10 +632,10 @@ describe('DELETE /v1/selection-lists/:listId', () => {
 
 describe('POST /v1/selection-lists/:listId/archive', () => {
   it('archives the list and returns 200', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists
-      .mockResolvedValueOnce({ rows: [] })                      // UPDATE archived
-      .mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists (in the txn)
+      .mockResolvedValueOnce({ rows: [] });                    // UPDATE archived
+    mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
 
     const res = await request(app)
       .post(`/v1/selection-lists/${TEST_LIST_ID}/archive`)
@@ -640,7 +646,7 @@ describe('POST /v1/selection-lists/:listId/archive', () => {
   });
 
   it('returns 404 when list not found', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [] });
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] });
 
     const res = await request(app)
       .post(`/v1/selection-lists/front_sl_nonexistent0000000000/archive`)

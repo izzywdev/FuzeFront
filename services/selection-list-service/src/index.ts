@@ -8,6 +8,8 @@
 //      bounded, never fatal — fail-closed OFF when unreachable/unconfigured).
 //   4. Start the HTTP server on $PORT (default 3011).
 //   5. Start the Kafka lifecycle consumers (non-fatal).
+//   5b. Start the transactional-outbox relay, ONLY when KAFKA_BROKERS is set
+//       (non-fatal; events otherwise wait durably in event_outbox).
 //   6. Register SIGTERM/SIGINT handlers for graceful shutdown.
 //
 // The migration step runs in-process so the pre-sync Helm Job (which runs
@@ -20,6 +22,7 @@ import { createApp } from './app';
 import { db } from './db';
 import { run as runMigrations } from './db/migrate';
 import { startLifecycleConsumers } from './events/consumer';
+import { OutboxRelayFromEnvHandle, startOutboxRelayFromEnv } from './events/outboxPublisher';
 import { closeFeatureFlags, initFeatureFlags } from './lib/featureFlags';
 import { installProcessHandlers } from './lib/http';
 import { logger } from './lib/logger';
@@ -30,6 +33,7 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 let server: Server | undefined;
 let disconnectConsumers: (() => Promise<void>) | null = null;
+let outboxRelay: OutboxRelayFromEnvHandle | null = null;
 let shuttingDown = false;
 
 /**
@@ -49,6 +53,11 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
   force.unref();
 
+  if (outboxRelay) {
+    // Let the in-flight relay pass finish its current row, then release the producer.
+    await outboxRelay.stop().catch((err) => logger.warn({ err }, 'outbox relay stop failed during shutdown'));
+    await outboxRelay.disconnect().catch((err) => logger.warn({ err }, 'outbox producer disconnect failed during shutdown'));
+  }
   if (disconnectConsumers) {
     await disconnectConsumers().catch((err) => logger.warn({ err }, 'Kafka disconnect failed during shutdown'));
   }
@@ -111,6 +120,15 @@ async function main(): Promise<void> {
       .catch((err) => {
         logger.error({ err }, 'Failed to start Kafka consumers (non-fatal)');
       });
+  }
+
+  // Transactional-outbox relay: publishes the events the routes wrote in their
+  // own transactions. Only when Kafka is configured; never fatal (a relay error
+  // is contained inside the relay and cannot take the HTTP server down).
+  try {
+    outboxRelay = startOutboxRelayFromEnv({ db, logger });
+  } catch (err) {
+    logger.error({ err }, 'Failed to start the outbox relay (non-fatal)');
   }
 
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
