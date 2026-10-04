@@ -55,6 +55,8 @@ vi.mock('../../lib/shared', () => ({
     setActiveOrganization: fixtures.setActiveOrganization,
   }),
   useAppContext: () => ({ state: { organizations: [] }, dispatch: vi.fn() }),
+  // An employee, so the root org stays visible (non-employees cannot see it).
+  useCurrentUser: () => ({ user: { roles: ['employee'] }, setUser: vi.fn() }),
   ROOT_ORG_ID: fixtures.ROOT_ID,
 }))
 
