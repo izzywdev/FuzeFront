@@ -28,6 +28,15 @@ import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
+import { lockOrgOutbox } from '../events/outbox';
+import {
+  eventContextFromRequest,
+  emitItemChanged,
+  emitItemCreated,
+  emitItemDeleted,
+  emitItemReordered,
+  readItem,
+} from '../events/emitters';
 
 const router = createRouter();
 registerIdParams(router);
@@ -37,9 +46,15 @@ registerIdParams(router);
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 
+// Must equal the openapi `Locale` enum / i18n.languages.json (and the Zod
+// `SELECTION_LIST_LOCALES` the published events validate against).
 const SUPPORTED_LOCALES = new Set([
-  'en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'ja', 'zh',
+  'en', 'es', 'fr', 'de', 'pt', 'ru', 'zh', 'ja', 'hi', 'ar', 'he',
 ]);
+
+// openapi SelectionListItemCode (the event schemas use the same rule).
+const ITEM_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
+const DESCRIPTION_MAX = 2000;
 
 // ─── Pagination helpers ───────────────────────────────────────────────────────
 
@@ -319,6 +334,17 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'code is required.' });
     return;
   }
+  if (!ITEM_CODE_PATTERN.test(code.trim())) {
+    res.status(400).json({
+      code: 'VALIDATION_ERROR',
+      message: 'code must be 1-63 characters: letters, digits, dot, underscore or hyphen, starting with a letter or digit.',
+    });
+    return;
+  }
+  if (description !== undefined && description !== null && (typeof description !== 'string' || description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
+    return;
+  }
   if (!label || typeof label !== 'string' || label.trim().length === 0) {
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'label is required.' });
     return;
@@ -352,6 +378,8 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
 
   try {
     await db.transaction(async (trx) => {
+      // Lock order is ALWAYS org outbox lock -> quota lock -> list row (events/outbox.ts).
+      await lockOrgOutbox(trx, req.orgId as string);
       // Exact quota enforcement: serialise creates for this list, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
       await lockQuotaScope(trx, `list_items:${listId}`);
@@ -393,6 +421,9 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
           hashText(label.trim()),
         ],
       );
+
+      // Outbox, same transaction: item.created (event-carried snapshot, own revision).
+      await emitItemCreated(trx, eventContextFromRequest(req), listId, id);
     });
 
     // Fetch the created item
@@ -494,12 +525,15 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
 
     // Apply new sort_order in a transaction (100-gap convention)
     await db.transaction(async (trx) => {
+      await lockOrgOutbox(trx, req.orgId as string);
       for (let i = 0; i < item_ids.length; i++) {
         await trx.raw(
           `UPDATE selection_list_items SET sort_order = ?, updated_at = now() WHERE id = ?`,
           [(i + 1) * 100, item_ids[i]],
         );
       }
+      // Outbox, same transaction: item.reordered carries the full resulting order.
+      await emitItemReordered(trx, eventContextFromRequest(req), listId);
     });
 
     // Return the reordered items with source-locale translations
@@ -580,6 +614,10 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'status must be active or archived.' });
     return;
   }
+  if (body.description !== undefined && body.description !== null && (typeof body.description !== 'string' || body.description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
+    return;
+  }
   if (body.sort_order !== undefined) {
     const so = parseInt(String(body.sort_order), 10);
     if (isNaN(so) || so < 0) {
@@ -596,17 +634,17 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
   }
 
   try {
-    // Verify item exists and belongs to this list
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ?`,
-      [itemId, listId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
-      return;
-    }
+    const found = await db.transaction(async (trx): Promise<boolean> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      // Verify item exists and belongs to this list (inside the txn: it is also
+      // the `before` state the event diff is taken against).
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+        [itemId, listId],
+      );
+      if (!existing.rows[0]) return false;
+      const before = await readItem(trx, itemId);
 
-    await db.transaction(async (trx) => {
       // Update item row — always bump updated_at (plus any changed scalars)
       const itemUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
       if (body.sort_order !== undefined) itemUpdates.sort_order = parseInt(String(body.sort_order), 10);
@@ -657,7 +695,15 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
           );
         }
       }
+
+      // Outbox, same transaction: item.updated (diffed) and/or item.archived.
+      await emitItemChanged(trx, eventContextFromRequest(req), listId, itemId, before);
+      return true;
     });
+    if (!found) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
+      return;
+    }
 
     // Return the updated item
     const result = await db.raw<{ rows: ItemRow[] }>(
@@ -727,31 +773,39 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
   }
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ?`,
-      [itemId, listId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
-      return;
-    }
+    const found = await db.transaction(async (trx): Promise<boolean> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string; code: string }] }>(
+        `SELECT id, code FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+        [itemId, listId],
+      );
+      if (!existing.rows[0]) return false;
 
-    if (purge) {
-      await db.transaction(async (trx) => {
+      const ctx = eventContextFromRequest(req);
+      if (purge) {
         await trx.raw(
           `DELETE FROM selection_list_item_translations WHERE item_id = ?`,
           [itemId],
         );
         await trx.raw(`DELETE FROM selection_list_items WHERE id = ?`, [itemId]);
-      });
+        // item.deleted only: it implies the item's translations (no translation events).
+        await emitItemDeleted(trx, ctx, listId, { itemId, code: existing.rows[0].code });
+      } else {
+        // Soft delete: archive (no event if it already was archived)
+        const before = await readItem(trx, itemId);
+        await trx.raw(`UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`, [itemId]);
+        await emitItemChanged(trx, ctx, listId, itemId, before);
+      }
+      return true;
+    });
+    if (!found) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
+      return;
+    }
+
+    if (purge) {
       res.status(204).send();
     } else {
-      // Soft delete: archive
-      await db.raw(
-        `UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`,
-        [itemId],
-      );
-
       const result = await db.raw<{ rows: ItemRow[] }>(
         `
         SELECT
@@ -807,19 +861,23 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
   }
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ?`,
-      [itemId, listId],
-    );
-    if (!existing.rows[0]) {
+    const found = await db.transaction(async (trx): Promise<boolean> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+        [itemId, listId],
+      );
+      if (!existing.rows[0]) return false;
+
+      const before = await readItem(trx, itemId);
+      await trx.raw(`UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`, [itemId]);
+      await emitItemChanged(trx, eventContextFromRequest(req), listId, itemId, before);
+      return true;
+    });
+    if (!found) {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list item not found.' });
       return;
     }
-
-    await db.raw(
-      `UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`,
-      [itemId],
-    );
 
     const result = await db.raw<{ rows: ItemRow[] }>(
       `

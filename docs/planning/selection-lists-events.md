@@ -522,6 +522,51 @@ Deviations from the sketch above, all deliberate:
   `[deleted-user]` already fit; nothing was relaxed. No RLS (none exists in this service; the
   DB is per-service and owned by `selection_list_svc`), no extra grants.
 
+### 13.0.1 As implemented (SL6 publishing: outbox writer + ordered relay)
+
+`services/selection-list-service/src/events/{outbox,emitters,outboxRelay,outboxPublisher}.ts`.
+Decisions the code makes that §4–§6 left open:
+
+- **Writer** — `enqueueEvent(trx, { topic, organizationId, payload, correlationId? })` validates
+  with `schemaForTopic` *before* the insert and throws on failure (rolling back the route's data
+  change: an invalid payload is a producer bug, never user input). It mints `eventId`
+  (UUIDv7 = the outbox row id), renders the org as the `org_…` TypeID, and refuses topics the
+  service does not produce (`seed.requested`, anything non-`selection-lists.*`).
+- **One revision per emitted event.** Each event that carries `listRevision` bumps
+  `selection_lists.revision` itself (consumers drop an event whose revision is not greater, so two
+  events must never share one). `list.created` carries the insert's own revision (1). Access
+  events carry none and do not bump. `list.deleted` bumps *before* the purge deletes the row.
+- **A change set that changes nothing emits nothing.** The emitters diff the row before/after:
+  `PATCH` with identical values, `archive` of an already archived list/item, a repeated `PUT`
+  of the same access role, and a `DELETE` of a translation/grant that is not there are all
+  `2xx`/`204` with no event and no revision bump.
+- **Archive is its own topic everywhere.** `PATCH {status:"archived"}` emits `*.archived`
+  (never `*.updated{status}`); if the same request also changed other fields, `*.updated` (without
+  `status`) precedes `*.archived`, each with its own revision. Restore (`archived → active`) is
+  `*.updated` with `status` in `changedFields`.
+- **Per-org serialisation to COMMIT.** Every mutating transaction takes a transaction-scoped
+  advisory lock per organization (`lockOrgOutbox`) *first* (lock order: org → quota → list row), so
+  `seq` order is commit order and "lowest pending `seq`" is the oldest event. Rows are stamped
+  with `clock_timestamp()` (insert time), not `now()` (transaction start). The relay never takes
+  this lock.
+- **Relay** — claims the *head* row of each org with `FOR UPDATE … SKIP LOCKED`, publishes that
+  org's rows in `seq` order and stops the org at the first failure (head-of-line blocking per org,
+  other orgs unaffected; two relay instances cannot reorder because the second skips the locked
+  head). 10 attempts then `<topic>.dlq` + `failed`; schema-invalid rows park at once; a *failed*
+  DLQ copy keeps the row `pending` (no event is ever lost); a parked row no longer blocks its org.
+  Poll-interval backoff (×2 up to 30 s) while a pass is failing; `sent` rows older than
+  `OUTBOX_SENT_RETENTION_HOURS` (168) are pruned. Metrics: `selection_list_outbox_{published,
+  publish_failures,parked}_total`, `…_pending`, `…_oldest_pending_age_seconds`, `…_failed`
+  (alert on `…_failed > 0` / any `…_parked_total` increase). Started from `src/index.ts` **only**
+  when `KAFKA_BROKERS` is set; relay errors are contained and cannot take the HTTP server down.
+- **Contract alignment fixed in the same PR.** The HTTP routes accepted values the event schemas
+  refuse (list keys with `_`/1 char, locales `it`/`nl`/`pl`, item codes with spaces,
+  descriptions > 2000, translation text > 200). They would have become `500`s; they now answer
+  `400` exactly as `openapi.yaml` already specifies, and machine-translation text is clamped to the
+  field limit.
+- **Not emitted here:** `seed.*` (next stream), org-wide lifecycle cascades
+  (`org-deleted.handler.ts`, per §4), `identity.user.deleted` anonymisation.
+
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
 `openapi.yaml` (v2.0.0) types `SelectionList.created_by`, `SelectionListItem.created_by`
