@@ -100,34 +100,64 @@ async function openComboMenu(page: Page) {
   await expect(menu, '[data-combo-menu] must be open').toBeVisible()
 }
 
+/**
+ * Contract-faithful stub of the two reads the picker makes (frozen openapi.yaml):
+ *
+ *   1. GET /v1/selection-lists            -> { items: SelectionList[], page }   (key -> list ID lookup)
+ *   2. GET /v1/selection-lists/{listId}/items -> { items: Item[], page }        (read by list ID, never by key)
+ *
+ * The list `key` ("sales-regions") is NOT a valid path segment for `{listId}`; the
+ * service mints a `front_sl_…` id and the picker must use it. An earlier version of
+ * this helper matched `/items` URLs by `url.includes(key)` and answered a single
+ * list object on a key-shaped GET — i.e. it modelled the picker calling the items
+ * endpoint with the KEY, which violates the contract and is exactly the bug the
+ * picker had. Requests for any other list id fall through (route.continue()) so a
+ * picker that sends the key as the id fails loudly instead of being served.
+ */
+function listIdForKey(key: string) {
+  return `front_sl_${key.replace(/-/g, '_')}`
+}
+
 /** Inject items for a given list key. */
 async function injectListItems(page: Page, key: string, items: typeof MOCK_SALES_REGION_ITEMS) {
+  const listId = listIdForKey(key)
   await page.route(`**/v1/selection-lists**`, async route => {
-    const url = route.request().url()
-    if (url.includes('/items') && url.includes(key)) {
-      await route.fulfill({
+    if (route.request().method() !== 'GET') return route.continue()
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace(/\/+$/, '')
+
+    if (path.endsWith('/v1/selection-lists')) {
+      // List lookup. The contract's `?key=` filter returns a page of at most one row;
+      // the picker may also page through all lists, so serve the list whenever it is
+      // unfiltered or the filter matches.
+      const wanted = url.searchParams.get('key')
+      const rows = !wanted || wanted === key
+        ? [{
+            id: listId,
+            key,
+            name: key === 'sales-regions' ? 'Sales Regions' : 'Countries',
+            is_machine: false,
+            status: 'active',
+            item_count: items.length,
+            source_locale: 'en',
+          }]
+        : []
+      return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ data: items, next_cursor: null, total: items.length }),
+        body: JSON.stringify({ items: rows, page: { nextCursor: null, hasMore: false } }),
       })
-    } else if (!url.includes('/items') && url.includes(key) && route.request().method() === 'GET') {
-      // List metadata lookup by key.
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: 'sl_sales_regions',
-          key,
-          name: key === 'sales-regions' ? 'Sales Regions' : 'Countries',
-          is_machine: false,
-          status: 'active',
-          item_count: items.length,
-          source_locale: 'en',
-        }),
-      })
-    } else {
-      await route.continue()
     }
+
+    if (path.endsWith(`/v1/selection-lists/${listId}/items`)) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ items, page: { nextCursor: null, hasMore: false, total: items.length } }),
+      })
+    }
+
+    return route.continue()
   })
 }
 
@@ -260,17 +290,8 @@ test.describe('Selection Lists picker — frame 12-picker-single', () => {
   })
 
   test('[data-state="empty"] disables the combobox with "No options available" when no active items exist', async ({ page }) => {
-    await page.route('**/v1/selection-lists**', async route => {
-      if (route.request().method() === 'GET') {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ data: [], next_cursor: null, total: 0 }),
-        })
-      } else {
-        await route.continue()
-      }
-    })
+    // The list EXISTS (key lookup succeeds) but has no active values.
+    await injectListItems(page, 'sales-regions', [])
     await gotoPickerHarness(page, { list: 'sales-regions', mode: 'single' })
     await expect(
       page.locator("[data-state='empty']"),
