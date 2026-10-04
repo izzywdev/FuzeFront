@@ -22,6 +22,8 @@ export interface RecordingDb {
   updates: Record<string, Array<Record<string, unknown>>>;
   /** the value lists passed to whereIn(), by `table.column` */
   whereIns: Record<string, unknown[][]>;
+  /** every raw SQL statement run directly on the db/trx (e.g. the org-projection tombstone), in order */
+  raws: Array<{ sql: string; bindings: unknown[] }>;
 }
 
 export function makeRecordingDb(results: RecordingResults = {}): RecordingDb {
@@ -29,6 +31,7 @@ export function makeRecordingDb(results: RecordingResults = {}): RecordingDb {
   const used: Array<[string, string]> = [];
   const updates: Record<string, Array<Record<string, unknown>>> = {};
   const whereIns: Record<string, unknown[][]> = {};
+  const raws: Array<{ sql: string; bindings: unknown[] }> = [];
 
   const builder = (table: string): any => {
     let mode: 'select' | 'update' | 'delete' | 'pluck' | 'count' = 'select';
@@ -101,6 +104,12 @@ export function makeRecordingDb(results: RecordingResults = {}): RecordingDb {
 
   const db: any = (table: string) => builder(table);
   db.fn = { now: () => new Date() };
+  // Raw SQL (the org-projection tombstone) is recorded SEPARATELY from `ops`, so the ordered
+  // table-operation assertions for the cascade stay exactly as they were.
+  db.raw = async (sql: string, bindings: unknown[] = []) => {
+    raws.push({ sql, bindings });
+    return { rows: [] };
+  };
   db.transaction = async (cb: (trx: any) => Promise<unknown>) => {
     ops.push('tx:begin');
     try {
@@ -113,5 +122,5 @@ export function makeRecordingDb(results: RecordingResults = {}): RecordingDb {
     }
   };
 
-  return { db, ops, used, updates, whereIns };
+  return { db, ops, used, updates, whereIns, raws };
 }

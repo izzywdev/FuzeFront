@@ -25,8 +25,21 @@ import { computeSourceHash } from '../src/routes/translations';
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
-jest.mock('../src/db', () => ({ db: jest.fn() }));
+jest.mock('../src/db', () => {
+  const db: any = jest.fn();
+  // The mutating routes run inside db.transaction(trx => ...). The trx is the
+  // same query-builder mock, so the existing chain fixtures keep applying.
+  db.transaction = jest.fn((cb: (trx: unknown) => unknown) => cb(db));
+  return { db };
+});
 jest.mock('../src/flags', () => ({ isSelectionListsEnabled: jest.fn() }));
+// Outbox event layer is a stub in this ROUTE-behaviour suite; its real behaviour
+// is covered against real Postgres (tests/outbox.db.test.ts, outbox.routes.db.test.ts).
+jest.mock('../src/events/outbox');
+jest.mock('../src/events/emitters');
+// The seeded-then-edited hash check (seed/content.ts) reads the row back through the transaction; its
+// behaviour is covered against real Postgres in tests/seed.user-edits.db.test.ts.
+jest.mock('../src/seed/content');
 
 // Pull typed references AFTER the jest.mock calls so we get the mocked versions.
 import { db } from '../src/db';
