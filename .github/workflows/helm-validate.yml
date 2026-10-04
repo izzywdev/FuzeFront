@@ -9,15 +9,36 @@ on:
     paths:
       - 'deploy/helm/**'
       - 'deploy/scripts/**'
+      # The cluster-scoped-kinds guard below reads clusterResourceWhitelist out of
+      # deploy/argocd/project.yaml, so a PR editing ONLY that file changes this
+      # workflow's verdict. Without this path the guard would be skipped on
+      # exactly the change most able to break it: narrowing the whitelist without
+      # touching the chart — which is the 2026-09-28 freeze approached from the
+      # other side, and is a live risk while FuzeInfra's duplicate copy exists
+      # (see the file's own header).
+      - 'deploy/argocd/**'
       - '.github/workflows/helm-validate.yml'
 
 permissions:
   contents: read
 
+# Added with the cluster-scoped-whitelist guard below. gate-workflow-policy flags
+# a `pull_request`-triggered workflow with no top-level concurrency group: rapid
+# pushes stack superseded runs onto the shared runner pool instead of cancelling
+# them. Pre-existing finding, fixed here rather than reported.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   helm-validate:
     name: Lint & kubeconform
     runs-on: ubuntu-latest
+    # gate-workflow-policy flags a job with no timeout-minutes (a hung job pins a
+    # scale-set slot until a human intervenes). Pre-existing finding, fixed here.
+    # 15 is generous: the whole job is helm/kubeconform/bash on rendered YAML with
+    # no cluster, no registry pulls beyond the kubeconform tarball, and no tests.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -185,3 +206,49 @@ jobs:
           set -euo pipefail
           ./deploy/scripts/check-authentik-public-paths.sh --self-test
           ./deploy/scripts/check-authentik-public-paths.sh rendered/fuzefront/templates
+
+      - name: Guard cluster-scoped kinds against the Argo AppProject whitelist (${{ matrix.values }})
+        run: |
+          # THE GUARD THAT WOULD HAVE CAUGHT THE 2026-09-28 DEPLOY FREEZE.
+          #
+          # Argo CD validates every resource in a sync against its Application's
+          # AppProject. A cluster-scoped kind absent from `clusterResourceWhitelist`
+          # does not get skipped — the sync task is INVALID and Argo ABORTS THE
+          # ENTIRE SYNC OPERATION. So one unpermitted resource freezes every other
+          # resource in the Application, image-tag bumps included. That is exactly
+          # what happened: workload-identity.yaml (#1190) began rendering a
+          # ClusterRole/ClusterRoleBinding while the fuzefront AppProject permitted
+          # only `{group: '', kind: Namespace}` cluster-scoped, and three successive
+          # GitOps bumps moved nothing for hours.
+          #
+          # helm lint and kubeconform were green throughout and always would be:
+          # they validate manifest SHAPE against the Kubernetes API schema, and an
+          # Argo AppProject admission boundary appears in no manifest's schema.
+          # Same class of gap as the two guards above (Traefik PathPrefix
+          # semantics; NetworkPolicy port range, FuzeInfra#501) — a schema check
+          # cannot see the behaviour of the controller that consumes the manifest.
+          #
+          # The whitelist is READ FROM deploy/argocd/project.yaml, never hardcoded,
+          # so the gate cannot drift from the project it is asserting about. That
+          # file is the authoritative definition per owner ruling FuzeInfra#639
+          # (consumers own their AppProject; argocd-register applies it); the full
+          # reasoning, including why FuzeInfra's stale duplicate copy is NOT
+          # fetched, is in the script header and in
+          # docs/planning/workload-identity-layering.md.
+          #
+          # TWO layers:
+          #   1. rendered ⊆ whitelist — the freeze itself.
+          #   2. whitelist ⊆ rendered — a cluster-scoped grant that outlives the
+          #      template needing it is standing permission to modify cluster-level
+          #      security. This is what makes retiring the workload-authenticator
+          #      grant an ENFORCED paired change once FuzeInfra's identity broker
+          #      takes the function over.
+          #
+          # Self-test FIRST, mirroring the guards above: prove the probe still
+          # FAILS on the real regression (a chart rendering ClusterRole against a
+          # Namespace-only whitelist) before trusting it to pass on this chart. A
+          # check only ever observed passing is evidence of nothing
+          # (governance/vacuous-check-policy.json).
+          set -euo pipefail
+          ./deploy/scripts/check-cluster-scoped-whitelist.sh --self-test
+          ./deploy/scripts/check-cluster-scoped-whitelist.sh rendered/fuzefront/templates
