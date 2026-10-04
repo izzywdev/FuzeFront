@@ -47,7 +47,18 @@ export const REDACT_PATHS: string[] = [
   '*.access_token',
   '*.refresh_token',
   '*.id_token',
-  '*.code',
+  // NOT a blanket '*.code': the serialized error carries `err.code` (ECONNRESET,
+  // ENOTFOUND, pg 23505, ...) which is exactly what an incident needs. Auth /
+  // OTP codes are redacted by their concrete locations instead.
+  'query.code',
+  'body.code',
+  'req.query.code',
+  'req.body.code',
+  '*.authorization_code',
+  '*.auth_code',
+  'authorization_code',
+  'auth_code',
+  'otp',
   '*.otp',
   '*.client_secret',
   '*.apiKey',
@@ -66,9 +77,11 @@ export const REDACT_PATHS: string[] = [
 
 function defaultLevel(): string {
   if (process.env.LOG_LEVEL) return process.env.LOG_LEVEL;
-  // Unit tests assert on behaviour, not log noise; they opt in via LOG_LEVEL
-  // or by building their own logger with createLogger().
-  return process.env.NODE_ENV === 'test' ? 'silent' : 'info';
+  // Unit tests (jest sets JEST_WORKER_ID) assert on behaviour, not log noise;
+  // they opt in via LOG_LEVEL or by building their own logger with
+  // createLogger(). NODE_ENV=test alone is NOT silenced: the CI integration job
+  // runs the real service under NODE_ENV=test and dumps its log on failure.
+  return process.env.JEST_WORKER_ID ? 'silent' : 'info';
 }
 
 /**
@@ -233,17 +246,17 @@ export function createLoggedFetch(
     const op = 'securityapi.request';
     const headers = ctx ? { ...init.headers, 'x-request-id': ctx.reqId } : init.headers;
     const start = performance.now();
-    log.debug({ op, method: init.method, path }, `${op} start`);
+    log.debug({ op, httpMethod: init.method, path }, `${op} start`);
     try {
       const res = await base(url, { ...init, headers });
       const elapsedMs = Math.round(performance.now() - start);
-      const fields = { op, method: init.method, path, status: res.status, elapsedMs };
+      const fields = { op, httpMethod: init.method, path, status: res.status, elapsedMs };
       if (!res.ok || elapsedMs >= SLOW_CALL_MS) log.warn(fields, `${op} end (degraded)`);
       else log.debug(fields, `${op} end`);
       return res;
     } catch (err) {
       log.error(
-        { op, method: init.method, path, elapsedMs: Math.round(performance.now() - start), err },
+        { op, httpMethod: init.method, path, elapsedMs: Math.round(performance.now() - start), err },
         `${op} failed`,
       );
       throw err;

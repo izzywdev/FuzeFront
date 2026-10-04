@@ -90,6 +90,18 @@ describe('request-scoped logger', () => {
     expect(handler.token).toBe('[REDACTED]');
   });
 
+  it('redacts auth/OTP codes by location but keeps err.code (ECONNRESET, pg 23505) visible', () => {
+    const { lines, log } = capture();
+    log.info({ body: { code: 'otp-654321' }, query: { code: 'authz-code-1' }, otp: '111111' }, 'creds');
+    const err = Object.assign(new Error('boom'), { code: 'ECONNRESET' });
+    log.error({ err }, 'upstream failed');
+    const raw = JSON.stringify(lines[0]);
+    expect(raw).not.toContain('otp-654321');
+    expect(raw).not.toContain('authz-code-1');
+    expect(raw).not.toContain('111111');
+    expect(lines[1].err.code).toBe('ECONNRESET');
+  });
+
   it('strips the query string from the logged route (it can carry tokens)', async () => {
     const { lines, log } = capture();
     await request(makeApp(log)).get('/ping?access_token=leak-me');
