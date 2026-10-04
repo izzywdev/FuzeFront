@@ -3,8 +3,12 @@
 // All routes require a valid JWT (authMiddleware upstream).
 // All DB queries are scoped to req.orgId — never cross-org.
 //
-// Authorization: every route carries requireAuthzCheck('SelectionList', <x-permit-action>)
-// per the contract (middleware/authz.ts).
+// Authorization (middleware/authz.ts; matrix: docs/planning/selection-lists-permit-actions.md):
+//   - tenant-level routes use the keyless SelectionListCatalog resource:
+//     GET / -> `list`, POST / -> `create`. GET / additionally filters every
+//     returned list through the per-list SelectionList `read` action.
+//   - every :listId route carries requireAuthzCheck('SelectionList', <action>)
+//     keyed on the list id.
 //
 // Pagination: cursor-based (opaque base64url JSON cursor), newest-first.
 //   DEFAULT_PAGE_SIZE = 50, MAX_PAGE_SIZE = 200.
@@ -30,7 +34,7 @@ import { mintId } from '@izzywdev/fuzefront-identity';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkListQuota, QuotaExceededError } from '../services/quota.service';
-import { requireAuthzCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
+import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
 
 const router = createRouter();
 registerIdParams(router);
@@ -193,7 +197,7 @@ async function fetchList(
 
 // ─── GET / — list all selection lists ────────────────────────────────────────
 
-router.get('/', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response): Promise<void> => {
   // Feature flag gate
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
@@ -382,7 +386,7 @@ router.get('/', requireAuthzCheck('SelectionList', 'read'), async (req: Request,
 
 // ─── POST / — create a selection list ────────────────────────────────────────
 
-router.post('/', requireAuthzCheck('SelectionList', 'add_value'), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag already checked by enforceListQuota middleware
 
   if (!req.orgId) {
@@ -607,7 +611,19 @@ router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: R
 
 // ─── PATCH /:listId — partial update ─────────────────────────────────────────
 
-router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), async (req: Request, res: Response): Promise<void> => {
+// PATCH {status:"archived"} IS an archive, so it needs the same action as
+// POST /:listId/archive and DELETE /:listId — `delete` (list-owner only) —
+// otherwise a list-editor could archive via PATCH what it cannot archive via
+// the archive endpoint (review L-1). Un-archiving ({status:"active"}) stays on
+// the route's base `update` action. Stacked AFTER the base check, so it can
+// only tighten.
+const requireArchiveAuthzOnStatusChange = requireAuthzCheckWhen(
+  (req) => req.body?.status === 'archived',
+  'SelectionList',
+  'delete',
+);
+
+router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireArchiveAuthzOnStatusChange, async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
