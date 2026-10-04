@@ -23,6 +23,7 @@ export declare const TOPICS: {
     readonly BILLING_PAYMENT_METHOD_UPDATED: "billing.payment_method.updated";
     readonly PORTAL_CREATED: "portal.created";
     readonly CHAT_RESPONSE_CHUNK: "chat.response.chunk";
+    readonly CONFIG_CHANGED: "config.changed";
     readonly SELECTION_LISTS_LIST_CREATED: "selection-lists.list.created";
     readonly SELECTION_LISTS_LIST_UPDATED: "selection-lists.list.updated";
     readonly SELECTION_LISTS_LIST_ARCHIVED: "selection-lists.list.archived";

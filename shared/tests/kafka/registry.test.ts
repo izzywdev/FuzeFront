@@ -55,3 +55,36 @@ describe('partitionKeyForPayload', () => {
     expect(partitionKeyForPayload(null)).toBeUndefined();
   });
 });
+
+describe('config.changed (FF-EPIC-18-S4)', () => {
+  const { configChangedSchemaV1 } = require('../../src/kafka');
+  const valid = {
+    namespace: 'fuzefront.chat',
+    scope: { scopeType: 'org', scopeId: '550e8400-e29b-41d4-a716-446655440000' },
+    changedKeys: ['ui.theme.density', 'api.key'],
+  };
+
+  it('is registered under TOPICS.CONFIG_CHANGED', () => {
+    expect(TOPICS.CONFIG_CHANGED).toBe('config.changed');
+    expect(schemaForTopic(TOPICS.CONFIG_CHANGED)).toBe(configChangedSchemaV1);
+  });
+
+  it('accepts a coalesced key list, and platform scope with null scopeId', () => {
+    expect(() => configChangedSchemaV1.parse(valid)).not.toThrow();
+    expect(() =>
+      configChangedSchemaV1.parse({ ...valid, scope: { scopeType: 'platform', scopeId: null } }),
+    ).not.toThrow();
+  });
+
+  it('rejects an empty key list and unknown scope types', () => {
+    expect(() => configChangedSchemaV1.parse({ ...valid, changedKeys: [] })).toThrow();
+    expect(() =>
+      configChangedSchemaV1.parse({ ...valid, scope: { scopeType: 'galaxy', scopeId: 'x' } }),
+    ).toThrow();
+  });
+
+  it('is strict: a value-bearing field can never ride along', () => {
+    expect(() => configChangedSchemaV1.parse({ ...valid, newValue: 'hunter2' })).toThrow();
+    expect(() => configChangedSchemaV1.parse({ ...valid, values: { a: 1 } })).toThrow();
+  });
+});

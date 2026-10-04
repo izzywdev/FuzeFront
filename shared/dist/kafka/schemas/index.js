@@ -55,3 +55,4 @@ __exportStar(require("./selection-lists.access.revoked"), exports);
 __exportStar(require("./selection-lists.seed.requested"), exports);
 __exportStar(require("./selection-lists.seed.completed"), exports);
 __exportStar(require("./selection-lists.seed.failed"), exports);
+__exportStar(require("./config.changed"), exports);

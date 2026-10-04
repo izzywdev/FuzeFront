@@ -27,6 +27,7 @@ exports.TOPICS = {
     BILLING_PAYMENT_METHOD_UPDATED: 'billing.payment_method.updated',
     PORTAL_CREATED: 'portal.created',
     CHAT_RESPONSE_CHUNK: 'chat.response.chunk',
+    CONFIG_CHANGED: 'config.changed',
     // selection-list-service (docs/planning/selection-lists-events.md). Produced
     // ONLY by selection-list-service, except SEED_REQUESTED, which allowlisted
     // services produce and selection-list-service consumes.
