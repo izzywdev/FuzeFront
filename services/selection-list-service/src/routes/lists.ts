@@ -27,7 +27,7 @@
 
 import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
-import { registerIdParams } from '../middleware/validateInput';
+import { acceptOnlyBodyProps, parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
@@ -248,8 +248,8 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
   }
 
   // Parse + clamp pagination params
-  const rawLimit = parseInt(String(req.query.limit ?? DEFAULT_PAGE_SIZE), 10);
-  const limit = isNaN(rawLimit) || rawLimit < 1 ? DEFAULT_PAGE_SIZE : Math.min(rawLimit, MAX_PAGE_SIZE);
+  const limit = parseLimitParam(req, res, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  if (limit === undefined) return;
 
   const rawCursor = req.query.cursor as string | undefined;
   const statusFilter = (req.query.status as string) ?? 'active';

@@ -1,0 +1,43 @@
+import type { Knex } from 'knex'
+import { enqueueEvent } from '@fuzefront/core'
+import { TOPICS } from '@fuzefront/shared/kafka'
+import { v4 as uuidv4 } from 'uuid'
+
+export interface MembershipChange {
+  organizationId: string
+  userId: string
+  role: string
+}
+
+/**
+ * Enqueue an `identity.membership.added` event on the transactional outbox.
+ * MUST be called with the same transaction that performs the membership
+ * insert so the event commits atomically with the write.
+ */
+export async function emitMembershipAdded(
+  trx: Knex.Transaction,
+  c: MembershipChange
+): Promise<void> {
+  await enqueueEvent(
+    trx,
+    TOPICS.IDENTITY_MEMBERSHIP_ADDED,
+    { organizationId: c.organizationId, userId: c.userId, role: c.role },
+    `identity-membership-added-${uuidv4()}`
+  )
+}
+
+/**
+ * Enqueue an `identity.membership.removed` event on the transactional outbox.
+ * MUST be called with the same transaction that performs the membership delete.
+ */
+export async function emitMembershipRemoved(
+  trx: Knex.Transaction,
+  c: MembershipChange
+): Promise<void> {
+  await enqueueEvent(
+    trx,
+    TOPICS.IDENTITY_MEMBERSHIP_REMOVED,
+    { organizationId: c.organizationId, userId: c.userId, role: c.role },
+    `identity-membership-removed-${uuidv4()}`
+  )
+}

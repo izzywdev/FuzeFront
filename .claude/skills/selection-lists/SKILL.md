@@ -14,7 +14,7 @@ A **selection list** is a named, **org-scoped**, ordered set of **translatable**
 | Thing | Path | Package / name |
 |---|---|---|
 | Frozen contract (24 operations) | `services/selection-list-service/openapi.yaml` | — |
-| Service (Express + Knex/Postgres, port `PORT` default **3011**) | `services/selection-list-service/` | `selection-list-service` (root workspace) |
+| Service (Express + Knex/Postgres, port `PORT` default **3008**, matching the chart) | `services/selection-list-service/` | `selection-list-service` (root workspace) |
 | TS client (hand-authored, zero deps) | `selection-list-client/` (**repo root, not `packages/`**) | `@fuzeone/selection-list-client` **2.0.0** |
 | Python client (stdlib `urllib`, zero deps) | `packages/selection-list-client-py/` | `fuzefront-selection-list-client` **2.0.0** |
 | Event schemas (source of truth for Kafka) | `shared/src/kafka/schemas/selection-lists.*.ts` | `@fuzefront/shared` ≥ 1.1.0 (`/kafka`) |
@@ -75,7 +75,7 @@ Both clients cover all 24 operations (verified: 24 public Python methods in `cli
 
 ## Calling it from TypeScript
 
-Paths include `/v1/…`, so `baseUrl` is the **prefix before `/v1`**. In the browser it must be same-origin (`'/api'` yields `/api/v1/selection-lists`, which is what `@fuzeone/selection-lists-ui` calls) — never an absolute host. Cluster-internal callers use `http://fuzefront-selection-list-service:<selectionListService.port>` — **3008** in the chart; `3011` is the spec's default server / local `PORT` default.
+Paths include `/v1/…`, so `baseUrl` is the **prefix before `/v1`**. In the browser it must be same-origin (`'/api'` yields `/api/v1/selection-lists`, which is what `@fuzeone/selection-lists-ui` calls) — never an absolute host. Cluster-internal callers use `http://fuzefront-selection-list-service:<selectionListService.port>` — **3008** in the chart, and now also the service's own `PORT` default and the Dockerfile `EXPOSE` (only the OpenAPI `servers` example still says `3011`).
 
 ```ts
 import {
@@ -264,7 +264,7 @@ There is **no per-repo MCP server** for this feature: no `mcp/` directory exists
 | Layer | Path | Run |
 |---|---|---|
 | Service unit/route tests (jest, DB mocked; authz no-op under `NODE_ENV=test`) | `services/selection-list-service/tests/*.test.ts` | `npm run -w selection-list-service test` (CI job `selection-list-service-tests`) |
-| Independent acceptance + contract + security suite against a **running** service (`SERVICE_BASE_URL`, default `http://localhost:3011`) | `tests/selection-list-service/{contract,security}/` | `npm test` / `test:contract` / `test:security` in that dir; its helper builds an `@fuzeone/selection-list-client` |
+| Independent acceptance + contract + security suite against a **running** service (`SERVICE_BASE_URL`, default `http://localhost:3008`) | `tests/selection-list-service/{contract,security}/` | `npm test` / `test:contract` / `test:security` in that dir; its helper builds an `@fuzeone/selection-list-client` |
 | Seeding / outbox / consumers (service; `*.db.test.ts` need a real Postgres, the rest mock it) | `services/selection-list-service/tests/{seed.*,outbox.*,events.*,migrations.seed-events.db.test.ts,flags.seed-defaults.test.ts,failure-containment.test.ts}` | same job |
 | Seed-request builders (TS + Python, pinned to the shared golden fixtures `shared/tests/fixtures/selection-lists/`) | `selection-list-client/tests/seed.test.ts`, `packages/selection-list-client-py/tests/test_seed.py` | `vitest` / `pytest` in each dir |
 | Python client tests | `packages/selection-list-client-py/tests/test_client.py` | `pip install -e '.[dev]' && pytest` in that dir |
@@ -282,7 +282,7 @@ API tests are `test-engineer`'s; UI e2e is `frontend-test-engineer`'s. Documenta
 ## Known doc/code discrepancies to fix at the source (not here)
 
 - `@fuzeone/selection-list-client` is **not published**: `selection-list-client` is absent from root `package.json` `workspaces`, the one list `scripts/publish-packages.mjs` reads (per that README). Install it from a local `npm pack` until fixed. (`@fuzeone/selection-lists-ui` is a workspace.) → `devops-engineer`.
-- Port references disagree: service default `3011` (spec, Dockerfile, `index.ts`) vs Helm `selectionListService.port: 3008` (the deployment sets `PORT` from it). In-cluster callers should use the Helm Service + port, not `3011`.
+- Port references (FIXED in SL8): the service default, Dockerfile `ENV PORT`/`EXPOSE` and `index.ts` now say `3008`, matching Helm `selectionListService.port` (the deployment also sets `PORT` from it). Remaining `3011` mentions: the OpenAPI `servers` example (frozen contract; its Helm copy must stay byte-identical) and the Python client README/docstring base URL — both owned by other roles, listed in the runbook known-gaps table.
 - **Org-id format in flag targeting (code gap, inferred).** The seeding path evaluates both flags with the `org_…` TypeID (`wireOrgId` in `src/events/outbox.ts` → `src/seed/flagGate.ts`); HTTP routes evaluate the master flag with whatever org claim the JWT carries (`req.orgId`, `src/middleware/auth.ts`, not normalised). An Unleash `orgId` constraint written for one format will not match the other, so the master flag can disagree between HTTP and seeding for the same org. → `backend-engineer` (normalise the flag context), then `feature-flags-engineer`.
 - **The "reconciler" is referenced but not built.** `src/events/org-created.handler.ts`, `src/seed/platform.ts` and the flag description say it backfills orgs once the flag turns ON; there is no such job (`grep -ri reconcil services/selection-list-service/src` finds comments only). → `backend-engineer`.
 - **No `identity.org.updated` consumer**: the projection's `is_active` is a creation-time snapshot, so `ORG_INACTIVE` cannot see a later deactivation. → `backend-engineer`.

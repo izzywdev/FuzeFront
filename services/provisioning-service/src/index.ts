@@ -16,6 +16,10 @@ import {
   identityUserUpdatedSchemaV1,
   IdentityUserDeletedPayloadV1,
   identityUserDeletedSchemaV1,
+  IdentityMembershipAddedPayloadV1,
+  identityMembershipAddedSchemaV1,
+  IdentityMembershipRemovedPayloadV1,
+  identityMembershipRemovedSchemaV1,
 } from '@fuzefront/shared/kafka';
 import { loadConfig } from './config';
 import {
@@ -25,6 +29,8 @@ import {
   handleOrgDeleted,
   handleUserUpdated,
   handleUserDeleted,
+  handleMembershipAdded,
+  handleMembershipRemoved,
   HandlerDeps,
 } from './handler';
 import { createApp } from './app';
@@ -149,6 +155,30 @@ async function main() {
     dlqProducer
   );
 
+  // identity.membership.added -> assign the member's Permit role.
+  const membershipAddedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-membership-added`);
+  await membershipAddedConsumer.connect();
+  await membershipAddedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_ADDED);
+  await membershipAddedConsumer.run(
+    withDlq<IdentityMembershipAddedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_ADDED, event =>
+      handleMembershipAdded(event, handlerDeps)
+    ),
+    identityMembershipAddedSchemaV1,
+    dlqProducer
+  );
+
+  // identity.membership.removed -> revoke the member's Permit role.
+  const membershipRemovedConsumer = new TypedConsumer(kafka, `${config.kafka.groupId}-membership-removed`);
+  await membershipRemovedConsumer.connect();
+  await membershipRemovedConsumer.subscribe(TOPICS.IDENTITY_MEMBERSHIP_REMOVED);
+  await membershipRemovedConsumer.run(
+    withDlq<IdentityMembershipRemovedPayloadV1>(TOPICS.IDENTITY_MEMBERSHIP_REMOVED, event =>
+      handleMembershipRemoved(event, handlerDeps)
+    ),
+    identityMembershipRemovedSchemaV1,
+    dlqProducer
+  );
+
   // --- HTTP health probe ---
   const app = createApp();
   app.listen(config.port, () => {
@@ -164,6 +194,8 @@ async function main() {
     await orgDeletedConsumer.disconnect();
     await userUpdatedConsumer.disconnect();
     await userDeletedConsumer.disconnect();
+    await membershipAddedConsumer.disconnect();
+    await membershipRemovedConsumer.disconnect();
     await dlqProducer.disconnect();
     process.exit(0);
   };

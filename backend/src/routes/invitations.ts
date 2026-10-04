@@ -15,6 +15,7 @@ import rateLimit from 'express-rate-limit'
 import jwt from 'jsonwebtoken'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
+import { emitMembershipAdded } from '../events/membershipEvents'
 import { assignOrganizationRole } from '../utils/permit/role-assignment'
 import { getRequestPortalScopingEnabled } from '../utils/identityFlag'
 import { normalizePortalId } from '../utils/scopeToPortal'
@@ -272,6 +273,11 @@ router.post('/:token/accept', invitationsRateLimiter, async (req: any, res) => {
           joined_at: new Date(),
           permissions: JSON.stringify({}),
           metadata: JSON.stringify({}),
+        })
+        await emitMembershipAdded(trx, {
+          organizationId: invitation.organization_id,
+          userId: user.id,
+          role: invitation.role,
         })
       }
 
