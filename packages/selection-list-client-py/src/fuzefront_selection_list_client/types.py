@@ -23,8 +23,8 @@ from typing import Generic, TypeVar
 # Identifier prefix constants (opaque past the prefix)
 # ---------------------------------------------------------------------------
 
-SELECTION_LIST_ID_PREFIX = "sl_"
-SELECTION_LIST_ITEM_ID_PREFIX = "sli_"
+SELECTION_LIST_ID_PREFIX = "front_sl_"
+SELECTION_LIST_ITEM_ID_PREFIX = "front_sli_"
 
 # ---------------------------------------------------------------------------
 # Enums
