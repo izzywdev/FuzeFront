@@ -18,6 +18,7 @@ export declare const ENTITY_PREFIXES: {
     readonly notification: "ntf";
     readonly selectionList: "front_sl";
     readonly selectionListItem: "front_sli";
+    readonly appBuildSession: "front_abs";
     readonly namespace: "cns";
     readonly keyDefinition: "ckd";
     readonly configHistory: "cvh";
