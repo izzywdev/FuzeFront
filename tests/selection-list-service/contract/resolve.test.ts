@@ -101,7 +101,7 @@ describe('POST /v1/resolve — active items', () => {
 
   it('all requested ids are accounted for: results + missing = request ids', async () => {
     const client = makeClient(orgAToken);
-    const missingId = 'sli_01hnonexistentresolve00000' as SelectionListItemId;
+    const missingId = 'front_sli_01hnonexistentresolve00000' as SelectionListItemId;
     const result = await client.resolveIds([activeItemId, missingId]);
 
     const accounted = [
@@ -307,7 +307,7 @@ describe('POST /v1/resolve — response envelope', () => {
     const { status, body } = await rawFetch('/v1/resolve', {
       method: 'POST',
       token: orgAToken(),
-      body: JSON.stringify({ ids: ['sli_01hanyid00000000000000000'] }),
+      body: JSON.stringify({ ids: ['front_sli_01hanyid00000000000000000'] }),
     });
     // Authenticated with an org-scoped token, so 200 is the only valid answer
     // (spec 2.0.0); a 401 here would mean a valid caller was refused.

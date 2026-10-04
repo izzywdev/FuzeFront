@@ -186,8 +186,9 @@ const client = new SelectionListClient({
 })
 ```
 
-The in-cluster Service port is `selectionListService.port` in the Helm values (**3008**);
-`3011` is only the process default for local runs (`PORT` unset).
+The in-cluster Service port is `selectionListService.port` in the Helm values (**3008**).
+The process default (`PORT` unset) is **3008** too, so a local run, the image and the chart all agree. Only the
+OpenAPI `servers` example still names `3011` (frozen contract; see the SL8 notes in the runbook).
 
 ---
 
@@ -765,12 +766,12 @@ The selection-list-service serves Swagger UI at `/docs` when running locally.
 All endpoints are exercisable from the browser with a Bearer token:
 
 ```
-http://localhost:3011/docs
+http://localhost:3008/docs
 ```
 
 In the cluster (via port-forward):
 
 ```bash
-kubectl port-forward svc/fuzefront-selection-list-service 3011:3008 -n fuzefront
-# Then open http://localhost:3011/docs
+kubectl port-forward svc/fuzefront-selection-list-service 3008:3008 -n fuzefront
+# Then open http://localhost:3008/docs
 ```
