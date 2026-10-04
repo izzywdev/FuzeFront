@@ -297,6 +297,18 @@ resource "aws_launch_template" "main" {
 
   user_data = local.user_data
 
+  # Require IMDSv2. With IMDSv1 any SSRF on the instance (an unvalidated URL in
+  # the backend, a redirect it follows) is a plain GET away from the instance
+  # profile's credentials; IMDSv2's PUT-issued session token cannot be reached
+  # that way. hop_limit is 2, not the default 1, because the app runs in Docker
+  # containers started by user_data.sh — the bridge network costs one hop, and
+  # a hop limit of 1 would break the AWS SDK inside them.
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 2
+  }
+
   tag_specifications {
     resource_type = "instance"
     tags = merge(local.common_tags, {

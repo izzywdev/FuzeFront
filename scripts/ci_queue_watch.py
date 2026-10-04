@@ -84,6 +84,7 @@ def _get(path, token):
     if token:
         req.add_header("Authorization", "Bearer " + token)
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the `file://` read this rule names is unreachable: `url` is rejected four lines above unless its scheme is in _ALLOWED_SCHEMES, and it is only ever API (a configured base) + a code-literal path, never a caller-supplied URL.
         with urllib.request.urlopen(req, timeout=30) as fh:
             return json.load(fh), None
     except urllib.error.HTTPError as exc:

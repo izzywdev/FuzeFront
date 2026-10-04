@@ -16,7 +16,10 @@ import {
 } from '../src/providers/authentik/AuthentikIdentityProvider'
 import type { NotificationClient } from '../src/providers/authentik/notifications'
 
-process.env.JWT_SECRET = 'test-secret'
+// Test-only JWT signing secret. Overridable via TEST_JWT_SECRET; the fallback is
+// a deliberately non-production placeholder, never a real credential.
+const TEST_JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret'
+process.env.JWT_SECRET = TEST_JWT_SECRET
 process.env.FRONTEND_URL = 'https://app.fuzefront.com'
 // Brokered is the DEFAULT; assert it explicitly so this file is order-independent.
 process.env.SECURITY_GOOGLE_BROKERED = 'true'
@@ -150,7 +153,7 @@ describe('server-brokered Google callback (success)', () => {
 
     const session = await provider.exchangeCode(code)
     expect(session.user.email).toBe('gina@example.com')
-    const decoded = jwt.verify(session.token, 'test-secret') as any
+    const decoded = jwt.verify(session.token, TEST_JWT_SECRET) as any
     expect(decoded.userId).toBe(session.user.id)
     // Single-use.
     await expect(provider.exchangeCode(code)).rejects.toBeInstanceOf(UnauthorizedError)

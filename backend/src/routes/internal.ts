@@ -9,6 +9,24 @@ import { isDevportalEnabled } from '../utils/devportalFlag'
 const router = express.Router()
 
 /**
+ * Neutralise a value before it reaches a log line.
+ *
+ * These handlers are request paths: the request-supplied `userId` is echoed
+ * back inside provisioning error messages, so an unsanitised value could
+ * inject CR/LF and forge whole log entries (log injection), or smuggle
+ * `%s`/`%d` format specifiers into a format string. Control characters are
+ * escaped rather than dropped so the information content is preserved, and
+ * the result is length-capped so one request cannot flood the log.
+ */
+function sanitizeForLog(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\p{Cc}/gu, ' ')
+    .slice(0, 2000)
+}
+
+/**
  * Internal, service-to-service provisioning endpoint.
  *
  * Plan D's provisioning-service calls this so that ALL provisioning logic stays
@@ -51,7 +69,10 @@ router.post('/provision', async (req, res) => {
     const result = await runInternalProvision(userId)
     return res.status(200).json({ ok: true, ...result })
   } catch (error: any) {
-    console.error('Internal provision failed:', error)
+    console.error(
+      'Internal provision failed: %s',
+      sanitizeForLog(error?.stack ?? error?.message ?? error)
+    )
     return res
       .status(500)
       .json({ error: 'Provisioning failed', detail: String(error?.message ?? error) })
@@ -103,7 +124,10 @@ router.post('/devportal-provision', async (req, res) => {
     await ensureDeveloperMembership(userId)
     return res.status(200).json({ ok: true })
   } catch (error: any) {
-    console.error('Internal devportal-provision failed:', error)
+    console.error(
+      'Internal devportal-provision failed: %s',
+      sanitizeForLog(error?.stack ?? error?.message ?? error)
+    )
     return res
       .status(500)
       .json({ error: 'Provisioning failed', detail: String(error?.message ?? error) })

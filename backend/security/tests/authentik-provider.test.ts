@@ -12,7 +12,10 @@ import { AuthentikIdentityProvider, MfaRequiredError, ConflictError, Unauthorize
 import * as totp from '../src/providers/authentik/totp'
 import type { NotificationClient } from '../src/providers/authentik/notifications'
 
-process.env.JWT_SECRET = 'test-secret'
+// Test-only JWT signing secret. Overridable via TEST_JWT_SECRET; the fallback is
+// a deliberately non-production placeholder, never a real credential.
+const TEST_JWT_SECRET = process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret'
+process.env.JWT_SECRET = TEST_JWT_SECRET
 process.env.FRONTEND_URL = 'https://app.fuzefront.com'
 process.env.SECURITY_IDP_PROXY_PREFIX = '/api/auth/idp'
 
@@ -134,7 +137,7 @@ describe('passwordLogin', () => {
     expect(session.token).toBeTruthy()
     expect(session.user.id).toBe('u1')
     expect(db.__tables.sessions.length).toBe(1)
-    const decoded = jwt.verify(session.token, 'test-secret') as any
+    const decoded = jwt.verify(session.token, TEST_JWT_SECRET) as any
     expect(decoded.userId).toBe('u1')
   })
 

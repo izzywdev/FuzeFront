@@ -237,9 +237,43 @@ export async function introspectMachineToken(
       console.error('[machine-identity] Introspection request rejected (401): check AUTHENTIK_CLIENT_ID/SECRET')
       return { active: false }
     }
-    console.error('[machine-identity] Token introspection error:', error)
+    // NEVER log the raw error object here. This call is
+    // `axios.post(introspectionEndpoint, params, { auth: { username: clientId,
+    // password: clientSecret } })`, so an AxiosError carries, as OWN
+    // ENUMERABLE properties:
+    //   - `config.auth.password`  = AUTHENTIK_CLIENT_SECRET
+    //   - `config.headers.Authorization` = `Basic base64(id:secret)`
+    //   - `config.data`           = `token=<the CALLER's bearer token>&...`
+    // `console.error(err)` renders via util.inspect (NOT AxiosError.toJSON),
+    // whose default depth of 2 is deep enough to print all three straight into
+    // stdout -> Loki. Summarise the non-secret fields only.
+    console.error(
+      '[machine-identity] Token introspection error: %s',
+      describeIntrospectionError(error)
+    )
     return { active: false }
   }
+}
+
+/**
+ * Non-secret summary of an introspection failure.
+ *
+ * Deliberately reads only fields that cannot contain a credential: the HTTP
+ * status, the axios error code, and the error message. It never touches
+ * `error.config` (request credentials) and never echoes the response body
+ * verbatim beyond the status.
+ */
+function describeIntrospectionError(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    return JSON.stringify({
+      code: error.code ?? null,
+      status: error.response?.status ?? null,
+      message: error.message,
+    })
+  }
+  return JSON.stringify({
+    message: error instanceof Error ? error.message : String(error),
+  })
 }
 
 /**

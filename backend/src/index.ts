@@ -9,6 +9,7 @@ import dotenv from 'dotenv'
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
+import connectorRoutes from './routes/connectors'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import usersRoutes from './routes/users'
@@ -28,7 +29,11 @@ import {
   getPermitSyncStatus,
 } from './permit/sync-permit-schema'
 import permitClient from './config/permit'
-import { ensureRootOrgAdmins } from './services/rootOrgAdmin'
+import {
+  ensureConfiguredRootAdmins,
+  ensureRootOrgAdmins,
+  parseRootAdminEmails,
+} from './services/rootOrgAdmin'
 import { initFeatureFlags } from './utils/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
@@ -44,6 +49,7 @@ import { startBillingProjection, stopBillingProjection } from './services/billin
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
+import { startChatResponseConsumer, stopChatResponseConsumer } from './kafka/chat-response.consumer'
 
 // Load environment variables
 dotenv.config()
@@ -336,6 +342,7 @@ app.use('/api/v1/billing', billingRoutes)
 // /api/v1/notifications/*; this forwards it in-cluster. The service's
 // /internal/* publish surface is blocked here — see routes/notifications.ts.
 app.use('/api/v1/notifications', notificationProxyRoutes)
+app.use('/api/v1/connectors', connectorRoutes)
 
 app.use('/api/v1/app-registry', appRegistryRoutes)
 // App-registry proxy: browser -> backend -> fuzefront-applications:3003. The
@@ -518,6 +525,12 @@ function gracefulShutdown(signal: string) {
         await stopRefIndexProjection()
       } catch (error) {
         console.error('❌ Error stopping ref_index projection consumer:', error)
+      }
+
+      try {
+        await stopChatResponseConsumer()
+      } catch (error) {
+        console.error('❌ Error stopping chat response consumer:', error)
       }
 
       console.log('🎯 Graceful shutdown complete')
@@ -705,6 +718,18 @@ async function startServer() {
       console.error('⚠️  ensureRootOrgAdmins failed (non-fatal):', error)
     }
 
+    // Configured human root admins (PLATFORM_ROOT_ADMIN_EMAILS) usually have no
+    // `users` row at boot — it appears on their first login. Re-check on an
+    // interval so that login takes effect without a restart. Permit treats a
+    // repeat assignment as a benign conflict.
+    if (parseRootAdminEmails().length > 0) {
+      setInterval(() => {
+        ensureConfiguredRootAdmins().catch(error =>
+          console.error('⚠️  ensureConfiguredRootAdmins failed (non-fatal):', error)
+        )
+      }, 5 * 60 * 1000).unref()
+    }
+
     // Start consuming billing.subscription.changed to project plan-tier/status
     // onto users/organizations. Non-fatal + no-op when KAFKA_BROKERS is unset.
     await startBillingProjection()
@@ -713,6 +738,10 @@ async function startServer() {
     // Non-fatal + no-op when KAFKA_BROKERS is unset.
     const refIndexStore = new KnexRefIndexRepository(db)
     await startRefIndexProjection(refIndexStore)
+
+    await startChatResponseConsumer(io).catch(error => {
+      console.error('⚠️  Chat response WebSocket bridge failed to start (non-fatal):', error)
+    })
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)

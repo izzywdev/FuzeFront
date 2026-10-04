@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { Modal, Input, Button, Alert } from '@fuzefront/design-system'
 
@@ -12,6 +12,12 @@ export interface CreatedOrganization {
   name: string
 }
 
+/** Verdict from the host's real-time availability probe. */
+export interface SlugAvailability {
+  available: boolean
+  reason?: 'taken' | 'invalid'
+}
+
 export interface CreateOrganizationDialogProps {
   open: boolean
   onClose: () => void
@@ -20,6 +26,13 @@ export interface CreateOrganizationDialogProps {
   onCreated?: (org: CreatedOrganization) => void
   /** Derives a slug candidate from the name (kept in the host app, which owns backend slug rules). */
   slugForName?: (name: string) => string
+  /**
+   * Optional real-time availability probe (host owns the API). When provided,
+   * the dialog checks the derived slug as the user types and warns inline BEFORE
+   * submit. The submit-time rejection from `onCreate` stays the safe gate, so
+   * omitting this only loses the early warning, never the guard.
+   */
+  onCheckAvailability?: (slug: string) => Promise<SlugAvailability>
 }
 
 function defaultSlug(name: string): string {
@@ -48,23 +61,62 @@ function isNameTakenError(err: unknown): boolean {
  * ContextSwitcher footer and the "My orgs & sub-orgs" list. A NAME_TAKEN
  * rejection renders INLINE on the field — never a toast that loses the form.
  */
+type AvailabilityState =
+  | { status: 'idle' | 'checking' | 'available' }
+  | { status: 'taken' | 'invalid' }
+
 export function CreateOrganizationDialog({
   open,
   onClose,
   onCreate,
   onCreated,
   slugForName = defaultSlug,
+  onCheckAvailability,
 }: CreateOrganizationDialogProps) {
   const [name, setName] = useState('')
   const [nameError, setNameError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [availability, setAvailability] = useState<AvailabilityState>({ status: 'idle' })
+  // Monotonic token so a slow probe that resolves after a newer keystroke is
+  // discarded instead of clobbering the current verdict.
+  const probeSeq = useRef(0)
+
+  // Debounced as-you-type availability check. Only runs when the host wired a
+  // probe; the submit-time guard covers the no-probe case.
+  useEffect(() => {
+    if (!onCheckAvailability) return
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setAvailability({ status: 'idle' })
+      return
+    }
+    const seq = ++probeSeq.current
+    setAvailability({ status: 'checking' })
+    const timer = setTimeout(async () => {
+      try {
+        const { available, reason } = await onCheckAvailability(slugForName(trimmed))
+        if (seq !== probeSeq.current) return // stale
+        setAvailability(
+          available
+            ? { status: 'available' }
+            : { status: reason === 'invalid' ? 'invalid' : 'taken' }
+        )
+      } catch {
+        if (seq !== probeSeq.current) return
+        setAvailability({ status: 'idle' }) // probe failure never blocks; submit re-checks
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [name, onCheckAvailability, slugForName])
 
   function reset() {
     setName('')
     setNameError(null)
     setFormError(null)
     setSubmitting(false)
+    probeSeq.current++
+    setAvailability({ status: 'idle' })
   }
 
   function handleClose() {
@@ -106,15 +158,41 @@ export function CreateOrganizationDialog({
         style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
       >
         {formError && <Alert tone="error">{formError}</Alert>}
-        <Input
-          label="Name"
-          data-input="org-name"
-          data-error-code={nameError ? 'NAME_TAKEN' : undefined}
-          value={name}
-          onChange={e => setName((e.target as HTMLInputElement).value)}
-          error={nameError ?? ''}
-          autoFocus
-        />
+        {(() => {
+          const liveError =
+            availability.status === 'taken'
+              ? 'That name is already taken'
+              : availability.status === 'invalid'
+                ? 'That name can’t be turned into a URL — try adding letters or numbers'
+                : null
+          const shownError = nameError ?? liveError
+          return (
+            <div>
+              <Input
+                label="Name"
+                data-input="org-name"
+                data-error-code={shownError ? 'NAME_TAKEN' : undefined}
+                data-availability={availability.status}
+                value={name}
+                onChange={e => setName((e.target as HTMLInputElement).value)}
+                error={shownError ?? ''}
+                autoFocus
+              />
+              {/* Positive / in-flight states use a quiet helper line; the taken/
+                  invalid states ride the Input's own error affordance above. */}
+              {!shownError && availability.status === 'checking' && (
+                <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                  Checking availability…
+                </p>
+              )}
+              {!shownError && availability.status === 'available' && (
+                <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-sm)', color: 'var(--color-success, var(--text-secondary))' }}>
+                  ✓ Available
+                </p>
+              )}
+            </div>
+          )
+        })()}
         <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
           <Button type="button" variant="ghost" onClick={handleClose}>
             Cancel

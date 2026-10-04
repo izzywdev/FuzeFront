@@ -4,6 +4,8 @@ import type { App } from '@fuzefront/app-registry-client'
 import { AppTile } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { useRegisteredApps } from '../platform/appRegistry'
+import { useCurrentUser, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
+import { isEmployeeUser } from '../utils/employee'
 import {
   iconImageUrl,
   iconGlyph,
@@ -22,6 +24,24 @@ function AppSelector() {
   const { t } = useLanguage()
   const navigate = useNavigate()
   const { apps } = useRegisteredApps()
+  const { user } = useCurrentUser()
+  const { activeOrganizationId } = useOrganizations()
+  const isPersonalContext = activeOrganizationId === null
+  const isEmployee = isEmployeeUser(user?.roles)
+
+  const visibleApps = apps.filter(app => {
+    if (app.slug === 'executive') {
+      if (isPersonalContext) return false
+      if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
+    }
+    const manifest = app.manifest as any
+    const orgRequired =
+      manifest?.requiresOrgContext === true ||
+      manifest?.visibility === 'organization'
+    if (isPersonalContext && orgRequired) return false
+    return true
+  })
+
   const [isOpen, setIsOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [dropdownPosition, setDropdownPosition] = useState({
@@ -155,7 +175,7 @@ function AppSelector() {
               {t('applications')}
             </div>
 
-            {apps.length > 0 ? (
+            {visibleApps.length > 0 ? (
               <div
                 style={{
                   display: 'grid',
@@ -165,7 +185,7 @@ function AppSelector() {
                   overflowY: 'auto',
                 }}
               >
-                {apps.map(app => (
+                {visibleApps.map(app => (
                   <AppTile
                     key={app.slug}
                     name={app.manifest.menuLabel}

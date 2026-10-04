@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import { Button } from '@fuzefront/design-system'
 import {
   useCurrentUser,
   useAppContext,
@@ -53,6 +54,7 @@ import ConfigPage from './pages/ConfigPage'
 import ConfigCatalogPage from './pages/ConfigCatalogPage'
 import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
+import ConnectorsPage from './pages/ConnectorsPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
 import {
   SelectionListManagementFlow,
@@ -260,12 +262,9 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         <p style={{ margin: 0, color: 'var(--text-secondary)', maxWidth: '46ch' }}>
           {t('accounts.limitBody', { max: MAX_PARALLEL_ACCOUNTS })}
         </p>
-        <button
-          className="btn btn-primary"
-          onClick={() => (window.location.href = '/')}
-        >
+        <Button variant="primary" onClick={() => (window.location.href = '/')}>
           {t('nav.dashboard')}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -384,6 +383,7 @@ function AppContent() {
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
+            <Route path="/connectors" element={<ConnectorsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
@@ -404,6 +404,7 @@ function AppContent() {
             <Route path="/settings/selection-lists/:listId/translations/:locale" element={<TranslationWorkbenchRoute />} />
             <Route path="/settings/selection-lists/:listId/access" element={<SelectionListAccessRoute />} />
             <Route path="/app/:appId" element={<AppRoute />} />
+            <Route path="/app/:appId/*" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/status" element={<StatusPage />} />
@@ -559,12 +560,9 @@ function AdminRoute() {
       >
         <h3>🔒 Access Denied</h3>
         <p>You need admin privileges to access this page.</p>
-        <button
-          className="btn btn-primary"
-          onClick={() => (window.location.href = '/dashboard')}
-        >
+        <Button variant="primary" onClick={() => (window.location.href = '/dashboard')}>
           Return to Dashboard
-        </button>
+        </Button>
       </div>
     )
   }
@@ -584,15 +582,11 @@ function NotFoundPage() {
     >
       <h1>404 - Page Not Found</h1>
       <p>The page you're looking for doesn't exist.</p>
-      <button
-        className="btn btn-primary"
-        onClick={() => (window.location.href = '/dashboard')}
-      >
+      <Button variant="primary" onClick={() => (window.location.href = '/dashboard')}>
         Go to Dashboard
-      </button>
+      </Button>
     </div>
   )
 }
 
 export default App
-

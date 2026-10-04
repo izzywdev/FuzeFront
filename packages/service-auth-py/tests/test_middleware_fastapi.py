@@ -21,12 +21,13 @@ from fuzefront_service_auth import (
     MachineTokenVerifier,
 )
 from fuzefront_service_auth.middleware.fastapi import (
+    delegated_identity_dependency,
     machine_identity_dependency,
 )
 
 
 def make_http_post(responses):
-    def http_post(url, payload, timeout):
+    def http_post(url, payload, timeout, **kwargs):
         return responses.pop(0)
 
     return http_post
@@ -101,3 +102,21 @@ def test_authorization_hook_denial_returns_403():
     response = client.get("/internal/reports", headers={"Authorization": "Bearer good-token"})
 
     assert response.status_code == 403
+
+
+def test_delegated_dependency_binds_audience_actor_and_scope():
+    responses = [
+        (200, json.dumps({"active": True, "subject": "service:caller", "tokenKind": "fuze-workload"})),
+        (200, json.dumps({"active": True, "subject": "user-1", "tokenKind": "fuze-delegation", "audience": "service:fuzekeys", "actor": {"sub": "service:caller"}, "scope": "connectors:credentials:read"})),
+    ]
+    verifier = MachineTokenVerifier(base_url="http://security", http_post=make_http_post(responses), cache_max_ttl_seconds=0)
+    app = FastAPI()
+    dependency = delegated_identity_dependency(verifier, audience="service:fuzekeys", required_scopes=["connectors:credentials:read"])
+
+    @app.get("/lease")
+    async def lease(identity=Depends(dependency)):  # noqa: B008 - FastAPI dependency declaration
+        return {"subject": identity.subject}
+
+    response = TestClient(app).get("/lease", headers={"Authorization": "Bearer machine", "X-Fuze-Delegation": "Bearer delegated"})
+    assert response.status_code == 200
+    assert response.json() == {"subject": "user-1"}
