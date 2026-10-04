@@ -2,9 +2,10 @@
 
 **Status:** contract FROZEN on merge of this PR. **No implementation exists yet** — the
 selection-list-service does not publish any of these events, does not consume
-`identity.org.created` or `selection-lists.seed.requested`, and the
-`fuzefront.selection-lists.seed-defaults` flag is not registered. A later wave builds
-all of that against this contract (see [§14](#14-implementation-wave-for-the-orchestrator)).
+`identity.org.created` or `selection-lists.seed.requested`. (The `fuzefront.selection-lists.seed-defaults` flag IS now registered —
+`packages/feature-flags/flag-registry.yaml`, `FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS`,
+`isSeedDefaultsEnabled()` in the service — default OFF, never enabled by registration.)
+A later wave builds all of that against this contract (see [§14](#14-implementation-wave-for-the-orchestrator)).
 
 | Artifact | Path |
 |---|---|
@@ -408,10 +409,13 @@ read-only list type. Open question Q2.
 | Gates | **both** new consumers: `identity.org.created` seeding and `seed.requested` handling, plus the reconciler |
 | OFF behaviour | `org.created`: skip (reconciler catches up when ON). `seed.requested`: `seed.failed` / `SEEDING_DISABLED`, `retryable: true` |
 | Independent of | `fuzefront.selection-lists.service` (master gate). Seeding also requires the master gate ON for the org. |
-| Owner / removal | platform team; remove when seeding is GA for 100 % of orgs and the reconciler has backfilled every existing org |
+| Owner / removal | izzywdev; remove once seeding has been ON for all orgs for 30 days with zero `selection-lists.seed.failed` in that window (and the reconciler has backfilled every existing org) |
 
-Registration in Unleash + the `FLAG_KEYS` constant are `feature-flags-engineer`; this
-contract only names it.
+Registered by `feature-flags-engineer`: `packages/feature-flags/flag-registry.yaml` entry,
+`FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS` (server-only — deliberately not in
+`WEB_EXPOSED_FLAGS`), and the service helper `isSeedDefaultsEnabled(ctx)` in
+`services/selection-list-service/src/flags.ts` (fails closed). Both consumers must call the
+helper per message with `{ organizationId }`.
 
 Publishing of the change events (§4) is **not** flagged: it is a pure side effect with no
 user-visible behaviour, and gating it would leave holes in consumers' read models.
