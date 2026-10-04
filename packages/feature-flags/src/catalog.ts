@@ -39,7 +39,11 @@ export const FLAG_KEYS = {
   BILLING_INVOICE_HISTORY: 'fuzefront.billing.invoice-history',
   /**
    * Gates showing org-context required apps as disabled in non-org context.
-   * Default ON in production. Release flag.
+   * Default ON in production. OPS-KILL-SWITCH (not release): the gated
+   * behaviour is a permanent, GA'd platform capability that ships ON; OFF is
+   * the break-glass that turns the org-context gating off. Owner:
+   * frontend-engineer. Removal criterion: only if org-context gating itself
+   * is removed from the shell.
    */
   APPS_ORG_CONTEXT_DISABLED: 'fuzefront.apps.org-context-disabled',
   /**
@@ -259,7 +263,9 @@ export const PLAN_FLAGS = {
 export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   { key: FLAG_KEYS.ACCOUNT_SECURITY_HUB, type: 'release', default: false },
   { key: FLAG_KEYS.BILLING_INVOICE_HISTORY, type: 'release', default: false },
-  { key: FLAG_KEYS.APPS_ORG_CONTEXT_DISABLED, type: 'release', default: true },
+  // Kill-switch semantics: default ON (gating active), OFF is break-glass. The
+  // taxonomy rule (kill-switch => default ON) is what makes default `true` correct.
+  { key: FLAG_KEYS.APPS_ORG_CONTEXT_DISABLED, type: 'ops-kill-switch', default: true },
   { key: FLAG_KEYS.APPS_ORG_CONTEXT_HIDDEN, type: 'release', default: false },
   {
     key: FLAG_KEYS.SELECTION_LISTS_SERVICE,
