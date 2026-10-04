@@ -85,9 +85,12 @@ describe('handleOrgDeleted', () => {
 });
 
 describe('handleUserDeleted', () => {
-  it('deletes user-scoped values AND anonymises authorship on survivors', async () => {
-    const f = fakePool([2, 5]);
+  it('deletes user-scoped values, anonymises authorship on survivors, and redacts history', async () => {
+    const f = fakePool([2, 5, 3]);
     await handleUserDeleted(f.pool, userEvent('user-abc'));
+
+    expect(f.statements[0].sql).toMatch(/^\s*BEGIN/i);
+    expect(f.statements[f.statements.length - 1].sql).toMatch(/^\s*COMMIT/i);
 
     const del = f.statements[1];
     expect(del.sql).toMatch(/DELETE FROM config\.config_values/i);
@@ -100,6 +103,23 @@ describe('handleUserDeleted', () => {
     expect(upd.params).toEqual(['user-abc']);
   });
 
+  it('redacts the user from config_history: actor_id NULL + actor_redacted TRUE, only on user rows', async () => {
+    const f = fakePool([2, 5, 3]);
+    await handleUserDeleted(f.pool, userEvent('user-abc'));
+
+    const redact = f.statements[3];
+    expect(redact.sql).toMatch(/UPDATE config\.config_history/i);
+    expect(redact.sql).toMatch(/actor_id\s*=\s*NULL/i);
+    expect(redact.sql).toMatch(/actor_redacted\s*=\s*TRUE/i);
+    // Only rows a USER authored — a system row has no id to erase, and must
+    // not be rewritten (the CHECK in migration 005 forbids it anyway).
+    expect(redact.sql).toMatch(/actor_type\s*=\s*'user'/i);
+    expect(redact.sql).toMatch(/actor_id\s*=\s*\$1/i);
+    expect(redact.params).toEqual(['user-abc']);
+    // It changes WHO, never WHAT: no action/value/occurred_at column touched.
+    expect(redact.sql).not.toMatch(/\baction\b\s*=|old_value\s*=|new_value\s*=|occurred_at\s*=/i);
+  });
+
   it('deletes before anonymising, so doomed rows are not rewritten first', async () => {
     const f = fakePool([2, 5]);
     await handleUserDeleted(f.pool, userEvent('user-abc'));
@@ -110,29 +130,43 @@ describe('handleUserDeleted', () => {
   });
 
   it('does NOT delete rows merely authored by the user — it nulls the author', async () => {
-    const f = fakePool([0, 4]);
+    const f = fakePool([0, 4, 0]);
     await handleUserDeleted(f.pool, userEvent('user-abc'));
     const deletes = f.statements.filter((s) => /DELETE/i.test(s.sql));
     expect(deletes).toHaveLength(1);
     expect(deletes[0].sql).toMatch(/scope_type\s*=\s*'user'/i);
   });
 
-  it('NEVER touches config_history — actor_id redaction needs a schema change', async () => {
-    const f = fakePool([2, 5]);
+  it('redaction runs inside the same transaction as the value changes', async () => {
+    const f = fakePool([2, 5, 3]);
     await handleUserDeleted(f.pool, userEvent('user-abc'));
-    expect(f.sqlText()).not.toMatch(/config_history/i);
+    const order = f.statements.map((s) => s.sql);
+    const begin = order.findIndex((s) => /^\s*BEGIN/i.test(s));
+    const commit = order.findIndex((s) => /^\s*COMMIT/i.test(s));
+    const redact = order.findIndex((s) => /config_history/i.test(s));
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(redact).toBeGreaterThan(begin);
+    expect(redact).toBeLessThan(commit);
   });
 
-  it('is idempotent: no overrides and no authorship is a clean no-op', async () => {
-    const f = fakePool([0, 0]);
+  it('is idempotent: no overrides, no authorship and no history is a clean no-op', async () => {
+    const f = fakePool([0, 0, 0]);
     await expect(handleUserDeleted(f.pool, userEvent('ghost'))).resolves.toBeUndefined();
     expect(f.sqlText()).toMatch(/COMMIT/i);
   });
 
-  it('rolls back and rethrows when the update fails', async () => {
-    const f = fakePool([1], /UPDATE/i);
+  it('rolls back and rethrows when the config_values update fails', async () => {
+    const f = fakePool([1], /UPDATE config\.config_values/i);
     await expect(handleUserDeleted(f.pool, userEvent('user-abc'))).rejects.toThrow('boom');
     expect(f.sqlText()).toMatch(/ROLLBACK/i);
+    expect(f.wasReleased()).toBe(true);
+  });
+
+  it('rolls back and rethrows when the history redaction fails — no half-erasure', async () => {
+    const f = fakePool([2, 5], /UPDATE config\.config_history/i);
+    await expect(handleUserDeleted(f.pool, userEvent('user-abc'))).rejects.toThrow('boom');
+    expect(f.sqlText()).toMatch(/ROLLBACK/i);
+    expect(f.sqlText()).not.toMatch(/COMMIT/i);
     expect(f.wasReleased()).toBe(true);
   });
 });
@@ -164,10 +198,14 @@ describe('cascade=soft is a DEACTIVATION and must never destroy config', () => {
     expect((f.pool.connect as jest.Mock)).not.toHaveBeenCalled();
   });
 
-  it('user: retains authorship — no DELETE and no set_by_user_id rewrite', async () => {
-    const f = fakePool([2, 5]);
+  it('user: retains authorship — no DELETE, no set_by_user_id rewrite, no history redaction', async () => {
+    const f = fakePool([2, 5, 3]);
     await handleUserDeleted(f.pool, userEvent('user-abc', 'soft'));
     expect(f.sqlText()).not.toMatch(/DELETE/i);
     expect(f.sqlText()).not.toMatch(/set_by_user_id/i);
+    // A deactivated user can be reactivated — their history authorship is
+    // restorable state, so it must survive soft deletion untouched.
+    expect(f.sqlText()).not.toMatch(/config_history/i);
+    expect(f.sqlText()).not.toMatch(/actor_redacted/i);
   });
 });

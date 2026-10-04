@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -105,10 +105,10 @@ export const AboutPage: React.FC = () => {
             className="mt-14 grid grid-cols-3 gap-6 max-w-lg mx-auto"
           >
             {stats.map((s) => (
-              <div key={s.label} className="text-center">
+              <Center key={s.label}>
                 <div className="text-3xl font-bold text-white">{s.metric}</div>
                 <div className="text-secondary-300 text-xs sm:text-sm mt-1">{s.label}</div>
-              </div>
+              </Center>
             ))}
           </motion.div>
         </Container>

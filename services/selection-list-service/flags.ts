@@ -48,6 +48,11 @@ export const FLAGS = {
    * Release flag, default OFF. See module doc above for full metadata.
    */
   SELECTION_LISTS_SERVICE: 'fuzefront.selection-lists.service',
+  /**
+   * Gates BOTH default-seeding consumers (org-created seeding + seed-requested).
+   * Release flag, default OFF, server-only. See src/flags.ts for full metadata.
+   */
+  SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
 } as const
 
 let injected: FlagClientLike | null = null
@@ -100,6 +105,26 @@ export async function isSelectionListsEnabled(
   try {
     return await client.getBooleanValue(
       FLAGS.SELECTION_LISTS_SERVICE,
+      false,
+      buildContext(ctx)
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Release flag (default OFF): is default-list seeding enabled for the org?
+ * Mirrors src/flags.ts `isSeedDefaultsEnabled` (keep in sync). Fails closed.
+ */
+export async function isSeedDefaultsEnabled(
+  ctx?: Partial<FlagContext>
+): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false // fail-safe: release default OFF
+  try {
+    return await client.getBooleanValue(
+      FLAGS.SELECTION_LISTS_SEED_DEFAULTS,
       false,
       buildContext(ctx)
     )

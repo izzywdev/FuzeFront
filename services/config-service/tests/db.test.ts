@@ -43,6 +43,7 @@ describe('migrations directory', () => {
       '002_config_key_definitions.sql',
       '003_config_values.sql',
       '004_config_history.sql',
+      '005_config_history_actor_redacted.sql',
     ]);
 
     for (const file of files) {

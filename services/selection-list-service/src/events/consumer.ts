@@ -26,8 +26,12 @@ interface LifecycleConsumers {
  *   selection-list-service-group-org-deleted
  *   selection-list-service-group-user-deleted
  *
- * Both share a single DLQ producer. A handler failure dead-letters the message
- * to `<topic>.dlq` so the offset still commits and the loop stays healthy.
+ * Both share a single DLQ producer. A message that is not valid JSON or fails
+ * schema validation is dead-lettered to `<topic>.dlq` by TypedConsumer (shared/
+ * src/kafka/consumer.ts) so the offset still commits. A HANDLER that throws is
+ * NOT dead-lettered: the error propagates to kafkajs (retry / consumer restart),
+ * which is why a handler bug (see org-deleted.handler.ts) is loud rather than
+ * silently parked. On success the DLQ is never touched.
  *
  * Returns a `disconnect()` function for graceful shutdown on SIGTERM.
  */

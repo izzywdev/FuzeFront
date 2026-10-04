@@ -33,6 +33,23 @@ exports.SCHEMA_BY_TOPIC = {
     [types_1.TOPICS.NOTIFY_EMAIL_REQUESTED]: schemas_1.notifyEmailRequestedSchemaV1,
     [types_1.TOPICS.NOTIFY_EMAIL_STATUS]: schemas_1.notifyEmailStatusSchemaV1,
     [types_1.TOPICS.PORTAL_CREATED]: schemas_1.portalCreatedSchemaV1,
+    [types_1.TOPICS.CHAT_RESPONSE_CHUNK]: schemas_1.chatResponseChunkSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_LIST_CREATED]: schemas_1.selectionListsListCreatedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_LIST_UPDATED]: schemas_1.selectionListsListUpdatedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_LIST_ARCHIVED]: schemas_1.selectionListsListArchivedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_LIST_DELETED]: schemas_1.selectionListsListDeletedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_ITEM_CREATED]: schemas_1.selectionListsItemCreatedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_ITEM_UPDATED]: schemas_1.selectionListsItemUpdatedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_ITEM_ARCHIVED]: schemas_1.selectionListsItemArchivedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_ITEM_DELETED]: schemas_1.selectionListsItemDeletedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_ITEM_REORDERED]: schemas_1.selectionListsItemReorderedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_TRANSLATION_UPSERTED]: schemas_1.selectionListsTranslationUpsertedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_TRANSLATION_DELETED]: schemas_1.selectionListsTranslationDeletedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_ACCESS_GRANTED]: schemas_1.selectionListsAccessGrantedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_ACCESS_REVOKED]: schemas_1.selectionListsAccessRevokedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_SEED_REQUESTED]: schemas_1.selectionListsSeedRequestedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_SEED_COMPLETED]: schemas_1.selectionListsSeedCompletedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_SEED_FAILED]: schemas_1.selectionListsSeedFailedSchemaV1,
 };
 /** Returns the payload schema for a topic, or undefined if none is registered. */
 function schemaForTopic(topic) {

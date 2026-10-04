@@ -11,6 +11,7 @@
     "shared",
     "packages/identity",
     "packages/auth",
+    "packages/telemetry",
     "packages/service-auth",
     "api-client",
     "sdk",

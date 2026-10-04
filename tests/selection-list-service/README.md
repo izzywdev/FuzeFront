@@ -3,12 +3,14 @@
 **FFRNT-198 / S12** — Written by `test-engineer` against the frozen spec
 (`services/selection-list-service/openapi.yaml` v1.0.0).
 
-## These tests are intentionally RED
+## Status: GREEN, and a required CI gate
 
-This suite was authored **before** the service exists. Every test is expected to fail
-until `backend-engineer` delivers a compliant implementation. Red tests against a real
-bug are a deliverable — they stay red until the bug is fixed, not until the test is
-removed.
+This suite was authored **before** the service existed and was TDD-red
+(`continue-on-error`) in CI. The service now meets the frozen spec and the
+suite passes in full, so `selection-list-service-integration-tests`
+(`.github/workflows/ci.yml`) is a **real gate**: a regression fails the build and
+the `notify` job. A red test means a real deviation from the frozen OpenAPI
+contract — fix the service (or amend the contract PR), never weaken the test.
 
 ## Prerequisites
 
@@ -16,7 +18,8 @@ removed.
 |---|---|
 | Node 24+ | `node --version` must be `>=24.0.0` |
 | Running `selection-list-service` | Defaults to `http://localhost:3011` |
-| Postgres (test DB) | Required only for `security/mirror-not-authority.test.ts` |
+| Postgres (test DB) | Required for `security/mirror-not-authority.test.ts` and for the quota ceilings seeded by `helpers/global-setup.ts` |
+| Stand-in Security API | `node helpers/fake-security-api.mjs` (port 3002); point the service at it with `SECURITY_SERVICE_URL` |
 
 ## Running the service locally
 
@@ -26,10 +29,12 @@ the service in test mode. The service must:
 1. Accept JWTs signed with `JWT_SECRET` (set it to `test-jwt-secret-for-selection-list-service`
    or override `TEST_JWT_SECRET` in your shell before running the tests)
 2. Connect to a fresh Postgres instance with the service's own migrations applied
-3. Use test-mode quota ceilings (see Environment Variables below)
-4. Use a Permit mock/test environment (the mirror-not-authority tests require that
-   the test Permit mock does NOT grant `usr_01test00000000mirrorb00000` access to
-   any list, so the direct DB injection is the only grant path)
+3. Resolve quota ceilings from `selection_list_org_quota` (the harness seeds the quota suite's org in `helpers/global-setup.ts` from `TEST_QUOTA_*`; the service needs no special mode)
+4. Authorize through the stand-in Security API (`helpers/fake-security-api.mjs`),
+   not the allow-all `NODE_ENV=test` no-op: set `SECURITY_SERVICE_URL` and
+   `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true`. It grants only via the service's
+   own grant calls, so the mirror-not-authority tests' direct DB injection is the
+   only way `usr_01test00000000mirrorb00000` could appear to have access
 
 Quick start (adjust to the service's actual startup command):
 

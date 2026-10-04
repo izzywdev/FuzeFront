@@ -15,10 +15,13 @@
  *   ALLOWED → assert 2xx
  *   DENIED  → assert 403 (or 404 for reads, per the "not an existence oracle" rule)
  *
- * Additionally: org admin derives list-owner on ALL lists in the org, even
- * without an explicit Permit grant.
+ * Additionally (contract 3.0.0, docs/planning/selection-lists-permit-actions.md
+ * §4.2/§5): per-list actions are INSTANCE-ONLY. A tenant role (admin included)
+ * confers none of them, and there is NO automatic org-admin -> list-owner
+ * derivation. A tenant admin reaches a list only through an explicit
+ * `list-owner` grant (the support path).
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';
@@ -416,10 +419,18 @@ describe('list-owner role', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Org admin derives list-owner on ALL lists (no explicit grant required)
+// Tenant admin does NOT derive list-owner (contract 3.0.0, review H-3)
+//
+// Replaces the 2.0.0 block "org-admin implicit list-owner", which asserted the
+// opposite. 3.0.0 splits authorization into the tenant-level
+// SelectionListCatalog (tenant roles) and the instance-level SelectionList
+// (per-list roles only): a tenant role confers NO per-list action, so an org
+// admin with no instance role on a list is treated like any other non-member of
+// that list — 404 on reads (no existence oracle), 403 on writes — until it is
+// explicitly granted list-owner.
 // ---------------------------------------------------------------------------
 
-describe('org-admin implicit list-owner', () => {
+describe('tenant admin has no implicit list-owner (3.0.0)', () => {
   const adminToken = () => tokenFor(USER_ORG_ADMIN, ['org-admin']);
 
   let orgAdminListId: SelectionListId;
@@ -439,32 +450,32 @@ describe('org-admin implicit list-owner', () => {
     await purgeList(ownerClient, orgAdminListId);
   });
 
-  it('org admin can read lists they have no explicit grant on', async () => {
+  it('org admin can NOT read a list it holds no instance role on (404, not 403)', async () => {
     const { status } = await rawFetch(`/v1/selection-lists/${encodeURIComponent(orgAdminListId)}`, {
       method: 'GET',
       token: adminToken(),
     });
-    expect(status).toBe(200);
+    expect(status).toBe(404);
   });
 
-  it('org admin can update list metadata (list-owner level)', async () => {
+  it('org admin can NOT update list metadata without an instance role', async () => {
     const { status } = await rawFetch(`/v1/selection-lists/${encodeURIComponent(orgAdminListId)}`, {
       method: 'PATCH',
       token: adminToken(),
       body: JSON.stringify({ name: 'Admin-updated Name' }),
     });
-    expect(status).toBe(200);
+    expect(status).toBe(403);
   });
 
-  it('org admin can manage_access on any list in their org', async () => {
+  it('org admin can NOT manage_access on a list it holds no instance role on', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(orgAdminListId)}/access`,
       { method: 'GET', token: adminToken() }
     );
-    expect(status).toBe(200);
+    expect(status).toBe(403);
   });
 
-  it('org admin can delete (archive) any list in their org', async () => {
+  it('org admin can NOT delete (archive) a list it holds no instance role on, and the list survives', async () => {
     const ownerClient = makeClient(() => tokenFor(USER_OWNER));
     const disposable = await createTestList(ownerClient, {
       key: 'admin-del-' + Math.random().toString(16).slice(2, 8),
@@ -475,8 +486,31 @@ describe('org-admin implicit list-owner', () => {
       method: 'DELETE',
       token: adminToken(),
     });
-    expect([200, 204]).toContain(status);
+    expect(status).toBe(403);
+
+    const still = await rawFetch(`/v1/selection-lists/${encodeURIComponent(disposable.id)}`, {
+      method: 'GET',
+      token: tokenFor(USER_OWNER),
+    });
+    expect(still.status).toBe(200);
     await purgeList(ownerClient, disposable.id as SelectionListId);
+  });
+
+  it('...but CAN use the tenant-level catalog (list, create), and sees no list it holds no role on', async () => {
+    const res = await rawFetch('/v1/selection-lists?limit=200', { method: 'GET', token: adminToken() });
+    expect(res.status).toBe(200);
+    const items = ((res.body as { items?: Array<{ id: string }> } | null)?.items ?? []) as Array<{ id: string }>;
+    expect(items.map((i) => i.id)).not.toContain(orgAdminListId);
+  });
+
+  it('once EXPLICITLY granted list-owner, the admin is a list-owner of that list', async () => {
+    const ownerClient = makeClient(() => tokenFor(USER_OWNER));
+    await ownerClient.setAccess(orgAdminListId, USER_ORG_ADMIN, 'list-owner');
+    const { status } = await rawFetch(`/v1/selection-lists/${encodeURIComponent(orgAdminListId)}`, {
+      method: 'GET',
+      token: adminToken(),
+    });
+    expect(status).toBe(200);
   });
 });
 
