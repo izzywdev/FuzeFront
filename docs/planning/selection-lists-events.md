@@ -1,11 +1,20 @@
 # Selection lists — Kafka event contract (SL5)
 
-**Status:** contract FROZEN on merge of this PR. **No implementation exists yet** — the
-selection-list-service does not publish any of these events, does not consume
-`identity.org.created` or `selection-lists.seed.requested`. (The `fuzefront.selection-lists.seed-defaults` flag IS now registered —
-`packages/feature-flags/flag-registry.yaml`, `FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS`,
-`isSeedDefaultsEnabled()` in the service — default OFF, never enabled by registration.)
-A later wave builds all of that against this contract (see [§14](#14-implementation-wave-for-the-orchestrator)).
+**Status:** contract FROZEN. **Implementation status (updated 2026-10-04, `origin/master` @ `0e70bcee`):**
+the transactional outbox + per-org ordered relay (SL6, #1265), the seed core library, platform
+pack and allowlist (#1270), and the `identity.org.created` / `selection-lists.seed.requested`
+consumers (#1271) are **merged**. **Not built:** the reconciler/backfill (§7.1 step 6, §9) and an
+`identity.org.updated` consumer. Seeding is gated by two default-OFF flags
+(`fuzefront.selection-lists.service` and `fuzefront.selection-lists.seed-defaults`) and by the
+allowlist, which ships with only the internal `platform` source — so **nothing is live**. What
+integrators and operators should read instead of this design document:
+[`docs/guides/SELECTION_LIST_EVENTS.md`](../guides/SELECTION_LIST_EVENTS.md) and
+[`docs/runbooks/selection-lists-seeding-operations.md`](../runbooks/selection-lists-seeding-operations.md).
+The text below is the original design (only the §13.0.x "As implemented" notes track the code);
+where it says "will"/"the reconciler", check those two pages. (The `fuzefront.selection-lists.seed-defaults`
+flag is registered — `packages/feature-flags/flag-registry.yaml`,
+`FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS`, `isSeedDefaultsEnabled()` — default OFF.)
+The implementation wave is described in [§14](#14-implementation-wave-for-the-orchestrator).
 
 | Artifact | Path |
 |---|---|
