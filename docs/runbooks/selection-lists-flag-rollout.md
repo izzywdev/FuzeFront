@@ -46,8 +46,10 @@ and is gated on the preconditions below.
 ## Preconditions — ALL must hold before the first ramp step
 
 1. `selection-list-service` **integration job green AND its gate required**
-   (not `continue-on-error`/advisory). The integration run uses
-   `FLAGS_FORCE_ON` (non-prod only) because CI has no Unleash.
+   (not `continue-on-error`/advisory). The integration run forces the flag ON
+   with the offline OpenFeature provider (`FUZE_FLAGS_PROVIDER=offline`,
+   non-prod only) because CI has no Unleash; a second matrix leg (`off`) runs
+   with no provider and asserts the dark 404.
 2. **e2e green** — `frontend/tests/selection-lists-*.spec.ts` pass against a
    deployed stack with the flag ON.
 3. **UI unit tests green** (`packages/selection-lists-ui` + the shell tests above).

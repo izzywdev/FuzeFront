@@ -213,10 +213,10 @@ The remaining gap belongs to `contract-designer` (declare L-1 in the spec) and t
 `fuzefront.selection-lists.service` — **release**, **default OFF**, owner platform team, Jira FFRNT-201, `web_exposed: true` (`packages/feature-flags/flag-registry.yaml`; key constant `FLAG_KEYS.SELECTION_LISTS_SERVICE`).
 
 - **Server:** `isSelectionListsEnabled()` in `services/selection-list-service/src/flags.ts`, called at the top of every list/item/translation/quota/resolve handler. OFF → `404 NOT_FOUND` (body message "Not found." or "Service not enabled."). Fails closed: no flag client or any client error → OFF. Org-targeted: context carries `orgId`.
-- **Local/CI only:** `FLAGS_FORCE_ON=fuzefront.selection-lists.service` forces ON, hard-disabled when `NODE_ENV=production`. Prod targeting is Unleash only (`unleash-flag-enable` skill; flag administration is `feature-flags-engineer`).
+- **Local/CI only:** `FUZE_FLAGS_PROVIDER=offline` with `FUZE_FLAGS_OFFLINE_ON=fuzefront.selection-lists.service` installs the offline OpenFeature provider in `@fuzefront/feature-flags` that forces the flag ON, refused when `NODE_ENV=production` and ignored whenever Unleash is configured. Prod targeting is Unleash only (`unleash-flag-enable` skill; flag administration is `feature-flags-engineer`).
 - **UI:** sidebar entry + each `/settings/selection-lists/*` route gated by `useFlag(...)`.
 - **Deploy gate (separate from the flag):** Helm `selectionListService.enabled` and `selectionListsMcp.enabled` are `false` in `values.yaml`; `values-prod.yaml` sets `selectionListService.enabled: false` (image tag pinned). The chart routes `/api/v1/selection-lists` and `/api/v1/resolve` to the service via `templates/ingress.yaml` (nginx rewrite annotation; a `selection-list-service-stripprefix` Middleware under Traefik), gated on `selectionListService.enabled`.
-- Plan any new work on this feature behind this flag (default OFF), test **both** states (`services/selection-list-service/tests/flags.force-on.test.ts` shows the pattern), and see the `feature-flags` skill for the family rules.
+- Plan any new work on this feature behind this flag (default OFF), test **both** states (`services/selection-list-service/tests/feature-flags.init.test.ts` and the `on`/`off` CI matrix with `tests/selection-list-service/dark.spec.ts` show the pattern), and see the `feature-flags` skill for the family rules.
 
 ## MCP surface
 

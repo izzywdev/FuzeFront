@@ -79,7 +79,8 @@ const SECURITY_SERVICE_URL = process.env.SECURITY_SERVICE_URL ?? 'http://fuzefro
  *
  * Setting `SECURITY_SERVICE_URL` explicitly opts OUT of the no-op: the
  * integration/acceptance suite runs the service under NODE_ENV=test (so the
- * FLAGS_FORCE_ON escape hatch works) against a stand-in Security API
+ * offline OpenFeature provider can install — it is refused in production)
+ * against a stand-in Security API
  * (tests/selection-list-service/helpers/fake-security-api.mjs) and needs REAL
  * decisions — an allow-all client cannot exercise a single denial path.
  * Unit tests never set it, so they keep the no-op.
