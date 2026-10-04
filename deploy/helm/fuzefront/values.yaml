@@ -366,6 +366,17 @@ applicationsService:
     # Key in fuzefront-secrets holding the scoped Unleash client token.
     tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
     tokenSecretName: ""
+  # Build-with-agent sessions. Every field is optional: with buildApiUrl or the
+  # token absent, POST builds answers 503 builder_unavailable. The token is a
+  # SECRET (sealed) - tokenSecretName "" means "not wired" and renders no env.
+  appBuilder:
+    buildApiUrl: ""          # absolute URL of FuzeAgent's build endpoint
+    publicBaseUrl: ""        # absolute public base for the status callbackUrl
+    tokenSecretName: ""      # Secret holding the bearer token; "" = unset
+    tokenSecretKey: "FUZEAGENT_BUILD_API_TOKEN"
+    readRateLimit: ""        # APP_BUILD_READ_RATE_LIMIT (code default 60)
+    writeRateLimit: ""       # APP_BUILD_WRITE_RATE_LIMIT (code default 10)
+    callbackRateLimit: ""    # APP_BUILD_CALLBACK_RATE_LIMIT (code default 120)
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }

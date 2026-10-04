@@ -42,6 +42,14 @@ function getDatabaseConfig(options = {}) {
         // dist/migrations and require()s them -> "Unexpected token 'export'".
         loadExtensions: [isProduction ? '.js' : '.ts'],
         extension: isProduction ? 'js' : 'ts',
+        // The split services share the original `knex_migrations` table but ship
+        // divergent chains (the monolith recorded `010_add_billing_to_entities`,
+        // while security renumbered to `010_create_api_tokens` + `011_add_billing`).
+        // knex's default validateMigrationList aborts boot when the table records a
+        // migration absent from this image's dir. All service migrations are written
+        // idempotently (hasTable/hasColumn guards), so it is safe to skip that strict
+        // check and let each service re-apply its own (no-op) chain.
+        disableMigrationsListValidation: true,
     };
     if (opts.migrationsDir) {
         migrationsConfig.directory = opts.migrationsDir;
@@ -220,6 +228,24 @@ async function ensureDatabase() {
         await client.end();
     }
 }
+// Knex's own migrations_lock table has no staleness/TTL check — if a prior
+// boot's migration process is killed mid-transaction (OOM, SIGKILL past the
+// pod's terminationGracePeriodSeconds, node crash) rather than throwing
+// cleanly, the row that clears `is_locked` never runs and the lock is stuck
+// FOREVER. Every schema-owning service here (security, applications) runs
+// `replicas: 2` in prod and calls this in-process at boot, so two pods race
+// migrate.latest() on every restart. That turns what should be a one-time
+// migration failure into a PERMANENT one: every subsequent boot — this
+// replica AND its sibling, and every replacement Kubernetes schedules after
+// each crash — fails at "Migration table is already locked", not at any
+// actual migration, and nothing ever clears it because no boot ever gets
+// past this line to do so. Match against the message Knex actually throws
+// (Migrator#_lockMigrations / #migrate, knex 3.x): "Migration table is
+// already locked". Force-free and retry exactly ONCE — safe even when the
+// lock is genuinely held by a sibling replica's in-flight migration, since
+// that replica's own transaction still owns its work; this retry simply
+// re-contends normally and, if truly contended, fails the same way it would
+// have without this wrapper (no infinite loop, no masking of a real error).
 const STUCK_MIGRATIONS_LOCK_RE = /migration.*(table|lock).*(already )?locked/i;
 async function runMigrations(options = {}) {
     console.log('🚀 Running database migrations...');
