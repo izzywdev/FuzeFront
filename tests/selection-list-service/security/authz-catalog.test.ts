@@ -27,6 +27,7 @@
 import { makeClient, rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 import { createTestListWithItems, purgeList } from '../helpers/factories';
+import { closeDb, dbQuery } from '../helpers/db';
 import type { SelectionListId, SelectionListItemId } from '../helpers/factories';
 
 const ORG_ID = 'org_01test0000000catalog000000';
@@ -61,6 +62,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await purgeList(makeClient(adminToken), adminListId);
+  await closeDb();
 });
 
 describe('GET /v1/selection-lists — catalog `list`', () => {
@@ -102,8 +104,15 @@ describe('POST /v1/selection-lists — catalog `create`', () => {
     ['viewer', viewerToken, 403],
     ['developer', developerToken, 403],
   ])('tenant %s -> %i and nothing is created', async (_role, tok, expected) => {
-    const res = await create(tok());
+    const key = 'cat-deny-' + Math.random().toString(16).slice(2, 9);
+    const res = await rawFetch('/v1/selection-lists', {
+      method: 'POST',
+      token: tok(),
+      body: JSON.stringify({ key, name: 'Must not exist', source_locale: 'en' }),
+    });
     expect(res.status).toBe(expected);
+    // the title always claimed this; it was never asserted
+    expect(await dbQuery('SELECT 1 FROM selection_lists WHERE organization_id = $1 AND key = $2', [ORG_ID, key])).toEqual([]);
   });
 
   it('tenant editor can create, and is then list-owner of its own list (granted by the service)', async () => {
@@ -148,12 +157,33 @@ describe('POST /v1/resolve — catalog `resolve`', () => {
     const res = await resolve(tok());
     expect(res.status).toBe(expected);
   });
+
+  it('L-4 (accepted trade-off, documented): a viewer holding NO role on the list can still resolve its item id — but only the minimal shape', async () => {
+    const res = await resolve(viewerToken());
+    expect(res.status).toBe(200);
+    const body = res.body as { results: Record<string, Record<string, unknown>>; missing: string[] };
+    expect(body.missing).toEqual([]);
+    expect(Object.keys(body.results[adminItemId]).sort()).toEqual(['is_machine', 'label', 'locale', 'status']);
+  });
+
+  it('a developer gets 403 and NOTHING of the item (no partial result, no echo of the id as missing)', async () => {
+    const res = await resolve(developerToken());
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(res.body)).not.toContain(adminItemId);
+  });
 });
 
 describe('per-list actions are instance-only — a tenant role grants none', () => {
+  // `developer` was missing: the contract (permit-actions §4.1) gives it NO catalog action at all, so
+  // it is the role most likely to be wrongly satisfied by a per-list shortcut.
+  // NOTE on the expected statuses: openapi 4.0.0 mandates 404-not-403 for READS the caller may not
+  // perform (info description + `NotFound`), and declares 403 for the write operations. The
+  // permit-actions doc §4 sentence "a tenant developer gets 404 on every per-list route" is broader
+  // than the spec, and the spec is normative; this block pins the spec (reads 404, writes 403).
   it.each([
     ['editor', editorToken],
     ['viewer', viewerToken],
+    ['developer', developerToken],
   ])('tenant %s with no instance role gets 404 reading the list and 403 writing to it', async (_r, tok) => {
     const path = `/v1/selection-lists/${encodeURIComponent(adminListId)}`;
     expect((await get(path, tok())).status).toBe(404);
