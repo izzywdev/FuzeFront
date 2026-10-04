@@ -177,8 +177,24 @@ describe('handleOrgDeleted — soft cascade', () => {
       return b;
     };
     failing.fn = original.fn;
+    failing.raw = original.raw;
     state.rec = { ...state.rec, db: failing };
     await expect(handleOrgDeleted(orgEvent('soft'))).rejects.toThrow('db down');
+  });
+});
+
+describe('handleOrgDeleted — org projection tombstone (plan 7.1)', () => {
+  it.each(['soft', 'hard'] as const)('%s: tombstones selection_list_ref_index (status deleted, never reverted) BEFORE any cascade write', async (cascade) => {
+    state.rec = makeRecordingDb({ pluck: { 'selection_lists.id': [] }, update: { selection_lists: 1 } });
+    await handleOrgDeleted(orgEvent(cascade));
+    expect(state.rec.raws).toHaveLength(1);
+    const [{ sql, bindings }] = state.rec.raws;
+    expect(sql).toContain('INSERT INTO selection_list_ref_index');
+    expect(sql).toContain("status     = 'deleted'");
+    expect(sql).not.toMatch(/status\s*=\s*'active'/);
+    expect(bindings).toEqual([ORG_UUID, ORG_TYPEID]);
+    // existing cascade behaviour is unchanged: the table ops are exactly what they were
+    expect(state.rec.ops.some((o) => o.includes('selection_list_ref_index'))).toBe(false);
   });
 });
 
