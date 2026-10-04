@@ -54,6 +54,10 @@ export const ENTITY_PREFIXES = {
   // shipped: changing one is a wire-breaking change for every stored reference.
   selectionList: 'front_sl',
   selectionListItem: 'front_sli',
+  // applications-service — product-local, namespaced front_ per the namespace
+  // gate. An app-build session is one "build your application" run (a FuzeAgent
+  // session that develops and deploys an app into a personal/org account).
+  appBuildSession: 'front_abs',
   // config-service (FF-EPIC-17) — bare spine prefixes, not front_-namespaced:
   // config-service is FuzeFront-hosted for the whole family (same tier as the
   // billing/messaging sets above), and the frozen contract
