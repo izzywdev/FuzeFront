@@ -714,9 +714,9 @@ describe('R13: schema-invalid messages are dead-lettered (token redacted) with a
 
   it('an invalid message whose header is unreadable is dead-lettered only (no outcome event can be addressed)', async () => {
     const dlq = jest.fn().mockResolvedValue(undefined);
-    const out = (await handleSeedRequested(seedEnvelope({ hello: 'world', attestation: { kind: 'service-token', token: 'sl7-tok-garbage-secret' } }) as never, { isSeedingEnabled: FLAG_ON, deadLetter: dlq })) as { kind: string; failureRecorded: boolean };
+    const out = (await handleSeedRequested(seedEnvelope({ hello: 'world', attestation: { kind: 'service-token', token: 'not-a-real-token' } }) as never, { isSeedingEnabled: FLAG_ON, deadLetter: dlq })) as { kind: string; failureRecorded: boolean };
     expect(out).toMatchObject({ kind: 'invalid', failureRecorded: false });
-    expect(JSON.stringify(dlq.mock.calls)).not.toContain('sl7-tok-garbage-secret');
+    expect(JSON.stringify(dlq.mock.calls)).not.toContain('not-a-real-token');
   });
 });
 
