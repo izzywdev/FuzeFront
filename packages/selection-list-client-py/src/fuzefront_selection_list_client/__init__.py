@@ -24,6 +24,7 @@ from .types import (
     AutofillResult,
     CreateItemRequest,
     CreateListRequest,
+    ItemTranslationLocaleStatus,
     # Enums
     LifecycleStatus,
     # Pagination
@@ -46,6 +47,7 @@ from .types import (
     StatusFilter,
     # Translations
     Translation,
+    TranslationLocaleStatus,
     UpdateItemRequest,
     UpdateListRequest,
     UpsertItemTranslationRequest,
@@ -58,6 +60,7 @@ __all__ = [
     "AutofillResult",
     "CreateItemRequest",
     "CreateListRequest",
+    "ItemTranslationLocaleStatus",
     # Enums
     "LifecycleStatus",
     # Types
@@ -80,6 +83,7 @@ __all__ = [
     "StatusFilter",
     "TokenProvider",
     "Translation",
+    "TranslationLocaleStatus",
     "UpdateItemRequest",
     "UpdateListRequest",
     "UpsertItemTranslationRequest",

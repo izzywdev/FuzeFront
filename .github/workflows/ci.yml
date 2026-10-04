@@ -611,7 +611,9 @@ jobs:
     # the pool. 30 min is >10x every observed runtime in this workflow.
     timeout-minutes: 30
     needs: build
-    continue-on-error: true
+    # A REAL gate: this suite was TDD-red (continue-on-error) until the service
+    # met the frozen contract; it is green now, so a regression must fail the
+    # build and `notify` below treats it as a required result.
     services:
       postgres:
         image: postgres:15
@@ -657,6 +659,30 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
         run: node services/selection-list-service/dist/db/migrate.js
+      - name: Start stand-in Security API
+        # The service authorizes every request through FuzeFront's Security API
+        # and holds no authorization state of its own (selection_list_access is a
+        # read-model mirror, never an authority). With no authz backend the role
+        # matrix and mirror-not-authority tests cannot pass by construction, and
+        # the NODE_ENV=test no-op client is allow-all. This in-memory stand-in
+        # (tests/selection-list-service/helpers/fake-security-api.mjs; test
+        # fixture only, never deployed) answers check / bulk-check / grants from
+        # the role matrix frozen in the OpenAPI spec.
+        env:
+          PORT: '3002'
+        run: |
+          node tests/selection-list-service/helpers/fake-security-api.mjs >/tmp/fake-security.log 2>&1 &
+          echo "FAKE_SEC_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 15); do
+            if curl -fsS http://localhost:3002/health >/dev/null 2>&1; then
+              echo "stand-in Security API is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ERROR: stand-in Security API did not start" >&2
+          cat /tmp/fake-security.log
+          exit 1
       - name: Start selection-list-service
         env:
           # NOT 'production'. Every route in this service is gated behind the
@@ -675,12 +701,16 @@ jobs:
           #    KAFKA_BROKERS is set or NODE_ENV=production, so they no longer
           #    spin retrying an unreachable broker and filling the log with
           #    `getaddrinfo EAI_AGAIN kafka.fuzeinfra.svc.cluster.local`.
-          #  - middleware/authz.ts's no-op client replaces the real one. No
-          #    behaviour change for these tests: requireAuthzCheck already
-          #    passes through in CI because AUTHZ_ENABLED defaults OFF, so the
-          #    client was constructed but never called either way.
+          #  - middleware/authz.ts would swap in its allow-all no-op client under
+          #    NODE_ENV=test. SECURITY_SERVICE_URL below (set explicitly) opts out
+          #    of that, and FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED turns the
+          #    release flag ON, so every request gets a REAL decision from the
+          #    stand-in Security API started above — the role-denial and
+          #    mirror-not-authority tests are only meaningful against that.
           NODE_ENV: test
           FLAGS_FORCE_ON: fuzefront.selection-lists.service
+          SECURITY_SERVICE_URL: http://localhost:3002
+          FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'
@@ -732,6 +762,9 @@ jobs:
         run: |
           if [ -n "$SLS_PID" ]; then
             kill "$SLS_PID" 2>/dev/null || true
+          fi
+          if [ -n "$FAKE_SEC_PID" ]; then
+            kill "$FAKE_SEC_PID" 2>/dev/null || true
           fi
 
   applications-service-tests:
@@ -1355,23 +1388,25 @@ jobs:
     # its own and its runner pod pins a scale-set slot until a human drains
     # the pool. 30 min is >10x every observed runtime in this workflow.
     timeout-minutes: 30
-    # selection-list-service-e2e and selection-list-service-integration-tests are listed
-    # in needs so notify waits for them to complete. Both are intentionally EXCLUDED from
-    # the success/failure conditions below: they have continue-on-error: true and their
-    # specs/tests are RED-by-design (TDD — implementations not yet landed). Failures there
-    # must never block the gate. Once they go GREEN, add them to the conditions and
-    # remove their continue-on-error flags.
+    # selection-list-service-e2e and selection-list-service-integration-tests are both
+    # listed in needs so notify waits for them to complete. They are treated differently:
+    #  - selection-list-service-integration-tests is a REAL gate (it is in the
+    #    success/failure conditions below) — the suite is green against the service.
+    #  - selection-list-service-e2e is still intentionally EXCLUDED: it has
+    #    continue-on-error: true and its specs are RED-by-design (TDD — the UI has not
+    #    landed). Its failures must never block the gate. Once it goes GREEN, add it to
+    #    the conditions and remove its continue-on-error flag.
     needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, gate-website-canonical-host, config-service-tests]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.gate-website-canonical-host.result == 'success' && needs.config-service-tests.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.selection-list-service-integration-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.gate-website-canonical-host.result == 'success' && needs.config-service-tests.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.gate-website-canonical-host.result == 'failure' || needs.config-service-tests.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.selection-list-service-integration-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.gate-website-canonical-host.result == 'failure' || needs.config-service-tests.result == 'failure' }}
 
         run: |
           echo "❌ Some checks failed. Please review the logs."

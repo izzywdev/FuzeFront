@@ -44,7 +44,13 @@
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
-import { mockAuthenticatedSelectionListsSession } from './support/selection-lists-e2e-session'
+import { mockAuthenticatedSelectionListsSession, gotoFlagGatedRoute, isShellHarnessNoise } from './support/selection-lists-e2e-session'
+
+// The vite build registers a Workbox service worker (vite-plugin-pwa 1.x still emits
+// sw.js with CI=true) that takes control mid-test via clientsClaim. Requests the SW
+// handles bypass page.route() mocks, so after claim every mocked /api/v1/* fetch hits
+// the preview server's SPA fallback and returns text/html. Block SWs so mocks hold.
+test.use({ serviceWorkers: 'block' })
 
 const LIST_ID = 'sl_01h455vb4pex5vsknk084sn02q'
 const TRANSLATIONS_ROUTE = `/settings/selection-lists/${LIST_ID}/translations`
@@ -97,12 +103,12 @@ const MOCK_LOCALE_INDEX = [
 
 async function gotoTranslationIndex(page: Page) {
   await mockAuthenticatedSelectionListsSession(page)
-  await page.goto(TRANSLATIONS_ROUTE, { waitUntil: 'domcontentloaded' })
+  await gotoFlagGatedRoute(page, TRANSLATIONS_ROUTE)
 }
 
 async function gotoLocaleEditor(page: Page) {
   await mockAuthenticatedSelectionListsSession(page)
-  await page.goto(FR_EDITOR_ROUTE, { waitUntil: 'domcontentloaded' })
+  await gotoFlagGatedRoute(page, FR_EDITOR_ROUTE)
 }
 
 /** Inject the locale index response. */
@@ -216,7 +222,7 @@ test.describe('Selection Lists translation-workbench — frame 07-locale-index',
     await injectLocaleIndex(page)
     await gotoTranslationIndex(page)
     await expect(
-      page.locator("[data-machine='true']"),
+      page.locator("[data-machine='true']").first(),
       '[data-machine="true"] must mark locales with machine-translated (M) strings',
     ).toBeVisible()
   })
@@ -341,11 +347,11 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
     await injectLocaleEditorFR(page)
     await gotoLocaleEditor(page)
     await expect(
-      page.locator("[data-machine='true']"),
+      page.locator("[data-machine='true']").first(),
       '[data-machine="true"] must mark AI-translated rows',
     ).toBeVisible()
     await expect(
-      page.locator("[data-machine='false']"),
+      page.locator("[data-machine='false']").first(),
       '[data-machine="false"] must mark human-reviewed rows',
     ).toBeVisible()
   })
@@ -418,7 +424,8 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
         await route.continue()
       }
     })
-    await page.goto(`/settings/selection-lists/${LIST_ID}/translations/ar`, { waitUntil: 'domcontentloaded' })
+    await mockAuthenticatedSelectionListsSession(page)
+    await gotoFlagGatedRoute(page, `/settings/selection-lists/${LIST_ID}/translations/ar`)
     // The RTL marker must be on the target (translation) cell, not the whole page.
     await expect(
       page.locator("[dir='rtl'][data-locale='ar']"),
@@ -455,7 +462,8 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
         await route.continue()
       }
     })
-    await page.goto(`/settings/selection-lists/${LIST_ID}/translations/he`, { waitUntil: 'domcontentloaded' })
+    await mockAuthenticatedSelectionListsSession(page)
+    await gotoFlagGatedRoute(page, `/settings/selection-lists/${LIST_ID}/translations/he`)
     await expect(
       page.locator("[dir='rtl'][data-locale='he']"),
       '[dir="rtl"][data-locale="he"] must be present on the Hebrew translation target cell',
@@ -507,8 +515,14 @@ test.describe('Selection Lists translation-workbench — frame 08-locale-editor'
     })
     await injectLocaleEditorFR(page)
     await gotoLocaleEditor(page)
+    // The service answers 403 FORBIDDEN on the write (there is no separate permission
+    // probe in the contract), so drive a save and assert the read-only fail-closed state.
+    const firstInput = page.locator("[data-translation-input='item']").first().locator('input, textarea').first()
+    await expect(firstInput, 'the editor must render before a save can be attempted').toBeVisible()
+    await firstInput.fill('Tentative interdite')
+    await page.locator("[data-action='save-row']").first().click()
     await expect(
-      page.locator("[data-error='FORBIDDEN']"),
+      page.locator("[data-error='FORBIDDEN']").first(),
       '[data-error="FORBIDDEN"] must appear when the user lacks the translate action',
     ).toBeVisible()
     // All translation inputs must be disabled.
@@ -558,10 +572,14 @@ test.describe('Selection Lists translation-workbench — frame 09-autofill-modal
       page.locator("[data-frame='09-autofill-modal']"),
       '[data-frame="09-autofill-modal"] must appear when the autofill modal opens',
     ).toBeVisible()
-    // The modal must state the exact missing-string count before running.
+    // The modal must state the exact missing-string count before running. The frame
+    // illustrates 60; the count is always total - translated of the locale the modal
+    // was opened for, so derive it from the mock (first untranslated locale: es, 249).
+    const target = MOCK_LOCALE_INDEX.find(l => !l.is_source && l.translated === 0)!
+    const missing = target.total - target.translated
     await expect(
-      page.locator("[data-autofill-count='60']"),
-      '[data-autofill-count="60"] must state the exact number of missing strings',
+      page.locator(`[data-autofill-count='${missing}']`),
+      `[data-autofill-count="${missing}"] must state the exact number of missing strings (total - translated)`,
     ).toBeVisible()
     // The modal must state the source locale.
     await expect(
@@ -708,7 +726,7 @@ test.describe('Selection Lists translation-workbench — runtime console-clean g
     const failedRequests: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => consoleErrors.push(`pageerror: ${String(err)}`))
     page.on('requestfailed', (req: Request) => {
@@ -731,7 +749,7 @@ test.describe('Selection Lists translation-workbench — runtime console-clean g
     const failedRequests: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => consoleErrors.push(`pageerror: ${String(err)}`))
     page.on('requestfailed', (req: Request) => {

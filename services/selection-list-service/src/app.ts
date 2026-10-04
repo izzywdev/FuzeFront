@@ -12,6 +12,7 @@
 
 import express, { Application } from 'express';
 import { authMiddleware } from './middleware/auth';
+import { requireSelectionListsFlag } from './middleware/flagGate';
 import healthRouter from './routes/health';
 import docsRouter from './routes/docs';
 import quotaRouter from './routes/quota';
@@ -31,6 +32,12 @@ export function createApp(): Application {
 
   // All /v1 routes require a valid JWT
   app.use('/v1', authMiddleware);
+
+  // Release flag `fuzefront.selection-lists.service` (default OFF): fail closed
+  // for EVERY /v1/selection-lists/* route (incl. access, which has no
+  // per-handler check) before any router runs. Evaluated after auth so the
+  // org/user context is available for targeting.
+  app.use('/v1/selection-lists', requireSelectionListsFlag);
 
   // S6: quota router is mounted BEFORE listsRouter so GET /quota is matched
   // before the /:listId wildcard pattern in listsRouter.
