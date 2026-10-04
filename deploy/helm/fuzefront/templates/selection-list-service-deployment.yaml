@@ -61,7 +61,28 @@ spec:
               # it is a plain cluster-internal DNS address. The consumer group IDs
               # are derived at runtime from the KAFKA_GROUP_ID env var (or the
               # default in src/events/consumer.ts).
-              value: {{ .Values.selectionListService.kafkaBrokers | default "kafka.fuzeinfra.svc.cluster.local:9092" | quote }}
+              value: {{ .Values.selectionListService.kafkaBrokers | quote }}
+            # Authz enforcement switch (src/middleware/authz.flags.ts). Explicit so
+            # the posture is visible in the rendered manifest; false == the
+            # in-code default (pass-through + warning log).
+            - name: FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED
+              value: {{ .Values.selectionListService.authzEnabled | quote }}
+            {{- if .Values.selectionListService.featureFlags.unleashUrl }}
+            # @fuzefront/feature-flags (Unleash) client env for the release flag
+            # fuzefront.selection-lists.service. Absent URL -> block does not
+            # render -> in-code fail-safe (OFF). NOTE: the service code must also
+            # call the package's init() for these to take effect (backend scope).
+            - name: UNLEASH_URL
+              value: {{ .Values.selectionListService.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.selectionListService.featureFlags.appName | quote }}
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.selectionListService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.selectionListService.featureFlags.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health

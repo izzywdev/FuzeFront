@@ -796,7 +796,32 @@ selectionListService:
   port: 3008
   # Shared FuzeInfra Kafka brokers for the lifecycle event consumer.
   # Must equal selectionListService.port in the networkPolicy block below.
-  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  # Same broker Service every other consumer in this chart uses (chatService,
+  # applicationsService, kafkaTopics.bootstrapServer, ...). This default
+  # previously read `kafka.fuzeinfra...`, a name no other block uses.
+  kafkaBrokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # Dedicated database on the shared FuzeInfra Postgres, owned by the shared
+  # `database.user` role -- created by templates/db-bootstrap-job.yaml via
+  # EXTRA_DATABASES (same pattern as devportalService.dbName). The service's
+  # DATABASE_URL (selection-list-secrets) must point at THIS database.
+  dbName: "fuzefront_selection_list"
+  # Authorization enforcement (env FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED, read
+  # by services/selection-list-service/src/middleware/authz.flags.ts). Declared
+  # explicitly so the prod posture is a reviewable value, not an absent env var.
+  # false = every authz check passes through with a warning log (the in-code
+  # default); true = Security API decisions are enforced and fail closed. Do NOT
+  # set true in prod until the SelectionList resource/roles exist in the Permit
+  # schema (backend/security/src/permit/schema.ts) -- see
+  # docs/runbooks/selection-lists-rollout.md.
+  authzEnabled: false
+  # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
+  # Empty unleashUrl (base default) renders no UNLEASH_* env. The CLIENT token is
+  # a SECRET (sealed) -- referenced, never inline.
+  featureFlags:
+    unleashUrl: ""
+    appName: "selection-list-service"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+    tokenSecretName: ""
   image:
     repository: fuzefront/selection-list-service
     tag: local
