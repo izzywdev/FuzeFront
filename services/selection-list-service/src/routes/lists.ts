@@ -188,7 +188,7 @@ async function fetchList(
 
 // ─── GET / — list all selection lists ────────────────────────────────────────
 
-router.get('/', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireAuthzCheck('SelectionList', 'list'), async (req: Request, res: Response): Promise<void> => {
   // Feature flag gate
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
