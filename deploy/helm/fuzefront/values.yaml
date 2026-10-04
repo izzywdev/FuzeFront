@@ -797,6 +797,21 @@ selectionListService:
   # Shared FuzeInfra Kafka brokers for the lifecycle event consumer.
   # Must equal selectionListService.port in the networkPolicy block below.
   kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  # Authorization enforcement (env FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED, read by
+  # services/selection-list-service/src/middleware/authz.flags.ts). The service
+  # runs NODE_ENV=production in-cluster, where authz is ALWAYS enforced whatever
+  # this says (review H-1: the old default was pass-through, i.e. no authorization
+  # at all). Declared true so the rendered manifest states the real posture; the
+  # key only has an effect outside production (dev/test).
+  authzEnabled: true
+  # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
+  # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe
+  # OFF. The CLIENT token is a SECRET (sealed) -- referenced, never inline.
+  featureFlags:
+    unleashUrl: ""
+    appName: "selection-list-service"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+    tokenSecretName: ""
   image:
     repository: fuzefront/selection-list-service
     tag: local

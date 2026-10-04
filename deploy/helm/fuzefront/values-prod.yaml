@@ -975,9 +975,20 @@ notificationService:
 # repository: anchor.
 selectionListService:
   enabled: false
+  # Authorization is ALWAYS enforced in production (code-level, review H-1); the
+  # explicit true keeps the rendered manifest honest. Do not set false.
+  authzEnabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: c446e4e3c3da
+  # Unleash CLIENT token read from the Unleash chart's own sealed Secret (same
+  # wiring as applicationsService/securityService/chatService above); server-side
+  # only. The service now calls @fuzefront/feature-flags init() at startup.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "selection-list-service"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
 
 # devportal-service / devportal-frontend (docs/planning/developers-portal.md).
 # Step 2 of the two-step go-live executed here: workloads are now deployed.
