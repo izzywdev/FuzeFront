@@ -162,25 +162,60 @@ jobs:
     name: www redirects to the canonical apex
     needs: announce
     runs-on: ubuntu-latest
-    # Four bounded curls; anything slower than this is a hung runner, not a
-    # slow edge (gate-workflow-policy [missing-timeout]).
-    timeout-minutes: 5
+    # The poll below runs for at most 10 minutes; past that it is a hung
+    # runner, not a slow edge (gate-workflow-policy [missing-timeout]).
+    timeout-minutes: 15
     steps:
       - name: www.fuzefront.com must 301 to https://fuzefront.com
         run: |
           set -euo pipefail
 
-          # --location is deliberately ABSENT. Following the redirect would
-          # make a page that merely *renders* the apex indistinguishable from
-          # a real canonicalization; this asserts the redirect itself.
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 https://www.fuzefront.com/)
-          loc=$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 30 https://www.fuzefront.com/)
+          # WHY THIS POLLS RATHER THAN PROBING ONCE.
+          #
+          # Measured, in run 36419988393: this job started 15 SECONDS into the
+          # workflow and failed immediately. It is `needs: announce`, so it does
+          # not wait for anything — while the redirect it asserts ships INSIDE
+          # the website-frontend image, which Argo has to pull and roll out
+          # after release.yml commits the GitOps tag bump. A single-shot probe
+          # fired 15s after dispatch therefore cannot pass on a healthy deploy;
+          # it races the rollout and loses every time. The `health` job next to
+          # it already knows this and sleeps 360s before polling.
+          #
+          # The fix is NOT to gate this behind `health`. This probes the public
+          # website edge, and `health` polls the app shell's /api/health — a
+          # sick app shell must not be able to suppress a brand-split alarm on
+          # the marketing domain. So it stays independent and waits on its own.
+          #
+          # It polls to a deadline instead of sleeping a fixed 360s so a
+          # already-correct edge (the ordinary case, when no website image
+          # changed) reports in one request instead of idling six minutes.
+          #
+          # This does NOT soften the check: after the deadline it still fails
+          # LOUD with the last state it saw. A slow rollout delays the verdict;
+          # it never converts a red into a green.
+          DEADLINE=$(( SECONDS + 600 ))
+          INTERVAL=20
+
+          probe() {
+            # --location is deliberately ABSENT. Following the redirect would
+            # make a page that merely *renders* the apex indistinguishable
+            # from a real canonicalization; this asserts the redirect itself.
+            code=$(curl -sS -o /dev/null -w '%{http_code}'   --max-time 30 https://www.fuzefront.com/ || echo 000)
+            loc=$( curl -sS -o /dev/null -w '%{redirect_url}' --max-time 30 https://www.fuzefront.com/ || echo '')
+          }
+
+          probe
+          while [ "$code" != "301" ] && [ "$SECONDS" -lt "$DEADLINE" ]; do
+            echo "waiting for the rollout — status ${code}, location '${loc:-<none>}' ($(( DEADLINE - SECONDS ))s left)"
+            sleep "$INTERVAL"
+            probe
+          done
 
           echo "status:   ${code}"
           echo "location: ${loc:-<none>}"
 
           if [ "$code" != "301" ]; then
-            echo "::error::www.fuzefront.com answered ${code}, expected 301. It is serving content of its own instead of redirecting to the canonical apex — one domain must not present two brands. If this is still CloudFront, the FuzeInfra DNS half of the fix has not landed; see websiteFrontend.aliasHosts in deploy/helm/fuzefront/values-prod.yaml."
+            echo "::error::www.fuzefront.com answered ${code} for 10 minutes, expected 301. It is serving content of its own instead of redirecting to the canonical apex — one domain must not present two brands. Check, in order: (1) is the running website-frontend image newer than the commit that added the redirect to fuzefront-website/frontend/nginx.conf — if Argo has not rolled the GitOps tag bump, nothing on the edge can be right yet; (2) does www still resolve to CloudFront, meaning FuzeInfra's DNS half was reverted (see websiteFrontend.aliasHosts in deploy/helm/fuzefront/values-prod.yaml and docs/runbooks/fuzefront-com-canonical-host.md)."
             exit 1
           fi
 
@@ -193,7 +228,9 @@ jobs:
           esac
 
           # The query string and path must survive, or every deep link to www
-          # lands on the homepage instead of the page that was asked for.
+          # lands on the homepage instead of the page that was asked for. No
+          # poll needed — the root probe above already proved the new image is
+          # serving, and both redirects come from the same server block.
           deep=$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 30 'https://www.fuzefront.com/pricing?plan=team')
           if [ "$deep" != "https://fuzefront.com/pricing?plan=team" ]; then
             echo "::error::Deep-link redirect dropped the path or query: got '${deep}', expected 'https://fuzefront.com/pricing?plan=team'."

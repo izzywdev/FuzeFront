@@ -27,10 +27,10 @@ import type { ConsoleMessage, Page } from '@playwright/test'
  *    response becomes `state.user`, and `isAuthenticated = !!state.user`
  *    (useCurrentUser, lib/shared.tsx) is the gate every settings route sits
  *    behind.
- * 3. `GET /api/flags` — `useFlag('fuzefront.selection-lists.service', false)`
- *    (App.tsx's SelectionListsRoute/TranslationWorkbenchRoute/
- *    SelectionListAccessRoute) is the SECOND gate on top of auth; without
- *    this the route renders `<Navigate to="/dashboard" />` even once
+ * 3. `GET /api/flags` — the `fuzefront.selection-lists.service` flag read by
+ *    App.tsx's FlagGatedRoute (SelectionListsRoute/TranslationWorkbenchRoute/
+ *    SelectionListAccessRoute) is the SECOND gate on top of auth; without this
+ *    the flag resolves OFF and the route redirects to `/dashboard` even once
  *    authenticated.
  * 4. `sessionStorage['ff.workspaceReady'] = '1'` — WorkspaceProvisioningGate
  *    wraps the entire authenticated route tree and otherwise shows a
@@ -128,15 +128,19 @@ export function isShellHarnessNoise(msg: ConsoleMessage): boolean {
 /**
  * Navigate to a `fuzefront.selection-lists.service`-gated route (/settings/selection-lists…).
  *
- * WHY NOT a plain `page.goto(route)`: on a hard load the shell mounts the route tree
- * before `GET /api/flags` settles; `useFlag()` returns its OFF default while
- * `loaded === false`, so `SelectionListsRoute` & co. immediately render
- * `<Navigate to="/dashboard">` and the deep link is lost (a real shell defect — it is
- * asserted on its own in the "deep link" spec in selection-lists-list-management.spec.ts,
- * and guards the shell waiting for the flag fetch). Without this helper that one
- * defect would mask every other assertion in the four selection-lists specs, so the
- * per-frame specs reach the route the way a signed-in user does: load the shell, let the
- * flags settle, then navigate client-side.
+ * WHY NOT a plain `page.goto(route)`: the per-frame specs reach the route the way a
+ * signed-in user does — load the shell, let the flags settle, then navigate
+ * client-side — so that a defect in the HARD-LOAD path is isolated to the one spec
+ * that asserts it ("flag-gated deep links" in
+ * selection-lists-list-management.spec.ts) instead of masking every other
+ * assertion in the four selection-lists specs.
+ *
+ * That is not hypothetical: on a hard load the shell mounts the route tree before
+ * `GET /api/flags` settles, and `useFlag()` returning its OFF default while
+ * `loaded === false` made `SelectionListsRoute` & co. render
+ * `<Navigate to="/dashboard">`, losing the deep link. `FlagGatedRoute`
+ * (frontend/src/App.tsx) fixed it by holding on `useFlagsLoaded()`. This helper
+ * stays regardless — the isolation is the point, not a workaround.
  */
 export async function gotoFlagGatedRoute(page: Page, route: string): Promise<void> {
   const flagsSettled = page.waitForResponse(r => new URL(r.url()).pathname === '/api/flags')

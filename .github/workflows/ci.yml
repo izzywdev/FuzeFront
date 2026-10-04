@@ -513,7 +513,9 @@ jobs:
     # A REAL gate: the selection-lists UI (@fuzeone/selection-lists-ui, mounted at
     # /settings/selection-lists; EPIC-17 / FFRNT-188) has landed and all specs pass,
     # so a regression must fail the build and `notify` below treats this job as a
-    # required result. These specs began as TDD-red; they are green now.
+    # required result. These specs began as TDD-red; they are green now. The
+    # escape hatch (continue-on-error, the `notify` exclusion, and the
+    # `governance/vacuous-check-policy.json` allowlist entry) is retired.
     # Specs: frontend/tests/selection-lists-{list-management,picker,access-control,
     #        translation-workbench}.spec.ts
     # (timeout-minutes is set once, above. A second `timeout-minutes: 90` merged
@@ -1413,7 +1415,9 @@ jobs:
     timeout-minutes: 30
     # selection-list-service-e2e and selection-list-service-integration-tests are both
     # REAL gates: each is in needs (so notify waits for it) and in the
-    # success/failure conditions below — both suites are green.
+    # success/failure conditions below — both suites are green. The e2e job was
+    # the last holdout (its specs were RED-by-design TDD and it carried
+    # continue-on-error until the UI landed); that escape hatch is now retired.
     needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, gate-website-canonical-host, config-service-tests]
     if: always()
 

@@ -101,6 +101,25 @@ export function useFlag(key: string, defaultValue = false): boolean {
 }
 
 /**
+ * Whether the one-shot `GET /api/flags` has settled.
+ *
+ * `useFlag()` returns its fail-safe default until then. That is correct for
+ * RENDERING — a flagged nav item simply stays hidden a moment longer — but
+ * wrong for a ROUTE GATE: the router mounts the route tree before the fetch
+ * resolves, so a gate that redirects on the default throws away every deep
+ * link, bookmark, refresh and email link into a flagged route before the flag
+ * can say ON. Route gates read this and hold (render a pending state) instead
+ * of redirecting on a default they do not yet know to be the answer.
+ *
+ * This always settles: with no auth token `fetchFlags()` short-circuits, and
+ * every network/parse failure is caught, so `loaded` flips true either way —
+ * a gate waiting on it can never hang.
+ */
+export function useFlagsLoaded(): boolean {
+  return useContext(FeatureFlagContext).loaded
+}
+
+/**
  * Opt-in variant of {@link useFlag} for ROUTE guards that must not decide on
  * the pre-fetch fallback. `useFlag` returns the default until `/api/flags`
  * settles, so a guard that redirects on "OFF" bounces a hard load / refresh /

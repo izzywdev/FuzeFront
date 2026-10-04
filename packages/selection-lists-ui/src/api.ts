@@ -179,6 +179,19 @@ export async function saveTranslation(
   })
 }
 
+/**
+ * POST …/translations/{locale}/autofill.
+ *
+ * Returns the response as-is, typed against the contract
+ * (SelectionListAutofillResult, services/selection-list-service/openapi.yaml),
+ * whose wire fields are `items_translated` / `items_skipped` / `list_translated`
+ * — NOT `filled` / `skipped`. An earlier version of this function re-typed the
+ * response as `{ filled, skipped }`, which doesn't exist on the wire: both
+ * counts came back `undefined`, so the completion summary rendered
+ * `data-items-skipped={undefined}` (attribute absent) and the "nothing to do"
+ * branch could never be true. Consume the contract's own field names instead
+ * of re-mapping them.
+ */
 export async function autofillTranslations(
   listId: string,
   locale: string,

@@ -210,8 +210,15 @@ function TranslationIndex({
   const [autofillTarget, setAutofillTarget] = useState<LocaleIndexEntry | null>(null)
   const [sourceLocale, setSourceLocale] = useState('en')
 
-  const loadLocales = useCallback(async (silent = false) => {
-    if (!silent) {
+  /**
+   * `background: true` refreshes the index WITHOUT the loading skeleton or the
+   * error panel. Both of those replace this component's entire subtree, which
+   * unmounts the autofill modal mid-run and destroys the run summary it is
+   * showing — so a post-mutation refresh must never take either branch. It also
+   * stops a populated list flashing a skeleton on every refresh.
+   */
+  const loadLocales = useCallback(async ({ background = false } = {}) => {
+    if (!background) {
       setLoading(true)
       setError(null)
     }
@@ -223,11 +230,11 @@ function TranslationIndex({
       const src = resp.locales?.find(l => l.is_source)
       if (src) setSourceLocale(src.locale)
     } catch (err) {
-      // A silent refresh failing must not replace the panel (and the open
-      // dialog); the stale rows are still correct enough to keep showing.
-      if (!silent) setError((err as ApiError).message ?? 'Failed to load translations')
+      // A failed background refresh keeps the data already on screen: the
+      // mutation that triggered it succeeded, and the refresh is advisory.
+      if (!background) setError((err as ApiError).message ?? 'Failed to load translations')
     } finally {
-      setLoading(false)
+      if (!background) setLoading(false)
     }
   }, [listId])
 
@@ -348,12 +355,12 @@ function TranslationIndex({
           sourceLocale={sourceLocale}
           missingCount={autofillTarget.total - autofillTarget.translated}
           onClose={() => setAutofillTarget(null)}
-          onComplete={() => {
-            // Refresh the rows behind the dialog WITHOUT swapping the panel to
-            // its loading skeleton, which would unmount the dialog and the
-            // result it is about to show.
-            loadLocales(true)
-          }}
+          // Frame 09 requires the run's own summary (items translated / skipped, or
+          // "nothing to do") to be READABLE after the POST resolves, so completion must
+          // NOT unmount the modal — it only refreshes the locale index behind it. The
+          // user dismisses the modal with Close. Closing it here raced the result render
+          // and the summary was never visible.
+          onComplete={() => loadLocales({ background: true })}
         />
       )}
     </div>
