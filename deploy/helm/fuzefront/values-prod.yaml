@@ -978,6 +978,17 @@ selectionListService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
     tag: 848485db4f8c
+  # Unleash CLIENT token read from the Unleash chart's own sealed Secret (same
+  # wiring as applicationsService/securityService/chatService above); server-side
+  # only. Inert until the service calls @fuzefront/feature-flags init().
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "selection-list-service"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Fleet placement policy (see .elasticPlacement above): every backend service
+  # runs on the elastic pool; this one was missed when it was added dark.
+  <<: *elasticPlacement
 
 # devportal-service / devportal-frontend (docs/planning/developers-portal.md).
 # Step 2 of the two-step go-live executed here: workloads are now deployed.
