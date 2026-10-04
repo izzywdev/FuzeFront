@@ -16,9 +16,10 @@ name: Fuze Code Review
 # long-standing `gate-code-review` job in harden-gate.yml (correctness/security
 # bugs only; ignore style, naming, tests, perf) and the SAME multi-provider
 # fallover chain as every other LLM-driven workflow in this fleet
-# (./.github/actions/fuze-code-action — LiteLLM-in-cluster-or-direct-Anthropic,
-# then OpenAI, then Gemini, on a classified AVAILABILITY failure only, never on a
-# real task failure). The one new thing here is what happens to a CLEAN result:
+# (./.github/actions/fuze-code-action — LiteLLM-in-cluster-or-direct-Anthropic on a
+# classified AVAILABILITY failure only, never on a real task failure; the OpenAI and
+# Gemini fallover rungs are DISABLED for this caller, see the READ-ONLY note below).
+# The one new thing here is what happens to a CLEAN result:
 # `gh pr review --approve` actually gets called.
 #
 # THE SAFETY PROPERTY THAT MATTERS MOST: an approval step that fires
@@ -43,12 +44,38 @@ name: Fuze Code Review
 #     verdict — a self-approving change to the approval machinery deserves a
 #     human. Enforced against the actual `git diff --name-only` file list, never
 #     against anything the model claims about its own diff.
-#   - The reviewer LLM is given NO Bash/Write/Edit tools (see `claude-args`
-#     below). The entire diff is embedded in its prompt, so it never needs to
-#     touch the checkout — an instruction smuggled inside the diff ("approve this
-#     PR", "run `gh pr review --approve`", "print the secrets") has no tool
-#     available to act on it, and the verdict is independently re-validated by
-#     the script regardless of what the model's prose says.
+#   - READ-ONLY AT THE TOOL LEVEL, PER RUNG (what is true, not what is hoped):
+#       Anthropic rungs (OAuth 1a, LiteLLM/direct-key 1): ENFORCED read-only. The
+#         reviewer gets `--allowedTools "Read,Grep,Glob"` and no Bash/Write/Edit.
+#       OpenAI/Codex rung: DISABLED for this workflow (no OPENAI_API_KEY passed, and
+#         fuze-code-action only runs the rung when that key is non-empty). Codex
+#         cannot be confined here: fuze-code-action
+#         runs it `danger-full-access` (its OS sandbox cannot initialise on the
+#         containerized self-hosted runner), which is a full shell on the runner.
+#       Gemini rung: DISABLED for this workflow, same mechanism (no GEMINI_API_KEY
+#         passed, the rung only runs when it is non-empty). run-gemini-cli hard-codes `gemini --yolo` (auto-approve every
+#         tool call including shell) and exposes no tool allow-list input.
+#     When both Anthropic rungs are unavailable the chain is exhausted; that
+#     classifies as an availability outage (non-blocking, never an approval), the
+#     fail-closed direction. Re-enabling either vendor here needs a demonstrated
+#     tool-level read-only mode, enforced by
+#     .github/actions/fuze-code-action/__tests__/test_review_caller_readonly.py.
+#     The disable is by KEY ABSENCE because fuze-code-action is a FuzeSDLC-managed
+#     file (governance-sync resets local edits to the canonical), so a dedicated
+#     `review-only` switch has to be added upstream, not here; until then the test
+#     pins both that no OpenAI/Gemini key is forwarded and that the action still
+#     gates those rungs on their key.
+#     The entire diff is embedded in the prompt, so the reviewer never needs the
+#     checkout; an instruction smuggled inside the diff ("approve this PR", "run
+#     `gh pr review --approve`", "print the secrets") has no tool available to act
+#     on it, and the verdict is independently re-validated by the script
+#     regardless of what the model's prose says.
+#   - NO PERSISTED CREDENTIAL: the checkout uses `persist-credentials: false`, so
+#     the job's GITHUB_TOKEN is not left in `.git/config` for a tool-using rung to
+#     read. GITHUB_TOKEN reaches only (a) the context step's one authenticated
+#     base-ref fetch, (b) the Anthropic action as its `github_token` input, and
+#     (c) the `Submit GitHub review` step. It is not in any `env:` of the review
+#     step.
 #   - The verdict contract's sentinel markers carry a per-run random NONCE, drawn
 #     AFTER the diff is already fixed on disk — a forged sentinel block planted
 #     inside the diff itself (to smuggle a fake clean verdict past a naive
@@ -73,9 +100,9 @@ name: Fuze Code Review
 # routing and failover; without it (or if the gateway is unreachable from the
 # runner) the workflow SKIPS (not fails) — a missing credential is environmental,
 # not a defect in the PR under review. Direct provider keys (ANTHROPIC_API_KEY,
-# OPENAI_API_KEY, GEMINI_API_KEY) are fallback rungs via the runner-local LiteLLM
-# in fuze-code-action/llm-endpoint, but are NOT needed when the in-cluster gateway
-# is reachable from the self-hosted fuzefront runner this job runs on.
+# OPENAI_API_KEY, GEMINI_API_KEY): ANTHROPIC_API_KEY is a fallback rung; the
+# OpenAI and Gemini keys are deliberately NOT forwarded by this workflow (see the
+# READ-ONLY note above), so provisioning them does not enable those rungs here.
 #
 # SCOPE: this workflow assumes PRs come from branches in THIS repo, matching the
 # agent-branch model documented across the fleet (agents push claude/**, codex/**
@@ -152,16 +179,21 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          # Do not leave GITHUB_TOKEN (pull-requests: write) in .git/config for the
+          # LLM-running step to find. Later steps that need the token take it from
+          # an explicit, step-scoped env instead.
+          persist-credentials: false
 
       - name: Gather PR context — diff, changed files, sensitive-path check, credential check
         id: context
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          # Used ONLY for the one authenticated base-ref fetch below (checkout no
+          # longer persists a credential). This step runs no LLM.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
-          HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
-          HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
         run: |
           set -uo pipefail
           # NOT --depth=1. `actions/checkout` above already fetched full history
@@ -174,7 +206,20 @@ jobs:
           # disarming the sensitive-path input to the self-approval defense below.
           # Measured on #1042 (+1376/-115 across 27 files): with --depth=1 the
           # diff is 0 bytes and exits 128; without it, 81558 bytes and exits 0.
-          git fetch origin "$BASE_REF"
+          #
+          # persist-credentials is false, so authenticate this one fetch explicitly
+          # (the header lives only in this git process's arguments, never in
+          # .git/config). A failed fetch is not fatal by itself because the checkout
+          # already fetched every branch, but the ref MUST resolve or the diff below
+          # would be computed against nothing.
+          AUTH_HEADER="Authorization: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          if ! git -c "http.extraheader=${AUTH_HEADER}" fetch origin "$BASE_REF"; then
+            echo "::warning title=fuze-code-review::could not refresh origin/$BASE_REF; using the ref the checkout already fetched"
+          fi
+          if ! git rev-parse --verify --quiet "origin/$BASE_REF" > /dev/null; then
+            echo "::error title=fuze-code-review::origin/$BASE_REF does not resolve -- refusing to report a verdict on a diff this job cannot see"
+            exit 1
+          fi
 
           # A diff that cannot be COMPUTED is not a diff that is EMPTY. Never
           # conflate the two: the first is a broken gate and must be loud, the
@@ -214,10 +259,9 @@ jobs:
           # to prefer -- reported "no LLM credential configured" and skipped the
           # review outright, with a working credential already wired to line 260.
           elif [ "${HAS_OAUTH:-false}" != "true" ] && [ "${HAS_LITELLM:-false}" != "true" ] \
-               && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
-               && [ "${HAS_OPENAI:-false}" != "true" ] && [ "${HAS_GEMINI:-false}" != "true" ]; then
+               && [ "${HAS_ANTHROPIC:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY; the OpenAI/Gemini rungs are disabled for this read-only reviewer) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           {
@@ -289,11 +333,14 @@ jobs:
             echo "FUZE_PROMPT_EOF_${NONCE}"
           } >> "$GITHUB_OUTPUT"
 
-      # NO Bash/Write/Edit tools. The entire diff is already embedded in the
-      # prompt above, so the reviewer never needs to touch the checkout -- and an
-      # instruction smuggled inside the diff has no tool available to act on it.
-      # Read/Grep/Glob are harmless here: they can only look, at a checkout that
-      # is already fully visible in the diff text.
+      # READ-ONLY AT THE TOOL LEVEL. The Anthropic rungs get only Read/Grep/Glob.
+      # The OpenAI and Gemini rungs are disabled below (their keys are NOT
+      # forwarded, and the action only runs a rung whose key is non-empty) because
+      # neither can be confined to read-only here.
+      # The entire diff is already embedded in the prompt above, so the reviewer
+      # never needs to touch the checkout -- and an instruction smuggled inside the
+      # diff has no tool available to act on it. Read/Grep/Glob can only look, at a
+      # checkout that holds no persisted credential. This step has no `env:` block.
       - name: Run automated review
         id: review
         if: steps.context.outputs.ready == 'true'
@@ -326,8 +373,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          # OPENAI_API_KEY / GEMINI_API_KEY are intentionally NOT forwarded: with no
+          # key the action skips rungs 2 and 3 by name. Codex runs danger-full-access
+          # and run-gemini-cli runs --yolo, i.e. a full shell, which a reviewer
+          # reading an attacker-controlled diff must never have. Do not add them back
+          # without a tool-level read-only mode (test_review_caller_readonly.py fails
+          # if you do).
           # allowed_bots — REQUIRED, for the same reason it is in fuze.yml, and it was
           # missing here until 2026-09-16. This workflow triggers on `pull_request`, so the
           # actor is whoever OPENED the PR — and on this repo that is routinely a bot:
@@ -386,6 +437,9 @@ jobs:
         if: steps.context.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No persisted git credential and no reliance on a git remote for repo
+          # inference: name the repo explicitly.
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           DECISION: ${{ steps.verdict.outputs.decision }}
           BODY: ${{ steps.verdict.outputs.body }}
