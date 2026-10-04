@@ -35,15 +35,39 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.selectionListService.port | quote }}
-            - name: DATABASE_URL
+            {{- /*
+            Data-tier identity: this service has its OWN database
+            (selectionListService.dbName) and its OWN login role
+            (selectionListService.db.role) with its OWN Secret. It does NOT run as
+            the shared `database.user` (fuzefront_user) and does not read the
+            chart Secret's DB_PASSWORD. The role + database are created and
+            reconciled by templates/service-db-bootstrap-job.yaml from the same
+            values, so name/role/password cannot drift. src/db/knexfile.ts builds
+            its connection from these DB_* vars (DATABASE_URL is unset on purpose).
+            */}}
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.selectionListService.dbName | quote }}
+            - name: DB_USER
+              value: {{ .Values.selectionListService.db.role | quote }}
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: selection-list-secrets
-                  key: DATABASE_URL
+                  name: {{ .Values.selectionListService.db.secretName | quote }}
+                  key: {{ .Values.selectionListService.db.passwordKey | quote }}
+            - name: DB_SSL
+              value: {{ .Values.selectionListService.db.ssl | quote }}
             - name: JWT_SECRET
+              # Shared platform JWT secret (verify-only), read from the chart
+              # Secret exactly like chat-service / devportal-service. It is not
+              # copied into selection-list-secrets, so that Secret holds only the
+              # DB password and can be minted without any human handling a value.
               valueFrom:
                 secretKeyRef:
-                  name: selection-list-secrets
+                  name: {{ include "fuzefront.secretName" . }}
                   key: JWT_SECRET
             - name: SECURITY_SERVICE_URL
               # fuzefront-security is the in-cluster Service name for security-service
@@ -61,7 +85,28 @@ spec:
               # it is a plain cluster-internal DNS address. The consumer group IDs
               # are derived at runtime from the KAFKA_GROUP_ID env var (or the
               # default in src/events/consumer.ts).
-              value: {{ .Values.selectionListService.kafkaBrokers | default "kafka.fuzeinfra.svc.cluster.local:9092" | quote }}
+              value: {{ .Values.selectionListService.kafkaBrokers | quote }}
+            # Authz enforcement switch (src/middleware/authz.flags.ts). Explicit so
+            # the posture is visible in the rendered manifest; false == the
+            # in-code default (pass-through + warning log).
+            - name: FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED
+              value: {{ .Values.selectionListService.authzEnabled | quote }}
+            {{- if .Values.selectionListService.featureFlags.unleashUrl }}
+            # @fuzefront/feature-flags (Unleash) client env for the release flag
+            # fuzefront.selection-lists.service. Absent URL -> block does not
+            # render -> in-code fail-safe (OFF). NOTE: the service code must also
+            # call the package's init() for these to take effect (backend scope).
+            - name: UNLEASH_URL
+              value: {{ .Values.selectionListService.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.selectionListService.featureFlags.appName | quote }}
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.selectionListService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.selectionListService.featureFlags.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /health
