@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/security-service",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@izzywdev/fuzefront-identity": "1.0.1",
-    "@fuzefront/core": "1.0.1",
+    "@fuzefront/core": "1.0.2",
     "@fuzefront/feature-flags": "file:../../packages/feature-flags",
     "@fuzefront/shared": "1.2.0",
     "@fuzefront/telemetry": "0.1.0",
