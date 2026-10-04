@@ -114,7 +114,11 @@ grant instead of joining the shared-token pool.
    with `403 FORBIDDEN`. In practice this means: provision the small number of
    trusted platform-operator service accounts that are allowed to grant/revoke
    S2S invoke permissions with `authz:admin` in their `scopes` list; every
-   other S2S client only ever needs to `check`.
+   other S2S client only ever needs to `check`. A service that grants on
+   behalf of an end user (e.g. making a resource's creator its owner) must do
+   so with such a machine identity, NOT the end user's token: human callers
+   are now authorized against the target tenant/resource and are denied
+   unless they already administer it.
 
    ```ts
    // grantServiceInvoke / revokeServiceInvoke (machine-roles.ts) remain the
