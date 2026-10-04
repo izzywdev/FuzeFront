@@ -79,6 +79,7 @@ interface HistoryRow {
   redacted: boolean;
   actor_type: string;
   actor_id: string | null;
+  actor_redacted: boolean;
   reason: string | null;
   revert_of: string | null;
   occurred_at: Date;
@@ -358,6 +359,7 @@ export class FakeDb {
         redacted,
         actor_type: actorType,
         actor_id: actorId,
+        actor_redacted: false,
         reason,
         revert_of: revertOf,
         occurred_at: nextTimestamp(),

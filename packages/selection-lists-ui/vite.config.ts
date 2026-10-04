@@ -32,6 +32,20 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Run with `vitest run --coverage` (needs the `@vitest/coverage-v8` dev
+    // dependency). The thresholds are a floor: a drop below them fails the run.
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/test/**', 'src/index.ts', 'src/types.ts'],
+      reporter: ['text-summary', 'lcov'],
+      thresholds: {
+        lines: 95,
+        statements: 95,
+        functions: 90,
+        branches: 85,
+      },
+    },
     alias: {
       '@fuzefront/design-system': dsRoot + '/index.js',
     },

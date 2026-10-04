@@ -174,6 +174,70 @@ describe('feature flag OFF', () => {
   });
 });
 
+// ─── Router-level flag gate (rollout audit) ──────────────────────────────────
+// The access (ReBAC grant) routes have no per-handler flag check, so the
+// app-level gate in app.ts (middleware/flagGate.ts) is what keeps them dark.
+// Without it, flag OFF still exposed the access roster/grants API.
+
+describe('router-level flag gate — access routes', () => {
+  const accessCases: Array<[string, string]> = [
+    ['get', `/v1/selection-lists/${LIST_ID}/access`],
+    ['put', `/v1/selection-lists/${LIST_ID}/access/usr_alice`],
+    ['delete', `/v1/selection-lists/${LIST_ID}/access/usr_alice`],
+  ];
+
+  describe('flag OFF → fails closed', () => {
+    beforeEach(() => mockFlag.mockResolvedValue(false));
+
+    test.each(accessCases)('%s %s → 404', async (method, url) => {
+      const app = createApp();
+      const res = await (request(app) as any)[method](url)
+        .set('Authorization', `Bearer ${TOKEN}`)
+        .send({ role: 'list-viewer' });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('NOT_FOUND');
+    });
+
+    it('fails closed (404) when flag evaluation throws', async () => {
+      mockFlag.mockRejectedValue(new Error('unleash down'));
+      const app = createApp();
+      const res = await request(app)
+        .get(`/v1/selection-lists/${LIST_ID}/access`)
+        .set('Authorization', `Bearer ${TOKEN}`);
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('flag ON → gate passes through to the router', () => {
+    it('GET /access is not short-circuited by the gate (reaches authz/DB layer, not the flag 404)', async () => {
+      mockFlag.mockResolvedValue(true);
+      // Make the access handler's DB read fail deterministically so we can tell
+      // "reached the handler" (500 INTERNAL_ERROR) apart from the gate's 404.
+      mockDb.mockImplementationOnce(() => {
+        throw new Error('db unavailable');
+      });
+      const app = createApp();
+      const res = await request(app)
+        .get(`/v1/selection-lists/${LIST_ID}/access`)
+        .set('Authorization', `Bearer ${TOKEN}`);
+      expect(res.body.code).not.toBe('NOT_FOUND');
+      expect(res.status).not.toBe(404);
+    });
+  });
+
+  it('evaluates the flag with the caller org + user (targeting context, never context-less)', async () => {
+    mockFlag.mockResolvedValue(false);
+    const app = createApp();
+    await request(app)
+      .get(`/v1/selection-lists/${LIST_ID}/translations`)
+      .set('Authorization', `Bearer ${TOKEN}`);
+    expect(mockFlag).toHaveBeenCalled();
+    for (const call of mockFlag.mock.calls) {
+      expect(call[0]).toEqual({ organizationId: 'org_01test', userId: 'usr_01test' });
+    }
+  });
+});
+
 // ─── Unauthenticated (no token) ───────────────────────────────────────────────
 
 describe('unauthenticated', () => {

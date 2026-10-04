@@ -31,7 +31,10 @@ jest.mock('../src/db', () => ({
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
 
+// Only mintId is stubbed (deterministic ids); the registry (ENTITY_PREFIXES, used
+// by the edge id validation in src/middleware/validateInput.ts) stays REAL.
 jest.mock('@izzywdev/fuzefront-identity', () => ({
+  ...jest.requireActual('@izzywdev/fuzefront-identity'),
   mintId: (type: string) =>
     type === 'selectionList'
       ? 'front_sl_01testlistid000000000000'
@@ -43,6 +46,28 @@ jest.mock('@izzywdev/fuzefront-identity', () => ({
 jest.mock('../src/middleware/quota', () => ({
   enforceListQuota: (_req: any, _res: any, next: any) => next(),
   enforceItemQuota: (_req: any, _res: any, next: any) => next(),
+  sendQuotaExceeded: jest.requireActual('../src/middleware/quota').sendQuotaExceeded,
+}));
+
+// ─── Quota service mock — the locked, in-transaction re-check ─────────────────
+// The create handler takes an advisory lock then re-checks the ceiling INSIDE the
+// transaction (exact enforcement). Real counting is covered by quota.service.test.ts.
+
+const mockLockQuotaScope = jest.fn().mockResolvedValue(undefined);
+const mockCheckListQuota = jest.fn().mockResolvedValue(undefined);
+jest.mock('../src/services/quota.service', () => ({
+  ...jest.requireActual('../src/services/quota.service'),
+  lockQuotaScope: (...args: any[]) => mockLockQuotaScope(...args),
+  checkListQuota: (...args: any[]) => mockCheckListQuota(...args),
+}));
+
+// ─── Creator -> list-owner grant (Security API + mirror, inside the create tx) ─
+// grantListOwner itself is covered by authz.middleware.test.ts.
+
+const mockGrantListOwner = jest.fn().mockResolvedValue(undefined);
+jest.mock('../src/middleware/authz', () => ({
+  ...jest.requireActual('../src/middleware/authz'),
+  grantListOwner: (...args: any[]) => mockGrantListOwner(...args),
 }));
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -97,6 +122,9 @@ beforeEach(() => {
   mockTransaction.mockReset();
   // Re-establish the transaction implementation after reset.
   mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
+  mockLockQuotaScope.mockReset().mockResolvedValue(undefined);
+  mockCheckListQuota.mockReset().mockResolvedValue(undefined);
+  mockGrantListOwner.mockReset().mockResolvedValue(undefined);
   setFlagClient({ getBooleanValue: async () => true });
 });
 
@@ -250,6 +278,32 @@ describe('GET /v1/selection-lists', () => {
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
 
+  it('accepts status=all and applies NO status predicate', async () => {
+    mockRaw
+      .mockResolvedValueOnce({ rows: [LIST_ROW] })
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] });
+
+    const res = await request(app)
+      .get('/v1/selection-lists?status=all')
+      .set(authHeader());
+
+    expect(res.status).toBe(200);
+    const [mainSql, mainParams] = mockRaw.mock.calls[0];
+    expect(mainSql).not.toContain('sl.status = ?');
+    expect(mainParams).not.toContain('all');
+    const [countSql] = mockRaw.mock.calls[1];
+    expect(countSql).not.toContain('sl.status = ?');
+  });
+
+  it('returns 400 VALIDATION_ERROR for an unsupported locale (never a silent fallback)', async () => {
+    const res = await request(app)
+      .get('/v1/selection-lists?locale=xx')
+      .set(authHeader());
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(mockRaw).not.toHaveBeenCalled();
+  });
+
   it('returns 401 when no JWT', async () => {
     const res = await request(app).get('/v1/selection-lists');
     expect(res.status).toBe(401);
@@ -277,6 +331,79 @@ describe('POST /v1/selection-lists', () => {
     expect(res.body.name).toBe('Countries');
     expect(res.body.status).toBe('active');
     expect(res.body.organization_id).toBe(TEST_ORG_ID);
+  });
+
+  it('grants the creator list-owner inside the create transaction, after the inserts', async () => {
+    mockTrxRaw.mockResolvedValue({ rows: [] });
+    mockRaw.mockResolvedValueOnce({ rows: [LIST_ROW] });
+
+    const res = await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(res.status).toBe(201);
+    expect(mockGrantListOwner).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      TEST_ORG_ID,
+      'front_sl_01testlistid000000000000',
+      TEST_USER_ID,
+      // No caller token argument any more: the grant is written with the
+      // service's MACHINE identity inside grantListOwner (lib/machineIdentity.ts).
+      mockTrx,
+    );
+    // The grant runs after both INSERTs (so a thrown grant rolls the list back).
+    expect(mockGrantListOwner.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mockTrxRaw.mock.invocationCallOrder[1],
+    );
+  });
+
+  it('does NOT return 201 when the owner grant throws (the transaction rolls the list back)', async () => {
+    mockTrxRaw.mockResolvedValue({ rows: [] });
+    mockGrantListOwner.mockRejectedValueOnce(new Error('Security API unavailable'));
+
+    const res = await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(res.status).toBe(500);
+    // The post-commit fetch is never reached.
+    expect(mockRaw).not.toHaveBeenCalled();
+  });
+
+  it('takes the per-org advisory lock and re-checks the ceiling INSIDE the transaction', async () => {
+    mockTrxRaw.mockResolvedValue({ rows: [] });
+    mockRaw.mockResolvedValueOnce({ rows: [LIST_ROW] });
+
+    await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `org_lists:${TEST_ORG_ID}`);
+    expect(mockCheckListQuota).toHaveBeenCalledWith(TEST_ORG_ID, mockTrx);
+    expect(mockLockQuotaScope.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCheckListQuota.mock.invocationCallOrder[0],
+    );
+    expect(mockCheckListQuota.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTrxRaw.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('returns 403 QUOTA_EXCEEDED (not 500) when the in-transaction re-check refuses', async () => {
+    const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+    mockCheckListQuota.mockRejectedValueOnce(new QuotaExceededError('org_lists', 3, 3, 'lists'));
+
+    const res = await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'org_lists', limit: 3, current: 3 });
+    expect(mockTrxRaw).not.toHaveBeenCalled();
+    expect(mockGrantListOwner).not.toHaveBeenCalled();
   });
 
   it('mints the id — never uses client-supplied id', async () => {
@@ -467,6 +594,7 @@ describe('DELETE /v1/selection-lists/:listId', () => {
       .mockResolvedValueOnce({ rows: [] }) // DELETE item translations
       .mockResolvedValueOnce({ rows: [] }) // DELETE items
       .mockResolvedValueOnce({ rows: [] }) // DELETE list translations
+      .mockResolvedValueOnce({ rows: [] }) // DELETE access-grant mirror rows (FK RESTRICT)
       .mockResolvedValueOnce({ rows: [] }); // DELETE list
 
     const res = await request(app)
@@ -474,6 +602,12 @@ describe('DELETE /v1/selection-lists/:listId', () => {
       .set(authHeader());
 
     expect(res.status).toBe(204);
+    // Purge cascades to access grants, and removes them BEFORE the list row.
+    const sqls = mockTrxRaw.mock.calls.map((c) => String(c[0]));
+    const accessIdx = sqls.findIndex((q) => q.includes('DELETE FROM selection_list_access'));
+    const listIdx = sqls.findIndex((q) => q.includes('DELETE FROM selection_lists'));
+    expect(accessIdx).toBeGreaterThanOrEqual(0);
+    expect(accessIdx).toBeLessThan(listIdx);
   });
 
   it('returns 404 when list not found', async () => {

@@ -41,6 +41,14 @@ on:
         required: false
       INTERNAL_PROVISION_SECRET:
         required: false
+      # Dedicated master-admin synthetic for the Portals directory
+      # list-contents assertion (portals-directory-smoke.spec.ts test 2).
+      # Absent → that test self-skips as missing coverage; the nav-render
+      # test still runs on the regular synthetic.
+      POST_PROD_ADMIN_EMAIL:
+        required: false
+      POST_PROD_ADMIN_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -83,6 +91,10 @@ jobs:
           # Without this secret the spec fails with a clear diagnostic instead of
           # silently looping on 401.
           INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
+          # Master-admin synthetic — gates the Portals directory list-contents
+          # assertion; when unset that one test self-skips as missing coverage.
+          POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
+          POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
         run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
 
       # AuthN provider-boundary smoke (contract PR #243). Runs only when

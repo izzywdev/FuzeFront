@@ -35,15 +35,39 @@ spec:
               value: "production"
             - name: PORT
               value: {{ .Values.selectionListService.port | quote }}
-            - name: DATABASE_URL
+            {{- /*
+            Data-tier identity: this service has its OWN database
+            (selectionListService.dbName) and its OWN login role
+            (selectionListService.db.role) with its OWN Secret. It does NOT run as
+            the shared `database.user` (fuzefront_user) and does not read the
+            chart Secret's DB_PASSWORD. The role + database are created and
+            reconciled by templates/service-db-bootstrap-job.yaml from the same
+            values, so name/role/password cannot drift. src/db/knexfile.ts builds
+            its connection from these DB_* vars (DATABASE_URL is unset on purpose).
+            */}}
+            - name: DB_HOST
+              value: {{ .Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.selectionListService.dbName | quote }}
+            - name: DB_USER
+              value: {{ .Values.selectionListService.db.role | quote }}
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: selection-list-secrets
-                  key: DATABASE_URL
+                  name: {{ .Values.selectionListService.db.secretName | quote }}
+                  key: {{ .Values.selectionListService.db.passwordKey | quote }}
+            - name: DB_SSL
+              value: {{ .Values.selectionListService.db.ssl | quote }}
             - name: JWT_SECRET
+              # Shared platform JWT secret (verify-only), read from the chart
+              # Secret exactly like chat-service / devportal-service. It is not
+              # copied into selection-list-secrets, so that Secret holds only the
+              # DB password and can be minted without any human handling a value.
               valueFrom:
                 secretKeyRef:
-                  name: selection-list-secrets
+                  name: {{ include "fuzefront.secretName" . }}
                   key: JWT_SECRET
             - name: SECURITY_SERVICE_URL
               # fuzefront-security is the in-cluster Service name for security-service
@@ -61,14 +85,62 @@ spec:
               # it is a plain cluster-internal DNS address. The consumer group IDs
               # are derived at runtime from the KAFKA_GROUP_ID env var (or the
               # default in src/events/consumer.ts).
-              value: {{ .Values.selectionListService.kafkaBrokers | default "kafka.fuzeinfra.svc.cluster.local:9092" | quote }}
+              value: {{ .Values.selectionListService.kafkaBrokers | quote }}
+            # Authorization is ALWAYS enforced when NODE_ENV=production (the code
+            # never consults this value there -- src/middleware/authz.flags.ts
+            # isAuthzEnforced, review H-1). Declared explicitly, from
+            # selectionListService.authzEnabled (true), so the rendered manifest
+            # states the posture instead of leaving an absent env var to read as
+            # "off". It stays a dev/test switch outside production only.
+            - name: FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED
+              value: {{ .Values.selectionListService.authzEnabled | quote }}
+            {{- if .Values.selectionListService.featureFlags.unleashUrl }}
+            # @fuzefront/feature-flags (Unleash) client env for the release flag
+            # fuzefront.selection-lists.service. The service calls the package's
+            # init() at startup (src/lib/featureFlags.ts). Absent URL -> block does
+            # not render -> in-code fail-safe (OFF: the feature stays dark).
+            - name: UNLEASH_URL
+              value: {{ .Values.selectionListService.featureFlags.unleashUrl | quote }}
+            - name: UNLEASH_APP_NAME
+              value: {{ .Values.selectionListService.featureFlags.appName | quote }}
+            - name: UNLEASH_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.selectionListService.featureFlags.tokenSecretName | default (include "fuzefront.secretName" .) | quote }}
+                  key: {{ .Values.selectionListService.featureFlags.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
+            # Machine identity (OAuth client_credentials) the service uses for
+            # Security API grant/revoke -- NOT the end user's token (review C-1).
+            # Both come from the same SealedSecret as DB_PASSWORD;
+            # `optional` so the pod still starts before the keys are sealed, in
+            # which case list creation / access grants fail CLOSED (500) and the
+            # service logs "machine identity NOT configured" at boot. The OAuth
+            # client must be provisioned with scope authz:admin -- see
+            # deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
+            - name: SELECTION_LIST_SERVICE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: selection-list-secrets
+                  key: SERVICE_CLIENT_ID
+                  optional: true
+            - name: SELECTION_LIST_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: selection-list-secrets
+                  key: SERVICE_CLIENT_SECRET
+                  optional: true
           readinessProbe:
             httpGet:
-              path: /health
+              # /ready checks the DB (bounded); /health stays a cheap liveness probe.
+              path: /ready
               port: {{ .Values.selectionListService.port }}
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 6
+            # Above the service's 2s DB-ping bound (READY_DB_TIMEOUT_MS) so a slow
+            # DB answers 503 {db: timeout} instead of tripping the kubelet's 1s default.
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /health
