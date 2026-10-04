@@ -222,9 +222,12 @@ router.post('/set-roles', async (req, res) => {
       .update({ roles: JSON.stringify(normalized), updated_at: db.fn.now() })
     return res.status(200).json({ ok: true, userId: user.id, email: user.email, roles: normalized })
   } catch (error: any) {
+    // Deliberately do NOT interpolate the request-supplied `email` into the log
+    // sink: it is user-controlled, and even sanitised, feeding it to the log is
+    // the log-injection taint path CodeQL flags. The error alone is the needed
+    // diagnostic for the only thing that reaches here (a DB failure).
     console.error(
-      'Internal set-roles failed for %s: %s',
-      sanitizeForLog(email),
+      'Internal set-roles failed: %s',
       sanitizeForLog(error?.stack ?? error?.message ?? error)
     )
     return res
