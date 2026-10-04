@@ -43,6 +43,7 @@ import {
   emitListTranslationUpserted,
   emitTranslationDeleted,
 } from '../events/emitters';
+import { refreshItemUserModified, refreshListUserModified } from '../seed/content';
 
 const router = createRouter();
 registerIdParams(router);
@@ -268,6 +269,10 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
       .where({ list_id: listId, locale })
       .first();
 
+    // A human wrote a translation of a (possibly seeded) list: persist seed_user_modified if the
+    // content no longer hashes to seed_hash (before the emit).
+    await refreshListUserModified(trx, listId);
+
     // Outbox, same transaction: translation.upserted (non-source locale).
     await emitListTranslationUpserted(trx, eventContextFromRequest(req), listId, locale);
 
@@ -329,6 +334,7 @@ router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList'
     // Outbox, same transaction. DELETE is idempotent (204 either way) but only a
     // row that actually existed is a change worth announcing.
     if (Number(removed) > 0) {
+      await refreshListUserModified(trx, listId);
       await emitTranslationDeleted(trx, eventContextFromRequest(req), listId, locale);
     }
 
@@ -464,6 +470,8 @@ router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('Sel
       .where({ item_id: itemId, locale })
       .first();
 
+    await refreshItemUserModified(trx, itemId);
+
     // Outbox, same transaction: translation.upserted (non-source locale).
     await emitItemTranslationUpserted(trx, eventContextFromRequest(req), listId, itemId, locale);
 
@@ -528,6 +536,7 @@ router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('
       .delete();
 
     if (Number(removed) > 0) {
+      await refreshItemUserModified(trx, itemId);
       await emitTranslationDeleted(trx, eventContextFromRequest(req), listId, locale, {
         itemId,
         itemCode: item.code,
