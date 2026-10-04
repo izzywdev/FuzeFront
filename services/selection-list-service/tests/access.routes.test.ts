@@ -616,7 +616,14 @@ describe('DELETE /:listId/access/:userId', () => {
 // about the human (route-level manage_access, the membership probe) keep using
 // the human's token.
 describe('machine identity for grant/revoke writes', () => {
-  const userToken = () => makeToken();
+  // Mint the caller's token ONCE and reuse the exact string. `makeToken()` is
+  // `jwt.sign(...)`, which stamps a per-second `iat`, so calling it twice can
+  // yield two byte-different tokens whenever the two calls straddle a 1-second
+  // boundary (e.g. when the handler's async work is slow on a loaded CI runner).
+  // Comparing the token the route actually forwarded against a *freshly* minted
+  // one therefore flaked (`iat` off by one) even though the route forwarded the
+  // right token. Pin one value so the assertion tests the principal, not the clock.
+  const userToken = makeToken();
 
   it('PUT: grant uses the machine token; the membership check keeps the end-user token', async () => {
     const check = jest.fn().mockResolvedValue({ allow: true });
@@ -625,17 +632,20 @@ describe('machine identity for grant/revoke writes', () => {
 
     const res = await request(makeApp())
       .put(`/lists/${LIST_ID}/access/${USER_ID}`)
-      .set({ Authorization: `Bearer ${userToken()}` })
+      .set({ Authorization: `Bearer ${userToken}` })
       .send({ role: 'list-viewer' });
 
     expect(res.status).toBe(200);
     expect(machineGetToken).toHaveBeenCalled();
     const [, grantToken] = (grant as jest.Mock).mock.calls[0];
     expect(grantToken).toBe(MACHINE_TOKEN);
-    expect(grantToken).not.toBe(userToken());
-    // Membership probe (a READ about the target) still carries the human's token.
+    expect(grantToken).not.toBe(userToken);
+    // Membership probe (a READ about the target) still carries the human's token,
+    // and NOT the service's machine token — the regression this guards against is
+    // the probe evaluating the wrong principal's authority over the target.
     const [, checkToken] = check.mock.calls[0];
-    expect(checkToken).toBe(userToken());
+    expect(checkToken).toBe(userToken);
+    expect(checkToken).not.toBe(MACHINE_TOKEN);
   });
 
   it('PUT: role change revokes the old role with the machine token too', async () => {
