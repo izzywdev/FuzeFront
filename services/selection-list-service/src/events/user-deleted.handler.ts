@@ -1,5 +1,6 @@
 import { FuzeEvent, IdentityUserDeletedPayloadV1 } from '@fuzefront/shared/kafka';
 import { db } from '../db';
+import { logger, timed } from '../lib/logger';
 
 /**
  * Reacts to `identity.user.deleted` by anonymizing per-user authorship
@@ -18,30 +19,27 @@ export async function handleUserDeleted(
 ): Promise<void> {
   const { userId } = event.payload;
   const sentinel = '[deleted-user]';
+  // The event's correlationId is this thread's reqId so one event is one grep.
+  const log = logger.child({ reqId: event.correlationId, component: 'user-deleted' });
+  log.info({ userId }, 'identity.user.deleted received');
 
-  const [lists, items, access] = await Promise.all([
-    db('selection_lists').where({ created_by: userId }).update({ created_by: sentinel }),
-    db('selection_list_items').where({ created_by: userId }).update({ created_by: sentinel }),
-    db('selection_list_access').where({ granted_by: userId }).update({ granted_by: sentinel }),
-  ]);
+  const [lists, items, access] = await timed(
+    log,
+    'db.anonymize-user',
+    () =>
+      Promise.all([
+        db('selection_lists').where({ created_by: userId }).update({ created_by: sentinel }),
+        db('selection_list_items').where({ created_by: userId }).update({ created_by: sentinel }),
+        db('selection_list_access').where({ granted_by: userId }).update({ granted_by: sentinel }),
+      ]),
+    { userId },
+  );
 
   const total = Number(lists) + Number(items) + Number(access);
   if (total === 0) {
-    console.log(
-      '[selection-list-service] user %s has no authorship references — nothing to anonymize (correlationId=%s)',
-      userId,
-      event.correlationId,
-    );
+    log.info({ userId }, 'user has no authorship references — nothing to anonymize');
     return;
   }
 
-  console.log(
-    '[selection-list-service] anonymized user %s in %d row(s) (lists=%d items=%d access=%d, correlationId=%s)',
-    userId,
-    total,
-    lists,
-    items,
-    access,
-    event.correlationId,
-  );
+  log.info({ userId, total, lists: Number(lists), items: Number(items), access: Number(access) }, 'anonymized user authorship references');
 }

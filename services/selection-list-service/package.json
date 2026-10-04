@@ -24,6 +24,7 @@
     "jsonwebtoken": "^9.0.2",
     "knex": "^3.1.0",
     "pg": "^8.11.5",
+    "pino": "^9.14.0",
     "swagger-ui-express": "^5.0.0",
     "zod": "3.22.4"
   },

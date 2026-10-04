@@ -15,12 +15,12 @@ import { createApp } from './app';
 import { db } from './db';
 import { run as runMigrations } from './db/migrate';
 import { startLifecycleConsumers } from './events/consumer';
+import { logger } from './lib/logger';
 
 async function main(): Promise<void> {
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
-    // eslint-disable-next-line no-console
-    console.error('[selection-list-service] FATAL: JWT_SECRET is not set.');
+    logger.fatal('JWT_SECRET is not set — refusing to start');
     process.exit(1);
   }
 
@@ -28,15 +28,12 @@ async function main(): Promise<void> {
   try {
     const applied = await runMigrations();
     if (applied.length > 0) {
-      // eslint-disable-next-line no-console
-      console.log('[selection-list-service] Applied %d migration(s):', applied.length, applied);
+      logger.info({ count: applied.length, migrations: applied }, 'Applied migration(s)');
     } else {
-      // eslint-disable-next-line no-console
-      console.log('[selection-list-service] DB schema up to date.');
+      logger.info('DB schema up to date');
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[selection-list-service] Migration failed:', err);
+    logger.fatal({ err }, 'Migration failed');
     await db.destroy().catch(() => {});
     process.exit(1);
   }
@@ -45,8 +42,7 @@ async function main(): Promise<void> {
   const port = parseInt(process.env.PORT || '3011', 10);
 
   const server = app.listen(port, () => {
-    // eslint-disable-next-line no-console
-    console.log('[selection-list-service] Listening on port %d', port);
+    logger.info({ port, logLevel: logger.level }, 'Listening');
   });
 
   // Start Kafka lifecycle consumers (fire-and-forget; errors are logged but do
@@ -56,18 +52,15 @@ async function main(): Promise<void> {
     startLifecycleConsumers()
       .then(({ disconnect }) => {
         disconnectConsumers = disconnect;
-        // eslint-disable-next-line no-console
-        console.log('[selection-list-service] Kafka lifecycle consumers started.');
+        logger.info('Kafka lifecycle consumers started');
       })
       .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error('[selection-list-service] Failed to start Kafka consumers (non-fatal):', err);
+        logger.error({ err }, 'Failed to start Kafka consumers (non-fatal)');
       });
   }
 
   const shutdown = async (): Promise<void> => {
-    // eslint-disable-next-line no-console
-    console.log('[selection-list-service] Shutting down...');
+    logger.info('Shutting down');
     if (disconnectConsumers) {
       await disconnectConsumers().catch(() => {});
     }
@@ -82,7 +75,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('[selection-list-service] Fatal error:', err);
+  logger.fatal({ err }, 'Fatal error');
   process.exit(1);
 });

@@ -11,6 +11,7 @@
 // behind authMiddleware like all other /v1 routes.
 
 import express, { Application } from 'express';
+import { requestLogger } from './lib/logger';
 import { authMiddleware } from './middleware/auth';
 import { requireSelectionListsFlag } from './middleware/flagGate';
 import healthRouter from './routes/health';
@@ -24,6 +25,9 @@ import resolveRouter from './routes/resolve';
 
 export function createApp(): Application {
   const app = express();
+  // First: binds reqId + request-scoped pino child logger (and ALS context)
+  // for every route, including /health and /docs.
+  app.use(requestLogger);
   app.use(express.json());
 
   // Unauthenticated routes

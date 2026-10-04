@@ -19,6 +19,7 @@
 // /:listId/items/:itemId so Express does not match "reorder" as an itemId.
 
 import { Router, Request, Response } from 'express';
+import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheck } from '../middleware/authz';
@@ -272,7 +273,10 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
       },
     });
   } catch (err) {
-    console.error('[items] GET /:listId/items error:', err);
+    getLog(req).error(
+      { err, op: 'items GET /:listId/items error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items GET /:listId/items error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -422,7 +426,10 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
       res.status(409).json({ code: 'CONFLICT', message: `An item with code '${code}' already exists in this list.` });
       return;
     }
-    console.error('[items] POST /:listId/items error:', err);
+    getLog(req).error(
+      { err, op: 'items POST /:listId/items error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items POST /:listId/items error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -518,7 +525,10 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
 
     res.status(200).json({ items: result.rows.map(formatItem) });
   } catch (err) {
-    console.error('[items] PUT /:listId/items/reorder error:', err);
+    getLog(req).error(
+      { err, op: 'items PUT /:listId/items/reorder error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items PUT /:listId/items/reorder error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -671,7 +681,10 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
 
     res.status(200).json(formatItem(result.rows[0]));
   } catch (err) {
-    console.error('[items] PATCH /:listId/items/:itemId error:', err);
+    getLog(req).error(
+      { err, op: 'items PATCH /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items PATCH /:listId/items/:itemId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -749,7 +762,10 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
       res.status(200).json(formatItem(result.rows[0]));
     }
   } catch (err) {
-    console.error('[items] DELETE /:listId/items/:itemId error:', err);
+    getLog(req).error(
+      { err, op: 'items DELETE /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items DELETE /:listId/items/:itemId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
@@ -815,7 +831,10 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
 
     res.status(200).json(formatItem(result.rows[0]));
   } catch (err) {
-    console.error('[items] POST /:listId/items/:itemId/archive error:', err);
+    getLog(req).error(
+      { err, op: 'items POST /:listId/items/:itemId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'items POST /:listId/items/:itemId/archive error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
