@@ -64,6 +64,20 @@ export const FLAG_KEYS = {
    */
   SELECTION_LISTS_SERVICE: 'fuzefront.selection-lists.service',
   /**
+   * SL5/SL6 — selection-list default-seeding (docs/planning/selection-lists-events.md
+   * section 11). Gates BOTH new selection-list-service consumers — the
+   * `identity.org.created` seeding consumer and the `selection-lists.seed.requested`
+   * handler (plus the reconciler). Default OFF. Release flag. Owner: izzywdev.
+   * Removal criterion: seeding ON for all orgs for 30 days with zero
+   * `selection-lists.seed.failed` in the window.
+   * SERVER-ONLY (`web_exposed: false`): deliberately NOT in WEB_EXPOSED_FLAGS —
+   * the browser never reads it. The constant lives here so the key is not a bare
+   * string; the service reads it via isSeedDefaultsEnabled() in
+   * services/selection-list-service/src/flags.ts. Independent of, and additionally
+   * requires, SELECTION_LISTS_SERVICE.
+   */
+  SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
+  /**
    * Portals Directory (backend S1 #640 / frontend S3 #642).
    * Gates the /portals page + SidePanel "Portals" nav entry (UI-side) and
    * the identityMode/launchUrl fields on GET /api/v1/admin/portals

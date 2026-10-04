@@ -1,0 +1,34 @@
+{
+  "$comment": "Golden input for buildSeedRequest (selection-list-client TS + Py). The expected output is seed-request.expected.json, which shared/tests/kafka/selection-lists.schemas.test.ts validates against selectionListsSeedRequestedSchemaV1. All three test suites read these files, so the helpers and the schema cannot drift apart silently.",
+  "requestId": "fuzecrm:org_01h455vb4pex5vsknk084sn02q:crm-defaults:v2",
+  "organizationId": "org_01h455vb4pex5vsknk084sn02q",
+  "app": "fuzecrm",
+  "service": "crm-service",
+  "packKey": "crm-defaults",
+  "packVersion": 2,
+  "serviceToken": "opaque.service.token",
+  "trigger": "app-installed",
+  "lists": [
+    {
+      "key": "fuzecrm-deal-stages",
+      "name": "Deal stages",
+      "description": "Pipeline stages for CRM deals.",
+      "translations": [{ "locale": "es", "name": "Etapas del trato" }],
+      "items": [
+        { "code": "LEAD", "label": "Lead" },
+        { "code": "QUALIFIED", "label": "Qualified", "translations": [{ "locale": "es", "label": "Calificado" }] },
+        { "code": "WON", "label": "Won", "description": "Closed and won." },
+        { "code": "LOST", "label": "Lost" }
+      ]
+    },
+    {
+      "key": "fuzecrm-lead-sources",
+      "sourceLocale": "en",
+      "name": "Lead sources",
+      "items": [
+        { "code": "WEB", "label": "Website" },
+        { "code": "REFERRAL", "label": "Referral" }
+      ]
+    }
+  ]
+}
