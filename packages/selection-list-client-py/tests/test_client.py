@@ -258,18 +258,30 @@ class TestUrlAndToken:
         assert received_paths[0] == "/v1/selection-lists"
 
     def test_no_token_no_auth_header(self) -> None:
+        # Spec 2.0.0: /v1/resolve has no anonymous mode. Without a token the
+        # client sends no Authorization header (it never invents one) and the
+        # service's 401 surfaces as a SelectionListApiError -- never a result.
         received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
+            if "Authorization" not in handler.headers:
+                handler.send_json(
+                    {"code": "UNAUTHENTICATED", "message": "Access denied. No token provided."},
+                    status=401,
+                )
+                return
             handler.send_json({"results": {}, "missing": []})
 
         routes = {("POST", "/v1/resolve"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url)
-            client.resolve_ids(["front_sli_01h455vb4pex5vsknk084sn02q"])
+            with pytest.raises(SelectionListApiError) as exc_info:
+                client.resolve_ids(["front_sli_01h455vb4pex5vsknk084sn02q"])
 
         assert "Authorization" not in received_headers[0]
+        assert exc_info.value.status == 401
+        assert exc_info.value.code == "UNAUTHENTICATED"
 
 
 # ---------------------------------------------------------------------------
@@ -609,7 +621,10 @@ class TestEndpointCoverage:
             "missing": [],
         }
 
+        received_auth: list[str] = []
+
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            received_auth.append(handler.headers.get("Authorization", ""))
             handler.send_json(resolve_body)
 
         routes = {("POST", "/v1/resolve"): handle}
@@ -617,6 +632,8 @@ class TestEndpointCoverage:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.resolve_ids([item_id])
 
+        # Spec 2.0.0: resolve is bearer-authenticated like every other operation.
+        assert received_auth == ["Bearer tok"]
         assert item_id in result.results
         assert result.results[item_id].label == "United States"
         assert result.missing == []

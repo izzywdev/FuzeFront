@@ -2,7 +2,7 @@
 Typed client for the FuzeFront selection-list-service.
 
 One method per endpoint of ``services/selection-list-service/openapi.yaml``
-v1.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
+v2.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
 
 Usage::
 
@@ -211,8 +211,10 @@ class SelectionListClient:
         schemes are rejected at construction time.
     :param token:
         Bearer token string, or a callable that returns one (so short-lived
-        tokens can refresh between calls). Optional -- ``resolve_ids`` may be
-        called unauthenticated by a trusted in-cluster caller.
+        tokens can refresh between calls). Every operation -- ``resolve_ids``
+        included (spec 2.0.0) -- requires it; it is optional only so a client
+        can be constructed before a token exists. Without one, calls raise a
+        ``401`` :class:`SelectionListApiError`.
     :param default_locale:
         Locale applied to every request that does not pass its own.
     """
@@ -851,6 +853,12 @@ class SelectionListClient:
         a URL). Archived ids resolve normally with ``status: 'archived'``; only
         purged or never-existent ids come back in ``missing``. Bounded at 500
         ids per call -- chunk larger batches yourself.
+
+        Authenticated like every other operation (spec 2.0.0): the Bearer
+        token must carry an organization claim, and resolution is scoped to
+        that org -- another org's ids land in ``missing``. There is no
+        anonymous mode; a missing or org-less token raises a ``401``
+        :class:`SelectionListApiError`.
         """
         body: dict = {"ids": ids}
         resolved_locale = locale or self._default_locale

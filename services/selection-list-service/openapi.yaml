@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Selection List Service API
-  version: 1.0.0
+  version: 2.0.0
   summary: Org-scoped, translatable selection lists (reference data) for the Fuze family.
   description: >-
     **FROZEN CONTRACT — FFRNT-187 (S1).** This file is the single source of truth
@@ -131,6 +131,17 @@ info:
     route re-checks the caller against the Security API, and a read the caller
     is not entitled to returns `404`, not `403`, so the API is not an
     existence oracle across orgs.
+
+
+    ### Changelog
+
+    * **2.0.0** — `POST /v1/resolve` requires a Bearer token carrying an
+      organization claim, like every other operation; the optional
+      unauthenticated "trusted in-cluster caller" mode is removed and `403` is
+      declared. MAJOR because it withdraws a documented calling mode, even
+      though `oasdiff breaking` does not flag the removed `{}` security
+      alternative and the service has always answered such calls `401`.
+    * **1.0.0** — initial frozen contract (FFRNT-187).
   contact:
     name: FuzeFront Platform Team
     url: https://github.com/izzywdev/FuzeFront
@@ -1094,17 +1105,26 @@ paths:
         ids come back in `missing`; ids are never silently dropped, so a caller
         can always tell "no label" from "no such item".
 
-        Unlike every other route this one is caller-authenticated at the service
-        level: it may be called with a Bearer token, or unauthenticated from a
-        trusted in-cluster caller that has already authorized its own end user.
-        It is therefore deliberately minimal — it returns a label, a locale and a
-        status, and never reveals a list key, an organization, or anything else
-        an id alone should not unlock.
+        **Authenticated, like every other route** (amended in 2.0.0). A Bearer
+        token is required, and it must carry an organization claim: resolution
+        is scoped to the caller's organization, so an id belonging to another
+        org lands in `missing` exactly as a never-existent id does — never a
+        `403`/`404` that would turn this endpoint into a cross-org existence
+        oracle. A call with no token, an invalid token, or a token with no
+        organization claim is answered `401` and resolves nothing. There is no
+        anonymous or "trusted in-cluster" path: an in-cluster caller resolves on
+        behalf of its end user by forwarding that user's token. (1.0.0 declared
+        an optional, unauthenticated mode; the service never implemented it,
+        and it would have made a bare item id a capability, contradicting the
+        identifier standard.)
+
+        The response is still deliberately minimal — it returns a label, a
+        locale and a status, and never reveals a list key, an organization, or
+        anything else an id alone should not unlock.
       tags: [resolve]
       x-permit-action: read
       security:
         - bearerAuth: []
-        - {}
       requestBody:
         required: true
         description: The item ids to resolve, and the locale to resolve them in.
@@ -1123,6 +1143,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
 components:
   securitySchemes:
