@@ -567,6 +567,50 @@ Decisions the code makes that §4–§6 left open:
 - **Not emitted here:** `seed.*` (next stream), org-wide lifecycle cascades
   (`org-deleted.handler.ts`, per §4), `identity.user.deleted` anonymisation.
 
+### 13.0.2 As implemented (SL6 seed core)
+
+`services/selection-list-service/src/seed/` (library only: **no Kafka consumer calls it yet**; tests:
+`tests/seed.{unit,apply.db,routes.db,sources.db}.test.ts`). Decisions the code makes that §7-§10 left open:
+
+- **API.** `applySeedRequest(db, request)` (one request, one transaction, never throws for a refusal: it
+  records `seed.failed` in its own transaction and returns the typed result), `recordSeedFailure`,
+  `applyPlatformDefaults(db, orgId, { trigger })`, `isSeedingEnabled(orgId)` (master gate AND seed flag;
+  **the library itself never reads a flag**, its callers do), `readOrgProjection`, the pack/source loaders
+  and `initSeeding(db)` (boot: validate packs + `seed-sources.json`, sync the allowlist; the service refuses
+  to start on an invalid file). Attestation *verification* (introspection) stays the consumer's job; the
+  library takes the verified `attestedSubject` and enforces the allowlist row against it.
+- **Lock order** is org outbox -> `sl-seed:<org>:<source>:<pack>` -> `org_lists` quota -> `list_items:<id>`.
+  `POST /lists` used to take the quota lock *before* the org lock (a deadlock against a concurrent seed);
+  it now takes the org lock first (test: `seed.routes.db.test.ts`, which fails without the fix).
+- **Order of refusals:** scope -> schema -> source (allowlist row, attested subject, caps, namespace) ->
+  org projection -> ledger (superseded / already-applied / PACK_CONTENT_MISMATCH) -> plan (KEY_CONFLICT) ->
+  quota. Everything that can refuse happens before the first write; an unexpected fault rolls back and is
+  recorded as `INTERNAL_ERROR` (retryable) unless the caller asks for `internalErrors: 'throw'`.
+- **Seeded-then-edited hash** (`content.ts`) covers list key, source locale, **status**, source text and the
+  non-machine translations of the other locales; items: label, description, status, non-machine
+  translations. A list's *status* is hashed (the plan hashes it for items only) so a human archive/restore
+  of a seeded list counts as taking ownership; seeding rewrites `seed_hash` when it archives/restores a row
+  itself. `seed_user_modified` is set by `refreshListUserModified` / `refreshItemUserModified` in the HTTP
+  update paths (list PATCH/archive, item PATCH/archive, translation PUT/DELETE) **before** the emitter, so
+  the event snapshot carries it; a request that changes nothing, a reorder, a `sort_order` change and an
+  autofill machine translation do not set it.
+- **Ledger manifest = every key/code ever seeded** (union over versions): that is what makes "user purged
+  it" distinguishable from "never seeded". A list dropped from the pack is archived only if unedited.
+- **Events.** Created lists/items emit `list.created` / `item.created` plus one `translation.upserted` per
+  non-source translation written (plan §4 "seeding"); an upgrade emits `*.updated` / `*.archived` /
+  translation events only for what changed; `seed.completed` is always last. `already-applied` re-emits a
+  fresh `seed.completed` carrying the stored per-list result and writes nothing else.
+- **Audit** rows (`seed.applied|upgraded|archived`, actor `system:selection-list-service`) carry
+  `listId`/`listKey` in `after`; `DELETE ?purge=true` now detaches a list's audit rows (`list_id = NULL`)
+  instead of failing on the FK.
+- **Responses.** Lists and items render the required nullable `seed` (`openapi.yaml` 4.0.0);
+  `tests/helpers/openapi.ts` validates live responses against the real spec file with Ajv.
+- **Hard org purge** also deletes the org's ledger rows; the soft cascade keeps them.
+- **Shipped assets** (copied into the image by the Dockerfile): `seed-sources.json` (only the internal
+  `platform` source; no app source is invented) and `seed-packs/platform/platform-defaults.v1.json`
+  (3 lists, 10 items, all 11 locales; the translations are unreviewed drafts and need the human review §10
+  requires before the flag is ever turned on).
+
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
 > **Status: frozen in `openapi.yaml` 4.0.0** (branch `claude/sl6-http-amend`).
