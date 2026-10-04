@@ -118,6 +118,8 @@ jobs:
       POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
       POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
       INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
+      POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
+      POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
 
   # The public marketing site (fuzefront-website) has its own deploy image and
   # its own release-time contrast/nav regressions (see
