@@ -25,6 +25,8 @@ import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceListQuota } from '../middleware/quota';
+import { requireAuthzCheck, grantListOwner, bearer, getAuthzClient } from '../middleware/authz';
+import { getBooleanFlag, FLAGS } from '../middleware/authz.flags';
 
 const router = Router();
 
@@ -186,7 +188,7 @@ async function fetchList(
 
 // ─── GET / — list all selection lists ────────────────────────────────────────
 
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
   // Feature flag gate
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
@@ -209,10 +211,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   const keyFilter = req.query.key as string | undefined;
 
   // Validate status filter
-  if (!['active', 'archived'].includes(statusFilter)) {
+  if (!['active', 'archived', 'all'].includes(statusFilter)) {
     res.status(400).json({
       code: 'VALIDATION_ERROR',
-      message: 'status must be one of: active, archived',
+      message: 'status must be one of: active, archived, all',
     });
     return;
   }
@@ -231,6 +233,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   // so we join fallback translations in order). For the list endpoint, use
   // a fixed fallback order and let COALESCE sort it out.
   const queryLocale = req.query.locale as string | undefined;
+  if (queryLocale !== undefined && (typeof queryLocale !== 'string' || !SUPPORTED_LOCALES.has(queryLocale))) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Unsupported locale.' });
+    return;
+  }
   const acceptLang = req.headers['accept-language'] as string | undefined;
 
   // Build the locale chain for the translation JOIN; source_locale varies per row.
@@ -246,8 +252,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   const whereClause: string[] = ['sl.organization_id = ?'];
   const params: (string | number | boolean | null | Date)[] = [req.orgId as string];
 
-  whereClause.push('sl.status = ?');
-  params.push(statusFilter);
+  if (statusFilter !== 'all') {
+    whereClause.push('sl.status = ?');
+    params.push(statusFilter);
+  }
 
   if (keyFilter) {
     whereClause.push('sl.key = ?');
@@ -311,7 +319,28 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
     const rows = result.rows;
     const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
+    const candidateItems = hasMore ? rows.slice(0, limit) : rows;
+    let items = candidateItems;
+    const authzEnabled = await getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, {
+      userId: req.userId, orgId: req.orgId, appId: req.appId,
+    });
+    if (authzEnabled && candidateItems.length > 0) {
+      const token = bearer(req);
+      if (!token) {
+        res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' });
+        return;
+      }
+      try {
+        const decisions = await getAuthzClient().bulkCheck(candidateItems.map(row => ({
+          subject: req.userId!, tenant: req.orgId!, resource: { type: 'SelectionList', key: row.id }, action: 'read',
+        })), token);
+        if (decisions.length !== candidateItems.length) throw new Error('Misaligned authorization decisions');
+        items = candidateItems.filter((_, index) => decisions[index]?.allow === true);
+      } catch {
+        res.status(403).json({ code: 'FORBIDDEN', message: 'Authorization service unavailable.' });
+        return;
+      }
+    }
 
     let nextCursor: string | null = null;
     if (hasMore && items.length > 0) {
@@ -329,18 +358,19 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       `
       SELECT COUNT(*) AS total
       FROM selection_lists sl
-      WHERE sl.organization_id = ? AND sl.status = ?
+      WHERE sl.organization_id = ?
+      ${statusFilter === 'all' ? '' : 'AND sl.status = ?'}
       ${keyFilter ? 'AND sl.key = ?' : ''}
       `,
-      keyFilter ? [req.orgId, statusFilter, keyFilter] : [req.orgId, statusFilter],
+      [req.orgId, ...(statusFilter === 'all' ? [] : [statusFilter]), ...(keyFilter ? [keyFilter] : [])],
     );
-    const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
+    const total = authzEnabled ? items.length : parseInt(countResult.rows[0]?.total ?? '0', 10);
 
     res.status(200).json({
       items: items.map(formatList),
       page: {
         nextCursor,
-        hasMore,
+        hasMore: hasMore && nextCursor !== null,
         total,
       },
     });
@@ -352,7 +382,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
 // ─── POST / — create a selection list ────────────────────────────────────────
 
-router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireAuthzCheck('SelectionList', 'create'), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag already checked by enforceListQuota middleware
 
   if (!req.orgId) {
@@ -406,6 +436,11 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
 
   // Mint the id — never accept one from the client (governance/identifier-standard.md §1)
   const id = mintId('selectionList');
+  const token = bearer(req);
+  if (!token || !req.userId) {
+    res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' });
+    return;
+  }
 
   try {
     // Insert list row + seed source-locale translation in a transaction
@@ -432,6 +467,17 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
         ],
       );
     });
+
+    try {
+      await grantListOwner(req.userId, req.orgId, id, req.userId, token);
+    } catch (grantError) {
+      // A list without its owner grant would be inaccessible and unsafe to keep.
+      await db.transaction(async (trx) => {
+        await trx.raw(`DELETE FROM selection_list_translations WHERE list_id = ?`, [id]);
+        await trx.raw(`DELETE FROM selection_lists WHERE id = ?`, [id]);
+      });
+      throw grantError;
+    }
 
     // Fetch the newly created list (with translation) to return the canonical shape
     const listResult = await db.raw<{ rows: ListRow[] }>(
@@ -477,7 +523,7 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
 
 // ─── GET /:listId — fetch a single list ──────────────────────────────────────
 
-router.get('/:listId', async (req: Request, res: Response): Promise<void> => {
+router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -492,6 +538,10 @@ router.get('/:listId', async (req: Request, res: Response): Promise<void> => {
 
   const { listId } = req.params;
   const queryLocale = req.query.locale as string | undefined;
+  if (queryLocale !== undefined && (typeof queryLocale !== 'string' || !SUPPORTED_LOCALES.has(queryLocale))) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'Unsupported locale.' });
+    return;
+  }
   const acceptLang = req.headers['accept-language'] as string | undefined;
 
   // We need the source_locale to build the chain — do a quick fetch first
@@ -558,7 +608,7 @@ router.get('/:listId', async (req: Request, res: Response): Promise<void> => {
 
 // ─── PATCH /:listId — partial update ─────────────────────────────────────────
 
-router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
+router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -730,7 +780,7 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
 
 // ─── DELETE /:listId — archive or purge ──────────────────────────────────────
 
-router.delete('/:listId', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -757,8 +807,18 @@ router.delete('/:listId', async (req: Request, res: Response): Promise<void> => 
     }
 
     if (purge) {
-      // Hard delete — translations and items must be removed first
-      await db.transaction(async (trx) => {
+      // Lock the parent row so a concurrent item insert cannot pass the purge guard.
+      const purged = await db.transaction(async (trx) => {
+        await trx.raw(`SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR UPDATE`, [listId, req.orgId]);
+        const active = await trx.raw<{ rows: [{ count: string }] }>(
+          `SELECT COUNT(*) AS count FROM selection_list_items WHERE list_id = ? AND status = 'active'`, [listId],
+        );
+        if (Number(active.rows[0].count) > 0) return false;
+
+        // Audit records are immutable, so detach their nullable FK references.
+        await trx.raw(`UPDATE selection_list_audit SET item_id = NULL WHERE list_id = ?`, [listId]);
+        await trx.raw(`UPDATE selection_list_audit SET list_id = NULL WHERE list_id = ?`, [listId]);
+        await trx.raw(`DELETE FROM selection_list_access WHERE list_id = ?`, [listId]);
         // Delete item translations first (FK constraint)
         await trx.raw(
           `
@@ -775,7 +835,12 @@ router.delete('/:listId', async (req: Request, res: Response): Promise<void> => 
         await trx.raw(`DELETE FROM selection_list_translations WHERE list_id = ?`, [listId]);
         // Delete the list
         await trx.raw(`DELETE FROM selection_lists WHERE id = ?`, [listId]);
+        return true;
       });
+      if (!purged) {
+        res.status(409).json({ code: 'CONFLICT', message: 'Archive all items before purging the list.' });
+        return;
+      }
       res.status(204).send();
     } else {
       // Soft delete: archive
@@ -820,7 +885,7 @@ router.delete('/:listId', async (req: Request, res: Response): Promise<void> => 
 
 // ─── POST /:listId/archive — explicit archive ─────────────────────────────────
 
-router.post('/:listId/archive', async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;

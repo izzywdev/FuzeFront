@@ -12,10 +12,12 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import { createApp } from '../src/app';
 import { setFlagClient } from '../src/flags';
+import { grantListOwner } from '../src/middleware/authz';
 
 // ─── DB mock ─────────────────────────────────────────────────────────────────
 
 const mockRaw = jest.fn();
+const mockBulkCheck = jest.fn();
 const mockTrxRaw = jest.fn();
 const mockTrx = {
   raw: mockTrxRaw,
@@ -43,6 +45,13 @@ jest.mock('@izzywdev/fuzefront-identity', () => ({
 jest.mock('../src/middleware/quota', () => ({
   enforceListQuota: (_req: any, _res: any, next: any) => next(),
   enforceItemQuota: (_req: any, _res: any, next: any) => next(),
+}));
+
+jest.mock('../src/middleware/authz', () => ({
+  requireAuthzCheck: () => (_req: any, _res: any, next: any) => next(),
+  grantListOwner: jest.fn(async () => undefined),
+  bearer: (req: any) => req.headers.authorization?.replace(/^Bearer /i, '') ?? null,
+  getAuthzClient: () => ({ bulkCheck: mockBulkCheck }),
 }));
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -93,11 +102,14 @@ beforeEach(() => {
   // mockReset clears both call history AND the specificReturnValues queue
   // (mockClear/clearAllMocks only clears call history, not the once-queues).
   mockRaw.mockReset();
+  mockBulkCheck.mockReset();
+  delete process.env.FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED;
   mockTrxRaw.mockReset();
   mockTransaction.mockReset();
   // Re-establish the transaction implementation after reset.
   mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
   setFlagClient({ getBooleanValue: async () => true });
+  jest.mocked(grantListOwner).mockReset().mockResolvedValue(undefined);
 });
 
 // ─── Feature flag OFF ─────────────────────────────────────────────────────────
@@ -250,6 +262,32 @@ describe('GET /v1/selection-lists', () => {
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
 
+  it('status=all does not constrain the SQL to one status', async () => {
+    mockRaw.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    const res = await request(app).get('/v1/selection-lists?status=all').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(mockRaw.mock.calls[0][0]).not.toContain('sl.status = ?');
+  });
+
+  it('omits list metadata denied by the instance authorization service', async () => {
+    process.env.FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED = 'true';
+    mockRaw.mockResolvedValueOnce({ rows: [LIST_ROW, { ...LIST_ROW, id: 'front_sl_private00000000000000' }] })
+      .mockResolvedValueOnce({ rows: [{ total: '2' }] });
+    mockBulkCheck.mockResolvedValueOnce([{ allow: true }, { allow: false }]);
+    const res = await request(app).get('/v1/selection-lists').set(authHeader());
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((item: { id: string }) => item.id)).toEqual([TEST_LIST_ID]);
+    expect(res.body.page.total).toBe(1);
+    expect(mockBulkCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unsupported locale before querying', async () => {
+    const res = await request(app).get('/v1/selection-lists?locale=xx').set(authHeader());
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(mockRaw).not.toHaveBeenCalled();
+  });
+
   it('returns 401 when no JWT', async () => {
     const res = await request(app).get('/v1/selection-lists');
     expect(res.status).toBe(401);
@@ -277,6 +315,17 @@ describe('POST /v1/selection-lists', () => {
     expect(res.body.name).toBe('Countries');
     expect(res.body.status).toBe('active');
     expect(res.body.organization_id).toBe(TEST_ORG_ID);
+    expect(grantListOwner).toHaveBeenCalledWith(TEST_USER_ID, TEST_ORG_ID, TEST_LIST_ID, TEST_USER_ID, expect.any(String));
+  });
+
+  it('removes the new list if its owner grant fails', async () => {
+    mockTrxRaw.mockResolvedValue({ rows: [] });
+    mockRaw.mockResolvedValueOnce({ rows: [LIST_ROW] });
+    jest.mocked(grantListOwner).mockRejectedValueOnce(new Error('Security API unavailable'));
+    const res = await request(app).post('/v1/selection-lists').set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+    expect(res.status).toBe(500);
+    expect(mockTrxRaw.mock.calls.some(([sql]) => sql.includes('DELETE FROM selection_lists'))).toBe(true);
   });
 
   it('mints the id — never uses client-supplied id', async () => {
@@ -343,6 +392,13 @@ describe('POST /v1/selection-lists', () => {
 // ─── GET /:listId ─────────────────────────────────────────────────────────────
 
 describe('GET /v1/selection-lists/:listId', () => {
+  it('rejects an unsupported locale before querying', async () => {
+    const res = await request(app).get(`/v1/selection-lists/${TEST_LIST_ID}?locale=xx`).set(authHeader());
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(mockRaw).not.toHaveBeenCalled();
+  });
+
   it('returns the list with correct shape', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // quick fetch
@@ -464,16 +520,27 @@ describe('DELETE /v1/selection-lists/:listId', () => {
     mockRaw.mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }); // check exists
 
     mockTrxRaw
-      .mockResolvedValueOnce({ rows: [] }) // DELETE item translations
-      .mockResolvedValueOnce({ rows: [] }) // DELETE items
-      .mockResolvedValueOnce({ rows: [] }) // DELETE list translations
-      .mockResolvedValueOnce({ rows: [] }); // DELETE list
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // lock parent
+      .mockResolvedValueOnce({ rows: [{ count: '0' }] }); // active item guard
+    mockTrxRaw.mockResolvedValue({ rows: [] });
 
     const res = await request(app)
       .delete(`/v1/selection-lists/${TEST_LIST_ID}?purge=true`)
       .set(authHeader());
 
     expect(res.status).toBe(204);
+    expect(mockTrxRaw.mock.calls.some(([sql]) => sql.includes('DELETE FROM selection_list_access'))).toBe(true);
+  });
+
+  it('does not purge a list with active items', async () => {
+    mockRaw.mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] });
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] })
+      .mockResolvedValueOnce({ rows: [{ count: '1' }] });
+    const res = await request(app).delete(`/v1/selection-lists/${TEST_LIST_ID}?purge=true`).set(authHeader());
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('CONFLICT');
+    expect(mockTrxRaw).toHaveBeenCalledTimes(2);
   });
 
   it('returns 404 when list not found', async () => {
