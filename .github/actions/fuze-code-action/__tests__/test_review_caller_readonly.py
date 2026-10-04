@@ -170,22 +170,23 @@ class TestReviewCallerReadOnly(unittest.TestCase):
                           f"key no longer keeps it out of a read-only reviewer")
 
 
+PRE_FIX_STEP = {
+    "uses": "./.github/actions/fuze-code-action",
+    "with": {
+        "claude-args": '--allowedTools "Read,Grep,Glob"',
+        "openai-api-key": "${{ secrets.OPENAI_API_KEY }}",
+        "gemini-api-key": "${{ secrets.GEMINI_API_KEY }}",
+    },
+}
+PRE_FIX_JOB = {"steps": [{"uses": "actions/checkout@x", "with": {"fetch-depth": 0}}]}
+
+
 class TestDetectorIsNotVacuous(unittest.TestCase):
     """The detector must flag the pre-fix shape, or the suite above proves nothing."""
 
-    PRE_FIX_STEP = {
-        "uses": "./.github/actions/fuze-code-action",
-        "with": {
-            "claude-args": '--allowedTools "Read,Grep,Glob"',
-            "openai-api-key": "${{ secrets.OPENAI_API_KEY }}",
-            "gemini-api-key": "${{ secrets.GEMINI_API_KEY }}",
-        },
-    }
-    PRE_FIX_JOB = {"steps": [{"uses": "actions/checkout@x", "with": {"fetch-depth": 0}}]}
-
     def test_pre_fix_shape_is_flagged(self):
-        self.assertTrue(read_only_intent(self.PRE_FIX_STEP))
-        v = violations("x.yml", self.PRE_FIX_JOB, self.PRE_FIX_STEP)
+        self.assertTrue(read_only_intent(PRE_FIX_STEP))
+        v = violations("x.yml", PRE_FIX_JOB, PRE_FIX_STEP)
         self.assertEqual(len(v), 3, v)
 
     def test_maintainer_allowlists_are_not_read_only_intent(self):
