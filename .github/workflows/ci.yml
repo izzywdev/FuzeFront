@@ -156,6 +156,15 @@ jobs:
       - name: Run SDK tests
         run: cd sdk && npm test
 
+      # @fuzefront/feature-flags carries the flag catalog (fail-safe defaults per
+      # type) and the degradation contract every service relies on, but no job
+      # ran its tests, so two suites rotted to non-compiling unnoticed. ts-jest
+      # runs from src, so no build step is needed; no network/infra required.
+      - name: feature-flags — type-check + unit tests
+        run: |
+          npm run -w @fuzefront/feature-flags type-check
+          npm run -w @fuzefront/feature-flags test
+
   identity-ui-and-security:
     name: Identity UI + Security (unit)
     runs-on: ubuntu-latest
