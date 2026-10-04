@@ -114,6 +114,9 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 6
+            # Above the service's 2s DB-ping bound (READY_DB_TIMEOUT_MS) so a slow
+            # DB answers 503 {db: timeout} instead of tripping the kubelet's 1s default.
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /health
