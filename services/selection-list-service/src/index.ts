@@ -13,6 +13,9 @@
 //      All four always start when Kafka is configured; the seed flag is evaluated per message.
 //   5b. Start the transactional-outbox relay, ONLY when KAFKA_BROKERS is set
 //       (non-fatal; events otherwise wait durably in event_outbox).
+//   5c. Start the seed RECONCILER (platform-defaults backfill), ONLY when SEED_RECONCILER_ENABLED=true
+//       (default OFF, independent of the feature flags; each org is still gated by isSeedingEnabled(org)).
+//       Non-fatal; started after migrations so the DB is known to be up.
 //   6. Register SIGTERM/SIGINT handlers for graceful shutdown.
 //
 // The migration step runs in-process so the pre-sync Helm Job (which runs
@@ -31,6 +34,7 @@ import { installProcessHandlers } from './lib/http';
 import { logger } from './lib/logger';
 import { logMachineIdentityStatus } from './lib/machineIdentity';
 import { initSeeding } from './seed';
+import { isReconcilerEnabled, ReconcilerHandle, startReconciler } from './seed/reconciler';
 
 /** Hard ceiling on graceful shutdown; after this the process exits regardless. */
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -38,6 +42,7 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 let server: Server | undefined;
 let disconnectConsumers: (() => Promise<void>) | null = null;
 let outboxRelay: OutboxRelayFromEnvHandle | null = null;
+let reconciler: ReconcilerHandle | null = null;
 let shuttingDown = false;
 
 /**
@@ -57,6 +62,10 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
   force.unref();
 
+  if (reconciler) {
+    // Let the in-flight reconcile tick finish its current org (it checks the stop flag between orgs).
+    await reconciler.stop().catch((err) => logger.warn({ err }, 'seed reconciler stop failed during shutdown'));
+  }
   if (outboxRelay) {
     // Let the in-flight relay pass finish its current row, then release the producer.
     await outboxRelay.stop().catch((err) => logger.warn({ err }, 'outbox relay stop failed during shutdown'));
@@ -145,6 +154,20 @@ async function main(): Promise<void> {
     outboxRelay = startOutboxRelayFromEnv({ db, logger });
   } catch (err) {
     logger.error({ err }, 'Failed to start the outbox relay (non-fatal)');
+  }
+
+  // Seed reconciler (platform-defaults backfill + pack-upgrade rollout). Opt-in via env, default OFF.
+  // Migrations have run and the pool is up at this point. Never fatal.
+  if (isReconcilerEnabled()) {
+    try {
+      await db.raw('select 1');
+      if (shuttingDown) return; // a fatal during boot (e.g. EADDRINUSE) already began shutdown
+      reconciler = startReconciler({ db, logger });
+    } catch (err) {
+      logger.error({ err }, 'Failed to start the seed reconciler (non-fatal)');
+    }
+  } else {
+    logger.info({ component: 'seed-reconciler' }, 'SEED_RECONCILER_ENABLED is not true - seed reconciler disabled');
   }
 
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
