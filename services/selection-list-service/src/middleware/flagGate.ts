@@ -11,6 +11,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { isSelectionListsEnabled } from '../flags';
+import { getLog } from '../lib/logger';
 
 export async function requireSelectionListsFlag(
   req: Request,
@@ -20,10 +21,12 @@ export async function requireSelectionListsFlag(
   let enabled = false;
   try {
     enabled = await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId });
-  } catch {
+  } catch (err) {
+    getLog(req).warn({ err }, 'selection-lists flag evaluation failed — failing closed');
     enabled = false; // fail closed
   }
   if (!enabled) {
+    getLog(req).debug('selection-lists release flag OFF — 404');
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
   }

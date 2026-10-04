@@ -1,5 +1,6 @@
 import { FuzeEvent, IdentityOrgDeletedPayloadV1 } from '@fuzefront/shared/kafka';
 import { db } from '../db';
+import { logger, timed } from '../lib/logger';
 
 /**
  * Reacts to `identity.org.deleted` by cascading the deletion through all
@@ -16,14 +17,18 @@ export async function handleOrgDeleted(
   event: FuzeEvent<IdentityOrgDeletedPayloadV1>,
 ): Promise<void> {
   const { organizationId, cascade } = event.payload;
+  // The event's correlationId is this thread's reqId so one event is one grep.
+  const log = logger.child({ reqId: event.correlationId, component: 'org-deleted' });
+  log.info({ organizationId, cascade }, 'identity.org.deleted received');
 
-  const listCount = await db('selection_lists').where({ org_id: organizationId }).count('id as n').first();
+  const listCount = await timed(
+    log,
+    'db.count-org-lists',
+    () => db('selection_lists').where({ org_id: organizationId }).count('id as n').first(),
+    { organizationId },
+  );
   if (!listCount || Number(listCount.n) === 0) {
-    console.log(
-      '[selection-list-service] org %s has no selection lists — nothing to cascade (correlationId=%s)',
-      organizationId,
-      event.correlationId,
-    );
+    log.info({ organizationId }, 'org has no selection lists — nothing to cascade');
     return;
   }
 
@@ -50,21 +55,12 @@ export async function handleOrgDeleted(
       // 7. Delete quota row
       await trx('selection_list_org_quota').where({ org_id: organizationId }).delete();
     });
-    console.log(
-      '[selection-list-service] hard-purged all selection-list data for org %s (correlationId=%s)',
-      organizationId,
-      event.correlationId,
-    );
+    log.info({ organizationId }, 'hard-purged all selection-list data for org');
   } else {
     // Soft: deactivate lists (preserves audit trail)
     const updated = await db('selection_lists')
       .where({ org_id: organizationId, is_active: true })
       .update({ is_active: false, updated_at: new Date() });
-    console.log(
-      '[selection-list-service] soft-deactivated %d selection list(s) for org %s (correlationId=%s)',
-      updated,
-      organizationId,
-      event.correlationId,
-    );
+    log.info({ organizationId, deactivated: Number(updated) }, 'soft-deactivated selection lists for org');
   }
 }

@@ -17,6 +17,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { checkListQuota, checkItemQuota, QuotaExceededError } from '../services/quota.service';
 import { isSelectionListsEnabled } from '../flags';
+import { getLog } from '../lib/logger';
 
 /** Wire-format 403 QUOTA_EXCEEDED body (shared with the create handlers' locked re-check). */
 export function sendQuotaExceeded(res: Response, err: QuotaExceededError): void {
@@ -64,6 +65,7 @@ export const enforceListQuota = async (
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {
+      getLog(req).info({ orgId: req.orgId, scope: err.scope, current: err.current, limit: err.limit }, 'quota exceeded — 403');
       // HTTP 403: per OpenAPI spec, QUOTA_EXCEEDED shares the Forbidden status
       // because "you may not, and retrying identically will not help".
       res.status(403).json({
@@ -75,6 +77,7 @@ export const enforceListQuota = async (
       });
       return;
     }
+    getLog(req).error({ err, orgId: req.orgId }, 'quota check failed — forwarding to error handler');
     next(err);
   }
 };
@@ -123,6 +126,7 @@ export const enforceItemQuota = async (
     next();
   } catch (err) {
     if (err instanceof QuotaExceededError) {
+      getLog(req).info({ orgId: req.orgId, scope: err.scope, current: err.current, limit: err.limit }, 'quota exceeded — 403');
       // HTTP 403: per OpenAPI spec, QUOTA_EXCEEDED shares the Forbidden status.
       res.status(403).json({
         code: 'QUOTA_EXCEEDED',
@@ -133,6 +137,7 @@ export const enforceItemQuota = async (
       });
       return;
     }
+    getLog(req).error({ err, orgId: req.orgId }, 'quota check failed — forwarding to error handler');
     next(err);
   }
 };
