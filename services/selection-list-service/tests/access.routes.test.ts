@@ -114,6 +114,13 @@ jest.mock('../src/db', () => ({
   },
 }));
 
+// Outbox event layer is a stub in this ROUTE-behaviour suite (the in-memory DB
+// above models only the access mirror). Its real behaviour -- access.granted /
+// access.revoked payloads, atomicity with the mirror write -- is covered against
+// real Postgres in tests/outbox.db.test.ts and tests/outbox.routes.db.test.ts.
+jest.mock('../src/events/outbox');
+jest.mock('../src/events/emitters');
+
 // ─── Imports ──────────────────────────────────────────────────────────────────
 import express from 'express';
 import request from 'supertest';

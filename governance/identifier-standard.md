@@ -152,6 +152,10 @@ Two properties matter more than the lookup itself:
 
 Deleted entities are **tombstoned, never removed**: consumers redeliver and Kafka gives no ordering across partitions, so a redelivered `*.created` must not resurrect a deleted row. An empty projection replays each topic from the beginning to rebuild — safe because every write is idempotent.
 
+### Which layer, and what happens on delete
+
+Which layer each reference uses, and what the holder does when the target is deleted (`cascade | nullify | restrict | retain`), is **declared per reference** in the service's `data-contract.json`. The policy is FuzeSDLC `governance/data-consistency-standard.md` §5, which also specifies L2 and L3 as they get built. Note the soft-delete rule there: a soft-deleted target is `inactive` in `ref_index`, not tombstoned — tombstoning on soft delete (current behavior) is a known gap tracked in `docs/planning/data-consistency-and-read-models.md`.
+
 ## 6. Exemptions
 
 Client-assigned ids are legitimate for offline-first and local-first surfaces, where the client is a trusted peer in a sync protocol rather than an anonymous caller, and cannot round-trip for an id.

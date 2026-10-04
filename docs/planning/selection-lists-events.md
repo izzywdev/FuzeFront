@@ -522,6 +522,123 @@ Deviations from the sketch above, all deliberate:
   `[deleted-user]` already fit; nothing was relaxed. No RLS (none exists in this service; the
   DB is per-service and owned by `selection_list_svc`), no extra grants.
 
+### 13.0.1 As implemented (SL6 publishing: outbox writer + ordered relay)
+
+`services/selection-list-service/src/events/{outbox,emitters,outboxRelay,outboxPublisher}.ts`.
+Decisions the code makes that §4–§6 left open:
+
+- **Writer** — `enqueueEvent(trx, { topic, organizationId, payload, correlationId? })` validates
+  with `schemaForTopic` *before* the insert and throws on failure (rolling back the route's data
+  change: an invalid payload is a producer bug, never user input). It mints `eventId`
+  (UUIDv7 = the outbox row id), renders the org as the `org_…` TypeID, and refuses topics the
+  service does not produce (`seed.requested`, anything non-`selection-lists.*`).
+- **One revision per emitted event.** Each event that carries `listRevision` bumps
+  `selection_lists.revision` itself (consumers drop an event whose revision is not greater, so two
+  events must never share one). `list.created` carries the insert's own revision (1). Access
+  events carry none and do not bump. `list.deleted` bumps *before* the purge deletes the row.
+- **A change set that changes nothing emits nothing.** The emitters diff the row before/after:
+  `PATCH` with identical values, `archive` of an already archived list/item, a repeated `PUT`
+  of the same access role, and a `DELETE` of a translation/grant that is not there are all
+  `2xx`/`204` with no event and no revision bump.
+- **Archive is its own topic everywhere.** `PATCH {status:"archived"}` emits `*.archived`
+  (never `*.updated{status}`); if the same request also changed other fields, `*.updated` (without
+  `status`) precedes `*.archived`, each with its own revision. Restore (`archived → active`) is
+  `*.updated` with `status` in `changedFields`.
+- **Per-org serialisation to COMMIT.** Every mutating transaction takes a transaction-scoped
+  advisory lock per organization (`lockOrgOutbox`) *first* (lock order: org → quota → list row), so
+  `seq` order is commit order and "lowest pending `seq`" is the oldest event. Rows are stamped
+  with `clock_timestamp()` (insert time), not `now()` (transaction start). The relay never takes
+  this lock.
+- **Relay** — claims the *head* row of each org with `FOR UPDATE … SKIP LOCKED`, publishes that
+  org's rows in `seq` order and stops the org at the first failure (head-of-line blocking per org,
+  other orgs unaffected; two relay instances cannot reorder because the second skips the locked
+  head). 10 attempts then `<topic>.dlq` + `failed`; schema-invalid rows park at once; a *failed*
+  DLQ copy keeps the row `pending` (no event is ever lost); a parked row no longer blocks its org.
+  Poll-interval backoff (×2 up to 30 s) while a pass is failing; `sent` rows older than
+  `OUTBOX_SENT_RETENTION_HOURS` (168) are pruned. Metrics: `selection_list_outbox_{published,
+  publish_failures,parked}_total`, `…_pending`, `…_oldest_pending_age_seconds`, `…_failed`
+  (alert on `…_failed > 0` / any `…_parked_total` increase). Started from `src/index.ts` **only**
+  when `KAFKA_BROKERS` is set; relay errors are contained and cannot take the HTTP server down.
+- **Contract alignment fixed in the same PR.** The HTTP routes accepted values the event schemas
+  refuse (list keys with `_`/1 char, locales `it`/`nl`/`pl`, item codes with spaces,
+  descriptions > 2000, translation text > 200). They would have become `500`s; they now answer
+  `400` exactly as `openapi.yaml` already specifies, and machine-translation text is clamped to the
+  field limit.
+- **Not emitted here:** `seed.*` (next stream), org-wide lifecycle cascades
+  (`org-deleted.handler.ts`, per §4), `identity.user.deleted` anonymisation.
+
+### 13.0.2 As implemented (SL6 seed core)
+
+`services/selection-list-service/src/seed/` (library only: **no Kafka consumer calls it yet**; tests:
+`tests/seed.{unit,apply.db,routes.db,sources.db}.test.ts`). Decisions the code makes that §7-§10 left open:
+
+- **API.** `applySeedRequest(db, request)` (one request, one transaction, never throws for a refusal: it
+  records `seed.failed` in its own transaction and returns the typed result), `recordSeedFailure`,
+  `applyPlatformDefaults(db, orgId, { trigger })`, `isSeedingEnabled(orgId)` (master gate AND seed flag;
+  **the library itself never reads a flag**, its callers do), `readOrgProjection`, the pack/source loaders
+  and `initSeeding(db)` (boot: validate packs + `seed-sources.json`, sync the allowlist; the service refuses
+  to start on an invalid file). Attestation *verification* (introspection) stays the consumer's job; the
+  library takes the verified `attestedSubject` and enforces the allowlist row against it.
+- **Lock order** is org outbox -> `sl-seed:<org>:<source>:<pack>` -> `org_lists` quota -> `list_items:<id>`.
+  `POST /lists` used to take the quota lock *before* the org lock (a deadlock against a concurrent seed);
+  it now takes the org lock first (test: `seed.routes.db.test.ts`, which fails without the fix).
+- **Order of refusals:** scope -> schema -> source (allowlist row, attested subject, caps, namespace) ->
+  org projection -> ledger (superseded / already-applied / PACK_CONTENT_MISMATCH) -> plan (KEY_CONFLICT) ->
+  quota. Everything that can refuse happens before the first write; an unexpected fault rolls back and is
+  recorded as `INTERNAL_ERROR` (retryable) unless the caller asks for `internalErrors: 'throw'`.
+- **Seeded-then-edited hash** (`content.ts`) covers list key, source locale, **status**, source text and the
+  non-machine translations of the other locales; items: label, description, status, non-machine
+  translations. A list's *status* is hashed (the plan hashes it for items only) so a human archive/restore
+  of a seeded list counts as taking ownership; seeding rewrites `seed_hash` when it archives/restores a row
+  itself. `seed_user_modified` is set by `refreshListUserModified` / `refreshItemUserModified` in the HTTP
+  update paths (list PATCH/archive, item PATCH/archive, translation PUT/DELETE) **before** the emitter, so
+  the event snapshot carries it; a request that changes nothing, a reorder, a `sort_order` change and an
+  autofill machine translation do not set it.
+- **Ledger manifest = every key/code ever seeded** (union over versions): that is what makes "user purged
+  it" distinguishable from "never seeded". A list dropped from the pack is archived only if unedited.
+- **Events.** Created lists/items emit `list.created` / `item.created` plus one `translation.upserted` per
+  non-source translation written (plan §4 "seeding"); an upgrade emits `*.updated` / `*.archived` /
+  translation events only for what changed; `seed.completed` is always last. `already-applied` re-emits a
+  fresh `seed.completed` carrying the stored per-list result and writes nothing else.
+- **Audit** rows (`seed.applied|upgraded|archived`, actor `system:selection-list-service`) carry
+  `listId`/`listKey` in `after`; `DELETE ?purge=true` now detaches a list's audit rows (`list_id = NULL`)
+  instead of failing on the FK.
+- **Responses.** Lists and items render the required nullable `seed` (`openapi.yaml` 4.0.0);
+  `tests/helpers/openapi.ts` validates live responses against the real spec file with Ajv.
+- **Hard org purge** also deletes the org's ledger rows; the soft cascade keeps them.
+- **Shipped assets** (copied into the image by the Dockerfile): `seed-sources.json` (only the internal
+  `platform` source; no app source is invented) and `seed-packs/platform/platform-defaults.v1.json`
+  (3 lists, 10 items, all 11 locales; the translations are unreviewed drafts and need the human review §10
+  requires before the flag is ever turned on).
+
+### 13.0.3 As implemented (SL6 consumers)
+
+`services/selection-list-service/src/events/{org-created.handler,seed-requested.handler,attestation,orgProjection,retryBudget}.ts`,
+wired in `consumer.ts` (groups `${KAFKA_GROUP_ID}-org-created` and `-seed-requested`, started whenever Kafka is configured; the flag is
+read per message, never by (not) starting a consumer). Tests: `tests/seed.consumers.db.test.ts` (real Postgres + real `TypedConsumer` with a
+fake KafkaJS client + the real `@fuzefront/service-auth` verifier against a fake introspection endpoint), `tests/events.seed-consumers.unit.test.ts`.
+Decisions the code makes that §7-§8 left open:
+
+- **Org projection.** `identity.org.created` upserts `selection_list_ref_index` *always* (flag OFF included); a `deleted` row is a tombstone and is
+  never resurrected (the upsert refreshes type/`is_active`, not `status`). `identity.org.deleted` tombstones it *before* cascading (soft and hard) and
+  inserts the tombstone for an org it never saw, so delete-before-create ends in `seed.failed` / `ORG_INACTIVE`, not lists. The projection is only
+  written by these two events: an `identity.org.updated` consumer does not exist yet, so `is_active` can go stale.
+- **`org.created` flow:** project -> `isActive:false` skips (flag not consulted) -> `isSeedingEnabled(org)` OFF skips + logs -> `applyPlatformDefaults`
+  (`appliesTo` / personal / platform rules stay in the pack). Redelivery is `already-applied`.
+- **`seed.requested` order:** schema -> `scope:'user'` (`SCOPE_UNSUPPORTED`) -> flag (`SEEDING_DISABLED`; the token is not even introspected) ->
+  attestation -> `applySeedRequest` with `attestedSubject`. A **wrong subject** is `SOURCE_NOT_ALLOWED` (the allowlist row decides, R7), not
+  `ATTESTATION_INVALID`; the latter is for an inactive/expired/unknown token or a missing `selection-lists:seed` scope (retryable).
+- **Fail closed, two kinds of no.** A bad token is a refusal (`seed.failed`). Introspection that cannot *decide* (outage, non-200, malformed
+  body, missing config) throws `AttestationUnavailableError` and the consumer retries; nothing is written. The verifier is
+  `createMachineTokenVerifier` against `SECURITY_SERVICE_URL`.
+- **Bounded retries.** A thrown handler is retried by kafkajs; each message gets a small in-memory budget (`RetryBudget`, 5 attempts). Attempts before
+  the last use `internalErrors: 'throw'`; the last records `seed.failed` / `INTERNAL_ERROR` (retryable) so a fault that never heals cannot wedge the partition.
+- **Schema-invalid payloads.** The consumer runs with a passthrough schema and the handler parses: valid JSON that fails the schema gets a best-effort
+  `seed.failed` / `VALIDATION_ERROR` (only when `requestId`/org TypeID/source/pack/trigger are each individually valid) **and** a DLQ copy whose
+  `attestation.token` is replaced by `[REDACTED]` (this narrows the §7.2 note that the DLQ copy carries the token). Non-JSON is dead-lettered by
+  `TypedConsumer` as before. The token reaches nothing but the verifier: tests assert it is in no outbox event, no log line and no DLQ message.
+- **Governance.** `governance/microservice-events-policy.json`: selection-list-service left `knownUnhandled`; `identity.user.created` is `notApplicable`.
+
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
 > **Status: frozen in `openapi.yaml` 4.0.0** (branch `claude/sl6-http-amend`).
