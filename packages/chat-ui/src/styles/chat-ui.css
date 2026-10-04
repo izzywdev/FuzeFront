@@ -467,3 +467,154 @@
   padding-block: var(--space-2);
   background: var(--bg-secondary);
 }
+
+/* ---- Inline Drawer Variant ----------------------------------- */
+.ffc-drawer--inline {
+  position: relative;
+  inset-block-start: auto;
+  inset-block-end: auto;
+  inset-inline-end: auto;
+  inline-size: 100%;
+  block-size: 100%;
+  min-height: 480px;
+  max-height: 650px;
+  border-inline-start: none;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  z-index: 1;
+}
+.ffc-drawer--inline::before {
+  display: none;
+}
+.ffc-header__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ffc-header__subtitle {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+/* ---- Fenced Code Blocks ------------------------------------- */
+.ffc-codeblock {
+  margin-block: var(--space-2);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border-color);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.ffc-codeblock__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline: var(--space-3);
+  padding-block: var(--space-1);
+  background: var(--bg-secondary);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+.ffc-codeblock__lang {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide, 0.05em);
+  font-weight: var(--weight-semibold);
+}
+.ffc-codeblock__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ffc-codeblock__btn {
+  background: transparent;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  padding-inline: var(--space-2);
+  padding-block: 2px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+.ffc-codeblock__btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--accent-color);
+}
+.ffc-codeblock__btn--action {
+  background: var(--accent-soft);
+  color: var(--accent-color);
+  font-weight: var(--weight-medium);
+  border-color: var(--accent-color);
+}
+.ffc-codeblock__btn--action:hover {
+  background: var(--accent-color);
+  color: var(--primary-foreground, #ffffff);
+}
+.ffc-codeblock__pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+}
+.ffc-codeblock__pre code {
+  background: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  font-size: inherit !important;
+}
+
+/* ---- Suggested Prompts -------------------------------------- */
+.ffc-empty-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-4);
+  width: 100%;
+}
+.ffc-suggested {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 480px;
+}
+.ffc-suggested__label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-normal);
+  text-align: center;
+}
+.ffc-suggested__chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ffc-suggested__chip {
+  padding-inline: var(--space-3);
+  padding-block: var(--space-2);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+.ffc-suggested__chip:hover {
+  border-color: var(--accent-color);
+  color: var(--text-primary);
+  background: var(--bg-quaternary);
+  transform: translateY(-1px);
+}
+

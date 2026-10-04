@@ -8,7 +8,7 @@
  *   import '@fuzefront/chat-ui/styles.css';
  */
 
-// High-level, self-contained widget (launcher + drawer + state).
+// High-level, self-contained widget (launcher + drawer + state, or inline).
 export { ChatWidget } from './components/ChatWidget';
 export type { ChatWidgetProps } from './components/ChatWidget';
 
@@ -27,6 +27,14 @@ export { ConfirmationCard } from './components/ConfirmationCard';
 export type { ConfirmationCardProps } from './components/ConfirmationCard';
 export { FeedbackButtons } from './components/FeedbackButtons';
 export type { FeedbackButtonsProps } from './components/FeedbackButtons';
+export { CodeBlock } from './components/CodeBlock';
+export type { CodeBlockProps } from './components/CodeBlock';
+export { SuggestedPrompts } from './components/SuggestedPrompts';
+export type { SuggestedPromptsProps } from './components/SuggestedPrompts';
+
+// Markdown helpers.
+export { renderInlineMarkdown, renderMessageMarkdown } from './lib/markdown';
+export type { MarkdownOptions } from './lib/markdown';
 
 // Hooks + reducer (drive a custom UI directly).
 export { useChat } from './hooks/useChat';

@@ -18,7 +18,7 @@
 // turn always retrieves docs then answers. The ConfirmationStore + PermitClient
 // gate exists for when mutating tools are added.
 
-import { SYSTEM_PROMPT, buildContextBlock, sanitizeUserInput, resolveMentionPersona } from './prompt';
+import { SYSTEM_PROMPT, buildContextBlock, sanitizeUserInput, resolveMentionPersona, resolveAppPrompt } from './prompt';
 import type { ChatMessage, TokenUsage, ChatStreamChunk } from '../llm/litellm';
 import type { SearchDocsResult, RagSource } from './tools/search-docs';
 import type { ToolRegistry } from './tools';
@@ -50,6 +50,7 @@ export interface AgentTurnInput {
   userId: string;
   orgId: string;
   conversationId: string;
+  appId?: string;
 }
 
 /** Events emitted by a turn — matches the chat-client SSE union. */
@@ -95,8 +96,9 @@ export async function runAgentTurn(
   }
 
   // 3. Assemble the system prompt + context + agent persona mention routing.
+  const baseAppPrompt = resolveAppPrompt(input.appId);
   const persona = resolveMentionPersona(query);
-  const basePrompt = persona ? `${SYSTEM_PROMPT}\n\n${persona}` : SYSTEM_PROMPT;
+  const basePrompt = persona ? `${baseAppPrompt}\n\n${persona}` : baseAppPrompt;
   const system =
     contextBlock.length > 0
       ? `${basePrompt}\n\nReference documents:\n${contextBlock}`

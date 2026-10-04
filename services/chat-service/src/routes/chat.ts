@@ -148,7 +148,7 @@ export function createChatRouter(deps: ChatRouterDeps): Router {
       let usage: TokenUsage | undefined;
 
       await deps.runAgentTurn(
-        { messages, userId, orgId, conversationId },
+        { messages, userId, orgId, conversationId, appId },
         {
           emit: (event) => {
             if (event.type === 'text_delta') assistantText += event.delta;

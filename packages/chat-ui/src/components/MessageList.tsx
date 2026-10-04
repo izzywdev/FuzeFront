@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useChatI18n } from '../i18n';
 import type { UiMessage } from '../hooks/types';
 import { MessageItem } from './MessageItem';
+import { SuggestedPrompts } from './SuggestedPrompts';
 
 /** Distance (px) from an edge that counts as "at" that edge. */
 const EDGE_THRESHOLD = 48;
@@ -27,6 +28,14 @@ export interface MessageListProps {
    * scrolled up into history.
    */
   sendSignal?: number;
+  /** Suggested questions rendered when conversation is empty. */
+  suggestedPrompts?: string[];
+  /** Handler to send a suggested prompt immediately. */
+  onSendPrompt?: (text: string) => void;
+  /** Handler when user clicks code block execution action. */
+  onCodeAction?: (code: string, language: string) => void;
+  /** Action label override for query code blocks. */
+  codeActionLabel?: string;
 }
 
 /**
@@ -47,6 +56,10 @@ export function MessageList({
   onLoadOlder,
   onLoadNewer,
   sendSignal = 0,
+  suggestedPrompts,
+  onSendPrompt,
+  onCodeAction,
+  codeActionLabel,
 }: MessageListProps) {
   const { strings } = useChatI18n();
   const listRef = useRef<HTMLDivElement>(null);
@@ -151,7 +164,15 @@ export function MessageList({
       {loadingHistory ? (
         <p className="ffc-empty">{strings.historyLoading}</p>
       ) : messages.length === 0 ? (
-        <p className="ffc-empty">{strings.emptyState}</p>
+        <div className="ffc-empty-wrapper">
+          <p className="ffc-empty">{strings.emptyState}</p>
+          {suggestedPrompts && onSendPrompt && (
+            <SuggestedPrompts
+              prompts={suggestedPrompts}
+              onSelect={onSendPrompt}
+            />
+          )}
+        </div>
       ) : (
         messages.map((m) => (
           <MessageItem
@@ -160,6 +181,8 @@ export function MessageList({
             onApprove={onApprove}
             onCancel={onCancel}
             onFeedback={onFeedback}
+            onCodeAction={onCodeAction}
+            codeActionLabel={codeActionLabel}
           />
         ))
       )}
