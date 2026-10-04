@@ -15,7 +15,7 @@
  *     – overwrite_machine: true refreshes machine rows but not human rows
  *   - Unsupported locale in path → 400 VALIDATION_ERROR
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';

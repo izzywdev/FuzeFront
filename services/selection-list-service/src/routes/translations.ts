@@ -19,8 +19,9 @@
 //   OFF) is checked at the top of every handler; returns 404 when OFF. Both flag
 //   states are exercised in tests/translations.test.ts.
 //
-// Authorization stubs:
-//   S7 adds Permit.io permit.check() calls. Each handler has a TODO(S7) marker.
+// Authorization:
+//   Every route carries requireAuthzCheck('SelectionList', read|translate) per the
+//   contract's x-permit-action (middleware/authz.ts).
 //
 // source_hash semantics:
 //   A translation row records the hash of the source-locale text it was produced
@@ -31,6 +32,7 @@ import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
+import { requireAuthzCheck } from '../middleware/authz';
 
 const router = Router();
 
@@ -81,7 +83,7 @@ function requireAuth(req: Request, res: Response): boolean {
 // GET /:listId/translations
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get('/:listId/translations', async (req: Request, res: Response) => {
+router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -152,7 +154,7 @@ router.get('/:listId/translations', async (req: Request, res: Response) => {
 // PUT /:listId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.put('/:listId/translations/:locale', async (req: Request, res: Response) => {
+router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -229,7 +231,7 @@ router.put('/:listId/translations/:locale', async (req: Request, res: Response) 
 // DELETE /:listId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.delete('/:listId/translations/:locale', async (req: Request, res: Response) => {
+router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -268,7 +270,7 @@ router.delete('/:listId/translations/:locale', async (req: Request, res: Respons
 // GET /:listId/items/:itemId/translations
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.get('/:listId/items/:itemId/translations', async (req: Request, res: Response) => {
+router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -317,7 +319,7 @@ router.get('/:listId/items/:itemId/translations', async (req: Request, res: Resp
 // PUT /:listId/items/:itemId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.put('/:listId/items/:itemId/translations/:locale', async (req: Request, res: Response) => {
+router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -397,7 +399,7 @@ router.put('/:listId/items/:itemId/translations/:locale', async (req: Request, r
 // DELETE /:listId/items/:itemId/translations/:locale
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.delete('/:listId/items/:itemId/translations/:locale', async (req: Request, res: Response) => {
+router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(res)) return;
   if (!requireAuth(req, res)) return;
 
@@ -444,7 +446,7 @@ router.delete('/:listId/items/:itemId/translations/:locale', async (req: Request
 //   Human translations (is_machine=false) are NEVER overwritten.
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.post('/:listId/translations/:locale/autofill', async (req: Request, res: Response) => {
+router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('SelectionList', 'translate'), async (req: Request, res: Response) => {
   if (!await requireFeatureEnabled(res)) return;
   if (!requireAuth(req, res)) return;
 
