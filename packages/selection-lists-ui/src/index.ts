@@ -32,6 +32,7 @@ export type {
   ResolveResponse,
   PagedResponse,
   ApiError,
+  AutofillResult,
 } from './types'
 
 // ── API helpers ───────────────────────────────────────────────────────────────
