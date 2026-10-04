@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Selection List Service API
-  version: 2.0.0
+  version: 3.0.0
   summary: Org-scoped, translatable selection lists (reference data) for the Fuze family.
   description: >-
     **FROZEN CONTRACT — FFRNT-187 (S1).** This file is the single source of truth
@@ -49,7 +49,8 @@ info:
     being offered for new selections but still **resolves**, so existing rows
     keep rendering a real label. `DELETE` therefore archives unless the caller
     passes `?purge=true`, which is irreversible and permitted only to a
-    `list-owner`. `POST /v1/resolve` deliberately resolves archived ids.
+    `list-owner` (it requires `delete` on the list, in addition to the
+    operation's own action — see *Authorization*). `POST /v1/resolve` deliberately resolves archived ids.
 
 
     ### Translations and the locale fallback
@@ -110,23 +111,79 @@ info:
 
     ### Authorization
 
-    Resource `SelectionList` in FuzeFront's Security API (backend/security's
+    Authorization is decided by FuzeFront's Security API (backend/security's
     `/api/v1/security/authz/*`, called via `@fuzefront/auth`'s `AuthzClient`
-    — this service embeds no policy-vendor SDK), with actions `read`,
-    `add_value`, `update_value`, `remove_value`, `translate`, `update`,
-    `delete`, `manage_access`. Grants are ReBAC resource-instance roles on the
-    list instance, mirroring `Organization.roles['org-admin']` in
-    `backend/src/permit/schema.ts`.
+    — this service embeds no policy-vendor SDK). Every operation declares the
+    resource type it is checked against in `x-permit-resource` and the action
+    it requires in `x-permit-action`. There are **two** resource types, and
+    they answer different questions:
 
-    | role | read | add_value | update_value | remove_value | translate | update | delete | manage_access |
-    |---|---|---|---|---|---|---|---|---|
-    | `list-owner`       | x | x | x | x | x | x | x | x |
-    | `list-editor`      | x | x | x | x | x | x |   |   |
-    | `list-contributor` | x | x | x |   | x |   |   |   |
-    | `list-translator`  | x |   |   |   | x |   |   |   |
-    | `list-viewer`      | x |   |   |   |   |   |   |   |
+    * **`SelectionListCatalog`** — the organization's collection of lists, as
+      a **tenant-level** resource (no instance key; the tenant is the caller's
+      organization). It answers "may this caller work with selection lists in
+      this org at all?". Actions: `list`, `create`, `read_quota`, `resolve`.
+      It is granted through **tenant roles**:
 
-    Each operation declares the action it requires in `x-permit-action`.
+      | tenant role | list | create | read_quota | resolve |
+      |---|---|---|---|---|
+      | `admin`     | x | x | x | x |
+      | `editor`    | x | x |   | x |
+      | `viewer`    | x |   |   | x |
+      | `developer` |   |   |   |   |
+
+    * **`SelectionList`** — one list **instance** (key = the `front_sl_` id).
+      It answers "what may this caller do to *this* list?". Actions: `read`,
+      `add_value`, `update_value`, `remove_value`, `translate`, `update`,
+      `delete`, `manage_access`. These actions are **instance-only**: they are
+      conferred exclusively by ReBAC resource-instance roles on the list
+      (mirroring `Organization.roles['org-admin']` in
+      `backend/src/permit/schema.ts`), and **tenant roles confer zero
+      `SelectionList:*` actions** — being an org `admin` does not by itself
+      let anyone read, edit or delete a list it holds no instance role on.
+
+      | role | read | add_value | update_value | remove_value | translate | update | delete | manage_access |
+      |---|---|---|---|---|---|---|---|---|
+      | `list-owner`       | x | x | x | x | x | x | x | x |
+      | `list-editor`      | x | x | x | x | x | x |   |   |
+      | `list-contributor` | x | x | x |   | x |   |   |   |
+      | `list-translator`  | x |   |   |   | x |   |   |   |
+      | `list-viewer`      | x |   |   |   |   |   |   |   |
+
+    How the two meet:
+
+    * **Listing** (`GET /v1/selection-lists`) requires `SelectionListCatalog:list`,
+      and the returned rows are **still filtered per list** by
+      `SelectionList:read` — catalog access lets a caller ask, it does not
+      widen what comes back.
+    * **Creating** (`POST /v1/selection-lists`) requires
+      `SelectionListCatalog:create`. The service then grants the creator
+      `list-owner` on the new instance, using **its own machine identity**
+      (the creator holds no `manage_access` on a list that did not exist a
+      moment ago, so the grant cannot be made with the caller's token).
+    * **Purging an item** (`DELETE .../items/{itemId}?purge=true`) requires
+      `SelectionList:remove_value` **and** `SelectionList:delete` on the
+      parent list — i.e. `list-owner` only. Archiving an item needs only
+      `remove_value`. The extra requirement is declared in
+      `x-permit-additional-actions` on that operation.
+    * **Resolving** (`POST /v1/resolve`) requires `SelectionListCatalog:resolve`
+      and does **not** check `SelectionList:read` on each id's list. This is an
+      accepted trade-off (review finding L-4): resolve is the hot path, it is
+      org-scoped, and it returns only a label, a locale and a status — never a
+      list key or anything else an id alone should not unlock. A caller who
+      holds an item id (because a consumer row it can see stores it) can
+      render its label without a grant on the list. Per-id list checks would
+      turn one round trip into N authorization decisions.
+
+    **Support path for tenant administrators.** A tenant `admin` holds
+    `Organization:manage`, which the Security API's grant gate
+    (`authorizeGrantMutation`) treats as authority to grant any role in the
+    tenant — so an admin who needs to administer a list it holds no role on
+    grants itself `list-owner` on that instance via `POST /authz/grants`. That
+    is an explicit, audited act, not an implicit inheritance. There is **no**
+    automatic `org-admin`/`admin` → `list-owner` derivation; whether there
+    should be is an open design question
+    (`docs/planning/selection-lists-permit-actions.md`).
+
     **An id is never a capability** — knowing a list id grants nothing; every
     route re-checks the caller against the Security API, and a read the caller
     is not entitled to returns `404`, not `403`, so the API is not an
@@ -135,6 +192,24 @@ info:
 
     ### Changelog
 
+    * **3.0.0** — authorization model split across two resources (see
+      *Authorization*). `x-permit-resource` is now declared on every operation.
+      `listSelectionLists`, `createSelectionList`, `getSelectionListQuota` and
+      `resolveSelectionListItems` are checked against the tenant-level
+      `SelectionListCatalog` (`list`, `create`, `read_quota`, `resolve`)
+      instead of `SelectionList` (`read`/`add_value`); every per-list action is
+      instance-only and tenant roles confer none of them. Item **purge** now
+      also requires `delete` on the parent list (owner-only, as the prose
+      always said — review finding M-1), withdrawing purge from `list-editor`.
+      `403` is declared on `listSelectionLists` and `getSelectionListQuota`.
+      The wire shapes are unchanged. MAJOR because existing grants stop
+      satisfying operations they used to: a tenant grant of `read`/`add_value`
+      on `SelectionList` no longer authorizes list, create, quota or resolve,
+      and a `list-editor` can no longer purge items. As with 2.0.0,
+      `oasdiff breaking` does not flag this (it reports only the two added
+      `403` responses, as info) because it does not model `x-permit-*`
+      extensions — the break is in who is authorized, not in the wire shape.
+      Migration notes: `docs/planning/selection-lists-permit-actions.md`.
     * **2.0.0** — `POST /v1/resolve` requires a Bearer token carrying an
       organization claim, like every other operation; the optional
       unauthenticated "trusted in-cluster caller" mode is removed and `403` is
@@ -182,12 +257,15 @@ paths:
       operationId: listSelectionLists
       summary: List selection lists in the caller's organization
       description: >-
-        Cursor-paginated. Scoped to the caller's organization and further
-        filtered to the lists the caller can `read`; a list the caller has no
-        grant on is simply absent, never a `403`. Each row carries its
-        source-locale-resolved (or `locale`-resolved) `name`.
+        Cursor-paginated. Requires `list` on the tenant-level
+        `SelectionListCatalog` (`403` without it). Scoped to the caller's
+        organization and further filtered per row to the lists the caller can
+        `read` (`SelectionList:read`, an instance-only action); a list the
+        caller has no instance grant on is simply absent, never a `403`. Each
+        row carries its source-locale-resolved (or `locale`-resolved) `name`.
       tags: [lists]
-      x-permit-action: read
+      x-permit-resource: SelectionListCatalog
+      x-permit-action: list
       parameters:
         - name: limit
           in: query
@@ -263,17 +341,22 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       operationId: createSelectionList
       summary: Create a selection list
       description: >-
         Mints a `front_sl_`-prefixed id server-side; the body must not contain one.
         `key` must be unique within the organization (`409 CONFLICT` otherwise)
-        and `name` seeds the `source_locale` translation. The caller is granted
-        `list-owner` on the new list. Subject to the `org_lists` and `user_lists`
-        quotas.
+        and `name` seeds the `source_locale` translation. Requires `create` on
+        the tenant-level `SelectionListCatalog`. The service then grants the
+        caller `list-owner` on the new list instance using its own machine
+        identity (the caller cannot hold `manage_access` on a list that did not
+        exist yet). Subject to the `org_lists` and `user_lists` quotas.
       tags: [lists]
-      x-permit-action: add_value
+      x-permit-resource: SelectionListCatalog
+      x-permit-action: create
       requestBody:
         required: true
         description: The list to create.
@@ -308,6 +391,7 @@ paths:
         fallback chain. Returns `404` — never `403` — when the caller cannot
         `read` it, so the endpoint is not a cross-org existence oracle.
       tags: [lists]
+      x-permit-resource: SelectionList
       x-permit-action: read
       parameters:
         - name: locale
@@ -341,6 +425,7 @@ paths:
         translations stale for the next autofill. Changing `source_locale` does
         not re-translate anything.
       tags: [lists]
+      x-permit-resource: SelectionList
       x-permit-action: update
       requestBody:
         required: true
@@ -377,6 +462,7 @@ paths:
         of the purged item ids — which is why it requires `delete` (owner only)
         and an explicit opt-in rather than being the default verb.
       tags: [lists]
+      x-permit-resource: SelectionList
       x-permit-action: delete
       parameters:
         - name: purge
@@ -416,6 +502,7 @@ paths:
         list returns `200` with the unchanged resource. The explicit verb exists
         so a UI need never call `DELETE` for the non-destructive outcome.
       tags: [lists]
+      x-permit-resource: SelectionList
       x-permit-action: delete
       responses:
         '200':
@@ -443,6 +530,7 @@ paths:
         dropdown never accidentally offers archived choices. Pass
         `status=archived` or `status=all` to see the rest.
       tags: [items]
+      x-permit-resource: SelectionList
       x-permit-action: read
       parameters:
         - name: limit
@@ -524,6 +612,7 @@ paths:
         appends the item at `max(sort_order) + 100`. Subject to the `list_items`
         quota.
       tags: [items]
+      x-permit-resource: SelectionList
       x-permit-action: add_value
       requestBody:
         required: true
@@ -565,6 +654,7 @@ paths:
         sparse patch — is what makes the operation a single atomic statement
         with no ambiguous interleaving when two editors reorder concurrently.
       tags: [items]
+      x-permit-resource: SelectionList
       x-permit-action: update_value
       requestBody:
         required: true
@@ -612,6 +702,7 @@ paths:
         Supplying `label`/`description` upserts the `source_locale` translation
         and marks every other locale's translation stale.
       tags: [items]
+      x-permit-resource: SelectionList
       x-permit-action: update_value
       requestBody:
         required: true
@@ -643,9 +734,21 @@ paths:
         offered but keeps resolving through `POST /v1/resolve`, so consumer rows
         holding its id still render a label. **Purging is irreversible** and
         turns every stored reference to this id into a `missing` entry on
-        resolve — hence `remove_value` plus an explicit opt-in.
+        resolve — hence an explicit opt-in **and** owner-level authority:
+        archiving needs `remove_value`, purging needs `remove_value` plus
+        `delete` on the parent list (`x-permit-additional-actions`), so only a
+        `list-owner` can purge. A `list-editor` passing `purge=true` gets `403`.
       tags: [items]
+      x-permit-resource: SelectionList
       x-permit-action: remove_value
+      x-permit-additional-actions:
+        - when: purge=true
+          resource: SelectionList
+          action: delete
+          reason: >-
+            Purge is irreversible and owner-only. `remove_value` alone (held
+            by `list-editor`) authorizes the archive outcome; the purge
+            outcome additionally requires `delete` on the parent list.
       parameters:
         - name: purge
           in: query
@@ -684,6 +787,7 @@ paths:
         Sets the item's `status` to `archived`. Idempotent. Archived items keep
         their `sort_order` so un-archiving restores their original position.
       tags: [items]
+      x-permit-resource: SelectionList
       x-permit-action: remove_value
       responses:
         '200':
@@ -714,6 +818,7 @@ paths:
 
         This endpoint is the primary read for the translation workbench UI.
       tags: [translations]
+      x-permit-resource: SelectionList
       x-permit-action: read
       x-pagination: exempt
       x-pagination-reason: >-
@@ -752,6 +857,7 @@ paths:
         `PATCH /v1/selection-lists/{listId}` with `name`/`description`. Subject
         to the `list_locales` quota.
       tags: [translations]
+      x-permit-resource: SelectionList
       x-permit-action: translate
       requestBody:
         required: true
@@ -785,6 +891,7 @@ paths:
         locale are not touched; delete them individually if needed. Idempotent:
         deleting a translation that does not exist returns `204`.
       tags: [translations]
+      x-permit-resource: SelectionList
       x-permit-action: translate
       responses:
         '204':
@@ -810,6 +917,7 @@ paths:
         with machine-translation status and staleness relative to the current
         source text. The source locale itself is excluded.
       tags: [translations]
+      x-permit-resource: SelectionList
       x-permit-action: read
       x-pagination: exempt
       x-pagination-reason: >-
@@ -845,6 +953,7 @@ paths:
         route. Does not consume `list_locales` quota beyond the locale already
         being open on the parent list.
       tags: [translations]
+      x-permit-resource: SelectionList
       x-permit-action: translate
       requestBody:
         required: true
@@ -876,6 +985,7 @@ paths:
         cannot be deleted. Idempotent: deleting a translation that does not
         exist returns `204`.
       tags: [translations]
+      x-permit-resource: SelectionList
       x-permit-action: translate
       responses:
         '204':
@@ -911,6 +1021,7 @@ paths:
         `source_locale` (`400 VALIDATION_ERROR` otherwise). Synchronous;
         responds `200` once every row is written.
       tags: [translations]
+      x-permit-resource: SelectionList
       x-permit-action: translate
       requestBody:
         required: false
@@ -946,6 +1057,7 @@ paths:
         instance; the list's creator appears as `list-owner`. Requires
         `manage_access` — who can see a list is itself sensitive.
       tags: [access]
+      x-permit-resource: SelectionList
       x-permit-action: manage_access
       parameters:
         - name: limit
@@ -1012,6 +1124,7 @@ paths:
         (`400 VALIDATION_ERROR` otherwise). **Demoting the last `list-owner` is
         refused with `409 CONFLICT`**, so a list can never become unadministrable.
       tags: [access]
+      x-permit-resource: SelectionList
       x-permit-action: manage_access
       requestBody:
         required: true
@@ -1045,6 +1158,7 @@ paths:
         Revoking the **last** `list-owner` is refused with `409 CONFLICT`, for
         the same reason demotion is.
       tags: [access]
+      x-permit-resource: SelectionList
       x-permit-action: manage_access
       responses:
         '204':
@@ -1066,8 +1180,12 @@ paths:
         Returns a fixed, closed set of four quota scopes with the caller's
         current usage against each ceiling. Intended for a UI to warn *before* a
         create fails, rather than surfacing `403 QUOTA_EXCEEDED` as a surprise.
+        Requires `read_quota` on the tenant-level `SelectionListCatalog`
+        (tenant `admin` only); a caller without it gets `403`, and a UI should
+        treat that as "no quota banner", not as an error.
       tags: [quota]
-      x-permit-action: read
+      x-permit-resource: SelectionListCatalog
+      x-permit-action: read_quota
       x-pagination: exempt
       x-pagination-reason: >-
         Aggregate/scalar response — a fixed, closed set of four quota scopes for
@@ -1082,6 +1200,8 @@ paths:
                 $ref: '#/components/schemas/SelectionListQuotaStatus'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /v1/resolve:
     post:
@@ -1121,8 +1241,19 @@ paths:
         The response is still deliberately minimal — it returns a label, a
         locale and a status, and never reveals a list key, an organization, or
         anything else an id alone should not unlock.
+
+        **Authorization (amended in 3.0.0):** requires `resolve` on the
+        tenant-level `SelectionListCatalog` (tenant `admin`, `editor`,
+        `viewer`); `403` without it. It deliberately does **not** check
+        `SelectionList:read` on each id's parent list — an accepted trade-off
+        (review finding L-4): within the caller's own organization, a caller
+        holding an item id can render that item's label even without an
+        instance grant on its list. The minimal response above is what bounds
+        that exposure; a per-id list check would turn this one round trip into
+        N authorization decisions on the hottest path in the service.
       tags: [resolve]
-      x-permit-action: read
+      x-permit-resource: SelectionListCatalog
+      x-permit-action: resolve
       security:
         - bearerAuth: []
       requestBody:
