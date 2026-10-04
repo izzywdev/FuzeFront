@@ -17,8 +17,11 @@ export interface SelectOption {
  */
 export interface SelectProps
   extends React.SelectHTMLAttributes<HTMLSelectElement> {
-  /** Field label rendered above the control (wired to it via `id`/`htmlFor`). */
-  label?: string;
+  /**
+   * Field label rendered above the control (wired to it via `id`/`htmlFor`).
+   * Accepts any node (see {@link InputProps.label}).
+   */
+  label?: React.ReactNode;
   /** Options to render; alternatively pass `<option>` children directly. */
   options?: SelectOption[];
   /** `<option>` elements, rendered after `options`/`placeholder`. */

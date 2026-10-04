@@ -569,7 +569,15 @@ websiteFrontend:
     tag: ""
   port: 3000
   replicas: 1
+  # The site's ONE canonical host (the apex in prod).
   host: ""
+  # Extra EXACT hosts the website Ingress also claims. They resolve to the
+  # same Service; the container's nginx 301s them to `host`, so the site has
+  # a single canonical home. Declared here with an explicit default rather
+  # than left to the template, so a reviewer can see it (CLAUDE.md, "Helm
+  # values hygiene"). Never a wildcard -- Traefik orders routers by rule
+  # length, so a wildcard shadows every single-label host in the cluster.
+  aliasHosts: []
   resources:
     requests: { cpu: 10m,  memory: 32Mi }
     limits:   { cpu: 200m, memory: 128Mi }

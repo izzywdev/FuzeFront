@@ -38,6 +38,10 @@
       "sourcePath": "components/core/Button.jsx"
     },
     {
+      "name": "Caption",
+      "sourcePath": "components/core/Caption.jsx"
+    },
+    {
       "name": "ExternalLink",
       "sourcePath": "components/core/ExternalLink.jsx"
     },
@@ -170,6 +174,10 @@
       "sourcePath": "components/layout/AuthCard.jsx"
     },
     {
+      "name": "Center",
+      "sourcePath": "components/layout/Center.jsx"
+    },
+    {
       "name": "CenteredCard",
       "sourcePath": "components/layout/CenteredCard.jsx"
     },
@@ -186,8 +194,16 @@
       "sourcePath": "components/layout/InfoRow.jsx"
     },
     {
+      "name": "ListStack",
+      "sourcePath": "components/layout/ListStack.jsx"
+    },
+    {
       "name": "Panel",
       "sourcePath": "components/layout/Panel.jsx"
+    },
+    {
+      "name": "ResponsiveGrid",
+      "sourcePath": "components/layout/ResponsiveGrid.jsx"
     },
     {
       "name": "SectionHead",
@@ -196,6 +212,10 @@
     {
       "name": "Stack",
       "sourcePath": "components/layout/Stack.jsx"
+    },
+    {
+      "name": "Wrap",
+      "sourcePath": "components/layout/Wrap.jsx"
     },
     {
       "name": "BottomNav",
@@ -228,6 +248,10 @@
     {
       "name": "MenuItem",
       "sourcePath": "components/shell/MenuItem.jsx"
+    },
+    {
+      "name": "NavLink",
+      "sourcePath": "components/shell/NavLink.jsx"
     },
     {
       "name": "Tabs",

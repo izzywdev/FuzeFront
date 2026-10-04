@@ -404,6 +404,7 @@ function AppContent() {
             <Route path="/settings/selection-lists/:listId/translations/:locale" element={<TranslationWorkbenchRoute />} />
             <Route path="/settings/selection-lists/:listId/access" element={<SelectionListAccessRoute />} />
             <Route path="/app/:appId" element={<AppRoute />} />
+            <Route path="/app/:appId/*" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/status" element={<StatusPage />} />

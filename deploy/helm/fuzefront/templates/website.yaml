@@ -159,17 +159,48 @@ metadata:
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   rules:
-    - host: {{ .Values.websiteFrontend.host | quote }}
+    {{- /*
+      The canonical host FIRST, then every alias (today: www.fuzefront.com).
+      An alias is routed to the SAME website-frontend Service on purpose: that
+      container's nginx owns the canonicalization and 301s any `www` Host to
+      the apex (fuzefront-website/frontend/nginx.conf). Routing the alias to a
+      different backend, or omitting it here, is what produced the defect this
+      fixes -- `www.fuzefront.com` fell through to a CloudFront distribution
+      serving FuzeHub while the apex served FuzeOne, so one domain presented
+      two brands.
+
+      Claiming the alias in-cluster is deliberately the FIRST half of the fix
+      and is inert until the DNS record moves: while `www` still resolves to
+      CloudFront nothing reaches this Ingress, so nothing changes for
+      visitors. That is the safe ordering -- claim, then flip. The reverse
+      (DNS first) lands traffic on a routed-but-unclaimed host and Traefik
+      answers 404. See `ingress.tenantIdentityHosts` in values-prod.yaml for
+      the same rule learned the hard way.
+
+      Every entry must be an EXACT host. Never put a wildcard here: Traefik
+      orders routers by rule LENGTH, not host specificity, so a wildcard
+      shadows every single-label host in the cluster (values-prod.yaml,
+      `ingress.wildcardHost`, has the full incident).
+
+      `| default list` is NOT this template absorbing a missing value -- the
+      default is declared where a reviewer can see it, as `aliasHosts: []` in
+      values.yaml (CLAUDE.md, "Helm values hygiene"). The guard exists only so
+      an overlay that writes an explicit `aliasHosts:` with nothing under it
+      (YAML null, not a list) renders the canonical host rather than failing
+      inside `prepend`.
+    */}}
+    {{- range $host := prepend (.Values.websiteFrontend.aliasHosts | default list) .Values.websiteFrontend.host }}
+    - host: {{ $host | quote }}
       http:
         paths:
-          {{- if .Values.websiteBackend.enabled }}
+          {{- if $.Values.websiteBackend.enabled }}
           - path: /api
             pathType: Prefix
             backend:
               service:
                 name: website-backend
                 port:
-                  number: {{ .Values.websiteBackend.port }}
+                  number: {{ $.Values.websiteBackend.port }}
           {{- end }}
           - path: /
             pathType: Prefix
@@ -177,6 +208,7 @@ spec:
               service:
                 name: website-frontend
                 port:
-                  number: {{ .Values.websiteFrontend.port }}
+                  number: {{ $.Values.websiteFrontend.port }}
+    {{- end }}
 {{- end }}
 {{- end }}

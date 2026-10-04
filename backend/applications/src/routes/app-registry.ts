@@ -140,9 +140,12 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     if (!(await v1WriteGate(caller, orgId, res))) return
 
     // FFRNT P2 — L1 referential-integrity check (identifier-standard §5).
-    // Assert that the supplied organizationId is known to the local ref_index
-    // projection. OFF (default): warn + continue; ON: hard-fail with 422.
-    if (orgId) {
+    // Assert tenant-supplied organization IDs against the local ref_index
+    // projection. The fixed platform root is an identity invariant owned and
+    // seeded by security-service; it must not depend on eventually-consistent
+    // projection replay (which may apply an old tombstone after our local seed).
+    // OFF (default): warn + continue; ON: hard-fail with 422.
+    if (orgId && orgId !== ROOT_ORG_ID) {
       const refMode = (await isRefEnforceEnabled({ organizationId: orgId, userId: caller.userId }))
         ? 'enforce'
         : 'warn'
