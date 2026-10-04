@@ -29,6 +29,7 @@ import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
 import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
 import { lockOrgOutbox } from '../events/outbox';
+import { refreshItemUserModified } from '../seed/content';
 import {
   eventContextFromRequest,
   emitItemChanged,
@@ -134,10 +135,25 @@ interface ItemRow {
   created_by: string;
   created_at: Date | string;
   updated_at: Date | string;
+  seed_source?: string | null;
+  seed_key?: string | null;
+  seed_version?: number | string | null;
+  seed_user_modified?: boolean | null;
   label: string | null;
   description: string | null;
   resolved_locale: string | null;
   is_machine: boolean | null;
+}
+
+/** openapi `SeedProvenance`: `null` for a user-authored row, else where the row came from. */
+function formatSeed(row: ItemRow) {
+  if (row.seed_source === null || row.seed_source === undefined) return null;
+  return {
+    source: row.seed_source,
+    pack_key: row.seed_key as string,
+    pack_version: Number(row.seed_version),
+    user_modified: Boolean(row.seed_user_modified),
+  };
 }
 
 function formatItem(row: ItemRow) {
@@ -152,6 +168,7 @@ function formatItem(row: ItemRow) {
     resolved_locale: row.resolved_locale ?? 'en',
     is_machine: row.is_machine ?? false,
     created_by: row.created_by,
+    seed: formatSeed(row),
     created_at: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -248,6 +265,7 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         ${labelCoalesce} AS label,
@@ -436,6 +454,7 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
@@ -546,6 +565,7 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
@@ -696,6 +716,10 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
         }
       }
 
+      // A human edited this item: if it is a seeded one whose content no longer hashes to
+      // `seed_hash`, persist seed_user_modified (before the emit, so the snapshot carries it).
+      await refreshItemUserModified(trx, itemId);
+
       // Outbox, same transaction: item.updated (diffed) and/or item.archived.
       await emitItemChanged(trx, eventContextFromRequest(req), listId, itemId, before);
       return true;
@@ -715,6 +739,7 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
@@ -794,6 +819,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
         // Soft delete: archive (no event if it already was archived)
         const before = await readItem(trx, itemId);
         await trx.raw(`UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`, [itemId]);
+        await refreshItemUserModified(trx, itemId);
         await emitItemChanged(trx, ctx, listId, itemId, before);
       }
       return true;
@@ -815,6 +841,7 @@ router.delete('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'remo
           i.sort_order,
           i.status,
           i.created_by,
+          i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
           i.created_at,
           i.updated_at,
           t.label,
@@ -871,6 +898,7 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
 
       const before = await readItem(trx, itemId);
       await trx.raw(`UPDATE selection_list_items SET status = 'archived', updated_at = now() WHERE id = ?`, [itemId]);
+      await refreshItemUserModified(trx, itemId);
       await emitItemChanged(trx, eventContextFromRequest(req), listId, itemId, before);
       return true;
     });
@@ -888,6 +916,7 @@ router.post('/:listId/items/:itemId/archive', requireAuthzCheck('SelectionList',
         i.sort_order,
         i.status,
         i.created_by,
+        i.seed_source, i.seed_key, i.seed_version, i.seed_user_modified,
         i.created_at,
         i.updated_at,
         t.label,
