@@ -2,10 +2,11 @@ import { Knex } from 'knex'
 import { v4 as uuidv4 } from 'uuid'
 
 /**
- * True when the given knex/transaction is talking to Postgres. Used to apply
- * Postgres-only SQL (the explicit `::jsonb` cast here, `FOR UPDATE SKIP LOCKED`
- * in the relay) while still working against the in-memory sqlite fallback used
- * in tests.
+ * True when the given knex/transaction is talking to Postgres. Guards the
+ * Postgres-specific SQL (the explicit `::jsonb` cast here, `FOR UPDATE SKIP
+ * LOCKED` in the relay). Postgres is the only supported datastore across the
+ * family; this guard stays as a defensive check so the helper degrades to
+ * portable SQL rather than throwing if ever handed a non-pg connection.
  */
 export function isPostgres(k: Knex | Knex.Transaction): boolean {
   const client: any = (k as any).client
@@ -34,7 +35,7 @@ export async function enqueueEvent(
     id: uuidv4(),
     topic,
     // Postgres rejects an implicit text->jsonb coercion in a parameterized
-    // query, so cast explicitly; sqlite (tests) stores the JSON string as-is.
+    // query, so cast explicitly; the non-pg branch stores the JSON string as-is.
     payload: isPostgres(trx) ? trx.raw('?::jsonb', [json]) : json,
     correlation_id: correlationId,
     status: 'pending',
