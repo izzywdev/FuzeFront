@@ -74,6 +74,20 @@ database:
       # namespace that holds the superuser password.
       secretName: ""
       secretKey: DB_SUPERUSER_PASSWORD
+    # Services that own a DEDICATED database with their OWN login role and
+    # credentials (true per-service data ownership). Each entry is the NAME OF A
+    # TOP-LEVEL VALUES KEY (e.g. `selectionListService`) that carries:
+    #   enabled           gates the Job (nothing renders while the service is off)
+    #   dbName            the database to create
+    #   db.role           the owner role to create
+    #   db.secretName     Secret holding the role's password
+    #   db.passwordKey    key inside that Secret
+    # One pre-install/pre-upgrade Job per entry
+    # (templates/service-db-bootstrap-job.yaml). To onboard the next service, add
+    # its values key here and give it the `dbName` + `db` block -- no template
+    # change. See docs/runbooks/per-service-database-and-role.md.
+    serviceDatabases:
+      - selectionListService
 
 # Image for the consumer-registration-seed post-upgrade Job
 # (templates/consumer-registration-seed-job.yaml). It needs nothing but a shell and
@@ -800,11 +814,30 @@ selectionListService:
   # applicationsService, kafkaTopics.bootstrapServer, ...). This default
   # previously read `kafka.fuzeinfra...`, a name no other block uses.
   kafkaBrokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
-  # Dedicated database on the shared FuzeInfra Postgres, owned by the shared
-  # `database.user` role -- created by templates/db-bootstrap-job.yaml via
-  # EXTRA_DATABASES (same pattern as devportalService.dbName). The service's
-  # DATABASE_URL (selection-list-secrets) must point at THIS database.
+  # Dedicated database on the shared FuzeInfra Postgres, owned by the service's
+  # OWN role (db.role below) -- NOT the shared `database.user` role, which is
+  # explicitly denied access. Created/reconciled by
+  # templates/service-db-bootstrap-job.yaml (see database.bootstrap.serviceDatabases
+  # and docs/runbooks/per-service-database-and-role.md).
   dbName: "fuzefront_selection_list"
+  # Per-service database identity: its own LOGIN role and its own credentials.
+  # Consumed by BOTH the Deployment (DB_USER / DB_PASSWORD) and the bootstrap Job
+  # (creates the role with that password), so they cannot drift.
+  db:
+    # Owner of dbName: LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE,
+    # NOREPLICATION. Matches the default in src/db/knexfile.ts.
+    role: "selection_list_svc"
+    # Secret holding the role's password. Minted + sealed by the dispatchable
+    # rotate-sealed-secret workflow (nobody ever sees the value); lives in
+    # deploy/contabo/sealed/selection-list-secrets.yaml.
+    secretName: "selection-list-secrets"
+    passwordKey: "DB_PASSWORD"
+    # DB_SSL for src/db/knexfile.ts (production default there is TLS ON, with
+    # certificate verification). UNVERIFIED: whether the shared FuzeInfra Postgres
+    # serves TLS with a certificate this client trusts. If the pod logs "server does
+    # not support SSL" or a certificate-verification error, set "false" here (a
+    # reviewable one-line change) -- do not edit the service code.
+    ssl: "true"
   # Authorization enforcement (env FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED, read
   # by services/selection-list-service/src/middleware/authz.flags.ts). Declared
   # explicitly so the prod posture is a reviewable value, not an absent env var.
