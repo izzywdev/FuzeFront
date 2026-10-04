@@ -33,13 +33,7 @@ export class HttpClient {
   constructor(opts: HttpClientOptions = {}) {
     this.baseUrl = opts.baseUrl ?? ''
     this.getToken = opts.getToken
-    // The global `fetch` is a native method that MUST be invoked with `this`
-    // bound to the global object. Storing the bare reference on an instance and
-    // later calling `this.fetchImpl(...)` re-binds `this` to the HttpClient,
-    // which the browser rejects with "Failed to execute 'fetch' on 'Window':
-    // Illegal invocation" — breaking every request this client makes. Bind the
-    // fallback to `globalThis`; an injected `fetchImpl` (tests) is left as-is.
-    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
+    this.fetchImpl = opts.fetchImpl ?? globalThis.fetch
   }
 
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {

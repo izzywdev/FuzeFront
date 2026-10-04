@@ -1,4 +1,4 @@
-import { CSSProperties, HTMLAttributes, JSX, MouseEventHandler } from "react";
+import { CSSProperties, HTMLAttributes, MouseEventHandler } from "react";
 
 export interface SectionHeadProps extends HTMLAttributes<HTMLDivElement> {
   /** Eyebrow pill label above the heading. */

@@ -11,4 +11,3 @@ export * from './identity.session.issued';
 export * from './identity.session.revoked';
 export * from './notify.email.requested';
 export * from './notify.email.status';
-export * from './portal.created';
