@@ -29,7 +29,7 @@ export function loadSchema(): SchemaMap {
       const table = m[1];
       schema[table] ??= new Set();
       for (const line of m[2].split('\n')) {
-        const col = line.trim().match(/^([a-z_]+)\s+(TEXT|INTEGER|BOOLEAN|TIMESTAMPTZ|JSONB|UUID)\b/i);
+        const col = line.trim().match(/^([a-z_]+)\s+(TEXT|INTEGER|BIGINT|BOOLEAN|TIMESTAMPTZ|JSONB|UUID)\b/i);
         if (col) schema[table].add(col[1]);
       }
     }
