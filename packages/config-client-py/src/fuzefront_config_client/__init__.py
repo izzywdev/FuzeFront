@@ -50,10 +50,9 @@ from .types import (
     Actor,
     ConfigErrorBody,
     ConfigErrorCode,
+    ConfigErrorDetail,
     ConfigHistoryAction,
     ConfigHistoryEntry,
-    RevealSecretResult,
-    ConfigErrorDetail,
     ConfigOperation,
     ConfigOperationType,
     ConfigWriteRequest,
@@ -69,6 +68,7 @@ from .types import (
     Paged,
     PageInfo,
     Precedence,
+    RevealSecretResult,
     Scope,
     ScopeType,
     ValueType,
@@ -78,26 +78,24 @@ __version__ = "1.1.0"
 
 __all__ = [
     "CONFIG_CHANGED_TOPIC",
-    "Actor",
-    "ConfigCache",
-    "ConfigChangedPayload",
-    "ConfigHistoryAction",
-    "ConfigHistoryEntry",
-    "RevealSecretResult",
-    "parse_config_changed_event",
     "KEY_DEFINITION_ID_PREFIX",
     # Identifier constants
     "NAMESPACE_ID_PREFIX",
     "NOT_MODIFIED",
     "SCOPE_CHAIN",
+    "Actor",
     "ConditionalEffectiveConfig",
     # Errors
     "ConfigApiError",
+    "ConfigCache",
+    "ConfigChangedPayload",
     # Client
     "ConfigClient",
     "ConfigErrorBody",
     "ConfigErrorCode",
     "ConfigErrorDetail",
+    "ConfigHistoryAction",
+    "ConfigHistoryEntry",
     "ConfigOperation",
     "ConfigOperationType",
     "ConfigWriteRequest",
@@ -114,6 +112,7 @@ __all__ = [
     "PageInfo",
     "Paged",
     "Precedence",
+    "RevealSecretResult",
     # Types
     "Scope",
     # Enums
@@ -124,4 +123,5 @@ __all__ = [
     "is_not_modified",
     # Paginator
     "paginate",
+    "parse_config_changed_event",
 ]
