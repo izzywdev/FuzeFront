@@ -41,6 +41,14 @@ vi.mock('@fuzefront/i18n', () => ({
 }))
 
 vi.mock('../../lib/shared', () => ({
+  // OrganizationSwitcherSection calls useCurrentUser() and gates the root org
+  // on isEmployeeUser(user?.roles): non-employees cannot switch to the root
+  // platform org, so it is filtered out for them. Added to UserMenu by #1188
+  // ("feat/market org context only") without updating this mock, which is why
+  // the render threw "No useCurrentUser export is defined on the mock". These
+  // fixtures assert the root row ('FuzeFront') IS present with its real role,
+  // which requires an employee caller — so mock an employee user.
+  useCurrentUser: () => ({ user: { roles: ['employee'] }, setUser: vi.fn() }),
   useOrganizations: () => ({
     organizations: fixtures.organizations,
     activeOrganizationId: fixtures.switcherState.activeOrganizationId,
