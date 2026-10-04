@@ -8,21 +8,18 @@
 //   - flag ON  path: provider says true  => /v1/selection-lists is served
 //   - flag OFF path: provider says false / unreachable => 404 (feature dark)
 //
-// The package is virtual-mocked so the suite does not depend on its build.
+// The package is injected through the existing seams (initFeatureFlags `load`,
+// flags.ts setFlagClient), so the suite does not depend on the package build and
+// is not order-dependent (a jest.mock of a resolvable module is, across files).
 
 const mockInit = jest.fn();
 const mockClose = jest.fn();
 const mockGetBooleanValue = jest.fn();
-
-jest.mock(
-  '@fuzefront/feature-flags',
-  () => ({
-    init: (...a: unknown[]) => mockInit(...a),
-    close: (...a: unknown[]) => mockClose(...a),
-    getClient: () => ({ getBooleanValue: (...a: unknown[]) => mockGetBooleanValue(...a) }),
-  }),
-  { virtual: true },
-);
+const fakeModule = {
+  init: (...a: unknown[]) => mockInit(...a),
+  close: (...a: unknown[]) => mockClose(...a),
+};
+const fakeClient = { getBooleanValue: (...a: unknown[]) => mockGetBooleanValue(...a) };
 
 jest.mock('../src/db', () => {
   const db: any = jest.fn();
@@ -48,16 +45,17 @@ beforeEach(() => {
   mockInit.mockReset().mockResolvedValue(undefined);
   mockClose.mockReset().mockResolvedValue(undefined);
   mockGetBooleanValue.mockReset();
-  setFlagClient(null); // use the real lazy-require path -> the virtual mock above
+  setFlagClient(fakeClient); // what flags.ts gets from the package's getClient() after init()
 });
 afterEach(async () => {
   await closeFeatureFlags();
+  setFlagClient(null);
   delete process.env.FLAGS_FORCE_ON;
 });
 
 describe('initFeatureFlags', () => {
   it('calls init() with the Unleash env and the standard evaluation context', async () => {
-    await expect(initFeatureFlags({ env: ENV })).resolves.toBe('initialized');
+    await expect(initFeatureFlags({ env: ENV, load: () => fakeModule })).resolves.toBe('initialized');
     expect(mockInit).toHaveBeenCalledTimes(1);
     expect(mockInit).toHaveBeenCalledWith(
       { url: 'http://unleash.test:4242/api', clientToken: 'client-token-not-a-real-secret', appName: 'selection-list-service' },
@@ -67,7 +65,7 @@ describe('initFeatureFlags', () => {
 
   it('defaults the app name and maps a non-production NODE_ENV to FLAG_ENV / local', async () => {
     const env = { UNLEASH_URL: ENV.UNLEASH_URL, UNLEASH_CLIENT_TOKEN: ENV.UNLEASH_CLIENT_TOKEN, NODE_ENV: 'test' } as NodeJS.ProcessEnv;
-    await initFeatureFlags({ env });
+    await initFeatureFlags({ env, load: () => fakeModule });
     expect(mockInit.mock.calls[0][0].appName).toBe('selection-list-service');
     expect(mockInit.mock.calls[0][1].environment).toBe('local');
   });
@@ -76,7 +74,7 @@ describe('initFeatureFlags', () => {
     ['UNLEASH_URL', { ...ENV, UNLEASH_URL: undefined }],
     ['UNLEASH_CLIENT_TOKEN', { ...ENV, UNLEASH_CLIENT_TOKEN: undefined }],
   ])('skips (never throws) when %s is missing — flags use in-code defaults (OFF)', async (_n, env) => {
-    await expect(initFeatureFlags({ env: env as NodeJS.ProcessEnv })).resolves.toBe('skipped-unconfigured');
+    await expect(initFeatureFlags({ env: env as NodeJS.ProcessEnv, load: () => fakeModule })).resolves.toBe('skipped-unconfigured');
     expect(mockInit).not.toHaveBeenCalled();
   });
 
@@ -86,13 +84,13 @@ describe('initFeatureFlags', () => {
 
   it('never throws when init() itself rejects (Unleash/provider failure) — reports "failed"', async () => {
     mockInit.mockRejectedValue(new Error('unleash unreachable'));
-    await expect(initFeatureFlags({ env: ENV })).resolves.toBe('failed');
+    await expect(initFeatureFlags({ env: ENV, load: () => fakeModule })).resolves.toBe('failed');
   });
 
   it('closeFeatureFlags() closes the provider after a successful init, and is safe when init never ran', async () => {
     await closeFeatureFlags(); // never initialised: no-op
     expect(mockClose).not.toHaveBeenCalled();
-    await initFeatureFlags({ env: ENV });
+    await initFeatureFlags({ env: ENV, load: () => fakeModule });
     await closeFeatureFlags();
     expect(mockClose).toHaveBeenCalledTimes(1);
     await closeFeatureFlags(); // idempotent
@@ -100,13 +98,13 @@ describe('initFeatureFlags', () => {
   });
 
   it('closeFeatureFlags() swallows a close() failure (shutdown must continue)', async () => {
-    await initFeatureFlags({ env: ENV });
+    await initFeatureFlags({ env: ENV, load: () => fakeModule });
     mockClose.mockRejectedValue(new Error('close failed'));
     await expect(closeFeatureFlags()).resolves.toBeUndefined();
   });
 });
 
-describe('release flag fuzefront.selection-lists.service — BOTH states through the real client path', () => {
+describe('release flag fuzefront.selection-lists.service — BOTH states through the client path', () => {
   it('ON: the provider answers true -> enabled, with the org/user context mapped for targeting', async () => {
     mockGetBooleanValue.mockResolvedValue(true);
     await expect(isSelectionListsEnabled({ organizationId: 'org_a', userId: 'usr_a' })).resolves.toBe(true);

@@ -2,22 +2,19 @@
 // Security API grant/revoke (lib/machineIdentity.ts), built on
 // @fuzefront/service-auth's createServiceAuthClient.
 //
-// The token client is mocked (virtual) — no network, no Authentik, and no
-// dependency on the package build.
+// The token client factory is injected (_setServiceAuthFactoryForTesting) — no
+// network, no Authentik. (Not jest.mock: a module mock of a RESOLVABLE package
+// is order-dependent across test files in one jest worker because the resolver
+// caches module ids; an explicit seam is deterministic.)
 
 const mockGetToken = jest.fn();
 const mockCreateClient = jest.fn((_opts: unknown) => ({ getToken: mockGetToken, invalidate: jest.fn() }));
-
-jest.mock(
-  '@fuzefront/service-auth',
-  () => ({ createServiceAuthClient: (o: unknown) => mockCreateClient(o) }),
-  { virtual: true },
-);
 
 import {
   getGrantToken,
   machineIdentityConfigured,
   _setGrantTokenProviderForTesting,
+  _setServiceAuthFactoryForTesting,
   AUTHZ_ADMIN_SCOPE,
   MachineIdentityError,
 } from '../src/lib/machineIdentity';
@@ -35,8 +32,10 @@ beforeEach(() => {
   mockGetToken.mockReset().mockResolvedValue('minted-machine-token');
   mockCreateClient.mockClear();
   _setGrantTokenProviderForTesting(null); // fresh cache each test
+  _setServiceAuthFactoryForTesting(mockCreateClient as never);
 });
 afterEach(() => {
+  _setServiceAuthFactoryForTesting(null);
   for (const k of Object.keys(process.env)) if (!(k in SAVED)) delete process.env[k];
   Object.assign(process.env, SAVED);
 });

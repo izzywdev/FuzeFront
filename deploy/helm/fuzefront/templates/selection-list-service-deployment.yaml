@@ -93,7 +93,7 @@ spec:
             # which case list creation / access grants fail CLOSED (500) and the
             # service logs "machine identity NOT configured" at boot. The OAuth
             # client must be provisioned with scope authz:admin -- see
-            # services/selection-list-service/README.md and the PR description.
+            # deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
             - name: SELECTION_LIST_SERVICE_CLIENT_ID
               valueFrom:
                 secretKeyRef:

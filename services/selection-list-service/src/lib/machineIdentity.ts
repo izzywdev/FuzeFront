@@ -51,10 +51,17 @@ export class MachineIdentityError extends Error {
 
 let injected: GrantTokenProvider | null = null;
 let cached: ServiceAuthClient | null = null;
+let clientFactory: typeof createServiceAuthClient = createServiceAuthClient;
 
 /** Test/DI seam: pin the provider. Pass null to restore env-driven resolution. */
 export function _setGrantTokenProviderForTesting(p: GrantTokenProvider | null): void {
   injected = p;
+  cached = null;
+}
+
+/** Test/DI seam: replace the service-auth client factory. Pass null to restore the real one. */
+export function _setServiceAuthFactoryForTesting(f: typeof createServiceAuthClient | null): void {
+  clientFactory = f ?? createServiceAuthClient;
   cached = null;
 }
 
@@ -72,7 +79,7 @@ function resolveClient(): ServiceAuthClient {
         'refusing to write access grants without it',
     );
   }
-  cached = createServiceAuthClient({
+  cached = clientFactory({
     baseUrl: process.env.SECURITY_SERVICE_URL ?? 'http://fuzefront-security:3002',
     clientId,
     clientSecret,
