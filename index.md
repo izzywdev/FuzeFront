@@ -230,13 +230,10 @@ sequenceDiagram
 ### Development Mode
 
 ```bash
-npm run install:all
-npm run db:init
-npm run db:seed
-npm run demo
+docker compose -f docker-compose.e2e.yml up -d --build
 ```
 
-This boots the platform shell, backend API, and a federated sample application.
+This boots the platform shell, backend API, security service and Authentik. Open http://localhost:4173 and create an account. To sign in and run the federated sample application (`clock-app`), follow the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md#1-developer-run-the-platform-locally), which also covers Windows troubleshooting.
 
 ### Local Kubernetes
 
