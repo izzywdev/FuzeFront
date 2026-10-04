@@ -3,7 +3,7 @@
 > **Status (2026-10-04):** investigation complete on the FuzeFront side; root cause is
 > on the `fuzefront` ARC runner scale set, which **FuzeInfra owns**. The `@fuze`
 > delegation at the bottom of this page is a **DRAFT, NOT SENT**.
-> One small in-repo hardening shipped alongside this page (see "In-repo findings").
+> One in-repo hardening was identified but must land in FuzeSDLC (see "In-repo findings").
 
 ## Symptom
 
@@ -142,21 +142,120 @@ inner steps are not listed in the jobs API, which shows only the 10 top-level st
 
 ## In-repo findings
 
-1. **Fixed (this branch): unbounded `docker` CLI calls in `./.github/actions/llm-endpoint`.**
+1. **Found, NOT fixable in this repo: unbounded `docker` CLI calls in `./.github/actions/llm-endpoint`.**
    On the runner-local LiteLLM fallback path, `docker run -d` (which includes a **cold image
-   pull** on every ephemeral pod), `docker logs` and `docker rm -f` had no wall-clock bound. The
+   pull** on every ephemeral pod), `docker logs` and `docker rm -f` have no wall-clock bound. The
    45s readiness loop only starts after `docker run` returns, so a stuck pull or a wedged dind
-   daemon held the step open for the caller's entire budget. They are now wrapped in
-   `timeout --signal=TERM --kill-after=…`: 180s for `docker run` (override with
-   `LOCAL_LITELLM_DOCKER_RUN_TIMEOUT`) and 30s for logs/rm. A timeout returns rc 124/137 into the
-   existing `run_rc != 0` branch, which **degrades to direct Anthropic exactly as before**. No
-   availability path becomes unavailable, and no classification rule changes.
-   Pinned by `.github/actions/fuze-code-action/__tests__/test_llm_endpoint_docker_timeout.py`
-   (wired into `gate-fuze-code-action.yml`). The test fails against the pre-fix action, because
-   the step is still running at the 30s outer deadline, and passes in ~2s on the fix.
-   *Scope note:* on the `fuzefront` runner the in-cluster LiteLLM path is normally taken.
-   Run 37196039671's LiteLLM rung was reported as a gateway 402 (credits depleted), i.e. the in-cluster path, not the local container. So this
+   daemon holds the step open for the caller's entire budget. A timeout returns rc 124/137 into
+   the existing `run_rc != 0` branch, which degrades to direct Anthropic, so no availability
+   path would become unavailable and no classification rule would change.
+   **Why it is not in this PR:** `.github/actions/llm-endpoint/action.yml` is a FuzeSDLC-managed
+   file (`.fuze/installed.json`). The governance-sync bot resets managed files to the canonical on
+   every PR push, and it reverted this fix (commit "reconcile managed files to FuzeSDLC v1"). The
+   change has to land in the FuzeSDLC canonical and sync down. The patch, as originally tested
+   (it failed the hang test before and passed it in ~2s after, against a stub `docker` whose `run`
+   never returns), is below for that PR.
+   *Scope note:* on the `fuzefront` runner the in-cluster LiteLLM path is normally taken, so this
    is **hardening, not the proven cause** of class B.
+
+   <details><summary>Patch for FuzeSDLC canonical</summary>
+
+   ```diff
+commit 3352c249368c3b16630c430d236f4b471476ddc6
+Author: Claude <noreply@anthropic.com>
+Date:   Sun Oct 4 12:39:54 2026 +0000
+
+    fix(ci): bound llm-endpoint docker CLI calls; document fuze-code-review runner-loss evidence
+    
+    fuze-code-review's "Run automated review" step was force-cancelled at exactly
+    job-timeout + 5 min on PR #1234 (runs 37199207685 a1/a2). The Actions API across
+    500 runs (2026-09-23 -> 2026-10-04) shows this is repo-wide: 13 jobs on 13
+    ephemeral `fuzefront` pods (both the xfxqd and jph9j scale-set generations) went
+    silent mid-step. The runner never acted on its own step timeout or the job
+    cancel. Other pods of the same set honoured the identical timeout cleanly the
+    same day. The cause is runner/pod loss on FuzeInfra's scale set, not a step that
+    ignores SIGTERM.
+    
+    docs/runbooks/fuze-code-review-runner-hang.md carries the evidence tables
+    (run/job ids, runner names, timestamps), what is proven vs inferred, and a
+    DRAFT, NOT SENT @fuze delegation to FuzeInfra.
+    
+    In-repo hardening found on the way: llm-endpoint's runner-local fallback ran
+    `docker run -d` (a cold image pull on every ephemeral pod), `docker logs` and
+    `docker rm -f` with no wall-clock bound, so a stuck pull or a wedged dind daemon
+    held the caller's step open. These are now wrapped in `timeout`, and the
+    existing rc != 0 branch still degrades to direct Anthropic, so availability
+    classification is unchanged. Pinned by a new test, wired into
+    gate-fuze-code-action. The test fails against the pre-fix action and passes on
+    the fix.
+    
+    Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_018PKRvNfpskTKPUfDc8X1G1
+
+diff --git a/.github/actions/llm-endpoint/action.yml b/.github/actions/llm-endpoint/action.yml
+index ba7b770e..d098c6d0 100644
+--- a/.github/actions/llm-endpoint/action.yml
++++ b/.github/actions/llm-endpoint/action.yml
+@@ -629,7 +629,22 @@ runs:
+         # "Process completed with exit code 125" and no docker-run.log, leaving
+         # the actual cause invisible. A tested context is the one place errexit
+         # is defined not to apply.
+-        if docker run -d --rm \
++        #
++        # WALL-CLOCK BOUND on every docker CLI call in this step. `docker run -d`
++        # includes the IMAGE PULL, and every ARC runner pod is ephemeral, so the
++        # pull is always cold (multi-hundred-MB LiteLLM image). Unbounded, a slow
++        # registry or a wedged dind daemon held this step -- and the whole
++        # `Run automated review` budget of every caller -- with nothing below it
++        # ever firing: the 45s readiness loop only starts AFTER `docker run`
++        # returns. `timeout` turns that into rc=124, which the existing
++        # run_rc != 0 branch already degrades to direct Anthropic. If `timeout`
++        # itself is missing the rc is 127 and the same degrade path applies, so
++        # this cannot make an available path unavailable. Diagnosed while
++        # investigating the fuze-code-review runner hang
++        # (docs/runbooks/fuze-code-review-runner-hang.md).
++        DOCKER_RUN_TIMEOUT="${LOCAL_LITELLM_DOCKER_RUN_TIMEOUT:-180}"
++        DOCKER_CLI_TIMEOUT=30
++        if timeout --signal=TERM --kill-after=10s "${DOCKER_RUN_TIMEOUT}" docker run -d --rm \
+           --name fuze-llm-fallback \
+           -p "127.0.0.1:${PORT}:4000" \
+           --env-file "$ENV_FILE" \
+@@ -680,6 +695,12 @@ runs:
+         }
+ 
+         if [ $run_rc -ne 0 ]; then
++          if [ "$run_rc" -eq 124 ] || [ "$run_rc" -eq 137 ]; then
++            echo "::error title=llm-endpoint::docker run (image pull + start) did not finish within ${DOCKER_RUN_TIMEOUT}s (rc=${run_rc}) -- killed rather than left to hold the job open."
++            # The daemon may still create the container after the CLI was killed;
++            # remove it (bounded) so a late-starting proxy cannot hold the port.
++            timeout --kill-after=5s "${DOCKER_CLI_TIMEOUT}" docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
++          fi
+           echo "::error title=llm-endpoint::docker run failed to start the runner-local LiteLLM fallback container (rc=${run_rc}). Log (redacted):"
+           while IFS= read -r line; do redact "$line"; done < "${WORKDIR}/docker-run.log"
+           degrade_to_anthropic "runner-local LiteLLM could not be started (docker rc=${run_rc})"
+@@ -698,8 +719,8 @@ runs:
+ 
+         if [ "$ready" != true ]; then
+           echo "::error title=llm-endpoint::runner-local LiteLLM fallback container did not become ready within ${LOCAL_LITELLM_STARTUP_TIMEOUT:-45}s (waited ${elapsed}s). Container logs (redacted):"
+-          docker logs fuze-llm-fallback 2>&1 | while IFS= read -r line; do redact "$line"; done
+-          docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
++          timeout --kill-after=5s "${DOCKER_CLI_TIMEOUT}" docker logs fuze-llm-fallback 2>&1 | while IFS= read -r line; do redact "$line"; done
++          timeout --kill-after=5s "${DOCKER_CLI_TIMEOUT}" docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
+           degrade_to_anthropic "runner-local LiteLLM did not become ready within ${LOCAL_LITELLM_STARTUP_TIMEOUT:-45}s"
+         fi
+ 
+@@ -716,7 +737,7 @@ runs:
+         serve_probe "http://127.0.0.1:${PORT}" "${LOCAL_MASTER_KEY}"
+         if [ "$SERVE_RESULT" != "ok" ]; then
+           echo "::warning title=llm-endpoint::runner-local LiteLLM became ready but its authenticated serve probe did NOT pass (result=${SERVE_RESULT}, HTTP ${SERVE_PROBE_CODE}) — the chain [${AVAILABLE[*]}] refused a real inference call."
+-          docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
++          timeout --kill-after=5s "${DOCKER_CLI_TIMEOUT}" docker rm -f fuze-llm-fallback >/dev/null 2>&1 || true
+           degrade_to_anthropic "runner-local LiteLLM answered readiness but failed the authenticated serve probe (result=${SERVE_RESULT}, HTTP ${SERVE_PROBE_CODE})"
+         fi
+         echo "::notice title=llm-endpoint::mode=fallback-local-litellm vendor=${primary_vendor} — runner-local LiteLLM (chain=[${AVAILABLE[*]}], skipped-no-key=[${SKIPPED[*]:-none}]) became ready in ${elapsed}s and passed an authenticated serve probe (HTTP ${SERVE_PROBE_CODE}). LiteLLM's own router_settings.fallbacks will auto-advance past ${primary_vendor} on a quota/rate-limit/auth error without another workflow run."
+   ```
+
+   </details>
 2. **No in-repo defect makes the step ignore cancellation.** Every rung is a third-party
    `uses:` action (claude-code-action, codex-action, run-gemini-cli). There is no in-repo
    `claude`/`codex`/`gemini` CLI invocation to wrap in `timeout`. The composite's own `run:`
