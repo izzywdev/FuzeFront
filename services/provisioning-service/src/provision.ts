@@ -245,3 +245,103 @@ export async function callUserDelete(
 
   throw lastError ?? new Error('callUserDelete: exhausted retries');
 }
+
+export interface MembershipChangePayload {
+  organizationId: string;
+  userId: string;
+  role: string;
+}
+
+export interface MembershipChangeResult {
+  ok: boolean;
+  organizationId: string;
+  userId: string;
+  role: string;
+}
+
+async function callMembershipEndpoint(
+  path: '/internal/membership-sync' | '/internal/membership-unsync',
+  payload: MembershipChangePayload,
+  securityServiceUrl: string,
+  internalProvisionSecret: string,
+  http: HttpClient
+): Promise<MembershipChangeResult> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= RETRY_COUNT; attempt++) {
+    if (attempt > 0) {
+      const delay = Math.min(RETRY_BASE_MS * Math.pow(RETRY_FACTOR, attempt - 1), RETRY_MAX_MS);
+      await sleep(delay);
+    }
+
+    const response = await http.fetch(`${securityServiceUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': internalProvisionSecret,
+      },
+      body: JSON.stringify({
+        organizationId: payload.organizationId,
+        userId: payload.userId,
+        role: payload.role,
+      }),
+    });
+
+    if (response.status === 200) {
+      const body = await response.json();
+      return body as MembershipChangeResult;
+    }
+
+    if (response.status >= 500) {
+      lastError = new Error(`security-service returned ${response.status} (attempt ${attempt + 1})`);
+      console.warn(`[provisioning-service] Transient error: ${lastError.message}`);
+      continue;
+    }
+
+    const body = await response.json().catch(() => ({}));
+    throw new Error(
+      `security-service returned ${response.status}: ${JSON.stringify(body)}`
+    );
+  }
+
+  throw lastError ?? new Error(`${path}: exhausted retries`);
+}
+
+/**
+ * Calls security-service POST /internal/membership-sync to assign the Permit
+ * role for a membership. Same retry/backoff + idempotency contract as
+ * callProvision (assignment is idempotent, replay-safe).
+ */
+export function callMembershipSync(
+  payload: MembershipChangePayload,
+  securityServiceUrl: string,
+  internalProvisionSecret: string,
+  http: HttpClient = nodeFetchClient
+): Promise<MembershipChangeResult> {
+  return callMembershipEndpoint(
+    '/internal/membership-sync',
+    payload,
+    securityServiceUrl,
+    internalProvisionSecret,
+    http
+  );
+}
+
+/**
+ * Calls security-service POST /internal/membership-unsync to unassign the
+ * Permit role for a removed membership. Same contract as callMembershipSync.
+ */
+export function callMembershipUnsync(
+  payload: MembershipChangePayload,
+  securityServiceUrl: string,
+  internalProvisionSecret: string,
+  http: HttpClient = nodeFetchClient
+): Promise<MembershipChangeResult> {
+  return callMembershipEndpoint(
+    '/internal/membership-unsync',
+    payload,
+    securityServiceUrl,
+    internalProvisionSecret,
+    http
+  );
+}
