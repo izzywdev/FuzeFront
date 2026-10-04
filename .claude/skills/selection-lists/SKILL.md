@@ -17,7 +17,7 @@ A **selection list** is a named, **org-scoped**, ordered set of **translatable**
 | Service (Express + Knex/Postgres, port `PORT` default **3011**) | `services/selection-list-service/` | `selection-list-service` (root workspace) |
 | TS client (hand-authored, zero deps) | `selection-list-client/` (**repo root, not `packages/`**) | `@fuzeone/selection-list-client` 1.0.0 |
 | Python client (stdlib `urllib`, zero deps) | `packages/selection-list-client-py/` | `fuzefront-selection-list-client` 1.0.0 |
-| UI (4 flows + picker) | `packages/selection-lists-ui/` | `@fuzeone/selection-lists-ui` 0.1.0 |
+| UI (4 flows + picker) | `packages/selection-lists-ui/` | `@fuzeone/selection-lists-ui` 0.2.0 |
 | Approved design frames (14 screens) | `design/frames/selection-lists/` (`manifest.json`, `index.html`) | — |
 | Helm | `deploy/helm/fuzefront/templates/selection-list-service-*.yaml`, `values*.yaml` → `selectionListService`, `selectionListsMcp` | — |
 | Epic / plan | `docs/planning/epics/EPIC-17-selection-lists.md` | — |
@@ -176,7 +176,9 @@ The shell mounts the three admin flows in `frontend/src/App.tsx` (each route re-
 ```tsx
 import { SelectionListPicker } from '@fuzeone/selection-lists-ui'
 
-// Props (src/SelectionListPickerHarness.tsx): listKey, mode, initialValue?, max?
+// Props (src/SelectionListPickerHarness.tsx): listKey, mode, initialValue?, max? (multi), onChange?
+// single: initialValue?: string  -> onChange(id: string)
+// multi:  initialValue?: string[] -> onChange(ids: string[])
 export function RegionField() {
   return <SelectionListPicker listKey="sales-regions" mode="single" />
 }
@@ -184,7 +186,7 @@ export function RegionField() {
 
 Build/consume rules: use design-system tokens only (no raw hex/spacing); the UI's own `src/api.ts` calls the **same-origin** base `/api/v1/selection-lists` and `/api/v1/resolve`; changing UI behaviour needs an approved frame first (`gate-frames-first`; frames are authored only by `product-designer`, in `design/frames/selection-lists/` in this repo).
 
-**Picker** — `SelectionListPicker` takes `onChange` (single: `string`; multi: `string[]`), accepts the list **key** (looked up to the `front_sl_…` id before listing items), and seeding from `initialValue` never fires `onChange`. Not yet done: a multi-mode `initialValue` array, and replacing a purged stored value.
+**Picker** — props are a discriminated union on `mode`: single takes `initialValue?: string` and `onChange(value: string)`; multi takes `initialValue?: string[]`, `max?`, and `onChange(value: string[])` (ids in the list's `sort_order`, same as the hidden `[data-persisted]` slot). It accepts the list **key** and looks the list up with the contract's exact-match `GET /v1/selection-lists?key=` filter (one call, no page walking; a `front_sl_…` id is used as-is), then reads the items by id. Seeding from `initialValue` never fires `onChange`, and all seeded ids are resolved in **one** `POST /v1/resolve` (`api.resolveItems` de-duplicates and only splits above the contract's 500-id cap). Stored values that are no longer offerable follow frame 14: an **archived** id renders its real label badged and is kept until the user removes it (multi chip ×) or replaces it (single); a **purged/unknown** id renders "Unknown value" (`[data-state="missing"]`, `[data-missing="true"]`, `[data-error="missing"]`) and is kept in the form until the user picks a replacement — single: the pick replaces it; multi: the next pick swaps one purged id out (or the chip × removes it) — after which the notice clears and the picker returns to frame 12/13. The harness route takes `?value=` as one id (single) or several (multi; repeated or comma-separated). `api.resolveItems` maps the contract's `{ results: { [id]: … }, missing }` body to the UI's `resolved[]` shape.
 
 ## Authorization and ownership rules
 
@@ -226,7 +228,7 @@ There is **no per-repo MCP server** for this feature: no `mcp/` directory exists
 | Independent acceptance + contract + security suite against a **running** service (`SERVICE_BASE_URL`, default `http://localhost:3011`) | `tests/selection-list-service/{contract,security}/` | `npm test` / `test:contract` / `test:security` in that dir; its helper builds an `@fuzeone/selection-list-client` |
 | Python client tests | `packages/selection-list-client-py/tests/test_client.py` | `pip install -e '.[dev]' && pytest` in that dir |
 | UI e2e (Playwright, derived from the approved frames; `data-*` hooks from the manifest) | `frontend/tests/selection-lists-{list-management,translation-workbench,access-control,picker}.red.spec.ts` | CI job `selection-list-service-e2e` (**`continue-on-error`**, still labelled RED-by-design) |
-| UI unit tests | `packages/selection-lists-ui/` has only `src/test/setup.ts`; **no test files** yet (`npm test` = `vitest run`) | — |
+| UI unit tests (vitest + RTL; `../api` mocked at the module boundary) | `packages/selection-lists-ui/src/test/*.test.ts(x)` — the four flows, the picker (frames 12-14), and `api.test.ts` | `npm test` (= `vitest run`) in the package |
 | TS-client ↔ spec coverage | `scripts/check-selection-lists-client-drift.sh` (**not** wired into `ci.yml`) | run by hand |
 | Contract lint | `selection-list-client`: `npm run lint:contract` (Spectral, `services/selection-list-service/.spectral.yaml`) | by hand |
 

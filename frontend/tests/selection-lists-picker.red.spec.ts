@@ -509,15 +509,14 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     // { label, locale, is_machine, status:"archived" } and render greyed with an archived badge.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        {
-          id: ARCHIVED_ITEM_ID,
+      results: {
+        [ARCHIVED_ITEM_ID]: {
           label: 'Old Country',
           locale: 'en',
           is_machine: false,
           status: 'archived',
         },
-      ],
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -534,9 +533,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
   test('[data-selected-label][data-archived="true"] renders the real label greyed with an archived badge', async ({ page }) => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -551,9 +550,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
   test('[data-status="archived"] marks the archived item in the selected display', async ({ page }) => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -567,9 +566,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     // The archived item must be ABSENT from the dropdown — readable but not newly selectable.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS) // active items only (no ARCHIVED_ITEM_ID)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -596,7 +595,7 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     // so re-saving does NOT silently drop data the user never chose to change.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [],
+      results: {},
       missing: [PURGED_ITEM_ID],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: PURGED_ITEM_ID })
@@ -622,15 +621,75 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
     ).toBe(true)
   })
 
+  test('a purged value can be replaced: picking an active item swaps the id, clears the missing notice and restores frame 12', async ({ page }) => {
+    await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
+    await injectResolve(page, { results: {}, missing: [PURGED_ITEM_ID] })
+    await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: PURGED_ITEM_ID })
+    await expect(page.locator("[data-state='missing']")).toBeVisible()
+
+    await openComboMenu(page)
+    await page.locator(`[data-item='${ITEM_ID_MULTI}']`).click()
+
+    await expect(
+      page.locator('[data-persisted]'),
+      '[data-persisted] must carry the replacement id and no longer the purged one',
+    ).toHaveAttribute('data-persisted', ITEM_ID_MULTI)
+    await expect(page.locator("[data-state='missing']")).toHaveCount(0)
+    await expect(page.locator("[data-missing='true']")).toHaveCount(0)
+    await expect(page.locator("[data-error='missing']")).toHaveCount(0)
+    await expect(page.locator("[data-frame='12-picker-single']")).toBeVisible()
+    await expect(page.locator('[data-selected-label]')).toContainText('United States')
+  })
+
+  test('multi: an array of stored ids (active + archived + purged) is resolved together, kept in the form, and a pick swaps out the purged id', async ({ page }) => {
+    await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
+    let resolveCalls = 0
+    await page.route('**/v1/resolve*', async route => {
+      resolveCalls += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          results: {
+            [ITEM_ID_MULTI]: { label: 'United States', locale: 'en', is_machine: false, status: 'active' },
+            [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+          },
+          missing: [PURGED_ITEM_ID],
+        }),
+      })
+    })
+    await gotoPickerHarness(page, {
+      list: 'countries',
+      mode: 'multi',
+      value: [ITEM_ID_MULTI, ARCHIVED_ITEM_ID, PURGED_ITEM_ID].join(','),
+    })
+    await expect(page.locator("[data-frame='14-picker-archived']")).toBeVisible()
+    await expect(page.locator(`[data-chip='${ARCHIVED_ITEM_ID}']`)).toHaveAttribute('data-archived', 'true')
+    await expect(page.locator(`[data-chip='${PURGED_ITEM_ID}']`)).toHaveAttribute('data-missing', 'true')
+    await expect(page.locator('[data-persisted]')).toHaveAttribute(
+      'data-persisted',
+      [ITEM_ID_MULTI, ARCHIVED_ITEM_ID, PURGED_ITEM_ID].join(','),
+    )
+    expect(resolveCalls, 'all stored ids must be resolved in ONE POST /v1/resolve').toBe(1)
+
+    await openComboMenu(page)
+    await page.locator("[data-item='sli_05h455vb4pex5vsknk084sn02q']").click()
+    await expect(page.locator('[data-persisted]')).toHaveAttribute(
+      'data-persisted',
+      [ITEM_ID_MULTI, 'sli_05h455vb4pex5vsknk084sn02q', ARCHIVED_ITEM_ID].join(','),
+    )
+    await expect(page.locator("[data-error='missing']")).toHaveCount(0)
+  })
+
   test('[data-panel="resolve-matrix"] shows locale resolution: ja falls back to source locale (never empty string)', async ({ page }) => {
     // The resolution matrix asserts one id renders per viewer locale,
     // with ja falling back to the source locale rather than an empty string.
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
         // ja falls back to en (source locale) — there is no Japanese label.
-      ],
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -648,9 +707,9 @@ test.describe('Selection Lists picker — frame 14-picker-archived', () => {
   test('[data-persisted] carries the resolved archived id throughout the session', async ({ page }) => {
     await injectListItems(page, 'countries', MOCK_COUNTRY_ITEMS)
     await injectResolve(page, {
-      resolved: [
-        { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-      ],
+      results: {
+        [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+      },
       missing: [],
     })
     await gotoPickerHarness(page, { list: 'countries', mode: 'single', value: ARCHIVED_ITEM_ID })
@@ -746,9 +805,9 @@ test.describe('Selection Lists picker — runtime console-clean gate (ui-runtime
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          resolved: [
-            { id: ARCHIVED_ITEM_ID, label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
-          ],
+          results: {
+            [ARCHIVED_ITEM_ID]: { label: 'Old Country', locale: 'en', is_machine: false, status: 'archived' },
+          },
           missing: [],
         }),
       })

@@ -77,6 +77,15 @@ export interface ResolvedItem {
   status: 'active' | 'archived'
 }
 
+/** `POST /v1/resolve` as the service sends it (contract `ResolveResponse`). */
+export interface ResolveWireResponse {
+  results?: Record<string, Omit<ResolvedItem, 'id'>>
+  /** Legacy array form; tolerated, never sent by the contract. */
+  resolved?: ResolvedItem[]
+  missing?: string[]
+}
+
+/** `POST /v1/resolve` normalised for the UI: every resolution carries its own `id`. */
 export interface ResolveResponse {
   resolved: ResolvedItem[]
   missing: string[]
