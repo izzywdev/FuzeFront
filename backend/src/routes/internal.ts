@@ -1,10 +1,10 @@
 import crypto from 'crypto'
 import express from 'express'
-import { db } from '../config/database'
 import {
   runInternalProvision,
   ensureDeveloperMembership,
 } from '../services/organizationProvisioning'
+import { ASSIGNABLE_ROLES, setUserRolesByEmail } from '../services/userRoles'
 import { isDevportalEnabled } from '../utils/devportalFlag'
 
 const router = express.Router()
@@ -23,13 +23,6 @@ function internalSecretOk(req: express.Request): boolean {
     expected && provided && a.length === b.length && crypto.timingSafeEqual(a, b)
   )
 }
-
-/** Roles a caller may assign via /internal/set-roles. Keep this list TIGHT —
- * each entry is a privilege this endpoint can hand out behind the shared
- * secret. `admin` is here solely so synthetic/break-glass accounts (e.g. the
- * post-prod master-admin smoke) can be provisioned without a manual prod DB
- * write; real per-resource authorization still lives in Permit. */
-const ASSIGNABLE_ROLES = new Set(['user', 'admin', 'developer', 'employee'])
 
 /**
  * Neutralise a value before it reaches a log line.
@@ -206,21 +199,16 @@ router.post('/set-roles', async (req, res) => {
       .json({ error: `unknown role(s): ${invalid.map(sanitizeForLog).join(', ')}` })
   }
 
-  // Normalise: `user` is the base role every account carries; dedupe so a
-  // re-run is a no-op rather than appending.
-  const normalized = Array.from(new Set(['user', ...roles]))
-
   try {
-    const user = await db('users')
-      .whereRaw('LOWER(email) = LOWER(?)', [email])
-      .first()
-    if (!user) {
+    // The DB read/write lives in services/userRoles.ts, not inline here: a raw
+    // users-table read in a route trips the scope-to-portal leak guard
+    // (FF-EPIC-11-S2), and this internal admin grant is exactly the
+    // services/* exemption that guard documents.
+    const result = await setUserRolesByEmail(email, roles)
+    if (!result) {
       return res.status(404).json({ error: 'user not found' })
     }
-    await db('users')
-      .where({ id: user.id })
-      .update({ roles: JSON.stringify(normalized), updated_at: db.fn.now() })
-    return res.status(200).json({ ok: true, userId: user.id, email: user.email, roles: normalized })
+    return res.status(200).json({ ok: true, ...result })
   } catch (error: any) {
     // Deliberately do NOT interpolate the request-supplied `email` into the log
     // sink: it is user-controlled, and even sanitised, feeding it to the log is
