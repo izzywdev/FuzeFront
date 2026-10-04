@@ -41,6 +41,8 @@ import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
 import { authMiddleware } from '../middleware/auth';
+import { lockOrgOutbox } from '../events/outbox';
+import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
 
 const router = createRouter();
 registerIdParams(router);
@@ -253,6 +255,9 @@ router.put(
       if (!callerToken) { res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' }); return; }
 
       const row = await db.transaction(async (trx) => {
+        // Lock order is ALWAYS org outbox lock first (events/outbox.ts): a list
+        // purge in the same org deletes these access rows while holding it.
+        await lockOrgOutbox(trx, orgId);
         // Serialise every access mutation on this list (guard + writes).
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
@@ -325,6 +330,17 @@ router.put(
           [listId, userId, role, actorId, orgId],
         );
 
+        // Outbox, same transaction: access.granted (previousRole null for a new
+        // grant). A repeat PUT of the role the user already holds changes nothing,
+        // so it announces nothing.
+        if (!existing || existing['role'] !== role) {
+          await emitAccessGranted(trx, eventContextFromRequest(req), listId, {
+            userId,
+            role,
+            previousRole: existing ? (existing['role'] as string) : null,
+          });
+        }
+
         return (await trx('selection_list_access')
           .where({ list_id: listId, user_id: userId })
           .first('list_id', 'user_id', 'role', 'granted_by', 'granted_at', 'updated_at')) as AccessRow;
@@ -368,7 +384,9 @@ router.delete(
       if (!callerToken) { res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' }); return; }
 
       await db.transaction(async (trx) => {
-        // Serialise every access mutation on this list (guard + writes).
+        // Org outbox lock first (see PUT above), then serialise every access
+        // mutation on this list (guard + writes).
+        await lockOrgOutbox(trx, orgId);
         await trx('selection_list_access').where({ list_id: listId }).forUpdate().select('user_id');
 
         // Fetch current grant for last-owner guard and idempotency.
@@ -412,6 +430,12 @@ router.delete(
         await trx('selection_list_access')
           .where({ list_id: listId, user_id: userId })
           .update({ revoked_at: trx.fn.now(), updated_at: trx.fn.now() });
+
+        // Outbox, same transaction: access.revoked (an idempotent no-op returned above).
+        await emitAccessRevoked(trx, eventContextFromRequest(req), listId, {
+          userId,
+          role: existing['role'] as string,
+        });
       });
 
       res.status(204).send();

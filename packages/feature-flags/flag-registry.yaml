@@ -322,6 +322,38 @@ flags:
           # No org/user targeting at creation — enable per-org via Unleash
           # targeting rules once the service is ready for a given org.
 
+  - key: fuzefront.selection-lists.seed-defaults
+    type: release
+    default: false
+    description: >
+      Gates BOTH selection-list-service seeding consumers (SL5 event contract,
+      docs/planning/selection-lists-events.md section 11): the
+      `identity.org.created` seeding consumer and the
+      `selection-lists.seed.requested` handler, plus the reconciler/backfill.
+      Evaluated per message with context { orgId, app: 'selection-list-service' }.
+      OFF behaviour: org.created is skipped (the reconciler catches up once
+      ON); seed.requested answers `selection-lists.seed.failed` with reason
+      SEEDING_DISABLED, retryable: true. Independent of (and additionally
+      requires) the master gate fuzefront.selection-lists.service. Publishing
+      of the change events is NOT flagged. Server-side only; fails closed
+      (no client or any evaluation error => OFF). Created OFF in every
+      Unleash environment — it is never enabled by this registry entry;
+      enablement is a deliberate per-org ramp by the owner.
+    owner: izzywdev
+    removal_criterion: >
+      Remove once seeding has been ON for all orgs for 30 consecutive days
+      with zero `selection-lists.seed.failed` events in that window (and the
+      reconciler has backfilled every existing org). Delete the flag in
+      Unleash, FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS, and
+      isSeedDefaultsEnabled() with both consumer guards in one cleanup PR.
+    gates:
+      - selection-list-service identity.org.created seeding consumer (server-side)
+      - selection-list-service selection-lists.seed.requested handler (server-side)
+      - selection-list-service seeding reconciler / backfill (server-side)
+    web_exposed: false
+    jira: ~
+    epic: FF-EPIC-17
+
   # ---------------------------------------------------------------------------
   # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /
   # portal reconciliation)

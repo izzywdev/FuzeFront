@@ -1344,7 +1344,9 @@ kafkaTopics:
   tolerations: []
   # retentionMs default applied when a topic omits its own. 7 days.
   defaultRetentionMs: 604800000
-  # Each topic: name (required), partitions, replicationFactor, retentionMs.
+  # Each topic: name (required), partitions, replicationFactor, retentionMs, and an
+  # optional cleanupPolicy (rendered as --config cleanup.policy=<v> only when set;
+  # omitted = broker default, which is `delete`).
   # DLQ companions are created for the consumer topics (dlqTopic() = "<t>.dlq").
   topics:
     # --- identity (security-service → provisioning-service + lifecycle consumers) ---
@@ -1444,6 +1446,103 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
+    # --- selection-lists (selection-list-service producer; docs/planning/selection-lists-events.md §4, §14) ---
+    # Keep in sync with the @fuzefront/shared TOPICS constant (SELECTION_LISTS_*,
+    # shared/src/kafka/types.ts). 3 partitions (matches identity.*), 7d retention,
+    # cleanup.policy=delete stated explicitly per topic (cleanupPolicy).
+    # selection-lists.seed.requested carries bearer attestation tokens (plan §8):
+    # 1d retention shrinks the exposure window, and its DLQ copy holds the same token
+    # (plan §7.2 "same exposure as the source topic"), so the DLQ is also 1d -- a
+    # deliberate departure from the 14d DLQ convention above. Lengthen it only if
+    # triage genuinely needs more than a day.
+    # selection-list-service consumes identity.org.created (new), identity.org.deleted
+    # and identity.user.deleted (existing); all three DLQs are already declared in the
+    # identity block above, so no further identity DLQs are needed for this feature.
+    - name: selection-lists.list.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.archived
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.archived
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.reordered
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.translation.upserted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.translation.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.access.granted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.access.revoked
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.seed.requested
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 86400000 # 1d -- carries bearer tokens (plan §8)
+      cleanupPolicy: delete
+    - name: selection-lists.seed.requested.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 86400000 # 1d -- same token exposure as the source topic (plan §7.2)
+      cleanupPolicy: delete
+    - name: selection-lists.seed.completed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.seed.failed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
 
 # Cloudflare cache purge — disabled by default; prod enables via values-prod.yaml.
 cloudflare:

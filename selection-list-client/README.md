@@ -2,7 +2,7 @@
 
 Typed client for the FuzeFront **selection-list-service**. Zero runtime dependencies; uses the platform `fetch`.
 
-Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v1.0.0**. The spec wins any disagreement.
+Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.0.0**. The spec wins any disagreement.
 
 ```ts
 import { SelectionListClient, isSelectionListApiError } from '@fuzeone/selection-list-client'
@@ -27,6 +27,26 @@ try {
   }
 }
 ```
+
+## Authorship fields are not always users (2.0.0)
+
+`created_by` (lists, items) and `granted_by` (access grants) are an
+`AuthorPrincipal`: a `usr_` user id, a `system:<service>` principal (rows written
+by seeding carry `system:selection-list-service`), or the literal
+`DELETED_USER_SENTINEL` (`'[deleted-user]'`, after the author was deleted). Branch
+before treating one as a user:
+
+```ts
+import { authorPrincipalKind, isUserAuthor } from '@fuzeone/selection-list-client'
+
+if (isUserAuthor(list.created_by)) showProfileLink(list.created_by)
+else if (authorPrincipalKind(list.created_by) === 'system') render('Seeded')
+else render('Deleted user')
+```
+
+Lists and items also carry a read-only `seed` (`SeedProvenance` or `null`):
+`source`, `pack_key`, `pack_version`, `user_modified`. It is `null` for every
+user-authored row.
 
 ## Install locally (pre-publish)
 
