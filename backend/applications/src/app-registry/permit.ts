@@ -9,6 +9,8 @@
 // authorizer. Feature-flag rollout of authz is convenience only — the real
 // authz decision always lives here, never in a flag.
 
+import { log, errInfo } from './log'
+
 export interface PermitResource {
   type: string
   tenant: string
@@ -22,6 +24,15 @@ export interface PermitLike {
     resource: PermitResource,
     context?: Record<string, unknown>
   ) => Promise<boolean>
+  /**
+   * Optional management API (present on the real permitio SDK, absent on the
+   * no-op CI client). Used ONLY for best-effort resource-instance role
+   * assignment (assignAppCreatorRole).
+   */
+  api?: {
+    resourceInstances?: { create: (data: Record<string, unknown>) => Promise<unknown> }
+    users?: { assignRole: (data: Record<string, unknown>) => Promise<unknown> }
+  }
 }
 
 /** Recursively-resolving no-op proxy — every check() resolves to false (deny). */
@@ -146,6 +157,68 @@ export async function checkPortalAdminPermission(args: {
       String(args.organizationId).replace(/[\r\n]+/g, ' '),
       String(err instanceof Error ? err.message : err).replace(/[\r\n]+/g, ' ')
     )
+    return false
+  }
+}
+
+/**
+ * Assigns the initial `creator` role on one App resource instance to the user
+ * who created/published it (flag fuzefront.apps.creator-ownership).
+ *
+ * OWNERSHIP MODEL — "org-held, user-originated": the owner of record is the
+ * organization (apps.organization_id); the creator is the originating user. The
+ * role is scoped to tenant = owning org, instance key = slug, so it dies with
+ * the user's membership of that org. Org owners/admins keep full control via
+ * their own org-level roles regardless of this assignment.
+ *
+ * PERMIT-SIDE CONFIG REQUIRED (not faked here): the Permit policy must define
+ * the `creator` role on resource `App` (an instance role: `App#creator`),
+ * granting at least `apps:write` and `apps:activate` on that instance. Until
+ * that policy exists the assignment is rejected by Permit and this function
+ * logs + continues.
+ *
+ * BEST-EFFORT, FAIL-SOFT: a Permit outage or a missing policy must never fail
+ * app registration/deployment — the app is still owned by its org and org
+ * admins retain control. Returns whether the assignment was made. Authority
+ * decisions never read this return value or apps.created_by_user_id.
+ */
+export async function assignAppCreatorRole(args: {
+  userId: string
+  organizationId: string
+  slug: string
+}): Promise<boolean> {
+  const ctx = { userId: args.userId, organizationId: args.organizationId, slug: args.slug }
+  const start = Date.now()
+  try {
+    const api = getPermitClient().api
+    if (!api?.users?.assignRole) {
+      log.warn('creator role not assigned: Permit management API unavailable', ctx)
+      return false
+    }
+    // Ensure the instance exists (idempotent: a conflict is fine).
+    try {
+      await api.resourceInstances?.create({
+        resource: 'App',
+        key: args.slug,
+        tenant: args.organizationId,
+      })
+    } catch {
+      /* already exists / not creatable — the role assignment below decides */
+    }
+    await api.users.assignRole({
+      user: args.userId,
+      role: 'creator',
+      resource_instance: `App:${args.slug}`,
+      tenant: args.organizationId,
+    })
+    log.debug('permit.assignRole creator end', { ...ctx, elapsedMs: Date.now() - start })
+    return true
+  } catch (err) {
+    log.warn('creator role not assigned (continuing)', {
+      ...ctx,
+      elapsedMs: Date.now() - start,
+      ...errInfo(err),
+    })
     return false
   }
 }
