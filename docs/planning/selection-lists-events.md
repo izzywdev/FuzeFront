@@ -582,9 +582,32 @@ Gate: `python3 scripts/gate_microservice_events.py` green with the §12 policy.
 
 ## 15. Drafted, UNSENT `@fuze` delegation to FuzeInfra
 
-> Not sent. FuzeInfra is never edited from this repo; this is the text for the owner to
-> post (or to adapt) on the FuzeInfra tracker. Topic **creation** is NOT part of it —
-> FuzeFront pre-creates its topics with its own `kafka-topics` Helm hook job.
+> **UNSENT.** FuzeInfra is never edited from this repo; this is the text for the owner to
+> post (or to adapt) on the FuzeInfra tracker.
+>
+> What the chart does today (verified against `deploy/helm/fuzefront/templates/kafka-topics-job.yaml`
+> and `values*.yaml`), which is why the request below is scoped as it is:
+>
+> - **Topic creation is FuzeFront's own, not FuzeInfra's.** `kafkaTopics.topics` in
+>   `values.yaml` is applied by an in-repo Helm `post-install,post-upgrade` hook Job
+>   (`fuzefront-kafka-topics`, `kafka-topics.sh --create --if-not-exists`, unauthenticated
+>   PLAINTEXT to `fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092`). The 16
+>   `selection-lists.*` topics + `selection-lists.seed.requested.dlq` are declared there
+>   (3 partitions, 7d retention, `cleanup.policy=delete`; `seed.requested` and its DLQ
+>   1d). No new DLQs were needed for the consumed identity topics: `identity.org.created`,
+>   `identity.org.deleted` and `identity.user.deleted` already have `.dlq` companions.
+> - **The Job is disabled everywhere today** (`kafkaTopics.enabled: false` in the base
+>   values and in `values-prod.yaml`, the latter because a slow Kafka made the hook wedge
+>   every Argo sync). Until it is re-enabled (a FuzeFront chart change: make it
+>   non-blocking, then flip the flag) the topics fall back to **broker auto-create with
+>   broker defaults** — not the partitions/retention declared here, notably not the 1d
+>   retention on `seed.requested`. That is a FuzeFront-side item, not a FuzeInfra request.
+>   If the broker has `auto.create.topics.enable=false` the topics will not exist at all;
+>   that setting is unverified from this repo.
+> - **The only FuzeInfra-owned parts are broker authentication and ACLs**, below.
+>   Corollary for the request: once SASL/ACLs are on, the hook Job also needs a principal
+>   (it creates topics), so that principal needs `CREATE`/`DESCRIBE`/`ALTER` on the
+>   `selection-lists.`, `identity.`, `notify.` and `billing.` prefixes.
 
 ```text
 @fuze FuzeInfra — Kafka authentication + ACLs for the FuzeFront selection-lists topics
@@ -612,6 +635,11 @@ Requested:
    - identity.* (prefixed):           WRITE only the identity producer principal
      (closes forgeable identity.org.deleted, which drives hard purges).
    - *.dlq: WRITE for the consuming service of the base topic.
+   - Consumer groups for selection-list-service: prefix
+     `selection-list-service-group` (default `KAFKA_GROUP_ID`; groups are
+     `<KAFKA_GROUP_ID>-org-deleted`, `-user-deleted`, `-org-created`, `-seed-requested`).
+   - The FuzeFront `fuzefront-kafka-topics` hook Job principal: CREATE/DESCRIBE/ALTER on
+     the `selection-lists.`, `identity.`, `notify.`, `billing.` topic prefixes.
 4. allow.everyone.if.no.acl.found=false once all FuzeFront services have migrated.
 
 No FuzeFront change depends on this landing first; selection-list-service will move to

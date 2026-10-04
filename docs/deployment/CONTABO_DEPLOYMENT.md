@@ -203,9 +203,11 @@ Notes:
 
 ## 6. Kafka topics
 
-Prod pre-creates the prefixed topics via a Helm post-install/post-upgrade Job
-(`templates/kafka-topics-job.yaml`, gated by `kafkaTopics.enabled: true` in
-`values-prod.yaml`) rather than relying on broker auto-create. The topic set is
+The prefixed topics are meant to be pre-created by a Helm post-install/post-upgrade
+Job (`templates/kafka-topics-job.yaml`, gated by `kafkaTopics.enabled`) rather than
+relying on broker auto-create. **It is currently `enabled: false` in `values-prod.yaml`**
+(the hook wedged Argo syncs; see the comment there), so prod topics fall back to broker
+auto-create until the Job is made non-blocking and re-enabled. The topic set is
 reconciled from the `@fuzefront/shared` `TOPICS` constant plus the planned
 billing/chat events. When that constant changes, edit `kafkaTopics.topics` in
 `values.yaml`. The Job uses `--create --if-not-exists`, so it is safe to re-run on
