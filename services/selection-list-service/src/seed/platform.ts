@@ -27,6 +27,8 @@ export interface ApplyPlatformDefaultsOptions {
   /** 'org-created' (default) from the identity.org.created consumer, 'backfill' from the reconciler. */
   trigger?: Extract<SeedTrigger, 'org-created' | 'backfill'>;
   correlationId?: string;
+  /** Forwarded to `applySeedRequest` (default 'record'); a consumer passes 'throw' so a transient fault is retried. */
+  internalErrors?: 'record' | 'throw';
   /** Pack directory override (tests); default is the shipped `seed-packs/platform`. */
   packDir?: string;
 }
@@ -67,6 +69,7 @@ export async function applyPlatformDefaults(
       requestId: null,
       lists: pack.lists,
       correlationId: options.correlationId,
+      internalErrors: options.internalErrors,
     });
     outcomes.push({ packKey: pack.packKey, version: pack.version, result });
   }

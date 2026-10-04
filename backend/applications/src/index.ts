@@ -26,6 +26,7 @@ import appsRoutes from './routes/apps'
 import appInstallationsRoutes from './routes/app-installations'
 import appRegistryRoutes from './routes/app-registry'
 import portalCatalogRoutes from './routes/portal-catalog'
+import appBuildsRoutes from './routes/app-builds'
 import { ensureBuiltins } from './app-registry/builtins'
 import { initFeatureFlags } from './config/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
@@ -92,6 +93,9 @@ app.use('/api/v1/app-registry', appRegistryRoutes)
 // it rides the existing host-backend proxy/route-ownership entry for
 // /api/v1/app-registry with no new wiring (see routes/portal-catalog.ts).
 app.use('/api/v1/app-registry', portalCatalogRoutes)
+// "Build your application" sessions + marketplace publication requests — same
+// prefix again (no new ingress/route-ownership wiring). Release-flagged, OFF.
+app.use('/api/v1/app-registry', appBuildsRoutes)
 
 const health = async (_req: any, res: any) => {
   const uptime = Math.floor((Date.now() - startTime) / 1000)

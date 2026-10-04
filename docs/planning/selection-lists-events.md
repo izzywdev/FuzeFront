@@ -611,6 +611,34 @@ Decisions the code makes that §4–§6 left open:
   (3 lists, 10 items, all 11 locales; the translations are unreviewed drafts and need the human review §10
   requires before the flag is ever turned on).
 
+### 13.0.3 As implemented (SL6 consumers)
+
+`services/selection-list-service/src/events/{org-created.handler,seed-requested.handler,attestation,orgProjection,retryBudget}.ts`,
+wired in `consumer.ts` (groups `${KAFKA_GROUP_ID}-org-created` and `-seed-requested`, started whenever Kafka is configured; the flag is
+read per message, never by (not) starting a consumer). Tests: `tests/seed.consumers.db.test.ts` (real Postgres + real `TypedConsumer` with a
+fake KafkaJS client + the real `@fuzefront/service-auth` verifier against a fake introspection endpoint), `tests/events.seed-consumers.unit.test.ts`.
+Decisions the code makes that §7-§8 left open:
+
+- **Org projection.** `identity.org.created` upserts `selection_list_ref_index` *always* (flag OFF included); a `deleted` row is a tombstone and is
+  never resurrected (the upsert refreshes type/`is_active`, not `status`). `identity.org.deleted` tombstones it *before* cascading (soft and hard) and
+  inserts the tombstone for an org it never saw, so delete-before-create ends in `seed.failed` / `ORG_INACTIVE`, not lists. The projection is only
+  written by these two events: an `identity.org.updated` consumer does not exist yet, so `is_active` can go stale.
+- **`org.created` flow:** project -> `isActive:false` skips (flag not consulted) -> `isSeedingEnabled(org)` OFF skips + logs -> `applyPlatformDefaults`
+  (`appliesTo` / personal / platform rules stay in the pack). Redelivery is `already-applied`.
+- **`seed.requested` order:** schema -> `scope:'user'` (`SCOPE_UNSUPPORTED`) -> flag (`SEEDING_DISABLED`; the token is not even introspected) ->
+  attestation -> `applySeedRequest` with `attestedSubject`. A **wrong subject** is `SOURCE_NOT_ALLOWED` (the allowlist row decides, R7), not
+  `ATTESTATION_INVALID`; the latter is for an inactive/expired/unknown token or a missing `selection-lists:seed` scope (retryable).
+- **Fail closed, two kinds of no.** A bad token is a refusal (`seed.failed`). Introspection that cannot *decide* (outage, non-200, malformed
+  body, missing config) throws `AttestationUnavailableError` and the consumer retries; nothing is written. The verifier is
+  `createMachineTokenVerifier` against `SECURITY_SERVICE_URL`.
+- **Bounded retries.** A thrown handler is retried by kafkajs; each message gets a small in-memory budget (`RetryBudget`, 5 attempts). Attempts before
+  the last use `internalErrors: 'throw'`; the last records `seed.failed` / `INTERNAL_ERROR` (retryable) so a fault that never heals cannot wedge the partition.
+- **Schema-invalid payloads.** The consumer runs with a passthrough schema and the handler parses: valid JSON that fails the schema gets a best-effort
+  `seed.failed` / `VALIDATION_ERROR` (only when `requestId`/org TypeID/source/pack/trigger are each individually valid) **and** a DLQ copy whose
+  `attestation.token` is replaced by `[REDACTED]` (this narrows the §7.2 note that the DLQ copy carries the token). Non-JSON is dead-lettered by
+  `TypedConsumer` as before. The token reaches nothing but the verifier: tests assert it is in no outbox event, no log line and no DLQ message.
+- **Governance.** `governance/microservice-events-policy.json`: selection-list-service left `knownUnhandled`; `identity.user.created` is `notApplicable`.
+
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
 > **Status: frozen in `openapi.yaml` 4.0.0** (branch `claude/sl6-http-amend`).
