@@ -221,6 +221,10 @@ export const appManifestSchema = z
     routing: routingSchema.optional(),
     infra: infraSchema.optional(),
     visibility: visibilitySchema.optional(),
+    scopeLevel: z.enum(['personal', 'organization', 'both']).optional(),
+    requiresOrgContext: z.boolean().optional(),
+    installMode: z.enum(['self', 'everyone', 'both']).optional(),
+    orgLevelOnly: z.boolean().optional(),
     roles: z.array(z.string()).optional(),
   })
   .strict()

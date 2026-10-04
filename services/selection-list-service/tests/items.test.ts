@@ -31,7 +31,10 @@ jest.mock('../src/db', () => ({
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
 
+// Only mintId is stubbed (deterministic ids); the registry (ENTITY_PREFIXES, used
+// by the edge id validation in src/middleware/validateInput.ts) stays REAL.
 jest.mock('@izzywdev/fuzefront-identity', () => ({
+  ...jest.requireActual('@izzywdev/fuzefront-identity'),
   mintId: (type: string) =>
     type === 'selectionListItem'
       ? 'front_sli_01testitemid0000000000000'
@@ -43,7 +46,32 @@ jest.mock('@izzywdev/fuzefront-identity', () => ({
 jest.mock('../src/middleware/quota', () => ({
   enforceListQuota: (_req: any, _res: any, next: any) => next(),
   enforceItemQuota: (_req: any, _res: any, next: any) => next(),
+  sendQuotaExceeded: jest.requireActual('../src/middleware/quota').sendQuotaExceeded,
 }));
+
+// ─── Quota service mock — the locked, in-transaction re-check ─────────────────
+// The create handler takes an advisory lock then re-checks the ceiling INSIDE the
+// transaction (exact enforcement). Real counting is covered by quota.service.test.ts.
+
+const mockLockQuotaScope = jest.fn().mockResolvedValue(undefined);
+const mockCheckItemQuota = jest.fn().mockResolvedValue(undefined);
+jest.mock('../src/services/quota.service', () => ({
+  ...jest.requireActual('../src/services/quota.service'),
+  lockQuotaScope: (...args: any[]) => mockLockQuotaScope(...args),
+  checkItemQuota: (...args: any[]) => mockCheckItemQuota(...args),
+}));
+
+// ─── Outbox emitters (events/*) ───────────────────────────────────────────────
+// The routes write their outbox events through events/emitters (same transaction).
+// These suites pin ROUTE behaviour against a mocked knex, so the event layer is a
+// stub here; its real behaviour (snapshots, revisions, atomicity with the data
+// change, exactly-one-topic-per-route) is covered against real Postgres in
+// tests/outbox.db.test.ts and tests/outbox.routes.db.test.ts.
+jest.mock('../src/events/outbox');
+jest.mock('../src/events/emitters');
+// The seeded-then-edited hash check (seed/content.ts) reads the row back through the transaction; its
+// behaviour is covered against real Postgres in tests/seed.user-edits.db.test.ts.
+jest.mock('../src/seed/content');
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -97,6 +125,8 @@ beforeEach(() => {
   mockTransaction.mockReset();
   // Re-establish the transaction implementation after reset.
   mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
+  mockLockQuotaScope.mockReset().mockResolvedValue(undefined);
+  mockCheckItemQuota.mockReset().mockResolvedValue(undefined);
   setFlagClient({ getBooleanValue: async () => true });
 });
 
@@ -163,6 +193,20 @@ describe('GET /v1/selection-lists/:listId/items', () => {
     expect(res.body.items[0].code).toBe('US');
     expect(res.body.items[0].label).toBe('United States');
     expect(res.body.items[0].sort_order).toBe(100);
+  });
+
+  it('renders `seed` as null for a user-authored item and the provenance for a seeded one; created_by passes through system:*', async () => {
+    mockRaw
+      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] })
+      .mockResolvedValueOnce({ rows: [ITEM_ROW, { ...ITEM_ROW, id: 'front_sli_seeded', created_by: 'system:selection-list-service', seed_source: 'platform', seed_key: 'platform-defaults', seed_version: 1, seed_user_modified: false }] })
+      .mockResolvedValueOnce({ rows: [{ total: '2' }] });
+
+    const res = await request(app).get(`/v1/selection-lists/${TEST_LIST_ID}/items`).set(authHeader());
+
+    expect(res.status).toBe(200);
+    expect(res.body.items[0].seed).toBeNull();
+    expect(res.body.items[1].seed).toEqual({ source: 'platform', pack_key: 'platform-defaults', pack_version: 1, user_modified: false });
+    expect(res.body.items[1].created_by).toBe('system:selection-list-service');
   });
 
   it('enforces MAX_PAGE_SIZE — clamps limit to 200', async () => {
@@ -255,10 +299,10 @@ describe('POST /v1/selection-lists/:listId/items', () => {
   it('creates item and returns 201 with correct shape', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ max_order: '200' }] })     // max sort_order
       .mockResolvedValueOnce({ rows: [ITEM_ROW] });                // fetch created
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ max_order: '200' }] }) // max sort_order (in-tx)
       .mockResolvedValueOnce({ rows: [] }) // INSERT item
       .mockResolvedValueOnce({ rows: [] }); // INSERT translation
 
@@ -336,10 +380,10 @@ describe('POST /v1/selection-lists/:listId/items', () => {
   it('appends at max+100 when sort_order not supplied', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ max_order: '400' }] })     // max sort_order
       .mockResolvedValueOnce({ rows: [{ ...ITEM_ROW, sort_order: 500 }] }); // fetch
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ max_order: '400' }] }) // max sort_order (in-tx)
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
@@ -350,8 +394,49 @@ describe('POST /v1/selection-lists/:listId/items', () => {
 
     expect(res.status).toBe(201);
     // Verify the insert used sort_order = 500 (max 400 + 100)
-    const insertParams = mockTrxRaw.mock.calls[0][1] as unknown[];
+    const insertParams = mockTrxRaw.mock.calls[1][1] as unknown[];
     expect(insertParams).toContain(500);
+  });
+
+  it('takes the per-list advisory lock and re-checks the ceiling INSIDE the transaction', async () => {
+    mockRaw
+      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] })
+      .mockResolvedValueOnce({ rows: [ITEM_ROW] });
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ max_order: null }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await request(app)
+      .post(`/v1/selection-lists/${TEST_LIST_ID}/items`)
+      .set(authHeader())
+      .send({ code: 'MX', label: 'Mexico' });
+
+    expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `list_items:${TEST_LIST_ID}`);
+    expect(mockCheckItemQuota).toHaveBeenCalledWith(TEST_LIST_ID, TEST_ORG_ID, mockTrx);
+    expect(mockLockQuotaScope.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCheckItemQuota.mock.invocationCallOrder[0],
+    );
+    // Lock + check precede the INSERT.
+    expect(mockCheckItemQuota.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTrxRaw.mock.invocationCallOrder[1],
+    );
+  });
+
+  it('returns 403 QUOTA_EXCEEDED (not 500) when the in-transaction re-check refuses', async () => {
+    const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+    mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] });
+    mockCheckItemQuota.mockRejectedValueOnce(new QuotaExceededError('list_items', 5, 5, 'items'));
+
+    const res = await request(app)
+      .post(`/v1/selection-lists/${TEST_LIST_ID}/items`)
+      .set(authHeader())
+      .send({ code: 'CU', label: 'Cuba' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_items', limit: 5, current: 5 });
+    // Nothing was inserted.
+    expect(mockTrxRaw).not.toHaveBeenCalled();
   });
 });
 
@@ -426,10 +511,10 @@ describe('PATCH /v1/selection-lists/:listId/items/:itemId', () => {
   it('updates label and returns 200', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID }] })     // item exists
       .mockResolvedValueOnce({ rows: [{ ...ITEM_ROW, label: 'USA' }] }); // fetch updated
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID }] }) // item exists (in the txn)
       .mockResolvedValueOnce({ rows: [] }) // UPDATE selection_list_items (updated_at)
       .mockResolvedValueOnce({ rows: [] }); // UPSERT translation
 
@@ -462,9 +547,8 @@ describe('PATCH /v1/selection-lists/:listId/items/:itemId', () => {
   });
 
   it('returns 404 when item not found', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [] }); // item check returns empty
+    mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }); // list check
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] }); // item check (in the txn) returns empty
 
     const res = await request(app)
       .patch(`/v1/selection-lists/${TEST_LIST_ID}/items/front_sli_nonexistent000000000`)
@@ -494,9 +578,10 @@ describe('DELETE /v1/selection-lists/:listId/items/:itemId', () => {
   it('archives item (soft-delete) by default and returns 200', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID }] })     // item exists
-      .mockResolvedValueOnce({ rows: [] })                          // UPDATE archived
       .mockResolvedValueOnce({ rows: [{ ...ITEM_ROW, status: 'archived' }] }); // fetch
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID, code: 'US' }] }) // item exists (in the txn)
+      .mockResolvedValueOnce({ rows: [] });                                  // UPDATE archived
 
     const res = await request(app)
       .delete(`/v1/selection-lists/${TEST_LIST_ID}/items/${TEST_ITEM_ID}`)
@@ -507,11 +592,10 @@ describe('DELETE /v1/selection-lists/:listId/items/:itemId', () => {
   });
 
   it('hard-deletes with purge=true and returns 204', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID }] });    // item exists
+    mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }); // list check
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID, code: 'US' }] }) // item exists (in the txn)
       .mockResolvedValueOnce({ rows: [] }) // DELETE translations
       .mockResolvedValueOnce({ rows: [] }); // DELETE item
 
@@ -523,9 +607,8 @@ describe('DELETE /v1/selection-lists/:listId/items/:itemId', () => {
   });
 
   it('returns 404 when item not found', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [] }); // item check returns empty
+    mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }); // list check
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] }); // item check (in the txn) returns empty
 
     const res = await request(app)
       .delete(`/v1/selection-lists/${TEST_LIST_ID}/items/front_sli_nonexistent000000000`)
@@ -542,9 +625,10 @@ describe('POST /v1/selection-lists/:listId/items/:itemId/archive', () => {
   it('archives item and returns 200', async () => {
     mockRaw
       .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }) // list check
-      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID }] })     // item exists
-      .mockResolvedValueOnce({ rows: [] })                          // UPDATE
       .mockResolvedValueOnce({ rows: [{ ...ITEM_ROW, status: 'archived' }] }); // fetch
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_ITEM_ID }] }) // item exists (in the txn)
+      .mockResolvedValueOnce({ rows: [] });                    // UPDATE
 
     const res = await request(app)
       .post(`/v1/selection-lists/${TEST_LIST_ID}/items/${TEST_ITEM_ID}/archive`)
@@ -555,9 +639,8 @@ describe('POST /v1/selection-lists/:listId/items/:itemId/archive', () => {
   });
 
   it('returns 404 when item not found', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] })
-      .mockResolvedValueOnce({ rows: [] });
+    mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] });
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] });
 
     const res = await request(app)
       .post(`/v1/selection-lists/${TEST_LIST_ID}/items/front_sli_nonexistent000000000/archive`)

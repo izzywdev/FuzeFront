@@ -53,6 +53,13 @@ export interface AppRecord {
   mode: AppMode
   builtin: boolean
   organizationId: string | null
+  /**
+   * Creator/publisher of record (users.id) — INFORMATIONAL, immutable once set,
+   * never a source of authority (that is Permit + org role). Internal field:
+   * routes strip it from the wire shape and only expose `createdBy`/`creator`
+   * when fuzefront.apps.creator-ownership is ON.
+   */
+  createdByUserId?: string | null
   manifest: AppManifest
   isHealthy: boolean | null
   lastSeenAt: string | null
@@ -80,6 +87,7 @@ function rowToApp(row: any): AppRecord {
     mode: row.mode,
     builtin: Boolean(row.builtin),
     organizationId: row.organization_id ?? null,
+    createdByUserId: row.created_by_user_id ?? null,
     manifest,
     isHealthy: row.is_healthy === null || row.is_healthy === undefined ? null : Boolean(row.is_healthy),
     lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null,
@@ -191,6 +199,37 @@ export interface ListResult {
 export interface PortalCatalogListContext {
   mode: 'off' | 'root' | 'scoped' | 'denied'
   portalId: string | null
+}
+
+export interface PublicationRow {
+  submittedAt: string | null
+  isApproved: boolean
+  approvedAt: string | null
+  approvedBy: string | null
+  metadata: Record<string, any>
+}
+
+function readJson(v: unknown): Record<string, any> {
+  if (!v) return {}
+  if (typeof v === 'string') {
+    try {
+      return JSON.parse(v) ?? {}
+    } catch {
+      return {}
+    }
+  }
+  return v as Record<string, any>
+}
+
+function rowToPublication(row: any): PublicationRow {
+  const iso = (d: unknown) => (d ? new Date(d as any).toISOString() : null)
+  return {
+    submittedAt: iso(row.marketplace_submitted_at),
+    isApproved: Boolean(row.is_marketplace_approved),
+    approvedAt: iso(row.marketplace_approved_at),
+    approvedBy: row.approved_by ?? null,
+    metadata: readJson(row.marketplace_metadata),
+  }
 }
 
 export class AppRegistryService {
@@ -349,7 +388,8 @@ export class AppRegistryService {
   async register(
     manifest: AppManifest,
     organizationId: string | null,
-    heartbeatToken: string
+    heartbeatToken: string,
+    opts?: { createdByUserId?: string | null }
   ): Promise<AppRecord> {
     const now = new Date()
     const integrationUrl =
@@ -370,7 +410,13 @@ export class AppRegistryService {
       mode: manifest.mode,
       builtin: manifest.builtin ?? false,
       organization_id: organizationId,
-      visibility: (manifest.visibility ?? 'private') as Visibility,
+      // Only present when creator-ownership is ON and a human registered it.
+      ...(opts?.createdByUserId ? { created_by_user_id: opts.createdByUserId } : {}),
+      scope_level:
+        manifest.scopeLevel ??
+        (manifest.requiresOrgContext || manifest.visibility === 'organization'
+          ? 'organization'
+          : 'both'),
       is_active: false,
       heartbeat_token: heartbeatToken,
       created_at: now,
@@ -406,6 +452,11 @@ export class AppRegistryService {
         manifest: JSON.stringify(manifest),
         mode: manifest.mode,
         visibility: (manifest.visibility ?? existing.manifest.visibility ?? 'private') as Visibility,
+        ...(manifest.scopeLevel
+          ? { scope_level: manifest.scopeLevel }
+          : manifest.requiresOrgContext || manifest.visibility === 'organization'
+          ? { scope_level: 'organization' }
+          : {}),
         updated_at: new Date(),
         // Re-derive placement: a manifest update may move the app in the menu.
         ...navColumns(manifest),
@@ -413,6 +464,92 @@ export class AppRegistryService {
     const updated = await this.findBySlug(existing.slug)
     if (!updated) throw new Error('updateManifest: row not found after update')
     return updated
+  }
+
+  /**
+   * Records the creator of an app that has none yet. IMMUTABLE once set: the
+   * `created_by_user_id IS NULL` guard makes this a no-op on an app that already
+   * has a creator, and no other write path touches the column. Returns whether
+   * the creator was written.
+   */
+  async setCreatorIfUnset(slug: string, userId: string): Promise<boolean> {
+    const n = await db('apps')
+      .where('slug', slug)
+      .whereNull('created_by_user_id')
+      .update({ created_by_user_id: userId })
+    return Number(n) > 0
+  }
+
+  // ── marketplace publication (columns from migration 002) ────────────────────
+  async getPublication(slug: string): Promise<PublicationRow | null> {
+    const row = await db('apps').where('slug', slug).whereNotNull('manifest').first()
+    return row ? rowToPublication(row) : null
+  }
+
+  /** Marks the app as submitted to the marketplace (pending review). */
+  async submitPublication(
+    slug: string,
+    publication: Record<string, unknown>
+  ): Promise<PublicationRow> {
+    const row = await db('apps').where('slug', slug).first()
+    const meta = readJson(row?.marketplace_metadata)
+    await db('apps')
+      .where('slug', slug)
+      .update({
+        marketplace_submitted_at: new Date(),
+        is_marketplace_approved: false,
+        marketplace_metadata: JSON.stringify({ ...meta, publication }),
+        updated_at: new Date(),
+      })
+    return (await this.getPublication(slug)) as PublicationRow
+  }
+
+  /** Approves: visibility -> marketplace (column AND manifest, which canRead reads). */
+  async approvePublication(
+    slug: string,
+    approvedBy: string | null,
+    publicationPatch: Record<string, unknown>
+  ): Promise<PublicationRow> {
+    const row = await db('apps').where('slug', slug).first()
+    const meta = readJson(row?.marketplace_metadata)
+    const manifest = readJson(row?.manifest)
+    const now = new Date()
+    await db('apps')
+      .where('slug', slug)
+      .update({
+        visibility: 'marketplace',
+        manifest: JSON.stringify({ ...manifest, visibility: 'marketplace' }),
+        is_marketplace_approved: true,
+        marketplace_approved_at: now,
+        approved_by: approvedBy,
+        marketplace_metadata: JSON.stringify({
+          ...meta,
+          publication: { ...(meta.publication ?? {}), ...publicationPatch },
+        }),
+        updated_at: now,
+      })
+    return (await this.getPublication(slug)) as PublicationRow
+  }
+
+  /** Rejects: clears the submission and records the reason in metadata. */
+  async rejectPublication(
+    slug: string,
+    publicationPatch: Record<string, unknown>
+  ): Promise<PublicationRow> {
+    const row = await db('apps').where('slug', slug).first()
+    const meta = readJson(row?.marketplace_metadata)
+    await db('apps')
+      .where('slug', slug)
+      .update({
+        marketplace_submitted_at: null,
+        is_marketplace_approved: false,
+        marketplace_metadata: JSON.stringify({
+          ...meta,
+          publication: { ...(meta.publication ?? {}), ...publicationPatch },
+        }),
+        updated_at: new Date(),
+      })
+    return (await this.getPublication(slug)) as PublicationRow
   }
 
   async delete(slug: string): Promise<void> {
@@ -527,6 +664,11 @@ export class AppRegistryService {
         // any other, owned by the platform root org rather than org-less.
         organization_id: ROOT_ORG_ID,
         visibility: (manifest.visibility ?? 'public') as Visibility,
+        scope_level:
+          manifest.scopeLevel ??
+          (manifest.requiresOrgContext || manifest.visibility === 'organization'
+            ? 'organization'
+            : 'both'),
         is_active: status === 'activated',
         heartbeat_token: heartbeatToken,
         created_at: now,

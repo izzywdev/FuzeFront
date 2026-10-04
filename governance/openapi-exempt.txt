@@ -108,6 +108,7 @@ DELETE /api/me  # backend/security: self-service account deactivation on the leg
 GET /api/v1/security/admin/reset-password  # N/A — this is POST not GET; gate scanner artefact
 POST /api/v1/security/admin/reset-password  # backend: admin password reset; internal admin route
 POST /internal/provision  # backend/security: Authentik lifecycle hook; internal, not REST API
+POST /internal/set-roles  # backend: S2S role grant (INTERNAL_PROVISION_SECRET-gated, cluster-only); provisions the post-prod master-admin synthetic, not a consumer REST API
 POST /internal/deprovision  # backend/security: Authentik lifecycle hook; internal, not REST API
 POST /internal/user-sync  # backend/security: Authentik lifecycle hook; internal, not REST API
 POST /internal/user-delete  # backend/security: Authentik lifecycle hook; internal, not REST API

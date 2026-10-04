@@ -58,7 +58,19 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, BlueOak-1.0.0, MIT-0
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, BlueOak-1.0.0, MIT-0, CC0-1.0
+          #
+          # CC0-1.0 is a public-domain dedication — no conditions at all, strictly
+          # PERMISSIVE (if anything, less restrictive than MIT's attribution
+          # notice requirement). Surfaced as `lodash.camelcase@4.3.0`'s declared
+          # license ("CC0-1.0 AND MIT", a conjunctive SPDX expression requiring
+          # BOTH terms be satisfiable — MIT was already allowed, CC0-1.0 was not),
+          # pulled in transitively via `@opentelemetry/exporter-trace-otlp-grpc`
+          # -> `@grpc/proto-loader`, added for @fuzefront/telemetry's gRPC OTLP
+          # exporter. Added to allow-licenses rather than exempted by name,
+          # following the BlueOak-1.0.0/MIT-0 precedent above: a permissive
+          # license that will recur (proto-loader/protobuf tooling commonly
+          # dual-licenses this way) belongs on the list.
           #
           # MIT-0 ("MIT No Attribution") is a distinct SPDX identifier from MIT,
           # so allowing MIT does not allow it. It is MIT with the attribution
@@ -280,7 +292,7 @@ jobs:
       # the real (already-visible) build failure. Guard on the same
       # `hashFiles` check so a missing SARIF is a clean skip here too.
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
@@ -383,7 +395,7 @@ jobs:
           args: --severity-threshold=high
 
       - name: Upload Snyk results to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always() && steps.snyk-token.outputs.present == 'true'
         with:
           sarif_file: snyk.sarif

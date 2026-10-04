@@ -31,6 +31,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { getLog } from '../lib/logger';
 
 // Augment Express Request with selection-list-service identity claims.
 declare global {
@@ -61,12 +62,14 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (!token) {
+    getLog(req).debug('auth: no bearer token — 401');
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Access denied. No token provided.' });
     return;
   }
 
   const secret = process.env.JWT_SECRET;
   if (!secret) {
+    getLog(req).error('auth misconfiguration: JWT_SECRET not set — 500');
     res.status(500).json({ code: 'UNAUTHENTICATED', message: 'Server misconfiguration: JWT_SECRET not set.' });
     return;
   }
@@ -78,6 +81,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
       // A signature-valid token with no subject is not an identity. Reject it
       // rather than letting req.userId stay undefined and having each route
       // rediscover that on its own.
+      getLog(req).warn('auth: signature-valid token has no subject — 401');
       res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Invalid token.' });
       return;
     }
@@ -87,8 +91,13 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     // genuinely carries no org — the route-level guards answer 401 for that.
     req.orgId = decoded.orgId ?? decoded.organization_id ?? decoded.organizationId;
     req.appId = decoded.appId;
+    // Bind identity once so every later line on this request carries it.
+    req.log = getLog(req).child({ userId: req.userId, orgId: req.orgId });
     next();
-  } catch {
+  } catch (err) {
+    // Log the failure CLASS only (TokenExpiredError / JsonWebTokenError / ...);
+    // never the token or the verifier's message, which can echo token content.
+    getLog(req).info({ reason: (err as Error)?.name }, 'auth: token verification failed — 401');
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Invalid token.' });
   }
 }

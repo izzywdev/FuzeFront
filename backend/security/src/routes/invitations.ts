@@ -60,7 +60,7 @@ router.get('/:token', async (req: any, res) => {
     )
     res.json({ invitation: invDto, organization: orgDto })
   } catch (error: any) {
-    withReqId((req as any).requestId).error(
+    withReqId((req as any).requestId, req).error(
       { err: error },
       'failed to resolve invitation'
     )
@@ -151,7 +151,7 @@ router.post('/:token/accept', async (req: any, res) => {
         invitation.role as 'owner' | 'admin' | 'member' | 'viewer' | 'developer'
       )
     } catch (permitErr) {
-      withReqId((req as any).requestId).error(
+      withReqId((req as any).requestId, req).error(
         {
           err: permitErr,
           userId: req.user.id,
@@ -169,7 +169,7 @@ router.post('/:token/accept', async (req: any, res) => {
       { organizationId: 'organization' }
     ))
   } catch (error: any) {
-    withReqId((req as any).requestId).error(
+    withReqId((req as any).requestId, req).error(
       { err: error },
       'failed to accept invitation'
     )

@@ -57,7 +57,14 @@ beforeEach(() => {
   jest.clearAllMocks()
   setIdentityProvider(identityProvider as any)
   setAuthorizationProvider(authorizationProvider as any)
-  identityProvider.getUserInfo.mockResolvedValue({ user: { id: 'user-1' } })
+  // Attribute writes are MACHINE-ONLY (operator identity holding authz:admin):
+  // 'valid-token' is therefore an operator machine token, never a session token.
+  identityProvider.getUserInfo.mockRejectedValue(new Error('not a session token'))
+  mockIntrospect.mockImplementation(async (token: string) =>
+    token === 'valid-token'
+      ? { active: true, client_id: 'authz-operator', scope: `s2s:platform ${AUTHZ_ADMIN_SCOPE}` }
+      : { active: false }
+  )
 })
 
 afterEach(() => {
@@ -68,7 +75,7 @@ afterEach(() => {
 const PATH = '/api/v1/security/authz/subjects/tenant/org_acme/attributes'
 
 describe('PATCH /api/v1/security/authz/subjects/:subjectType/:subjectKey/attributes', () => {
-  it('returns 200 and echoes the merged attributes for an authorized human caller', async () => {
+  it('returns 200 and echoes the merged attributes for an authorized operator machine caller', async () => {
     authorizationProvider.setAttributes.mockResolvedValue({
       subject: { type: 'tenant', key: 'org_acme' },
       attributes: { plan_tier: 'pro', seat_limit: 25 },
@@ -219,6 +226,34 @@ describe('PATCH /api/v1/security/authz/subjects/:subjectType/:subjectKey/attribu
 
     expect(response.type).toMatch(/json/)
     expect(response.body.code).toBe('PROVIDER_UNAVAILABLE')
+  })
+})
+
+describe('PATCH .../attributes — human (session) callers are always denied', () => {
+  it('a human session caller is FORBIDDEN, and the provider is never reached', async () => {
+    identityProvider.getUserInfo.mockResolvedValue({ user: { id: 'user-1' } })
+
+    const response = await request(buildApp())
+      .patch(PATH)
+      .set('Authorization', 'Bearer human-session-token')
+      .send({ attributes: { plan_tier: 'enterprise', seat_limit: 100000 } })
+      .expect(403)
+
+    expect(response.body.code).toBe('FORBIDDEN')
+    expect(authorizationProvider.setAttributes).not.toHaveBeenCalled()
+  })
+
+  it('even a human who is a tenant admin is FORBIDDEN (no tenant role confers entitlement writes)', async () => {
+    identityProvider.getUserInfo.mockResolvedValue({ user: { id: 'tenant-admin-1' } })
+    authorizationProvider.check.mockResolvedValue(true)
+
+    await request(buildApp())
+      .patch(PATH)
+      .set('Authorization', 'Bearer human-session-token')
+      .send({ attributes: { plan_tier: 'enterprise' } })
+      .expect(403)
+
+    expect(authorizationProvider.setAttributes).not.toHaveBeenCalled()
   })
 })
 
