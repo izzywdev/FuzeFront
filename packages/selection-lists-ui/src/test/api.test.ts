@@ -16,7 +16,9 @@ beforeEach(() => {
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('same-origin base + request shaping', () => {
   it('never uses an absolute host', async () => {
@@ -30,6 +32,24 @@ describe('same-origin base + request shaping', () => {
     fetchMock.mockResolvedValue(json({ data: [] }))
     await api.listSelectionLists({ cursor: 'c1', status: 'archived' })
     expect(lastCall()[0]).toBe('/api/v1/selection-lists?cursor=c1&status=archived')
+  })
+
+  it('sends the contract `key` filter (exact-match lookup by list key)', async () => {
+    fetchMock.mockResolvedValue(json({ items: [], page: { hasMore: false } }))
+    await api.listSelectionLists({ key: 'sales-regions' })
+    expect(lastCall()[0]).toBe('/api/v1/selection-lists?key=sales-regions')
+  })
+
+  it('combines key with cursor/status and URL-encodes it', async () => {
+    fetchMock.mockResolvedValue(json({ items: [] }))
+    await api.listSelectionLists({ key: 'a b', status: 'all' })
+    expect(lastCall()[0]).toBe('/api/v1/selection-lists?status=all&key=a+b')
+  })
+
+  it('omits an empty key', async () => {
+    fetchMock.mockResolvedValue(json({ items: [] }))
+    await api.listSelectionLists({ key: '' })
+    expect(lastCall()[0]).toBe('/api/v1/selection-lists')
   })
 
   it('omits empty/null cursor', async () => {
@@ -167,5 +187,78 @@ describe('paged-envelope helpers', () => {
     expect(api.unwrapCursor({ page: { nextCursor: 'b' } })).toBe('b')
     expect(api.unwrapCursor({ page: { hasMore: false } })).toBeNull()
     expect(api.unwrapCursor({})).toBeNull()
+  })
+})
+
+describe('resolveItems — POST /v1/resolve (contract: ids in, results map + missing out)', () => {
+  const RESOLVED = (label: string, status: 'active' | 'archived' = 'active') => ({
+    label,
+    locale: 'en',
+    is_machine: false,
+    status,
+  })
+  const bodyOf = (callIndex: number) =>
+    JSON.parse((fetchMock.mock.calls[callIndex][1] as RequestInit).body as string) as { ids: string[] }
+
+  it('normalises the contract `results` map to resolved[] carrying each id, plus missing', async () => {
+    fetchMock.mockResolvedValue(
+      json({ results: { sli_a: RESOLVED('Mango'), sli_old: RESOLVED('Old', 'archived') }, missing: ['sli_gone'] }),
+    )
+    const res = await api.resolveItems(['sli_a', 'sli_old', 'sli_gone'])
+    expect(res.resolved).toEqual([
+      { id: 'sli_a', ...RESOLVED('Mango') },
+      { id: 'sli_old', ...RESOLVED('Old', 'archived') },
+    ])
+    expect(res.missing).toEqual(['sli_gone'])
+  })
+
+  it('still accepts a legacy resolved[] body', async () => {
+    fetchMock.mockResolvedValue(json({ resolved: [{ id: 'sli_a', ...RESOLVED('Mango') }], missing: [] }))
+    const res = await api.resolveItems(['sli_a'])
+    expect(res.resolved).toEqual([{ id: 'sli_a', ...RESOLVED('Mango') }])
+  })
+
+  it('sends a whole batch in ONE call, de-duplicated (ids are uniqueItems)', async () => {
+    fetchMock.mockResolvedValue(json({ results: {}, missing: [] }))
+    await api.resolveItems(['a', 'b', 'a', 'c'])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(bodyOf(0)).toEqual({ ids: ['a', 'b', 'c'] })
+  })
+
+  it('makes no call for an empty batch (the contract requires >= 1 id)', async () => {
+    await expect(api.resolveItems([])).resolves.toEqual({ resolved: [], missing: [] })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('exactly the contract cap (500) is still ONE call', async () => {
+    fetchMock.mockResolvedValue(json({ results: {}, missing: [] }))
+    const ids = Array.from({ length: api.RESOLVE_MAX_IDS }, (_, i) => `sli_${i}`)
+    await api.resolveItems(ids)
+    expect(api.RESOLVE_MAX_IDS).toBe(500)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(bodyOf(0).ids).toHaveLength(500)
+  })
+
+  it('splits only a batch over the 500-id cap, and merges the answers', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json({ results: { sli_0: RESOLVED('Zero') }, missing: [] }))
+      .mockResolvedValueOnce(json({ results: {}, missing: ['sli_500'] }))
+    const ids = Array.from({ length: 501 }, (_, i) => `sli_${i}`)
+    const res = await api.resolveItems(ids)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(bodyOf(0).ids).toHaveLength(500)
+    expect(bodyOf(1).ids).toEqual(['sli_500'])
+    expect(res.resolved).toEqual([{ id: 'sli_0', ...RESOLVED('Zero') }])
+    expect(res.missing).toEqual(['sli_500'])
+  })
+
+  it('tolerates a body with neither results nor missing', async () => {
+    fetchMock.mockResolvedValue(json({}))
+    await expect(api.resolveItems(['a'])).resolves.toEqual({ resolved: [], missing: [] })
+  })
+
+  it('surfaces a 401 (no token / no org claim) as an error carrying the status', async () => {
+    fetchMock.mockResolvedValue(json({ code: 'UNAUTHORIZED', message: 'no token' }, 401, 'Unauthorized'))
+    await expect(api.resolveItems(['a'])).rejects.toMatchObject({ status: 401, code: 'UNAUTHORIZED' })
   })
 })

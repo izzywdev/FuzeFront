@@ -12,6 +12,7 @@ import SelectionListPickerHarnessDefault, {
   type SelectionListPickerProps,
 } from '../SelectionListPickerHarness'
 import * as api from '../api'
+import type { ResolvedItem } from '../types'
 import { apiError, makeItem, makeList, renderFlowSettled, NEVER } from './helpers'
 
 vi.mock('../api', async () => {
@@ -47,7 +48,7 @@ beforeEach(() => {
 type PickerOpts = {
   listKey?: string
   mode?: 'single' | 'multi'
-  initialValue?: string
+  initialValue?: string | string[]
   max?: number
   onChange?: (value: never) => void
 }
@@ -84,7 +85,7 @@ describe('frame 12 — single select', () => {
 
   it('looks the list up by KEY, then loads items by the list ID the contract requires', async () => {
     await renderPicker()
-    expect(m.listSelectionLists).toHaveBeenCalledWith({})
+    expect(m.listSelectionLists).toHaveBeenCalledWith({ key: 'fruit' })
     expect(m.listItems).toHaveBeenCalledWith('front_sl_fruit', {})
   })
 
@@ -255,21 +256,51 @@ describe('frame 12 — single select', () => {
       for (const call of m.listItems.mock.calls) expect(call[0]).not.toBe('fruit')
     })
 
-    it('follows page.nextCursor through the list lookup until the key is found', async () => {
-      m.listSelectionLists
-        .mockResolvedValueOnce({ items: [OTHER_LIST], page: { hasMore: true, nextCursor: 'c2' } })
-        .mockResolvedValueOnce({ items: [FRUIT_LIST], page: { hasMore: false } })
+    it('looks the list up with the contract `key` filter in ONE call — no page walking', async () => {
+      m.listSelectionLists.mockResolvedValue({ items: [FRUIT_LIST], page: { hasMore: false } })
       await renderPicker()
-      expect(m.listSelectionLists).toHaveBeenNthCalledWith(1, {})
-      expect(m.listSelectionLists).toHaveBeenNthCalledWith(2, { cursor: 'c2' })
+      expect(m.listSelectionLists).toHaveBeenCalledTimes(1)
+      expect(m.listSelectionLists).toHaveBeenCalledWith({ key: 'fruit' })
       expect(m.listItems).toHaveBeenCalledWith('front_sl_fruit', {})
     })
 
-    it('gives up (not-found) rather than loop forever on a never-ending lookup', async () => {
+    it('never follows the lookup cursor, even if the service sent one (the filter returns at most one row)', async () => {
       m.listSelectionLists.mockResolvedValue({ items: [OTHER_LIST], page: { hasMore: true, nextCursor: 'again' } })
       render(pickerEl({}))
       await waitFor(() => expect(q('[data-state="not-found"]')).not.toBeNull())
-      expect(m.listSelectionLists.mock.calls.length).toBeLessThanOrEqual(20)
+      expect(m.listSelectionLists).toHaveBeenCalledTimes(1)
+    })
+
+    it('an empty filtered page means the list is not found (or not visible to the caller)', async () => {
+      m.listSelectionLists.mockResolvedValue({ items: [], page: { hasMore: false } })
+      render(pickerEl({}))
+      await waitFor(() => expect(q('[data-state="not-found"]')).not.toBeNull())
+      expect(q('[data-error="NOT_FOUND"]')).toHaveTextContent('List "fruit" not found')
+      expect(m.listItems).not.toHaveBeenCalled()
+    })
+
+    it('only trusts a row whose key matches exactly (a service ignoring the filter cannot mis-bind the picker)', async () => {
+      m.listSelectionLists.mockResolvedValue({ items: [OTHER_LIST], page: { hasMore: false } })
+      render(pickerEl({}))
+      await waitFor(() => expect(q('[data-state="not-found"]')).not.toBeNull())
+      expect(m.listItems).not.toHaveBeenCalled()
+    })
+
+    it('a key the contract rejects (400) reads as not-found, not as a load failure', async () => {
+      m.listSelectionLists.mockRejectedValue(apiError(400, 'VALIDATION_ERROR', 'bad key'))
+      render(pickerEl({ listKey: 'Not A Key' }))
+      await waitFor(() => expect(q('[data-state="not-found"]')).not.toBeNull())
+      expect(q('[data-state="error"]')).toBeNull()
+    })
+
+    it('a failing lookup (500) shows the error state with Retry, which re-runs the lookup', async () => {
+      m.listSelectionLists.mockRejectedValueOnce(apiError(500, 'INTERNAL', 'down'))
+      const user = userEvent.setup()
+      render(pickerEl({}))
+      await waitFor(() => expect(q('[data-state="error"]')).not.toBeNull())
+      await user.click(screen.getByRole('button', { name: 'Retry' }))
+      await waitFor(() => expect(q('[data-combo-control]')).not.toBeNull())
+      expect(m.listSelectionLists).toHaveBeenCalledTimes(2)
     })
 
     it('follows the items cursor envelope so values beyond page one are offered and kept', async () => {
@@ -650,13 +681,62 @@ describe('onChange — the host receives the selection (item IDs, never labels/c
       expect(persisted()).toBe('sli_a')
     })
 
-    it('a PURGED stored value offers no control, so nothing can be emitted and the id is kept', async () => {
+    it('seeding a PURGED stored value emits nothing and keeps the id until the user picks', async () => {
       const onChange = vi.fn()
       m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
       await renderPicker({ initialValue: 'sli_gone', onChange })
       await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
-      expect(q('[data-combo-control]')).toBeNull()
       expect(onChange).not.toHaveBeenCalled()
+      expect(persisted()).toBe('sli_gone')
+    })
+
+    it('a PURGED stored value can be replaced: pick emits the new id, the notice clears, frame 12 returns', async () => {
+      const onChange = vi.fn()
+      m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
+      const { user } = await renderPicker({ initialValue: 'sli_gone', onChange })
+      await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
+
+      await user.click(control())
+      expect(optionLabels()).toEqual(['Zebra', 'Apple', 'Mango']) // active items only
+      await pick(user, 'Apple')
+
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenLastCalledWith('sli_b')
+      expect(persisted()).toBe('sli_b') // the purged id is gone from the form
+      expect(q('[data-state="missing"]')).toBeNull()
+      expect(q('[data-missing="true"]')).toBeNull()
+      expect(q('[data-error="missing"]')).toBeNull()
+      expect(q('[data-frame="12-picker-single"]')).toBeInTheDocument()
+      expect(q('[data-selected-label]')).toHaveTextContent('Apple')
+    })
+
+    it('a purged value is not "selected" in the menu, and the menu says nothing about archived items', async () => {
+      m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
+      const { user } = await renderPicker({ initialValue: 'sli_gone' })
+      await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
+      await user.click(control())
+      for (const o of screen.getAllByRole('option')) expect(o).toHaveAttribute('aria-selected', 'false')
+      expect(q('[data-note="archived-not-offerable"]')).toBeNull()
+    })
+
+    it('the purged-value control is a labelled combobox button (keyboard reachable, expanded state exposed)', async () => {
+      m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
+      const { user } = await renderPicker({ initialValue: 'sli_gone' })
+      await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
+      expect(control()).toHaveAttribute('aria-haspopup', 'listbox')
+      expect(control()).toHaveAttribute('aria-expanded', 'false')
+      expect(control()).toHaveTextContent('Unknown value')
+      control().focus()
+      await user.keyboard('{Enter}')
+      expect(control()).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('a purged stored value in an EMPTY list keeps the id and cannot be replaced (no options to pick)', async () => {
+      m.listItems.mockResolvedValue({ data: [] })
+      m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
+      await renderPicker({ initialValue: 'sli_gone' })
+      await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
+      expect(control()).toBeDisabled()
       expect(persisted()).toBe('sli_gone')
     })
 
@@ -824,28 +904,262 @@ describe('onChange — the host receives the selection (item IDs, never labels/c
         expect(persisted()).toBe('sli_old')
       })
 
-      it('live toggles on top of an archived value emit what the form slot holds; emptying restores the archived id', async () => {
+      it('a live pick on top of an archived value KEEPS it (never silently dropped); its chip x removes it', async () => {
         const onChange = vi.fn()
         archivedOld()
-        const { user } = await multi({ initialValue: 'sli_old', onChange })
+        const { user } = await multi({ initialValue: ['sli_old'], onChange })
         await waitFor(() => expect(q('[data-frame="14-picker-archived"]')).not.toBeNull())
         await user.click(control())
         await pick(user, 'Mango')
+        expect(lastIds(onChange)).toEqual(['sli_a', 'sli_old']) // sort_order; archived is still stored
+        expect(persisted()).toBe('sli_a,sli_old')
+        expect(q('[data-chip="sli_old"]')).toHaveAttribute('data-archived', 'true')
+
+        await user.click(screen.getByRole('button', { name: 'Remove Old' }))
         expect(lastIds(onChange)).toEqual(['sli_a'])
         expect(persisted()).toBe('sli_a')
-        await pick(user, 'Mango') // nothing live chosen any more -> the stored (archived) id is not dropped
+        expect(q('[data-frame="13-picker-multi"]')).toBeInTheDocument() // no stored value left
+        expect(q('[data-panel="resolve-matrix"]')).toBeNull()
+      })
+
+      it('a purged stored value is replaced by the next live pick: emits the swap, clears the notice, frame 13 returns', async () => {
+        const onChange = vi.fn()
+        m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
+        const { user } = await multi({ initialValue: ['sli_gone'], onChange })
+        await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
+        expect(q('[data-combo-control]')).not.toBeNull() // the picker stays usable
+        expect(onChange).not.toHaveBeenCalled()
+        expect(persisted()).toBe('sli_gone')
+
+        await user.click(control())
+        await pick(user, 'Apple')
+        expect(onChange).toHaveBeenCalledTimes(1)
+        expect(lastIds(onChange)).toEqual(['sli_b'])
+        expect(persisted()).toBe('sli_b')
+        expect(q('[data-state="missing"]')).toBeNull()
+        expect(q('[data-error="missing"]')).toBeNull()
+        expect(q('[data-missing="true"]')).toBeNull()
+        expect(q('[data-frame="13-picker-multi"]')).toBeInTheDocument()
+      })
+
+      it('a purged chip can be removed outright (x) — emits the array without it and clears the notice', async () => {
+        const onChange = vi.fn()
+        m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
+        const { user } = await multi({ initialValue: ['sli_gone'], onChange })
+        await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
+        await user.click(screen.getByRole('button', { name: 'Remove unknown value' }))
+        expect(onChange).toHaveBeenLastCalledWith([])
+        expect(persisted()).toBe('')
+        expect(q('[data-error="missing"]')).toBeNull()
+      })
+    })
+
+    describe('array initialValue (multi seeding)', () => {
+      const LIVE_LABELS: Record<string, string> = { sli_a: 'Mango', sli_b: 'Apple', sli_c: 'Zebra' }
+      /** Resolve like the service: active for the live ids, archived for sli_old, missing for sli_gone*. */
+      const resolveMixed = () =>
+        m.resolveItems.mockImplementation(async ids => ({
+          resolved: ids.flatMap((id): ResolvedItem[] =>
+            id === 'sli_old'
+              ? [{ id, label: 'Old', locale: 'en', is_machine: false, status: 'archived' }]
+              : LIVE_LABELS[id]
+                ? [{ id, label: LIVE_LABELS[id], locale: 'en', is_machine: false, status: 'active' }]
+                : [],
+          ),
+          missing: ids.filter(id => id.startsWith('sli_gone')),
+        }))
+
+      it('resolves ALL seeded ids in ONE /resolve call and never fires onChange', async () => {
+        resolveMixed()
+        const onChange = vi.fn()
+        await multi({ initialValue: ['sli_a', 'sli_old', 'sli_gone', 'sli_c'], onChange })
+        await waitFor(() => expect(persisted()).not.toBe(''))
+        expect(m.resolveItems).toHaveBeenCalledTimes(1)
+        expect(m.resolveItems).toHaveBeenCalledWith(['sli_a', 'sli_old', 'sli_gone', 'sli_c'])
+        expect(onChange).not.toHaveBeenCalled()
+      })
+
+      it('seeds active, archived and purged ids; persists them in sort_order (unorderable purged id last)', async () => {
+        resolveMixed()
+        await multi({ initialValue: ['sli_gone', 'sli_old', 'sli_a', 'sli_c'] })
+        await waitFor(() => expect(q('[data-frame="14-picker-archived"]')).not.toBeNull())
+        // Zebra(1) Mango(3) Old(4, archived) then the purged id with no order
+        expect(persisted()).toBe('sli_c,sli_a,sli_old,sli_gone')
+        expect(qa('[data-chip]').map(c => c.getAttribute('data-chip'))).toEqual(['sli_c', 'sli_a', 'sli_old', 'sli_gone'])
+        expect(q('[data-chip="sli_c"]')).toHaveTextContent('Zebra')
+        expect(q('[data-chip="sli_old"]')).toHaveAttribute('data-archived', 'true')
+        expect(q('[data-chip="sli_old"]')).toHaveTextContent('Archived')
+        expect(q('[data-chip="sli_gone"]')).toHaveAttribute('data-missing', 'true')
+        expect(q('[data-chip="sli_gone"]')).toHaveTextContent('Unknown value')
+        expect(q('[data-error="missing"]')).toBeInTheDocument()
+        expect(q('[data-panel="resolve-matrix"][data-resolve-for="sli_old"]')).toBeInTheDocument()
+      })
+
+      it('all-active seed stays frame 13 and is ordered by sort_order, not seed order', async () => {
+        resolveMixed()
+        await multi({ initialValue: ['sli_a', 'sli_c'] })
+        await waitFor(() => expect(persisted()).toBe('sli_c,sli_a'))
+        expect(q('[data-frame="13-picker-multi"]')).toBeInTheDocument()
+        expect(q('[data-error="missing"]')).toBeNull()
+      })
+
+      it('de-duplicates the seed (the request schema is uniqueItems)', async () => {
+        resolveMixed()
+        await multi({ initialValue: ['sli_a', 'sli_a'] })
+        await waitFor(() => expect(persisted()).toBe('sli_a'))
+        expect(m.resolveItems).toHaveBeenCalledTimes(1)
+        expect(m.resolveItems).toHaveBeenCalledWith(['sli_a'])
+      })
+
+      it('skips /resolve for an empty array and starts empty', async () => {
+        await multi({ initialValue: [] })
+        expect(m.resolveItems).not.toHaveBeenCalled()
+        expect(persisted()).toBe('')
+        expect(q('[data-state="empty-selection"]')).toBeInTheDocument()
+      })
+
+      it('an equal array re-created by the host on re-render does not re-seed or re-resolve', async () => {
+        resolveMixed()
+        const { rerender } = await multi({ initialValue: ['sli_a'] })
+        await waitFor(() => expect(persisted()).toBe('sli_a'))
+        rerender(pickerEl({ mode: 'multi', initialValue: ['sli_a'] }))
+        rerender(pickerEl({ mode: 'multi', initialValue: ['sli_a'] }))
+        expect(m.resolveItems).toHaveBeenCalledTimes(1)
+      })
+
+      it('a DIFFERENT array re-seeds (a seed, not a binding) without firing onChange', async () => {
+        resolveMixed()
+        const onChange = vi.fn()
+        const { rerender } = await multi({ initialValue: ['sli_a'], onChange })
+        await waitFor(() => expect(persisted()).toBe('sli_a'))
+        rerender(pickerEl({ mode: 'multi', initialValue: ['sli_b', 'sli_c'], onChange }))
+        await waitFor(() => expect(persisted()).toBe('sli_c,sli_b'))
+        expect(onChange).not.toHaveBeenCalled()
+      })
+
+      it('a late /resolve never overwrites a pick the user already made', async () => {
+        const onChange = vi.fn()
+        type R = Awaited<ReturnType<typeof api.resolveItems>>
+        let release!: (v: R) => void
+        m.resolveItems.mockReturnValue(new Promise<R>(r => { release = r }))
+        const { user } = await multi({ initialValue: ['sli_a', 'sli_old'], onChange })
+        await user.click(control())
+        await pick(user, 'Zebra')
+        expect(persisted()).toBe('sli_c')
+
+        release({
+          resolved: [
+            { id: 'sli_a', label: 'Mango', locale: 'en', is_machine: false, status: 'active' },
+            { id: 'sli_old', label: 'Old', locale: 'en', is_machine: false, status: 'archived' },
+          ],
+          missing: [],
+        })
+        await new Promise(r => setTimeout(r, 0))
+        expect(persisted()).toBe('sli_c') // host and picker still agree
+        expect(q('[data-frame="14-picker-archived"]')).toBeNull()
+        expect(onChange).toHaveBeenCalledTimes(1)
+        expect(lastIds(onChange)).toEqual(['sli_c'])
+      })
+
+      it('a late FAILED /resolve does not overwrite a user pick either', async () => {
+        let fail!: (e: Error) => void
+        m.resolveItems.mockReturnValue(new Promise((_, rej) => { fail = rej }))
+        const { user } = await multi({ initialValue: ['sli_a', 'sli_b'] })
+        await user.click(control())
+        await pick(user, 'Zebra')
+        fail(apiError(500, 'INTERNAL', 'down'))
+        await new Promise(r => setTimeout(r, 0))
+        expect(persisted()).toBe('sli_c')
+      })
+
+      it('fails open: if /resolve errors, the seeded ids that are live options stay selected', async () => {
+        m.resolveItems.mockRejectedValue(apiError(500, 'INTERNAL', 'resolve down'))
+        const onChange = vi.fn()
+        await multi({ initialValue: ['sli_a', 'sli_b'], onChange })
+        await waitFor(() => expect(persisted()).toBe('sli_b,sli_a'))
+        expect(q('[data-frame="13-picker-multi"]')).toBeInTheDocument()
+        expect(onChange).not.toHaveBeenCalled()
+      })
+
+      it('toggling a seeded active id off emits the reduced set (including stored values still held)', async () => {
+        resolveMixed()
+        const onChange = vi.fn()
+        const { user } = await multi({ initialValue: ['sli_a', 'sli_old'], onChange })
+        await waitFor(() => expect(persisted()).toBe('sli_a,sli_old'))
+        await user.click(screen.getByRole('button', { name: 'Remove Mango' }))
         expect(lastIds(onChange)).toEqual(['sli_old'])
         expect(persisted()).toBe('sli_old')
       })
 
-      it('a purged stored value renders no control, so nothing is emitted and the id stays', async () => {
+      it('picking an active item swaps out only ONE purged id; the notice stays while another remains', async () => {
+        resolveMixed()
         const onChange = vi.fn()
-        m.resolveItems.mockResolvedValue({ resolved: [], missing: ['sli_gone'] })
-        await multi({ initialValue: 'sli_gone', onChange })
-        await waitFor(() => expect(q('[data-state="missing"]')).not.toBeNull())
-        expect(q('[data-combo-control]')).toBeNull()
+        const { user } = await multi({ initialValue: ['sli_gone', 'sli_gone2', 'sli_a'], onChange })
+        await waitFor(() => expect(qa('[data-missing="true"]')).toHaveLength(2))
+        await user.click(control())
+        await pick(user, 'Zebra')
+        expect(lastIds(onChange)).toEqual(['sli_c', 'sli_a', 'sli_gone2'])
+        expect(qa('[data-missing="true"]')).toHaveLength(1)
+        expect(q('[data-error="missing"]')).toBeInTheDocument()
+        await pick(user, 'Apple')
+        expect(lastIds(onChange)).toEqual(['sli_c', 'sli_b', 'sli_a'])
+        expect(q('[data-error="missing"]')).toBeNull()
+        expect(q('[data-frame="13-picker-multi"]')).toBeInTheDocument()
+      })
+
+      it('Clear all also drops stored values and the notice', async () => {
+        resolveMixed()
+        const onChange = vi.fn()
+        const { user } = await multi({ initialValue: ['sli_old', 'sli_gone'], onChange })
+        await waitFor(() => expect(q('[data-error="missing"]')).not.toBeNull())
+        await user.click(screen.getByRole('button', { name: 'Clear all' }))
+        expect(onChange).toHaveBeenLastCalledWith([])
+        expect(persisted()).toBe('')
+        expect(q('[data-error="missing"]')).toBeNull()
+        expect(q('[data-panel="resolve-matrix"]')).toBeNull()
+      })
+
+      it('the host cap counts stored values: at max, a new pick is refused; replacing a purged id is allowed', async () => {
+        resolveMixed()
+        const onChange = vi.fn()
+        const { user } = await multi({ initialValue: ['sli_a', 'sli_old'], max: 2, onChange })
+        await waitFor(() => expect(q('[data-error="max-selected"]')).not.toBeNull())
+        await user.click(control())
+        await pick(user, 'Zebra') // refused: archived still holds a slot
         expect(onChange).not.toHaveBeenCalled()
-        expect(persisted()).toBe('sli_gone')
+        await user.click(screen.getByRole('button', { name: 'Remove Old' }))
+        expect(lastIds(onChange)).toEqual(['sli_a'])
+        await pick(user, 'Zebra')
+        expect(lastIds(onChange)).toEqual(['sli_c', 'sli_a'])
+      })
+
+      it('at the cap, picking an active item still replaces a purged id (the count does not grow)', async () => {
+        resolveMixed()
+        const onChange = vi.fn()
+        const { user } = await multi({ initialValue: ['sli_a', 'sli_gone'], max: 2, onChange })
+        await waitFor(() => expect(q('[data-error="max-selected"]')).not.toBeNull())
+        await user.click(control())
+        await pick(user, 'Zebra')
+        expect(lastIds(onChange)).toEqual(['sli_c', 'sli_a'])
+        expect(q('[data-error="missing"]')).toBeNull()
+      })
+
+      it('the archived-not-offerable note appears in the open menu when an archived value is held; archived is never an option', async () => {
+        resolveMixed()
+        const { user } = await multi({ initialValue: ['sli_old', 'sli_a'] })
+        await waitFor(() => expect(q('[data-chip="sli_old"]')).not.toBeNull())
+        await user.click(control())
+        expect(optionLabels()).toEqual(['Zebra', 'Apple', 'Mango'])
+        expect(q('[data-note="archived-not-offerable"]')).toBeInTheDocument()
+      })
+
+      it('purged chips are never blank and removing controls are labelled (a11y)', async () => {
+        resolveMixed()
+        await multi({ initialValue: ['sli_gone'] })
+        await waitFor(() => expect(q('[data-chip="sli_gone"]')).not.toBeNull())
+        expect((q('[data-chip="sli_gone"]') as HTMLElement).textContent?.replace('×', '').trim()).not.toBe('')
+        expect(screen.getByRole('button', { name: 'Remove unknown value' })).toBeInTheDocument()
+        expect(q('[data-error="missing"]')).toHaveAttribute('role', 'status')
       })
     })
   })
@@ -934,6 +1248,32 @@ describe('SelectionListPickerHarness (query-param route)', () => {
     await user.click(control())
     await user.click(screen.getByRole('option', { name: 'Zebra' }))
     expect(q('[data-error="max-selected"]')).toHaveTextContent('Maximum selections reached (1).')
+  })
+
+  it('multi: ?value= accepts several ids (comma-separated or repeated) and resolves them in ONE call', async () => {
+    m.resolveItems.mockResolvedValue({
+      resolved: [
+        { id: 'sli_a', label: 'Mango', locale: 'en', is_machine: false, status: 'active' },
+        { id: 'sli_b', label: 'Apple', locale: 'en', is_machine: false, status: 'active' },
+        { id: 'sli_c', label: 'Zebra', locale: 'en', is_machine: false, status: 'active' },
+      ],
+      missing: [],
+    })
+    const first = await at('?list=fruit&mode=multi&value=sli_a,sli_b&value=sli_c')
+    await waitFor(() => expect(persisted()).toBe('sli_c,sli_b,sli_a'))
+    expect(m.resolveItems).toHaveBeenCalledTimes(1)
+    expect(m.resolveItems).toHaveBeenCalledWith(['sli_a', 'sli_b', 'sli_c'])
+    first.unmount()
+  })
+
+  it('single: only the first ?value= id seeds the picker', async () => {
+    m.resolveItems.mockResolvedValue({
+      resolved: [{ id: 'sli_b', label: 'Apple', locale: 'en', is_machine: false, status: 'active' }],
+      missing: [],
+    })
+    await at('?list=fruit&mode=single&value=sli_b,sli_a')
+    await waitFor(() => expect(persisted()).toBe('sli_b'))
+    expect(m.resolveItems).toHaveBeenCalledWith(['sli_b'])
   })
 
   it('passes ?value= through so an archived stored id resolves', async () => {
