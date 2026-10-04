@@ -86,6 +86,12 @@ function stubFlagsFetch() {
     resolveFlags = resolve
     rejectFlags = reject
   })
+  // The deferred is owned by the test, and the production code under test handles
+  // its rejection (fetchFlags catches and fails closed). Without this guard a test
+  // that rejects it can race the component's own handler (unmount/abort between the
+  // reject and the await) and Node reports an UNHANDLED rejection, which Vitest turns
+  // into a failed run even though every test passed (~1 run in 8 locally).
+  pending.catch(() => {})
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) =>
