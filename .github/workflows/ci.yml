@@ -669,6 +669,15 @@ jobs:
         run: |
           npm run -w @fuzefront/security-client build
           npm run -w @fuzefront/service-auth build
+      - name: Build @fuzefront/feature-flags (runtime dist the service require()s)
+        # The service resolves the release flag through @fuzefront/feature-flags
+        # at runtime (lib/featureFlags.ts initFeatureFlags() + flags.ts), so its
+        # dist/index.cjs must exist or require() throws and the flag stays OFF
+        # (every route 404s). The old FLAGS_FORCE_ON short-circuited before the
+        # require, so this build was not needed then; the offline provider runs
+        # the real client path and needs it. (Prod images already build it for
+        # the Unleash path.)
+        run: npm run -w @fuzefront/feature-flags build
       - name: Build selection-list-service
         run: npm run -w selection-list-service build
       - name: Run DB migrations
