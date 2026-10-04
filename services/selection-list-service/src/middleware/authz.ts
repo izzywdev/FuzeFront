@@ -25,11 +25,11 @@
 //     denial, a thrown DECISION_UNAVAILABLE, asserting the exact request
 //     body) inject a mock via `_setAuthzClientForTesting()`.
 //
-//  3. Feature flag gate: requireAuthzCheck() checks the authz-enabled flag
-//     first. If OFF, the middleware passes through with a warning log (dark
-//     deploy / kill-switch mode). If ON, it does a real Security API check.
-//     Unchanged by this migration — same flag, same env var, same
-//     dark-deploy semantics; only what happens when the flag is ON changed.
+//  3. Enforcement gate: requireAuthzCheck() asks `isAuthzEnforced()` first.
+//     In NODE_ENV=production authz is ALWAYS enforced (the env var is never
+//     consulted — review H-1). Outside production the authz-enabled env var is
+//     honoured as a dev/test convenience: OFF passes through with a warning
+//     log, ON does a real Security API check.
 //
 //  4. The selection_list_access table is a READ-MODEL MIRROR — it is never
 //     consulted for authorization. It is updated by grantListOwner() and
@@ -57,7 +57,9 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthzClient, createAuthzClient } from '@fuzefront/auth';
 import type { Knex } from 'knex';
 import { db } from '../db';
-import { getBooleanFlag, FLAGS, FlagContext } from './authz.flags';
+import { isAuthzEnforced, FLAGS, FlagContext } from './authz.flags';
+import { createLoggedFetch, getLog, timed } from '../lib/logger';
+import { getGrantToken } from '../lib/machineIdentity';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -124,7 +126,9 @@ function makeNoOpProxy(): AuthzClient {
 
 let _authzClient: AuthzClient = isNoOpMode
   ? makeNoOpProxy()
-  : createAuthzClient({ baseUrl: SECURITY_SERVICE_URL });
+  : // createLoggedFetch: boundary logging (start/end/elapsedMs) + x-request-id
+    // propagation on every Security API call; behaviour is otherwise unchanged.
+    createAuthzClient({ baseUrl: SECURITY_SERVICE_URL, fetch: createLoggedFetch() });
 
 /** Returns the active authz client (real or no-op). */
 export function getAuthzClient(): AuthzClient {
@@ -142,6 +146,32 @@ export function _setAuthzClientForTesting(client: AuthzClient): void {
 
 /** Re-export so tests can create a fresh no-op without importing the factory. */
 export { makeNoOpProxy };
+
+// ---------------------------------------------------------------------------
+// Resource types — instance level vs tenant level (review H-3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-LIST resource. Every check against it carries the list id as the
+ * instance key (ReBAC): `list-owner|editor|contributor|translator|viewer` are
+ * granted per list instance, and only per-list actions (`read`, `update`,
+ * `add_value`, ...) are evaluated against it. A tenant role must NEVER be given
+ * these actions: Permit applies a tenant role to every instance in the tenant,
+ * which would erase the per-list distinctions.
+ */
+export const SELECTION_LIST_RESOURCE = 'SelectionList';
+
+/**
+ * Tenant-level CATALOG resource (keyless — there is no instance to key on).
+ * Authorizes the operations that are not about one list: asking for the
+ * catalog (`list`), creating a list (`create`), reading the quota
+ * (`read_quota`) and bulk-resolving item ids (`resolve`). Tenant roles carry
+ * these actions; they never carry a per-list action. See
+ * docs/planning/selection-lists-permit-actions.md.
+ */
+export const SELECTION_LIST_CATALOG_RESOURCE = 'SelectionListCatalog';
+
+export type CatalogAction = 'list' | 'create' | 'read_quota' | 'resolve';
 
 // ---------------------------------------------------------------------------
 // bearer — re-read the raw token so a decision is always asked for the
@@ -169,8 +199,9 @@ export function bearer(req: Request): string | null {
  * The listId is extracted from req.params.listId.  If absent, the check is
  * performed without a resource-instance key (tenant-level check only).
  *
- * Flag OFF → pass-through with a warning log (dark deploy / kill-switch).
- * Flag ON  → perform a real check, fail closed on any error.
+ * Production → ALWAYS a real check (fail closed on any error).
+ * Non-production, env switch OFF → pass-through with a warning log (dev/test).
+ * Non-production, env switch ON  → real check, fail closed on any error.
  */
 export function requireAuthzCheck(resource: string, action: string) {
   return async function authzMiddleware(
@@ -187,12 +218,12 @@ export function requireAuthzCheck(resource: string, action: string) {
     }
 
     const flagCtx: FlagContext = { userId, orgId, appId: req.appId };
-    const authzEnabled = await getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, flagCtx);
+    const authzEnabled = await isAuthzEnforced(flagCtx);
 
     if (!authzEnabled) {
-      console.warn(
-        '[authz] authz-enabled flag is OFF — passing through without a Security API check.',
-        { userId, orgId, resource, action },
+      getLog(req).warn(
+        { userId, orgId, resource, action, flag: FLAGS.AUTHZ_ENABLED },
+        'authz-enabled flag is OFF — passing through without a Security API check',
       );
       next();
       return;
@@ -204,7 +235,9 @@ export function requireAuthzCheck(resource: string, action: string) {
       return;
     }
 
-    const listId = req.params['listId'];
+    // The catalog resource is tenant-level by definition: it is never keyed,
+    // even if a route happens to carry a :listId param.
+    const listId = resource === SELECTION_LIST_CATALOG_RESOURCE ? undefined : req.params['listId'];
     try {
       // Org-scoped existence pre-check: a list id that does not exist IN THE
       // CALLER'S ORG is a 404 whatever the action, before any decision is
@@ -212,10 +245,14 @@ export function requireAuthzCheck(resource: string, action: string) {
       // indistinguishable (no cross-org existence oracle), and the Security API
       // is never asked to rule on an id the caller's tenant does not own.
       if (listId) {
-        const exists = await db('selection_lists')
-          .where({ id: listId, organization_id: orgId })
-          .first('id');
+        const exists = await timed(
+          getLog(req),
+          'db.selection_lists.exists',
+          () => db('selection_lists').where({ id: listId, organization_id: orgId }).first('id'),
+          { listId, orgId },
+        );
         if (!exists) {
+          getLog(req).debug({ listId, orgId }, 'authz precheck: list not in caller org — 404');
           res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
           return;
         }
@@ -231,6 +268,10 @@ export function requireAuthzCheck(resource: string, action: string) {
         token,
       );
       if (!decision.allow) {
+        getLog(req).info(
+          { userId, orgId, resource, action, listId, allow: false },
+          'authz decision: denied',
+        );
         if (action === 'read' && listId) {
           // A read the caller is not entitled to is a 404, not a 403, so the
           // API is not an existence oracle (openapi §Authorization).
@@ -245,9 +286,47 @@ export function requireAuthzCheck(resource: string, action: string) {
       // Fail CLOSED: any Security API error (including a thrown
       // AuthzError('DECISION_UNAVAILABLE') for a timeout/non-200) must never
       // grant access.
-      console.error('[authz] Security API check threw — failing closed.', { err, userId, orgId, resource, action });
+      getLog(req).error(
+        { err, userId, orgId, resource, action, listId },
+        'Security API check threw — failing closed',
+      );
       res.status(403).json({ code: 'FORBIDDEN', message: 'Authorization service unavailable.' });
     }
+  };
+}
+
+/**
+ * Tenant-level check against the `SelectionListCatalog` resource (keyless).
+ * Use for GET / (`list`), POST / (`create`), GET /quota (`read_quota`) and
+ * POST /resolve (`resolve`). Never use it for anything addressed to one list.
+ */
+export function requireCatalogCheck(action: CatalogAction) {
+  return requireAuthzCheck(SELECTION_LIST_CATALOG_RESOURCE, action);
+}
+
+/**
+ * Like `requireAuthzCheck`, but only asks when `when(req)` is true; otherwise
+ * it passes straight through. For routes whose required action depends on the
+ * request (e.g. an extra `delete` check only when `?purge=true`, or only when a
+ * PATCH body sets `status: "archived"`). It is stacked AFTER the route's base
+ * check, so it can only ever make a route stricter, never looser.
+ */
+export function requireAuthzCheckWhen(
+  when: (req: Request) => boolean,
+  resource: string,
+  action: string,
+) {
+  const check = requireAuthzCheck(resource, action);
+  return function conditionalAuthzMiddleware(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> | void {
+    if (!when(req)) {
+      next();
+      return;
+    }
+    return check(req, res, next);
   };
 }
 
@@ -255,9 +334,9 @@ export function requireAuthzCheck(resource: string, action: string) {
 // isAuthzEnabled / filterReadable — instance-level filtering of collections
 // ---------------------------------------------------------------------------
 
-/** True when authz decisions are enforced (release flag ON). */
+/** True when authz decisions are enforced (always in production; see authz.flags.ts). */
 export async function isAuthzEnabled(req: Request): Promise<boolean> {
-  return getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, {
+  return isAuthzEnforced({
     userId: req.userId,
     orgId: req.orgId,
     appId: req.appId,
@@ -265,7 +344,11 @@ export async function isAuthzEnabled(req: Request): Promise<boolean> {
 }
 
 /**
- * Drops every list the caller may not `read` from a page of rows
+ * Drops every list the caller may not `read` from a page of rows. The
+ * tenant-level `SelectionListCatalog:list` check (route middleware) only
+ * authorizes ASKING for the catalog; WHICH lists come back is decided here, per
+ * list, by the per-list `SelectionList:read` action (review H-3) — Permit
+ * decides, this service assumes nothing about org-admin derivation.
  * (openapi: "a list the caller has no grant on is simply absent, never a 403").
  * One `bulkCheck` round trip for the whole page (<= 200 rows == the Security
  * API's bulk ceiling). Fail CLOSED: a thrown AuthzError propagates to the
@@ -284,7 +367,7 @@ export async function filterReadable<T extends { id: string }>(
     rows.map((r) => ({
       subject: req.userId as string,
       tenant: req.orgId as string,
-      resource: { type: 'SelectionList', key: r.id },
+      resource: { type: SELECTION_LIST_RESOURCE, key: r.id },
       action: 'read',
     })),
     token,
@@ -310,18 +393,21 @@ export async function filterReadable<T extends { id: string }>(
  * the mirror row is only reached — and only written — once the grant
  * succeeded, so a thrown grant can never leave a mirror row claiming success.
  *
- * @param token  The ACTING caller's bearer token — the Security API decides
- *               (and records) the grant for the real principal, never a
- *               service-wide credential.
+ * AUTHENTICATION OF THE WRITE. The grant is made with this service's MACHINE
+ * identity (`getGrantToken()`: OAuth client_credentials, scope `authz:admin`),
+ * never the end user's token: the end user has no standing to write their own
+ * role, and the Security API denies non-admin human grant calls (review C-1).
+ * `grantedBy` is recorded on the mirror row as the acting user; the Security API
+ * sees the machine principal. Fail closed: no/failed machine token -> throws.
  */
 export async function grantListOwner(
   userId: string,
   orgId: string,
   listId: string,
   grantedBy: string,
-  token: string,
   executor: Knex | Knex.Transaction = db,
 ): Promise<void> {
+  const machineToken = await getGrantToken();
   await getAuthzClient().grant(
     {
       subject: userId,
@@ -329,7 +415,7 @@ export async function grantListOwner(
       role: 'list-owner',
       resource: { type: 'SelectionList', key: listId },
     },
-    token,
+    machineToken,
   );
 
   // Upsert the mirror row. Only reached if the grant above succeeded.

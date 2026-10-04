@@ -163,7 +163,7 @@ const client = new SelectionListClient({
 | Option | Type | Required | Notes |
 |---|---|---|---|
 | `baseUrl` | `string` | Yes | Same-origin path in the browser; absolute URL in server-side callers |
-| `token` | `string \| () => string \| Promise<string>` | No | `resolveIds` may be called unauthenticated by trusted in-cluster callers |
+| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | Bearer token with an `orgId` claim. `resolveIds` also requires it (spec v2.0.0) |
 | `fetch` | `typeof fetch` | No | Inject for tests or non-global runtimes; defaults to `globalThis.fetch` |
 | `defaultLocale` | `Locale` | No | Applied to every request that doesn't supply its own |
 | `headers` | `Record<string, string>` | No | Merged into every request (tracing IDs, tenant hints) |
@@ -433,8 +433,32 @@ for await (const grant of client.paginate((p) => client.getAccess(list.id, p))) 
 await client.revokeAccess(list.id, userId)
 ```
 
+### Tenant-level operations vs per-list actions
+
+Authorization has two levels, and the roles above only ever apply to the
+second:
+
+| Operation | Checked against | Action |
+|---|---|---|
+| `GET /v1/selection-lists` | `SelectionListCatalog` (tenant-level, keyless) | `list` |
+| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` |
+| `GET /v1/selection-lists/quota` | `SelectionListCatalog` | `read_quota` |
+| `POST /v1/resolve` | `SelectionListCatalog` | `resolve` |
+| everything addressed to one list | `SelectionList`, keyed on the list id | the per-list action in the table above |
+
+Tenant roles carry only the four catalog actions, never a per-list action, so
+being allowed to *list* does not let a caller read every list: `GET
+/v1/selection-lists` returns only the lists the caller holds an instance role
+on (a caller with none gets an empty page, not a `403`). Creating a list makes
+the creator its `list-owner` (granted by the service). Two actions are
+stricter than the table suggests: **purging an item** (`DELETE
+.../items/{itemId}?purge=true`) additionally needs `delete` on the list, so only
+a `list-owner` can purge (a `list-editor` can archive an item but gets `403` on
+purge); and **archiving a list via `PATCH` `status: "archived"`** needs the same
+`delete` as `POST .../archive`.
+
 > **Important:** an `id` is never a capability.  Knowing a list's `id` grants
-> nothing — every route re-checks the caller against Permit.  A resource the
+> nothing — every route re-checks the caller against the Security API / Permit.  A resource the
 > caller cannot read returns `404`, not `403`, so the API is not a cross-org
 > existence oracle.
 

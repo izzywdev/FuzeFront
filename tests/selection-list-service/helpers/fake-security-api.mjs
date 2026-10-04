@@ -19,15 +19,45 @@
  *   - Instance-scoped role grants: POST/DELETE/GET /authz/grants. Roles stack
  *     at this layer (like Permit); it is the SERVICE's job to revoke the old
  *     role when it changes one (openapi: "roles do not stack").
- *   - Decisions: POST /authz/check and /authz/bulk-check, using the role ->
- *     action matrix frozen in services/selection-list-service/openapi.yaml
- *     (§Authorization). `org-admin` in the caller's JWT `roles` claim derives
- *     list-owner on every list in the caller's tenant (no explicit grant).
+ *   - Decisions: POST /authz/check and /authz/bulk-check, using the SAME
+ *     two-level matrix the Permit schema declares (review H-3), never a
+ *     shortcut a real policy does not contain. Verbatim from
+ *     docs/planning/selection-lists-permit-actions.md (contract 3.0.0):
+ *       * resource `SelectionList` (instance-scoped, key = list id): only the
+ *         per-list roles list-owner|editor|contributor|translator|viewer, and
+ *         only per-list actions (read, add_value, ... manage_access).
+ *       * resource `SelectionListCatalog` (tenant-level, keyless): the TENANT
+ *         roles carry ONLY the catalog actions
+ *           admin     list create read_quota resolve
+ *           editor    list create            resolve
+ *           viewer    list                   resolve
+ *           developer (none)
+ *         The caller's tenant role is read from the JWT `roles` claim (the most
+ *         privileged of admin|editor|viewer|developer; `org-admin` is an alias
+ *         of admin). A token carrying NONE of those is treated as a tenant
+ *         `admin` — a fixture convenience so the many plain-token tests can
+ *         create lists and read quota; it grants NO per-list action.
+ *     A tenant role is NEVER evaluated for a per-list action: every tenant role
+ *     — admin included — is denied `SelectionList:*` on a list it holds no
+ *     per-list role on, and a keyless `SelectionList` check is always denied.
+ *     There is NO org-admin -> list-owner derivation (contract 3.0.0 §5). The
+ *     old stand-in allowed keyless `read`/`add_value` to any member and derived
+ *     list-owner for org-admin: two rules no real policy contains, which hid
+ *     review H-3.
  *   - Tenant membership: `Organization:read` is answered from the declared
  *     NON_MEMBERS fixture below — everyone else is a member of the tenant
  *     they are asked about. This is the one place the suite's declared
  *     "outsider" (contract/access.test.ts USER_OUTSIDER, "NOT in ORG_ID") is
  *     encoded, deliberately explicit rather than guessed from id shapes.
+ *
+ * MACHINE IDENTITY (review C-1). The real Security API is being fixed so that a
+ * non-admin HUMAN session is denied grant/revoke; only a machine caller whose
+ * token carries the `authz:admin` scope may write grants
+ * (backend/security/src/routes/authz.ts AUTHZ_ADMIN_SCOPE). The stand-in models
+ * that: POST /api/v1/security/tokens issues a machine token for the one CI
+ * client below, and POST/DELETE /authz/grants answer 403 to anything else —
+ * including any user JWT. That makes this suite fail if the service ever goes
+ * back to writing grants with the END USER's token.
  *
  * The caller's bearer token is decoded WITHOUT verification: the service has
  * already verified it, and this process only runs on localhost in CI.
@@ -38,6 +68,12 @@
 import http from 'node:http';
 
 const PORT = Number(process.env.PORT ?? 3002);
+
+/** The one OAuth client this stand-in knows (CI-only fixture values, not real credentials). */
+const MACHINE_CLIENT_ID = process.env.FAKE_SEC_CLIENT_ID ?? 'selection-list-service-ci';
+const MACHINE_CLIENT_SECRET = process.env.FAKE_SEC_CLIENT_SECRET ?? 'ci-only-fixture-client-secret';
+const AUTHZ_ADMIN_SCOPE = 'authz:admin';
+const MACHINE_TOKEN_PREFIX = 'fake-machine-token:';
 
 /** `${tenant}|${userId}` pairs that are NOT members of that tenant. */
 const NON_MEMBERS = new Set([
@@ -53,12 +89,34 @@ const ROLE_ACTIONS = {
   'list-viewer': ['read'],
 };
 
+/**
+ * Tenant roles -> actions on the keyless SelectionListCatalog resource ONLY
+ * (review H-3). No tenant role carries any per-list (`SelectionList`) action.
+ */
+const TENANT_ROLE_ACTIONS = {
+  admin: ['list', 'create', 'read_quota', 'resolve'],
+  editor: ['list', 'create', 'resolve'],
+  viewer: ['list', 'resolve'],
+  developer: [],
+};
+/** most privileged first */
+const TENANT_ROLE_ORDER = ['admin', 'editor', 'viewer', 'developer'];
+
 /** `${tenant}|${type}:${key}|${subject}` -> Set<role> */
 const grants = new Map();
 let grantSeq = 0;
 
 function grantKey(tenant, resource, subject) {
   return `${tenant}|${resource?.type ?? ''}:${resource?.key ?? ''}|${subject}`;
+}
+
+/** Scopes of a machine token minted by THIS process, else null (humans / garbage). */
+function machineScopesOf(req) {
+  const h = req.headers['authorization'];
+  if (!h) return null;
+  const [scheme, token] = String(h).split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token || !token.startsWith(MACHINE_TOKEN_PREFIX)) return null;
+  return token.slice(MACHINE_TOKEN_PREFIX.length).split('+').filter(Boolean);
 }
 
 function claimsOf(req) {
@@ -77,6 +135,13 @@ function isMember(tenant, subject) {
   return !NON_MEMBERS.has(`${tenant}|${subject}`);
 }
 
+/** The caller's tenant role, from the JWT `roles` claim (see header). */
+function tenantRoleOf(claims, subject, tenant) {
+  if (!(claims && claims.sub === subject && claims.organization_id === tenant)) return 'developer'; // unknowable -> least
+  const roles = Array.isArray(claims.roles) ? claims.roles.map((r) => (r === 'org-admin' ? 'admin' : r)) : [];
+  return TENANT_ROLE_ORDER.find((r) => roles.includes(r)) ?? 'admin';
+}
+
 function decide(q, claims) {
   const { subject, tenant, resource, action } = q;
   if (!subject || !tenant || !resource?.type || !action) return false;
@@ -84,19 +149,20 @@ function decide(q, claims) {
   if (resource.type === 'Organization') {
     return action === 'read' && isMember(tenant, subject);
   }
-  if (resource.type !== 'SelectionList') return false;
   if (!isMember(tenant, subject)) return false;
 
-  // org-admin derives list-owner on every list in the tenant.
-  const isOrgAdmin =
-    claims && claims.sub === subject && claims.organization_id === tenant &&
-    Array.isArray(claims.roles) && claims.roles.includes('org-admin');
-  if (isOrgAdmin) return ROLE_ACTIONS['list-owner'].includes(action);
-
-  if (!resource.key) {
-    // Tenant-level operations (create a list, list lists, quota): any member.
-    return ['read', 'add_value'].includes(action);
+  // Tenant level: keyless catalog resource, tenant roles, catalog actions only.
+  if (resource.type === 'SelectionListCatalog') {
+    if (resource.key) return false; // the catalog has no instances
+    return TENANT_ROLE_ACTIONS[tenantRoleOf(claims, subject, tenant)].includes(action);
   }
+
+  // Instance level: per-list roles, per-list actions only.
+  if (resource.type !== 'SelectionList') return false;
+  // There is no tenant-wide per-list grant: a keyless SelectionList check is
+  // never allowed, whoever asks.
+  if (!resource.key) return false;
+
   const roles = grants.get(grantKey(tenant, resource, subject)) ?? new Set();
   for (const role of roles) {
     if ((ROLE_ACTIONS[role] ?? []).includes(action)) return true;
@@ -132,7 +198,38 @@ const server = http.createServer(async (req, res) => {
 
   if (path === '/health') return send(res, 200, { status: 'ok', service: 'fake-security-api' });
 
-  const claims = claimsOf(req);
+  // POST /tokens — client_credentials issuance (no bearer; the credentials ARE the auth).
+  if (req.method === 'POST' && path === '/api/v1/security/tokens') {
+    const b = await readBody(req);
+    if (!b || b.clientId !== MACHINE_CLIENT_ID || b.clientSecret !== MACHINE_CLIENT_SECRET) {
+      return send(res, 401, { error: 'invalid client credentials', code: 'AUTH_REQUIRED' });
+    }
+    const scope = String(b.scope ?? '').split(' ').filter(Boolean);
+    return send(res, 200, {
+      accessToken: `${MACHINE_TOKEN_PREFIX}${scope.join('+')}`,
+      tokenType: 'Bearer',
+      expiresIn: 300,
+      scope: scope.join(' '),
+    });
+  }
+
+  // Grant/revoke WRITES: machine callers holding authz:admin only. A human
+  // session — even a valid one — is denied (what the fixed Security API does).
+  if (path === '/api/v1/security/authz/grants' && (req.method === 'POST' || req.method === 'DELETE')) {
+    const scopes = machineScopesOf(req);
+    if (!scopes) return send(res, 403, { error: 'grant/revoke require a machine caller with the authz:admin scope', code: 'FORBIDDEN' });
+    if (!scopes.includes(AUTHZ_ADMIN_SCOPE)) {
+      return send(res, 403, { error: `machine caller is missing the required '${AUTHZ_ADMIN_SCOPE}' scope`, code: 'FORBIDDEN' });
+    }
+  }
+
+  // Everything below authenticates a HUMAN session token (decoded, not verified).
+  // GET /authz/grants (listing) and decisions keep using it; the machine-only
+  // write routes above were already authorised, so give them a synthetic caller.
+  const claims =
+    machineScopesOf(req) && path === '/api/v1/security/authz/grants'
+      ? { sub: `svc:${MACHINE_CLIENT_ID}` }
+      : claimsOf(req);
   if (!claims) return send(res, 401, { error: 'Authentication required', code: 'AUTH_REQUIRED' });
 
   if (req.method === 'POST' && path === '/api/v1/security/authz/check') {
@@ -158,6 +255,12 @@ const server = http.createServer(async (req, res) => {
         return send(res, 400, { error: 'subject, tenant and role are required', code: 'MALFORMED' });
       }
       if (!ROLE_ACTIONS[b.role]) return send(res, 400, { error: `unknown role ${b.role}`, code: 'MALFORMED' });
+      // A per-list role only exists on a SelectionList INSTANCE (resource role in
+      // the Permit schema): granting it tenant-wide / keyless is rejected, so a
+      // regression that drops `resource` fails loudly instead of widening access.
+      if (b.resource?.type !== 'SelectionList' || !b.resource?.key) {
+        return send(res, 400, { error: `role ${b.role} is an instance role: resource {type:'SelectionList', key} required`, code: 'MALFORMED' });
+      }
       const k = grantKey(b.tenant, b.resource, b.subject);
       const roles = grants.get(k) ?? new Set();
       roles.add(b.role);

@@ -7,7 +7,7 @@ description: Use when building on, calling, extending, testing, or documenting t
 
 A **selection list** is a named, **org-scoped**, ordered set of **translatable** choices (`countries`, `ticket-priorities`) that consuming apps render in dropdowns and persist **by item id**. `selection-list-service` owns exactly three things: list/item structure, per-locale translations of both, and per-list access grants.
 
-**Verified against** `origin/master` @ `a0de54f2` (2026-10-04). Everything below is read from code unless marked **(inferred)** or **(gap)**. If the spec and any other file disagree, **the spec wins** (`services/selection-list-service/openapi.yaml`, v1.0.0, FROZEN — FFRNT-187).
+**Verified against** `origin/master` @ `a0de54f2` (2026-10-04). Everything below is read from code unless marked **(inferred)** or **(gap)**. If the spec and any other file disagree, **the spec wins** (`services/selection-list-service/openapi.yaml`, v2.0.0, FROZEN — FFRNT-187).
 
 ## Where things live
 
@@ -17,7 +17,7 @@ A **selection list** is a named, **org-scoped**, ordered set of **translatable**
 | Service (Express + Knex/Postgres, port `PORT` default **3011**) | `services/selection-list-service/` | `selection-list-service` (root workspace) |
 | TS client (hand-authored, zero deps) | `selection-list-client/` (**repo root, not `packages/`**) | `@fuzeone/selection-list-client` 1.0.0 |
 | Python client (stdlib `urllib`, zero deps) | `packages/selection-list-client-py/` | `fuzefront-selection-list-client` 1.0.0 |
-| UI (4 flows + picker) | `packages/selection-lists-ui/` | `@fuzeone/selection-lists-ui` 0.1.0 |
+| UI (4 flows + picker) | `packages/selection-lists-ui/` | `@fuzeone/selection-lists-ui` 0.2.0 |
 | Approved design frames (14 screens) | `design/frames/selection-lists/` (`manifest.json`, `index.html`) | — |
 | Helm | `deploy/helm/fuzefront/templates/selection-list-service-*.yaml`, `values*.yaml` → `selectionListService`, `selectionListsMcp` | — |
 | Epic / plan | `docs/planning/epics/EPIC-17-selection-lists.md` | — |
@@ -176,7 +176,9 @@ The shell mounts the three admin flows in `frontend/src/App.tsx` (each route re-
 ```tsx
 import { SelectionListPicker } from '@fuzeone/selection-lists-ui'
 
-// Props (src/SelectionListPickerHarness.tsx): listKey, mode, initialValue?, max?
+// Props (src/SelectionListPickerHarness.tsx): listKey, mode, initialValue?, max? (multi), onChange?
+// single: initialValue?: string  -> onChange(id: string)
+// multi:  initialValue?: string[] -> onChange(ids: string[])
 export function RegionField() {
   return <SelectionListPicker listKey="sales-regions" mode="single" />
 }
@@ -184,23 +186,27 @@ export function RegionField() {
 
 Build/consume rules: use design-system tokens only (no raw hex/spacing); the UI's own `src/api.ts` calls the **same-origin** base `/api/v1/selection-lists` and `/api/v1/resolve`; changing UI behaviour needs an approved frame first (`gate-frames-first`; frames are authored only by `product-designer`, in `design/frames/selection-lists/` in this repo).
 
-**(gap) Picker today** — verified in `SelectionListPickerHarness.tsx`: `SelectionListPicker` has **no `onChange`/value callback prop**, so a host form cannot read the selection yet; and it passes `listKey` straight into `GET /v1/selection-lists/{listId}/items`, whose path param is the `front_sl_…` **id**, not the `key`. Treat the picker as a design-approved harness, not a finished embeddable, until both are addressed (UI change → `frontend-engineer`, after a frames update if the interaction changes).
+**Picker** — props are a discriminated union on `mode`: single takes `initialValue?: string` and `onChange(value: string)`; multi takes `initialValue?: string[]`, `max?`, and `onChange(value: string[])` (ids in the list's `sort_order`, same as the hidden `[data-persisted]` slot). It accepts the list **key** and looks the list up with the contract's exact-match `GET /v1/selection-lists?key=` filter (one call, no page walking; a `front_sl_…` id is used as-is), then reads the items by id. Seeding from `initialValue` never fires `onChange`, and all seeded ids are resolved in **one** `POST /v1/resolve` (`api.resolveItems` de-duplicates and only splits above the contract's 500-id cap). Stored values that are no longer offerable follow frame 14: an **archived** id renders its real label badged and is kept until the user removes it (multi chip ×) or replaces it (single); a **purged/unknown** id renders "Unknown value" (`[data-state="missing"]`, `[data-missing="true"]`, `[data-error="missing"]`) and is kept in the form until the user picks a replacement — single: the pick replaces it; multi: the next pick swaps one purged id out (or the chip × removes it) — after which the notice clears and the picker returns to frame 12/13. The harness route takes `?value=` as one id (single) or several (multi; repeated or comma-separated). `api.resolveItems` maps the contract's `{ results: { [id]: … }, missing }` body to the UI's `resolved[]` shape.
 
 ## Authorization and ownership rules
 
 1. **Org scope comes from the token, never the body.** `organization_id` and the acting user derive from the Bearer JWT (`src/middleware/auth.ts` accepts `userId`/`sub` and `orgId`/`organization_id`/`organizationId`). Every list/item query in the routes filters by `req.orgId`. A cross-org or unentitled read returns **`404`, not `403`** (no existence oracle).
 2. **The service mints ids** (`mintId('selectionList'|'selectionListItem')` from `@izzywdev/fuzefront-identity` → `front_sl_…` / `front_sli_…`, TypeID). Create bodies carry no `id` and set `additionalProperties: false`. Ids are opaque past the prefix — validate the prefix, never parse further. Referenced spine ids keep their own prefixes (`org_`, `usr_`). Standard: `governance/identifier-standard.md`.
 3. **An id is never a capability.** Knowing a list or item id grants nothing; routes re-check org scope (and, for access routes, the Security API). `POST /v1/resolve` returns only `{label, locale, is_machine, status}` — never list key, org, or anything else an id alone shouldn't unlock; max **500 ids** per call.
-4. **Authorization backend:** FuzeFront's Security API (`backend/security` `/api/v1/security/authz/*`) via `@fuzefront/auth`'s `AuthzClient` — no vendor SDK in the service. Resource `SelectionList`, instance-scoped by `{type:'SelectionList', key: listId}`. **Fails closed** (Security API error → `403`). `selection_list_access` is a **read-model mirror only** — never consulted for authz decisions, only for the roster and the last-owner guard.
+4. **Authorization backend:** FuzeFront's Security API (`backend/security` `/api/v1/security/authz/*`) via `@fuzefront/auth`'s `AuthzClient` — no vendor SDK in the service. **Two resource types, never mixed (review H-3; matrix in `docs/planning/selection-lists-permit-actions.md`):**
+   - **`SelectionListCatalog`** — tenant-level, **keyless**, for the four operations that are not about one list: `GET /v1/selection-lists` → `list`, `POST /v1/selection-lists` → `create`, `GET /v1/selection-lists/quota` → `read_quota`, `POST /v1/resolve` → `resolve` (`requireCatalogCheck(action)` in `src/middleware/authz.ts`, which never sends a key even if a route carried a `:listId`). **Tenant roles carry only these actions.**
+   - **`SelectionList`** — instance-scoped by `{type:'SelectionList', key: listId}`; every `:listId` route checks its per-list action (`read`, `update`, `delete`, `add_value`, `update_value`, `remove_value`, `translate`, `manage_access`) on that instance. **Per-list actions are instance-only: no tenant role confers any of them**, and there is no automatic org-admin → `list-owner` derivation.
+   - `GET /v1/selection-lists` additionally filters each returned row through a per-list `SelectionList:read` bulk check (`filterReadable`) — the catalog `list` action only authorizes *asking* for the catalog, so a caller sees only lists it holds an instance role on.
+   - Extra checks stacked after a route's base check (`requireAuthzCheckWhen`): item purge (`DELETE …/items/:itemId?purge=true`) also needs `delete` on the list (owner-only, review M-1); `PATCH …/:listId` with `status:"archived"` also needs `delete` like `POST …/:listId/archive` (review L-1; un-archive stays on `update`).
+   **Fails closed** (Security API error → `403`). `selection_list_access` is a **read-model mirror only** — never consulted for authz decisions, only for the roster and the last-owner guard.
 5. **Never route authz through the feature flag.** `fuzefront.selection-lists.service` is rollout, not entitlement (see below).
 
-**(gap) Code vs. contract, as shipped @ `a0de54f2`** — do not describe the matrix in the spec as fully enforced:
-- Per-role Security-API checks (`requireAuthzCheck`) are wired **only on the three `/access` routes**; list/item/translation routes enforce **org scope** but not the per-role matrix.
-- Those access routes check action `'admin'` for PUT/DELETE (spec's action name is `manage_access`), and the check is **skipped (pass-through + warning)** unless env flag `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true` (default OFF; `src/middleware/authz.flags.ts`).
-- `grantListOwner()` (writes the creator's `list-owner` grant) is defined in `src/middleware/authz.ts` but **no route calls it** (grep), so creating a list does not currently seed an owner grant.
-- Spec says `/v1/resolve` may be called unauthenticated from a trusted in-cluster caller; `src/app.ts` mounts `authMiddleware` on all `/v1/*`, and the route needs an `orgId` claim — it **requires a Bearer token** today.
-- Spec says purge needs `delete` (list-owner only); no per-role check exists on the purge path in the route handlers.
-These belong to `backend-engineer` (and `contract-designer` if the *spec* should change instead). Do not paper over them in docs.
+**Authz enforcement as implemented** (`services/selection-list-service/src`, verified by `tests/authz.route-matrix.test.ts`, which discovers every mounted `/v1` route and asserts its `(resource, key, action)`):
+- Every `/v1` route carries a Security-API check — the four collection-level ones on `SelectionListCatalog`, all others on `SelectionList` keyed by the list id. Authorization is **always enforced when `NODE_ENV=production`** (`isAuthzEnforced()` in `src/middleware/authz.flags.ts` never reads the env var there); `FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED=true` is only a dev/test switch outside production (default OFF = pass-through + warning). Grant/revoke WRITES are authenticated with the service's own machine identity (`src/lib/machineIdentity.ts`, client_credentials, scope `authz:admin`), never the end user's token.
+- Create (`POST /v1/selection-lists`) checks `SelectionListCatalog:create`, then `grantListOwner()` writes the creator's instance-scoped `list-owner` grant with the machine identity inside the create transaction — that grant, not the tenant role, is what lets the creator then read/edit its own list.
+- `/v1/resolve` **requires a Bearer token** with an `orgId` claim and `SelectionListCatalog:resolve`; it does not run a per-list `read` check (accepted trade-off, review L-4 — the org predicate is the isolation boundary).
+- **(gap, contract)** The spec does not yet declare the extra `delete` on `PATCH status:"archived"` (L-1) as an `x-permit-additional-actions`; the service enforces it anyway (stricter, never looser). The Permit schema (`SelectionListCatalog` + tenant-role grants) is a separate stream: until it lands, enforcement denies every catalog check in a real Permit environment (fail closed).
+The remaining gap belongs to `contract-designer` (declare L-1 in the spec) and the Permit-schema stream. Do not paper over it in docs.
 
 ## Feature flag
 
@@ -209,7 +215,7 @@ These belong to `backend-engineer` (and `contract-designer` if the *spec* should
 - **Server:** `isSelectionListsEnabled()` in `services/selection-list-service/src/flags.ts`, called at the top of every list/item/translation/quota/resolve handler. OFF → `404 NOT_FOUND` (body message "Not found." or "Service not enabled."). Fails closed: no flag client or any client error → OFF. Org-targeted: context carries `orgId`.
 - **Local/CI only:** `FLAGS_FORCE_ON=fuzefront.selection-lists.service` forces ON, hard-disabled when `NODE_ENV=production`. Prod targeting is Unleash only (`unleash-flag-enable` skill; flag administration is `feature-flags-engineer`).
 - **UI:** sidebar entry + each `/settings/selection-lists/*` route gated by `useFlag(...)`.
-- **Deploy gate (separate from the flag):** Helm `selectionListService.enabled` and `selectionListsMcp.enabled` are `false` in `values.yaml`; `values-prod.yaml` sets `selectionListService.enabled: false` (image tag pinned). **(gap)** No Ingress/IngressRoute template in `deploy/helm/fuzefront/templates/` routes `/api/v1/selection-lists` to the service (grep), so the same-origin path the UI and a browser `baseUrl: '/api'` rely on is not wired in-chart. That is `devops-engineer` scope.
+- **Deploy gate (separate from the flag):** Helm `selectionListService.enabled` and `selectionListsMcp.enabled` are `false` in `values.yaml`; `values-prod.yaml` sets `selectionListService.enabled: false` (image tag pinned). The chart routes `/api/v1/selection-lists` and `/api/v1/resolve` to the service via `templates/ingress.yaml` (nginx rewrite annotation; a `selection-list-service-stripprefix` Middleware under Traefik), gated on `selectionListService.enabled`.
 - Plan any new work on this feature behind this flag (default OFF), test **both** states (`services/selection-list-service/tests/flags.force-on.test.ts` shows the pattern), and see the `feature-flags` skill for the family rules.
 
 ## MCP surface
@@ -225,8 +231,8 @@ There is **no per-repo MCP server** for this feature: no `mcp/` directory exists
 | Service unit/route tests (jest, DB mocked; authz no-op under `NODE_ENV=test`) | `services/selection-list-service/tests/*.test.ts` | `npm run -w selection-list-service test` (CI job `selection-list-service-tests`) |
 | Independent acceptance + contract + security suite against a **running** service (`SERVICE_BASE_URL`, default `http://localhost:3011`) | `tests/selection-list-service/{contract,security}/` | `npm test` / `test:contract` / `test:security` in that dir; its helper builds an `@fuzeone/selection-list-client` |
 | Python client tests | `packages/selection-list-client-py/tests/test_client.py` | `pip install -e '.[dev]' && pytest` in that dir |
-| UI e2e (Playwright, derived from the approved frames; `data-*` hooks from the manifest) | `frontend/tests/selection-lists-{list-management,translation-workbench,access-control,picker}.red.spec.ts` | CI job `selection-list-service-e2e` (**`continue-on-error`**, still labelled RED-by-design) |
-| UI unit tests | `packages/selection-lists-ui/` has only `src/test/setup.ts`; **no test files** yet (`npm test` = `vitest run`) | — |
+| UI e2e (Playwright, derived from the approved frames; `data-*` hooks from the manifest) | `frontend/tests/selection-lists-{list-management,translation-workbench,access-control,picker}.spec.ts` | CI job `selection-list-service-e2e` ("Selection list E2E") — a **blocking gate**: no `continue-on-error`, required by `Notify Team` |
+| UI unit tests (vitest + RTL; `../api` mocked at the module boundary) | `packages/selection-lists-ui/src/test/*.test.ts(x)` — the four flows, the picker (frames 12-14), and `api.test.ts` | `npm test` (= `vitest run`) in the package |
 | TS-client ↔ spec coverage | `scripts/check-selection-lists-client-drift.sh` (**not** wired into `ci.yml`) | run by hand |
 | Contract lint | `selection-list-client`: `npm run lint:contract` (Spectral, `services/selection-list-service/.spectral.yaml`) | by hand |
 

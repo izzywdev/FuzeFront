@@ -26,6 +26,26 @@ exports.TOPICS = {
     BILLING_TENANT_REGISTERED: 'billing.tenant.registered',
     BILLING_PAYMENT_METHOD_UPDATED: 'billing.payment_method.updated',
     PORTAL_CREATED: 'portal.created',
+    CHAT_RESPONSE_CHUNK: 'chat.response.chunk',
+    // selection-list-service (docs/planning/selection-lists-events.md). Produced
+    // ONLY by selection-list-service, except SEED_REQUESTED, which allowlisted
+    // services produce and selection-list-service consumes.
+    SELECTION_LISTS_LIST_CREATED: 'selection-lists.list.created',
+    SELECTION_LISTS_LIST_UPDATED: 'selection-lists.list.updated',
+    SELECTION_LISTS_LIST_ARCHIVED: 'selection-lists.list.archived',
+    SELECTION_LISTS_LIST_DELETED: 'selection-lists.list.deleted',
+    SELECTION_LISTS_ITEM_CREATED: 'selection-lists.item.created',
+    SELECTION_LISTS_ITEM_UPDATED: 'selection-lists.item.updated',
+    SELECTION_LISTS_ITEM_ARCHIVED: 'selection-lists.item.archived',
+    SELECTION_LISTS_ITEM_DELETED: 'selection-lists.item.deleted',
+    SELECTION_LISTS_ITEM_REORDERED: 'selection-lists.item.reordered',
+    SELECTION_LISTS_TRANSLATION_UPSERTED: 'selection-lists.translation.upserted',
+    SELECTION_LISTS_TRANSLATION_DELETED: 'selection-lists.translation.deleted',
+    SELECTION_LISTS_ACCESS_GRANTED: 'selection-lists.access.granted',
+    SELECTION_LISTS_ACCESS_REVOKED: 'selection-lists.access.revoked',
+    SELECTION_LISTS_SEED_REQUESTED: 'selection-lists.seed.requested',
+    SELECTION_LISTS_SEED_COMPLETED: 'selection-lists.seed.completed',
+    SELECTION_LISTS_SEED_FAILED: 'selection-lists.seed.failed',
 };
 /** Returns the dead-letter queue topic name for a given topic */
 function dlqTopic(topic) {

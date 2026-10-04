@@ -74,6 +74,20 @@ database:
       # namespace that holds the superuser password.
       secretName: ""
       secretKey: DB_SUPERUSER_PASSWORD
+    # Services that own a DEDICATED database with their OWN login role and
+    # credentials (true per-service data ownership). Each entry is the NAME OF A
+    # TOP-LEVEL VALUES KEY (e.g. `selectionListService`) that carries:
+    #   enabled           gates the Job (nothing renders while the service is off)
+    #   dbName            the database to create
+    #   db.role           the owner role to create
+    #   db.secretName     Secret holding the role's password
+    #   db.passwordKey    key inside that Secret
+    # One pre-install/pre-upgrade Job per entry
+    # (templates/service-db-bootstrap-job.yaml). To onboard the next service, add
+    # its values key here and give it the `dbName` + `db` block -- no template
+    # change. See docs/runbooks/per-service-database-and-role.md.
+    serviceDatabases:
+      - selectionListService
 
 # Image for the consumer-registration-seed post-upgrade Job
 # (templates/consumer-registration-seed-job.yaml). It needs nothing but a shell and
@@ -796,7 +810,49 @@ selectionListService:
   port: 3008
   # Shared FuzeInfra Kafka brokers for the lifecycle event consumer.
   # Must equal selectionListService.port in the networkPolicy block below.
-  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
+  # Same broker Service every other consumer in this chart uses (chatService,
+  # applicationsService, kafkaTopics.bootstrapServer, ...). This default
+  # previously read `kafka.fuzeinfra...`, a name no other block uses.
+  kafkaBrokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # Dedicated database on the shared FuzeInfra Postgres, owned by the service's
+  # OWN role (db.role below) -- NOT the shared `database.user` role, which is
+  # explicitly denied access. Created/reconciled by
+  # templates/service-db-bootstrap-job.yaml (see database.bootstrap.serviceDatabases
+  # and docs/runbooks/per-service-database-and-role.md).
+  dbName: "fuzefront_selection_list"
+  # Per-service database identity: its own LOGIN role and its own credentials.
+  # Consumed by BOTH the Deployment (DB_USER / DB_PASSWORD) and the bootstrap Job
+  # (creates the role with that password), so they cannot drift.
+  db:
+    # Owner of dbName: LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE,
+    # NOREPLICATION. Matches the default in src/db/knexfile.ts.
+    role: "selection_list_svc"
+    # Secret holding the role's password. Minted + sealed by the dispatchable
+    # rotate-sealed-secret workflow (nobody ever sees the value); lives in
+    # deploy/contabo/sealed/selection-list-secrets.yaml.
+    secretName: "selection-list-secrets"
+    passwordKey: "DB_PASSWORD"
+    # DB_SSL for src/db/knexfile.ts (production default there is TLS ON, with
+    # certificate verification). UNVERIFIED: whether the shared FuzeInfra Postgres
+    # serves TLS with a certificate this client trusts. If the pod logs "server does
+    # not support SSL" or a certificate-verification error, set "false" here (a
+    # reviewable one-line change) -- do not edit the service code.
+    ssl: "true"
+  # Authorization enforcement (env FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED, read by
+  # services/selection-list-service/src/middleware/authz.flags.ts). The service
+  # runs NODE_ENV=production in-cluster, where authz is ALWAYS enforced whatever
+  # this says (review H-1: the old default was pass-through, i.e. no authorization
+  # at all). Declared true so the rendered manifest states the real posture; the
+  # key only has an effect outside production (dev/test).
+  authzEnabled: true
+  # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
+  # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe
+  # OFF. The CLIENT token is a SECRET (sealed) -- referenced, never inline.
+  featureFlags:
+    unleashUrl: ""
+    appName: "selection-list-service"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+    tokenSecretName: ""
   image:
     repository: fuzefront/selection-list-service
     tag: local
@@ -817,6 +873,14 @@ selectionListService:
     # services calling the selection-list API). The Traefik rule below covers
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
+  # Same-origin route under ingress.host (templates/ingress.yaml): publishes
+  # ONLY /api/v1/selection-lists and /api/v1/resolve (the paths
+  # packages/selection-lists-ui calls), stripping /api before the service, which
+  # mounts at /v1. Rendered only when selectionListService.enabled is also true.
+  # No auth is added or removed at the edge -- the service authenticates itself
+  # and the flag fuzefront.selection-lists.service (default OFF => 404) gates it.
+  ingress:
+    enabled: true
 
 # MCP SSE gateway for the selection-list-service. Ships dark by default alongside
 # the service itself. Both selectionListService.enabled AND selectionListsMcp.enabled
@@ -1141,9 +1205,11 @@ unleash:
   nodeSelector: {}
   affinity: {}
   tolerations: []
-  # RBAC for prod-unleash-ops.yml: the workflow reads the admin token from
-  # `unleash-secrets` via the k8s API using the runner pod's mounted service
-  # account token. The Role below grants `get` on that one secret; the
+  # RBAC for the in-cluster ops workflows: they read secrets from the
+  # `fuzefront` namespace via the k8s API using the runner pod's mounted
+  # service account token (ARC runners have no kubectl). The Role below grants
+  # `get` on `unleash.secretName` (prod-unleash-ops.yml reads the admin token
+  # from `unleash-secrets`) PLUS every name in `ciRunner.extraSecretNames`; the
   # RoleBinding attaches it to the ARC runner SA.
   #
   # serviceAccountName is the ServiceAccount the runner PODS run as — NOT the
@@ -1157,6 +1223,11 @@ unleash:
     enabled: true
     serviceAccountName: arc-runner-sa
     serviceAccountNamespace: ""   # defaults to the release namespace
+    # Additional Secret names (beyond unleash.secretName) in THIS namespace the
+    # runner SA may `get`. prod-synthetic-admin.yml needs `fuzefront-secrets`
+    # for INTERNAL_PROVISION_SECRET — declared in values-prod.yaml, not here, so
+    # the dev/local default stays least-privilege (unleash-secrets only).
+    extraSecretNames: []
 
 authentik:
   enabled: true
@@ -1270,7 +1341,9 @@ kafkaTopics:
   tolerations: []
   # retentionMs default applied when a topic omits its own. 7 days.
   defaultRetentionMs: 604800000
-  # Each topic: name (required), partitions, replicationFactor, retentionMs.
+  # Each topic: name (required), partitions, replicationFactor, retentionMs, and an
+  # optional cleanupPolicy (rendered as --config cleanup.policy=<v> only when set;
+  # omitted = broker default, which is `delete`).
   # DLQ companions are created for the consumer topics (dlqTopic() = "<t>.dlq").
   topics:
     # --- identity (security-service → provisioning-service + lifecycle consumers) ---
@@ -1370,6 +1443,103 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
+    # --- selection-lists (selection-list-service producer; docs/planning/selection-lists-events.md §4, §14) ---
+    # Keep in sync with the @fuzefront/shared TOPICS constant (SELECTION_LISTS_*,
+    # shared/src/kafka/types.ts). 3 partitions (matches identity.*), 7d retention,
+    # cleanup.policy=delete stated explicitly per topic (cleanupPolicy).
+    # selection-lists.seed.requested carries bearer attestation tokens (plan §8):
+    # 1d retention shrinks the exposure window, and its DLQ copy holds the same token
+    # (plan §7.2 "same exposure as the source topic"), so the DLQ is also 1d -- a
+    # deliberate departure from the 14d DLQ convention above. Lengthen it only if
+    # triage genuinely needs more than a day.
+    # selection-list-service consumes identity.org.created (new), identity.org.deleted
+    # and identity.user.deleted (existing); all three DLQs are already declared in the
+    # identity block above, so no further identity DLQs are needed for this feature.
+    - name: selection-lists.list.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.archived
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.archived
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.reordered
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.translation.upserted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.translation.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.access.granted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.access.revoked
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.seed.requested
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 86400000 # 1d -- carries bearer tokens (plan §8)
+      cleanupPolicy: delete
+    - name: selection-lists.seed.requested.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 86400000 # 1d -- same token exposure as the source topic (plan §7.2)
+      cleanupPolicy: delete
+    - name: selection-lists.seed.completed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.seed.failed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
 
 # Cloudflare cache purge — disabled by default; prod enables via values-prod.yaml.
 cloudflare:

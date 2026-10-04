@@ -2,7 +2,7 @@
 Typed client for the FuzeFront selection-list-service.
 
 One method per endpoint of ``services/selection-list-service/openapi.yaml``
-v1.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
+v4.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
 
 Usage::
 
@@ -38,6 +38,7 @@ from .types import (
     QuotaScope,
     ResolveResponse,
     ResolveResult,
+    SeedProvenance,
     SelectionList,
     SelectionListAccessRole,
     SelectionListItem,
@@ -72,6 +73,18 @@ def _parse_page(raw: dict) -> Page:
     )
 
 
+def _parse_seed(raw: object) -> SeedProvenance | None:
+    """``seed`` is required-but-nullable on the wire; tolerate absence as ``None``."""
+    if not isinstance(raw, dict):
+        return None
+    return SeedProvenance(
+        source=raw["source"],
+        pack_key=raw["pack_key"],
+        pack_version=raw["pack_version"],
+        user_modified=raw["user_modified"],
+    )
+
+
 def _parse_selection_list(raw: dict) -> SelectionList:
     return SelectionList(
         id=raw["id"],
@@ -87,6 +100,7 @@ def _parse_selection_list(raw: dict) -> SelectionList:
         updated_at=raw["updated_at"],
         description=raw.get("description"),
         item_count=raw.get("item_count"),
+        seed=_parse_seed(raw.get("seed")),
     )
 
 
@@ -104,6 +118,7 @@ def _parse_item(raw: dict) -> SelectionListItem:
         created_at=raw["created_at"],
         updated_at=raw["updated_at"],
         description=raw.get("description"),
+        seed=_parse_seed(raw.get("seed")),
     )
 
 
@@ -211,8 +226,10 @@ class SelectionListClient:
         schemes are rejected at construction time.
     :param token:
         Bearer token string, or a callable that returns one (so short-lived
-        tokens can refresh between calls). Optional -- ``resolve_ids`` may be
-        called unauthenticated by a trusted in-cluster caller.
+        tokens can refresh between calls). Every operation -- ``resolve_ids``
+        included (spec 2.0.0) -- requires it; it is optional only so a client
+        can be constructed before a token exists. Without one, calls raise a
+        ``401`` :class:`SelectionListApiError`.
     :param default_locale:
         Locale applied to every request that does not pass its own.
     """
@@ -851,6 +868,12 @@ class SelectionListClient:
         a URL). Archived ids resolve normally with ``status: 'archived'``; only
         purged or never-existent ids come back in ``missing``. Bounded at 500
         ids per call -- chunk larger batches yourself.
+
+        Authenticated like every other operation (spec 2.0.0): the Bearer
+        token must carry an organization claim, and resolution is scoped to
+        that org -- another org's ids land in ``missing``. There is no
+        anonymous mode; a missing or org-less token raises a ``401``
+        :class:`SelectionListApiError`.
         """
         body: dict = {"ids": ids}
         resolved_locale = locale or self._default_locale

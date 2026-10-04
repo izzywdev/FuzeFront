@@ -34,7 +34,7 @@ function makeFakeClient(existing: { resources: string[]; roles: string[] }) {
 describe('permit schema IaC', () => {
   it('defines exactly the resources and roles the code references', () => {
     expect(permitSchema.resources.map(r => r.key).sort()).toEqual(
-      ['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement']
+      ['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'SelectionList', 'SelectionListCatalog', 'ServiceEndpoint', 'UserManagement']
     )
     expect(permitSchema.roles.map(r => r.key).sort()).toEqual(['admin', 'developer', 'editor', 'viewer'])
 
@@ -91,6 +91,78 @@ describe('permit schema IaC', () => {
     }
   })
 
+  describe('selection lists', () => {
+    const LIST_ACTIONS = [
+      'add_value', 'delete', 'manage_access', 'read', 'remove_value', 'translate', 'update', 'update_value',
+    ]
+    const ROLE_MATRIX: Record<string, string[]> = {
+      'list-owner': LIST_ACTIONS,
+      'list-editor': ['add_value', 'read', 'remove_value', 'translate', 'update', 'update_value'],
+      'list-contributor': ['add_value', 'read', 'translate', 'update_value'],
+      'list-translator': ['read', 'translate'],
+      'list-viewer': ['read'],
+    }
+
+    it('SelectionList declares the eight per-list actions', () => {
+      const list = permitSchema.resources.find(r => r.key === 'SelectionList')!
+      expect(Object.keys(list.actions).sort()).toEqual(LIST_ACTIONS)
+    })
+
+    it('SelectionList declares exactly the five instance roles with the contract matrix', () => {
+      const list = permitSchema.resources.find(r => r.key === 'SelectionList')!
+      expect(Object.keys(list.roles ?? {}).sort()).toEqual(Object.keys(ROLE_MATRIX).sort())
+      for (const [role, perms] of Object.entries(ROLE_MATRIX)) {
+        expect([...list.roles![role].permissions].sort()).toEqual(perms)
+        // every permission names a declared action
+        for (const p of list.roles![role].permissions) expect(list.actions[p]).toBeDefined()
+        // direct assignment only: never derived from a role held elsewhere
+        expect(list.roles![role].granted_to).toBeUndefined()
+      }
+    })
+
+    it('SelectionListCatalog declares the four tenant-level actions', () => {
+      const cat = permitSchema.resources.find(r => r.key === 'SelectionListCatalog')!
+      expect(Object.keys(cat.actions).sort()).toEqual(['create', 'list', 'read_quota', 'resolve'])
+      expect(cat.roles).toBeUndefined()
+    })
+
+    it('tenant roles hold ZERO SelectionList:* actions (per-list access is instance-granted only)', () => {
+      for (const tenantRole of permitSchema.roles) {
+        expect(tenantRole.permissions.filter(p => p.startsWith('SelectionList:'))).toEqual([])
+      }
+    })
+
+    it('tenant roles hold the catalog actions per the matrix (developer: none)', () => {
+      const catalog = (key: string) =>
+        permitSchema.roles.find(r => r.key === key)!.permissions
+          .filter(p => p.startsWith('SelectionListCatalog:')).map(p => p.split(':')[1]).sort()
+      expect(catalog('admin')).toEqual(['create', 'list', 'read_quota', 'resolve'])
+      expect(catalog('editor')).toEqual(['create', 'list', 'resolve'])
+      expect(catalog('viewer')).toEqual(['list', 'resolve'])
+      expect(catalog('developer')).toEqual([])
+    })
+
+    it('every tenant role permission references a declared resource and action', () => {
+      for (const role of permitSchema.roles) {
+        for (const p of role.permissions) {
+          const [resKey, act] = p.split(':')
+          const res = permitSchema.resources.find(r => r.key === resKey)
+          expect(res).toBeDefined()
+          expect(res!.actions[act]).toBeDefined()
+        }
+      }
+    })
+
+    it('syncs both selection-list resources (and instance roles) to Permit', async () => {
+      const { client, calls } = makeFakeClient({ resources: [], roles: [] })
+      await syncPermitSchema(client)
+      const created = calls.resourceCreate.map((c: any) => c.key)
+      expect(created).toEqual(expect.arrayContaining(['SelectionList', 'SelectionListCatalog']))
+      const listDef = calls.resourceCreate.find((c: any) => c.key === 'SelectionList')
+      expect(Object.keys(listDef.roles).sort()).toEqual(Object.keys(ROLE_MATRIX).sort())
+    })
+  })
+
   it('admin role can manage organizations and user management', () => {
     const admin = permitSchema.roles.find(r => r.key === 'admin')!
     expect(admin.permissions).toContain('Organization:manage')
@@ -129,7 +201,7 @@ describe('permit schema IaC', () => {
   it('creates resources and roles when none exist (idempotent: create path)', async () => {
     const { client, calls } = makeFakeClient({ resources: [], roles: [] })
     await syncPermitSchema(client)
-    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
+    expect(calls.resourceCreate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'SelectionList', 'SelectionListCatalog', 'ServiceEndpoint', 'UserManagement'])
     expect(calls.roleCreate.map(r => r.key).sort()).toEqual(['admin', 'developer', 'editor', 'viewer'])
     expect(calls.resourceUpdate).toHaveLength(0)
     expect(calls.roleUpdate).toHaveLength(0)
@@ -137,13 +209,13 @@ describe('permit schema IaC', () => {
 
   it('updates resources and roles when they already exist (idempotent: update path)', async () => {
     const { client, calls } = makeFakeClient({
-      resources: ['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'],
+      resources: ['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'SelectionList', 'SelectionListCatalog', 'ServiceEndpoint', 'UserManagement'],
       roles: ['admin', 'developer', 'editor', 'viewer'],
     })
     await syncPermitSchema(client)
     expect(calls.resourceCreate).toHaveLength(0)
     expect(calls.roleCreate).toHaveLength(0)
-    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'ServiceEndpoint', 'UserManagement'])
+    expect(calls.resourceUpdate.map(r => r.key).sort()).toEqual(['App', 'Chat', 'DevPortalCatalog', 'DevPortalPlayground', 'Docs', 'Organization', 'SelectionList', 'SelectionListCatalog', 'ServiceEndpoint', 'UserManagement'])
     expect(calls.roleUpdate.map(r => r.key).sort()).toEqual(['admin', 'developer', 'editor', 'viewer'])
   })
 })

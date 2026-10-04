@@ -38,9 +38,16 @@
     "the same notApplicable treatment, but only once each actually handles the",
     "DELETED pair (no sparse store is exempt from delete: a row it can write, it",
     "can strand). devportal-service (core_tables) and notification-service",
-    "(per-user preferences) are REAL seed debt, not not-applicable. selection-",
-    "list-service is org-scoped + lazily populated and handles the deleted pair",
-    "already; it is a notApplicable candidate on the created pair in a later PR.",
+    "(per-user preferences) are REAL seed debt, not not-applicable.",
+    "",
+    "RESOLVED, selection-list-service (2026-10-04). It handles",
+    "identity.org.created (services/selection-list-service/src/events/",
+    "org-created.handler.ts: projects the org, then seeds the platform default",
+    "packs behind the fuzefront.selection-lists.seed-defaults flag) and",
+    "identity.org.deleted (tombstones the projection, then cascades), and",
+    "identity.user.deleted. identity.user.created is declared not-applicable: the",
+    "service has no user-scoped lists (docs/planning/selection-lists-events.md",
+    "section 2; a user-scoped seed request is answered SCOPE_UNSUPPORTED).",
     "Run `python3 scripts/gate_microservice_events.py --report` before trusting",
     "any of this -- it drifts as services are fixed."
   ],
@@ -51,10 +58,12 @@
     "email-service",
     "notification-service",
     "payment-service",
-    "selection-list-service",
     "sms-service"
   ],
   "notApplicable": {
+    "selection-list-service": {
+      "identity.user.created": "No user-scoped lists exist (selection_lists is keyed by organization_id; user_lists is a per-creator quota). Seeding for a user scope is answered SCOPE_UNSUPPORTED; see docs/planning/selection-lists-events.md section 2."
+    },
     "config-service": {
       "identity.org.created": "config_values is a sparse override store; a new org needs zero rows -- resolution inherits platform->portal->org->user (src/resolver/resolve.ts). An empty seed handler would be the vacuous-pass the gate rejects.",
       "identity.user.created": "config_values is a sparse override store; a new user needs zero rows -- unset keys resolve to the inherited scope (src/resolver/resolve.ts). An empty seed handler would be the vacuous-pass the gate rejects."

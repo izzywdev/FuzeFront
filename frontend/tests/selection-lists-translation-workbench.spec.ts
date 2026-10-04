@@ -1,9 +1,9 @@
 /**
- * SELECTION LISTS — TRANSLATION WORKBENCH FLOW — INDEPENDENT, PRE-PRODUCTION, RED-by-design UI e2e.
+ * SELECTION LISTS — TRANSLATION WORKBENCH FLOW — INDEPENDENT, PRE-PRODUCTION UI e2e.
  * (frontend-test-engineer — independent verification, NOT the implementer.)
  *
  * ── What this file is ────────────────────────────────────────────────────────
- * TDD RED specs for the translation-workbench flow of EPIC-17 / FFRNT-188 (Selection
+ * Playwright specs for the translation-workbench flow of EPIC-17 / FFRNT-188 (Selection
  * Lists). They are derived STRICTLY from the approved visual contract:
  *
  *   design/frames/selection-lists/manifest.json  (build inventory + test hooks)
@@ -24,23 +24,18 @@
  *   package     @fuzeone/selection-lists-ui
  *   components  TranslationWorkbench, LocaleEditor
  *
- * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
- * The route /settings/selection-lists/:listId/translations and
- * @fuzeone/selection-lists-ui do NOT exist yet. Every test below is EXPECTED
- * to fail today, and must fail for the RIGHT reason: the panels / editor /
- * modals are ABSENT from the DOM — not a harness/config error. That RED state
- * proves this is TDD (specs written against the approved design before
- * implementation), not tests retrofitted to shipped UI.
- *
- * Tests are deliberately NOT test.skip / test.fixme — hiding RED defeats the
- * point. They go GREEN when frontend-engineer lands @fuzeone/selection-lists-ui
- * and wires the translations route.
+ * ── Status ───────────────────────────────────────────────────────────────────
+ * These began as TDD-red specs written against the approved design before
+ * @fuzeone/selection-lists-ui existed. The UI has landed and they are GREEN; they
+ * are now a blocking CI gate (job `selection-list-service-e2e`, rolled into
+ * `Notify Team`). A failure here is a real regression — fix the UI or the spec,
+ * never test.skip / test.fixme it away.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
- *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-translation-workbench.red
+ *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-translation-workbench.spec.ts
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'

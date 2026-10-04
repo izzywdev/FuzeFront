@@ -1,0 +1,617 @@
+{
+  "packKey": "platform-defaults",
+  "version": 1,
+  "appliesTo": [
+    "organization",
+    "personal"
+  ],
+  "lists": [
+    {
+      "key": "yes-no",
+      "sourceLocale": "en",
+      "name": "Yes / No",
+      "translations": [
+        {
+          "locale": "es",
+          "name": "Sí / No"
+        },
+        {
+          "locale": "fr",
+          "name": "Oui / Non"
+        },
+        {
+          "locale": "de",
+          "name": "Ja / Nein"
+        },
+        {
+          "locale": "pt",
+          "name": "Sim / Não"
+        },
+        {
+          "locale": "ru",
+          "name": "Да / Нет"
+        },
+        {
+          "locale": "zh",
+          "name": "是 / 否"
+        },
+        {
+          "locale": "ja",
+          "name": "はい / いいえ"
+        },
+        {
+          "locale": "hi",
+          "name": "हाँ / नहीं"
+        },
+        {
+          "locale": "ar",
+          "name": "نعم / لا"
+        },
+        {
+          "locale": "he",
+          "name": "כן / לא"
+        }
+      ],
+      "items": [
+        {
+          "code": "YES",
+          "label": "Yes",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "Sí"
+            },
+            {
+              "locale": "fr",
+              "label": "Oui"
+            },
+            {
+              "locale": "de",
+              "label": "Ja"
+            },
+            {
+              "locale": "pt",
+              "label": "Sim"
+            },
+            {
+              "locale": "ru",
+              "label": "Да"
+            },
+            {
+              "locale": "zh",
+              "label": "是"
+            },
+            {
+              "locale": "ja",
+              "label": "はい"
+            },
+            {
+              "locale": "hi",
+              "label": "हाँ"
+            },
+            {
+              "locale": "ar",
+              "label": "نعم"
+            },
+            {
+              "locale": "he",
+              "label": "כן"
+            }
+          ]
+        },
+        {
+          "code": "NO",
+          "label": "No",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "No"
+            },
+            {
+              "locale": "fr",
+              "label": "Non"
+            },
+            {
+              "locale": "de",
+              "label": "Nein"
+            },
+            {
+              "locale": "pt",
+              "label": "Não"
+            },
+            {
+              "locale": "ru",
+              "label": "Нет"
+            },
+            {
+              "locale": "zh",
+              "label": "否"
+            },
+            {
+              "locale": "ja",
+              "label": "いいえ"
+            },
+            {
+              "locale": "hi",
+              "label": "नहीं"
+            },
+            {
+              "locale": "ar",
+              "label": "لا"
+            },
+            {
+              "locale": "he",
+              "label": "לא"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "priority",
+      "sourceLocale": "en",
+      "name": "Priority",
+      "translations": [
+        {
+          "locale": "es",
+          "name": "Prioridad"
+        },
+        {
+          "locale": "fr",
+          "name": "Priorité"
+        },
+        {
+          "locale": "de",
+          "name": "Priorität"
+        },
+        {
+          "locale": "pt",
+          "name": "Prioridade"
+        },
+        {
+          "locale": "ru",
+          "name": "Приоритет"
+        },
+        {
+          "locale": "zh",
+          "name": "优先级"
+        },
+        {
+          "locale": "ja",
+          "name": "優先度"
+        },
+        {
+          "locale": "hi",
+          "name": "प्राथमिकता"
+        },
+        {
+          "locale": "ar",
+          "name": "الأولوية"
+        },
+        {
+          "locale": "he",
+          "name": "עדיפות"
+        }
+      ],
+      "items": [
+        {
+          "code": "LOW",
+          "label": "Low",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "Baja"
+            },
+            {
+              "locale": "fr",
+              "label": "Basse"
+            },
+            {
+              "locale": "de",
+              "label": "Niedrig"
+            },
+            {
+              "locale": "pt",
+              "label": "Baixa"
+            },
+            {
+              "locale": "ru",
+              "label": "Низкий"
+            },
+            {
+              "locale": "zh",
+              "label": "低"
+            },
+            {
+              "locale": "ja",
+              "label": "低"
+            },
+            {
+              "locale": "hi",
+              "label": "कम"
+            },
+            {
+              "locale": "ar",
+              "label": "منخفضة"
+            },
+            {
+              "locale": "he",
+              "label": "נמוכה"
+            }
+          ]
+        },
+        {
+          "code": "MEDIUM",
+          "label": "Medium",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "Media"
+            },
+            {
+              "locale": "fr",
+              "label": "Moyenne"
+            },
+            {
+              "locale": "de",
+              "label": "Mittel"
+            },
+            {
+              "locale": "pt",
+              "label": "Média"
+            },
+            {
+              "locale": "ru",
+              "label": "Средний"
+            },
+            {
+              "locale": "zh",
+              "label": "中"
+            },
+            {
+              "locale": "ja",
+              "label": "中"
+            },
+            {
+              "locale": "hi",
+              "label": "मध्यम"
+            },
+            {
+              "locale": "ar",
+              "label": "متوسطة"
+            },
+            {
+              "locale": "he",
+              "label": "בינונית"
+            }
+          ]
+        },
+        {
+          "code": "HIGH",
+          "label": "High",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "Alta"
+            },
+            {
+              "locale": "fr",
+              "label": "Haute"
+            },
+            {
+              "locale": "de",
+              "label": "Hoch"
+            },
+            {
+              "locale": "pt",
+              "label": "Alta"
+            },
+            {
+              "locale": "ru",
+              "label": "Высокий"
+            },
+            {
+              "locale": "zh",
+              "label": "高"
+            },
+            {
+              "locale": "ja",
+              "label": "高"
+            },
+            {
+              "locale": "hi",
+              "label": "उच्च"
+            },
+            {
+              "locale": "ar",
+              "label": "عالية"
+            },
+            {
+              "locale": "he",
+              "label": "גבוהה"
+            }
+          ]
+        },
+        {
+          "code": "URGENT",
+          "label": "Urgent",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "Urgente"
+            },
+            {
+              "locale": "fr",
+              "label": "Urgente"
+            },
+            {
+              "locale": "de",
+              "label": "Dringend"
+            },
+            {
+              "locale": "pt",
+              "label": "Urgente"
+            },
+            {
+              "locale": "ru",
+              "label": "Срочный"
+            },
+            {
+              "locale": "zh",
+              "label": "紧急"
+            },
+            {
+              "locale": "ja",
+              "label": "緊急"
+            },
+            {
+              "locale": "hi",
+              "label": "अत्यावश्यक"
+            },
+            {
+              "locale": "ar",
+              "label": "عاجلة"
+            },
+            {
+              "locale": "he",
+              "label": "דחופה"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "work-status",
+      "sourceLocale": "en",
+      "name": "Work status",
+      "translations": [
+        {
+          "locale": "es",
+          "name": "Estado del trabajo"
+        },
+        {
+          "locale": "fr",
+          "name": "Statut du travail"
+        },
+        {
+          "locale": "de",
+          "name": "Arbeitsstatus"
+        },
+        {
+          "locale": "pt",
+          "name": "Estado do trabalho"
+        },
+        {
+          "locale": "ru",
+          "name": "Статус работы"
+        },
+        {
+          "locale": "zh",
+          "name": "工作状态"
+        },
+        {
+          "locale": "ja",
+          "name": "作業ステータス"
+        },
+        {
+          "locale": "hi",
+          "name": "कार्य स्थिति"
+        },
+        {
+          "locale": "ar",
+          "name": "حالة العمل"
+        },
+        {
+          "locale": "he",
+          "name": "סטטוס עבודה"
+        }
+      ],
+      "items": [
+        {
+          "code": "NOT_STARTED",
+          "label": "Not started",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "No iniciado"
+            },
+            {
+              "locale": "fr",
+              "label": "Non commencé"
+            },
+            {
+              "locale": "de",
+              "label": "Nicht begonnen"
+            },
+            {
+              "locale": "pt",
+              "label": "Não iniciado"
+            },
+            {
+              "locale": "ru",
+              "label": "Не начато"
+            },
+            {
+              "locale": "zh",
+              "label": "未开始"
+            },
+            {
+              "locale": "ja",
+              "label": "未着手"
+            },
+            {
+              "locale": "hi",
+              "label": "शुरू नहीं हुआ"
+            },
+            {
+              "locale": "ar",
+              "label": "لم يبدأ"
+            },
+            {
+              "locale": "he",
+              "label": "לא התחיל"
+            }
+          ]
+        },
+        {
+          "code": "IN_PROGRESS",
+          "label": "In progress",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "En curso"
+            },
+            {
+              "locale": "fr",
+              "label": "En cours"
+            },
+            {
+              "locale": "de",
+              "label": "In Bearbeitung"
+            },
+            {
+              "locale": "pt",
+              "label": "Em andamento"
+            },
+            {
+              "locale": "ru",
+              "label": "В работе"
+            },
+            {
+              "locale": "zh",
+              "label": "进行中"
+            },
+            {
+              "locale": "ja",
+              "label": "進行中"
+            },
+            {
+              "locale": "hi",
+              "label": "प्रगति में"
+            },
+            {
+              "locale": "ar",
+              "label": "قيد التنفيذ"
+            },
+            {
+              "locale": "he",
+              "label": "בתהליך"
+            }
+          ]
+        },
+        {
+          "code": "BLOCKED",
+          "label": "Blocked",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "Bloqueado"
+            },
+            {
+              "locale": "fr",
+              "label": "Bloqué"
+            },
+            {
+              "locale": "de",
+              "label": "Blockiert"
+            },
+            {
+              "locale": "pt",
+              "label": "Bloqueado"
+            },
+            {
+              "locale": "ru",
+              "label": "Заблокировано"
+            },
+            {
+              "locale": "zh",
+              "label": "已阻塞"
+            },
+            {
+              "locale": "ja",
+              "label": "ブロック中"
+            },
+            {
+              "locale": "hi",
+              "label": "अवरुद्ध"
+            },
+            {
+              "locale": "ar",
+              "label": "محظور"
+            },
+            {
+              "locale": "he",
+              "label": "חסום"
+            }
+          ]
+        },
+        {
+          "code": "DONE",
+          "label": "Done",
+          "translations": [
+            {
+              "locale": "es",
+              "label": "Hecho"
+            },
+            {
+              "locale": "fr",
+              "label": "Terminé"
+            },
+            {
+              "locale": "de",
+              "label": "Erledigt"
+            },
+            {
+              "locale": "pt",
+              "label": "Concluído"
+            },
+            {
+              "locale": "ru",
+              "label": "Готово"
+            },
+            {
+              "locale": "zh",
+              "label": "已完成"
+            },
+            {
+              "locale": "ja",
+              "label": "完了"
+            },
+            {
+              "locale": "hi",
+              "label": "पूर्ण"
+            },
+            {
+              "locale": "ar",
+              "label": "تم"
+            },
+            {
+              "locale": "he",
+              "label": "הושלם"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

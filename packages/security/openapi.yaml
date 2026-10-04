@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.9.0
+  version: 0.9.1
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -986,6 +986,17 @@ paths:
         key }` to scope it to a specific resource instance (ReBAC). Returns the
         created `Grant`. A grant is a rollout/assignment convenience — the
         AUTHORITATIVE decision is always `POST /authz/check`. Fail-closed.
+
+
+        **Authorization.** A human (session) caller must be authorized to
+        administer the TARGET tenant (tenant administrator), or — for a
+        resource-instance-scoped grant of a non-tenant-level role — hold
+        `manage_access` on that exact instance. A caller can never grant a
+        role broader than the one that authorizes them, and has no standing
+        in a tenant they do not administer: `403 FORBIDDEN`. A provider
+        outage while deciding fails closed (`502 PROVIDER_UNAVAILABLE`),
+        never allow. A machine caller must hold the `authz:admin` scope
+        (unchanged).
       security:
         - bearerAuth: []
       requestBody:
@@ -1005,6 +1016,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '502':
           $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
@@ -1019,6 +1032,14 @@ paths:
         — revoking an absent grant still returns 204. A revoke never changes the
         authoritative model beyond removing the assignment; `authz/check` remains
         the source of truth. Fail-closed.
+
+
+        **Authorization.** Same rule as `POST /authz/grants`: a human caller
+        must administer the target tenant (or hold `manage_access` on the
+        instance for an instance-scoped, non-tenant-level role), else `403
+        FORBIDDEN`; a machine caller must hold `authz:admin` (unchanged). A
+        `grantId` is resolved to its `tenant:subject:role` tuple and
+        authorized against THAT tenant.
       security:
         - bearerAuth: []
       requestBody:
@@ -1034,6 +1055,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
       x-pagination-reason: Singleton revoke action.
     get:
@@ -1046,6 +1071,11 @@ paths:
         hold grants across MANY resource instances under ReBAC, this set is
         treated as potentially unbounded and is cursor-paginated per the family
         pagination standard.
+
+
+        **Authorization.** A caller may always list their OWN grants.
+        Listing another subject's grants requires administering the tenant
+        (`403 FORBIDDEN` otherwise); a machine caller needs `authz:admin`.
       security:
         - bearerAuth: []
       parameters:
@@ -1079,6 +1109,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
   # ───────────────────────── AuthZ: subject attributes (ABAC) ───────────────
   /v1/security/authz/subjects/{subjectType}/{subjectKey}/attributes:
     patch:
@@ -1123,6 +1157,12 @@ paths:
         implementation — vendor name confined to the adapter, never this
         contract) — the type is load-bearing, not decoration, so no lookup
         ever resolves a bare subject id (identifier-standard.md, rule 2).
+
+
+        **Authorization — machine callers only.** Entitlement attributes may
+        be written only by an operator machine identity holding the
+        `authz:admin` scope. Human (session) callers are always denied
+        (`403 FORBIDDEN`), including tenant administrators.
       security:
         - bearerAuth: []
       parameters:
@@ -1162,6 +1202,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '502':
           $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
@@ -1234,6 +1276,10 @@ paths:
                 $ref: '#/components/schemas/Tenant'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
         '404':
           $ref: '#/components/responses/NotFound'
       x-pagination: exempt
@@ -1259,6 +1305,10 @@ paths:
                 $ref: '#/components/schemas/MemberPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
         '404':
           $ref: '#/components/responses/NotFound'
     post:
@@ -1287,6 +1337,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
         '404':
           $ref: '#/components/responses/NotFound'
       x-pagination: exempt
@@ -1310,6 +1364,10 @@ paths:
           description: Member removed.
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
         '404':
           $ref: '#/components/responses/NotFound'
       x-pagination: exempt
@@ -1341,6 +1399,10 @@ paths:
                 required: [items]
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
         '404':
           $ref: '#/components/responses/NotFound'
       x-pagination: exempt
@@ -1378,6 +1440,10 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/ProviderError'
         '404':
           $ref: '#/components/responses/NotFound'
       x-pagination: exempt
