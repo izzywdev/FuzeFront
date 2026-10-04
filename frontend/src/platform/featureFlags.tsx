@@ -99,3 +99,8 @@ export function useFlag(key: string, defaultValue = false): boolean {
   if (!loaded) return defaultValue
   return key in flags ? flags[key] : defaultValue
 }
+
+/** Routes must wait for flag evaluation before redirecting on an OFF result. */
+export function useFlagsLoaded(): boolean {
+  return useContext(FeatureFlagContext).loaded
+}

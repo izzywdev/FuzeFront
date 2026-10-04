@@ -36,6 +36,7 @@ export type {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 export {
+  setSelectionListAuthTokenProvider,
   listSelectionLists,
   createSelectionList,
   getSelectionList,

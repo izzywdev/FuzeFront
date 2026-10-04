@@ -18,7 +18,7 @@ import { AccountsProvider } from './contexts/AccountsContext'
 import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
-import { FeatureFlagProvider, useFlag } from './platform/featureFlags'
+import { FeatureFlagProvider, useFlag, useFlagsLoaded } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
 import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
@@ -61,7 +61,10 @@ import {
   TranslationWorkbenchFlow,
   SelectionListAccessFlow,
   SelectionListPickerHarness,
+  setSelectionListAuthTokenProvider,
 } from '@fuzeone/selection-lists-ui'
+
+setSelectionListAuthTokenProvider(getActiveAuthToken)
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -516,6 +519,8 @@ function ConfigAuditHistoryRoute() {
  */
 function SelectionListsRoute() {
   const enabled = useFlag('fuzefront.selection-lists.service', false)
+  const loaded = useFlagsLoaded()
+  if (!loaded) return null
   if (!enabled) return <Navigate to="/dashboard" replace />
   return (
     <FederatedAppErrorBoundary appName="Selection Lists">
@@ -526,6 +531,8 @@ function SelectionListsRoute() {
 
 function TranslationWorkbenchRoute() {
   const enabled = useFlag('fuzefront.selection-lists.service', false)
+  const loaded = useFlagsLoaded()
+  if (!loaded) return null
   if (!enabled) return <Navigate to="/dashboard" replace />
   return (
     <FederatedAppErrorBoundary appName="Translation Workbench">
@@ -536,6 +543,8 @@ function TranslationWorkbenchRoute() {
 
 function SelectionListAccessRoute() {
   const enabled = useFlag('fuzefront.selection-lists.service', false)
+  const loaded = useFlagsLoaded()
+  if (!loaded) return null
   if (!enabled) return <Navigate to="/dashboard" replace />
   return (
     <FederatedAppErrorBoundary appName="Selection List Access">
