@@ -3,7 +3,12 @@
 // All routes require a valid JWT (authMiddleware upstream).
 // All DB queries are scoped to req.orgId — never cross-org.
 //
-// TODO(S7): add permit.check() before each mutating operation.
+// Authorization (middleware/authz.ts; matrix: docs/planning/selection-lists-permit-actions.md):
+//   - tenant-level routes use the keyless SelectionListCatalog resource:
+//     GET / -> `list`, POST / -> `create`. GET / additionally filters every
+//     returned list through the per-list SelectionList `read` action.
+//   - every :listId route carries requireAuthzCheck('SelectionList', <action>)
+//     keyed on the list id.
 //
 // Pagination: cursor-based (opaque base64url JSON cursor), newest-first.
 //   DEFAULT_PAGE_SIZE = 50, MAX_PAGE_SIZE = 200.
@@ -20,22 +25,45 @@
 //   DELETE /:listId?purge=true — hard deletes the row (translations first)
 //   POST   /:listId/archive   — always archives (soft-delete)
 
-import { Router, Request, Response } from 'express';
+import { Request, Response } from 'express';
+import { createRouter } from '../lib/http';
+import { registerIdParams } from '../middleware/validateInput';
+import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { isSelectionListsEnabled } from '../flags';
-import { enforceListQuota } from '../middleware/quota';
+import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
+import { lockQuotaScope, checkListQuota, QuotaExceededError } from '../services/quota.service';
+import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
+import { lockOrgOutbox, wireUserId } from '../events/outbox';
+import { refreshListUserModified } from '../seed/content';
+import {
+  eventContextFromRequest,
+  emitAccessGranted,
+  emitListChanged,
+  emitListCreated,
+  emitListDeleted,
+  readList,
+} from '../events/emitters';
 
-const router = Router();
+const router = createRouter();
+registerIdParams(router);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 
+// Must equal the openapi `Locale` enum / i18n.languages.json (and the Zod
+// `SELECTION_LIST_LOCALES` the published events validate against): a locale
+// outside it would be accepted here but make the list.* event invalid.
 const SUPPORTED_LOCALES = new Set([
-  'en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'pl', 'ru', 'ja', 'zh',
+  'en', 'es', 'fr', 'de', 'pt', 'ru', 'zh', 'ja', 'hi', 'ar', 'he',
 ]);
+
+// openapi SelectionListKey (the event schemas use the same rule).
+const LIST_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
+const DESCRIPTION_MAX = 2000;
 
 // ─── Pagination helpers ───────────────────────────────────────────────────────
 
@@ -117,11 +145,30 @@ interface ListRow {
   created_by: string;
   created_at: Date | string;
   updated_at: Date | string;
+  seed_source?: string | null;
+  seed_key?: string | null;
+  seed_version?: number | string | null;
+  seed_user_modified?: boolean | null;
   name: string | null;
   description: string | null;
   resolved_locale: string | null;
   is_machine: boolean | null;
   item_count?: number | string | null;
+}
+
+/**
+ * openapi `SeedProvenance`: `null` for a user-authored row (seed_source IS NULL), else where the
+ * row came from. Read-only; the columns are written only by the seed algorithm and by the
+ * user-edit paths (`refreshListUserModified`).
+ */
+function formatSeed(row: ListRow) {
+  if (row.seed_source === null || row.seed_source === undefined) return null;
+  return {
+    source: row.seed_source,
+    pack_key: row.seed_key as string,
+    pack_version: Number(row.seed_version),
+    user_modified: Boolean(row.seed_user_modified),
+  };
 }
 
 function formatList(row: ListRow) {
@@ -139,6 +186,7 @@ function formatList(row: ListRow) {
       ? Number(row.item_count)
       : undefined,
     created_by: row.created_by,
+    seed: formatSeed(row),
     created_at: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : row.created_at,
@@ -165,6 +213,7 @@ async function fetchList(
       sl.source_locale,
       sl.status,
       sl.created_by,
+      sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
       sl.created_at,
       sl.updated_at,
       COALESCE(${localeChain.map(() => 't?.name').join(', t')}) AS name,
@@ -186,7 +235,7 @@ async function fetchList(
 
 // ─── GET / — list all selection lists ────────────────────────────────────────
 
-router.get('/', async (req: Request, res: Response): Promise<void> => {
+router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response): Promise<void> => {
   // Feature flag gate
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
@@ -198,8 +247,6 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  // TODO(S7): permit.check({ user: req.userId, action: 'read', resource: 'SelectionList' })
-
   // Parse + clamp pagination params
   const rawLimit = parseInt(String(req.query.limit ?? DEFAULT_PAGE_SIZE), 10);
   const limit = isNaN(rawLimit) || rawLimit < 1 ? DEFAULT_PAGE_SIZE : Math.min(rawLimit, MAX_PAGE_SIZE);
@@ -209,10 +256,20 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   const keyFilter = req.query.key as string | undefined;
 
   // Validate status filter
-  if (!['active', 'archived'].includes(statusFilter)) {
+  if (!['active', 'archived', 'all'].includes(statusFilter)) {
     res.status(400).json({
       code: 'VALIDATION_ERROR',
-      message: 'status must be one of: active, archived',
+      message: 'status must be one of: active, archived, all',
+    });
+    return;
+  }
+
+  // An unsupported `locale` is a 400, never a silent fallback (openapi: so a
+  // client bug does not masquerade as missing translations).
+  if (req.query.locale !== undefined && !SUPPORTED_LOCALES.has(String(req.query.locale))) {
+    res.status(400).json({
+      code: 'VALIDATION_ERROR',
+      message: `locale '${String(req.query.locale)}' is not supported.`,
     });
     return;
   }
@@ -246,8 +303,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
   const whereClause: string[] = ['sl.organization_id = ?'];
   const params: (string | number | boolean | null | Date)[] = [req.orgId as string];
 
-  whereClause.push('sl.status = ?');
-  params.push(statusFilter);
+  if (statusFilter !== 'all') {
+    whereClause.push('sl.status = ?');
+    params.push(statusFilter);
+  }
 
   if (keyFilter) {
     whereClause.push('sl.key = ?');
@@ -290,6 +349,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
         sl.source_locale,
         sl.status,
         sl.created_by,
+        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
         sl.created_at,
         sl.updated_at,
         ${nameCoalesce} AS name,
@@ -311,11 +371,15 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
     const rows = result.rows;
     const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    // Instance-level read filter: a list the caller has no grant on is absent
+    // from the page, never a 403. The cursor still follows the DB order, so a
+    // page may be shorter than `limit` but the walk stays gap- and dupe-free.
+    const items = await filterReadable(req, pageRows);
 
     let nextCursor: string | null = null;
-    if (hasMore && items.length > 0) {
-      const last = items[items.length - 1];
+    if (hasMore && pageRows.length > 0) {
+      const last = pageRows[pageRows.length - 1];
       nextCursor = encodeCursor({
         createdAt: last.created_at instanceof Date
           ? last.created_at.toISOString()
@@ -329,38 +393,45 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       `
       SELECT COUNT(*) AS total
       FROM selection_lists sl
-      WHERE sl.organization_id = ? AND sl.status = ?
+      WHERE sl.organization_id = ?
+      ${statusFilter !== 'all' ? 'AND sl.status = ?' : ''}
       ${keyFilter ? 'AND sl.key = ?' : ''}
       `,
-      keyFilter ? [req.orgId, statusFilter, keyFilter] : [req.orgId, statusFilter],
+      [
+        req.orgId,
+        ...(statusFilter !== 'all' ? [statusFilter] : []),
+        ...(keyFilter ? [keyFilter] : []),
+      ],
     );
     const total = parseInt(countResult.rows[0]?.total ?? '0', 10);
 
+    // `total` counts every list in the org, including ones the caller cannot
+    // read; once instance-level authz is enforced that would leak how many
+    // lists exist, so it is omitted (the field is optional in the contract).
+    const authzEnforced = await isAuthzEnabled(req);
+
     res.status(200).json({
       items: items.map(formatList),
-      page: {
-        nextCursor,
-        hasMore,
-        total,
-      },
+      page: authzEnforced ? { nextCursor, hasMore } : { nextCursor, hasMore, total },
     });
   } catch (err) {
-    console.error('[lists] GET / error:', err);
+    getLog(req).error(
+      { err, op: 'lists GET / error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists GET / error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── POST / — create a selection list ────────────────────────────────────────
 
-router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Request, res: Response): Promise<void> => {
   // Flag already checked by enforceListQuota middleware
 
   if (!req.orgId) {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'add_value', resource: 'SelectionList' })
 
   const { key, name, description, source_locale } = req.body ?? {};
 
@@ -379,11 +450,15 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'key is required.' });
     return;
   }
-  if (!/^[a-z0-9][a-z0-9_-]*$/.test(key)) {
+  if (!LIST_KEY_PATTERN.test(key.trim())) {
     res.status(400).json({
       code: 'VALIDATION_ERROR',
-      message: 'key must be lowercase alphanumeric with hyphens/underscores.',
+      message: 'key must be 2-64 characters of lowercase alphanumerics and hyphens, starting and ending with an alphanumeric.',
     });
+    return;
+  }
+  if (description !== undefined && description !== null && (typeof description !== 'string' || description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
     return;
   }
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -408,8 +483,18 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
   const id = mintId('selectionList');
 
   try {
-    // Insert list row + seed source-locale translation in a transaction
+    // Insert list row + seed source-locale translation + grant the creator
+    // list-owner, all in one transaction.
     await db.transaction(async (trx) => {
+      // Lock order is ALWAYS org outbox lock -> quota lock -> list row (events/outbox.ts):
+      // the seed algorithm takes them in that order too, so taking the quota lock first here
+      // could deadlock against a concurrent seed of the same org.
+      await lockOrgOutbox(trx, req.orgId as string);
+      // Exact quota enforcement: serialise creates for this org, re-check the
+      // ceiling under the lock, then insert (see quota.service.ts header).
+      await lockQuotaScope(trx, `org_lists:${req.orgId}`);
+      await checkListQuota(req.orgId as string, trx);
+
       await trx.raw(
         `
         INSERT INTO selection_lists (id, organization_id, key, source_locale, status, created_by)
@@ -431,6 +516,24 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
           hashText(name.trim()),
         ],
       );
+
+      // The creator becomes list-owner: Security API grant FIRST (source of
+      // truth), mirror row second, both inside this transaction — if the grant
+      // throws, the list row rolls back, so no list is ever created that
+      // nobody (but an org admin) can administer.
+      // (Written with this service's machine identity, not the caller's token.)
+      await grantListOwner(req.userId as string, req.orgId as string, id, req.userId as string, trx);
+
+      // Outbox, same transaction (docs/planning/selection-lists-events.md section 6):
+      // list.created (revision 1) then the creator's owner grant. Written AFTER the
+      // Security API call so the per-org outbox lock is held only for the commit.
+      const ctx = eventContextFromRequest(req);
+      await emitListCreated(trx, ctx, id);
+      await emitAccessGranted(trx, ctx, id, {
+        userId: wireUserId(req.userId as string),
+        role: 'list-owner',
+        previousRole: null,
+      });
     });
 
     // Fetch the newly created list (with translation) to return the canonical shape
@@ -443,6 +546,7 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
         sl.source_locale,
         sl.status,
         sl.created_by,
+        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
         sl.created_at,
         sl.updated_at,
         t.name,
@@ -465,19 +569,26 @@ router.post('/', enforceListQuota, async (req: Request, res: Response): Promise<
 
     res.status(201).json(formatList(row));
   } catch (err: unknown) {
+    if (err instanceof QuotaExceededError) {
+      sendQuotaExceeded(res, err);
+      return;
+    }
     const pg = err as { code?: string };
     if (pg?.code === '23505') {
       res.status(409).json({ code: 'CONFLICT', message: `A list with key '${key}' already exists.` });
       return;
     }
-    console.error('[lists] POST / error:', err);
+    getLog(req).error(
+      { err, op: 'lists POST / error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists POST / error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── GET /:listId — fetch a single list ──────────────────────────────────────
 
-router.get('/:listId', async (req: Request, res: Response): Promise<void> => {
+router.get('/:listId', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -487,8 +598,6 @@ router.get('/:listId', async (req: Request, res: Response): Promise<void> => {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'read', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId } = req.params;
   const queryLocale = req.query.locale as string | undefined;
@@ -526,6 +635,7 @@ router.get('/:listId', async (req: Request, res: Response): Promise<void> => {
         sl.source_locale,
         sl.status,
         sl.created_by,
+        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
         sl.created_at,
         sl.updated_at,
         ${nameCoalesce} AS name,
@@ -551,14 +661,29 @@ router.get('/:listId', async (req: Request, res: Response): Promise<void> => {
 
     res.status(200).json(formatList(row));
   } catch (err) {
-    console.error('[lists] GET /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists GET /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists GET /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── PATCH /:listId — partial update ─────────────────────────────────────────
 
-router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
+// PATCH {status:"archived"} IS an archive, so it needs the same action as
+// POST /:listId/archive and DELETE /:listId — `delete` (list-owner only) —
+// otherwise a list-editor could archive via PATCH what it cannot archive via
+// the archive endpoint (review L-1). Un-archiving ({status:"active"}) stays on
+// the route's base `update` action. Stacked AFTER the base check, so it can
+// only tighten.
+const requireArchiveAuthzOnStatusChange = requireAuthzCheckWhen(
+  (req) => req.body?.status === 'archived',
+  'SelectionList',
+  'delete',
+);
+
+router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireArchiveAuthzOnStatusChange, async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -568,8 +693,6 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
     res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Organization context required.' });
     return;
   }
-
-  // TODO(S7): permit.check({ user: req.userId, action: 'edit', resource: 'SelectionList', resourceInstance: req.params.listId })
 
   const { listId } = req.params;
   const body = req.body ?? {};
@@ -597,13 +720,17 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ code: 'VALIDATION_ERROR', message: 'key must be a non-empty string.' });
       return;
     }
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(body.key)) {
+    if (!LIST_KEY_PATTERN.test(body.key.trim())) {
       res.status(400).json({
         code: 'VALIDATION_ERROR',
-        message: 'key must be lowercase alphanumeric with hyphens/underscores.',
+        message: 'key must be 2-64 characters of lowercase alphanumerics and hyphens, starting and ending with an alphanumeric.',
       });
       return;
     }
+  }
+  if (body.description !== undefined && body.description !== null && (typeof body.description !== 'string' || body.description.length > DESCRIPTION_MAX)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `description must be a string of at most ${DESCRIPTION_MAX} characters.` });
+    return;
   }
   if (body.source_locale !== undefined && !SUPPORTED_LOCALES.has(body.source_locale)) {
     res.status(400).json({ code: 'VALIDATION_ERROR', message: `source_locale '${body.source_locale}' is not supported.` });
@@ -623,19 +750,21 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    // Fetch the existing list row (scoped to org)
-    const existing = await db.raw<{ rows: [{ id: string; source_locale: string; status: string; key: string }] }>(
-      `SELECT id, source_locale, status, key FROM selection_lists WHERE id = ? AND organization_id = ?`,
-      [listId, req.orgId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
-      return;
-    }
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
+      // Lock order is ALWAYS org outbox lock -> list row (emitters/outbox.ts), so a
+      // concurrent item create / purge / access write on this org cannot deadlock.
+      await lockOrgOutbox(trx, req.orgId as string);
 
-    const current = existing.rows[0];
+      // Fetch the existing list row (scoped to org) inside the transaction; it is
+      // also the `before` state the event diff is taken against.
+      const existing = await trx.raw<{ rows: Array<{ id: string; source_locale: string; status: string; key: string }> }>(
+        `SELECT id, source_locale, status, key FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
+        [listId, req.orgId],
+      );
+      if (!existing.rows[0]) return 'not-found';
+      const current = existing.rows[0];
+      const before = await readList(trx, listId);
 
-    await db.transaction(async (trx) => {
       // Update the list row — always bump updated_at (plus any changed scalars)
       const listUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
       if (body.key !== undefined) listUpdates.key = body.key.trim();
@@ -687,7 +816,19 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
           );
         }
       }
+
+      // A human edited this list: if it is a seeded one whose content no longer hashes to
+      // `seed_hash`, persist seed_user_modified (before the emit, so the snapshot carries it).
+      await refreshListUserModified(trx, listId);
+
+      // Outbox, same transaction: list.updated (what changed) and/or list.archived.
+      await emitListChanged(trx, eventContextFromRequest(req), listId, before);
+      return 'ok';
     });
+    if (outcome === 'not-found') {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
+      return;
+    }
 
     // Return the updated list with source-locale translation
     const updatedResult = await db.raw<{ rows: ListRow[] }>(
@@ -699,6 +840,7 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
         sl.source_locale,
         sl.status,
         sl.created_by,
+        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
         sl.created_at,
         sl.updated_at,
         t.name,
@@ -723,14 +865,17 @@ router.patch('/:listId', async (req: Request, res: Response): Promise<void> => {
       res.status(409).json({ code: 'CONFLICT', message: 'A list with that key already exists.' });
       return;
     }
-    console.error('[lists] PATCH /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists PATCH /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists PATCH /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── DELETE /:listId — archive or purge ──────────────────────────────────────
 
-router.delete('/:listId', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -741,24 +886,26 @@ router.delete('/:listId', async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  // TODO(S7): permit.check({ user: req.userId, action: 'delete', resource: 'SelectionList', resourceInstance: req.params.listId })
-
   const { listId } = req.params;
   const purge = req.query.purge === 'true';
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ?`,
-      [listId, req.orgId],
-    );
-    if (!existing.rows[0]) {
-      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
-      return;
-    }
+    // One transaction for the existence check, the change and its outbox event.
+    // Lock order: org outbox lock -> list row (see events/outbox.ts).
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
+        [listId, req.orgId],
+      );
+      if (!existing.rows[0]) return 'not-found';
 
-    if (purge) {
-      // Hard delete — translations and items must be removed first
-      await db.transaction(async (trx) => {
+      const ctx = eventContextFromRequest(req);
+      if (purge) {
+        // list.deleted tombstone FIRST: it reads the key and bumps the revision,
+        // which needs the row. No per-item/translation/access events: it implies them.
+        await emitListDeleted(trx, ctx, listId);
+        // Hard delete — translations and items must be removed first
         // Delete item translations first (FK constraint)
         await trx.raw(
           `
@@ -773,17 +920,32 @@ router.delete('/:listId', async (req: Request, res: Response): Promise<void> => 
         await trx.raw(`DELETE FROM selection_list_items WHERE list_id = ?`, [listId]);
         // Delete list translations
         await trx.raw(`DELETE FROM selection_list_translations WHERE list_id = ?`, [listId]);
+        // Delete the access-grant mirror rows (FK ON DELETE RESTRICT) — purge
+        // cascades to every access grant (openapi DELETE /{listId}).
+        await trx.raw(`DELETE FROM selection_list_access WHERE list_id = ?`, [listId]);
+        // Detach the audit rows (selection_list_audit.list_id is an FK without cascade; seeding writes
+        // list-level rows) - the trail is kept, the list reference is dropped (seed audit rows also carry
+        // the list id/key in `after`).
+        await trx.raw(`UPDATE selection_list_audit SET list_id = NULL WHERE list_id = ?`, [listId]);
         // Delete the list
         await trx.raw(`DELETE FROM selection_lists WHERE id = ?`, [listId]);
-      });
+      } else {
+        // Soft delete: archive (no event if it already was archived)
+        const before = await readList(trx, listId);
+        await trx.raw(`UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`, [listId]);
+        await refreshListUserModified(trx, listId);
+        await emitListChanged(trx, ctx, listId, before);
+      }
+      return 'ok';
+    });
+    if (outcome === 'not-found') {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
+      return;
+    }
+
+    if (purge) {
       res.status(204).send();
     } else {
-      // Soft delete: archive
-      await db.raw(
-        `UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`,
-        [listId],
-      );
-
       // Return the archived list
       const result = await db.raw<{ rows: ListRow[] }>(
         `
@@ -794,6 +956,7 @@ router.delete('/:listId', async (req: Request, res: Response): Promise<void> => 
           sl.source_locale,
           sl.status,
           sl.created_by,
+          sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
           sl.created_at,
           sl.updated_at,
           t.name,
@@ -813,14 +976,17 @@ router.delete('/:listId', async (req: Request, res: Response): Promise<void> => 
       res.status(200).json(formatList(result.rows[0]));
     }
   } catch (err) {
-    console.error('[lists] DELETE /:listId error:', err);
+    getLog(req).error(
+      { err, op: 'lists DELETE /:listId error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists DELETE /:listId error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });
 
 // ─── POST /:listId/archive — explicit archive ─────────────────────────────────
 
-router.post('/:listId/archive', async (req: Request, res: Response): Promise<void> => {
+router.post('/:listId/archive', requireAuthzCheck('SelectionList', 'delete'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
     return;
@@ -831,24 +997,27 @@ router.post('/:listId/archive', async (req: Request, res: Response): Promise<voi
     return;
   }
 
-  // TODO(S7): permit.check({ user: req.userId, action: 'delete', resource: 'SelectionList', resourceInstance: req.params.listId })
-
   const { listId } = req.params;
 
   try {
-    const existing = await db.raw<{ rows: [{ id: string }] }>(
-      `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ?`,
-      [listId, req.orgId],
-    );
-    if (!existing.rows[0]) {
+    const outcome = await db.transaction(async (trx): Promise<'not-found' | 'ok'> => {
+      await lockOrgOutbox(trx, req.orgId as string);
+      const existing = await trx.raw<{ rows: [{ id: string }] }>(
+        `SELECT id FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
+        [listId, req.orgId],
+      );
+      if (!existing.rows[0]) return 'not-found';
+
+      const before = await readList(trx, listId);
+      await trx.raw(`UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`, [listId]);
+      await refreshListUserModified(trx, listId);
+      await emitListChanged(trx, eventContextFromRequest(req), listId, before);
+      return 'ok';
+    });
+    if (outcome === 'not-found') {
       res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
       return;
     }
-
-    await db.raw(
-      `UPDATE selection_lists SET status = 'archived', updated_at = now() WHERE id = ?`,
-      [listId],
-    );
 
     const result = await db.raw<{ rows: ListRow[] }>(
       `
@@ -859,6 +1028,7 @@ router.post('/:listId/archive', async (req: Request, res: Response): Promise<voi
         sl.source_locale,
         sl.status,
         sl.created_by,
+        sl.seed_source, sl.seed_key, sl.seed_version, sl.seed_user_modified,
         sl.created_at,
         sl.updated_at,
         t.name,
@@ -878,7 +1048,10 @@ router.post('/:listId/archive', async (req: Request, res: Response): Promise<voi
 
     res.status(200).json(formatList(result.rows[0]));
   } catch (err) {
-    console.error('[lists] POST /:listId/archive error:', err);
+    getLog(req).error(
+      { err, op: 'lists POST /:listId/archive error', userId: req.userId, orgId: req.orgId, params: req.params },
+      'lists POST /:listId/archive error failed',
+    );
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   }
 });

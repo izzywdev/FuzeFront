@@ -31,7 +31,10 @@ jest.mock('../src/db', () => ({
 
 // ─── Identity mock (mintId) ───────────────────────────────────────────────────
 
+// Only mintId is stubbed (deterministic ids); the registry (ENTITY_PREFIXES, used
+// by the edge id validation in src/middleware/validateInput.ts) stays REAL.
 jest.mock('@izzywdev/fuzefront-identity', () => ({
+  ...jest.requireActual('@izzywdev/fuzefront-identity'),
   mintId: (type: string) =>
     type === 'selectionList'
       ? 'front_sl_01testlistid000000000000'
@@ -43,7 +46,41 @@ jest.mock('@izzywdev/fuzefront-identity', () => ({
 jest.mock('../src/middleware/quota', () => ({
   enforceListQuota: (_req: any, _res: any, next: any) => next(),
   enforceItemQuota: (_req: any, _res: any, next: any) => next(),
+  sendQuotaExceeded: jest.requireActual('../src/middleware/quota').sendQuotaExceeded,
 }));
+
+// ─── Quota service mock — the locked, in-transaction re-check ─────────────────
+// The create handler takes an advisory lock then re-checks the ceiling INSIDE the
+// transaction (exact enforcement). Real counting is covered by quota.service.test.ts.
+
+const mockLockQuotaScope = jest.fn().mockResolvedValue(undefined);
+const mockCheckListQuota = jest.fn().mockResolvedValue(undefined);
+jest.mock('../src/services/quota.service', () => ({
+  ...jest.requireActual('../src/services/quota.service'),
+  lockQuotaScope: (...args: any[]) => mockLockQuotaScope(...args),
+  checkListQuota: (...args: any[]) => mockCheckListQuota(...args),
+}));
+
+// ─── Creator -> list-owner grant (Security API + mirror, inside the create tx) ─
+// grantListOwner itself is covered by authz.middleware.test.ts.
+
+const mockGrantListOwner = jest.fn().mockResolvedValue(undefined);
+jest.mock('../src/middleware/authz', () => ({
+  ...jest.requireActual('../src/middleware/authz'),
+  grantListOwner: (...args: any[]) => mockGrantListOwner(...args),
+}));
+
+// ─── Outbox emitters (events/*) ───────────────────────────────────────────────
+// The routes write their outbox events through events/emitters (same transaction).
+// These suites pin ROUTE behaviour against a mocked knex, so the event layer is a
+// stub here; its real behaviour (snapshots, revisions, atomicity with the data
+// change, exactly-one-topic-per-route) is covered against real Postgres in
+// tests/outbox.db.test.ts and tests/outbox.routes.db.test.ts.
+jest.mock('../src/events/outbox');
+jest.mock('../src/events/emitters');
+// The seeded-then-edited hash check (seed/content.ts) reads the row back through the transaction; its
+// behaviour is covered against real Postgres in tests/seed.user-edits.db.test.ts.
+jest.mock('../src/seed/content');
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -97,6 +134,9 @@ beforeEach(() => {
   mockTransaction.mockReset();
   // Re-establish the transaction implementation after reset.
   mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
+  mockLockQuotaScope.mockReset().mockResolvedValue(undefined);
+  mockCheckListQuota.mockReset().mockResolvedValue(undefined);
+  mockGrantListOwner.mockReset().mockResolvedValue(undefined);
   setFlagClient({ getBooleanValue: async () => true });
 });
 
@@ -250,6 +290,32 @@ describe('GET /v1/selection-lists', () => {
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
 
+  it('accepts status=all and applies NO status predicate', async () => {
+    mockRaw
+      .mockResolvedValueOnce({ rows: [LIST_ROW] })
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] });
+
+    const res = await request(app)
+      .get('/v1/selection-lists?status=all')
+      .set(authHeader());
+
+    expect(res.status).toBe(200);
+    const [mainSql, mainParams] = mockRaw.mock.calls[0];
+    expect(mainSql).not.toContain('sl.status = ?');
+    expect(mainParams).not.toContain('all');
+    const [countSql] = mockRaw.mock.calls[1];
+    expect(countSql).not.toContain('sl.status = ?');
+  });
+
+  it('returns 400 VALIDATION_ERROR for an unsupported locale (never a silent fallback)', async () => {
+    const res = await request(app)
+      .get('/v1/selection-lists?locale=xx')
+      .set(authHeader());
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+    expect(mockRaw).not.toHaveBeenCalled();
+  });
+
   it('returns 401 when no JWT', async () => {
     const res = await request(app).get('/v1/selection-lists');
     expect(res.status).toBe(401);
@@ -277,6 +343,79 @@ describe('POST /v1/selection-lists', () => {
     expect(res.body.name).toBe('Countries');
     expect(res.body.status).toBe('active');
     expect(res.body.organization_id).toBe(TEST_ORG_ID);
+  });
+
+  it('grants the creator list-owner inside the create transaction, after the inserts', async () => {
+    mockTrxRaw.mockResolvedValue({ rows: [] });
+    mockRaw.mockResolvedValueOnce({ rows: [LIST_ROW] });
+
+    const res = await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(res.status).toBe(201);
+    expect(mockGrantListOwner).toHaveBeenCalledWith(
+      TEST_USER_ID,
+      TEST_ORG_ID,
+      'front_sl_01testlistid000000000000',
+      TEST_USER_ID,
+      // No caller token argument any more: the grant is written with the
+      // service's MACHINE identity inside grantListOwner (lib/machineIdentity.ts).
+      mockTrx,
+    );
+    // The grant runs after both INSERTs (so a thrown grant rolls the list back).
+    expect(mockGrantListOwner.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mockTrxRaw.mock.invocationCallOrder[1],
+    );
+  });
+
+  it('does NOT return 201 when the owner grant throws (the transaction rolls the list back)', async () => {
+    mockTrxRaw.mockResolvedValue({ rows: [] });
+    mockGrantListOwner.mockRejectedValueOnce(new Error('Security API unavailable'));
+
+    const res = await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(res.status).toBe(500);
+    // The post-commit fetch is never reached.
+    expect(mockRaw).not.toHaveBeenCalled();
+  });
+
+  it('takes the per-org advisory lock and re-checks the ceiling INSIDE the transaction', async () => {
+    mockTrxRaw.mockResolvedValue({ rows: [] });
+    mockRaw.mockResolvedValueOnce({ rows: [LIST_ROW] });
+
+    await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `org_lists:${TEST_ORG_ID}`);
+    expect(mockCheckListQuota).toHaveBeenCalledWith(TEST_ORG_ID, mockTrx);
+    expect(mockLockQuotaScope.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCheckListQuota.mock.invocationCallOrder[0],
+    );
+    expect(mockCheckListQuota.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTrxRaw.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('returns 403 QUOTA_EXCEEDED (not 500) when the in-transaction re-check refuses', async () => {
+    const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+    mockCheckListQuota.mockRejectedValueOnce(new QuotaExceededError('org_lists', 3, 3, 'lists'));
+
+    const res = await request(app)
+      .post('/v1/selection-lists')
+      .set(authHeader())
+      .send({ key: 'countries', name: 'Countries' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'org_lists', limit: 3, current: 3 });
+    expect(mockTrxRaw).not.toHaveBeenCalled();
+    expect(mockGrantListOwner).not.toHaveBeenCalled();
   });
 
   it('mints the id — never uses client-supplied id', async () => {
@@ -359,6 +498,19 @@ describe('GET /v1/selection-lists/:listId', () => {
     expect(typeof res.body.is_machine).toBe('boolean');
   });
 
+  it('renders `seed` as null for a user-authored row (seed_source IS NULL) and the provenance for a seeded one; created_by passes through system:* and the deleted-user sentinel', async () => {
+    const get = async (row: Record<string, unknown>) => {
+      mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }).mockResolvedValueOnce({ rows: [row] });
+      return (await request(app).get(`/v1/selection-lists/${TEST_LIST_ID}`).set(authHeader())).body;
+    };
+    expect((await get(LIST_ROW)).seed).toBeNull();
+    expect((await get({ ...LIST_ROW, seed_source: null, seed_key: null, seed_version: null, seed_user_modified: false })).seed).toBeNull();
+    const seeded = await get({ ...LIST_ROW, created_by: 'system:selection-list-service', seed_source: 'platform', seed_key: 'platform-defaults', seed_version: '2', seed_user_modified: true });
+    expect(seeded.seed).toEqual({ source: 'platform', pack_key: 'platform-defaults', pack_version: 2, user_modified: true });
+    expect(seeded.created_by).toBe('system:selection-list-service');
+    expect((await get({ ...LIST_ROW, created_by: '[deleted-user]' })).created_by).toBe('[deleted-user]');
+  });
+
   it('returns 404 when list not found', async () => {
     mockRaw.mockResolvedValueOnce({ rows: [] }); // quick fetch returns empty
 
@@ -380,11 +532,10 @@ describe('GET /v1/selection-lists/:listId', () => {
 
 describe('PATCH /v1/selection-lists/:listId', () => {
   it('updates name and returns 200', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }] }) // fetch existing
-      .mockResolvedValueOnce({ rows: [{ ...LIST_ROW, name: 'Countries Updated' }] }); // fetch after update
+    mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, name: 'Countries Updated' }] }); // fetch after update
 
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }] }) // fetch existing (in the txn)
       .mockResolvedValueOnce({ rows: [] }) // UPDATE selection_lists
       .mockResolvedValueOnce({ rows: [] }); // UPSERT translation
 
@@ -416,7 +567,7 @@ describe('PATCH /v1/selection-lists/:listId', () => {
   });
 
   it('returns 404 when list not found', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [] }); // fetch existing returns empty
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] }); // fetch existing returns empty
 
     const res = await request(app)
       .patch(`/v1/selection-lists/front_sl_nonexistent0000000000`)
@@ -428,10 +579,9 @@ describe('PATCH /v1/selection-lists/:listId', () => {
   });
 
   it('returns 409 on duplicate key', async () => {
-    mockRaw.mockResolvedValueOnce({
-      rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }],
-    });
-    mockTrxRaw.mockRejectedValueOnce({ code: '23505' });
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries' }] })
+      .mockRejectedValueOnce({ code: '23505' }); // UPDATE collides on (organization_id, key)
 
     const res = await request(app)
       .patch(`/v1/selection-lists/${TEST_LIST_ID}`)
@@ -447,10 +597,10 @@ describe('PATCH /v1/selection-lists/:listId', () => {
 
 describe('DELETE /v1/selection-lists/:listId', () => {
   it('archives (soft-delete) by default and returns 200', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists
-      .mockResolvedValueOnce({ rows: [] })                      // UPDATE archived
-      .mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists (in the txn)
+      .mockResolvedValueOnce({ rows: [] });                    // UPDATE archived
+    mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
 
     const res = await request(app)
       .delete(`/v1/selection-lists/${TEST_LIST_ID}`)
@@ -461,12 +611,12 @@ describe('DELETE /v1/selection-lists/:listId', () => {
   });
 
   it('hard-deletes with purge=true and returns 204', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }); // check exists
-
     mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists (in the txn)
       .mockResolvedValueOnce({ rows: [] }) // DELETE item translations
       .mockResolvedValueOnce({ rows: [] }) // DELETE items
       .mockResolvedValueOnce({ rows: [] }) // DELETE list translations
+      .mockResolvedValueOnce({ rows: [] }) // DELETE access-grant mirror rows (FK RESTRICT)
       .mockResolvedValueOnce({ rows: [] }); // DELETE list
 
     const res = await request(app)
@@ -474,10 +624,16 @@ describe('DELETE /v1/selection-lists/:listId', () => {
       .set(authHeader());
 
     expect(res.status).toBe(204);
+    // Purge cascades to access grants, and removes them BEFORE the list row.
+    const sqls = mockTrxRaw.mock.calls.map((c) => String(c[0]));
+    const accessIdx = sqls.findIndex((q) => q.includes('DELETE FROM selection_list_access'));
+    const listIdx = sqls.findIndex((q) => q.includes('DELETE FROM selection_lists'));
+    expect(accessIdx).toBeGreaterThanOrEqual(0);
+    expect(accessIdx).toBeLessThan(listIdx);
   });
 
   it('returns 404 when list not found', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [] }); // check exists returns empty
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] }); // check exists returns empty
 
     const res = await request(app)
       .delete(`/v1/selection-lists/front_sl_nonexistent0000000000`)
@@ -492,10 +648,10 @@ describe('DELETE /v1/selection-lists/:listId', () => {
 
 describe('POST /v1/selection-lists/:listId/archive', () => {
   it('archives the list and returns 200', async () => {
-    mockRaw
-      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists
-      .mockResolvedValueOnce({ rows: [] })                      // UPDATE archived
-      .mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID }] }) // check exists (in the txn)
+      .mockResolvedValueOnce({ rows: [] });                    // UPDATE archived
+    mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'archived' }] }); // fetch after
 
     const res = await request(app)
       .post(`/v1/selection-lists/${TEST_LIST_ID}/archive`)
@@ -506,7 +662,7 @@ describe('POST /v1/selection-lists/:listId/archive', () => {
   });
 
   it('returns 404 when list not found', async () => {
-    mockRaw.mockResolvedValueOnce({ rows: [] });
+    mockTrxRaw.mockResolvedValueOnce({ rows: [] });
 
     const res = await request(app)
       .post(`/v1/selection-lists/front_sl_nonexistent0000000000/archive`)

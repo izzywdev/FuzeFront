@@ -101,12 +101,22 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 function skipIfNoDb(name: string, fn: () => Promise<void>) {
-  // Use test.skip when DB is not available so the skip is reported, not hidden.
-  if (!dbAvailable) {
-    test.todo(`${name} [DB UNAVAILABLE — FFRNT-242 gap]`);
-  } else {
-    test(name, fn, 30_000);
-  }
+  // Test bug fixed: this used to branch on `dbAvailable` at *definition* time,
+  // but `dbAvailable` is only set later, in beforeAll, so it was always false
+  // here and every test below was registered as `test.todo`. The whole file
+  // reported green while asserting nothing (a vacuous pass on the suite's
+  // central security regression). The decision must be made when the test RUNS.
+  // Jest has no runtime skip, and a silent `return` would be a false green, so
+  // an unavailable DB fails the test loudly instead.
+  test(name, async () => {
+    if (!dbAvailable) {
+      throw new Error(
+        '[FFRNT-242 gap] DB unavailable - mirror-not-authority cannot run. ' +
+          'Set TEST_DB_URL (or DB_* env vars) to a migrated test database.'
+      );
+    }
+    await fn();
+  }, 30_000);
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +129,7 @@ describe('FFRNT-242: selection_list_access mirror cannot authorize', () => {
     await insertDirectAccessGrant({
       list_id: testListId,
       user_id: USER_B,
-      organization_id: ORG_ID,
+      org_id: ORG_ID,
       role: 'list-owner',
       granted_by: USER_A,
     });

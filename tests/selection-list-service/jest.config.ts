@@ -5,6 +5,8 @@ const config: Config = {
   testEnvironment: 'node',
   roots: ['<rootDir>'],
   testMatch: ['**/*.test.ts'],
+  // Seeds the test-mode quota ceilings for the quota suite's org (see the file header).
+  globalSetup: '<rootDir>/helpers/global-setup.ts',
   transform: {
     // isolatedModules: transpile-only; full type-checking runs separately via `tsc --noEmit`.
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json', isolatedModules: true }],

@@ -222,6 +222,14 @@ jobs:
       - name: Run mcp-maintainer
         id: maintainer
         if: steps.gate.outputs.run == 'true' && steps.marker.outputs.run == 'true'
+        # continue-on-error so the `Verdict` step below owns the result. fuze-code-action
+        # exits non-zero when every rung is exhausted; without this the runner ends the job
+        # red on THIS step and the Verdict step's credit-outage exception (which exits 0 on
+        # `availability=true`) can never take effect -- measured on #1234, where Verdict
+        # printed "passing per the owner's exception" while the job was still red.
+        # a2a-maintain.yml already does this. It does not make a real failure green:
+        # Verdict re-fails the job for a task failure.
+        continue-on-error: true
         uses: ./.github/actions/fuze-code-action
         with:
           # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key

@@ -782,6 +782,8 @@ export interface AppInstallation {
 export interface AppInstallationsResponse {
   appId: string
   scopeLevel: AppScopeLevel
+  orgLevelOnly?: boolean
+  installMode?: 'self' | 'everyone' | 'both'
   installations: AppInstallation[]
 }
 

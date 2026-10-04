@@ -1,0 +1,171 @@
+{{- /*
+Generic per-service database + role bootstrap (true per-service data ownership).
+
+One pre-install/pre-upgrade Job per entry of database.bootstrap.serviceDatabases.
+Each entry names a top-level values key (e.g. selectionListService) that supplies
+`enabled`, `dbName` and `db.{role,secretName,passwordKey}` -- so the Deployment and
+this Job read the SAME role/db/secret values and cannot drift. Nothing renders for
+a service while its `enabled` is false.
+
+What each Job guarantees on EVERY sync (idempotent, converges drift):
+  - role  <db.role>: LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
+    NOBYPASSRLS, password reconciled from the Secret (so a rotated Secret takes
+    effect on the next sync).
+  - database <dbName> OWNER <db.role> (created if absent, owner reconciled).
+  - REVOKE ALL ON DATABASE FROM PUBLIC and from the shared `database.user` role
+    (Postgres grants CONNECT to PUBLIC by default). Afterwards the Job FAILS if any
+    grantee other than the owner holds a privilege on the database.
+  - public schema: PUBLIC revoked, owned by <db.role> (so the service may run its
+    own knex migrations -- DDL confined to its own database).
+
+The password is read from the environment inside psql (backtick \set), so it is
+never on a command line, never in rendered YAML/values, and the session suppresses
+statement + error-statement logging before it is used. No `set -x`.
+
+ORDERING: this is a pre-upgrade hook, so it runs BEFORE the sync that applies the
+SealedSecret (the separate `fuzefront-sealed` Argo app). The Secret must already
+exist from an EARLIER merge -- seal it first (see
+docs/runbooks/per-service-database-and-role.md), then flip the service's `enabled`.
+Enabling both in one change makes this Job fail on a missing Secret, which is a hook
+failure, which fails the whole sync. (Same constraint as config-db-bootstrap.)
+*/}}
+{{- range $svcKey := .Values.database.bootstrap.serviceDatabases }}
+{{- $svc := index $.Values $svcKey }}
+{{- if and $.Values.database.bootstrap.enabled $svc.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "fuzefront-svcdb-%s" ($svcKey | kebabcase) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "fuzefront.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: service-db-bootstrap
+  annotations:
+    # Privileged (superuser) provisioning of one service's own role + database.
+    # Runs after the shared-DB bootstrap (-5) and before the workloads.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-4"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: service-db-bootstrap
+    spec:
+      restartPolicy: Never
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "fuzefront.scheduling" (dict "svc" dict "root" $) | nindent 6 }}
+      containers:
+        - name: service-db-bootstrap
+          image: postgres:15
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              if [ -z "${SERVICE_DB_PASSWORD:-}" ]; then
+                echo "FATAL: the role password is empty. Seal it into Secret/{{ $svc.db.secretName }} (key {{ $svc.db.passwordKey }})" >&2
+                echo "and let that change sync BEFORE enabling {{ $svcKey }}." >&2
+                exit 1
+              fi
+              export PGPASSWORD="$DB_SUPERUSER_PASSWORD"
+              psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_SUPERUSER" -d postgres \
+                -X -q -v ON_ERROR_STOP=1 \
+                -v dbname="$SVC_DB_NAME" -v role="$SVC_DB_ROLE" -v shared="$SHARED_DB_ROLE" <<'SQL'
+              \set VERBOSITY terse
+              \set SHOW_CONTEXT never
+              -- Never let the password reach a server log or an error echo.
+              SET log_statement = 'none';
+              SET log_min_error_statement = 'panic';
+              SET password_encryption = 'scram-sha-256';
+              -- Read the password from the environment (not argv) and stash it, plus
+              -- the identifiers, in session GUCs: psql :'var' interpolation works only
+              -- in plain SQL, never inside a dollar-quoted DO body, so the DO block
+              -- reads them back via current_setting() and quotes with %I / %L.
+              \set pw `printf %s "$SERVICE_DB_PASSWORD"`
+              SET fuzefront.svc_pw TO :'pw';
+              SET fuzefront.svc_role TO :'role';
+              \unset pw
+              DO $do$
+              DECLARE
+                r  text := current_setting('fuzefront.svc_role');
+                pw text := current_setting('fuzefront.svc_pw');
+              BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) THEN
+                  EXECUTE format('CREATE ROLE %I', r);
+                END IF;
+                -- Always (re)assert attributes + password: converges drift and picks
+                -- up a rotated Secret on the next sync.
+                EXECUTE format(
+                  'ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L',
+                  r, pw);
+              END
+              $do$;
+              RESET fuzefront.svc_pw;
+              -- CREATE DATABASE cannot run inside a transaction block or a DO body.
+              -- psql runs each statement in autocommit; \gexec runs the generated one.
+              SELECT format('CREATE DATABASE %I OWNER %I', :'dbname', :'role')
+                WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'dbname')
+              \gexec
+              ALTER DATABASE :"dbname" OWNER TO :"role";
+              -- Postgres grants CONNECT (and TEMP) on every new database to PUBLIC.
+              REVOKE ALL ON DATABASE :"dbname" FROM PUBLIC;
+              -- Explicitly deny the shared app role (no-op if it holds nothing).
+              SELECT format('REVOKE ALL ON DATABASE %I FROM %I', :'dbname', :'shared')
+                WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = :'shared')
+                  AND :'shared' <> :'role'
+              \gexec
+              GRANT ALL ON DATABASE :"dbname" TO :"role";
+              -- Fail the Job (and the sync) if anyone but the owner holds a privilege.
+              SET fuzefront.svc_db TO :'dbname';
+              DO $do$
+              BEGIN
+                IF EXISTS (
+                  SELECT FROM pg_database d, aclexplode(d.datacl) a
+                   WHERE d.datname = current_setting('fuzefront.svc_db')
+                     AND a.grantee <> d.datdba
+                ) THEN
+                  RAISE EXCEPTION 'unexpected grantee holds a privilege on database %',
+                    current_setting('fuzefront.svc_db');
+                END IF;
+              END
+              $do$;
+              -- Inside the service database: lock the public schema down to the owner.
+              \connect :"dbname"
+              REVOKE ALL ON SCHEMA public FROM PUBLIC;
+              ALTER SCHEMA public OWNER TO :"role";
+              \echo 'service database ensured:' :dbname 'owned by' :role
+              SQL
+          env:
+            - name: DB_HOST
+              value: {{ $.Values.fuzeinfra.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ $.Values.fuzeinfra.postgres.port | quote }}
+            - name: DB_SUPERUSER
+              value: {{ $.Values.database.bootstrap.superuser.username | quote }}
+            - name: DB_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.database.bootstrap.superuser.secretName | default (include "fuzefront.secretName" $) }}
+                  key: {{ $.Values.database.bootstrap.superuser.secretKey | quote }}
+            - name: SVC_DB_NAME
+              value: {{ $svc.dbName | quote }}
+            - name: SVC_DB_ROLE
+              value: {{ $svc.db.role | quote }}
+            - name: SHARED_DB_ROLE
+              value: {{ $.Values.database.user | quote }}
+            # The service role's own password, from its own per-service Secret.
+            - name: SERVICE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $svc.db.secretName | quote }}
+                  key: {{ $svc.db.passwordKey | quote }}
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 200m, memory: 128Mi }
+{{- end }}
+{{- end }}
