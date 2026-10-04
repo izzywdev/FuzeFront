@@ -43,14 +43,14 @@ async function resolveOwner(knex: Knex): Promise<UserRow | undefined> {
 export async function up(knex: Knex): Promise<void> {
   const owner = await resolveOwner(knex)
   if (!owner) {
-    console.log('[019] no users yet — nothing to own or backfill')
+    console.log('[020] no users yet — nothing to own or backfill')
     return
   }
 
   const root = await knex('organizations').where({ id: ROOT_ORG_ID }).first()
   if (!root) {
     console.log(
-      `[019] root organization ${ROOT_ORG_ID} is absent — skipping owner/backfill. ` +
+      `[020] root organization ${ROOT_ORG_ID} is absent — skipping owner/backfill. ` +
         'Its creation is owned by the additive root seed / 014; this migration runs the ' +
         'owner + membership backfill once that row exists. No changes made.'
     )
@@ -59,7 +59,7 @@ export async function up(knex: Knex): Promise<void> {
 
   if (root.owner_id !== owner.id) {
     await knex('organizations').where({ id: ROOT_ORG_ID }).update({ owner_id: owner.id })
-    console.log(`[019] set root ${ROOT_ORG_ID} owner_id ${root.owner_id ?? '<null>'} -> ${owner.id}`)
+    console.log(`[020] set root ${ROOT_ORG_ID} owner_id ${root.owner_id ?? '<null>'} -> ${owner.id}`)
   }
 
   await knex.raw(
@@ -84,7 +84,7 @@ export async function up(knex: Knex): Promise<void> {
     [ROOT_ORG_ID, ROOT_ORG_ID]
   )
   const inserted = (backfill as { rowCount?: number }).rowCount ?? 0
-  console.log(`[019] root owner=${owner.id}; backfilled ${inserted} member row(s)`)
+  console.log(`[020] root owner=${owner.id}; backfilled ${inserted} member row(s)`)
 }
 
 export async function down(_knex: Knex): Promise<void> {

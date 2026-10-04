@@ -1,5 +1,5 @@
 /**
- * FF-EPIC-17 — real-DB integration test proving migration 019 (set root owner +
+ * FF-EPIC-17 — real-DB integration test proving migration 020 (set root owner +
  * backfill root memberships) is correct, idempotent, and safe. Security-service
  * copy of `backend/tests/setRootOwnerAndBackfillMigration.test.ts`.
  *
@@ -32,11 +32,11 @@ async function pgReachable(): Promise<boolean> {
   }
 }
 
-describe('migration 019 — set root owner + backfill memberships (FF-EPIC-17, #750, integration)', () => {
+describe('migration 020 — set root owner + backfill memberships (FF-EPIC-17, #750, integration)', () => {
   let reachable = false
   let db: any
   let ROOT_ORG_ID: string
-  let migration019: { up(knex: any): Promise<void>; down(knex: any): Promise<void> }
+  let migration020: { up(knex: any): Promise<void>; down(knex: any): Promise<void> }
 
   beforeAll(async () => {
     reachable = await pgReachable()
@@ -64,7 +64,7 @@ describe('migration 019 — set root owner + backfill memberships (FF-EPIC-17, #
 
     const rootOrgMigration = require('../src/migrations/014_seed_root_platform_organization')
     ROOT_ORG_ID = rootOrgMigration.ROOT_ORG_ID
-    migration019 = require('../src/migrations/019_set_root_owner_and_backfill_memberships')
+    migration020 = require('../src/migrations/020_set_root_owner_and_backfill_memberships')
 
     // Fresh scratch DB had zero users at migration time (014 deferred root
     // creation); bootstrap a user + the root org so scenarios have a baseline.
@@ -130,7 +130,7 @@ describe('migration 019 — set root owner + backfill memberships (FF-EPIC-17, #
       const ownerId = await insertUser(trx, ownerEmail)
       const otherId = await insertUser(trx, `other-${uuidv4().slice(0, 8)}@test.local`)
 
-      await migration019.up(trx)
+      await migration020.up(trx)
 
       const root = await trx('organizations').where({ id: ROOT_ORG_ID }).first()
       expect(root.owner_id).toBe(ownerId)
@@ -165,7 +165,7 @@ describe('migration 019 — set root owner + backfill memberships (FF-EPIC-17, #
         metadata: JSON.stringify({}),
       })
 
-      await migration019.up(trx)
+      await migration020.up(trx)
 
       const rows = await trx('organization_memberships')
         .where({ user_id: ownerId, organization_id: ROOT_ORG_ID })
@@ -182,8 +182,8 @@ describe('migration 019 — set root owner + backfill memberships (FF-EPIC-17, #
     await inRollback(async trx => {
       const ownerId = await insertUser(trx, ownerEmail)
 
-      await migration019.up(trx)
-      await migration019.up(trx)
+      await migration020.up(trx)
+      await migration020.up(trx)
 
       const rows = await trx('organization_memberships')
         .where({ user_id: ownerId, organization_id: ROOT_ORG_ID })
@@ -202,7 +202,7 @@ describe('migration 019 — set root owner + backfill memberships (FF-EPIC-17, #
       const ownerId = await insertUser(trx, ownerEmail)
       await trx('organizations').where({ id: ROOT_ORG_ID }).del()
 
-      await migration019.up(trx) // must not throw
+      await migration020.up(trx) // must not throw
 
       expect(await trx('organizations').where({ id: ROOT_ORG_ID }).first()).toBeUndefined()
       expect(

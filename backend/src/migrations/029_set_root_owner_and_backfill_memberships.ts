@@ -35,7 +35,7 @@ import { ROOT_ORG_ID } from './015_seed_root_platform_organization'
  * touch the adopted legacy `fuzefront` org; converging those two is the
  * repoint decision 028's header explains was declined.
  *
- * Mirrored into `backend/security/src/migrations/019_set_root_owner_and_backfill_memberships.ts`.
+ * Mirrored into `backend/security/src/migrations/020_set_root_owner_and_backfill_memberships.ts`.
  */
 
 const PLATFORM_REGISTRAR_ID = '00000000-0000-0000-0000-000000000001'
