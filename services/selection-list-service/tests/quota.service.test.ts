@@ -53,6 +53,7 @@ import {
   checkListQuota,
   checkItemQuota,
   getQuotaUsage,
+  lockQuotaScope,
   DEFAULT_MAX_LISTS,
   DEFAULT_MAX_LISTS_PER_USER,
   DEFAULT_MAX_ITEMS_PER_LIST,
@@ -355,5 +356,47 @@ describe('getQuotaUsage', () => {
     expect(result.quotas[2].current).toBeNull();
     expect(result.quotas[3].limit).toBe(4);
     expect(result.quotas[3].current).toBeNull();
+  });
+});
+
+// ─── Exact enforcement: advisory lock + in-transaction counting ───────────────
+
+describe('lockQuotaScope', () => {
+  it('takes a transaction-scoped advisory lock keyed on the scope string', async () => {
+    const trx = { raw: jest.fn().mockResolvedValue({ rows: [] }) };
+    await lockQuotaScope(trx as any, 'list_items:front_sl_abc');
+    expect(trx.raw).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtextextended(?, 0))',
+      ['list_items:front_sl_abc'],
+    );
+  });
+});
+
+describe('checkListQuota / checkItemQuota with an explicit transaction executor', () => {
+  it('counts through the supplied executor, NOT the shared pool', async () => {
+    const executor: any = jest.fn((table: string) => makeQB(table));
+    mockListCount = String(DEFAULT_MAX_LISTS);
+    resetMocks();
+    mockListCount = String(DEFAULT_MAX_LISTS);
+
+    await expect(checkListQuota('org_x', executor)).rejects.toBeInstanceOf(QuotaExceededError);
+
+    expect(executor).toHaveBeenCalledWith('selection_list_org_quota');
+    expect(executor).toHaveBeenCalledWith('selection_lists');
+    expect(require('../src/db').db).not.toHaveBeenCalled();
+  });
+
+  it('refuses an item create at the ceiling, reading the per-org override via the executor', async () => {
+    const executor: any = jest.fn((table: string) => makeQB(table));
+    resetMocks();
+    mockQuotaRow = { max_items_per_list: 5 };
+    mockItemCount = '5';
+
+    await expect(checkItemQuota('front_sl_a', 'org_x', executor)).rejects.toMatchObject({
+      scope: 'list_items',
+      limit: 5,
+      current: 5,
+    });
+    expect(require('../src/db').db).not.toHaveBeenCalled();
   });
 });

@@ -13,7 +13,7 @@
  *   - Locale fallback chain operates on the resolve endpoint
  *   - Unauthenticated call from trusted in-cluster caller is accepted
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';
