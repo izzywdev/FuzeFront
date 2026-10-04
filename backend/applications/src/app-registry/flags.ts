@@ -31,6 +31,21 @@
 //       owner: backend-engineer (platform). removal criterion: delete this
 //       flag + the pre-epic unscoped branch in list() once the portal catalog
 //       is 100% rolled out and the flag-OFF path is no longer exercised.
+//   - fuzefront.apps.build-with-agent
+//       type: release | default: OFF
+//       gates the build-session API (routes/app-builds.ts). owner:
+//       backend-engineer. removal criterion: delete once build-with-agent is
+//       100% rolled out and stable for one release cycle.
+//   - fuzefront.apps.creator-ownership
+//       type: release | default: OFF
+//       gates writing apps.created_by_user_id, assigning the creator Permit
+//       role, and exposing createdBy/creator on App DTOs. owner:
+//       backend-engineer. removal criterion: delete once rolled out to 100% and
+//       the Permit App#creator policy is live. NEVER a substitute for Permit.
+//   - fuzefront.apps.marketplace-publishing
+//       type: release | default: OFF
+//       gates the publication-request endpoints. owner: backend-engineer.
+//       removal criterion: delete once rolled out to 100% and stable.
 //
 // The in-code default is the fail-safe value (OFF for release, ON for
 // kill-switch) so an Unleash/client outage fails safe. The client is resolved
@@ -65,6 +80,9 @@ export const FLAGS = {
    *   enforcement is the permanent behavior (no traffic with missing refs).
    */
   REF_INDEX_ENFORCE: 'fuzefront.ref-index.enforce-ref-checks',
+  BUILD_WITH_AGENT: 'fuzefront.apps.build-with-agent',
+  CREATOR_OWNERSHIP: 'fuzefront.apps.creator-ownership',
+  MARKETPLACE_PUBLISHING: 'fuzefront.apps.marketplace-publishing',
 } as const
 
 let injected: FlagClientLike | null = null
@@ -160,4 +178,30 @@ export async function isRefEnforceEnabled(ctx?: Partial<FlagContext>): Promise<b
   } catch {
     return false
   }
+}
+
+/** Shared fail-safe release-flag read (default OFF; any error/no client → OFF). */
+async function releaseFlag(key: string, ctx?: Partial<FlagContext>): Promise<boolean> {
+  const client = resolveClient()
+  if (!client) return false
+  try {
+    return await client.getBooleanValue(key, false, buildContext(ctx))
+  } catch {
+    return false
+  }
+}
+
+/** release flag (default OFF): the build-with-FuzeAgent session API. */
+export function isBuildWithAgentEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  return releaseFlag(FLAGS.BUILD_WITH_AGENT, ctx)
+}
+
+/** release flag (default OFF): creator ownership (created_by + creator role + DTO). */
+export function isCreatorOwnershipEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  return releaseFlag(FLAGS.CREATOR_OWNERSHIP, ctx)
+}
+
+/** release flag (default OFF): marketplace publication-request endpoints. */
+export function isMarketplacePublishingEnabled(ctx?: Partial<FlagContext>): Promise<boolean> {
+  return releaseFlag(FLAGS.MARKETPLACE_PUBLISHING, ctx)
 }

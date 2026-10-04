@@ -8,7 +8,9 @@
 //   3. Initialize the family flag client (Unleash via @fuzefront/feature-flags;
 //      bounded, never fatal — fail-closed OFF when unreachable/unconfigured).
 //   4. Start the HTTP server on $PORT (default 3011).
-//   5. Start the Kafka lifecycle consumers (non-fatal).
+//   5. Start the Kafka consumers (non-fatal): identity.org.created (projection + platform seeding),
+//      selection-lists.seed.requested (attested app seeding), identity.org.deleted, identity.user.deleted.
+//      All four always start when Kafka is configured; the seed flag is evaluated per message.
 //   5b. Start the transactional-outbox relay, ONLY when KAFKA_BROKERS is set
 //       (non-fatal; events otherwise wait durably in event_outbox).
 //   6. Register SIGTERM/SIGINT handlers for graceful shutdown.
@@ -100,7 +102,7 @@ async function main(): Promise<void> {
   // Validate every shipped platform seed pack and the seed-source allowlist, and sync the allowlist
   // into its table (plan sections 8 and 10). Refuse to boot on an invalid file rather than fail on the
   // first org. This only reads files and writes the allowlist table: nothing is seeded here (seeding
-  // is behind fuzefront.selection-lists.seed-defaults and is driven by consumers that do not exist yet).
+  // is behind fuzefront.selection-lists.seed-defaults, evaluated per message by the consumers).
   try {
     await initSeeding(db);
   } catch (err) {
