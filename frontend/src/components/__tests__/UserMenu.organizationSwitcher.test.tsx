@@ -22,6 +22,10 @@ const fixtures = vi.hoisted(() => {
       { id: ROOT, name: 'FuzeFront', user_role: 'member', parentId: null },
       { id: 'org_northwind', name: 'Northwind', user_role: 'owner', parentId: ROOT },
       { id: 'org_nw_sales', name: 'Sales', user_role: 'admin', parentId: 'org_northwind' },
+      // The legacy platform org (migration 025a): visible to everyone, no membership.
+      { id: 'org_legacy_platform', name: 'Legacy Platform', type: 'platform', user_role: null, parentId: null },
+      // The user's legacy type='personal' org row.
+      { id: 'org_personal', name: 'Personal Workspace', type: 'personal', user_role: 'owner', parentId: null },
     ],
     switcherState: { activeOrganizationId: ROOT as string | null },
     setActiveOrganization: vi.fn((id: string | null) => {
@@ -114,5 +118,30 @@ describe('OrganizationSwitcherSection — fuzefront.identity.personal-context', 
     await waitFor(() => expect(screen.getByText('Personal')).toBeInTheDocument())
     screen.getByText('Personal').closest('button')!.click()
     expect(fixtures.setActiveOrganization).toHaveBeenCalledWith(null)
+  })
+
+  it('flag OFF: legacy personal and visibility-only platform orgs still list (unchanged)', async () => {
+    flagValue = false
+    renderSection()
+    await waitFor(() => expect(screen.getByText('Northwind')).toBeInTheDocument())
+    expect(screen.getByText('Personal Workspace')).toBeInTheDocument()
+    expect(screen.getByText('Legacy Platform')).toBeInTheDocument()
+  })
+
+  it('flag ON: drops the type=personal org — Personal is the context row, not an org', async () => {
+    flagValue = true
+    renderSection()
+    await waitFor(() => expect(screen.getByText('Northwind')).toBeInTheDocument())
+    expect(screen.queryByText('Personal Workspace')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Personal')).toHaveLength(1)
+  })
+
+  it('flag ON: drops platform orgs the caller only sees (GUEST, no membership)', async () => {
+    flagValue = true
+    renderSection()
+    await waitFor(() => expect(screen.getByText('Northwind')).toBeInTheDocument())
+    expect(screen.queryByText('Legacy Platform')).not.toBeInTheDocument()
+    // The root org the caller IS a member of stays.
+    expect(screen.getByText('FuzeFront')).toBeInTheDocument()
   })
 })

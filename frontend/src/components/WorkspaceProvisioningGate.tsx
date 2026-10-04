@@ -6,6 +6,8 @@ import {
   getPersistedActiveOrganizationId,
   ROOT_ORG_ID,
 } from '../lib/shared'
+import { isProvisionedMembership } from '../lib/orgMembership'
+import { useFlag } from '../platform/featureFlags'
 import { isEmployeeUser } from '../utils/employee'
 import { ProvisioningCard, ProvisioningState } from './ProvisioningCard'
 import type { Organization } from '../services/api'
@@ -50,13 +52,6 @@ interface WorkspaceProvisioningGateProps {
  * wrong for any other reason (e.g. the reclassification defect fixed by
  * PR #788) even though the user's membership was never touched.
  */
-function isProvisionedMembership(o: Organization): boolean {
-  if (o.user_role !== undefined) {
-    return o.user_role != null
-  }
-  return o.type !== 'platform'
-}
-
 function hasProvisionedOrg(orgs: Organization[]): boolean {
   return orgs.some(isProvisionedMembership)
 }
@@ -81,9 +76,13 @@ function hasProvisionedOrg(orgs: Organization[]): boolean {
 export function WorkspaceProvisioningGate({
   children,
 }: WorkspaceProvisioningGateProps) {
-  const { dispatch } = useAppContext()
+  const { state, dispatch } = useAppContext()
   const { user } = useCurrentUser()
   const isEmployee = isEmployeeUser(user?.roles)
+  // With the reconciled switcher, Personal is the `null` context and a
+  // `type='personal'` org is never a context of its own (see
+  // isSwitcherContextOrg in lib/shared).
+  const personalContextEnabled = useFlag('fuzefront.identity.personal-context', false)
 
   const [gateState, setGateState] = useState<
     'checking' | 'provisioning' | 'ready' | 'timeout' | 'error'
@@ -115,7 +114,24 @@ export function WorkspaceProvisioningGate({
     // Non-employees cannot have ROOT_ORG_ID as their active organization
     const eligibleOrgs = memberOrgs.filter(o => isEmployee || o.id !== ROOT_ORG_ID)
 
-    if (eligibleOrgs.length > 0) {
+    if (personalContextEnabled) {
+      // A persisted personal-context choice reads back as `null`, the same as
+      // "nothing persisted" — and a persisted id may name the legacy
+      // type='personal' org this gate used to auto-select. Both mean Personal.
+      // Only a persisted, still-valid, non-personal membership wins.
+      const persistedId = getPersistedActiveOrganizationId()
+      const persisted = persistedId && (isEmployee || persistedId !== ROOT_ORG_ID)
+        ? eligibleOrgs.find(o => o.id === persistedId && o.type !== 'personal')
+        : undefined
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: persisted ? persisted.id : null })
+      try {
+        sessionStorage.setItem(READY_SESSION_KEY, '1')
+      } catch {
+        // ignore
+      }
+      stopPolling()
+      setGateState('ready')
+    } else if (eligibleOrgs.length > 0) {
       const personal = eligibleOrgs.find(o => o.type === 'personal')
       // Prefer the org the user previously selected (persisted across reloads)
       // over blindly forcing the personal org — otherwise every reload reset
@@ -175,6 +191,18 @@ export function WorkspaceProvisioningGate({
     stopPolling()
     startPolling()
   }
+
+  // Flags load asynchronously, so the org list can arrive (and the branch
+  // above pick an org) before `personal-context` resolves ON. Once it does,
+  // a legacy type='personal' org selected under the old default moves to the
+  // Personal (`null`) context rather than lingering as the active org.
+  useEffect(() => {
+    if (!personalContextEnabled || state.activeOrganizationId === null) return
+    const active = state.organizations.find(o => o.id === state.activeOrganizationId)
+    if (active?.type === 'personal') {
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: null })
+    }
+  }, [personalContextEnabled, state.activeOrganizationId, state.organizations, dispatch])
 
   useEffect(() => {
     let cancelled = false

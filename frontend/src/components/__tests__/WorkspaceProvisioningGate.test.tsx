@@ -8,6 +8,14 @@ import * as shared from '../../lib/shared'
 import { LanguageProvider } from '../../contexts/LanguageContext'
 import * as api from '../../services/api'
 
+// `fuzefront.identity.personal-context`. Default OFF keeps every pre-existing
+// case on the legacy branch; the flag-ON cases below flip it.
+let personalContextFlag = false
+vi.mock('../../platform/featureFlags', () => ({
+  useFlag: (key: string, fallback: boolean) =>
+    key === 'fuzefront.identity.personal-context' ? personalContextFlag : fallback,
+}))
+
 // ── fixtures ─────────────────────────────────────────────────────────────────
 //
 // `GET /organizations` returns every org the caller is an active member of,
@@ -87,6 +95,7 @@ function renderGate(
 
 describe('WorkspaceProvisioningGate', () => {
   afterEach(() => {
+    personalContextFlag = false
     vi.restoreAllMocks()
     vi.useRealTimers()
     sessionStorage.clear()
@@ -326,5 +335,56 @@ describe('WorkspaceProvisioningGate', () => {
     })
     // Never the platform org — only a real membership is eligible as active.
     expect(screen.getByTestId('active-org')).toHaveTextContent('org-2')
+  })
+
+  describe('flag ON: fuzefront.identity.personal-context', () => {
+    const acme = { id: 'org-2', name: 'ACME Corp', type: 'organization', user_role: 'member' }
+
+    it('defaults to the Personal (null) context, not the legacy type=personal org', async () => {
+      personalContextFlag = true
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg,
+        acme,
+        platformOrg,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByText('App content')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('active-org')).toHaveTextContent(/^$/)
+    })
+
+    it('maps a persisted legacy personal-org selection to Personal', async () => {
+      personalContextFlag = true
+      vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue('org-1')
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg,
+        acme,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByText('App content')).toBeInTheDocument()
+      })
+      expect(screen.getByTestId('active-org')).toHaveTextContent(/^$/)
+    })
+
+    it('keeps a persisted real organization across reloads', async () => {
+      personalContextFlag = true
+      vi.spyOn(shared, 'getPersistedActiveOrganizationId').mockReturnValue('org-2')
+      vi.spyOn(api.organizationsAPI, 'getOrganizations').mockResolvedValue([
+        personalOrg,
+        acme,
+      ])
+
+      renderGate()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('active-org')).toHaveTextContent('org-2')
+      })
+    })
   })
 })
