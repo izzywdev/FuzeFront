@@ -608,6 +608,38 @@ billingService:
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
     tag: 8ccd4ca37648
+  # THE AUTHZ CUTOVER. billing-service's migration off the embedded Permit SDK
+  # (#1053) shipped dark: the code was live but `enabled: false` meant
+  # syncPlanToPermit() logged "flag is OFF — skipping" and returned false. This
+  # turns it on in production, and is the whole point of this block.
+  #
+  # WHAT HAPPENS ON SYNC, in order:
+  #   1. PreSync: billing-s2s-register Job provisions the Authentik
+  #      `s2s-billing-service` client_credentials application with the
+  #      `authz:admin` scope and publishes Secret/billing-s2s-credentials.
+  #   2. The billing Deployment is updated — AUTHENTIK_CLIENT_ID/SECRET are now
+  #      REQUIRED (optional tracks `enabled`), and the Secret exists because
+  #      step 1 ran first and a failed PreSync aborts the sync.
+  #   3. syncPlanToPermit() starts calling PATCH /authz/subjects/.../attributes
+  #      with a machine token on the four Stripe webhook paths.
+  #
+  # BLAST RADIUS IF SOMETHING IS WRONG. Small and reversible, by construction:
+  #   - Job fails      → sync aborts, Deployment untouched, live pod unaffected.
+  #   - Creds bad      → getMachineToken() throws, syncPlanToPermit() catches,
+  #                      logs and returns false. The Stripe webhook still
+  #                      returns 200, so Stripe does not retry, and the DB
+  #                      mirror (billingProjection off Kafka) is independent of
+  #                      this path and keeps updating.
+  #   - Need to revert → set `enabled: false` here. One line, one sync. That
+  #                      also restores `optional: true` automatically.
+  #
+  # REMOVAL CRITERION for the flag itself (from authz.flags.ts): after the
+  # Security-API-backed sync has run clean in prod for >= 2 sprints, delete the
+  # flag and the dead OFF-path rather than leaving a permanent toggle.
+  authz:
+    enabled: true
+    register:
+      enabled: true
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
