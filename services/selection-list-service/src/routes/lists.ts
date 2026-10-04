@@ -469,7 +469,7 @@ router.post('/', requireAuthzCheck('SelectionList', 'create'), enforceListQuota,
     });
 
     try {
-      await grantListOwner(req.userId, req.orgId, id, req.userId, token);
+      await grantListOwner(req.userId, req.orgId, id, req.userId);
     } catch (grantError) {
       // A list without its owner grant would be inaccessible and unsafe to keep.
       await db.transaction(async (trx) => {

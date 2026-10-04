@@ -315,7 +315,7 @@ describe('POST /v1/selection-lists', () => {
     expect(res.body.name).toBe('Countries');
     expect(res.body.status).toBe('active');
     expect(res.body.organization_id).toBe(TEST_ORG_ID);
-    expect(grantListOwner).toHaveBeenCalledWith(TEST_USER_ID, TEST_ORG_ID, TEST_LIST_ID, TEST_USER_ID, expect.any(String));
+    expect(grantListOwner).toHaveBeenCalledWith(TEST_USER_ID, TEST_ORG_ID, TEST_LIST_ID, TEST_USER_ID);
   });
 
   it('removes the new list if its owner grant fails', async () => {
