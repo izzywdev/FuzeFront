@@ -104,6 +104,18 @@ suite('lifecycle handlers on real Postgres', () => {
       { id: `aud_${tag}2`, list_id: null, item_id: itemId, actor_id: owner, action: 'item.create' }, // item-only row
     ]);
     await db('selection_list_org_quota').insert({ organization_id: org, max_lists: 5, updated_by: owner });
+    // the seed ledger row (migration 7): the HARD purge deletes it, the soft cascade keeps it
+    await db('selection_list_seed_ledger').insert({
+      organization_id: org,
+      seed_source: 'platform',
+      seed_key: 'platform-defaults',
+      version: 1,
+      content_hash: 'h',
+      manifest: db.raw('?::jsonb', ['{}']),
+      result: db.raw('?::jsonb', ['[]']),
+      trigger: 'org-created',
+      applied_by: 'system:selection-list-service',
+    });
     return { listId, itemId };
   }
 
@@ -120,6 +132,7 @@ suite('lifecycle handlers on real Postgres', () => {
       access: await n('selection_list_access', 'list_id'),
       audit: await n('selection_list_audit', 'list_id'),
       quota: Number((await db('selection_list_org_quota').where({ organization_id: org }).count('* as n').first())?.n ?? 0),
+      ledger: Number((await db('selection_list_seed_ledger').where({ organization_id: org }).count('* as n').first())?.n ?? 0),
     };
   };
 
@@ -132,6 +145,7 @@ suite('lifecycle handlers on real Postgres', () => {
       'selection_list_items',
       'selection_lists',
       'selection_list_org_quota',
+      'selection_list_seed_ledger',
     ]) {
       await db(t).delete();
     }
@@ -141,23 +155,27 @@ suite('lifecycle handlers on real Postgres', () => {
     it('removes every row of the org (FK-safe, incl. item-only audit rows + quota), leaves other orgs alone, and replays as a no-op', async () => {
       await seedOrg(ORG_A, 'a', USER);
       await seedOrg(ORG_B, 'b', OTHER_USER);
-      expect(await counts(ORG_A)).toMatchObject({ lists: 1, items: 1, access: 1, quota: 1 });
+      expect(await counts(ORG_A)).toMatchObject({ lists: 1, items: 1, access: 1, quota: 1, ledger: 1 });
 
       // The event carries the bare UUID; the rows store the org_ TypeID.
       await handleOrgDeleted(orgEvent(ORG_A_UUID, 'hard'));
 
-      expect(await counts(ORG_A)).toEqual({ lists: 0, archived: 0, items: 0, listTranslations: 0, access: 0, audit: 0, quota: 0 });
+      expect(await counts(ORG_A)).toEqual({ lists: 0, archived: 0, items: 0, listTranslations: 0, access: 0, audit: 0, quota: 0, ledger: 0 });
       expect(await db('selection_list_audit').where({ action: 'item.create', actor_id: USER }).count('* as n').first()).toMatchObject({ n: '0' });
-      expect(await counts(ORG_B)).toMatchObject({ lists: 1, items: 1, listTranslations: 1, access: 1, audit: 1, quota: 1 });
+      expect(await counts(ORG_B)).toMatchObject({ lists: 1, items: 1, listTranslations: 1, access: 1, audit: 1, quota: 1, ledger: 1 });
 
       await expect(handleOrgDeleted(orgEvent(ORG_A_UUID, 'hard'))).resolves.toBeUndefined(); // idempotent
       expect(await counts(ORG_B)).toMatchObject({ lists: 1 });
     });
 
-    it('also clears a quota override row for an org that has no lists', async () => {
+    it('also clears a quota override row and ledger rows for an org that has no lists', async () => {
       await db('selection_list_org_quota').insert({ organization_id: ORG_A, max_lists: 1, updated_by: USER });
+      await db('selection_list_seed_ledger').insert({
+        organization_id: ORG_A, seed_source: 'platform', seed_key: 'platform-defaults', version: 1, content_hash: 'h',
+        manifest: db.raw('?::jsonb', ['{}']), result: db.raw('?::jsonb', ['[]']), trigger: 'org-created', applied_by: 'system:selection-list-service',
+      });
       await handleOrgDeleted(orgEvent(ORG_A_UUID, 'hard'));
-      expect((await counts(ORG_A)).quota).toBe(0);
+      expect(await counts(ORG_A)).toMatchObject({ quota: 0, ledger: 0 });
     });
 
     it('matches an org stored in the bare-UUID form too', async () => {
@@ -174,7 +192,7 @@ suite('lifecycle handlers on real Postgres', () => {
 
       await handleOrgDeleted(orgEvent(ORG_A_UUID, 'soft'));
 
-      expect(await counts(ORG_A)).toMatchObject({ lists: 1, archived: 1, items: 1, listTranslations: 1, access: 1, audit: 1, quota: 1 });
+      expect(await counts(ORG_A)).toMatchObject({ lists: 1, archived: 1, items: 1, listTranslations: 1, access: 1, audit: 1, quota: 1, ledger: 1 }); // soft keeps the ledger: a restore must not re-seed
       expect(await counts(ORG_B)).toMatchObject({ lists: 1, archived: 0 });
 
       const before = await db('selection_lists').where({ organization_id: ORG_A }).first('updated_at');

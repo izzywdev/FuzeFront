@@ -78,6 +78,9 @@ jest.mock('../src/middleware/authz', () => ({
 // tests/outbox.db.test.ts and tests/outbox.routes.db.test.ts.
 jest.mock('../src/events/outbox');
 jest.mock('../src/events/emitters');
+// The seeded-then-edited hash check (seed/content.ts) reads the row back through the transaction; its
+// behaviour is covered against real Postgres in tests/seed.user-edits.db.test.ts.
+jest.mock('../src/seed/content');
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -493,6 +496,19 @@ describe('GET /v1/selection-lists/:listId', () => {
     expect(res.body.key).toBe('countries');
     expect(res.body.resolved_locale).toBe('en');
     expect(typeof res.body.is_machine).toBe('boolean');
+  });
+
+  it('renders `seed` as null for a user-authored row (seed_source IS NULL) and the provenance for a seeded one; created_by passes through system:* and the deleted-user sentinel', async () => {
+    const get = async (row: Record<string, unknown>) => {
+      mockRaw.mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] }).mockResolvedValueOnce({ rows: [row] });
+      return (await request(app).get(`/v1/selection-lists/${TEST_LIST_ID}`).set(authHeader())).body;
+    };
+    expect((await get(LIST_ROW)).seed).toBeNull();
+    expect((await get({ ...LIST_ROW, seed_source: null, seed_key: null, seed_version: null, seed_user_modified: false })).seed).toBeNull();
+    const seeded = await get({ ...LIST_ROW, created_by: 'system:selection-list-service', seed_source: 'platform', seed_key: 'platform-defaults', seed_version: '2', seed_user_modified: true });
+    expect(seeded.seed).toEqual({ source: 'platform', pack_key: 'platform-defaults', pack_version: 2, user_modified: true });
+    expect(seeded.created_by).toBe('system:selection-list-service');
+    expect((await get({ ...LIST_ROW, created_by: '[deleted-user]' })).created_by).toBe('[deleted-user]');
   });
 
   it('returns 404 when list not found', async () => {
