@@ -75,7 +75,7 @@ interface RequestOptions {
  * Typed client for the FuzeFront selection-list-service.
  *
  * One method per endpoint of `services/selection-list-service/openapi.yaml`
- * v2.0.0, plus {@link SelectionListClient.paginate} for walking a cursor.
+ * v4.0.0, plus {@link SelectionListClient.paginate} for walking a cursor.
  * Zero runtime dependencies — it uses the platform `fetch`.
  */
 export class SelectionListClient {
@@ -154,7 +154,13 @@ export class SelectionListClient {
     })
   }
 
-  /** `PATCH /v1/selection-lists/{listId}` — partial update. */
+  /**
+   * `PATCH /v1/selection-lists/{listId}` — partial update.
+   *
+   * Requires `update` on the list; a body with `status: 'archived'` also
+   * requires `delete` (contract 4.0.0, `x-permit-additional-actions`), so a
+   * `list-editor` gets a `FORBIDDEN` error for it — same as {@link archiveList}.
+   */
   async updateList(
     listId: SelectionListId,
     body: SelectionListUpdate,

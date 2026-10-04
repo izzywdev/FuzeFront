@@ -7,6 +7,15 @@ byte-identical. This document is the design record behind that change. **The spe
 is normative; if this document and the spec disagree, the spec wins** and this
 document is stale.
 
+**4.0.0 amendment (L-1):** `updateSelectionList` with body `status: archived`
+additionally requires `SelectionList:delete` (`x-permit-additional-actions`), so
+PATCH is no longer a way for a `list-editor` to reach the archive outcome that
+`DELETE`/`POST .../archive` reserve for `delete`. The service already
+enforces it (#1253: `requireArchiveAuthzOnStatusChange` in `routes/lists.ts`; the
+item-purge `delete` check in `routes/items.ts`; pinned by
+`tests/authz.route-matrix.test.ts`) — 4.0.0 brings the contract up to the code. 4.0.0 also widens `created_by`/`granted_by` and adds `seed`; see the spec
+changelog and `selection-lists-events.md` §13.1.
+
 **Who builds what (not this PR):**
 
 | Stream | Branch / owner | Work |
@@ -52,7 +61,7 @@ the first without silently answering the second.
 | `listSelectionLists` | `GET /v1/selection-lists` | `SelectionListCatalog` | `list` | rows still filtered per list by `SelectionList:read`; `403` declared |
 | `createSelectionList` | `POST /v1/selection-lists` | `SelectionListCatalog` | `create` | service then grants the creator `list-owner` with **its machine identity** |
 | `getSelectionList` | `GET /v1/selection-lists/{listId}` | `SelectionList` | `read` | `404`, never `403`, when denied |
-| `updateSelectionList` | `PATCH /v1/selection-lists/{listId}` | `SelectionList` | `update` | |
+| `updateSelectionList` | `PATCH /v1/selection-lists/{listId}` | `SelectionList` | `update` | **with body `status: archived` ALSO `SelectionList:delete`** (`x-permit-additional-actions`) — L-1, 4.0.0 |
 | `deleteSelectionList` | `DELETE /v1/selection-lists/{listId}` | `SelectionList` | `delete` | archive and purge alike |
 | `archiveSelectionList` | `POST /v1/selection-lists/{listId}/archive` | `SelectionList` | `delete` | |
 | `listSelectionListItems` | `GET .../{listId}/items` | `SelectionList` | `read` | |
@@ -109,6 +118,10 @@ Derived consequences worth stating, because each is a test case:
 
 * Item **purge** = `remove_value` + `delete` → `list-owner` only. A
   `list-editor` can archive an item but gets `403` on `?purge=true`.
+* List **archive via PATCH** (`{"status": "archived"}`) = `update` + `delete`
+  → `list-owner` only (4.0.0, review L-1), matching `DELETE` and
+  `POST .../archive`. A `list-editor` gets `403` for that body and can still
+  PATCH every other field.
 * A tenant `viewer` can list (and sees only lists it holds an instance role
   on), and can resolve ids, but cannot create.
 * A tenant `editor` can create; the new list is its own (`list-owner`) because
@@ -185,9 +198,10 @@ bumps**. What changes is which grants satisfy which operations. On rollout:
   `SelectionList --organization--> Organization` tuple on create and backfill
   it, and (b) the derivation to key on the **tenant** `admin` role, not ReBAC
   `org-admin`. Until decided, §5's explicit grant is the path. Owner decision.
-* **Q2 — M-1 (item purge owner-only).** Resolved in 3.0.0 by requiring
+* **Q2 — M-1 (item purge owner-only) and L-1 (archive via PATCH).** M-1 resolved in 3.0.0 by requiring
   `delete` on the parent list in addition to `remove_value`
-  (`x-permit-additional-actions` on `deleteSelectionListItem`). Open only in
+  (`x-permit-additional-actions` on `deleteSelectionListItem`); L-1 in 4.0.0
+  the same way on `updateSelectionList` (`when: body.status=archived`). Open only in
   that the extension is a FuzeFront convention with no gate reading it yet; the
   service stream must enforce it in code, and a future `gate-authz` could
   cross-check route checks against `x-permit-resource` / `x-permit-action` /
