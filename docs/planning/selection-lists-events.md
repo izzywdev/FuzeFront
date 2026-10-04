@@ -524,6 +524,18 @@ Deviations from the sketch above, all deliberate:
 
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
+> **Status: frozen in `openapi.yaml` 4.0.0** (branch `claude/sl6-http-amend`).
+> `created_by`/`granted_by` are `AuthorPrincipal` = `oneOf: [UserId,
+> SystemPrincipal, DeletedUserSentinel]` (the sentinel is the exact string
+> `[deleted-user]` the handler writes, so the handler did not change); lists
+> and items carry a required, read-only, nullable `seed` (`SeedProvenance`).
+> Clients: `@fuzeone/selection-list-client` 2.0.0, Python 2.0.0. The text below
+> is the original requirement, kept as the record. **Backend still owes**:
+> emitting `seed` on every list/item response — `null` when `seed_source IS NULL`,
+> else `{ source: seed_source, pack_key: seed_key, pack_version: seed_version,
+> user_modified: seed_user_modified }` (columns from migration 000006). Until it
+> does, live responses omit a required property.
+
 `openapi.yaml` (v2.0.0) types `SelectionList.created_by`, `SelectionListItem.created_by`
 and `SelectionListAccessGrant.granted_by` as `UserId` (`^usr_[0-9a-z]+$`), and the
 resources are `additionalProperties: false`. Seeded rows (`created_by =
