@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express'
 import axios, { AxiosError, Method } from 'axios'
 import crypto from 'crypto'
+import { googleAccountIdentity, requireGoogleBinding, requireGoogleScopes, refreshGoogleCredential, GoogleReauthorizationRequired } from '../connector-platform/google-account'
 import { createDelegationClient, createMachineTokenVerifier, createWorkloadAuthClient, requireDelegatedAuth } from '@fuzefront/service-auth'
 import { authenticateToken } from '../middleware/auth'
 
@@ -101,9 +102,8 @@ router.get('/google-gmail/oauth/callback', async (req, res) => {
       code, client_id: oauth.clientId, client_secret: oauth.clientSecret,
       redirect_uri: oauth.redirectUri, grant_type: 'authorization_code',
     })
-    const profile = (await axios.get('https://openidconnect.googleapis.com/v1/userinfo', {
-      headers: { Authorization: `Bearer ${token.access_token}` }, timeout: 10000,
-    })).data
+    const account = await googleAccountIdentity(token.access_token, oauth.clientId)
+    requireGoogleScopes(token, GOOGLE_SCOPES)
     const credential = { ...token, expires_at: Math.floor(Date.now() / 1000) + Number(token.expires_in || 3600) }
     const headers = {
       Authorization: `Bearer ${await workloadAuth.getToken()}`,
@@ -111,13 +111,17 @@ router.get('/google-gmail/oauth/callback', async (req, res) => {
     }
     await axios.put(`${FUZEKEYS_URL}/api/v1/connectors/google-gmail/credential`, {
       credential,
-      identity_email: profile.email,
+      identity_email: account.email,
+      google_identity: account.identity,
       scopes: String(token.scope || '').split(/\s+/).filter(Boolean),
       configuration: { query: 'in:inbox', include_spam_trash: false },
     }, { headers, timeout: 5000 })
     const separator = state.returnTo.includes('?') ? '&' : '?'
     res.redirect(`${state.returnTo}${separator}connected=google-gmail`)
   } catch (error) {
+    if (error instanceof GoogleReauthorizationRequired || (axios.isAxiosError(error) && error.response?.status === 409)) {
+      return res.status(409).json({ error: 'Google account authorization cannot be combined. Disconnect existing Google connectors and authorize the same Google account again.', code: 'GOOGLE_REAUTHORIZATION_REQUIRED' })
+    }
     res.status(400).json({ error: 'Unable to complete Google authorization' })
   }
 })
@@ -126,16 +130,14 @@ router.get('/google-gmail/messages/recent', requireChatDelegation, async (req, r
   try {
     const headers = await delegatedHeaders(req, ['connectors:credentials:read', 'connectors:credentials:write'], delegationBearer(req))
     const leased = await axios.get(`${FUZEKEYS_URL}/api/v1/connectors/google-gmail/credential`, { headers, timeout: 5000 })
-    const credential = leased.data.credential as Record<string, any>
+    let credential = leased.data.credential as Record<string, any>
+    const oauth = googleOAuthConfig()
+    const identity = requireGoogleBinding(leased.data.google_identity, oauth.clientId)
     if (Number(credential.expires_at || 0) <= Math.floor(Date.now() / 1000) + 60) {
-      if (!credential.refresh_token) return res.status(409).json({ error: 'Google authorization must be renewed' })
-      const refreshed = await googleForm('https://oauth2.googleapis.com/token', {
-        client_id: leased.data.oauth_client?.client_id || '', client_secret: leased.data.oauth_client?.client_secret || '',
-        refresh_token: credential.refresh_token, grant_type: 'refresh_token',
-      })
-      Object.assign(credential, refreshed, { refresh_token: credential.refresh_token, expires_at: Math.floor(Date.now() / 1000) + Number(refreshed.expires_in || 3600) })
-      await axios.put(`${FUZEKEYS_URL}/api/v1/connectors/google-gmail/credential`, { credential }, { headers, timeout: 5000 })
+      credential = await refreshGoogleCredential(credential, identity, oauth.clientId, oauth.clientSecret, GOOGLE_SCOPES)
+      await axios.put(`${FUZEKEYS_URL}/api/v1/connectors/google-gmail/credential`, { credential, google_identity: identity }, { headers, timeout: 5000 })
     }
+    requireGoogleScopes(credential, GOOGLE_SCOPES)
     const config = leased.data.configuration || {}
     const limit = Math.min(Number(req.query.limit) || 5, 20)
     const listing = await axios.get('https://gmail.googleapis.com/gmail/v1/users/me/messages', {
@@ -152,6 +154,7 @@ router.get('/google-gmail/messages/recent', requireChatDelegation, async (req, r
     }))
     res.json({ identity_email: leased.data.identity_email, messages })
   } catch (error) {
+    if (error instanceof GoogleReauthorizationRequired || (error as AxiosError).response?.status === 409) return res.status(409).json({ error: 'Reconnect Gmail using the same Google account to grant mail access.', code: 'GOOGLE_REAUTHORIZATION_REQUIRED' })
     const status = (error as AxiosError).response?.status || 502
     res.status(status).json({ error: 'Unable to read Gmail', code: (error as AxiosError).code || 'EUPSTREAM' })
   }

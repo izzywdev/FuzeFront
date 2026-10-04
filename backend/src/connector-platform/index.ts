@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit'
 import { createDelegationClient, createWorkloadAuthClient } from '@fuzefront/service-auth'
 import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
+import { GOOGLE_CONNECTORS, googleAccountIdentity, requireGoogleBinding, requireGoogleScopes, refreshGoogleCredential, GoogleReauthorizationRequired } from './google-account'
 
 interface ConnectorBase {
   id: string
@@ -181,17 +182,23 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       }), { headers: { 'content-type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, timeout: 10000 })
       const token = provider.exchangeCode ? await provider.exchangeCode(req.query.code, state.verifier) : tokenResponse!.data
       if (typeof token.access_token !== 'string') throw new Error('Missing access token')
-      const identityEmail = provider.tokenIdentity ? await provider.tokenIdentity(token) : await provider.identity!(token.access_token)
+      const googleAccount = GOOGLE_CONNECTORS.has(provider.id) ? await googleAccountIdentity(token.access_token, env(provider.clientIdEnv)) : undefined
+      if (googleAccount) requireGoogleScopes(token, provider.scopes)
+      const identityEmail = googleAccount?.email || (provider.tokenIdentity ? await provider.tokenIdentity(token) : await provider.identity!(token.access_token))
       const credential = { ...token, ...(Number(token.expires_in) > 0 ? { expires_at: Math.floor(Date.now() / 1000) + Number(token.expires_in) } : {}) }
       await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}/credential`, {
         credential, identity_email: identityEmail,
+        ...(googleAccount ? { google_identity: googleAccount.identity } : {}),
         scopes: typeof token.scope === 'string' ? token.scope.split(/[\s,]+/).filter(Boolean) : provider.scopes,
         configuration: provider.initialConfiguration || {},
       }, { headers: { Authorization: `Bearer ${await workload.getToken()}`, 'X-Fuze-Delegation': `Bearer ${state.delegation}` }, timeout: 10000 })
       const returnTo = new URL('/connectors', options.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:5173')
       returnTo.searchParams.set('connected', provider.id)
       res.redirect(returnTo.toString())
-    } catch {
+    } catch (error) {
+      if (error instanceof GoogleReauthorizationRequired || (GOOGLE_CONNECTORS.has(req.params.provider) && axios.isAxiosError(error) && error.response?.status === 409)) {
+        return res.status(409).json({ error: 'Google account authorization cannot be combined. Disconnect existing Google connectors and authorize the same Google account again.', code: 'GOOGLE_REAUTHORIZATION_REQUIRED' })
+      }
       res.status(400).json({ error: 'Unable to complete connector authorization' })
     }
   })
@@ -266,16 +273,20 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       const delegated = await headers(bearer(req), ['connectors:credentials:read', 'connectors:credentials:write'])
       const lease = await axios.get(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { headers: delegated, timeout: 10000 })
       let credential = lease.data.credential as Record<string, any>
+      const googleProvider = provider!.authentication !== 'api-key' && GOOGLE_CONNECTORS.has(provider!.id) ? provider! : undefined
+      const googleIdentity = googleProvider ? requireGoogleBinding(lease.data.google_identity, env(googleProvider.clientIdEnv)) : undefined
       if (!credential || typeof credential.access_token !== 'string') throw new Error('Invalid credential')
-      if (provider!.authentication !== 'api-key' && credential.expires_at && Number(credential.expires_at) <= Date.now() / 1000 + 60) {
-        credential = await refresh(provider!, credential)
-        await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { credential }, { headers: delegated, timeout: 10000 })
+      if (provider!.authentication !== 'api-key' && (googleProvider ? Number(credential.expires_at || 0) <= Date.now() / 1000 + 60 : credential.expires_at && Number(credential.expires_at) <= Date.now() / 1000 + 60)) {
+        credential = googleProvider ? await refreshGoogleCredential(credential, googleIdentity, env(googleProvider.clientIdEnv), env(googleProvider.clientSecretEnv), googleProvider.scopes) : await refresh(provider!, credential)
+        await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { credential, ...(googleIdentity ? { google_identity: googleIdentity } : {}) }, { headers: delegated, timeout: 10000 })
       }
+      if (googleProvider) requireGoogleScopes(credential, googleProvider.scopes)
       const result = await action({ accessToken: credential.access_token,
         query: req.query as Record<string, unknown>, configuration: lease.data.configuration || {} })
       res.json(result)
     } catch (error) {
       const upstream = axios.isAxiosError(error) ? error.response?.status : undefined
+      if (error instanceof GoogleReauthorizationRequired || (GOOGLE_CONNECTORS.has(provider!.id) && upstream === 409)) return res.status(409).json({ error: 'Reconnect this Google connector using the same Google account to grant the required access.', code: 'GOOGLE_REAUTHORIZATION_REQUIRED' })
       res.status(upstream === 404 ? 404 : upstream === 429 ? 429 : 502)
         .json({ error: upstream === 404 ? 'Connector is not connected' : 'Unable to read connector' })
     }
