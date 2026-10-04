@@ -13,16 +13,19 @@ Invariants, checked against the real files (not a copy of their text):
 
   1. Every caller whose own `claude-args` allow-list has no write-capable tool
      (Bash/Edit/MultiEdit/Write/NotebookEdit) is a READ-ONLY-INTENT caller. Each one
-     must set `review-only: 'true'` AND must not forward `openai-api-key` or
-     `gemini-api-key` (belt and braces: the switch alone is enough, the missing key
-     means a future edit that drops the switch still cannot reach the rung).
+     must NOT forward `openai-api-key` or `gemini-api-key`: fuze-code-action only
+     runs a fallover rung whose key is non-empty, so an absent key is what keeps
+     codex (`danger-full-access`) and gemini (`--yolo`) out of a reviewer.
   2. Each such caller's checkout steps set `persist-credentials: false`.
   3. No such caller's fuze-code-action step carries an `env:` block, so the job
      token is not exported into the LLM-running step.
   4. fuze-code-review.yml is explicitly a read-only-intent caller (so a refactor
      that drops its `--allowedTools` cannot make invariant 1 vacuous).
-  5. In the action, `review-only` exists, defaults to 'false' (maintainer callers
-     keep their write-capable fallover), and gates BOTH the codex and gemini rungs.
+  5. The action still gates BOTH the codex and gemini rungs on their key being
+     non-empty. fuze-code-action is a FuzeSDLC-managed file (governance-sync resets
+     local edits), so this is the mechanism available here; if the canonical ever
+     drops it, this test fails loudly instead of the reviewer silently regaining a
+     shell.
 
 Run: python3 .github/actions/fuze-code-action/__tests__/test_review_caller_readonly.py
 """
@@ -102,8 +105,6 @@ def violations(file, job, step):
     """Every way this READ-ONLY-INTENT caller fails to be read-only. [] = clean."""
     out = []
     w = step.get("with") or {}
-    if str(w.get("review-only", "")).lower() != "true":
-        out.append("review-only is not 'true' (codex danger-full-access / gemini --yolo reachable)")
     for key in ("openai-api-key", "gemini-api-key"):
         if key in w:
             out.append(f"forwards `{key}` to a read-only reviewer")
@@ -159,13 +160,14 @@ class TestReviewCallerReadOnly(unittest.TestCase):
         self.assertIn("GH_TOKEN", env)
         self.assertIn("GH_REPO", env)
 
-    def test_action_review_only_switch(self):
+    def test_action_rungs_are_gated_on_their_key(self):
         doc = _load(ACTION)
-        self.assertEqual(doc["inputs"]["review-only"]["default"], "false")
         steps = {s.get("id") or s["name"]: s for s in doc["runs"]["steps"]}
-        for rung in ("codex", "gemini"):
-            self.assertIn("inputs.review-only != 'true'", " ".join(str(steps[rung]["if"]).split()),
-                          f"rung `{rung}` is not gated on review-only")
+        for rung, key in (("codex", "openai-api-key"), ("gemini", "gemini-api-key")):
+            cond = " ".join(str(steps[rung]["if"]).split())
+            self.assertIn(f"inputs.{key} != ''", cond,
+                          f"rung `{rung}` is not gated on a non-empty {key}: omitting the "
+                          f"key no longer keeps it out of a read-only reviewer")
 
 
 class TestDetectorIsNotVacuous(unittest.TestCase):
@@ -184,7 +186,7 @@ class TestDetectorIsNotVacuous(unittest.TestCase):
     def test_pre_fix_shape_is_flagged(self):
         self.assertTrue(read_only_intent(self.PRE_FIX_STEP))
         v = violations("x.yml", self.PRE_FIX_JOB, self.PRE_FIX_STEP)
-        self.assertEqual(len(v), 4, v)
+        self.assertEqual(len(v), 3, v)
 
     def test_maintainer_allowlists_are_not_read_only_intent(self):
         for args in (
@@ -201,7 +203,7 @@ class TestDetectorIsNotVacuous(unittest.TestCase):
     def test_fixed_shape_is_clean(self):
         step = {
             "uses": "./.github/actions/fuze-code-action",
-            "with": {"claude-args": '--allowedTools "Read,Grep,Glob"', "review-only": "true"},
+            "with": {"claude-args": '--allowedTools "Read,Grep,Glob"'},
         }
         job = {"steps": [{"uses": "actions/checkout@x", "with": {"persist-credentials": False}}]}
         self.assertEqual(violations("x.yml", job, step), [])

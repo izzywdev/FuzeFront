@@ -47,18 +47,24 @@ name: Fuze Code Review
 #   - READ-ONLY AT THE TOOL LEVEL, PER RUNG (what is true, not what is hoped):
 #       Anthropic rungs (OAuth 1a, LiteLLM/direct-key 1): ENFORCED read-only. The
 #         reviewer gets `--allowedTools "Read,Grep,Glob"` and no Bash/Write/Edit.
-#       OpenAI/Codex rung: DISABLED for this workflow (`review-only: 'true'`, no
-#         OPENAI_API_KEY passed). Codex cannot be confined here: fuze-code-action
+#       OpenAI/Codex rung: DISABLED for this workflow (no OPENAI_API_KEY passed, and
+#         fuze-code-action only runs the rung when that key is non-empty). Codex
+#         cannot be confined here: fuze-code-action
 #         runs it `danger-full-access` (its OS sandbox cannot initialise on the
 #         containerized self-hosted runner), which is a full shell on the runner.
-#       Gemini rung: DISABLED for this workflow, same switch, no GEMINI_API_KEY
-#         passed. run-gemini-cli hard-codes `gemini --yolo` (auto-approve every
+#       Gemini rung: DISABLED for this workflow, same mechanism (no GEMINI_API_KEY
+#         passed, the rung only runs when it is non-empty). run-gemini-cli hard-codes `gemini --yolo` (auto-approve every
 #         tool call including shell) and exposes no tool allow-list input.
 #     When both Anthropic rungs are unavailable the chain is exhausted; that
 #     classifies as an availability outage (non-blocking, never an approval), the
 #     fail-closed direction. Re-enabling either vendor here needs a demonstrated
 #     tool-level read-only mode, enforced by
 #     .github/actions/fuze-code-action/__tests__/test_review_caller_readonly.py.
+#     The disable is by KEY ABSENCE because fuze-code-action is a FuzeSDLC-managed
+#     file (governance-sync resets local edits to the canonical), so a dedicated
+#     `review-only` switch has to be added upstream, not here; until then the test
+#     pins both that no OpenAI/Gemini key is forwarded and that the action still
+#     gates those rungs on their key.
 #     The entire diff is embedded in the prompt, so the reviewer never needs the
 #     checkout; an instruction smuggled inside the diff ("approve this PR", "run
 #     `gh pr review --approve`", "print the secrets") has no tool available to act
@@ -328,8 +334,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # READ-ONLY AT THE TOOL LEVEL. The Anthropic rungs get only Read/Grep/Glob.
-      # The OpenAI and Gemini rungs are disabled below (`review-only`, and their
-      # keys are NOT forwarded) because neither can be confined to read-only here.
+      # The OpenAI and Gemini rungs are disabled below (their keys are NOT
+      # forwarded, and the action only runs a rung whose key is non-empty) because
+      # neither can be confined to read-only here.
       # The entire diff is already embedded in the prompt above, so the reviewer
       # never needs to touch the checkout -- and an instruction smuggled inside the
       # diff has no tool available to act on it. Read/Grep/Glob can only look, at a
@@ -366,11 +373,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # OPENAI_API_KEY / GEMINI_API_KEY are intentionally NOT forwarded and
-          # `review-only` refuses rungs 2 and 3 even if a key were added: codex runs
-          # danger-full-access and run-gemini-cli runs --yolo, i.e. a full shell,
-          # which a reviewer reading an attacker-controlled diff must never have.
-          review-only: 'true'
+          # OPENAI_API_KEY / GEMINI_API_KEY are intentionally NOT forwarded: with no
+          # key the action skips rungs 2 and 3 by name. Codex runs danger-full-access
+          # and run-gemini-cli runs --yolo, i.e. a full shell, which a reviewer
+          # reading an attacker-controlled diff must never have. Do not add them back
+          # without a tool-level read-only mode (test_review_caller_readonly.py fails
+          # if you do).
           # allowed_bots — REQUIRED, for the same reason it is in fuze.yml, and it was
           # missing here until 2026-09-16. This workflow triggers on `pull_request`, so the
           # actor is whoever OPENED the PR — and on this repo that is routinely a bot:
