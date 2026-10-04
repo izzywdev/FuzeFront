@@ -9,6 +9,14 @@ on:
     paths:
       - 'deploy/helm/**'
       - 'deploy/scripts/**'
+      # The cluster-scoped-kinds guard below reads clusterResourceWhitelist out of
+      # deploy/argocd/project.yaml, so a PR editing ONLY that file changes this
+      # workflow's verdict. Without this path the guard would be skipped on
+      # exactly the change most able to break it: narrowing the whitelist without
+      # touching the chart — which is the 2026-09-28 freeze approached from the
+      # other side, and is a live risk while FuzeInfra's duplicate copy exists
+      # (see the file's own header).
+      - 'deploy/argocd/**'
       - '.github/workflows/helm-validate.yml'
 
 permissions:

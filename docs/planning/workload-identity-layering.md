@@ -129,6 +129,13 @@ $ ./deploy/scripts/check-cluster-scoped-whitelist.sh rendered/fuzefront/template
 EXIT=1
 ```
 
+**The workflow triggers on `deploy/argocd/**` as well as the chart.** The gate's
+verdict depends on `project.yaml`, so a PR editing only that file changes the
+answer. Without that trigger path the guard would be skipped on precisely the
+change most able to break it — narrowing the whitelist without touching the chart,
+which is this incident approached from the other side, and a live risk while
+FuzeInfra's duplicate copy exists (§6).
+
 **It fails closed on an unclassified kind.** Kubernetes does not encode scope in a
 manifest and a PR runner has no cluster to ask, so the kind→scope mapping is an
 explicit table. A rendered kind in neither list is an **error**, not a pass —
