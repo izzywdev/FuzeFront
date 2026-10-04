@@ -22,6 +22,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
+import { requireAuthzCheck } from '../middleware/authz';
 
 const router = Router();
 
@@ -48,7 +49,7 @@ function parseAcceptLanguage(header: string | undefined): string | null {
   return null;
 }
 
-router.post('/resolve', async (req: Request, res: Response) => {
+router.post('/resolve', requireAuthzCheck('SelectionList', 'read'), async (req: Request, res: Response) => {
   // ── Feature flag gate (release, default OFF) ───────────────────────────────
   const enabled = await isSelectionListsEnabled({
     organizationId: req.orgId,

@@ -55,6 +55,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { AuthzClient, createAuthzClient } from '@fuzefront/auth';
+import type { Knex } from 'knex';
 import { db } from '../db';
 import { getBooleanFlag, FLAGS, FlagContext } from './authz.flags';
 
@@ -71,8 +72,18 @@ import { getBooleanFlag, FLAGS, FlagContext } from './authz.flags';
  */
 const SECURITY_SERVICE_URL = process.env.SECURITY_SERVICE_URL ?? 'http://fuzefront-security:3002';
 
-/** `NODE_ENV=test` with no explicit client wired -> allow-all, no network. */
-export const isNoOpMode: boolean = process.env.NODE_ENV === 'test';
+/**
+ * `NODE_ENV=test` with no explicit client wired -> allow-all, no network.
+ *
+ * Setting `SECURITY_SERVICE_URL` explicitly opts OUT of the no-op: the
+ * integration/acceptance suite runs the service under NODE_ENV=test (so the
+ * FLAGS_FORCE_ON escape hatch works) against a stand-in Security API
+ * (tests/selection-list-service/helpers/fake-security-api.mjs) and needs REAL
+ * decisions — an allow-all client cannot exercise a single denial path.
+ * Unit tests never set it, so they keep the no-op.
+ */
+export const isNoOpMode: boolean =
+  process.env.NODE_ENV === 'test' && !process.env.SECURITY_SERVICE_URL;
 
 // ---------------------------------------------------------------------------
 // No-op proxy (CI / test safety net)
@@ -195,6 +206,21 @@ export function requireAuthzCheck(resource: string, action: string) {
 
     const listId = req.params['listId'];
     try {
+      // Org-scoped existence pre-check: a list id that does not exist IN THE
+      // CALLER'S ORG is a 404 whatever the action, before any decision is
+      // asked. Cross-org ids and never-minted ids are therefore
+      // indistinguishable (no cross-org existence oracle), and the Security API
+      // is never asked to rule on an id the caller's tenant does not own.
+      if (listId) {
+        const exists = await db('selection_lists')
+          .where({ id: listId, organization_id: orgId })
+          .first('id');
+        if (!exists) {
+          res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
+          return;
+        }
+      }
+
       const decision = await getAuthzClient().check(
         {
           subject: userId,
@@ -205,6 +231,12 @@ export function requireAuthzCheck(resource: string, action: string) {
         token,
       );
       if (!decision.allow) {
+        if (action === 'read' && listId) {
+          // A read the caller is not entitled to is a 404, not a 403, so the
+          // API is not an existence oracle (openapi §Authorization).
+          res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
+          return;
+        }
         res.status(403).json({ code: 'FORBIDDEN', message: 'Permission denied.' });
         return;
       }
@@ -217,6 +249,47 @@ export function requireAuthzCheck(resource: string, action: string) {
       res.status(403).json({ code: 'FORBIDDEN', message: 'Authorization service unavailable.' });
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// isAuthzEnabled / filterReadable — instance-level filtering of collections
+// ---------------------------------------------------------------------------
+
+/** True when authz decisions are enforced (release flag ON). */
+export async function isAuthzEnabled(req: Request): Promise<boolean> {
+  return getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, {
+    userId: req.userId,
+    orgId: req.orgId,
+    appId: req.appId,
+  });
+}
+
+/**
+ * Drops every list the caller may not `read` from a page of rows
+ * (openapi: "a list the caller has no grant on is simply absent, never a 403").
+ * One `bulkCheck` round trip for the whole page (<= 200 rows == the Security
+ * API's bulk ceiling). Fail CLOSED: a thrown AuthzError propagates to the
+ * route's catch (-> 500), it never degrades to "return everything".
+ * With the authz flag OFF (dark deploy) rows pass through unchanged, exactly
+ * like `requireAuthzCheck`.
+ */
+export async function filterReadable<T extends { id: string }>(
+  req: Request,
+  rows: T[],
+): Promise<T[]> {
+  if (rows.length === 0 || !(await isAuthzEnabled(req))) return rows;
+  const token = bearer(req);
+  if (!token || !req.userId || !req.orgId) return [];
+  const decisions = await getAuthzClient().bulkCheck(
+    rows.map((r) => ({
+      subject: req.userId as string,
+      tenant: req.orgId as string,
+      resource: { type: 'SelectionList', key: r.id },
+      action: 'read',
+    })),
+    token,
+  );
+  return rows.filter((_, i) => decisions[i]?.allow === true);
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +320,7 @@ export async function grantListOwner(
   listId: string,
   grantedBy: string,
   token: string,
+  executor: Knex | Knex.Transaction = db,
 ): Promise<void> {
   await getAuthzClient().grant(
     {
@@ -259,7 +333,9 @@ export async function grantListOwner(
   );
 
   // Upsert the mirror row. Only reached if the grant above succeeded.
-  await db('selection_list_access')
+  // `executor` lets a create handler write the mirror row inside the same
+  // transaction as the list row (the mirror has an FK to selection_lists).
+  await executor('selection_list_access')
     .insert({
       list_id: listId,
       user_id: userId,

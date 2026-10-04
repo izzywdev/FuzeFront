@@ -18,7 +18,7 @@
  * Additionally: org admin derives list-owner on ALL lists in the org, even
  * without an explicit Permit grant.
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';
