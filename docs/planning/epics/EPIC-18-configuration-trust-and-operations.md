@@ -48,7 +48,7 @@ domain: Platform
 - [ ] Feature 1: Secret-typed values — encrypted at rest, masked on read, excluded from bulk export.
 - [ ] Feature 2: Append-only audit history of every set / unset / lock / unlock, with actor and reason.
 - [ ] Feature 3: Revert a key at a scope to any previous value from its history.
-- [ ] Feature 4: `config.changed` events published so consumers invalidate their caches.
+- [x] Feature 4: `config.changed` events published so consumers invalidate their caches.
 - [ ] Feature 5: Version stamp / ETag per `(namespace, scope)` so clients can poll cheaply.
 - [ ] Feature 6: Declarative key-definition registration — apps publish a manifest, upserted idempotently.
 - [ ] Feature 7: Import / export of a scope's configuration (JSON + YAML) with a dry-run diff.
