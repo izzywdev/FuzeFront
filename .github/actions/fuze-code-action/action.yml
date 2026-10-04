@@ -29,6 +29,18 @@ description: >-
   SHA. It is reached only on the availability cascade, and it fails closed when
   `gemini-api-key` is empty rather than silently skipping.
   .
+  REVIEW-ONLY MODE (`review-only: 'true'`). Rungs 1a/1 (claude-code-action) honour a
+  tool allow-list (`claude-args: --allowedTools "Read,Grep,Glob"`), so they CAN be
+  confined to read-only at the tool level. Rungs 2 and 3 CANNOT: codex-action here
+  runs with `danger-full-access` (its OS sandbox cannot initialise on the
+  containerized self-hosted runner), and run-gemini-cli hard-codes `gemini --yolo`
+  (auto-approve every tool call, shell included) with no allow-list input. A caller
+  that feeds attacker-controlled text (a PR diff) to a REVIEWER therefore sets
+  `review-only: 'true'`, which refuses rungs 2 and 3 outright (skipped by name) so
+  the chain is Anthropic-only. An unavailable Anthropic rung then exhausts the
+  chain, which Finish reports as availability=true (an outage), the safe, non-blocking
+  direction. Maintainer callers that must write leave it at the default.
+  .
   If every configured rung fails, THIS ACTION FAILS (non-zero). It never exits 0
   because the chain is exhausted — a caller relying on this action's success must be
   able to trust that signal.
@@ -172,6 +184,20 @@ inputs:
       ./llm-endpoint already uses for its own openai/gemini vendor legs.
     required: false
     default: ''
+  review-only:
+    description: >-
+      'true' makes the action REVIEW-ONLY: the OpenAI (codex-action) and Gemini
+      (run-gemini-cli) fallover rungs are never run, regardless of whether their
+      keys are supplied. Set it on any caller that hands untrusted text (a pull
+      request diff) to a model that must not be able to act on it. Reason: those
+      two rungs cannot be confined to read-only at the tool level in this setup
+      (codex runs `danger-full-access`; run-gemini-cli always passes `--yolo`), so
+      the only fail-closed option is to not run them. The Anthropic rungs stay
+      available and are confined by the caller's `claude-args` allow-list. Default
+      'false' keeps the existing full fallover for maintainer callers that need
+      write tools.
+    required: false
+    default: 'false'
   codex-sandbox:
     description: >-
       codex-action `sandbox` input for the OpenAI rung. `danger-full-access`, not
@@ -189,6 +215,11 @@ inputs:
       ephemeral, throwaway CI runner as the isolation boundary — codex retains the
       write capability the fallover needs. Override per-caller if a host with
       working Landlock ever runs this.
+      .
+      SECURITY: `danger-full-access` is a full shell on the runner. It is
+      acceptable ONLY for maintainer callers whose Anthropic rung already runs
+      Bash. A caller that feeds untrusted text to a read-only reviewer MUST set
+      `review-only: 'true'`, which skips this rung entirely.
     required: false
     default: 'danger-full-access'
   codex-safety-strategy:
@@ -606,6 +637,7 @@ runs:
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.review-only != 'true' &&
         inputs.openai-api-key != ''
       continue-on-error: true
       uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1
@@ -617,11 +649,22 @@ runs:
         codex-args: ${{ inputs.codex-args }}
         output-file: ${{ runner.temp }}/fuze-code-action-codex-output.txt
 
+    - name: 'Rungs 2 and 3 refused — review-only'
+      id: review-only-refusal
+      if: |
+        steps.classify-claude.outputs.code == '1' &&
+        inputs.task-prompt != '' &&
+        inputs.review-only == 'true'
+      shell: bash
+      run: |
+        echo "::notice title=fuze-code-action::rung=openai and rung=gemini REFUSED — review-only is set. Neither can be confined to read-only at the tool level here (codex runs danger-full-access; run-gemini-cli passes --yolo), so a reviewer fed untrusted text never falls over into them. Chain is Anthropic-only; the Finish step reports the exhausted chain as an availability outage."
+
     - name: 'Rung 2 skipped — no openai-api-key'
       id: codex-no-key
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.review-only != 'true' &&
         inputs.openai-api-key == ''
       shell: bash
       run: |
@@ -711,6 +754,7 @@ runs:
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
         steps.codex.outcome != 'success' &&
+        inputs.review-only != 'true' &&
         inputs.gemini-api-key != ''
       shell: bash
       run: echo "GEMINI_CLI_TRUST_WORKSPACE=true" >> "$GITHUB_ENV"
@@ -721,6 +765,7 @@ runs:
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
         steps.codex.outcome != 'success' &&
+        inputs.review-only != 'true' &&
         inputs.gemini-api-key != ''
       continue-on-error: true
       uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
@@ -735,6 +780,7 @@ runs:
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
         steps.codex.outcome != 'success' &&
+        inputs.review-only != 'true' &&
         inputs.gemini-api-key == ''
       shell: bash
       run: |

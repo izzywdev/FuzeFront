@@ -17,6 +17,8 @@ combination rather than spot-checked.
      review finding or build break against another vendor is the core defect.
   3. A SUCCESS (code=0) never reaches rung 2 or 3.
   4. A rung is never attempted without its own credential.
+  5. `review-only: 'true'` NEVER reaches rung 2 or 3, whatever keys are present:
+     neither vendor can be confined to read-only at the tool level.
 
 Run: python3 .github/actions/fuze-code-action/__tests__/test_rung_gating.py
 """
@@ -197,10 +199,11 @@ class TestRungGating(unittest.TestCase):
         okeys = ["", "sk-openai"]
         gkeys = ["", "sk-gemini"]
         codex_outcomes = ["success", "failure", "skipped"]
+        review_only = ["", "false", "true"]
 
         checked = 0
-        for code, prompt, okey, gkey, cout in itertools.product(
-            codes, prompts, okeys, gkeys, codex_outcomes
+        for code, prompt, okey, gkey, cout, ro in itertools.product(
+            codes, prompts, okeys, gkeys, codex_outcomes, review_only
         ):
             ctx = {
                 "steps.classify-claude.outputs.code": code,
@@ -208,11 +211,12 @@ class TestRungGating(unittest.TestCase):
                 "inputs.openai-api-key": okey,
                 "inputs.gemini-api-key": gkey,
                 "steps.codex.outcome": cout,
+                "inputs.review-only": ro,
             }
             r2 = _evaluate(self.steps["codex"]["if"], ctx)
             r3 = _evaluate(self.steps["gemini"]["if"], ctx)
             checked += 1
-            where = f"code={code} prompt={prompt!r} openai={bool(okey)} gemini={bool(gkey)} codex={cout}"
+            where = f"code={code} prompt={prompt!r} openai={bool(okey)} gemini={bool(gkey)} codex={cout} review-only={ro!r}"
 
             if prompt == "":
                 self.assertFalse(r2, f"mention mode reached rung 2: {where}")
@@ -226,12 +230,15 @@ class TestRungGating(unittest.TestCase):
             if code == "3":
                 self.assertFalse(r2, f"declined reached rung 2: {where}")
                 self.assertFalse(r3, f"declined reached rung 3: {where}")
+            if ro == "true":
+                self.assertFalse(r2, f"review-only reached rung 2 (codex, full shell): {where}")
+                self.assertFalse(r3, f"review-only reached rung 3 (gemini --yolo): {where}")
             if not okey:
                 self.assertFalse(r2, f"rung 2 ran with no openai key: {where}")
             if not gkey:
                 self.assertFalse(r3, f"rung 3 ran with no gemini key: {where}")
 
-        self.assertEqual(checked, 96)
+        self.assertEqual(checked, 288)
 
     def test_the_gates_are_not_vacuous(self):
         # A suite that only proves "never fires" would pass on `if: false`.
@@ -242,9 +249,14 @@ class TestRungGating(unittest.TestCase):
             "inputs.openai-api-key": "sk-openai",
             "inputs.gemini-api-key": "sk-gemini",
             "steps.codex.outcome": "failure",
+            "inputs.review-only": "false",
         }
         self.assertTrue(_evaluate(self.steps["codex"]["if"], base))
         self.assertTrue(_evaluate(self.steps["gemini"]["if"], base))
+        # ...and the review-only refusal notice fires exactly where they are refused.
+        ro = dict(base, **{"inputs.review-only": "true"})
+        self.assertTrue(_evaluate(self.steps["review-only-refusal"]["if"], ro))
+        self.assertFalse(_evaluate(self.steps["review-only-refusal"]["if"], base))
 
 
 class TestEvaluator(unittest.TestCase):
