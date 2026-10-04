@@ -4,6 +4,7 @@ import { Button, Modal, Spinner, StatusCallout } from '@fuzefront/design-system'
 import { useOrganizations } from '../lib/shared'
 import {
   AppInstallation,
+  AppInstallationsResponse,
   AppScopeLevel,
   InstallMode,
   InstallScope,
