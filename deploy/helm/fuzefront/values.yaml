@@ -817,6 +817,14 @@ selectionListService:
     # services calling the selection-list API). The Traefik rule below covers
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
+  # Same-origin route under ingress.host (templates/ingress.yaml): publishes
+  # ONLY /api/v1/selection-lists and /api/v1/resolve (the paths
+  # packages/selection-lists-ui calls), stripping /api before the service, which
+  # mounts at /v1. Rendered only when selectionListService.enabled is also true.
+  # No auth is added or removed at the edge -- the service authenticates itself
+  # and the flag fuzefront.selection-lists.service (default OFF => 404) gates it.
+  ingress:
+    enabled: true
 
 # MCP SSE gateway for the selection-list-service. Ships dark by default alongside
 # the service itself. Both selectionListService.enabled AND selectionListsMcp.enabled
