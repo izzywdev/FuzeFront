@@ -125,7 +125,7 @@ class StubServer:
 _NOW = "2026-08-10T12:00:00Z"
 
 _LIST_FIXTURE: dict[str, Any] = {
-    "id": "sl_01h455vb4pex5vsknk084sn02q",
+    "id": "front_sl_01h455vb4pex5vsknk084sn02q",
     "organization_id": "org_01h455vb4pex5vsknk084sn02q",
     "key": "countries",
     "source_locale": "en",
@@ -140,8 +140,8 @@ _LIST_FIXTURE: dict[str, Any] = {
 }
 
 _ITEM_FIXTURE: dict[str, Any] = {
-    "id": "sli_01h455vb4pex5vsknk084sn02q",
-    "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+    "id": "front_sli_01h455vb4pex5vsknk084sn02q",
+    "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
     "code": "US",
     "sort_order": 100,
     "status": "active",
@@ -267,7 +267,7 @@ class TestUrlAndToken:
         routes = {("POST", "/v1/resolve"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url)
-            client.resolve_ids(["sli_01h455vb4pex5vsknk084sn02q"])
+            client.resolve_ids(["front_sli_01h455vb4pex5vsknk084sn02q"])
 
         assert "Authorization" not in received_headers[0]
 
@@ -281,8 +281,8 @@ class TestCursorWalk:
     """The paginator must walk exactly two pages and yield no duplicates."""
 
     def test_two_page_cursor_walk(self) -> None:
-        page1_item = dict(_ITEM_FIXTURE, id="sli_page1_item")
-        page2_item = dict(_ITEM_FIXTURE, id="sli_page2_item")
+        page1_item = dict(_ITEM_FIXTURE, id="front_sli_page1_item")
+        page2_item = dict(_ITEM_FIXTURE, id="front_sli_page2_item")
 
         page1_cursor = "cursor-page-2"
         call_log: list[str | None] = []
@@ -295,19 +295,19 @@ class TestCursorWalk:
             else:
                 handler.send_json(_page([page2_item], next_cursor=None, has_more=False))
 
-        routes = {("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
+        routes = {("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             results = list(
                 client.paginate(
-                    lambda **kw: client.get_items("sl_01h455vb4pex5vsknk084sn02q", **kw)
+                    lambda **kw: client.get_items("front_sl_01h455vb4pex5vsknk084sn02q", **kw)
                 )
             )
 
         assert len(results) == 2, f"Expected 2 items, got {len(results)}"
         ids = [r.id for r in results]
-        assert "sli_page1_item" in ids
-        assert "sli_page2_item" in ids
+        assert "front_sli_page1_item" in ids
+        assert "front_sli_page2_item" in ids
         # No duplicates
         assert len(ids) == len(set(ids))
         # Called twice: first with no cursor, second with the page1 cursor
@@ -322,12 +322,12 @@ class TestCursorWalk:
             call_count += 1
             handler.send_json(_page([_ITEM_FIXTURE], next_cursor=None, has_more=False))
 
-        routes = {("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
+        routes = {("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             items = list(
                 client.paginate(
-                    lambda **kw: client.get_items("sl_01h455vb4pex5vsknk084sn02q", **kw)
+                    lambda **kw: client.get_items("front_sl_01h455vb4pex5vsknk084sn02q", **kw)
                 )
             )
 
@@ -337,7 +337,7 @@ class TestCursorWalk:
     def test_paginate_three_pages(self) -> None:
         """Paginator must handle N>2 pages correctly."""
         pages = [
-            (f"sli_item_{i}", f"cursor-page-{i + 1}", True)
+            (f"front_sli_item_{i}", f"cursor-page-{i + 1}", True)
             for i in range(3)
         ]
         # Last page: no cursor, no more
@@ -353,17 +353,17 @@ class TestCursorWalk:
                 _page([dict(_ITEM_FIXTURE, id=item_id)], next_cursor=next_c, has_more=has_m)
             )
 
-        routes = {("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
+        routes = {("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             results = list(
                 client.paginate(
-                    lambda **kw: client.get_items("sl_01h455vb4pex5vsknk084sn02q", **kw)
+                    lambda **kw: client.get_items("front_sl_01h455vb4pex5vsknk084sn02q", **kw)
                 )
             )
 
         assert len(results) == 3
-        assert {r.id for r in results} == {f"sli_item_{i}" for i in range(3)}
+        assert {r.id for r in results} == {f"front_sli_item_{i}" for i in range(3)}
 
 
 # ---------------------------------------------------------------------------
@@ -406,11 +406,11 @@ class TestApiError:
                 status=404,
             )
 
-        routes = {("GET", "/v1/selection-lists/sl_nosuchlist"): handle}
+        routes = {("GET", "/v1/selection-lists/front_sl_nosuchlist"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             with pytest.raises(SelectionListApiError) as exc_info:
-                client.get_list("sl_nosuchlist")
+                client.get_list("front_sl_nosuchlist")
 
         err = exc_info.value
         assert err.code == "NOT_FOUND"
@@ -487,10 +487,10 @@ class TestEmptyResponse:
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             handler.send_no_content()
 
-        routes = {("DELETE", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q"): handle}
+        routes = {("DELETE", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.delete_list("sl_01h455vb4pex5vsknk084sn02q", purge=True)
+            result = client.delete_list("front_sl_01h455vb4pex5vsknk084sn02q", purge=True)
 
         assert result is None
 
@@ -501,14 +501,14 @@ class TestEmptyResponse:
         routes = {
             (
                 "DELETE",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items/sli_01h455vb4pex5vsknk084sn02q",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items/front_sli_01h455vb4pex5vsknk084sn02q",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.delete_item(
-                "sl_01h455vb4pex5vsknk084sn02q",
-                "sli_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
+                "front_sli_01h455vb4pex5vsknk084sn02q",
                 purge=True,
             )
 
@@ -521,13 +521,13 @@ class TestEmptyResponse:
         routes = {
             (
                 "DELETE",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.revoke_access(
-                "sl_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
                 "usr_01h455vb4pex5vsknk084sn02q",
             )
 
@@ -541,10 +541,10 @@ class TestEmptyResponse:
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             handler.send_json(archived)
 
-        routes = {("DELETE", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q"): handle}
+        routes = {("DELETE", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.delete_list("sl_01h455vb4pex5vsknk084sn02q")
+            result = client.delete_list("front_sl_01h455vb4pex5vsknk084sn02q")
 
         assert result is not None
         assert result.status == LifecycleStatus.ARCHIVED
@@ -568,7 +568,7 @@ class TestEndpointCoverage:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             sl = client.create_list(key="countries", name="Countries", source_locale="en")
 
-        assert sl.id == "sl_01h455vb4pex5vsknk084sn02q"
+        assert sl.id == "front_sl_01h455vb4pex5vsknk084sn02q"
         assert received_bodies[0] == {"key": "countries", "name": "Countries", "source_locale": "en"}
 
     def test_get_quota(self) -> None:
@@ -596,7 +596,7 @@ class TestEndpointCoverage:
         assert status.quotas[0].current == 12
 
     def test_resolve_ids(self) -> None:
-        item_id = "sli_01h455vb4pex5vsknk084sn02q"
+        item_id = "front_sli_01h455vb4pex5vsknk084sn02q"
         resolve_body = {
             "results": {
                 item_id: {
@@ -622,7 +622,7 @@ class TestEndpointCoverage:
         assert result.missing == []
 
     def test_reorder_items(self) -> None:
-        item2 = dict(_ITEM_FIXTURE, id="sli_item_2", sort_order=200)
+        item2 = dict(_ITEM_FIXTURE, id="front_sli_item_2", sort_order=200)
         reorder_response = {"items": [_ITEM_FIXTURE, item2]}
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
@@ -631,16 +631,16 @@ class TestEndpointCoverage:
         routes = {
             (
                 "PUT",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items/reorder",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items/reorder",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             items = client.reorder_items(
-                "sl_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
                 [
-                    "sli_01h455vb4pex5vsknk084sn02q",
-                    "sli_item_2",
+                    "front_sli_01h455vb4pex5vsknk084sn02q",
+                    "front_sli_item_2",
                 ],
             )
 
@@ -648,7 +648,7 @@ class TestEndpointCoverage:
 
     def test_upsert_list_translation(self) -> None:
         translation_body = {
-            "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+            "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
             "locale": "fr",
             "name": "Pays",
             "is_machine": False,
@@ -661,13 +661,13 @@ class TestEndpointCoverage:
         routes = {
             (
                 "PUT",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/translations/fr",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/translations/fr",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             t = client.upsert_list_translation(
-                "sl_01h455vb4pex5vsknk084sn02q", "fr", "Pays"
+                "front_sl_01h455vb4pex5vsknk084sn02q", "fr", "Pays"
             )
 
         assert t.locale == "fr"
@@ -675,7 +675,7 @@ class TestEndpointCoverage:
 
     def test_set_access(self) -> None:
         grant_body = {
-            "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+            "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
             "user_id": "usr_01h455vb4pex5vsknk084sn02q",
             "role": "list-editor",
             "granted_by": "usr_01h455vb4pex5vsknk084sn02q",
@@ -689,13 +689,13 @@ class TestEndpointCoverage:
         routes = {
             (
                 "PUT",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             grant = client.set_access(
-                "sl_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
                 "usr_01h455vb4pex5vsknk084sn02q",
                 "list-editor",
             )
@@ -717,13 +717,13 @@ class TestEndpointCoverage:
         routes = {
             (
                 "POST",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/translations/fr/autofill",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/translations/fr/autofill",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.autofill_translations(
-                "sl_01h455vb4pex5vsknk084sn02q", "fr"
+                "front_sl_01h455vb4pex5vsknk084sn02q", "fr"
             )
 
         assert result.items_translated == 248
@@ -731,7 +731,7 @@ class TestEndpointCoverage:
 
     def test_get_access_page(self) -> None:
         grant = {
-            "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+            "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
             "user_id": "usr_01h455vb4pex5vsknk084sn02q",
             "role": "list-owner",
             "granted_by": "usr_01h455vb4pex5vsknk084sn02q",
@@ -743,11 +743,11 @@ class TestEndpointCoverage:
             handler.send_json(_page([grant]))
 
         routes = {
-            ("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/access"): handle
+            ("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/access"): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.get_access("sl_01h455vb4pex5vsknk084sn02q")
+            result = client.get_access("front_sl_01h455vb4pex5vsknk084sn02q")
 
         assert len(result.items) == 1
         assert result.items[0].role.value == "list-owner"
@@ -760,11 +760,11 @@ class TestEndpointCoverage:
             handler.send_json(archived)
 
         routes = {
-            ("POST", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/archive"): handle
+            ("POST", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/archive"): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.archive_list("sl_01h455vb4pex5vsknk084sn02q")
+            result = client.archive_list("front_sl_01h455vb4pex5vsknk084sn02q")
 
         assert result.status == LifecycleStatus.ARCHIVED
 
@@ -777,14 +777,14 @@ class TestEndpointCoverage:
         routes = {
             (
                 "POST",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items/sli_01h455vb4pex5vsknk084sn02q/archive",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items/front_sli_01h455vb4pex5vsknk084sn02q/archive",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.archive_item(
-                "sl_01h455vb4pex5vsknk084sn02q",
-                "sli_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
+                "front_sli_01h455vb4pex5vsknk084sn02q",
             )
 
         assert result.status == LifecycleStatus.ARCHIVED
@@ -795,8 +795,8 @@ class TestEndpointCoverage:
 # ---------------------------------------------------------------------------
 
 
-_LIST_ID = "sl_01h455vb4pex5vsknk084sn02q"
-_ITEM_ID = "sli_01h455vb4pex5vsknk084sn02q"
+_LIST_ID = "front_sl_01h455vb4pex5vsknk084sn02q"
+_ITEM_ID = "front_sli_01h455vb4pex5vsknk084sn02q"
 
 
 class TestTranslationStatusAndDelete:
@@ -981,7 +981,7 @@ class TestTranslationStatusAndDelete:
 
 class TestPaginationEnvelope:
     def test_page_next_cursor_and_has_more(self) -> None:
-        item1 = dict(_LIST_FIXTURE, id="sl_page1")
+        item1 = dict(_LIST_FIXTURE, id="front_sl_page1")
         page1_cursor = "eyJsYXN0SWQiOiJzbF8wMSJ9"
 
         call_num = 0
