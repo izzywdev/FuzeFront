@@ -29,7 +29,7 @@
     "version": "echo $npm_package_version"
   },
   "dependencies": {
-    "@izzywdev/fuzefront-identity": "1.0.0",
+    "@izzywdev/fuzefront-identity": "1.0.1",
     "@fuzefront/custom-hostname-client": "1.0.0",
     "@fuzefront/feature-flags": "file:../packages/feature-flags",
     "@fuzefront/shared": "1.0.0",
