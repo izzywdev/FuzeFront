@@ -133,10 +133,13 @@ Skip for platform-defaults-only pilots.
 
 ### 2.6 The known gaps are accepted by the owner
 
-- [ ] Read §6 and record the owner's decision on at least: seeded lists have **no owner**
-      (invisible to members until a grant), and **no backfill** (orgs created while the flag was
-      OFF are never seeded). Do not enable seeding for an org whose users are expected to use the
-      seeded lists immediately.
+- [ ] Read §6. Two former gaps are **fixed** and no longer need an owner decision: seeded lists now
+      get a `list-owner` for the org owner (SL8, see §6), and the reconciler/backfill exists (SL7,
+      off by default: set `SEED_RECONCILER_ENABLED=true`). What still needs a decision: an org
+      whose `identity.org.created` carried **no `ownerId`** gets lists nobody can see until a grant
+      is made through the Security API (the `selection_list_seed_owner_grant_skipped_total{reason="no-owner"}`
+      counter tells you which), and **app-seeded** lists (`seed.requested`) are never granted by
+      the service: the requesting app must grant through the Security API.
 
 ## 3. Flag ramp
 
@@ -169,10 +172,10 @@ Suggested order (each step: soak, run the §4 checks, then the next):
 | 0 | Prerequisites §2 all ticked. Both flags OFF. Service deployed. | `GET /ready` 200; no `seed.failed`/parked rows; outbox pending ≈ 0 |
 | 1 | Master flag ON for the pilot org(s) (per `selection-lists-flag-rollout.md`), `seed-defaults` still OFF | HTTP behaves; `seed-defaults` OFF ⇒ a created pilot org is projected but **not** seeded (log: `seeding flag is OFF for this org`) |
 | 2 | `seed-defaults` ON for **one** pilot org (`orgId` constraint), then create (or trigger) its `identity.org.created` | `seed.completed` (`outcome: applied`, `trigger: org-created`, three lists) on `selection-lists.seed.completed`; one ledger row; three `selection_lists` rows with `seed_source='platform'`, `created_by='system:selection-list-service'` |
-| 3 | Verify the pilot org end to end (§4.3). Remember the lists are **invisible** to members until a `list-owner` is granted | Self-grant via the support path in the service guide, confirm the lists render, items resolve in the pilot's locales |
+| 3 | Verify the pilot org end to end (§4.3). The org owner holds `list-owner` on each seeded list (audit action `seed.owner-granted`); other members see nothing until granted | Sign in as the org owner, confirm the three lists render, items resolve in the pilot's locales. No `list-owner` for the owner ⇒ check `selection_list_seed_owner_grants_total{result="failed"}` and the machine identity |
 | 4 | Add a few more orgs to the constraint; repeat step 3 on one | zero unexplained `seed.failed`, outbox healthy |
 | 5 | Add the first allowlisted **app** (PR + Authentik client), have it send one `seed.requested` for the pilot org | `seed.completed` with its `requestId`; a deliberately bad request (wrong key prefix) returns `NAMESPACE_VIOLATION` |
-| 6 | Widen to all orgs only after the owner accepts §6; the flag's removal criterion is 30 days at 100% with zero `seed.failed`, **and** a backfill — which does not exist | — |
+| 6 | Widen to all orgs only after the owner accepts §6; the flag's removal criterion is 30 days at 100% with zero `seed.failed`, **and** a backfill (the SL7 reconciler, `SEED_RECONCILER_ENABLED=true`) | — |
 
 Enabling the flag does **not** seed existing orgs (no reconciler). A pilot org must either be
 created after the flag is ON, or have its `identity.org.created` re-delivered — a replay is
@@ -192,7 +195,7 @@ ledger), so it is expected to be safe, but treat that as **inferred**.
 | `selection_list_outbox_publish_failures_total{topic}` | failed publish attempts (retried) | rate > 0 for long ⇒ Kafka/ACL/topic problem |
 | `selection_list_outbox_published_total{topic}` | delivered | flat at 0 while changes happen ⇒ relay disabled |
 
-There are **no seed-specific metrics.** The signals for seeding are the `seed.failed` events, the
+The reconciler and the owner grants have their own counters (`selection_list_seed_reconciler_*`; `selection_list_seed_owner_grants_total{result=granted|failed}` - alert on any `failed` increase - and `selection_list_seed_owner_grant_skipped_total{reason}`). There are **no other seed-specific metrics.** The signals for seeding are the `seed.failed` events, the
 ledger, and logs (messages `seed: request completed`, `seed: request refused (seed.failed recorded,
 nothing written)`, `seeding flag is OFF for this org`, `attestation refused (ATTESTATION_INVALID)`,
 `attestation could not be verified and the retry budget is exhausted`).
@@ -280,16 +283,19 @@ What the flag **does not** undo — rollback is forward-only for data:
 
 ## 6. Known gaps — read before enabling, do not paper over
 
-Checked against `origin/master` @ `0e70bcee`:
+Originally checked against `origin/master` @ `0e70bcee`; rows marked **FIXED (SL8)** were re-verified
+against the SL8 branch (`claude/sl8-fixes`) and stay in the table as a record, not as open work.
 
 | Gap | Evidence | Consequence | Owner |
 |---|---|---|---|
-| **Reconciler / backfill is not built** | `grep -ri reconcil services/selection-list-service/src` finds only comments; no commit subject for this service mentions one; the flag description and the org-created handler say "the reconciler catches up" | An org created while a flag is OFF never gets the platform pack; a new pack version (v2) reaches only orgs created later; the flag's own removal criterion cannot be met | `backend-engineer` |
-| **No `identity.org.updated` consumer** | no reference in `src/events/`; projection `is_active` comes only from `identity.org.created` | A later deactivation is invisible: `ORG_INACTIVE` will not fire and seeding keeps applying to an org identity considers inactive | `backend-engineer` |
-| **Seeded lists have no list-owner** | no grant is written in `src/seed/`; per-list actions are instance-only; list endpoint filters by `SelectionList:read` | Members **and tenant admins** cannot see/read seeded lists until a role is granted (admin self-grant via the Security API, documented in the service guide). Open owner decision: grant at seed time vs. admin → owner derivation (`selection-lists-permit-actions.md` Q1) | owner decision, then `backend-engineer` |
+| ~~**Reconciler / backfill is not built**~~ **FIXED (SL7)** | `src/seed/reconciler.ts` (`runReconcilerOnce` / `startReconciler`; `SEED_RECONCILER_ENABLED=true`, default OFF) | Orgs created while a flag was OFF, and pack upgrades, are backfilled once seeding is ON for the org. It also heals a missing owner grant (SL8) | done |
+| ~~**No `identity.org.updated` consumer**~~ **FIXED (SL8)** | `src/events/org-updated.handler.ts`, consumer group `${KAFKA_GROUP_ID}-org-updated`, DLQ `identity.org.updated.dlq`; tests `events.org-updated.db.test.ts` | The projection's `is_active` / `type` / `name` follow the org; flag-independent; never resurrects a tombstone; an older snapshot never overwrites a newer one. A deactivated org is no longer seeded/backfilled | done |
+| ~~**Seeded lists have no list-owner**~~ **FIXED (SL8)** | `src/seed/ownerGrants.ts`, called at the end of `applyPlatformDefaults` (org-created handler **and** reconciler); migration 10 adds `selection_list_ref_index.owner_id` | The org owner (`identity.org.created.ownerId`, stored as `usr_…`) gets `list-owner` on every active platform-seeded list via the service's machine identity (fail closed), after the seed transaction commits; idempotent; a grant failure throws so the message is retried (and the reconciler re-selects the org); audit action `seed.owner-granted`. **Remaining limits:** an org with **no `ownerId`** is skipped (log + `selection_list_seed_owner_grant_skipped_total{reason="no-owner"}`); a human's later demotion/revocation is respected (never re-granted); **app-seeded** lists (`seed.requested`) get **no** grant: the requesting app must grant through the Security API (the frozen `seed.requested` schema carries no owner); other members and tenant admins still see nothing until granted | done (owner-less orgs: support) |
 | **User-scoped lists unsupported** | `scope: 'user'` ⇒ `SCOPE_UNSUPPORTED` | per-user seeding cannot be offered | — |
 | **`seed-defaults` cannot be flipped by `prod-unleash-ops`** | workflow `flags` options list has no such set; strategy is percentage-only | manual Unleash procedure or workflow extension; no per-org targeting in the workflow | `feature-flags-engineer` |
-| **Org-id format in flag context** | seeding passes `org_…` TypeID (`wireOrgId`); HTTP passes the JWT claim as-is | an `orgId` constraint can match one path and not the other (inferred) | `backend-engineer` |
+| ~~**Org-id format in flag context**~~ **FIXED (SL8)** | `buildFlagContext` in `src/flags.ts` canonicalises `orgId` / `userId` to the wire TypeID (`org_…` / `usr_…`; a bare UUID claim is converted with the identity codec) for EVERY evaluation; test `flags.canonical-context.test.ts` | Write Unleash `orgId` constraints in the **`org_…`** form: it now matches the seeding paths and the HTTP paths alike. A constraint written with a bare UUID will match neither | done |
+| ~~**Request bodies looser than the spec; `limit=0` accepted; resolve accepted non-`front_sli_` ids**~~ **FIXED (SL8)** | `acceptOnlyBodyProps` / `parseLimitParam` in `src/middleware/validateInput.ts`; `POST /v1/resolve` validates `ids`; tests `routes.request-validation.db.test.ts` + the acceptance suite | Undeclared body properties, `limit<1`, cross-type/duplicate/empty resolve ids and an unsupported locale are `400 VALIDATION_ERROR`. **Behaviour change for callers:** `POST /v1/resolve` with `ids: []` is now `400` (spec `minItems: 1`), not an empty `200` | done |
+| ~~**Port mismatch (service default 3011 vs chart 3008)**~~ **FIXED service-side (SL8)** | `src/index.ts` default, `Dockerfile` `ENV PORT`/`EXPOSE` and the docs now say `3008` (the chart already set `PORT` from `selectionListService.port`, so the deployed pod was never affected) | Local runs / the image default agree with the chart. **Still `3011`:** the OpenAPI `servers` example (frozen contract; its Helm copy `deploy/helm/fuzefront/files/selection-list-service-openapi.yaml` must stay byte-identical, so amend both in a contract PR), the `fuzefront-selection-list-client` Python README/docstring base URL, and CI's explicit `PORT: '3011'` (harmless) | `contract-designer` (spec), `docs-maintainer` (py README) |
 | **Prod topic pre-creation is disabled** | `kafkaTopics.enabled: false` in `values-prod.yaml` | topics may be auto-created with broker defaults; token retention on `seed.requested`/`.dlq` not guaranteed to be 1 d; change-event DLQs undeclared | `devops-engineer` / FuzeInfra via `@fuze` |
 | **Service not deployed; secrets not sealed** | `selectionListService.enabled: false`; no `selection-list-secrets.yaml` under `deploy/contabo/sealed/` | nothing above can run in prod yet | `devops-engineer` |
 | **Allowlist has no app sources; no seed clients exist** | `seed-sources.json` lists only `platform`; seed-clients runbook is scaffolding | every app request is `SOURCE_NOT_ALLOWED` | per onboarding PR |
@@ -307,7 +313,7 @@ Checked against `origin/master` @ `0e70bcee`:
 | No outcome event at all | request never consumed, or outcome stuck in the outbox | `selection_list_outbox_pending` / oldest age; consumer group lag on `selection-lists.seed.requested`; topic name |
 | `selection_list_outbox_failed` > 0 | events parked after 10 failed publishes or schema drift | `last_error` on the `failed` rows; the `<topic>.dlq` copy |
 | `INTERNAL_ERROR` | DB/Security API fault outlasted 5 attempts | service logs around the `requestId`; Security API health (token introspection) |
-| Platform pack missing for an org | created while a flag was OFF, or `appliesTo` excludes its type (`platform` org), or inactive | the §4.2 "never received" query; there is no automatic repair |
+| Platform pack missing for an org | created while a flag was OFF, or `appliesTo` excludes its type (`platform` org), or inactive | the §4.2 "never received" query; the reconciler (`SEED_RECONCILER_ENABLED=true`) repairs it once seeding is ON for the org |
 
 ---
 

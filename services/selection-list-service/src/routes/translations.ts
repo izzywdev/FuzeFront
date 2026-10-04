@@ -30,7 +30,8 @@
 
 import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
-import { registerIdParams } from '../middleware/validateInput';
+import { acceptOnlyBodyProps, isItemId, registerIdParams } from '../middleware/validateInput';
+import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
 import { createHash } from 'crypto';
 import { db } from '../db';
 import { isSelectionListsEnabled } from '../flags';
@@ -61,6 +62,8 @@ const SUPPORTED_LOCALES = new Set([
 // Field limits (openapi + the event schemas the translation events validate against).
 const NAME_MAX = 200;
 const DESCRIPTION_MAX = 2000;
+/** SelectionListAutofillRequest.item_ids maxItems. */
+const AUTOFILL_MAX_ITEM_IDS = 5000;
 
 /**
  * Noop machine-translation provider: "[MT] " + source text, clamped to the
@@ -209,6 +212,8 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
     });
   }
 
+  // SelectionListTranslationUpsert: additionalProperties false (no `id`).
+  if (!acceptOnlyBodyProps(req, res, ['name', 'description'])) return;
   const { name, description } = req.body ?? {};
   if (!name || typeof name !== 'string' || name.trim() === '') {
     return res.status(400).json({ code: 'VALIDATION_ERROR', message: 'name is required.' });
@@ -412,6 +417,8 @@ router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('Sel
     });
   }
 
+  // SelectionListItemTranslationUpsert: additionalProperties false (no `id`).
+  if (!acceptOnlyBodyProps(req, res, ['label', 'description'])) return;
   const { label, description } = req.body ?? {};
   if (!label || typeof label !== 'string' || label.trim() === '') {
     return res.status(400).json({ code: 'VALIDATION_ERROR', message: 'label is required.' });
@@ -561,6 +568,9 @@ router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('Selecti
 
   const { listId, locale } = req.params;
   const orgId = req.orgId as string;
+
+  // SelectionListAutofillRequest: additionalProperties false.
+  if (!acceptOnlyBodyProps(req, res, ['overwrite_machine', 'item_ids'])) return;
   const { overwrite_machine = false, item_ids } = req.body ?? {};
 
   // TODO(S7): permit.check('translate', listId, req.userId)
@@ -570,6 +580,23 @@ router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('Selecti
       code: 'VALIDATION_ERROR',
       message: `Unsupported locale: ${locale}.`,
     });
+  }
+  if (typeof overwrite_machine !== 'boolean') {
+    return res.status(400).json({ code: 'VALIDATION_ERROR', message: 'overwrite_machine must be a boolean.' });
+  }
+  // item_ids: at most 5000 unique `front_sli_` ids (contract: maxItems 5000, uniqueItems).
+  if (item_ids !== undefined) {
+    if (
+      !Array.isArray(item_ids) ||
+      item_ids.length > AUTOFILL_MAX_ITEM_IDS ||
+      !item_ids.every(isItemId) ||
+      new Set(item_ids).size !== item_ids.length
+    ) {
+      return res.status(400).json({
+        code: 'VALIDATION_ERROR',
+        message: `item_ids must be an array of at most ${AUTOFILL_MAX_ITEM_IDS} unique '${ENTITY_PREFIXES.selectionListItem}_' ids.`,
+      });
+    }
   }
 
   // The whole autofill is ONE transaction: every machine translation written

@@ -7,17 +7,17 @@
  * an undeclared `id` is the "client-chosen identity" door the standard closes, and a route that
  * treats a list/user/org id as a (missing) item id is the cross-type confusion it exists to stop.
  *
- * DEFECTS FOUND against the current service — each is `it.failing` so CI stays green while the
- * defect stays PROVABLE: when the service is fixed the test turns red ("expected to fail but
- * passed") and the `.failing` is removed in the same PR. Do NOT weaken the assertions.
+ * These were two DEFECTS, pinned as `it.failing` until the service was fixed (SL8); the pins are
+ * now plain tests that must stay green. Do NOT weaken the assertions.
  *
  *   D1  PUT .../translations/{locale}, PUT .../items/{itemId}/translations/{locale},
- *       PUT .../items/reorder, POST .../translations/{locale}/autofill and POST /v1/resolve accept
- *       undeclared properties (incl. `id`, `organization_id`) and answer 2xx; the spec says 400.
- *   D2  POST /v1/resolve accepts ids that do not match `^front_sli_[0-9a-z]+$` — a `front_sl_`,
- *       `usr_` or `org_` id, upper-case, even a JSON number — and answers 200 with them listed in
- *       `missing`; the spec says 400 VALIDATION_ERROR. Also accepts duplicate ids (`uniqueItems`),
+ *       PUT .../items/reorder, POST .../translations/{locale}/autofill and POST /v1/resolve used to
+ *       accept undeclared properties (incl. `id`, `organization_id`) and answer 2xx; the spec says 400.
+ *   D2  POST /v1/resolve used to accept ids that do not match `^front_sli_[0-9a-z]+$` — a `front_sl_`,
+ *       `usr_` or `org_` id, upper-case, even a JSON number — and answer 200 with them listed in
+ *       `missing`; the spec says 400 VALIDATION_ERROR. It also accepted duplicate ids (`uniqueItems`),
  *       an unsupported `locale`, and an empty `ids` (`minItems: 1`) with 200.
+ *   D3  `limit=0` on the paginated GETs (spec `minimum: 1`) was silently treated as the default.
  */
 import { mintTestToken } from '../helpers/auth';
 import { rawFetch } from '../helpers/client';
@@ -67,28 +67,28 @@ describe('the spec itself declares these constraints (guards against the tests b
 });
 
 describe('D1: undeclared properties must be rejected with 400 VALIDATION_ERROR (additionalProperties: false)', () => {
-  it.failing('PUT list translation with an extra `id`', async () => {
+  it('PUT list translation with an extra `id`', async () => {
     expect400(await call('PUT', `${L()}/translations/fr`, { name: 'x', id: 'front_sl_01h455vb4pex5vsknk084sn02q' }));
   });
-  it.failing('PUT list translation with an arbitrary extra property', async () => {
+  it('PUT list translation with an arbitrary extra property', async () => {
     expect400(await call('PUT', `${L()}/translations/de`, { name: 'x', bogus: 1 }));
   });
-  it.failing('PUT item translation with an extra `id`', async () => {
+  it('PUT item translation with an extra `id`', async () => {
     expect400(await call('PUT', `${L()}/items/${itemId}/translations/fr`, { label: 'x', id: 'front_sli_01h455vb4pex5vsknk084sn02q' }));
   });
-  it.failing('PUT reorder with an extra `id`', async () => {
+  it('PUT reorder with an extra `id`', async () => {
     expect400(await call('PUT', `${L()}/items/reorder`, { item_ids: [itemId], id: 'front_sli_01h455vb4pex5vsknk084sn02q' }));
   });
-  it.failing('POST autofill with an undeclared property', async () => {
+  it('POST autofill with an undeclared property', async () => {
     expect400(await call('POST', `${L()}/translations/es/autofill`, { bogus: 1 }));
   });
-  it.failing('POST resolve with an undeclared property (e.g. a client-supplied organization_id)', async () => {
+  it('POST resolve with an undeclared property (e.g. a client-supplied organization_id)', async () => {
     expect400(await call('POST', '/v1/resolve', { ids: [itemId], organization_id: 'org_01h455vb4pex5vsknk084sn02q' }));
   });
 });
 
 describe('D2: POST /v1/resolve enforces the ids schema', () => {
-  it.failing.each([
+  it.each([
     ['a list id', 'front_sl_01h455vb4pex5vsknk084sn02q'],
     ['a user id', 'usr_01h455vb4pex5vsknk084sn02q'],
     ['an org id', 'org_01h455vb4pex5vsknk084sn02q'],
@@ -98,14 +98,35 @@ describe('D2: POST /v1/resolve enforces the ids schema', () => {
   ])('rejects %s in ids (cross-type / malformed id)', async (_name, bad) => {
     expect400(await call('POST', '/v1/resolve', { ids: [bad] }));
   });
-  it.failing('rejects duplicate ids (uniqueItems)', async () => {
+  it('rejects duplicate ids (uniqueItems)', async () => {
     expect400(await call('POST', '/v1/resolve', { ids: [itemId, itemId] }));
   });
-  it.failing('rejects an unsupported locale', async () => {
+  it('rejects an unsupported locale', async () => {
     expect400(await call('POST', '/v1/resolve', { ids: [itemId], locale: 'xx' }));
   });
-  it.failing('rejects an empty ids array (minItems: 1)', async () => {
+  it('rejects an empty ids array (minItems: 1)', async () => {
     expect400(await call('POST', '/v1/resolve', { ids: [] }));
+  });
+});
+
+describe('D3: limit must be an integer >= 1 on every paginated GET (over-max is clamped, never honoured unbounded)', () => {
+  const paths = (): Array<[string, string]> => [
+    ['GET /v1/selection-lists', '/v1/selection-lists'],
+    ['GET .../items', `${L()}/items`],
+    ['GET .../access', `${L()}/access`],
+  ];
+  it.each([['0'], ['-1'], ['abc'], ['1.5'], ['']])('rejects limit=%p with 400 VALIDATION_ERROR on all three collections', async (bad) => {
+    for (const [name, path] of paths()) {
+      const res = await call('GET', `${path}?limit=${encodeURIComponent(bad)}`);
+      expect({ name, status: res.status }).toEqual({ name, status: 400 });
+      expect400(res);
+    }
+  });
+  it('clamps limit=100000 to the max (200) instead of rejecting or honouring it', async () => {
+    for (const [name, path] of paths()) {
+      const res = await call('GET', `${path}?limit=100000`);
+      expect({ name, status: res.status }).toEqual({ name, status: 200 });
+    }
   });
 });
 
