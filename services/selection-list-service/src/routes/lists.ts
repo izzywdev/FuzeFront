@@ -3,8 +3,10 @@
 // All routes require a valid JWT (authMiddleware upstream).
 // All DB queries are scoped to req.orgId — never cross-org.
 //
-// Authorization: every route carries requireAuthzCheck('SelectionList', <x-permit-action>)
-// per the contract (middleware/authz.ts).
+// Authorization: every route carries requireAuthzCheck(<x-permit-resource>, <x-permit-action>)
+// per the contract (middleware/authz.ts). Since contract 3.0.0 the collection routes
+// (GET /, POST /) check the tenant-level 'SelectionListCatalog' (list / create);
+// the per-list routes check the 'SelectionList' instance.
 //
 // Pagination: cursor-based (opaque base64url JSON cursor), newest-first.
 //   DEFAULT_PAGE_SIZE = 50, MAX_PAGE_SIZE = 200.
