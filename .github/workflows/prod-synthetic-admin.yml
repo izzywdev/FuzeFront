@@ -70,21 +70,44 @@ jobs:
           #    kubectl). Same mechanism as prod-unleash-ops.yml.
           _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
           _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-          _SECRET_JSON=$(curl -sf --cacert "$_K8S_CA" \
-            -H "Authorization: Bearer $_SA_TOKEN" \
-            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/fuzefront-secrets" \
-            2>/dev/null || true)
-          INTERNAL_SECRET=$(echo "$_SECRET_JSON" | python3 -c "
+          _K8S=https://kubernetes.default.svc
+
+          # Diagnostic probe: capture the HTTP STATUS (not just the body) of the
+          # secret GETs so a failure is legible. fuzefront-secrets is the target;
+          # unleash-secrets is a CONTROL the runner Role has always been allowed
+          # to read (prod-unleash-ops.yml uses it). Comparing the two statuses
+          # distinguishes an un-synced RBAC Role (target 403, control 200) from a
+          # missing key or a reachability problem (both 200, or both fail).
+          _probe() {
+            curl -s -o /tmp/k8s-secret.json -w '%{http_code}' --cacert "$_K8S_CA" \
+              -H "Authorization: Bearer $_SA_TOKEN" \
+              "$_K8S/api/v1/namespaces/fuzefront/secrets/$1" 2>/dev/null || echo "000"
+          }
+          CTRL_CODE=$(_probe unleash-secrets)
+          TGT_CODE=$(_probe fuzefront-secrets)   # leaves the body in /tmp/k8s-secret.json
+          echo "k8s secret GET status — fuzefront-secrets (target): $TGT_CODE | unleash-secrets (control): $CTRL_CODE"
+
+          INTERNAL_SECRET=$(python3 -c "
           import sys, json, base64
           try:
-            d = json.load(sys.stdin)
+            d = json.load(open('/tmp/k8s-secret.json'))
             print(base64.b64decode(d['data']['INTERNAL_PROVISION_SECRET']).decode().strip())
           except Exception:
             sys.exit(0)
           " 2>/dev/null || true)
           if [ -z "${INTERNAL_SECRET:-}" ]; then
-            echo "::error title=prod-synthetic-admin::Could not read INTERNAL_PROVISION_SECRET from the fuzefront-secrets Secret. " \
-              "Check the runner SA can get secret/fuzefront-secrets in the fuzefront namespace (same RBAC as unleash-secrets)."
+            if [ "$TGT_CODE" = "403" ] && [ "$CTRL_CODE" = "200" ]; then
+              echo "::error title=prod-synthetic-admin::403 reading secret/fuzefront-secrets while unleash-secrets reads 200 — " \
+                "the runner Role has NOT picked up fuzefront-secrets in resourceNames yet. The chart grants it " \
+                "(unleash.ciRunner.extraSecretNames), so this is an un-applied Argo sync of the unleash-runner-secret-reader Role, " \
+                "not a code gap. Refresh/sync the fuzefront Argo Application, then re-run."
+            elif [ "$TGT_CODE" = "200" ]; then
+              echo "::error title=prod-synthetic-admin::Read secret/fuzefront-secrets (200) but could not decode key INTERNAL_PROVISION_SECRET — " \
+                "the key is missing/unexpected in the live Secret. Check the fuzefront-secrets SealedSecret is applied and carries that key."
+            else
+              echo "::error title=prod-synthetic-admin::Could not read INTERNAL_PROVISION_SECRET (fuzefront-secrets HTTP $TGT_CODE, control unleash-secrets HTTP $CTRL_CODE). " \
+                "Check runner SA RBAC and k8s API reachability from the fuzefront runner."
+            fi
             exit 1
           fi
 

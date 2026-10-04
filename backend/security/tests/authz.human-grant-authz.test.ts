@@ -40,16 +40,19 @@ function buildApp() {
 //
 // tenantRoles:   user -> tenant -> platform role key (admin/editor/viewer/...)
 // instanceRoles: user -> `${tenant}|${Type}:${key}` -> instance role key
-// Tenant roles resolve from the real `permitSchema`; instance roles from the
-// small table below (the shape the selection-list-service relies on).
+// Tenant roles AND instance roles both resolve from the real `permitSchema`
+// (instance roles from `resources[SelectionList].roles`).
 
 const TENANT_ROLE_PERMS: Record<string, Set<string>> = Object.fromEntries(
   permitSchema.roles.map(r => [r.key, new Set(r.permissions)])
 )
-const INSTANCE_ROLE_ACTIONS: Record<string, string[]> = {
-  'list-owner': ['read', 'update', 'delete', 'manage_access'],
-  'list-viewer': ['read'],
-}
+// Instance roles resolve from the REAL `SelectionList` resource in the schema
+// (not a hand-written copy), so the role -> action matrix asserted here is the
+// one Permit is actually synced with.
+const SELECTION_LIST_RESOURCE = permitSchema.resources.find(r => r.key === 'SelectionList')!
+const INSTANCE_ROLE_ACTIONS: Record<string, string[]> = Object.fromEntries(
+  Object.entries(SELECTION_LIST_RESOURCE.roles ?? {}).map(([k, v]) => [k, v.permissions])
+)
 
 const tenantRoles: Record<string, Record<string, string>> = {}
 const instanceRoles: Record<string, Record<string, string>> = {}
@@ -257,6 +260,59 @@ describe('POST /authz/grants — human callers', () => {
     it('a plain member with no manage_access on the instance is FORBIDDEN', async () => {
       await POST('tok-editor', listGrant('L1', 'list-viewer')).expect(403)
       expect(authorizationProvider.grant).not.toHaveBeenCalled()
+    })
+
+    it('the schema declares the five selection-list instance roles the double resolves', () => {
+      expect(Object.keys(INSTANCE_ROLE_ACTIONS).sort()).toEqual([
+        'list-contributor', 'list-editor', 'list-owner', 'list-translator', 'list-viewer',
+      ])
+      expect(INSTANCE_ROLE_ACTIONS['list-owner']).toContain('manage_access')
+      // only the owner can administer access
+      for (const [role, actions] of Object.entries(INSTANCE_ROLE_ACTIONS)) {
+        if (role !== 'list-owner') expect(actions).not.toContain('manage_access')
+      }
+    })
+
+    it('owner-1 (manage_access on t1|SelectionList:L1) may grant list-owner on L1', async () => {
+      authorizationProvider.grant.mockResolvedValue({ ...GRANT_OK, role: 'list-owner' })
+      await POST('tok-owner', listGrant('L1', 'list-owner')).expect(201)
+      expect(authorizationProvider.grant).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'list-owner', resource: { type: 'SelectionList', key: 'L1' } })
+      )
+      expect(authorizationProvider.check).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: 'owner-1',
+          tenant: T1,
+          resource: { type: 'SelectionList', key: 'L1' },
+          action: 'manage_access',
+        })
+      )
+    })
+
+    it('owner-1 may NOT grant list-owner on a different list (L2) or tenant', async () => {
+      await POST('tok-owner', listGrant('L2', 'list-owner')).expect(403)
+      await POST('tok-owner', listGrant('L1', 'list-owner', T2)).expect(403)
+      expect(authorizationProvider.grant).not.toHaveBeenCalled()
+    })
+
+    it('owner-1 may NOT grant a tenant-level role name on L1 (admin/editor/viewer/developer/org-admin)', async () => {
+      for (const role of ['admin', 'editor', 'viewer', 'developer', 'org-admin']) {
+        await POST('tok-owner', listGrant('L1', role)).expect(403)
+      }
+      expect(authorizationProvider.grant).not.toHaveBeenCalled()
+    })
+
+    it('non-owner list roles hold no manage_access, so they cannot grant (list-editor on L1)', async () => {
+      instanceRoles['editor-1'] = { [`${T1}|SelectionList:L1`]: 'list-editor' }
+      await POST('tok-editor', listGrant('L1', 'list-viewer')).expect(403)
+      expect(authorizationProvider.grant).not.toHaveBeenCalled()
+    })
+
+    it('tenant roles hold no SelectionList:* action, so a tenant editor/viewer has no list access without a grant', async () => {
+      for (const role of permitSchema.roles) {
+        expect(role.permissions.filter(p => p.startsWith('SelectionList:'))).toEqual([])
+      }
+      expect(policyDecision({ subject: 'editor-1', tenant: T1, resource: { type: 'SelectionList', key: 'L1' }, action: 'read' })).toBe(false)
     })
 
     it('a tenant admin may grant instance-scoped roles in their tenant', async () => {
