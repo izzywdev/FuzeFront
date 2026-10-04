@@ -49,15 +49,34 @@ export const FLAG_KEYS = {
   APPS_ORG_CONTEXT_HIDDEN: 'fuzefront.apps.org-context-hidden',
   /**
    * FF-EPIC-17 / FFRNT-201 — S15
-   * Gates the selection-list-service and its management UI. Enable per-org
+   * Gates ALL selection-list surface, server and client. Enable per-org
    * as the service rolls out. Default OFF. Release flag.
    * Owner: platform team.
-   * Removal criterion: when the service is GA and enabled for 100% of orgs.
+   * Removal criterion: when the service is GA and enabled for 100% of orgs
+   * and stable for one release cycle (then delete flag + every guard below).
    * Gates:
-   *   1. selection-list-service Helm deployment (service-side)
+   *   1. selection-list-service API — every /v1/selection-lists/* route and
+   *      /v1/resolve answer 404 while OFF (service-side)
    *   2. "Selection Lists" entry in the shell left sidebar (UI-side, S9)
+   *   3. /settings/selection-lists* shell routes (UI-side redirect)
+   * Web-exposed (WEB_EXPOSED_FLAGS) — required for the browser to see it.
+   * Runbook: docs/runbooks/selection-lists-flag-rollout.md
    */
   SELECTION_LISTS_SERVICE: 'fuzefront.selection-lists.service',
+  /**
+   * SL5/SL6 — selection-list default-seeding (docs/planning/selection-lists-events.md
+   * section 11). Gates BOTH new selection-list-service consumers — the
+   * `identity.org.created` seeding consumer and the `selection-lists.seed.requested`
+   * handler (plus the reconciler). Default OFF. Release flag. Owner: izzywdev.
+   * Removal criterion: seeding ON for all orgs for 30 days with zero
+   * `selection-lists.seed.failed` in the window.
+   * SERVER-ONLY (`web_exposed: false`): deliberately NOT in WEB_EXPOSED_FLAGS —
+   * the browser never reads it. The constant lives here so the key is not a bare
+   * string; the service reads it via isSeedDefaultsEnabled() in
+   * services/selection-list-service/src/flags.ts. Independent of, and additionally
+   * requires, SELECTION_LISTS_SERVICE.
+   */
+  SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
   /**
    * Portals Directory (backend S1 #640 / frontend S3 #642).
    * Gates the /portals page + SidePanel "Portals" nav entry (UI-side) and
@@ -111,6 +130,34 @@ export const FLAG_KEYS = {
    * always falls back to its in-code default (OFF), same class of gap as #697.
    */
   MULTI_TENANT_PORTALS: 'fuzefront.platform.multi-tenant-portals',
+  /**
+   * FF-EPIC-14 — per-portal admin console: the Users tab
+   * (`PortalAdminConsoleFlow` / `UsersTab` / `InviteUserDialog`). Read in the
+   * browser via `useFlag()` in `frontend/src/pages/PortalAdminConsolePage.tsx`.
+   * Default OFF. Release flag. Owner: platform team.
+   * Removal criterion: when the per-portal console is GA for 100% of portals.
+   * Without this entry `GET /api/flags` never discloses it, so the console's
+   * `useFlag()` falls back to its in-code default (OFF) — same gap class as the
+   * MULTI_TENANT_PORTALS note above.
+   */
+  IDENTITY_PORTAL_SCOPED_USERS: 'fuzefront.identity.portal-scoped-users',
+  /**
+   * FF-EPIC-14 — per-portal admin console: the Catalog tab (`CatalogTab`).
+   * Read in the browser via `useFlag()` in
+   * `frontend/src/pages/PortalAdminConsolePage.tsx`. Default OFF. Release flag.
+   * Owner: platform team.
+   * Removal criterion: when the per-portal catalog is GA for 100% of portals.
+   */
+  APPS_PORTAL_CATALOG: 'fuzefront.apps.portal-catalog',
+  /**
+   * FF-EPIC-14 — portal billing: the reseller Stripe-connect surface
+   * (`PortalBillingFlow`, `/portal/admin/billing`). Read in the browser via
+   * `useFlag()` in `frontend/src/pages/PortalBillingPage.tsx`. Default OFF.
+   * Release flag. Owner: feature-flags-engineer (billing domain).
+   * Removal criterion: when reseller billing is GA for 100% of reseller
+   * portals. Real entitlement still enforced by Permit, never this flag.
+   */
+  BILLING_RESELLER_CONNECT: 'fuzefront.billing.reseller-connect',
 
   // ── Plan-tier permission flags ─────────────────────────────────────────────
   // These gate UI surfaces and server routes by subscription tier. They are
@@ -232,6 +279,13 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
   // switch (see FLAG_KEYS doc). Registry `web_exposed` flipped false -> true
   // to match: this entry is what makes GET /api/flags disclose it at all.
   { key: FLAG_KEYS.MULTI_TENANT_PORTALS, type: 'release', default: false },
+  // FF-EPIC-14 per-portal admin console + portal billing — read in the browser
+  // via `useFlag()` in PortalAdminConsolePage / PortalBillingPage. Without these
+  // entries GET /api/flags never discloses them, so flipping them ON in Unleash
+  // would move server-side evaluation but leave the console/billing UI dark.
+  { key: FLAG_KEYS.IDENTITY_PORTAL_SCOPED_USERS, type: 'release', default: false },
+  { key: FLAG_KEYS.APPS_PORTAL_CATALOG, type: 'release', default: false },
+  { key: FLAG_KEYS.BILLING_RESELLER_CONNECT, type: 'release', default: false },
 
   // ── Plan-tier permission flags ─────────────────────────────────────────────
   // Exposed to the browser so the shell UI can conditionally render plan-gated

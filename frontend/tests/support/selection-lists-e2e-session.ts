@@ -1,7 +1,7 @@
-import type { Page } from '@playwright/test'
+import type { ConsoleMessage, Page } from '@playwright/test'
 
 /**
- * Selection List red-spec harness — authenticated-session mock for a
+ * Selection List e2e harness — authenticated-session mock for a
  * backend-less run (the `selection-list-service-e2e` CI job serves the
  * frontend with `vite preview`, no backend, no Authentik).
  *
@@ -9,7 +9,7 @@ import type { Page } from '@playwright/test'
  * mobile-layout.spec.ts, clock-load.spec.ts, ...) signs in against a REAL
  * backend + Authentik on a full local-up stack. This job intentionally does
  * not run that stack — it only builds and serves the static frontend bundle,
- * so the selection-list red specs mock the shell's session/flag/org
+ * so the selection-list e2e specs mock the shell's session/flag/org
  * dependencies directly instead. Without this, `/settings/selection-lists`
  * (and its /translations, /access siblings) redirect straight to
  * `/dashboard` before any UI under test ever mounts — regardless of how
@@ -90,4 +90,62 @@ export async function mockAuthenticatedSelectionListsSession(page: Page): Promis
       body: JSON.stringify({ apps: [] }),
     })
   })
+
+  await stubExternalFonts(page)
+}
+
+/**
+ * index.html pulls Google Fonts over the network. Stub them so a run is deterministic
+ * (and silent) on runners with no/filtered egress instead of logging net::ERR_*
+ * resource errors that have nothing to do with the feature under test.
+ */
+export async function stubExternalFonts(page: Page): Promise<void> {
+  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, async route => {
+    await route.fulfill({ status: 200, contentType: 'text/css', body: '' })
+  })
+}
+
+/**
+ * Console errors that come from the SHELL running backend-less in this harness, not
+ * from the selection-lists UI under test. The console-clean gates ignore exactly
+ * these and nothing else — every other error (CSP, mixed content, uncaught
+ * exception, failed selection-list request) still fails the gate.
+ *
+ *  - the shell's realtime notifications channel (socket.io WebSocket + the
+ *    /api/v1/notifications/stream SSE fallback) has no server behind `vite preview`;
+ *  - the specs run with `serviceWorkers: 'block'` (so the PWA SW cannot bypass
+ *    page.route mocks), which makes the shell's own SW registration log a failure.
+ */
+export function isShellHarnessNoise(msg: ConsoleMessage): boolean {
+  const text = msg.text()
+  const url = msg.location().url ?? ''
+  if (/Service worker registration failed/i.test(text)) return true
+  if (/WebSocket connection (error|to)/i.test(text) || url.includes('/socket.io/')) return true
+  if (url.includes('/api/v1/notifications/stream')) return true
+  return false
+}
+
+/**
+ * Navigate to a `fuzefront.selection-lists.service`-gated route (/settings/selection-lists…).
+ *
+ * WHY NOT a plain `page.goto(route)`: on a hard load the shell mounts the route tree
+ * before `GET /api/flags` settles; `useFlag()` returns its OFF default while
+ * `loaded === false`, so `SelectionListsRoute` & co. immediately render
+ * `<Navigate to="/dashboard">` and the deep link is lost (a real shell defect — it is
+ * asserted on its own in the "deep link" spec in selection-lists-list-management.spec.ts,
+ * and guards the shell waiting for the flag fetch). Without this helper that one
+ * defect would mask every other assertion in the four selection-lists specs, so the
+ * per-frame specs reach the route the way a signed-in user does: load the shell, let the
+ * flags settle, then navigate client-side.
+ */
+export async function gotoFlagGatedRoute(page: Page, route: string): Promise<void> {
+  const flagsSettled = page.waitForResponse(r => new URL(r.url()).pathname === '/api/flags')
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' })
+  await flagsSettled
+  await page.evaluate(async target => {
+    // Let FeatureFlagProvider commit the fetched flags before the router sees the route.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    window.history.pushState({}, '', target)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, route)
 }

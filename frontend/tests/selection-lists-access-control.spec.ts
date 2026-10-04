@@ -1,9 +1,9 @@
 /**
- * SELECTION LISTS — ACCESS CONTROL FLOW — INDEPENDENT, PRE-PRODUCTION, RED-by-design UI e2e.
+ * SELECTION LISTS — ACCESS CONTROL FLOW — INDEPENDENT, PRE-PRODUCTION UI e2e.
  * (frontend-test-engineer — independent verification, NOT the implementer.)
  *
  * ── What this file is ────────────────────────────────────────────────────────
- * TDD RED specs for the access-control flow of EPIC-17 / FFRNT-188 (Selection
+ * Playwright specs for the access-control flow of EPIC-17 / FFRNT-188 (Selection
  * Lists). They are derived STRICTLY from the approved visual contract:
  *
  *   design/frames/selection-lists/manifest.json  (build inventory + test hooks)
@@ -22,27 +22,28 @@
  *   package     @fuzeone/selection-lists-ui
  *   components  AccessPanel
  *
- * ── Why they are RED right now (READ THIS before "fixing" a failure) ─────────
- * The route /settings/selection-lists/:listId/access and
- * @fuzeone/selection-lists-ui do NOT exist yet. Every test below is EXPECTED
- * to fail today, and must fail for the RIGHT reason: the panels / modals are
- * ABSENT from the DOM — not a harness/config error. That RED state proves this
- * is TDD (specs written against the approved design before implementation), not
- * tests retrofitted to shipped UI.
- *
- * Tests are deliberately NOT test.skip / test.fixme — hiding RED defeats the
- * point. They go GREEN when frontend-engineer lands @fuzeone/selection-lists-ui
- * and wires the /settings/selection-lists/:listId/access route.
+ * ── Status ───────────────────────────────────────────────────────────────────
+ * These began as TDD-red specs written against the approved design before
+ * @fuzeone/selection-lists-ui existed. The UI has landed and they are GREEN; they
+ * are now a blocking CI gate (job `selection-list-service-e2e`, rolled into
+ * `Notify Team`). A failure here is a real regression — fix the UI or the spec,
+ * never test.skip / test.fixme it away.
  *
  * Selectors are ONLY the data-* hooks declared in manifest.json (testHooks).
  * No class names, no text selectors, no invented selectors.
  *
  * Run (pre-prod, against a built UI on the ephemeral stack / dev host):
- *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-access-control.red
+ *   BASE_URL=http://fuzefront.dev.local npx playwright test selection-lists-access-control.spec.ts
  * Config: frontend/playwright.config.ts (chromium + mobile projects).
  */
 import { test, expect, type Page, type ConsoleMessage, type Request } from '@playwright/test'
-import { mockAuthenticatedSelectionListsSession } from './support/selection-lists-e2e-session'
+import { mockAuthenticatedSelectionListsSession, gotoFlagGatedRoute, isShellHarnessNoise } from './support/selection-lists-e2e-session'
+
+// The vite build registers a Workbox service worker (vite-plugin-pwa 1.x still emits
+// sw.js with CI=true) that takes control mid-test via clientsClaim. Requests the SW
+// handles bypass page.route() mocks, so after claim every mocked /api/v1/* fetch hits
+// the preview server's SPA fallback and returns text/html. Block SWs so mocks hold.
+test.use({ serviceWorkers: 'block' })
 
 const LIST_ID = 'sl_01h455vb4pex5vsknk084sn02q'
 const ACCESS_ROUTE = `/settings/selection-lists/${LIST_ID}/access`
@@ -72,7 +73,7 @@ const MOCK_ACCESS_GRANTS = [
 
 async function gotoAccessPanel(page: Page) {
   await mockAuthenticatedSelectionListsSession(page)
-  await page.goto(ACCESS_ROUTE, { waitUntil: 'domcontentloaded' })
+  await gotoFlagGatedRoute(page, ACCESS_ROUTE)
 }
 
 /** Inject a successful GET …/access response. */
@@ -145,7 +146,8 @@ test.describe('Selection Lists access-control — frame 10-access-panel', () => 
       '[data-role-select] must render on each grant row to allow role changes',
     ).toBeVisible()
     await expect(
-      page.locator("[data-role='list-translator']"),
+      // Scope to the grant rows: the role matrix also carries [data-role='list-translator'].
+      page.locator("[data-grant][data-role='list-translator']"),
       '[data-role="list-translator"] must mark the list-translator grant row',
     ).toBeVisible()
   })
@@ -578,7 +580,7 @@ test.describe('Selection Lists access-control — runtime console-clean gate (ui
     const failedRequests: string[] = []
 
     page.on('console', (msg: ConsoleMessage) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text())
+      if (msg.type() === 'error' && !isShellHarnessNoise(msg)) consoleErrors.push(msg.text())
     })
     page.on('pageerror', err => consoleErrors.push(`pageerror: ${String(err)}`))
     page.on('requestfailed', (req: Request) => {

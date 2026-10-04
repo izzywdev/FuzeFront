@@ -4,9 +4,25 @@ import {
   runInternalProvision,
   ensureDeveloperMembership,
 } from '../services/organizationProvisioning'
+import { ASSIGNABLE_ROLES, setUserRolesByEmail } from '../services/userRoles'
 import { isDevportalEnabled } from '../utils/devportalFlag'
 
 const router = express.Router()
+
+/**
+ * Shared-secret gate for the internal (cluster-only, never ingress-exposed)
+ * endpoints. Constant-time compare against INTERNAL_PROVISION_SECRET; fails
+ * closed when the secret is unset. Returns true when the caller is authorised.
+ */
+function internalSecretOk(req: express.Request): boolean {
+  const expected = process.env.INTERNAL_PROVISION_SECRET
+  const provided = req.header('x-internal-secret')
+  const a = Buffer.from(provided || '')
+  const b = Buffer.from(expected || '')
+  return Boolean(
+    expected && provided && a.length === b.length && crypto.timingSafeEqual(a, b)
+  )
+}
 
 /**
  * Neutralise a value before it reaches a log line.
@@ -131,6 +147,80 @@ router.post('/devportal-provision', async (req, res) => {
     return res
       .status(500)
       .json({ error: 'Provisioning failed', detail: String(error?.message ?? error) })
+  }
+})
+
+/**
+ * Internal, service-to-service role-assignment endpoint.
+ *
+ * Sets a user's `users.roles` by email. Its reason to exist: the platform has
+ * NO self-serve admin grant — public signup only ever mints `["user"]`, and the
+ * master-admin directory (`GET /api/v1/admin/portals`) gates on
+ * `requireRole(['admin'])`. Provisioning a synthetic/break-glass admin (e.g. the
+ * post-prod Portals smoke's `postprod-admin@…`) otherwise means a hand-run prod
+ * DB `UPDATE`. This endpoint single-sources that write behind the same
+ * `x-internal-secret` gate as `/provision`, so a dispatchable in-cluster ops
+ * workflow can do it instead of a human touching the database.
+ *
+ *   POST /internal/set-roles
+ *   Headers: x-internal-secret: <INTERNAL_PROVISION_SECRET>
+ *   Body:    { "email": "<address>", "roles": ["admin"] }
+ *   200 { ok: true, userId, email, roles }   (roles normalised: `user` always included, deduped)
+ *   400 { error }  missing email / roles not a non-empty string[] / unknown role
+ *   401 { error }  bad/missing secret (or secret not configured)
+ *   404 { error }  no user with that email
+ *
+ * Cluster-internal ONLY (never ingress-exposed — see templates/ingress.yaml and
+ * index.ts's `/internal` mount). `roles` is validated against ASSIGNABLE_ROLES
+ * so the shared secret cannot hand out an arbitrary/unknown role. Idempotent.
+ * Authorization for real actions still comes from the token + Permit; a role in
+ * `users.roles` is a rollout/break-glass marker, never the capability itself.
+ */
+router.post('/set-roles', async (req, res) => {
+  if (!internalSecretOk(req)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  const { email, roles } = req.body || {}
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'email is required' })
+  }
+  if (
+    !Array.isArray(roles) ||
+    roles.length === 0 ||
+    !roles.every(r => typeof r === 'string')
+  ) {
+    return res.status(400).json({ error: 'roles must be a non-empty array of strings' })
+  }
+  const invalid = roles.filter(r => !ASSIGNABLE_ROLES.has(r))
+  if (invalid.length > 0) {
+    return res
+      .status(400)
+      .json({ error: `unknown role(s): ${invalid.map(sanitizeForLog).join(', ')}` })
+  }
+
+  try {
+    // The DB read/write lives in services/userRoles.ts, not inline here: a raw
+    // users-table read in a route trips the scope-to-portal leak guard
+    // (FF-EPIC-11-S2), and this internal admin grant is exactly the
+    // services/* exemption that guard documents.
+    const result = await setUserRolesByEmail(email, roles)
+    if (!result) {
+      return res.status(404).json({ error: 'user not found' })
+    }
+    return res.status(200).json({ ok: true, ...result })
+  } catch (error: any) {
+    // Deliberately do NOT interpolate the request-supplied `email` into the log
+    // sink: it is user-controlled, and even sanitised, feeding it to the log is
+    // the log-injection taint path CodeQL flags. The error alone is the needed
+    // diagnostic for the only thing that reaches here (a DB failure).
+    console.error(
+      'Internal set-roles failed: %s',
+      sanitizeForLog(error?.stack ?? error?.message ?? error)
+    )
+    return res
+      .status(500)
+      .json({ error: 'set-roles failed', detail: String(error?.message ?? error) })
   }
 })
 

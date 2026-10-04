@@ -99,3 +99,28 @@ export function useFlag(key: string, defaultValue = false): boolean {
   if (!loaded) return defaultValue
   return key in flags ? flags[key] : defaultValue
 }
+
+/**
+ * Opt-in variant of {@link useFlag} for ROUTE guards that must not decide on
+ * the pre-fetch fallback. `useFlag` returns the default until `/api/flags`
+ * settles, so a guard that redirects on "OFF" bounces a hard load / refresh /
+ * bookmark of a flagged URL even when the flag is ON. This hook also reports
+ * `ready`:
+ *
+ *   - `ready: false` — the fetch has not settled; render nothing/a spinner and
+ *     do NOT redirect. `enabled` is the fail-safe `defaultValue`.
+ *   - `ready: true`  — settled. `enabled` is the resolved value. A failed fetch
+ *     (network error, non-200, no token) settles to an empty map, so a flag
+ *     that cannot be read resolves to `defaultValue` (OFF for release flags):
+ *     fail-closed, redirect.
+ *
+ * `useFlag`'s contract is unchanged; other callers are unaffected.
+ */
+export function useFlagState(
+  key: string,
+  defaultValue = false,
+): { enabled: boolean; ready: boolean } {
+  const { flags, loaded } = useContext(FeatureFlagContext)
+  if (!loaded) return { enabled: defaultValue, ready: false }
+  return { enabled: key in flags ? flags[key] : defaultValue, ready: true }
+}

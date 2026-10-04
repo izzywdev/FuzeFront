@@ -50,6 +50,10 @@ beforeEach(() => {
   jest.clearAllMocks()
   setIdentityProvider(identityProvider as any)
   setAuthorizationProvider(authorizationProvider as any)
+  // The caller in this file is an AUTHORIZED tenant administrator: the
+  // tenant/member/role routes check the caller against the target tenant
+  // (the denial matrix lives in authz.human-grant-authz.test.ts).
+  authorizationProvider.check.mockResolvedValue(true)
 })
 
 afterEach(() => {
@@ -596,10 +600,16 @@ describe('Security API OpenAPI authorization contracts', () => {
       await request(buildApp())
         .delete('/api/v1/security/authz/grants')
         .set('Authorization', 'Bearer valid-token')
-        .send({ grantId: 'grant-1' })
+        .send({ grantId: 'tenant-1:user-2:viewer' })
         .expect(204)
 
-      expect(authorizationProvider.revoke).toHaveBeenCalledWith({ grantId: 'grant-1' })
+      // The route resolves the grantId to its effective tuple, authorizes it
+      // against the TARGET tenant, and executes exactly that tuple.
+      expect(authorizationProvider.revoke).toHaveBeenCalledWith({
+        subject: 'user-2',
+        tenant: 'tenant-1',
+        role: 'viewer',
+      })
     })
 
     it('returns 401 when grant revocation is attempted without authentication', async () => {
@@ -629,6 +639,7 @@ describe('Security API OpenAPI authorization contracts', () => {
   describe('POST /api/v1/security/authz/check', () => {
     it('returns a 200 application/json response for an application/json request with a forbidden authorization decision', async () => {
       // @fuzequality api authzCheck
+      authorizationProvider.check.mockResolvedValueOnce(false)
       const response = await request(buildApp())
         .post('/api/v1/security/authz/check')
         .set('Authorization', 'Bearer valid-token')

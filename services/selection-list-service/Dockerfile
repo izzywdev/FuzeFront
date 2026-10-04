@@ -56,6 +56,21 @@ COPY services/devportal-service/package.json ./services/devportal-service/
 # Install only production deps for selection-list-service
 RUN npm ci --workspace=services/selection-list-service --omit=dev --ignore-scripts
 
+# Guarantee the per-workspace node_modules directories the production stage COPYs
+# actually exist. npm creates packages/<x>/node_modules ONLY when something could
+# not be hoisted: packages/auth gets one because jose@5 conflicts with the root's
+# jose@4, but packages/feature-flags' @openfeature/* + unleash-client have no such
+# conflict today, so npm hoists them all and creates no directory at all -- and
+# `COPY --from=base /app/packages/feature-flags/node_modules` would then fail the
+# whole build with "not found" rather than copy nothing. The COPY has to stay
+# unconditional (Docker has no conditional COPY, and
+# scripts/check-dockerfile-lockfile.mjs requires the line so the image does not
+# depend on what one resolution happened to hoist), so make the SOURCE exist. An
+# empty directory is the correct outcome when everything hoisted; if a future
+# resolution stops hoisting, the real contents land here and get copied without
+# anyone having to remember why. (Same treatment as services/chat-service.)
+RUN mkdir -p packages/auth/node_modules packages/feature-flags/node_modules
+
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build
 WORKDIR /app
@@ -99,6 +114,9 @@ RUN npm ci --workspace=services/selection-list-service --ignore-scripts
 # Copy source
 COPY packages/identity/ ./packages/identity/
 COPY packages/auth/ ./packages/auth/
+COPY packages/security/ ./packages/security/
+COPY packages/service-auth/ ./packages/service-auth/
+COPY packages/feature-flags/ ./packages/feature-flags/
 COPY shared/ ./shared/
 COPY services/selection-list-service/ ./services/selection-list-service/
 
@@ -126,6 +144,18 @@ RUN cd packages/auth && npm install --ignore-scripts && npm run build
 # above only installs selection-list-service's own devDeps, so shared needs
 # its own install + build here — same pattern as packages/auth above.
 RUN cd shared && npm install --ignore-scripts && npm run build
+# @fuzefront/service-auth (src/lib/machineIdentity.ts: the service's own
+# client_credentials token for Security API grant/revoke) re-exports types from
+# @fuzefront/security-client, so that must be built first -- then service-auth
+# itself, because `tsc` for the service resolves its dist/index.d.ts. Mirrors
+# services/chat-service/Dockerfile's identical treatment.
+RUN cd packages/security && npm install --ignore-scripts && npm run build
+RUN cd packages/service-auth && npm run build
+# @fuzefront/feature-flags (src/lib/featureFlags.ts calls its init() at startup so
+# the release flag can actually turn ON -- rollout runbook B4). It is `require`d
+# lazily, so nothing fails at tsc time, but without dist/ in the image the
+# `require` throws, the client resolves to null and the flag is OFF forever.
+RUN cd packages/feature-flags && npm install --ignore-scripts && npm run build
 RUN cd services/selection-list-service && npm run build
 
 # ---------- production ----------
@@ -169,12 +199,37 @@ COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 # `npm install` inside packages/auth to get tsup, and copying from there would
 # drag tsup/typescript/jest into the production image.
 COPY --from=base /app/packages/auth/node_modules ./packages/auth/node_modules
+# @fuzefront/service-auth is a `file:` dep linked the same way (symlink target
+# /app/packages/service-auth; its package.json ships in the base stage's manifest
+# list). It declares NO runtime dependencies, so -- like @izzywdev/fuzefront-identity
+# above and unlike packages/auth -- package.json + dist is all it needs.
+COPY --from=build /app/packages/service-auth/package.json ./packages/service-auth/package.json
+COPY --from=build /app/packages/service-auth/dist ./packages/service-auth/dist
+# @fuzefront/feature-flags: same kind of `file:`-linked symlink target
+# (node_modules/@fuzefront/feature-flags -> /app/packages/feature-flags). It is
+# loaded by `require('@fuzefront/feature-flags')` in src/flags.ts and
+# src/lib/featureFlags.ts; main is dist/index.cjs.
+COPY --from=build /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
+COPY --from=build /app/packages/feature-flags/dist ./packages/feature-flags/dist
+# ...AND its runtime dependencies (@openfeature/server-sdk, @openfeature/web-sdk,
+# unleash-client). Same reasoning as jose above: this consumer's lockfile carries
+# only a link entry for a `file:` dep, never the target's own dependencies, so
+# `npm ci` cannot be trusted to hoist them into /app/node_modules on every build --
+# scripts/check-dockerfile-lockfile.mjs (FFRNT-254) enforces this unconditionally.
+# Copied from `base` (--omit=dev), not `build`, so tsup/typescript/jest stay out.
+COPY --from=base /app/packages/feature-flags/node_modules ./packages/feature-flags/node_modules
 # @fuzefront/shared is a workspace dep linked by npm. Populate the symlink
 # target with the built output so the Kafka consumer resolves at runtime.
 COPY --from=build /app/shared/package.json ./shared/package.json
 COPY --from=build /app/shared/dist ./shared/dist
 # Copy openapi.yaml so the docs route can serve swagger-ui-express at runtime
 COPY --from=build /app/services/selection-list-service/openapi.yaml ./services/selection-list-service/openapi.yaml
+# Seeding assets (docs/planning/selection-lists-events.md sections 8 and 10): the reviewed
+# seed-source allowlist and the platform default packs. src/index.ts validates both at boot
+# (initSeeding) and refuses to start if they are missing or invalid, so they must ship in the
+# image; they are resolved relative to dist/ (../seed-sources.json, ../seed-packs/platform).
+COPY --from=build /app/services/selection-list-service/seed-sources.json ./services/selection-list-service/seed-sources.json
+COPY --from=build /app/services/selection-list-service/seed-packs ./services/selection-list-service/seed-packs
 
 # Remove declaration files from production image
 RUN find ./services/selection-list-service/dist -name "*.d.ts" -type f -delete

@@ -4,7 +4,7 @@
  * Routes:
  *   /settings/selection-lists/:listId/access → AccessPanel (frame 10) + AddAccessModal (frame 11)
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useId } from 'react'
 import { useParams } from 'react-router-dom'
 import type { AccessGrant, ApiError } from './types'
 import {
@@ -164,6 +164,8 @@ interface AddAccessModalProps {
 }
 
 function AddAccessModal({ listId, existingGrantUserIds, onClose, onGranted }: AddAccessModalProps) {
+  const searchId = useId()
+  const roleId = useId()
   const [searchText, setSearchText] = useState('')
   const [searchState, setSearchState] = useState<'idle' | 'loading' | 'loaded' | 'empty'>('idle')
   const [results, setResults] = useState<SearchUser[]>([])
@@ -267,10 +269,11 @@ function AddAccessModal({ listId, existingGrantUserIds, onClose, onGranted }: Ad
 
           {/* User search input */}
           <div style={{ marginBottom: 'var(--space-3)' }}>
-            <label style={{ display: 'block', marginBottom: 'var(--space-1)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+            <label htmlFor={searchId} style={{ display: 'block', marginBottom: 'var(--space-1)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
               Search users
             </label>
             <input
+              id={searchId}
               data-user-search
               type="text"
               value={searchText}
@@ -331,10 +334,11 @@ function AddAccessModal({ listId, existingGrantUserIds, onClose, onGranted }: Ad
 
           {/* Role selection */}
           <div style={{ marginBottom: 'var(--space-4)' }}>
-            <label style={{ display: 'block', marginBottom: 'var(--space-1)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+            <label htmlFor={roleId} style={{ display: 'block', marginBottom: 'var(--space-1)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
               Role
             </label>
             <select
+              id={roleId}
               data-role-select
               value={selectedRole}
               onChange={e => setSelectedRole(e.target.value)}
