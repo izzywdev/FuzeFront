@@ -69,6 +69,9 @@ jest.mock('../src/services/quota.service', () => ({
 // tests/outbox.db.test.ts and tests/outbox.routes.db.test.ts.
 jest.mock('../src/events/outbox');
 jest.mock('../src/events/emitters');
+// The seeded-then-edited hash check (seed/content.ts) reads the row back through the transaction; its
+// behaviour is covered against real Postgres in tests/seed.user-edits.db.test.ts.
+jest.mock('../src/seed/content');
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -190,6 +193,20 @@ describe('GET /v1/selection-lists/:listId/items', () => {
     expect(res.body.items[0].code).toBe('US');
     expect(res.body.items[0].label).toBe('United States');
     expect(res.body.items[0].sort_order).toBe(100);
+  });
+
+  it('renders `seed` as null for a user-authored item and the provenance for a seeded one; created_by passes through system:*', async () => {
+    mockRaw
+      .mockResolvedValueOnce({ rows: [{ source_locale: 'en' }] })
+      .mockResolvedValueOnce({ rows: [ITEM_ROW, { ...ITEM_ROW, id: 'front_sli_seeded', created_by: 'system:selection-list-service', seed_source: 'platform', seed_key: 'platform-defaults', seed_version: 1, seed_user_modified: false }] })
+      .mockResolvedValueOnce({ rows: [{ total: '2' }] });
+
+    const res = await request(app).get(`/v1/selection-lists/${TEST_LIST_ID}/items`).set(authHeader());
+
+    expect(res.status).toBe(200);
+    expect(res.body.items[0].seed).toBeNull();
+    expect(res.body.items[1].seed).toEqual({ source: 'platform', pack_key: 'platform-defaults', pack_version: 1, user_modified: false });
+    expect(res.body.items[1].created_by).toBe('system:selection-list-service');
   });
 
   it('enforces MAX_PAGE_SIZE — clamps limit to 200', async () => {

@@ -37,6 +37,9 @@ jest.mock('../src/flags', () => ({ isSelectionListsEnabled: jest.fn() }));
 // is covered against real Postgres (tests/outbox.db.test.ts, outbox.routes.db.test.ts).
 jest.mock('../src/events/outbox');
 jest.mock('../src/events/emitters');
+// The seeded-then-edited hash check (seed/content.ts) reads the row back through the transaction; its
+// behaviour is covered against real Postgres in tests/seed.user-edits.db.test.ts.
+jest.mock('../src/seed/content');
 
 // Pull typed references AFTER the jest.mock calls so we get the mocked versions.
 import { db } from '../src/db';

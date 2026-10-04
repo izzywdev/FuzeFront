@@ -3,7 +3,8 @@
 // Startup sequence:
 //   0. Install the process-level failure policy (lib/http.ts installProcessHandlers).
 //   1. Validate required env vars (JWT_SECRET).
-//   2. Run pending DB migrations (idempotent knex migrate:latest).
+//   2. Run pending DB migrations (idempotent knex migrate:latest), then validate the seed packs +
+//      seed-sources file and sync the seed allowlist table (fatal when invalid).
 //   3. Initialize the family flag client (Unleash via @fuzefront/feature-flags;
 //      bounded, never fatal — fail-closed OFF when unreachable/unconfigured).
 //   4. Start the HTTP server on $PORT (default 3011).
@@ -27,6 +28,7 @@ import { closeFeatureFlags, initFeatureFlags } from './lib/featureFlags';
 import { installProcessHandlers } from './lib/http';
 import { logger } from './lib/logger';
 import { logMachineIdentityStatus } from './lib/machineIdentity';
+import { initSeeding } from './seed';
 
 /** Hard ceiling on graceful shutdown; after this the process exits regardless. */
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -91,6 +93,18 @@ async function main(): Promise<void> {
     }
   } catch (err) {
     logger.fatal({ err }, 'Migration failed');
+    await db.destroy().catch(() => {});
+    process.exit(1);
+  }
+
+  // Validate every shipped platform seed pack and the seed-source allowlist, and sync the allowlist
+  // into its table (plan sections 8 and 10). Refuse to boot on an invalid file rather than fail on the
+  // first org. This only reads files and writes the allowlist table: nothing is seeded here (seeding
+  // is behind fuzefront.selection-lists.seed-defaults and is driven by consumers that do not exist yet).
+  try {
+    await initSeeding(db);
+  } catch (err) {
+    logger.fatal({ err }, 'Seed packs / seed-sources invalid or allowlist sync failed');
     await db.destroy().catch(() => {});
     process.exit(1);
   }
