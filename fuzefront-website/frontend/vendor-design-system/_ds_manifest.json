@@ -46,6 +46,10 @@
       "sourcePath": "components/core/ExternalLink.jsx"
     },
     {
+      "name": "GradientText",
+      "sourcePath": "components/core/GradientText.jsx"
+    },
+    {
       "name": "IconButton",
       "sourcePath": "components/core/IconButton.jsx"
     },
