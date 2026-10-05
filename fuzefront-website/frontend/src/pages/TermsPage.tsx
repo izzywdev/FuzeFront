@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { FileText } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { IconTile, BulletList } from '@fuzefront/design-system'
 
 export const TermsPage: React.FC = () => {
   return (
@@ -52,13 +52,13 @@ export const TermsPage: React.FC = () => {
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">3. Accounts</h2>
             <p>To use our Services, you must create an account. You agree to:</p>
-            <ul className="list-disc pl-6 space-y-1.5 mt-3">
+            <BulletList space="sm">
               <li>Provide accurate, current, and complete registration information</li>
               <li>Maintain the security of your account credentials</li>
               <li>Promptly notify us of any unauthorized use of your account</li>
               <li>Not share your account credentials with others outside your organization</li>
               <li>Be responsible for all activity that occurs under your account</li>
-            </ul>
+            </BulletList>
             <p className="mt-3">
               We reserve the right to terminate accounts, remove content, or cancel subscriptions at our sole discretion if we determine that Terms have been violated.
             </p>
@@ -113,7 +113,7 @@ export const TermsPage: React.FC = () => {
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">7. Acceptable Use</h2>
             <p>You agree not to use our Services to:</p>
-            <ul className="list-disc pl-6 space-y-1.5 mt-3">
+            <BulletList space="sm">
               <li>Violate any applicable law or regulation</li>
               <li>Infringe on the intellectual property rights of others</li>
               <li>Transmit malware, viruses, or other malicious code</li>
@@ -122,7 +122,7 @@ export const TermsPage: React.FC = () => {
               <li>Conduct activities that harm minors</li>
               <li>Interfere with the proper functioning of our Services</li>
               <li>Resell or sublicense the Services without authorization</li>
-            </ul>
+            </BulletList>
           </section>
 
           <section>
@@ -187,14 +187,14 @@ export const TermsPage: React.FC = () => {
 
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-4">14. Miscellaneous</h2>
-            <ul className="list-disc pl-6 space-y-2">
+            <BulletList>
               <li><strong>Entire Agreement:</strong> These Terms constitute the entire agreement between you and FuzeOne regarding the Services and supersede all prior agreements.</li>
               <li><strong>Severability:</strong> If any provision of these Terms is held invalid, the remaining provisions remain in full force.</li>
               <li><strong>Waiver:</strong> Failure to enforce any right or provision does not constitute a waiver of that right.</li>
               <li><strong>Assignment:</strong> You may not assign these Terms without our prior written consent. We may assign our rights without restriction.</li>
               <li><strong>Force Majeure:</strong> Neither party is liable for delays caused by circumstances beyond their reasonable control.</li>
               <li><strong>Notices:</strong> Legal notices to FuzeOne should be sent to <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">legal@fuzefront.com</a>.</li>
-            </ul>
+            </BulletList>
           </section>
 
           <section>

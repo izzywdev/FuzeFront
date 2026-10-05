@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, BulletList } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
@@ -41,32 +41,32 @@ export const PrivacyPolicyPage: React.FC = () => {
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">2. Information We Collect</h2>
               <h3 className="text-base font-semibold text-gray-800 mb-2">2.1 Information You Provide</h3>
-              <ul className="list-disc pl-6 space-y-1.5">
+              <BulletList>
                 <li>Account registration details (name, email, password hash)</li>
                 <li>Organization and billing information</li>
                 <li>Communications you send us (support requests, contact forms)</li>
                 <li>Profile information and preferences</li>
                 <li>Payment information (processed by Stripe; we do not store raw card numbers)</li>
-              </ul>
+              </BulletList>
               <h3 className="text-base font-semibold text-gray-800 mb-2 mt-5">2.2 Information Collected Automatically</h3>
-              <ul className="list-disc pl-6 space-y-1.5">
+              <BulletList>
                 <li>Log data (IP address, browser type, pages visited, timestamps)</li>
                 <li>Device identifiers and usage statistics</li>
                 <li>Cookies and similar tracking technologies (see Section 8)</li>
                 <li>Analytics data about how you interact with our platform</li>
-              </ul>
+              </BulletList>
               <h3 className="text-base font-semibold text-gray-800 mb-2 mt-5">2.3 Information from Third Parties</h3>
-              <ul className="list-disc pl-6 space-y-1.5">
+              <BulletList>
                 <li>SSO providers (when you log in via Google, Microsoft, or your organization's identity provider)</li>
                 <li>Payment processors (Stripe)</li>
                 <li>Analytics and monitoring services</li>
-              </ul>
+              </BulletList>
             </section>
 
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">3. How We Use Your Information</h2>
               <p>We use the information we collect to:</p>
-              <ul className="list-disc pl-6 space-y-1.5 mt-3">
+              <BulletList space="sm">
                 <li>Provide, operate, and maintain our platform and services</li>
                 <li>Process transactions and send related information (receipts, invoices)</li>
                 <li>Send transactional communications (account notifications, security alerts)</li>
@@ -76,19 +76,19 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <li>Protect against fraud, unauthorized access, and other security threats</li>
                 <li>Comply with legal obligations</li>
                 <li>Enforce our Terms of Service</li>
-              </ul>
+              </BulletList>
             </section>
 
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">4. Sharing Your Information</h2>
               <p>We do not sell your personal information. We may share your information in the following circumstances:</p>
-              <ul className="list-disc pl-6 space-y-1.5 mt-3">
+              <BulletList space="sm">
                 <li><strong>Service Providers:</strong> We share information with vendors who assist in delivering our services (hosting, analytics, payment processing, customer support).</li>
                 <li><strong>Business Transfers:</strong> In connection with a merger, acquisition, or sale of assets, your information may be transferred to the acquiring entity.</li>
                 <li><strong>Legal Requirements:</strong> We may disclose information if required by law, court order, or governmental authority.</li>
                 <li><strong>Protection of Rights:</strong> To protect the rights, property, and safety of FuzeOne, our users, or others.</li>
                 <li><strong>With Your Consent:</strong> In any other circumstances where you have given explicit consent.</li>
-              </ul>
+              </BulletList>
             </section>
 
             <section>
@@ -105,7 +105,7 @@ export const PrivacyPolicyPage: React.FC = () => {
               <h2 className="text-xl font-bold text-gray-900 mb-4">6. Your Rights</h2>
               <h3 className="text-base font-semibold text-gray-800 mb-2">6.1 GDPR Rights (EEA Residents)</h3>
               <p>If you are located in the European Economic Area, you have the following rights:</p>
-              <ul className="list-disc pl-6 space-y-1.5 mt-3">
+              <BulletList space="sm">
                 <li><strong>Access:</strong> Request a copy of your personal data</li>
                 <li><strong>Rectification:</strong> Correct inaccurate or incomplete data</li>
                 <li><strong>Erasure:</strong> Request deletion of your personal data ("right to be forgotten")</li>
@@ -113,15 +113,15 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <li><strong>Portability:</strong> Receive your data in a machine-readable format</li>
                 <li><strong>Object:</strong> Object to processing based on legitimate interests</li>
                 <li><strong>Withdraw Consent:</strong> Withdraw consent where processing is based on consent</li>
-              </ul>
+              </BulletList>
               <h3 className="text-base font-semibold text-gray-800 mb-2 mt-5">6.2 CCPA Rights (California Residents)</h3>
               <p>California residents have the right to:</p>
-              <ul className="list-disc pl-6 space-y-1.5 mt-3">
+              <BulletList space="sm">
                 <li>Know what personal information we collect and how it is used</li>
                 <li>Delete personal information (subject to exceptions)</li>
                 <li>Opt out of the sale of personal information (we do not sell personal information)</li>
                 <li>Non-discrimination for exercising your rights</li>
-              </ul>
+              </BulletList>
               <p className="mt-3">To exercise any of these rights, contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">privacy@fuzefront.com</a>.</p>
             </section>
 
@@ -130,13 +130,13 @@ export const PrivacyPolicyPage: React.FC = () => {
               <p>
                 We implement administrative, technical, and physical security measures to protect your personal information from unauthorized access, disclosure, alteration, or destruction. These measures include:
               </p>
-              <ul className="list-disc pl-6 space-y-1.5 mt-3">
+              <BulletList space="sm">
                 <li>Encryption in transit (TLS) and at rest (AES-256)</li>
                 <li>Role-based access controls and least-privilege principles</li>
                 <li>Automated secrets rotation and credential management via FuzeKeys</li>
                 <li>Regular security audits and penetration testing</li>
                 <li>Multi-factor authentication for all staff with system access</li>
-              </ul>
+              </BulletList>
               <p className="mt-3">
                 While we take reasonable precautions, no security system is impenetrable. In the event of a data breach, we will notify affected users and relevant authorities as required by applicable law.
               </p>
@@ -145,12 +145,12 @@ export const PrivacyPolicyPage: React.FC = () => {
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">8. Cookies</h2>
               <p>We use cookies and similar technologies for:</p>
-              <ul className="list-disc pl-6 space-y-1.5 mt-3">
+              <BulletList space="sm">
                 <li><strong>Essential cookies:</strong> Required for the platform to function (authentication sessions, security tokens)</li>
                 <li><strong>Analytics cookies:</strong> To understand how users interact with our website</li>
                 <li><strong>Preference cookies:</strong> To remember your settings and preferences</li>
                 <li><strong>Marketing cookies:</strong> Only with your explicit consent</li>
-              </ul>
+              </BulletList>
               <p className="mt-3">You can control cookie settings through your browser. Disabling essential cookies may affect platform functionality.</p>
             </section>
 
