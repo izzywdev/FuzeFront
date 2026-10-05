@@ -16,6 +16,7 @@
   --space-10: 2.5rem;   /* 40px */
   --space-12: 3rem;     /* 48px */
   --space-16: 4rem;     /* 64px */
+  --space-24: 6rem;     /* 96px — marketing-page hero/section vertical rhythm */
 
   /* ---- Radii --------------------------------------------- */
   --radius: 0.625rem;   /* 10px base */
