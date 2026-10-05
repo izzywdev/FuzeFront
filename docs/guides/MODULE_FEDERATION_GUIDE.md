@@ -25,16 +25,18 @@ FrontFuse implements a **runtime module federation** system where:
 
 ### 1. Start the FrontFuse Platform
 
+`npm run install:all`, `npm run db:init` and `npm run dev` are no longer
+defined in `package.json` — this section predates the current Docker-based
+local stack. Use the real, current quickstart instead:
+
 ```bash
-# Install dependencies
-npm run install:all
-
-# Initialize database
-npm run db:init
-
-# Start backend and frontend
-npm run dev
+docker compose -f docker-compose.e2e.yml up -d --build
 ```
+
+This brings up Postgres, Redis, Authentik, the backend, the security service
+and the shell with no secrets or `.env` values required. See
+[`docs/ADOPTION_QUICKSTART.md`](../ADOPTION_QUICKSTART.md) for the full
+walkthrough (signing in, running the federated sample app, troubleshooting).
 
 ### 2. Create a New Micro-frontend
 
@@ -46,8 +48,8 @@ cd my-app
 # Install module federation plugin
 npm install @originjs/vite-plugin-federation --save-dev
 
-# Install FrontFuse SDK
-npm install @frontfuse/sdk-react
+# Install the FuzeFront SDK (published as @izzywdev/fuzefront-sdk-react)
+npm install @izzywdev/fuzefront-sdk-react
 ```
 
 ### 3. Configure Module Federation

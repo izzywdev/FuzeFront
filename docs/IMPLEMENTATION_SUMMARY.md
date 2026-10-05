@@ -1,5 +1,13 @@
 # FrontFuse Module Federation Implementation Summary
 
+> **Historical snapshot.** This document describes the original
+> `task-manager-app` implementation and npm scripts (`install:all`, `demo`,
+> `dev:all`) from an earlier stage of the project; none of them exist in the
+> current `package.json`, and `task-manager-app/` itself has since been
+> replaced by `clock-app/`. For the current, verified local setup, use
+> [`docs/ADOPTION_QUICKSTART.md`](ADOPTION_QUICKSTART.md) instead of the
+> `Usage` commands below.
+
 ## 🎯 What We've Accomplished
 
 We have successfully implemented a **complete runtime module federation system** where Docker containers with frontend apps can:
