@@ -134,9 +134,12 @@ export function isAllowedRedirectUri(client: string, redirectUri: string): boole
 export function verifyClientSecret(client: string, clientSecret: string): boolean {
   const cfg = getBrokerClient(client)
   if (!cfg || typeof clientSecret !== 'string') return false
-  const expected = Buffer.from(cfg.clientSecret)
-  const actual = Buffer.from(clientSecret)
-  if (expected.length !== actual.length) return false
+  // Hash both sides to a fixed-length digest before comparing so a length
+  // mismatch never short-circuits the check — timingSafeEqual alone still
+  // leaks the registered secret's byte length via an early return on
+  // differing input lengths.
+  const expected = crypto.createHash('sha256').update(cfg.clientSecret).digest()
+  const actual = crypto.createHash('sha256').update(clientSecret).digest()
   return crypto.timingSafeEqual(expected, actual)
 }
 
