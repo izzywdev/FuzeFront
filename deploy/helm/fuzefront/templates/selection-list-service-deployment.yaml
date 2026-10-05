@@ -112,24 +112,34 @@ spec:
             {{- end }}
             # Machine identity (OAuth client_credentials) the service uses for
             # Security API grant/revoke -- NOT the end user's token (review C-1).
-            # Both come from the same SealedSecret as DB_PASSWORD;
-            # `optional` so the pod still starts before the keys are sealed, in
-            # which case list creation / access grants fail CLOSED (500) and the
-            # service logs "machine identity NOT configured" at boot. The OAuth
-            # client must be provisioned with scope authz:admin -- see
-            # deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
+            # Sourced from Secret/<s2s.secretName>, a SEPARATE Secret from the
+            # sealed selection-list-secrets (which holds DB_PASSWORD only and is
+            # replaced by the sealed-secrets controller on reconcile). Normally
+            # minted in-cluster by selection-list-s2s-register-job.yaml; the key
+            # names are the ones `register-s2s-cli.js --write-env-file` emits.
+            #
+            # `optional` TRACKS THE FLAG (same idiom as billing-service.yaml):
+            #   register ON  -> optional: false -> the PreSync Job guarantees the
+            #                   Secret exists before this Deployment is updated; a
+            #                   failed Job aborts the sync without touching it.
+            #   register OFF -> optional: true  -> the pod still starts before a
+            #                   Secret is provided, and list creation / access
+            #                   grants fail CLOSED (500) with a "machine identity
+            #                   NOT configured" boot log, never falling back to the
+            #                   end user's token. The OAuth client must hold scope
+            #                   authz:admin.
             - name: SELECTION_LIST_SERVICE_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: selection-list-secrets
-                  key: SERVICE_CLIENT_ID
-                  optional: true
+                  name: {{ .Values.selectionListService.s2s.secretName | quote }}
+                  key: AUTHENTIK_CLIENT_ID
+                  optional: {{ not .Values.selectionListService.s2s.register.enabled }}
             - name: SELECTION_LIST_SERVICE_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: selection-list-secrets
-                  key: SERVICE_CLIENT_SECRET
-                  optional: true
+                  name: {{ .Values.selectionListService.s2s.secretName | quote }}
+                  key: AUTHENTIK_CLIENT_SECRET
+                  optional: {{ not .Values.selectionListService.s2s.register.enabled }}
           readinessProbe:
             httpGet:
               # /ready checks the DB (bounded); /health stays a cheap liveness probe.

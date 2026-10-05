@@ -30,13 +30,28 @@
  *      {"aud": "s2s", "service": "<service>", "scopes": [<granted scopes>]})
  *   2. OAuth2 Provider — "<service> (s2s)"  (client_credentials, confidential)
  *   3. Application    — slug "s2s-<service-slug>" bound to the provider above
+ *   4. Per-scope mappings — "s2s-scope:<scope>" (scope_name = <scope>, emits no
+ *      extra claims), attached to the provider so the scope is grantable
  *
- * The `scopes` list is carried as a claim on the issued JWT (not enforced by
- * Authentik's OAuth2 scope grant machinery — Authentik does not variably grant a
- * subset of a client_credentials client's configured scopes per token request).
- * A consuming service authorizes by checking the `scopes` claim itself and/or
- * calling into Permit (see `utils/permit/machine-roles.ts`'s `grantServiceInvoke`
- * for wiring a service account to a Permit `ServiceEndpoint:invoke` grant).
+ * The `scopes` list is carried as a claim on the issued JWT (the `s2s` scope
+ * mapping above). A consuming service can authorize by checking that `scopes`
+ * claim itself and/or calling into Permit (see `utils/permit/machine-roles.ts`'s
+ * `grantServiceInvoke` for wiring a service account to a Permit
+ * `ServiceEndpoint:invoke` grant).
+ *
+ * EACH requested scope is ALSO registered as a real OAuth2 scope on the provider
+ * (4. below). That is load-bearing for the Security API: its machine-caller gate
+ * (`backend/security/src/routes/authz.ts` `requireAuthzAdmin`) reads the
+ * INTROSPECTED standard `scope` field, not the custom `scopes` claim. Authentik
+ * clamps a client_credentials request's scope to the scope_names of the
+ * ScopeMappings attached to the provider (authentik/providers/oauth2/token/
+ * base.py `check_scopes`: "Application requested scopes not configured, setting
+ * to overlap"), and introspection reports `" ".join(token.scope)`. With only the
+ * `s2s` mapping attached, a request for `scope=authz:admin` is silently reduced
+ * to the empty set and the Security API answers 403 to a client that was
+ * registered with that very scope. A per-scope mapping (scope_name = the scope,
+ * expression `return {}`) is what lets the scope survive into the token. The
+ * client must still ASK for the scope: a token request that omits it gets none.
  *
  * The returned `clientId` is safe to share; the `clientSecret` is the caller
  * credential and MUST be sealed on the consumer side (FuzeInfra's
@@ -103,6 +118,10 @@ const SCOPE_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/** Authentik property-mapping pk. A UUID string on current releases; typed to
+ * also accept the number the older code/tests assumed. */
+type MappingPk = number | string
 
 export interface RegisterS2SClientResult {
   /** OAuth2 client_id issued by Authentik — safe to share. */
@@ -172,19 +191,50 @@ async function ensureS2SScopeMapping(
 }
 
 /**
+ * Ensures one grantable OAuth2 scope per requested scope: a ScopeMapping whose
+ * scope_name IS the scope and which emits no claims. Without it Authentik drops
+ * the scope from the issued token (see the header comment), so the Security
+ * API's introspection-based `authz:admin` gate could never pass. The mapping is
+ * shared by every service registered with the same scope (one object per scope
+ * name, not per service) — it carries no per-service data.
+ */
+async function ensureS2SScopeGrantMappings(
+  baseUrl: string,
+  headers: Record<string, string>,
+  scopes: string[]
+): Promise<MappingPk[]> {
+  const pks: MappingPk[] = []
+  for (const scope of scopes) {
+    pks.push(
+      await ensureScopeMapping(baseUrl, headers, {
+        name: `s2s-scope:${scope}`,
+        scopeName: scope,
+        expression: 'return {}',
+      })
+    )
+  }
+  return pks
+}
+
+/**
  * Resolves (or creates) the "<service> (s2s)" OAuth2 provider, with the S2S
- * scope mapping attached. Returns the provider pk.
+ * claim mapping and the per-scope grant mappings attached. Returns the provider
+ * pk. An EXISTING provider is reconciled: any wanted mapping it lacks is added
+ * (PATCH, additive only — nothing is ever removed), so a provider registered
+ * before per-scope mappings existed is repaired by simply re-running the
+ * registration. A provider that already has every mapping is left untouched
+ * (no write, no churn), and its credentials are never rotated.
  */
 async function ensureS2SProvider(
   baseUrl: string,
   headers: Record<string, string>,
   service: string,
-  scopeMappingPk: number,
+  mappingPks: MappingPk[],
   tokenValidity: string
 ): Promise<number> {
   const providerName = `${service} (s2s)`
 
-  const found = await findAcrossPages<{ pk: number; name: string }>(
+  const found = await findAcrossPages<{ pk: number; name: string; property_mappings?: MappingPk[] }>(
     `${baseUrl}/api/v3/providers/oauth2/`,
     { name: providerName },
     headers,
@@ -192,6 +242,18 @@ async function ensureS2SProvider(
   )
   if (found) {
     console.log(`[provision-s2s] OAuth2 provider "${providerName}" already exists (pk=${found.pk})`)
+    const have = new Set((found.property_mappings ?? []).map(String))
+    const missing = mappingPks.filter(pk => !have.has(String(pk)))
+    if (missing.length > 0) {
+      await axios.patch(
+        `${baseUrl}/api/v3/providers/oauth2/${found.pk}/`,
+        { property_mappings: [...(found.property_mappings ?? []), ...missing] },
+        { headers, timeout: AUTHENTIK_TIMEOUT_MS }
+      )
+      console.log(
+        `[provision-s2s] Attached ${missing.length} missing scope mapping(s) to provider "${providerName}"`
+      )
+    }
     return found.pk
   }
 
@@ -219,7 +281,7 @@ async function ensureS2SProvider(
       invalidation_flow: invalidationFlow,
       client_type: 'confidential',
       allowed_grant_types: ['client_credentials'],
-      property_mappings: [scopeMappingPk],
+      property_mappings: mappingPks,
       // Required field on 2024.x; client_credentials has no redirect leg.
       redirect_uris: [],
       sub_mode: 'hashed_user_id',
@@ -294,8 +356,9 @@ async function readCredentials(
 /**
  * Idempotently registers an S2S machine identity for `service` in Authentik and
  * returns its credentials. Safe to call repeatedly — existing resources are
- * reused (their scopes/expression are NOT rewritten on re-run; delete-and-recreate
- * by hand if the granted scope set must change). Throws if AUTHENTIK_ADMIN_TOKEN
+ * reused (the claim expression is NOT rewritten on re-run; delete-and-recreate
+ * by hand if the granted scope set must change). A re-run does ADD any missing
+ * per-scope grant mapping to an existing provider, but never removes one. Throws if AUTHENTIK_ADMIN_TOKEN
  * is missing, an input is invalid, or the Authentik API rejects a create.
  */
 export async function registerS2SClient(
@@ -321,8 +384,15 @@ export async function registerS2SClient(
     `[provision-s2s] Registering S2S machine identity "${service}" (scopes: ${scopes.join(', ')}) against ${baseUrl}`
   )
 
-  const scopePk = await ensureS2SScopeMapping(baseUrl, headers, service, scopes)
-  const providerPk = await ensureS2SProvider(baseUrl, headers, service, scopePk, tokenValidity)
+  const claimMappingPk = await ensureS2SScopeMapping(baseUrl, headers, service, scopes)
+  const grantMappingPks = await ensureS2SScopeGrantMappings(baseUrl, headers, scopes)
+  const providerPk = await ensureS2SProvider(
+    baseUrl,
+    headers,
+    service,
+    [claimMappingPk, ...grantMappingPks],
+    tokenValidity
+  )
   const applicationSlug = await ensureS2SApplication(baseUrl, headers, service, providerPk)
   const { clientId, clientSecret } = await readCredentials(baseUrl, headers, providerPk)
 

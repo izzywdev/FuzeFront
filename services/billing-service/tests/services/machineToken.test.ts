@@ -37,6 +37,9 @@ describe('getMachineToken', () => {
     const body = (fetchImpl.mock.calls[0][1] as any).body as string;
     expect(body).toContain('grant_type=client_credentials');
     expect(body).toContain('client_id=billing-service');
+    // Without an explicit scope Authentik issues an EMPTY-scope token and the
+    // Security API's authz:admin gate 403s it.
+    expect(new URLSearchParams(body).get('scope')).toBe('authz:admin');
   });
 
   it('caches the token across calls until near expiry', async () => {

@@ -1047,6 +1047,16 @@ selectionListService:
     appName: "selection-list-service"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Machine identity for Security API grant/revoke, minted IN-CLUSTER by the
+  # selection-list-s2s-register PreSync Job (Authentik `selection-list-service`
+  # client_credentials app with scope authz:admin -> Secret/selection-list-s2s).
+  # Nothing renders while `enabled: false` above; at go-live the single flip of
+  # `enabled` brings the Job up first (PreSync), then the Deployment. Requires
+  # AUTHENTIK_BOOTSTRAP_TOKEN in fuzefront-secrets -- the Job fails loudly (and the
+  # sync aborts without touching the Deployment) if it is absent.
+  s2s:
+    register:
+      enabled: true
   # Fleet placement policy (see .elasticPlacement above): every backend service
   # runs on the elastic pool; this one was missed when it was added dark.
   <<: *elasticPlacement

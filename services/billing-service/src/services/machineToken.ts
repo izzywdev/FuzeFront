@@ -98,10 +98,17 @@ export async function getMachineToken(
     );
   }
 
+  // The scope MUST be requested explicitly. Authentik grants a client_credentials
+  // token only the scopes the request names AND the provider has a scope mapping
+  // for; an omitted `scope` yields a token with an EMPTY scope, which the Security
+  // API's introspection-based gate (requireAuthzAdmin) rejects with 403. The
+  // billing-s2s-register Job registers `authz:admin` as a grantable scope on this
+  // provider (backend/src/authentik/provision-s2s-clients.ts).
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id: config.clientId,
     client_secret: config.clientSecret,
+    scope: 'authz:admin',
   });
 
   const res = await fetchImpl(config.tokenUrl, {

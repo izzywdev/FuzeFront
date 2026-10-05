@@ -18,6 +18,7 @@ jest.mock('axios', () => {
     ...actual,
     post: jest.fn(),
     get: jest.fn(),
+    patch: jest.fn(),
     isAxiosError: actual.isAxiosError,
   }
 })
@@ -31,6 +32,7 @@ import {
 
 const mockedGet = axios.get as jest.MockedFunction<typeof axios.get>
 const mockedPost = axios.post as jest.MockedFunction<typeof axios.post>
+const mockedPatch = axios.patch as jest.MockedFunction<typeof axios.patch>
 
 const EMPTY_PAGE = { data: { results: [], pagination: { next: 0 } } }
 
@@ -49,9 +51,10 @@ function wireHappyPath(): void {
     return EMPTY_PAGE as any
   })
 
+  let nextMappingPk = 10
   mockedPost.mockImplementation(async (url: string) => {
     if (url.includes('/propertymappings/provider/scope/')) {
-      return { data: { pk: 10 } } as any
+      return { data: { pk: nextMappingPk++ } } as any
     }
     if (url.includes('/providers/oauth2/')) {
       return { data: { pk: 20 } } as any
@@ -117,7 +120,8 @@ describe('registerS2SClient()', () => {
     const body = providerCreate![1] as any
     expect(body.allowed_grant_types).toEqual(['client_credentials'])
     expect(body.client_type).toBe('confidential')
-    expect(body.property_mappings).toEqual([10])
+    // [claim mapping, per-scope grant mapping] — in that order.
+    expect(body.property_mappings).toEqual([10, 11])
     expect(body.redirect_uris).toEqual([])
     expect(body.name).toBe('fuzex-api (s2s)')
     expect(body.token_validity).toBe(DEFAULT_TOKEN_VALIDITY)
@@ -141,10 +145,13 @@ describe('registerS2SClient()', () => {
         return { data: { client_id: 'existing-id', client_secret: 'existing-secret' } } as any
       }
       if (url.includes('/propertymappings/provider/scope/')) {
-        return { data: { results: [{ pk: 10, name: 's2s:fuzecall-backend' }], pagination: { next: 0 } } } as any
+        return { data: { results: [
+          { pk: 10, name: 's2s:fuzecall-backend' },
+          { pk: 11, name: 's2s-scope:fuzecall:control-plane:auth' },
+        ], pagination: { next: 0 } } } as any
       }
       if (url.includes('/providers/oauth2/')) {
-        return { data: { results: [{ pk: 20, name: 'fuzecall-backend (s2s)' }], pagination: { next: 0 } } } as any
+        return { data: { results: [{ pk: 20, name: 'fuzecall-backend (s2s)', property_mappings: [10, 11] }], pagination: { next: 0 } } } as any
       }
       if (url.includes('/core/applications/')) {
         return { data: { results: [{ slug: 's2s-fuzecall-backend', name: 'fuzecall-backend (s2s)' }], pagination: { next: 0 } } } as any
@@ -186,6 +193,96 @@ describe('registerS2SClient()', () => {
     expect(body.expression).toBe(
       'return {"aud": "s2s", "service": "fuzex-api", "scopes": ["fuzex:frames:write"]}'
     )
+  })
+
+  it('registers each requested scope as a grantable OAuth2 scope (scope_name = the scope)', async () => {
+    wireHappyPath()
+
+    await registerS2SClient('selection-list-service', ['authz:admin'])
+
+    const mappingCreates = mockedPost.mock.calls
+      .filter(([url]) => String(url).includes('/propertymappings/provider/scope/'))
+      .map(([, body]) => body as any)
+    // The introspected `scope` field (what the Security API's authz:admin gate
+    // reads) can only contain a scope Authentik is willing to grant, i.e. one
+    // that is some attached mapping's scope_name. The custom `scopes` claim
+    // from the s2s mapping does not count.
+    const grant = mappingCreates.find(b => b.scope_name === 'authz:admin')
+    expect(grant).toBeDefined()
+    expect(grant.name).toBe('s2s-scope:authz:admin')
+    expect(grant.expression).toBe('return {}')
+  })
+
+  it('creates one grant mapping per scope and attaches all of them to the provider', async () => {
+    wireHappyPath()
+
+    await registerS2SClient('fuzecall-backend', ['fuzecall:jobs:read', 'authz:admin'])
+
+    const names = mockedPost.mock.calls
+      .filter(([url]) => String(url).includes('/propertymappings/provider/scope/'))
+      .map(([, body]) => (body as any).scope_name)
+    expect(names).toEqual(['s2s', 'fuzecall:jobs:read', 'authz:admin'])
+    const providerCreate = mockedPost.mock.calls.find(([url]) => String(url).endsWith('/providers/oauth2/'))
+    expect((providerCreate![1] as any).property_mappings).toEqual([10, 11, 12])
+  })
+
+  describe('reconciling an EXISTING provider', () => {
+    // Authentik returns mapping pks as UUID strings; model that, plus the
+    // pre-fix shape (only the s2s claim mapping attached).
+    function wireExisting(attachedMappings: string[]): void {
+      mockedGet.mockImplementation(async (url: string) => {
+        if (/\/providers\/oauth2\/\d+\/?$/.test(url)) {
+          return { data: { client_id: 'existing-id', client_secret: 'existing-secret' } } as any
+        }
+        if (url.includes('/propertymappings/provider/scope/')) {
+          return {
+            data: {
+              results: [
+                { pk: 'uuid-claim', name: 's2s:billing-service' },
+                { pk: 'uuid-authz', name: 's2s-scope:authz:admin' },
+              ],
+              pagination: { next: 0 },
+            },
+          } as any
+        }
+        if (url.includes('/providers/oauth2/')) {
+          return {
+            data: {
+              results: [{ pk: 20, name: 'billing-service (s2s)', property_mappings: attachedMappings }],
+              pagination: { next: 0 },
+            },
+          } as any
+        }
+        if (url.includes('/core/applications/')) {
+          return { data: { results: [{ slug: 's2s-billing-service', name: 'billing-service (s2s)' }], pagination: { next: 0 } } } as any
+        }
+        return EMPTY_PAGE as any
+      })
+    }
+
+    it('adds the missing per-scope mapping to a provider registered before it existed, keeping what it had', async () => {
+      wireExisting(['uuid-claim'])
+
+      const result = await registerS2SClient('billing-service', ['authz:admin'])
+
+      expect(mockedPatch).toHaveBeenCalledTimes(1)
+      const [url, body] = mockedPatch.mock.calls[0] as [string, any, any]
+      expect(url).toMatch(/\/api\/v3\/providers\/oauth2\/20\/$/)
+      expect(body).toEqual({ property_mappings: ['uuid-claim', 'uuid-authz'] })
+      // Credentials are read back, never regenerated.
+      expect(result.clientId).toBe('existing-id')
+      expect(result.clientSecret).toBe('existing-secret')
+      expect(mockedPost).not.toHaveBeenCalled()
+    })
+
+    it('does not write when the provider already has every mapping (idempotent, no churn)', async () => {
+      wireExisting(['uuid-claim', 'uuid-authz'])
+
+      await registerS2SClient('billing-service', ['authz:admin'])
+
+      expect(mockedPatch).not.toHaveBeenCalled()
+      expect(mockedPost).not.toHaveBeenCalled()
+    })
   })
 
   it('throws when AUTHENTIK_ADMIN_TOKEN is missing', async () => {

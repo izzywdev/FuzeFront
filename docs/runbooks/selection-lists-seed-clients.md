@@ -71,6 +71,14 @@ with `SOURCE_NOT_ALLOWED`.
    the onboarding PR delegates via `@fuze` rather than editing it from here.
    Never paste the value into an issue, PR, log or workflow input.
 
+   > **Only for a requester in ANOTHER namespace/repo.** These seed-source clients
+   > are other services' identities and genuinely have to cross a boundary, so they
+   > stay on the handoff. selection-list-service's **own** `authz:admin` identity
+   > is NOT one of them: it lives in the `fuzefront` namespace and is minted
+   > in-cluster by the `selection-list-s2s-register` PreSync Job
+   > (`selectionListService.s2s.*`) into `Secret/selection-list-s2s` — no seal, no
+   > handoff, no human sees the value. See `s2s-client-credentials.md`.
+
    `rotate-sealed-secret.yml` IS the right tool for any secret FuzeFront mints
    itself (it is how the selection-list-service DB password is sealed), e.g.:
 

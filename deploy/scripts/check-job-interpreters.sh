@@ -151,6 +151,14 @@ for pair in "${PAIRS[@]}"; do
       echo "SKIP  $image ($interp) — first-party image, pulling it needs ghcr.io auth"
       continue
       ;;
+    fuzefront/*:local)
+      # values-local.yaml points first-party services at images built on a
+      # developer machine (`:local`); they exist in no registry, so a pull can only
+      # fail. Same reasoning as the ghcr.io skip above: our own Dockerfiles pin
+      # their bases. Narrow on purpose: only the `fuzefront/` namespace + `:local`.
+      echo "SKIP  $image ($interp) — first-party local-build image, not in any registry"
+      continue
+      ;;
   esac
 
   echo "CHECK $image needs $interp"

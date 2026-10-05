@@ -43,12 +43,23 @@ Tick each with evidence (command output, run URL, PR) in the issue that requests
       manifest=deploy/contabo/sealed/selection-list-secrets.yaml`), PR merged. **Verified absent
       today:** `deploy/contabo/sealed/` holds only `selection-list-service-secrets.yaml.template`.
       See [`per-service-database-and-role.md`](per-service-database-and-role.md).
-- [ ] The same Secret also carries `SERVICE_CLIENT_ID` / `SERVICE_CLIENT_SECRET` — the service's
-      own `client_credentials` identity (scope `authz:admin`) used to write list-owner grants.
-      Without them list creation / access grants **fail closed** (`values-prod.yaml` comments;
-      `src/lib/machineIdentity.ts`). The secret value is Authentik-issued, so it cannot be sealed
-      with `rotate-sealed-secret.yml`; use the FuzeInfra `credential-handoff.json` mechanism
-      (delegate via `@fuze`), as described in the seed-clients runbook.
+- [ ] The service's own `client_credentials` identity (scope `authz:admin`, used to write
+      list-owner grants) is **minted in-cluster — nothing to seal and no `@fuze` handoff.**
+      `values-prod.yaml` sets `selectionListService.s2s.register.enabled: true`, so when
+      `enabled` flips, the `selection-list-s2s-register` PreSync Job
+      (`deploy/helm/fuzefront/templates/selection-list-s2s-register-job.yaml`) runs
+      `register-s2s-cli.js selection-list-service authz:admin --write-env-file …` and publishes
+      `Secret/selection-list-s2s` (`AUTHENTIK_CLIENT_ID` / `AUTHENTIK_CLIENT_SECRET`); the
+      Deployment reads it as `SELECTION_LIST_SERVICE_CLIENT_ID` / `_SECRET`. It is a **separate
+      Secret** from the sealed `selection-list-secrets` (the sealed-secrets controller would
+      replace any key written into that one). Prerequisite: `AUTHENTIK_BOOTSTRAP_TOKEN` in
+      `fuzefront-secrets` — if absent the Job fails loudly and the sync aborts without touching
+      the Deployment. Without the identity, list creation / access grants **fail closed**
+      (`src/lib/machineIdentity.ts`). See
+      [`s2s-client-credentials.md`](s2s-client-credentials.md) ("Prefer the automated handoff").
+      Verify after the first sync: `Secret/selection-list-s2s` exists with both keys non-empty
+      (the Job asserts this and prints lengths only), and the boot log does **not** say
+      `machine identity NOT configured`.
 - [ ] In a **later** merge, `selectionListService.enabled: true` in `values-prod.yaml` (deploy
       window). Pod is Ready: `GET /ready` is 200; `GET /health` is 200.
 - [ ] Boot log shows `Kafka lifecycle consumers started`, the outbox relay line
