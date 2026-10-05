@@ -1,0 +1,218 @@
+{
+  "name": "MFA step-up & contact verification — mobile (375px) — approval frames",
+  "description": "Mobile (375px, Android TWA viewport) treatment of the provider-neutral Security API step-up and contact-verification UX requested in issue #251: choose-a-factor, OTP code entry, phone contact verification, and a combined mobile security-status screen. Built for Issue #251's design-review request. Reconciled against already-in-repo flows (see `reconciliation` below) rather than shipping a disconnected fourth pattern for the same data: extends the unapproved `mfa-management` step-up flow with an explicit mobile/375px treatment and the missing loading/empty/generic-error states; adds a genuinely new phone-OTP verification screen while leaving the already-approved email link-click pattern (`auth-experience` `verify-email`) untouched; and adds an additive mobile security-status screen rather than a duplicate of the approved `account-security` hub. No vendor name appears anywhere in the UI. Approving a flow approves its component/package plan before UI implementation; frontend-test-engineer drives Playwright against the data-frame/data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "reconciliation": {
+    "sourceIssue": "#251",
+    "notes": [
+      "mfa-management/05-step-up-challenge.html (flow mfa-step-up, approved: false) already covers choose-a-factor + TOTP entry at a desktop 420px card width with no 375px validation and no loading/empty/generic-error states. This feature's 01-choose-factor.html and 02-enter-code.html are the missing mobile treatment of THAT SAME flow (same route /login/mfa, same OtpInput/FactorPicker primitives) plus the states CLAUDE.md's design-first gate requires — not a second, divergent step-up design. Implementation should land as mfa-management's mfa-step-up flow gaining a responsive (375px) layout, not as a parallel component tree.",
+      "auth-experience/04-verify-landing.html (flow verify-email, approved: true, shipped pattern) is a link-click state machine for post-signup EMAIL verification. Issue #251 proposed replacing it with 6-cell-OTP code entry for email too. That is a real, user-facing behavior change (link vs. code) on an already-approved flow, and this feature deliberately does NOT make that change without an explicit owner ruling. 03-confirm-contact.html in this feature therefore scopes the OTP code-entry pattern to PHONE verification only (which has no existing frame at all) and links to the existing approved email flow instead of re-implementing it. If the owner wants email moved to code-entry too, that is a follow-up PR against auth-experience's own manifest, called out explicitly as a behavior change, not bundled here.",
+      "account-security/01-hub.html + 02-states.html (flow account-security, approved: true) already own the account's security-posture overview and the hasPassword:null fail-closed guard. 04-security-status.html here is an ADDITIVE, mobile-shaped combined view (2FA factor status + contact verification chips in one TWA screen) — it reuses the hub's badge/chip language and does not duplicate or re-derive password state. It is not a fourth security-status surface competing with the hub; it is the mobile shape the hub does not yet have (the hub's own mobile breakpoint collapses its card grid to one column but keeps the desktop sidebar shell, which doesn't fit a chromeless TWA screen)."
+    ],
+    "openQuestionsForOwner": [
+      "Should auth-experience's approved verify-email flow also move from link-click to OTP code-entry for consistency with phone, or stay link-click? This feature assumes 'stay link-click' (least change to an approved flow) pending an explicit ruling.",
+      "Should the mobile security-status screen (04) become the TWA app's canonical account-security entry point, or stay a secondary/deep-linked view alongside the desktop hub? This feature assumes 'secondary, additive' pending an explicit ruling."
+    ]
+  },
+  "implementation": {
+    "paths": [
+      "packages/account-security-ui/src/components/mfa/**",
+      "packages/account-security-ui/src/components/security-status/**"
+    ]
+  },
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "component": "@fuzefront/account-security-ui",
+    "featureFlag": "fuzefront.security.mfa-stepup-mobile",
+    "schemas": [
+      "components.schemas.MfaFactor",
+      "components.schemas.MfaChallengeRequest",
+      "components.schemas.MfaChallengeAck",
+      "components.schemas.MfaVerifyRequest",
+      "components.schemas.VerifyConfirmRequest",
+      "components.schemas.VerificationStatus",
+      "components.schemas.AuthMethods",
+      "components.schemas.ErrorBody"
+    ],
+    "endpoints": [
+      "GET /v1/security/methods",
+      "POST /v1/security/mfa/challenge",
+      "POST /v1/security/mfa/verify",
+      "POST /v1/security/verify/phone/start",
+      "POST /v1/security/verify/phone/confirm",
+      "DELETE /v1/security/mfa/factors/{factorId}"
+    ]
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "mfa-stepup-mobile",
+        "orchestrator": "MfaStepUpMobileFlow",
+        "route": "/login/mfa",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "packages/account-security-ui/src/components/mfa/**"
+          ]
+        }
+      },
+      {
+        "id": "confirm-contact-phone",
+        "orchestrator": "ConfirmContactFlow",
+        "route": "/account/security/verify/phone",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "packages/account-security-ui/src/components/mfa/**"
+          ]
+        }
+      },
+      {
+        "id": "security-status-mobile",
+        "orchestrator": "SecurityStatusMobileFlow",
+        "route": "/account/security",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "packages/account-security-ui/src/components/security-status/**"
+          ]
+        }
+      }
+    ],
+    "components": [
+      "FactorPicker",
+      "OtpInput",
+      "MfaChallengeCard",
+      "ContactVerifyPanel",
+      "SecurityStatusList",
+      "SecurityStatusRow",
+      "RemoveFactorDialog"
+    ],
+    "packages": [
+      "@fuzefront/account-security-ui"
+    ],
+    "missingDesignSystemPrimitives": [
+      {
+        "name": "OtpInput",
+        "reason": "Already named as missing by mfa-management's manifest (6-cell, paste-aware, arrow-key nav). This feature reuses the SAME primitive at a mobile touch-target size (42x52, min 44px tap target) rather than defining a second one-off OTP field."
+      }
+    ]
+  },
+  "frames": [
+    {
+      "id": "index",
+      "file": "index.html",
+      "label": "Index",
+      "route": "/",
+      "flow": "index",
+      "summary": "Flow walker + build inventory + reconciliation notes against mfa-management, auth-experience and account-security.",
+      "acceptanceNotes": "index links to every frame in order; the reconciliation notes are visible, not just in manifest.json.",
+      "testHooks": [
+        "[data-frame='index']",
+        "[data-inventory]",
+        "[data-nav='01-choose-factor']",
+        "[data-nav='02-enter-code']",
+        "[data-nav='03-confirm-contact']",
+        "[data-nav='04-security-status']"
+      ]
+    },
+    {
+      "id": "01-choose-factor",
+      "file": "01-choose-factor.html",
+      "label": "(01) Choose a factor",
+      "route": "/login/mfa",
+      "flow": "mfa-stepup-mobile",
+      "summary": "Mobile factor picker (authenticator / email / SMS / recovery) at 375px, plus loading skeleton, generic load-error, and a zero-factors fail-closed state not present in the desktop frame.",
+      "acceptanceNotes": "Factor list driven by mfa_required.factors; SMS/email offered only when enrolled. Loading shows skeleton rows, not a blank screen. Load error offers retry only (no silent fallback). Zero-factors is fail-closed to a support contact, never a dead end.",
+      "testHooks": [
+        "[data-frame='01-choose-factor']",
+        "[data-panel='choose-factor'][data-state='loaded']",
+        "[data-panel='choose-factor'][data-state='loading']",
+        "[data-panel='choose-factor'][data-state='error']",
+        "[data-panel='choose-factor'][data-state='empty']",
+        "[data-component='factor-picker']",
+        "[data-factor='totp']",
+        "[data-factor='email']",
+        "[data-factor='sms']",
+        "[data-action='challenge']",
+        "[data-action='retry']",
+        "[data-action='contact-support']"
+      ]
+    },
+    {
+      "id": "02-enter-code",
+      "file": "02-enter-code.html",
+      "label": "(02) Enter code",
+      "route": "/login/mfa",
+      "flow": "mfa-stepup-mobile",
+      "summary": "Mobile OTP entry (auto-advance, paste-aware, 44px+ touch cells) with in-flight/verifying, wrong/expired fail-closed (no navigation), expiry countdown + resend cooldown, and delivery-failure fallback.",
+      "acceptanceNotes": "Verify via POST /mfa/verify; a wrong/expired code stays on screen with an inline error, never navigates away. The verify button disables and shows a spinner while in flight so a slow network can't produce a double-submit. Resend is disabled during the cooldown window with a live countdown.",
+      "testHooks": [
+        "[data-frame='02-enter-code']",
+        "[data-panel='enter-code'][data-state='idle']",
+        "[data-panel='enter-code'][data-state='verifying']",
+        "[data-panel='enter-code'][data-state='error-invalid']",
+        "[data-panel='enter-code'][data-state='error-delivery']",
+        "[data-component='otp-input']",
+        "[data-action='verify-mfa']",
+        "[data-action='resend']",
+        "[data-state='cooldown']",
+        "[data-error='invalid-code']"
+      ]
+    },
+    {
+      "id": "03-confirm-contact",
+      "file": "03-confirm-contact.html",
+      "label": "(03) Confirm your phone",
+      "route": "/account/security/verify/phone",
+      "flow": "confirm-contact-phone",
+      "summary": "Phone-only OTP verification: enter phone -> sending -> enter code -> verified, with wrong-code and generic send-failure fail-closed states, and 'Skip for now' (re-prompts from profile). Email verification intentionally stays on the existing approved link-click pattern (linked in copy, not re-implemented here) — see manifest reconciliation notes.",
+      "acceptanceNotes": "POST /verify/phone/start then /verify/phone/confirm. Wrong/expired code shows inline error, no navigation. A generic send failure (not a bad code) offers retry or skip, never a silent hang. Skip is always available and the manifest records that profile re-prompts until verified.",
+      "testHooks": [
+        "[data-frame='03-confirm-contact']",
+        "[data-panel='confirm-contact'][data-state='enter-phone']",
+        "[data-panel='confirm-contact'][data-state='sending']",
+        "[data-panel='confirm-contact'][data-state='enter-code']",
+        "[data-panel='confirm-contact'][data-state='error-invalid']",
+        "[data-panel='confirm-contact'][data-state='error-send']",
+        "[data-panel='confirm-contact'][data-state='verified']",
+        "[data-action='send-code']",
+        "[data-action='verify-contact']",
+        "[data-action='skip']",
+        "[data-action='resend']"
+      ]
+    },
+    {
+      "id": "04-security-status",
+      "file": "04-security-status.html",
+      "label": "(04) Security status (profile)",
+      "route": "/account/security",
+      "flow": "security-status-mobile",
+      "summary": "Combined mobile 2FA + contact-verification status (Active/Verified/Unverified chips), with loading skeleton, generic load-error, and the remove-last-2FA-factor -> 409 fail-closed guard (reusing mfa-management's RemoveFactorDialog pattern) when the account's only active factor is removed under an enforced-MFA policy.",
+      "acceptanceNotes": "Status rows render only confirmed server state (no optimistic 'Active'/'Verified' before the server says so). DELETE /mfa/factors/{factorId} on the only active factor returns 409 and the UI blocks removal via the bottom-sheet dialog, routing to 'Add another method first' rather than silently succeeding. Password state is out of scope here (owned by account-security/02-states.html) and is not duplicated.",
+      "testHooks": [
+        "[data-frame='04-security-status']",
+        "[data-panel='security-status'][data-state='loaded']",
+        "[data-panel='security-status'][data-state='loading']",
+        "[data-panel='security-status'][data-state='error']",
+        "[data-status='active']",
+        "[data-status='verified']",
+        "[data-status='unverified']",
+        "[data-action='remove-factor']",
+        "[data-action='verify-phone']",
+        "[data-component='remove-factor-dialog'][data-state='remove-last-blocked'][data-http-status='409']",
+        "[data-error='remove-last']",
+        "[data-action='retry']"
+      ]
+    }
+  ],
+  "stamp": "95d204dcc367dad6237162f2d71d708ba530e7599d8d277f585509d2f6c7296e"
+}

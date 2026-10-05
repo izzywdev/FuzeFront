@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MFA step-up &amp; contact verification (mobile) — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  .wrap { max-width: 940px; margin: 0 auto; padding: var(--space-12) var(--space-8) var(--space-16); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin-bottom: var(--space-3); }
+  h1 { font-family: var(--font-display); font-size: var(--text-2xl); letter-spacing: var(--tracking-display); margin: 0 0 var(--space-2); }
+  h2 { font-family: var(--font-display); font-size: var(--text-xl); letter-spacing: var(--tracking-display);
+    margin: var(--space-12) 0 var(--space-4); }
+  .lead { color: var(--text-secondary); margin: 0; max-width: 68ch; }
+  .crumb { font-size: var(--text-sm); color: var(--text-tertiary); margin: var(--space-4) 0 0; }
+  .crumb b { color: var(--text-secondary); font-weight: var(--weight-semibold); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-6); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .frame-link .states { margin-top: var(--space-3); display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .tag { font-family: var(--font-mono); font-size: var(--text-2xs); padding: 1px var(--space-2);
+    border-radius: var(--radius-pill); border: 1px solid var(--border-color); color: var(--text-secondary); }
+  .tag.warn { color: var(--warning-color); border-color: rgba(245,185,80,0.4); }
+  .tag.err { color: var(--error-color); border-color: rgba(243,105,127,0.4); }
+  .inv { margin-top: var(--space-6); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); font-family: var(--font-mono);
+    letter-spacing: var(--tracking-wide); text-transform: uppercase; color: var(--text-tertiary); }
+  .inv dl { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-3) var(--space-5); margin: 0; }
+  @media (max-width: 640px){ .inv dl { grid-template-columns: 1fr; gap: var(--space-1) 0; } }
+  .inv dt { color: var(--text-tertiary); font-size: var(--text-sm); padding-top: var(--space-1); }
+  .inv dd { margin: 0; }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: var(--text-2xs);
+    padding: 2px var(--space-2); margin: 0 var(--space-1) var(--space-1) 0; border-radius: var(--radius-sm);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); color: var(--text-secondary); }
+  .chip.flow { color: var(--cyan-400); border-color: rgba(41,211,230,0.4); }
+  .chip.pkg { color: var(--accent-color); border-color: rgba(110,92,255,0.4); }
+  .reconcile { margin-top: var(--space-6); background: var(--bg-tertiary); border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .reconcile h3 { margin: 0 0 var(--space-3); font-size: var(--text-md); color: var(--text-primary); }
+  .reconcile ul { margin: 0; padding-left: 1.2em; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.6; }
+  .reconcile li { margin-bottom: var(--space-3); }
+  .reconcile li:last-child { margin-bottom: 0; }
+  .reconcile code { font-family: var(--font-mono); color: var(--text-primary); }
+  .open-q { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-color); }
+  .open-q h4 { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--warning-color);
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: var(--tracking-wide); }
+  .meta { margin-top: var(--space-10); font-size: var(--text-sm); color: var(--text-tertiary); line-height: 1.6; }
+  .meta code { font-family: var(--font-mono); color: var(--text-secondary); }
+  .pending { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px 8px; border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid rgba(245,185,80,0.4); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap" data-frame="index" data-feature="mfa-stepup-mobile">
+  <div class="eyebrow">Contract-freeze · UX approval · issue #251</div>
+  <h1>MFA step-up &amp; contact verification — mobile (375px) · Approval Frames</h1>
+  <p class="lead">375px (Android TWA viewport) frames for the provider-neutral Security API step-up and
+    contact-verification UX requested in issue #251: choose a factor, enter a one-time code, confirm a phone
+    number, and a combined mobile security-status view. These land <b>in this repo</b> (not an external canvas
+    link) so they can be diffed, schema/DS-conformance checked, and stamped per the design-first gate. Built in the
+    fuse-seam design system (tokens only). No provider name appears anywhere in the UI.</p>
+  <p class="crumb">Reached from sign-in (<b>/login/mfa</b>) and from the <b>Account security</b> surface
+    (<b>/account/security</b>, <b>/account/security/verify/phone</b>).</p>
+
+  <h2>Walk the flow</h2>
+  <div class="grid">
+    <a href="01-choose-factor.html" class="frame-link" data-nav="01-choose-factor">
+      <div class="seam"></div>
+      <div class="step">Frame 01 · /login/mfa</div>
+      <h3>Choose a factor</h3>
+      <p>Mobile factor picker (authenticator / email / SMS / recovery), plus the loading, load-error, and zero-factors states the desktop frame doesn't show.</p>
+      <div class="states"><span class="tag">default</span><span class="tag warn">loading</span><span class="tag err">load error</span><span class="tag err">empty / no factors</span></div>
+    </a>
+    <a href="02-enter-code.html" class="frame-link" data-nav="02-enter-code">
+      <div class="seam"></div>
+      <div class="step">Frame 02 · /login/mfa</div>
+      <h3>Enter code</h3>
+      <p>Touch-sized OTP entry, verifying in-flight, expiry countdown + resend cooldown, delivery failure. Fail-closed: wrong/expired code stays on screen.</p>
+      <div class="states"><span class="tag">default</span><span class="tag">verifying</span><span class="tag err">invalid / expired</span><span class="tag err">delivery failed</span></div>
+    </a>
+    <a href="03-confirm-contact.html" class="frame-link" data-nav="03-confirm-contact">
+      <div class="seam"></div>
+      <div class="step">Frame 03 · /account/security/verify/phone</div>
+      <h3>Confirm your phone</h3>
+      <p>Phone-only OTP verification (genuinely new — email keeps the approved link-click pattern). Skippable; re-prompts from profile.</p>
+      <div class="states"><span class="tag">enter phone</span><span class="tag">enter code</span><span class="tag err">invalid code</span><span class="tag err">send failed</span><span class="tag">verified</span></div>
+    </a>
+    <a href="04-security-status.html" class="frame-link" data-nav="04-security-status">
+      <div class="seam"></div>
+      <div class="step">Frame 04 · /account/security</div>
+      <h3>Security status (profile)</h3>
+      <p>Combined 2FA + contact-verification chips for the TWA shell. Additive to the desktop hub, not a replacement. Fail-closed 409 on removing your only factor.</p>
+      <div class="states"><span class="tag">default</span><span class="tag warn">loading</span><span class="tag err">load error</span><span class="tag err">remove-last blocked (409)</span></div>
+    </a>
+  </div>
+
+  <div class="inv" data-build-inventory>
+    <h3>Build inventory — what approving these frames approves</h3>
+    <dl>
+      <dt>Flows</dt>
+      <dd>
+        <span class="chip flow">MfaStepUpMobileFlow · /login/mfa</span>
+        <span class="chip flow">ConfirmContactFlow · /account/security/verify/phone</span>
+        <span class="chip flow">SecurityStatusMobileFlow · /account/security</span>
+      </dd>
+      <dt>Components</dt>
+      <dd>
+        <span class="chip">FactorPicker</span><span class="chip">OtpInput (reused)</span><span class="chip">MfaChallengeCard</span>
+        <span class="chip">ContactVerifyPanel</span><span class="chip">SecurityStatusList</span>
+        <span class="chip">SecurityStatusRow</span><span class="chip">RemoveFactorDialog</span>
+      </dd>
+      <dt>Packages</dt>
+      <dd>
+        <span class="chip pkg">@fuzefront/account-security-ui</span>
+        <span class="chip pkg">@fuzefront/security-client (existing)</span>
+      </dd>
+    </dl>
+  </div>
+
+  <div class="reconcile" data-reconciliation>
+    <h3>Reconciliation with already-in-repo flows (not greenfield)</h3>
+    <ul>
+      <li><b>vs. <code>mfa-management/05-step-up-challenge.html</code></b> (flow <code>mfa-step-up</code>, unapproved) —
+        same route <code>/login/mfa</code>, same OtpInput/FactorPicker primitives. Frames 01–02 here are the missing
+        375px treatment + missing loading/empty/generic-error states for <b>that same flow</b>, not a second,
+        divergent step-up design.</li>
+      <li><b>vs. <code>auth-experience/04-verify-landing.html</code></b> (flow <code>verify-email</code>, <b>approved</b>) —
+        this is a shipped link-click pattern for email. Frame 03 scopes OTP code-entry to <b>phone only</b> (which has
+        no existing frame) and leaves email on its approved pattern rather than silently swapping a link for a code.</li>
+      <li><b>vs. <code>account-security/01-hub.html</code> + <code>02-states.html</code></b> (flow <code>account-security</code>,
+        <b>approved</b>) — frame 04 is an additive mobile combined view, reusing the hub's chip/badge language; it does
+        not duplicate or re-derive the hub's <code>hasPassword: null</code> guard.</li>
+    </ul>
+    <div class="open-q">
+      <h4>Open for owner ruling</h4>
+      <ul>
+        <li>Should email verification also move to OTP code-entry for consistency with phone? Assumed <b>no</b> (stay link-click) pending a ruling.</li>
+        <li>Should frame 04 become the TWA's canonical security entry point, or stay secondary to the desktop hub? Assumed <b>secondary/additive</b> pending a ruling.</li>
+      </ul>
+    </div>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval</span>
+
+  <p class="meta">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam) ·
+    Contract: <code>packages/security/openapi.yaml</code> → <code>@fuzefront/security-client</code> ·
+    Package: <code>@fuzefront/account-security-ui</code> ·
+    Flag: <code>fuzefront.security.mfa-stepup-mobile</code> (default OFF).<br />
+    Per-flow approval lives in <code>manifest.json</code>; approve by setting a flow's <code>approved: true</code>
+    (+ approver + date) or reply <code>@claude approve &lt;flow-id&gt;</code> / <code>@claude reject: &lt;reason&gt;</code>
+    on issue #251.
+  </p>
+</div>
+</body>
+</html>
