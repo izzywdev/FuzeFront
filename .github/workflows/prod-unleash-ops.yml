@@ -28,6 +28,7 @@ on:
             org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
+            root-membership     — fuzefront.identity.root-membership (100%): new signups take the root-membership path instead of a personal org (FF-EPIC-17-S1/S2; the S2 backfill is #1095, deployed)
         required: true
         default: billing-portal
         type: choice
@@ -38,6 +39,7 @@ on:
           - org-context-gating
           - selection-lists
           - app-builder
+          - root-membership
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -269,6 +271,19 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Root membership (FF-EPIC-17-S1/S2) ─────────────────────────────
+          # Backend release flag (web_exposed:false). ON = signup / auth
+          # self-heal upserts a root organization_memberships(role='member')
+          # row instead of creating a type='personal' org. Only changes NEW
+          # signup behaviour; existing users were handled by the S2 backfill
+          # (#1095 migrations 029/020, deployed). GA per owner decision
+          # 2026-10-05 (izzy). Removal: drop the type='personal' branch once
+          # 100% of signups take this path.
+          apply_root_membership() {
+            enable_ga "fuzefront.identity.root-membership" \
+              "Release flag (FF-EPIC-17-S1/S2, backend). ON = signup/auth self-heal upserts a root membership(role=member) instead of a personal org. S2 backfill = #1095 (deployed). GA per owner decision 2026-10-05 (izzy). Owner: platform team. Removal: drop the type=personal provisioning branch once 100% of signups take the root-membership path."
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
             billing-portal)      apply_billing ;;
@@ -277,6 +292,7 @@ jobs:
             org-context-gating)  apply_org_context_gating ;;
             selection-lists)     apply_selection_lists ;;
             app-builder)         apply_app_builder ;;
+            root-membership)     apply_root_membership ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -342,4 +358,6 @@ jobs:
               check_flag "fuzefront.apps.build-with-agent"
               check_flag "fuzefront.apps.creator-ownership"
               check_flag "fuzefront.apps.marketplace-publishing" ;;
+            root-membership)
+              check_flag "fuzefront.identity.root-membership" ;;
           esac
