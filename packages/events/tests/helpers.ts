@@ -2,8 +2,18 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { buildEvent, type EnvelopeV2 } from '../src'
 
-export function vectors<T = any>(file: string): T {
-  return JSON.parse(readFileSync(join(__dirname, '../../conformance-vectors/events', file), 'utf8')) as T
+const VECTOR_DIR = join(__dirname, '../../conformance-vectors/events')
+/** Fixed table of vector files: no caller-supplied string reaches path.join. */
+const VECTOR_FILES = {
+  'envelopes.valid.json': join(VECTOR_DIR, 'envelopes.valid.json'),
+  'envelopes.invalid.json': join(VECTOR_DIR, 'envelopes.invalid.json'),
+  'dedupe.json': join(VECTOR_DIR, 'dedupe.json'),
+  'version-guard.json': join(VECTOR_DIR, 'version-guard.json'),
+} as const
+export type VectorFile = keyof typeof VECTOR_FILES
+
+export function vectors<T = any>(file: VectorFile): T {
+  return JSON.parse(readFileSync(VECTOR_FILES[file], 'utf8')) as T
 }
 
 export const ORG_A = 'org_01h455vb4pex5vsknk084sn02q'
@@ -31,6 +41,6 @@ export function withId(e: EnvelopeV2, eventId: string): EnvelopeV2 {
 }
 
 /** `[name, case][]` for `it.each` from a vector file's `vectors`/`cases` array. */
-export function cases(file: string, key: 'vectors' | 'cases'): Array<[string, any]> {
+export function cases(file: VectorFile, key: 'vectors' | 'cases'): Array<[string, any]> {
   return (vectors(file)[key] as any[]).map((c) => [c.name, c] as [string, any])
 }
