@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { Center, HeroBand } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -41,7 +41,7 @@ export const SolutionsPage: React.FC = () => {
 
   return (
     <div className="bg-white pt-16">
-      <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
+      <HeroBand ref={heroRef}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Center
             as={motion.div}
@@ -58,7 +58,7 @@ export const SolutionsPage: React.FC = () => {
             </p>
           </Center>
         </div>
-      </section>
+      </HeroBand>
 
       <section ref={solutionsRef} className="py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

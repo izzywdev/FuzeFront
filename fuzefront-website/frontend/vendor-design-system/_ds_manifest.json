@@ -190,6 +190,10 @@
       "sourcePath": "components/layout/Eyebrow.jsx"
     },
     {
+      "name": "HeroBand",
+      "sourcePath": "components/layout/HeroBand.jsx"
+    },
+    {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
     },
@@ -1179,6 +1183,12 @@
     {
       "name": "--space-16",
       "value": "4rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-24",
+      "value": "6rem",
       "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },
