@@ -1,0 +1,76 @@
+<!doctype html>
+<!--
+  Minimal local example app for FuzeFront's iframe integration.
+
+  This is the entire "product" being embedded — a single static page. It is
+  deliberately dumb: no build step, no dependencies. Run it with:
+
+    npx serve docs/examples/iframe-integration/app -p 5180
+    # or
+    python3 -m http.server 5180 --directory docs/examples/iframe-integration/app
+
+  Then register it with the manifest in ../manifest.json (which already points
+  at http://localhost:5180/).
+
+  It demonstrates the one thing an iframe integration must do for itself that a
+  Module-Federation remote gets for free: receive the parent's auth token over
+  `postMessage`, because the shell does NOT inject `window.__FRONTFUSE_CONTEXT__`
+  into an iframe (that only happens for same-document MF remotes — see the
+  "Isolation, auth, and routing caveats" section of ../README.md).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FuzeFront iframe example app</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #0e1116;
+      color: #e6e6e6;
+      padding: 2rem;
+    }
+    code {
+      background: #1b1f27;
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+    }
+    #token-status {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      background: #1b1f27;
+      border: 1px solid #2a2f3a;
+    }
+  </style>
+</head>
+<body>
+  <h1>Example iframe app</h1>
+  <p>
+    This page is embedded in the FuzeFront shell via
+    <code>integration.type: "iframe"</code>. It owns its own DOM, its own
+    script context, and (per the <code>sandbox</code> attribute the shell sets)
+    cannot reach into the parent document — and the parent cannot reach into
+    this one either.
+  </p>
+  <div id="token-status">Waiting for a token from the host&hellip;</div>
+
+  <script>
+    // The shell never writes platform context onto this document's `window` —
+    // that mechanism (`window.__FRONTFUSE_CONTEXT__`) only applies to
+    // Module-Federation remotes, which share the same JS realm as the host.
+    // An iframe is a separate realm, so the only channel across the boundary
+    // is `postMessage`. A real integration would have the host post a token
+    // (or a short-lived capability) and this page would listen for it:
+    window.addEventListener('message', (event) => {
+      // In production, verify event.origin against the shell's known origin
+      // before trusting the payload.
+      const status = document.getElementById('token-status')
+      if (event.data && event.data.type === 'fuzefront:auth') {
+        status.textContent =
+          'Received a message from the host at origin: ' + event.origin
+      }
+    })
+  </script>
+</body>
+</html>
