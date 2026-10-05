@@ -13,6 +13,9 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
+
+# Package requires Python >=3.11 (pyproject); importlib.resources is the zip-safe way to read data.
+# nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
 from importlib import resources
 from typing import Any
 

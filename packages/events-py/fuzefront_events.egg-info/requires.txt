@@ -1,0 +1,12 @@
+aiokafka>=0.10
+sqlalchemy[asyncio]>=2.0
+jsonschema>=4.18
+fuzefront-identity<2,>=1.0
+
+[dev]
+pytest>=8.0
+pytest-asyncio>=0.23
+aiosqlite>=0.19
+psycopg[binary]>=3.1
+asyncpg>=0.29
+ruff>=0.5
