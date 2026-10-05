@@ -212,24 +212,16 @@ spec:
       port: {{ .Values.a2a.service.port }}
       targetPort: http
 {{- if .Values.a2aDeploy.ingress.enabled }}
----
-{{- /*
-  Public Ingress for the A2A pod.
-
-  Exposes https://<host>/a2a/* → a2a-fuzefront pod (paths minus the /a2a prefix).
-  The canonical public RPC endpoint becomes https://<host>/a2a/rpc (the pod serves
-  A2A JSON-RPC at /rpc; agent-card discovery at /.well-known/agent.json).
-
-  Auth model: the A2A pod validates OIDC tokens itself (audience: a2a,
-  callerClaim: repo, discovery via the in-cluster Authentik URL). No additional
-  auth middleware is needed at the Ingress layer — the pod rejects any request
-  whose token does not satisfy audience + claim checks.
-*/}}
 {{- if eq .Values.ingress.className "traefik" }}
+---
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
   name: a2a-stripprefix
+  annotations:
+    # Apply before Ingress objects so Traefik never sees a router referencing a
+    # missing Middleware (Helm's Kind sort puts Ingress before CRD instances).
+    argocd.argoproj.io/sync-wave: "-1"
   labels:
     {{- include "fuzefront.labels" . | nindent 4 }}
     app.kubernetes.io/component: a2a
@@ -237,8 +229,11 @@ spec:
   stripPrefix:
     prefixes:
       - /a2a
----
 {{- end }}
+---
+# Public Ingress for the A2A pod.
+# Exposes https://<host>/a2a/* → a2a-fuzefront (paths minus /a2a prefix).
+# Auth: the A2A pod validates OIDC tokens in-pod; no Ingress-layer auth needed.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
