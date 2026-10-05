@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Center, Container } from '@fuzefront/design-system'
+import { BlockHeading, Center, Container } from '@fuzefront/design-system'
 
 export const BlogPage: React.FC = () => {
   const [heroRef, heroInView] = useInView({ triggerOnce: true })
@@ -29,9 +29,9 @@ export const BlogPage: React.FC = () => {
       <section className="py-24">
         <Container size="4xl">
           <Center>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            <BlockHeading>
               Blog Coming Soon
-            </h2>
+            </BlockHeading>
             <p className="text-gray-600">
               We're working on bringing you the latest insights and updates.
               Subscribe to our newsletter to be notified when we launch.
