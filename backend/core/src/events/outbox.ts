@@ -3,10 +3,9 @@ import { v4 as uuidv4 } from 'uuid'
 
 /**
  * True when the given knex/transaction is talking to Postgres. Guards the
- * Postgres-specific SQL (the explicit `::jsonb` cast here, `FOR UPDATE SKIP
- * LOCKED` in the relay). Postgres is the only supported datastore across the
- * family; this guard stays as a defensive check so the helper degrades to
- * portable SQL rather than throwing if ever handed a non-pg connection.
+ * Postgres-only SQL (the `::jsonb` cast here, `FOR UPDATE SKIP LOCKED` in the
+ * relay). Postgres is the only supported datastore; this stays a defensive
+ * check so the helper never assumes a dialect it was not handed.
  */
 export function isPostgres(k: Knex | Knex.Transaction): boolean {
   const client: any = (k as any).client
