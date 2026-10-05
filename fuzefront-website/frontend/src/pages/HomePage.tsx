@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, HeroPatternOverlay } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -380,7 +380,7 @@ export const HomePage: React.FC = () => {
 
       {/* ── Pricing Teaser ── */}
       <section className="py-24 bg-gradient-to-br from-primary-900 via-secondary-900 to-accent-900 relative overflow-hidden">
-        <div className="absolute inset-0 hero-pattern opacity-30" />
+        <HeroPatternOverlay opacity={0.3} />
         <Container size="4xl" className="relative text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
