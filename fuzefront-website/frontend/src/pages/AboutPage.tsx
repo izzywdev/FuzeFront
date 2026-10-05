@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -72,47 +72,42 @@ export const AboutPage: React.FC = () => {
   return (
     <div>
       {/* Hero */}
-      <section
+      <HeroSection
         ref={heroRef}
-        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
+        decor={[
+          { corner: 'top-left', tone: 'primary', size: 'lg' },
+          { corner: 'bottom-right', tone: 'accent', size: 'md' },
+        ]}
       >
-        {/* Separate overlay div: `hero-pattern` and the gradient classes both
-            set `background-image`, so combining them on one element drops the
-            gradient entirely instead of layering. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
-        <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
-        <Container size="4xl" className="relative text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={heroInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6 }}
-          >
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
-              About <span className="gradient-text">FuzeOne</span>
-            </h1>
-            <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
-              We're building the operating system for SaaS — integrated platforms that eliminate
-              the need to rebuild common infrastructure, so teams can ship faster.
-            </p>
-          </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={heroInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6 }}
+        >
+          <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
+            About <span className="gradient-text">FuzeOne</span>
+          </h1>
+          <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
+            We're building the operating system for SaaS — integrated platforms that eliminate
+            the need to rebuild common infrastructure, so teams can ship faster.
+          </p>
+        </motion.div>
 
-          {/* Stats */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={heroInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="mt-14 grid grid-cols-3 gap-6 max-w-lg mx-auto"
-          >
-            {stats.map((s) => (
-              <Center key={s.label}>
-                <div className="text-3xl font-bold text-white">{s.metric}</div>
-                <div className="text-secondary-300 text-xs sm:text-sm mt-1">{s.label}</div>
-              </Center>
-            ))}
-          </motion.div>
-        </Container>
-      </section>
+        {/* Stats */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={heroInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6, delay: 0.2 }}
+          className="mt-14 grid grid-cols-3 gap-6 max-w-lg mx-auto"
+        >
+          {stats.map((s) => (
+            <Center key={s.label}>
+              <div className="text-3xl font-bold text-white">{s.metric}</div>
+              <div className="text-secondary-300 text-xs sm:text-sm mt-1">{s.label}</div>
+            </Center>
+          ))}
+        </motion.div>
+      </HeroSection>
 
       {/* Values */}
       <section className="py-24 bg-white">

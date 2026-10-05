@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -98,31 +98,21 @@ export const CareersPage: React.FC = () => {
   return (
     <div>
       {/* Hero */}
-      <section
-        ref={heroRef}
-        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
-      >
-        {/* Separate overlay div: `hero-pattern` and the gradient classes both
-            set `background-image`, so combining them on one element drops the
-            gradient entirely instead of layering. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
-        <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <Container size="4xl" className="relative text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={heroInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6 }}
-          >
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
-              Join <span className="gradient-text">FuzeOne</span>
-            </h1>
-            <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
-              We're a small, remote-first team building the operating system for SaaS. Help us
-              build it.
-            </p>
-          </motion.div>
-        </Container>
-      </section>
+      <HeroSection ref={heroRef} decor={[{ corner: 'top-left', tone: 'primary', size: 'lg' }]}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={heroInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6 }}
+        >
+          <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
+            Join <span className="gradient-text">FuzeOne</span>
+          </h1>
+          <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
+            We're a small, remote-first team building the operating system for SaaS. Help us
+            build it.
+          </p>
+        </motion.div>
+      </HeroSection>
 
       {/* Perks */}
       <section className="py-16 bg-white border-b border-secondary-100">
