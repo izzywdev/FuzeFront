@@ -36,6 +36,13 @@ const VARIANTS = {
     boxShadow: "none",
     hover: "var(--bg-quaternary)",
   },
+  outline: {
+    background: "var(--bg-tertiary)",
+    color: "var(--accent-color)",
+    border: "var(--border-width-strong) solid var(--accent-color)",
+    boxShadow: "none",
+    hover: "var(--accent-soft)",
+  },
   danger: {
     background: "var(--error-color)",
     color: "#fff",
