@@ -31,7 +31,7 @@ def check_dependency() -> None:
 def main() -> int:
     try:
         check_dependency()
-    except Exception:
+    except Exception:  # noqa: BLE001
         # Health bodies and exception details are deliberately not reflected.
         print(
             "::error::FuzeKeys production must be healthy and advertise "
