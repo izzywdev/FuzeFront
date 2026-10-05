@@ -281,9 +281,19 @@ router.put(
           }
         }
 
-        // Roles do not stack: drop the old role in the Security API before
-        // granting the new one. Revoke-first fails safe — a failure between the
-        // two leaves the user with LESS access, never more.
+        const assignment = {
+          subject: userId,
+          tenant: orgId,
+          role,
+          resource: { type: 'SelectionList', key: listId },
+        };
+        // An owner demoting themselves must retain manage_access until the
+        // final revoke. The replacement is strictly weaker than list-owner;
+        // a failed revoke retains existing authority rather than adding any.
+        const selfDemotion = userId === actorId && existing?.['role'] === 'list-owner' && role !== 'list-owner';
+        if (selfDemotion) await getAuthzClient().grant(assignment, callerToken);
+
+        // Other role changes revoke first, leaving less access on failure.
         if (existing && existing['role'] !== role) {
           await getAuthzClient().revoke(
             {
@@ -300,15 +310,7 @@ router.put(
         // resource is REQUIRED: it scopes this grant to this one list rather
         // than tenant-wide. grant() THROWS on a Security API failure, which
         // rolls this transaction back before the mirror is touched.
-        await getAuthzClient().grant(
-          {
-            subject: userId,
-            tenant: orgId,
-            role,
-            resource: { type: 'SelectionList', key: listId },
-          },
-          callerToken,
-        );
+        if (!selfDemotion) await getAuthzClient().grant(assignment, callerToken);
 
         // Mirror upsert. A previously revoked row is a NEW grant (granted_at
         // restarts); a live row keeps its original granted_at (the contract:

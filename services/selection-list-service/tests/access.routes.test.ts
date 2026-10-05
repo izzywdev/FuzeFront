@@ -465,6 +465,30 @@ describe('PUT /:listId/access/:userId', () => {
     expect(accessRow(USER_ID)!.role).toBe('list-editor');
   });
 
+  it('an owner can demote themselves without losing authority before the replacement grant', async () => {
+    seedAccess(ACTOR_ID, 'list-owner');
+    seedAccess('usr_other_owner', 'list-owner');
+    const roles = new Set(['list-owner']);
+    _setAuthzClientForTesting(makeAuthzClient({
+      grant: jest.fn(async (assignment) => {
+        if (!roles.has('list-owner')) throw new AuthzError('PROVIDER_ERROR', 'Manager authority lost');
+        roles.add(assignment.role);
+        return { id: 'self-demotion', ...assignment };
+      }),
+      revoke: jest.fn(async (assignment) => {
+        if (!roles.has('list-owner')) throw new AuthzError('PROVIDER_ERROR', 'Manager authority lost');
+        roles.delete(assignment.role);
+      }),
+    }));
+
+    const res = await request(makeApp()).put(`/lists/${LIST_ID}/access/${ACTOR_ID}`).set(auth()).send({ role: 'list-editor' });
+
+    expect(res.status).toBe(200);
+    expect([...roles]).toEqual(['list-editor']);
+    expect(accessRow(ACTOR_ID)!.role).toBe('list-editor');
+    expect(accessRow('usr_other_owner')!.role).toBe('list-owner');
+  });
+
   it('returns 500 and leaves the mirror UNCHANGED when AuthzClient.grant() throws (write-ordering fail-closed guarantee)', async () => {
     seedAccess(USER_ID, 'list-viewer');
     const grant = jest.fn().mockRejectedValue(new AuthzError('PROVIDER_ERROR', 'Security API returned 502'));
