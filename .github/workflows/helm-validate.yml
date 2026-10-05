@@ -97,6 +97,8 @@ jobs:
             --set provisioningService.enabled=true \
             --set permit.enabled=true \
             --set configService.enabled=true \
+            --set selectionListService.enabled=true \
+            --set selectionListService.s2s.register.enabled=true \
             --output-dir rendered
 
           # Strict: reject unknown fields. Skip CRDs cert-manager/sealed-secrets
@@ -118,6 +120,19 @@ jobs:
             -ignore-filename-pattern 'authentik-blueprints' \
             -summary \
             rendered/fuzefront/templates/
+
+      - name: Assert selection-list-service S2S wiring (${{ matrix.values }})
+        run: |
+          # kubeconform checks SHAPE, not that the in-cluster S2S register Job stays
+          # inside its gate, that its Role is scoped to the single Secret it
+          # manages, or that the Deployment reads the Job-minted Secret rather than
+          # the SEALED selection-list-secrets the Job must never write to. Asserted
+          # on the rendered manifests, with a negative control so a vacuous pass
+          # cannot hide. See deploy/scripts/check-selection-list-s2s.sh.
+          set -euo pipefail
+          python3 -c 'import yaml' 2>/dev/null || pip install --quiet pyyaml
+          ./deploy/scripts/check-selection-list-s2s.sh deploy/helm/fuzefront \
+            deploy/helm/fuzefront/${{ matrix.values }}
 
       - name: Guard shell-launched containers can run their interpreter (${{ matrix.values }})
         run: |

@@ -864,6 +864,39 @@ selectionListService:
     appName: "selection-list-service"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
     tokenSecretName: ""
+  # The service's OWN machine identity (OAuth client_credentials) for Security API
+  # grant/revoke -- NOT the end user's token (review C-1). The Security API only
+  # lets a machine caller holding the `authz:admin` scope write grants.
+  #
+  # `register.enabled` gates the PreSync Job (templates/selection-list-s2s-register-
+  # job.yaml) that provisions the Authentik S2S application in-cluster and publishes
+  # its credentials as Secret/<secretName>, so no human ever sees the secret
+  # (docs/runbooks/s2s-client-credentials.md). Same design as
+  # billingService.authz.register. OFF here so a dev/local install never reaches for
+  # an Authentik Admin API it has no token for; values-prod.yaml turns it on. It only
+  # renders when selectionListService.enabled is ALSO true.
+  #
+  # When register.enabled is true the Deployment's two client secretKeyRefs are
+  # REQUIRED (optional: false) -- the PreSync Job guarantees the Secret exists before
+  # the Deployment is updated and a failed Job aborts the sync without touching it.
+  # When false they stay `optional: true`: the pod still starts and list creation /
+  # access grants fail CLOSED (500) until a Secret named <secretName> is provided
+  # some other way (e.g. a hand-sealed SealedSecret).
+  s2s:
+    register:
+      enabled: false
+    # Deliberately NOT db.secretName (selection-list-secrets): that Secret is a
+    # SealedSecret owned by the sealed-secrets controller, which REPLACES it on
+    # every reconcile, so a Job-minted key written into it would silently vanish.
+    # Keys written by the Job (fixed by register-s2s-cli.js --write-env-file):
+    # AUTHENTIK_CLIENT_ID, AUTHENTIK_CLIENT_SECRET.
+    secretName: selection-list-s2s
+    # Passed to register-s2s-cli.js as <service-name> <scopes>. Authentik app slug
+    # becomes s2s-<serviceName>. `authz:admin` is what backend/security's
+    # requireAuthzAdmin demands of a machine caller on grant/revoke, and it is the
+    # scope the service requests by default (SELECTION_LIST_SERVICE_TOKEN_SCOPE).
+    serviceName: selection-list-service
+    scopes: authz:admin
   image:
     repository: fuzefront/selection-list-service
     tag: local

@@ -23,8 +23,9 @@
 // that needed it fails, the create transaction rolls back, and the route
 // answers 500 — never a silent fallback to the caller's own token.
 //
-// Env (secret values come from the `selection-list-secrets` Secret, never from
-// this repo):
+// Env (secret values come from Secret/selection-list-s2s, minted in-cluster by the
+// selection-list-s2s-register PreSync Job -- never from this repo, and not from the
+// sealed `selection-list-secrets`, which holds only DB_PASSWORD):
 //   SELECTION_LIST_SERVICE_CLIENT_ID      OAuth client id of this service
 //   SELECTION_LIST_SERVICE_CLIENT_SECRET  its secret
 //   SELECTION_LIST_SERVICE_TOKEN_SCOPE    optional; default `authz:admin`

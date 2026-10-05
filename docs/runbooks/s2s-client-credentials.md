@@ -61,8 +61,11 @@ grant instead of joining the shared-token pool.
    GitHub repo secret, a PR diff, or this repo's history.
 
    `deploy/helm/fuzefront/templates/billing-s2s-register-job.yaml` is the
-   reference implementation (billing-service). Copy its shape for the next
-   in-namespace consumer. Three things in it are load-bearing rather than
+   reference implementation (billing-service); `selection-list-s2s-register-job.yaml`
+   is the second (selection-list-service, scope `authz:admin`, Secret
+   `selection-list-s2s`, configured under `selectionListService.s2s.*`; its
+   Deployment's `secretKeyRef`s are `optional` only while `s2s.register.enabled`
+   is false). Copy their shape for the next in-namespace consumer. Three things in it are load-bearing rather than
    decorative:
 
    - **It is a PreSync (`pre-install,pre-upgrade`) hook, not PostSync.** The
@@ -151,10 +154,24 @@ grant instead of joining the shared-token pool.
    authenticated caller (human or machine) may `check` — it can only ever
    answer a question, never change what's true. `POST`/`DELETE
    /api/v1/security/authz/grants` mutate the authorization graph, so a
-   MACHINE caller must additionally hold the `authz:admin` scope (a normal
-   Authentik scope, granted the same way as any other — see
+   MACHINE caller must additionally hold the `authz:admin` scope (granted by
    `registerS2SClient(service, scopes)` in step 1) or the request is rejected
-   with `403 FORBIDDEN`. In practice this means: provision the small number of
+   with `403 FORBIDDEN`.
+
+   **Two things must both be true for that scope to reach the Security API,
+   and the second is easy to miss.** The Security API reads the INTROSPECTED
+   standard `scope` field, not the custom `scopes` claim the `s2s` mapping
+   emits. (a) The registration must attach a scope mapping whose `scope_name`
+   IS the scope — `registerS2SClient` now creates one per requested scope
+   (`s2s-scope:<scope>`, expression `return {}`) and, on re-run, adds any that
+   an older provider lacks (additive only). Authentik clamps a
+   `client_credentials` request's scope to the `scope_name`s of the mappings
+   attached to the provider and drops the rest, so before this the issued token's
+   scope was empty and every grant 403'd despite the client being "registered
+   with `authz:admin`". (b) The token request must NAME the scope
+   (`scope=authz:admin`) — a request that omits it also gets none.
+   `@fuzefront/service-auth` sends it when `scope` is set (selection-list-service
+   does), and billing-service's `machineToken.ts` now sends it explicitly. In practice this means: provision the small number of
    trusted platform-operator service accounts that are allowed to grant/revoke
    S2S invoke permissions with `authz:admin` in their `scopes` list; every
    other S2S client only ever needs to `check`. A service that grants on
