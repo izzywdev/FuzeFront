@@ -194,6 +194,10 @@
       "sourcePath": "components/layout/InfoRow.jsx"
     },
     {
+      "name": "Lead",
+      "sourcePath": "components/layout/Lead.jsx"
+    },
+    {
       "name": "ListStack",
       "sourcePath": "components/layout/ListStack.jsx"
     },

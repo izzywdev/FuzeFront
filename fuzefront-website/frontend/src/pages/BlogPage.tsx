@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Center, Container } from '@fuzefront/design-system'
+import { Center, Container, Lead } from '@fuzefront/design-system'
 
 export const BlogPage: React.FC = () => {
   const [heroRef, heroInView] = useInView({ triggerOnce: true })
@@ -19,9 +19,9 @@ export const BlogPage: React.FC = () => {
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
               <span className="gradient-text">Blog</span> & Insights
             </h1>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            <Lead>
               Stay updated with the latest in SaaS development, best practices, and FuzeFront updates.
-            </p>
+            </Lead>
           </Center>
         </Container>
       </section>
