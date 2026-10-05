@@ -13,10 +13,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
-
-# Package requires Python >=3.11 (pyproject); importlib.resources is the zip-safe way to read data.
-# nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2
-from importlib import resources
+from pathlib import Path
 from typing import Any
 
 from fuzefront_identity import mint_id
@@ -62,7 +59,7 @@ class EnvelopeError(ValueError):
 
 @lru_cache(maxsize=1)
 def load_v2_schema() -> dict[str, Any]:
-    text = resources.files("fuzefront_events").joinpath("envelope.v2.schema.json").read_text("utf-8")
+    text = (Path(__file__).parent / "envelope.v2.schema.json").read_text("utf-8")
     return json.loads(text)
 
 
