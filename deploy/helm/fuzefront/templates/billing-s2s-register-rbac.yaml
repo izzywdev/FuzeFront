@@ -1,0 +1,79 @@
+{{/*
+Minimal RBAC for the billing-s2s-register Job.
+
+The Job SA needs only create + patch on Secrets in the release namespace so it
+can idempotently ensure Secret/<authz.secretName> (default
+billing-s2s-credentials). Modelled on consumer-registration-seed-rbac.yaml,
+which solves the identical problem for Secret/fuzefront-registration.
+
+PreSync, not PostSync: the billing Deployment's AUTHENTIK_CLIENT_ID/SECRET
+become REQUIRED (optional: false) the moment billingService.authz.enabled is
+true, so the Secret has to exist before the Deployment is updated. Helm's
+pre-install/pre-upgrade maps to Argo's PreSync, and a failed PreSync aborts the
+sync WITHOUT touching the Deployment -- which is the fail-safe this cutover
+depends on. See billing-s2s-register-job.yaml for the full ordering argument.
+*/}}
+{{- if and .Values.billingService.enabled .Values.billingService.authz.register.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: billing-s2s-register
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: billing-s2s-register
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  # Kubernetes RBAC cannot restrict `create` by resourceName -- the object does
+  # not exist at admission time, so there is no name to match. Allow create on
+  # secrets in this namespace; the Job only ever creates the one below.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  # get/patch/update are restricted to the single Secret this Job manages.
+  # Deliberately NOT billing-secrets: that one is owned by the sealed-secrets
+  # controller (deploy/contabo/sealed/billing-secrets.yaml carries no
+  # `sealedsecrets.bitnami.com/patch` annotation, so the controller REPLACES the
+  # Secret on every reconcile). Extra keys patched into it would survive until
+  # the next reconcile and then silently vanish. A separate Secret object is the
+  # only correct place for a credential this Job mints.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ .Values.billingService.authz.secretName | quote }}]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: billing-s2s-register
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: billing-s2s-register
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: billing-s2s-register
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
