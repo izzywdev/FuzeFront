@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -179,7 +179,7 @@ export const PricingPage: React.FC = () => {
       </section>
 
       {/* Plans */}
-      <section className="py-16 bg-secondary-50">
+      <Section tone="muted" spacing="sm">
         <Container size="7xl">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {plans.map((plan, i) => {
@@ -278,7 +278,7 @@ export const PricingPage: React.FC = () => {
             })}
           </div>
         </Container>
-      </section>
+      </Section>
 
       {/* Feature Comparison Table */}
       <section className="py-20 bg-white">

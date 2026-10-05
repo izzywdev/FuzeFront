@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -144,7 +144,7 @@ export const CareersPage: React.FC = () => {
       </section>
 
       {/* Open positions */}
-      <section className="py-24 bg-secondary-50">
+      <Section tone="muted" spacing="lg">
         <Container size="5xl">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
@@ -243,7 +243,7 @@ export const CareersPage: React.FC = () => {
             })}
           </div>
         </Container>
-      </section>
+      </Section>
     </div>
   )
 }

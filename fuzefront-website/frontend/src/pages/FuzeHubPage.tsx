@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -117,7 +117,7 @@ export const FuzeHubPage: React.FC = () => {
       {/* secondary-950 doesn't exist in this site's Tailwind palette (only
           50-900 are defined) — the class silently generated no CSS at all,
           leaving this section's own background transparent. */}
-      <section className="bg-secondary-900 py-12 border-y border-secondary-800">
+      <Section tone="inverse" spacing="xs" border="y">
         <Container size="5xl">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -162,10 +162,10 @@ export const FuzeHubPage: React.FC = () => {
             </div>
           </motion.div>
         </Container>
-      </section>
+      </Section>
 
       {/* Features */}
-      <section className="py-20 bg-secondary-900">
+      <Section tone="inverse" spacing="md">
         <Container size="5xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-white mb-12 text-center">
             Everything you need, nothing you don't
@@ -176,10 +176,10 @@ export const FuzeHubPage: React.FC = () => {
             ))}
           </div>
         </Container>
-      </section>
+      </Section>
 
       {/* Use cases */}
-      <section className="py-16 bg-secondary-800">
+      <Section tone="inverseMuted" spacing="sm">
         <Container size="4xl">
           <h2 className="text-2xl font-heading font-bold text-white mb-10 text-center">
             Who uses FuzeHub
@@ -198,10 +198,10 @@ export const FuzeHubPage: React.FC = () => {
             ))}
           </div>
         </Container>
-      </section>
+      </Section>
 
       {/* CTA */}
-      <section ref={ctaRef} className="py-20 bg-secondary-900 border-t border-secondary-800">
+      <Section ref={ctaRef} tone="inverse" spacing="md" border="top">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={ctaInView ? { opacity: 1, y: 0 } : {}}
@@ -228,7 +228,7 @@ export const FuzeHubPage: React.FC = () => {
             </Link>
           </div>
         </motion.div>
-      </section>
+      </Section>
     </div>
   )
 }

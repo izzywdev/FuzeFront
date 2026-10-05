@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -352,7 +353,7 @@ export const ProductDetailPage: React.FC = () => {
       </section>
 
       {/* Use cases */}
-      <section className="py-16 bg-secondary-50">
+      <Section tone="muted" spacing="sm">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl font-heading font-bold text-gray-900 mb-8 text-center">
             Built for teams who need to
@@ -366,7 +367,7 @@ export const ProductDetailPage: React.FC = () => {
             ))}
           </div>
         </div>
-      </section>
+      </Section>
 
       {/* CTA */}
       <section className="py-20 bg-white border-t border-gray-100">
