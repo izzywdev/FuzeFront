@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { FileText } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { IconTile, InlineLink } from '@fuzefront/design-system'
 
 export const TermsPage: React.FC = () => {
   return (
@@ -18,9 +18,9 @@ export const TermsPage: React.FC = () => {
           <p className="text-gray-600">Last updated: September 2026</p>
           <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull; A Delaware Corporation &bull;{' '}
-            <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">
+            <InlineLink href="mailto:legal@fuzefront.com">
               legal@fuzefront.com
-            </a>
+            </InlineLink>
           </p>
         </div>
 
@@ -193,7 +193,7 @@ export const TermsPage: React.FC = () => {
               <li><strong>Waiver:</strong> Failure to enforce any right or provision does not constitute a waiver of that right.</li>
               <li><strong>Assignment:</strong> You may not assign these Terms without our prior written consent. We may assign our rights without restriction.</li>
               <li><strong>Force Majeure:</strong> Neither party is liable for delays caused by circumstances beyond their reasonable control.</li>
-              <li><strong>Notices:</strong> Legal notices to FuzeOne should be sent to <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">legal@fuzefront.com</a>.</li>
+              <li><strong>Notices:</strong> Legal notices to FuzeOne should be sent to <InlineLink href="mailto:legal@fuzefront.com">legal@fuzefront.com</InlineLink>.</li>
             </ul>
           </section>
 
@@ -205,9 +205,9 @@ export const TermsPage: React.FC = () => {
               <p className="text-gray-600 mt-1">Attention: Legal Team</p>
               <p className="text-gray-600">Delaware Corporation</p>
               <p className="mt-2">
-                <a href="mailto:legal@fuzefront.com" className="text-primary-700 hover:underline">
+                <InlineLink href="mailto:legal@fuzefront.com">
                   legal@fuzefront.com
-                </a>
+                </InlineLink>
               </p>
             </div>
           </section>
