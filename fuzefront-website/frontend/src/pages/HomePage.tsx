@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Button, Caption, Center, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -419,13 +419,14 @@ export const HomePage: React.FC = () => {
                 >
                   See all plans <ArrowRight size={16} />
                 </Link>
-                <Link
+                <Button
+                  as={Link}
                   to="/contact"
-                  className="btn-ghost flex items-center justify-center gap-2"
+                  variant="ghost-inverse"
                   onClick={() => trackEvent('cta_click', { button: 'talk_sales', location: 'pricing_teaser' })}
                 >
                   Talk to sales
-                </Link>
+                </Button>
               </div>
             </motion.div>
           </SectionWrapper>
