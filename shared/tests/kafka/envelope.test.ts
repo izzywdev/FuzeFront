@@ -5,8 +5,13 @@ import addFormats from 'ajv-formats';
 import { EnvelopeV2Schema, parseEnvelope, envelopePartitionKey } from '../../src/kafka';
 
 const ROOT = path.resolve(__dirname, '../../..');
-const vec = (f: string) =>
-  JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/conformance-vectors/events', f), 'utf8'));
+const VECTOR_FILES = {
+  valid: path.join(ROOT, 'packages/conformance-vectors/events/envelopes.valid.json'),
+  invalid: path.join(ROOT, 'packages/conformance-vectors/events/envelopes.invalid.json'),
+  dedupe: path.join(ROOT, 'packages/conformance-vectors/events/dedupe.json'),
+  versionGuard: path.join(ROOT, 'packages/conformance-vectors/events/version-guard.json'),
+} as const;
+const vec = (k: keyof typeof VECTOR_FILES) => JSON.parse(fs.readFileSync(VECTOR_FILES[k], 'utf8'));
 const schema = JSON.parse(
   fs.readFileSync(path.join(ROOT, 'contracts/events/envelope.v2.schema.json'), 'utf8')
 );
@@ -15,9 +20,9 @@ const ajv = new Ajv2020({ strict: true, allErrors: true });
 addFormats(ajv);
 const validateJson = ajv.compile(schema);
 
-const valid: { name: string; envelope: unknown }[] = vec('envelopes.valid.json').vectors;
+const valid: { name: string; envelope: unknown }[] = vec('valid').vectors;
 const invalid: { name: string; why: string; envelope: unknown }[] =
-  vec('envelopes.invalid.json').vectors;
+  vec('invalid').vectors;
 
 describe('envelope v2: Zod and JSON Schema agree on the conformance vectors', () => {
   test('vector files are non-vacuous and every invalid vector states why', () => {
@@ -101,7 +106,7 @@ describe('parseEnvelope', () => {
 
 describe('consumer vectors are well-formed (consumed by TS and Python suites)', () => {
   test('dedupe.json', () => {
-    const d = vec('dedupe.json');
+    const d = vec('dedupe');
     for (const c of d.cases) {
       expect(c.expectedOutcomes).toHaveLength(c.deliveries.length);
       const seen = new Set<string>();
@@ -118,7 +123,7 @@ describe('consumer vectors are well-formed (consumed by TS and Python suites)', 
   });
 
   test('version-guard.json reference model reproduces every expectation', () => {
-    const g = vec('version-guard.json');
+    const g = vec('versionGuard');
     for (const c of g.cases) {
       const state: Record<string, { version: number; deleted: boolean; data: unknown }> = {};
       const outcomes = c.events.map((e: any) => {
