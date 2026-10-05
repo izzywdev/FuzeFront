@@ -206,6 +206,10 @@
       "sourcePath": "components/layout/ResponsiveGrid.jsx"
     },
     {
+      "name": "Section",
+      "sourcePath": "components/layout/Section.jsx"
+    },
+    {
       "name": "SectionHead",
       "sourcePath": "components/layout/SectionHead.jsx"
     },
@@ -1179,6 +1183,18 @@
     {
       "name": "--space-16",
       "value": "4rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-20",
+      "value": "5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-24",
+      "value": "6rem",
       "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },

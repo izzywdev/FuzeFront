@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -130,7 +130,7 @@ export const PressPage: React.FC = () => {
       </section>
 
       {/* Contact */}
-      <section className="py-16 bg-white border-t border-secondary-100">
+      <Section padding="sm" divider>
         <div className="max-w-2xl mx-auto px-4 text-center">
           <p className="text-gray-600">
             For all press inquiries, contact{' '}
@@ -139,7 +139,7 @@ export const PressPage: React.FC = () => {
             </a>
           </p>
         </div>
-      </section>
+      </Section>
     </div>
   )
 }
