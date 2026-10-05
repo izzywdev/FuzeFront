@@ -141,4 +141,78 @@ spec:
     - name: http
       port: {{ .Values.mcp.port }}
       targetPort: http
+{{- if .Values.mcp.ingress.enabled }}
+---
+{{- /*
+  Public Ingress for the MCP SSE gateway.
+
+  Exposes https://<host>/mcp/* → fuzefront-mcp pod at the same paths minus the
+  /mcp prefix (stripped by the Traefik StripPrefix middleware below, or by
+  nginx's rewrite-target).
+
+  Auth model: the MCP gateway itself forwards the CALLER'S bearer token to the
+  upstream app-registry and holds no credential of its own. Callers without an
+  Authorization header receive a MissingIdentityError on the first tool call — the
+  tool surface (/tools.json, listTools) is intentionally public, matching the
+  published OpenAPI spec. Per-user Permit authz checks run on the upstream.
+
+  Do NOT add a Traefik ForwardAuth middleware here: it would intercept the caller's
+  bearer token before it reaches the gateway, breaking the pass-through design.
+  Auth is enforced in-application and in-upstream; the Ingress is routing only.
+*/}}
+{{- if eq .Values.ingress.className "traefik" }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: mcp-stripprefix
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+spec:
+  stripPrefix:
+    prefixes:
+      - /mcp
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-mcp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+  annotations:
+    {{- if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- else if eq .Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-mcp-stripprefix@kubernetescrd
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- if eq .Values.ingress.className "nginx" }}
+          - path: /mcp(/|$)(.*)
+            pathType: ImplementationSpecific
+          {{- else }}
+          - path: /mcp
+            pathType: Prefix
+          {{- end }}
+            backend:
+              service:
+                name: fuzefront-mcp
+                port:
+                  number: {{ .Values.mcp.port }}
+{{- end }}
 {{- end }}

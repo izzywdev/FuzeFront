@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Publish to marketplace — frame (f)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="06-publish-request">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Flow 4 · Marketplace publish · Frame (f) · app detail (/apps/:appId)</div>
+  <h1>Publish to marketplace</h1>
+  <p class="lead">A <b>Publishing</b> panel on app detail shows the app's tier (private → organization →
+    marketplace) and its marketplace review state from <code>GET /apps/{slug}/publication</code>. Private and
+    organization are the existing visibility edit; only the marketplace step is a request a platform admin
+    reviews. Each review state has exactly one next action.</p>
+
+  <!-- f1 none -->
+  <div class="state-block">
+    <div class="state-label">(f1) status: none — request action available (caller has apps:write)</div>
+    <section class="panel" data-panel="app-publication" data-publication-status="none" aria-labelledby="pub1">
+      <div class="panel-head"><h2 id="pub1">Publishing</h2><span class="vis">organization</span></div>
+      <div class="panel-body">
+        <p class="muted" style="margin: 0 0 var(--space-4)">Visible to every member of Acme Corp. Publish to the
+          FuzeFront marketplace to let any FuzeFront user or organization discover and install it. A platform
+          admin reviews each request.</p>
+        <button class="btn btn-accent" data-action="request-publication">Publish to marketplace</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- f2 request dialog -->
+  <div class="state-block">
+    <div class="state-label">(f2) Request dialog — POST /apps/{slug}/publication-requests { target: marketplace, notes? }</div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rq-t" data-panel="publication-request-dialog">
+      <div class="modal-head"><h2 id="rq-t">Publish “Expense tracker” to the marketplace?</h2></div>
+      <div class="modal-body">
+        <p>A FuzeFront admin will review it. Until it's approved nothing changes: it stays visible to Acme Corp
+          only. Once approved, it's listed publicly with <b>Acme Corp</b> as publisher.</p>
+        <div class="field" style="margin-bottom: 0">
+          <div class="counter"><label class="label" for="pn">Notes for the reviewer <span class="muted">(optional)</span></label>
+            <span class="count" data-counter="notes">96 / 2000</span></div>
+          <textarea class="textarea" id="pn" data-input="publication-notes" maxlength="2000">Used daily by our finance team for six months. No external calls; data stays in the org tenant.</textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel-publication-request">Cancel</button>
+        <button class="btn btn-accent" data-action="submit-publication-request">Submit for review</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- f3 pending -->
+  <div class="state-block">
+    <div class="state-label">(f3) status: pending — awaiting review; no second request possible</div>
+    <section class="panel" data-panel="app-publication" data-publication-status="pending" aria-labelledby="pub3">
+      <div class="panel-head"><h2 id="pub3">Publishing</h2>
+        <span class="status status--warning" data-status-pill="pending"><span class="dot"></span>In review</span></div>
+      <div class="panel-body">
+        <dl class="defs">
+          <dt>Requested</dt><dd>2 Oct 2026 by Dana Levi</dd>
+          <dt>Your notes</dt><dd class="muted">Used daily by our finance team for six months…</dd>
+          <dt>Tier now</dt><dd><span class="vis">organization</span> <span class="muted">until approved</span></dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+
+  <!-- f4 approved -->
+  <div class="state-block">
+    <div class="state-label">(f4) status: approved — tier = marketplace</div>
+    <section class="panel panel--seam" data-panel="app-publication" data-publication-status="approved" aria-labelledby="pub4">
+      <div class="panel-head"><h2 id="pub4">Publishing</h2><span class="vis vis--marketplace">marketplace</span></div>
+      <div class="panel-body">
+        <div class="banner banner-success"><span><b>Listed on the FuzeFront marketplace</b>
+          <p>Approved 3 Oct 2026. Any FuzeFront user or organization can find and install it. Publisher: Acme Corp.</p></span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- f5 rejected -->
+  <div class="state-block">
+    <div class="state-label">(f5) status: rejected — reason shown verbatim; resubmit allowed</div>
+    <section class="panel" data-panel="app-publication" data-publication-status="rejected" aria-labelledby="pub5">
+      <div class="panel-head"><h2 id="pub5">Publishing</h2>
+        <span class="status status--error" data-status-pill="rejected"><span class="dot"></span>Not approved</span></div>
+      <div class="panel-body">
+        <div class="banner banner-error">
+          <span><b>The marketplace request wasn't approved</b>
+            <p data-field="rejection-reason">“The manifest has no description or support contact. Add both and resubmit.”</p>
+            <p class="sub">Reviewed 3 Oct 2026. The app is still visible to Acme Corp as before.</p>
+            <span class="actions"><button class="btn" data-action="request-publication">Resubmit</button></span></span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- f6 409 -->
+  <div class="state-block">
+    <div class="state-label">(f6) 409 on submit — ALREADY_PENDING / ALREADY_PUBLISHED (someone acted first): refetch and show that state</div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cf-t" data-http="409">
+      <div class="modal-head"><h2 id="cf-t">Publish “Expense tracker” to the marketplace?</h2></div>
+      <div class="modal-body">
+        <div class="banner banner-warn" data-error-code="ALREADY_PENDING"><span><b>A request is already in review</b>
+          <p>Someone in Acme Corp submitted this app a moment ago. No second request was made.</p></span></div>
+        <div class="banner banner-info" data-error-code="ALREADY_PUBLISHED"><span><b>Already on the marketplace</b>
+          <p>This app was approved in the meantime. Nothing to submit.</p></span></div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-accent" data-action="close-and-refresh">Close</button></div>
+    </div>
+  </div>
+
+  <!-- f7 read-only -->
+  <div class="state-block">
+    <div class="state-label">(f7) Read-only — caller can view the app but lacks apps:write; GET /publication answers 404 → panel not rendered</div>
+    <div class="panel" data-state="read-only" data-http="404"><div class="panel-body">
+      <p class="muted" style="margin: 0">App detail renders with no Publishing panel and no “Publish to
+        marketplace” control — never a button that only fails on click. Same when
+        <code>fuzefront.apps.marketplace-publishing</code> is OFF (<code>503 feature_disabled</code>, or the flag read
+        client-side first).</p>
+    </div></div>
+  </div>
+
+  <!-- f8 403 on submit -->
+  <div class="state-block">
+    <div class="state-label">(f8) 403 on submit — authority revoked since load: in place, control removed after</div>
+    <div class="panel" data-http="403"><div class="panel-body">
+      <div class="banner banner-error" data-error-code="FORBIDDEN"><span><b>You can no longer publish this app</b>
+        <p>Your access to change it was removed. Ask an Acme Corp admin.</p></span></div>
+    </div></div>
+  </div>
+
+  <p class="note">
+    <b>Data.</b> <code>AppPublication</code>: <code>tier</code> (Visibility) drives the tier badge;
+    <code>status</code> ∈ <code>none | pending | approved | rejected</code> drives the panel; <code>rejection.reason</code>
+    is shown as text (escaped, never HTML). Names for <code>requestedBy</code> come from the creator/member lookup
+    where available; otherwise the date alone is shown.<br />
+    <b>Visibility of the panel.</b> Rendered only when the flag is ON <b>and</b> <code>GET /apps/{slug}/publication</code>
+    returns 200 — the contract answers 404 to anyone who can merely read the app, so a 404 means “no panel”, not an
+    error. A 409 on submit is a race, not a failure: refetch and render (f3)/(f4).<br />
+    Test hooks: <code>[data-frame='06-publish-request']</code> · <code>[data-panel='app-publication']</code> ·
+    <code>[data-publication-status='none']</code> · <code>[data-action='request-publication']</code> ·
+    <code>[data-panel='publication-request-dialog']</code> · <code>[data-input='publication-notes']</code> ·
+    <code>[data-action='submit-publication-request']</code> · <code>[data-publication-status='pending']</code> ·
+    <code>[data-publication-status='approved']</code> · <code>[data-publication-status='rejected']</code> ·
+    <code>[data-field='rejection-reason']</code> · <code>[data-error-code='ALREADY_PENDING']</code> ·
+    <code>[data-error-code='ALREADY_PUBLISHED']</code> · <code>[data-state='read-only']</code> · <code>[data-http='403']</code>.
+  </p>
+
+  <div class="pager"><a href="05-creator-ownership.html">← Creator &amp; ownership</a><a href="07-review-queue.html">Admin review queue →</a></div>
+</div>
+</body>
+</html>
