@@ -71,7 +71,11 @@ import secrets as _secrets_mod  # nonce generation; unrelated to GitHub Secrets
 import sys
 
 VALID_VERDICTS = ("approve", "request_changes", "comment")
-DECISIONS = ("approve", "request_changes", "comment", "abstain", "outage")
+DECISIONS = ("approve", "request_changes", "comment", "abstain", "outage", "outage_blocking")
+
+# Marker embedded in every outage comment so the workflow can find and PATCH the existing
+# comment instead of posting a second one per run.
+OUTAGE_MARKER = "<!-- fuze-code-review-outage -->"
 
 
 def make_nonce() -> str:
@@ -142,7 +146,8 @@ def extract_verdict_json(result_text: str, nonce: str) -> tuple[dict | None, str
 
 def decide(action_conclusion: str, result_text: str, nonce: str,
            sensitive_files: list[str], mode: str = "",
-           availability: bool = False, action_reported: bool = True) -> dict:
+           availability: bool = False, action_reported: bool = True,
+           deploy_sensitive_files: list[str] | None = None) -> dict:
     """The single decision point. Returns a dict with keys: decision, reason, verdict,
     summary, findings, downgraded (bool: true iff a model "approve" was overridden by the
     sensitive-files rule), deferred (bool: true iff the review was legitimately deferred by
@@ -210,34 +215,51 @@ def decide(action_conclusion: str, result_text: str, nonce: str,
         # finding: a finding requires a verdict, and there is none. The reason
         # text keeps it DISTINCT from a clean credit skip so a hang is never
         # silently read as one.
-        if not action_reported:
-            return {
-                "decision": "outage",
-                "reason": (
+        #
+        # PATH SENSITIVITY. Every recent "success" here was an outage skip, so the exception
+        # had become a blanket pass. An outage on a PR touching the CI/governance surface
+        # (`sensitive_files`) or the deploy surface (`deploy_sensitive_files`: charts,
+        # Dockerfiles, release workflow, DB migrations) is NOT absorbed: no review happened
+        # on exactly the paths where an unreviewed change costs most, so it is
+        # `outage_blocking` and the workflow fails the check. Other paths still pass, loudly.
+        blocking_paths = list(sensitive_files) + [
+            f for f in (deploy_sensitive_files or []) if f not in sensitive_files
+        ]
+
+        if not action_reported or availability:
+            if not action_reported:
+                reason = (
                     "fuze-code-action produced NO conclusion output - the step did not "
                     "report at all (killed mid-run, e.g. a hang against the provider). "
                     "That is an infrastructure failure, not a review verdict, and is "
                     "treated as an availability outage per the owner's exception. No "
                     "finding can be hidden by this: a finding requires a verdict, and "
                     "none was produced. Re-run once a provider recovers."
-                ),
-                "verdict": None, "summary": "", "findings": [],
-                "downgraded": False, "deferred": False,
-            }
-
-        if availability:
-            return {
-                "decision": "outage",
-                "reason": (
+                )
+            else:
+                reason = (
                     "fuze-code-action reported an AVAILABILITY failure (vendor credit/quota "
                     "exhausted, rate-limited, or the provider could not be reached) — its "
-                    "`availability` output was true. Per the owner's explicit exception the "
-                    "required review check does NOT fail on a credit outage: it is not a defect "
-                    "in this PR. This is a non-blocking notice; re-run once a provider recovers. "
-                    "The auto-fix loop is deliberately NOT triggered (there is nothing to fix)."
-                ),
-                "verdict": None, "summary": "", "findings": [], "downgraded": False,
-                "deferred": False, "outage": True,
+                    "`availability` output was true. This is not a defect in this PR. "
+                    "Re-run once a provider recovers. The auto-fix loop is deliberately NOT "
+                    "triggered (there is nothing to fix)."
+                )
+            if blocking_paths:
+                return {
+                    "decision": "outage_blocking",
+                    "reason": (
+                        reason + " BLOCKING: this PR touches sensitive paths ("
+                        + ", ".join(blocking_paths) + ") and NO REVIEW WAS PERFORMED, so the "
+                        "outage exception does not apply. Re-run once a provider recovers."
+                    ),
+                    "verdict": None, "summary": "", "findings": [], "downgraded": False,
+                    "deferred": False, "outage": True,
+                }
+            return {
+                "decision": "outage",
+                "reason": reason + " NO REVIEW WAS PERFORMED.",
+                "verdict": None, "summary": "", "findings": [],
+                "downgraded": False, "deferred": False, "outage": True,
             }
 
         return {
@@ -288,15 +310,29 @@ def render_body(result: dict, mode: str, vendor: str) -> str:
     """Human-readable GitHub review body for the decision `result` from decide()."""
     lines = ["## fuze-code-review — automated verdict", ""]
 
-    if result.get("outage"):
-        lines.append("**Review skipped on a credit/availability outage — this is not a failure.**")
+    if result["decision"] == "outage_blocking":
+        lines.append(OUTAGE_MARKER)
+        lines.append("**NO REVIEW WAS PERFORMED — blocking: this PR touches sensitive paths.**")
         lines.append("")
         lines.append(result["reason"])
         lines.append("")
         lines.append(
-            "_The required check PASSES per the owner's explicit credit-outage exception. "
-            "The required gates and human review still gate this PR. Re-run this workflow "
-            "once a provider recovers to get a real review verdict._"
+            "_The provider outage exception does not cover CI/governance, deploy or "
+            "migration paths. This check FAILS until a real review runs. Re-run this "
+            "workflow once a provider recovers._"
+        )
+        return "\n".join(lines)
+
+    if result.get("outage"):
+        lines.append(OUTAGE_MARKER)
+        lines.append("**NO REVIEW WAS PERFORMED — skipped on a credit/availability outage.**")
+        lines.append("")
+        lines.append(result["reason"])
+        lines.append("")
+        lines.append(
+            "_The check passes only because no sensitive path is touched. This is NOT a "
+            "review and NOT an approval; the required gates still gate this PR. Re-run this "
+            "workflow once a provider recovers to get a real review verdict._"
         )
         return "\n".join(lines)
 
@@ -381,12 +417,17 @@ def main() -> int:
     action_reported = bool(action_conclusion.strip())
     sensitive_raw = os.environ.get("FUZE_SENSITIVE_FILES", "")
     sensitive_files = [line for line in sensitive_raw.splitlines() if line.strip()]
+    deploy_raw = os.environ.get("FUZE_DEPLOY_SENSITIVE_FILES", "")
+    deploy_sensitive_files = [line for line in deploy_raw.splitlines() if line.strip()]
 
     result = decide(action_conclusion, result_text, nonce, sensitive_files, mode,
-                    availability, action_reported=action_reported)
+                    availability, action_reported=action_reported,
+                    deploy_sensitive_files=deploy_sensitive_files)
     body = render_body(result, mode, vendor)
 
-    print(f"::notice title=fuze-code-review::decision={result['decision']} reason={result['reason']}")
+    level = ("error" if result["decision"] == "outage_blocking"
+             else "warning" if result["decision"] == "outage" else "notice")
+    print(f"::{level} title=fuze-code-review::decision={result['decision']} reason={result['reason']}")
     _write_github_output(result, body)
 
     return 0
