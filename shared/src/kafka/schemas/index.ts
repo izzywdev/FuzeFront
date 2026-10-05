@@ -18,6 +18,8 @@ export * from './identity.org.updated';
 export * from './identity.org.deleted';
 export * from './identity.membership.added';
 export * from './identity.membership.removed';
+export * from './identity.invitation.created';
+export * from './identity.invitation.accepted';
 export * from './identity.session.issued';
 export * from './identity.session.revoked';
 export * from './notify.email.requested';

@@ -12,6 +12,8 @@ export const TOPICS = {
   IDENTITY_ORG_DELETED: 'identity.org.deleted',
   IDENTITY_MEMBERSHIP_ADDED: 'identity.membership.added',
   IDENTITY_MEMBERSHIP_REMOVED: 'identity.membership.removed',
+  IDENTITY_INVITATION_CREATED: 'identity.invitation.created',
+  IDENTITY_INVITATION_ACCEPTED: 'identity.invitation.accepted',
   NOTIFY_EMAIL_REQUESTED: 'notify.email.requested',
   NOTIFY_EMAIL_STATUS: 'notify.email.status',
   BILLING_USAGE_RECORDED: 'billing.usage.recorded',

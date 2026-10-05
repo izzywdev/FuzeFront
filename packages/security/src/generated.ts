@@ -953,6 +953,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/organizations/{id}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an organization's invitations
+         * @description Unbounded collection — cursor-paginated per the family pagination standard (`limit` + opaque `cursor`, `{ items, page }` envelope). Optional `status` filter. Org owner/admin capability; a non-privileged caller gets `403 FORBIDDEN` rendered in place (only 401 re-authenticates). An id is never a capability.
+         */
+        get: operations["listOrganizationInvitations"];
+        put?: never;
+        /**
+         * Create an invitation
+         * @description Invites one person to the organization. The `invitee` is a typed, discriminated reference — an existing `account` (by server-minted userId) or an `external` identity reached over a `channel` (email OR WhatsApp e164 phone). `memberType` (employee|customer) is orthogonal to the access `role`. `owner` can never be invited. The service mints the invitation id and the `bindToken`; the body never carries an id (`additionalProperties: false`). A pending invitation to the same identity returns `409`.
+         */
+        post: operations["createOrganizationInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{id}/invitations/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create invitations in bulk
+         * @description Creates up to 50 invitations in one call, all sharing one `role` and `memberType`. Each `invitee` is a typed, discriminated reference (as in the single create). Per-invitee outcomes are returned individually so a partial batch (some already pending) still reports precisely. The service mints every id and bindToken; the body carries none (`additionalProperties: false`).
+         */
+        post: operations["createOrganizationInvitationsBulk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{id}/invitations/{invitationId}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend a pending invitation
+         * @description Re-dispatches the invitation over its original `channel` (email or WhatsApp) and extends its expiry. Only a `pending` invitation can be resent. Org owner/admin capability.
+         */
+        post: operations["resendOrganizationInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/organizations/{id}/invitations/{invitationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an invitation
+         * @description Revokes a pending invitation (transitions it to `revoked`). Idempotent from the caller's view. Org owner/admin capability.
+         */
+        delete: operations["revokeOrganizationInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invitations/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve an invitation by token (public)
+         * @description Public, unauthenticated resolve of an invitation by its opaque token. The invitee's contact identity is MASKED (first char + domain / last digits) — the token is a lookup key, never a data leak and never a capability. Returns `410` when the invitation is expired or revoked.
+         */
+        get: operations["resolveInvitation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invitations/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invitation (auth-optional; carries the external-signup bind)
+         * @description Redeems an invitation. Two outcomes, distinguished by status code:
+         *     • **Unauthenticated / no account yet (202)** — returns `{ action: 'enroll', enrollUrl, bindToken }`. The `bindToken` is the single-use, short-lived, server-minted carrier of this invite THROUGH signup/enrollment: the client sends it as `SignupRequest.bindToken`, the server verifies the signup identity matches the invited `channel` identity, provisions the account, and auto-binds the membership — so the handler never has to trust that the caller "knew the token".
+         *     • **Authenticated & identity matches (200)** — the membership is bound immediately (CAS pending→accepted, idempotent) and the result carries the `memberType` and `role`. An identity mismatch is `403`; an expired/revoked invite is `410`; a lost accept race is `409`.
+         */
+        post: operations["acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/employee/status": {
         parameters: {
             query?: never;
@@ -1127,6 +1253,8 @@ export interface components {
             lastName?: string;
             /** @description Optional tenant/organization name to provision on signup. */
             tenantName?: string;
+            /** @description Optional single-use invitation bind token (from the `202` accept response, `InvitationEnrollResponse.bindToken`). When present, the server verifies the signup identity matches the invited channel identity, then auto-binds the invited membership (with its `memberType`/`role`) as part of signup — redeeming the invite without a second round-trip. Mismatch or an expired token fails signup-bind closed (the account may still be created; the bind is rejected). */
+            bindToken?: string;
         };
         ExchangeRequest: {
             /** @description The single-use opaque code from the social callback redirect. */
@@ -1331,11 +1459,15 @@ export interface components {
             userId: string;
             email?: string;
             roles: string[];
+            /** @description How this member relates to the org (employee|customer), orthogonal to `roles`. Optional for backward compatibility: memberships created before FFRNT-305 may not carry one. */
+            memberType?: components["schemas"]["MemberType"];
         };
         MemberCreate: {
             userId?: string;
             email?: string;
             roles?: string[];
+            /** @description How the member relates to the org (employee|customer), orthogonal to roles. */
+            memberType?: components["schemas"]["MemberType"];
         };
         Role: {
             key: string;
@@ -1343,6 +1475,155 @@ export interface components {
         };
         RoleAssignment: {
             roles: string[];
+        };
+        /**
+         * @description How a member relates to the organization — ORTHOGONAL to the access role. `employee` = internal staff of the org; `customer` = an external customer member (the root-org owner invites external users as `customer`). A membership and an invitation each carry exactly one.
+         * @enum {string}
+         */
+        MemberType: "employee" | "customer";
+        /**
+         * @description The delivery/identity channel for an external invitee. `email` = an email address; `whatsapp` = an E.164 phone reachable over WhatsApp. An invitation to an existing account-holder carries the channel of the contact the invite was dispatched to (defaults to `email`).
+         * @enum {string}
+         */
+        InvitationChannel: "email" | "whatsapp";
+        /**
+         * @description The access role an invitee is granted on accept. `owner` can NEVER be invited (ownership is transferred, not invited), so it is absent here.
+         * @enum {string}
+         */
+        InvitationRole: "admin" | "member" | "viewer";
+        /**
+         * @description Invitation lifecycle status.
+         * @enum {string}
+         */
+        InvitationStatus: "pending" | "accepted" | "revoked" | "expired";
+        /** @description An invitee who ALREADY has a FuzeFront account. `userId` REFERENCES an existing, server-minted user — it names an entity that already exists, so it is a reference (not identity being created) and carries its referent type via `kind: account`. */
+        AccountInvitee: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "account";
+            /** @description Server-minted, typed user id (e.g. `usr_…`) of the existing account-holder. */
+            userId: string;
+        };
+        /** @description An invitee with NO account yet, reached over a `channel`. Exactly one contact field is required, selected by `channel`: `email` (RFC 5322) for `channel: email`, `phone` (E.164) for `channel: whatsapp`. The external user must sign up first; the invite then auto-binds via the `bindToken`. */
+        ExternalInvitee: {
+            /** @constant */
+            kind: "external";
+            channel: components["schemas"]["InvitationChannel"];
+            /**
+             * Format: email
+             * @description Required when `channel` is `email`.
+             */
+            email?: string;
+            /** @description E.164 phone (e.g. `+14155552671`). Required when `channel` is `whatsapp`. */
+            phone?: string;
+        } & (unknown & unknown & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "external";
+        });
+        /** @description A typed, discriminated invitee reference — an existing `account` or an `external` identity. The `kind` discriminator means no bare id is ever resolved without its referent type (governance/identifier-standard.md 2). */
+        InviteeRef: components["schemas"]["AccountInvitee"] | components["schemas"]["ExternalInvitee"];
+        /** @description Create one invitation. */
+        InvitationCreate: {
+            invitee: components["schemas"]["InviteeRef"];
+            role?: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+        };
+        /** @description Create up to 50 invitations sharing one `role` and `memberType`. The service mints every id and bindToken; none may be supplied. */
+        BulkInvitationCreate: {
+            invitees: components["schemas"]["InviteeRef"][];
+            role?: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+        };
+        /** @description An invitation as seen by an org owner/admin (list + create + resend responses). The invitee identity is UNMASKED here because the caller administers the org; the public token resolve (`InvitationPublic`) masks it. `bindToken` is NOT included in this admin projection — it is handed only to the invitee via the accept flow. */
+        Invitation: {
+            /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past the prefix. */
+            id: string;
+            /** @description Typed id of the organization the invite is into. */
+            organizationId: string;
+            invitee: components["schemas"]["InviteeRef"];
+            channel: components["schemas"]["InvitationChannel"];
+            role: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+            status: components["schemas"]["InvitationStatus"];
+            /** @description Typed user id of the inviter (a reference to an existing user). */
+            invitedByUserId?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        /** @description Masked public projection of an invitation returned by the unauthenticated token resolve. The contact identity is reduced to a hint (`maskedContact`) — never the full address/number, since the caller is unauthenticated and the token is a lookup key, not a capability. */
+        InvitationPublic: {
+            id: string;
+            /** @description Masked identity hint, e.g. `u***@example.com` or `+1 *** *** 2671`. */
+            maskedContact: string;
+            channel: components["schemas"]["InvitationChannel"];
+            role: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
+            status: components["schemas"]["InvitationStatus"];
+            /** Format: date-time */
+            expiresAt?: string;
+        };
+        /** @description Minimal, public-safe org summary shown on the invite landing page. */
+        InvitationOrgRef: {
+            id: string;
+            name: string;
+            slug?: string;
+        };
+        /** @description The masked invitation plus the organization it is into. */
+        InvitationResolveResult: {
+            invitation: components["schemas"]["InvitationPublic"];
+            organization: components["schemas"]["InvitationOrgRef"];
+        };
+        InvitationPage: {
+            items: components["schemas"]["Invitation"][];
+            page: components["schemas"]["PageInfo"];
+        };
+        /** @description Outcome for one invitee in a bulk create. */
+        BulkInvitationItemResult: {
+            invitee: components["schemas"]["InviteeRef"];
+            /** @enum {string} */
+            status: "created" | "skipped" | "failed";
+            /** @description Present when `status` is `created`. */
+            invitationId?: string;
+            /** @description Why an invitee was skipped/failed (e.g. `already-pending`). */
+            reason?: string;
+        };
+        BulkInvitationResult: {
+            created: number;
+            skipped: number;
+            failed: number;
+            results: components["schemas"]["BulkInvitationItemResult"][];
+        };
+        /** @description Optional accept body. No fields are required: the token is in the path and, for an authenticated accept, the identity comes from the session. */
+        InvitationAcceptRequest: Record<string, never>;
+        /** @description Returned `202` when the invitee has no session/account yet. Directs them to sign up / sign in and carries the single-use `bindToken` that threads this invite through signup (sent back as `SignupRequest.bindToken`). */
+        InvitationEnrollResponse: {
+            /** @constant */
+            action: "enroll";
+            /**
+             * Format: uri
+             * @description Where to send the invitee to create an account or sign in.
+             */
+            enrollUrl: string;
+            /** @description Single-use, short-lived, server-minted carrier of this invitation through signup/enrollment. Redeemed server-side on signup (identity must match the invited channel identity) to auto-bind the membership. */
+            bindToken: string;
+            message?: string;
+        };
+        /** @description Returned `200` when the membership was bound. */
+        InvitationAcceptResult: {
+            /** @constant */
+            action: "bound";
+            organizationId: string;
+            /** @description Typed id of the now-bound member (a reference to the accepting user). */
+            userId: string;
+            role: components["schemas"]["InvitationRole"];
+            memberType: components["schemas"]["MemberType"];
         };
         TokenIssueRequest: {
             clientId: string;
@@ -1567,6 +1848,8 @@ export interface components {
             role: "owner" | "admin" | "member" | "viewer";
             /** @description True for the calling user's own row (rendered "You"; data-self). */
             isSelf?: boolean;
+            /** @description How this member relates to the org (employee|customer), orthogonal to `role`. Optional: pre-FFRNT-305 memberships may not carry one. */
+            memberType?: components["schemas"]["MemberType"];
         };
         /** @description Page-based envelope for the searchable user directory. Deliberately distinct from the cursor `PageInfo` envelope (MemberPage/TenantPage): the directory is search-first and page-navigable, so it echoes the 1-based `page`, the effective `pageSize`, and the true server `total` so the UI can render a page-of-pages pager and disable Prev/Next at the boundaries. Satisfies gate-pagination (`items` + `page`). */
         DirectoryPage: {
@@ -1763,6 +2046,24 @@ export interface components {
                 "application/json": components["schemas"]["ErrorBody"];
             };
         };
+        /** @description The request conflicts with current state — e.g. a pending invitation to the same identity already exists, or an accept lost its CAS race. */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorBody"];
+            };
+        };
+        /** @description The invitation has expired or been revoked and can no longer be resolved or accepted. */
+        Gone: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorBody"];
+            };
+        };
         /** @description The identity provider is unreachable, too slow, or presented a flow this API cannot drive server-side (`code: PROVIDER_UNAVAILABLE`). This is a SERVICE condition and says nothing about the caller's credentials — clients MUST NOT surface it as an authentication failure. Retryable; `Retry-After` indicates how long to wait. */
         ServiceUnavailable: {
             headers: {
@@ -1790,6 +2091,10 @@ export interface components {
         /** @description Server-side search over the directory (name / email). Submitted by the UI search box; the client never fetches all users to filter locally. */
         DirectoryQuery: string;
         FactorId: string;
+        /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its prefix; never a capability — standing comes from the token + Permit. */
+        InvitationId: string;
+        /** @description Opaque, single-use invitation token from the dispatched invite. A lookup key only — never a capability; accept still enforces identity + standing. */
+        InvitationToken: string;
     };
     requestBodies: never;
     headers: never;
@@ -3240,6 +3545,222 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listOrganizationInvitations: {
+        parameters: {
+            query?: {
+                /** @description Max items per page. Clamped server-side to the maximum. */
+                limit?: number;
+                /** @description Opaque, server-issued cursor for the next page. Omit for the first page. */
+                cursor?: string;
+                /** @description Optional filter by invitation lifecycle status. */
+                status?: components["schemas"]["InvitationStatus"];
+            };
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of invitations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createOrganizationInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Invitation created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createOrganizationInvitationsBulk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkInvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Per-invitee results for the batch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkInvitationResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    resendOrganizationInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+                /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its prefix; never a capability — standing comes from the token + Permit. */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation re-dispatched (expiry extended). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invitation"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    revokeOrganizationInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tenant-root organization id — the platform root org id OR a portal-root org id. The same endpoint serves any root/portal; `tenantId` semantics resolve server-side from the org tree. Opaque past its prefix. */
+                id: components["parameters"]["OrganizationId"];
+                /** @description Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its prefix; never a capability — standing comes from the token + Permit. */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invitation revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    resolveInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque, single-use invitation token from the dispatched invite. A lookup key only — never a capability; accept still enforces identity + standing. */
+                token: components["parameters"]["InvitationToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The (masked) invitation and its organization. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResolveResult"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["Gone"];
+        };
+    };
+    acceptInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque, single-use invitation token from the dispatched invite. A lookup key only — never a capability; accept still enforces identity + standing. */
+                token: components["parameters"]["InvitationToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["InvitationAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Invitation accepted and membership bound. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationAcceptResult"];
+                };
+            };
+            /** @description The invitee must sign up / sign in first. Carries the `bindToken` to redeem the invite post-signup. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationEnrollResponse"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            410: components["responses"]["Gone"];
         };
     };
     getEmployeeStatus: {
