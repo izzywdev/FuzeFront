@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, TextLink } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
@@ -194,15 +194,15 @@ export const PrivacyPolicyPage: React.FC = () => {
 
         {/* Footer nav */}
         <div className="mt-16 pt-8 border-t border-gray-200 flex flex-wrap gap-4">
-          <Link to="/terms" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
+          <TextLink as={Link} to="/terms">
             Terms of Service
-          </Link>
-          <Link to="/contact" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
+          </TextLink>
+          <TextLink as={Link} to="/contact">
             Contact Us
-          </Link>
-          <Link to="/" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
+          </TextLink>
+          <TextLink as={Link} to="/">
             Back to Home
-          </Link>
+          </TextLink>
         </div>
       </Container>
     </div>
