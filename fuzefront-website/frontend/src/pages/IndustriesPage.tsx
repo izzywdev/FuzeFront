@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, IconListItem } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -174,10 +174,9 @@ function IndustrySection({ industry }: { industry: Industry }) {
           <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider mb-3">Key challenges addressed</h4>
           <ul className="space-y-2">
             {industry.challenges.map((challenge) => (
-              <li key={challenge} className="flex items-start gap-2 text-sm text-gray-600">
-                <CheckCircle2 size={14} className="text-success-500 flex-shrink-0 mt-0.5" />
+              <IconListItem key={challenge} icon={CheckCircle2} className="text-sm text-gray-600">
                 {challenge}
-              </li>
+              </IconListItem>
             ))}
           </ul>
         </div>
