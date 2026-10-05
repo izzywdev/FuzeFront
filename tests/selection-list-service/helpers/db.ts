@@ -35,6 +35,19 @@ export async function getDbClient(): Promise<PoolClient> {
   return getPool().connect();
 }
 
+/** Run one read/write query on the test DB (the SAME database the service under test uses). */
+export async function dbQuery<T extends Record<string, any> = Record<string, any>>(
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  const client = await getDbClient();
+  try {
+    return (await client.query(sql, params)).rows as T[];
+  } finally {
+    client.release();
+  }
+}
+
 export async function closeDb(): Promise<void> {
   if (_pool) {
     await _pool.end();

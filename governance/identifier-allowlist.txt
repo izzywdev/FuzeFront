@@ -44,11 +44,11 @@
 src backend/core/src/events/outbox.ts:34                    # event_outbox row id
 src backend/src/services/organizationProvisioning.ts:378    # event_outbox row id
 src backend/src/services/portalProvisioning.ts:590          # event_outbox row id
-src backend/security/src/services/organizationProvisioning.ts:315  # event_outbox row id
+src backend/security/src/services/organizationProvisioning.ts:338  # event_outbox row id
 
 # Provisioning workflow step rows: bookkeeping for a saga, not entities.
 src backend/src/services/organizationProvisioning.ts:286    # organization_provisioning step row
-src backend/security/src/services/organizationProvisioning.ts:269  # organization_provisioning step row
+src backend/security/src/services/organizationProvisioning.ts:292  # organization_provisioning step row
 src backend/src/services/portalProvisioning.ts:249          # portal_provisioning step row
 
 # One-shot credential artifacts. Same family as the token/nonce/verifier targets
