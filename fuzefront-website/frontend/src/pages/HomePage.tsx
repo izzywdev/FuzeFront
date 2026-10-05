@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { AmbientGlow, Caption, Center, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -173,8 +173,8 @@ export const HomePage: React.FC = () => {
             the Pricing Teaser section below does it. */}
         <div className="absolute inset-0 hero-pattern pointer-events-none" />
         {/* Background orbs */}
-        <div className="absolute top-20 left-1/4 w-96 h-96 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-20 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow tone="primary" size={384} style={{ top: '5rem', left: '25%' }} />
+        <AmbientGlow tone="accent" size={320} opacity={0.15} style={{ bottom: '5rem', right: '25%' }} />
 
         <Container size="7xl" className="relative pt-24 pb-20">
           <div className="text-center max-w-4xl mx-auto">
