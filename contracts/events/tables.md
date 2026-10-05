@@ -52,12 +52,15 @@ backfill, then set NOT NULL; rows enqueued by pre-v2 producers during the window
 - Claim with `SELECT ... FOR UPDATE SKIP LOCKED` (replicas never publish the same row).
 - **Order is per aggregate, by `aggregate_version` ascending** — not global `created_at`. A pending
   row is claimable only if no row for the same `(aggregate_type, aggregate_id)` with a lower
-  `aggregate_version` is still `pending` (or `failed` and not dead-lettered). Different aggregates
+  `aggregate_version` is `pending` or `failed`. Different aggregates
   interleave freely; the broker partition key `aggregate_id` preserves the order downstream.
 - Publish with key = `aggregate_id`; mark `sent` only after broker acknowledgement.
-- After bounded attempts: `failed` + dead-letter (`<topic>.dlq`) + alert. A `failed` head row
-  **blocks** later versions of that aggregate until resolved (intentional: skipping would let a
-  consumer apply v3 without v2).
+- After bounded attempts: `failed` + dead-letter copy to `<topic>.dlq` + alert. The `failed` row
+  **still blocks** later versions of that aggregate — dead-lettering does not unblock it. Only an
+  operator action resolves it: requeue (back to `pending`) or mark it `sent` deliberately after
+  publishing a fixed copy. Intentional: not every topic is event-carried state, so skipping would
+  let a consumer apply v3 without v2 and silently lose a transition. A stalled aggregate is visible
+  and alerted; a lost transition is not. Other aggregates are unaffected.
 
 ## `processed_events` (consumer inbox)
 
@@ -74,6 +77,13 @@ CREATE TABLE processed_events (
 
 - `consumer` — stable consumer-group / handler name; the same `event_id` for two consumers is two rows.
 - Dedupe is `INSERT ... ON CONFLICT DO NOTHING`; zero rows inserted means duplicate, skip the effect.
+- **v1 envelopes** (no `eventId`) are still consumed during the migration window. Their dedupe key is
+  `<topic>:<partition>:<offset>`, written to `processed_events.event_id`. It is stable for a given
+  Kafka record, so redelivery of that record is absorbed; it does not dedupe a v1 event re-published
+  as a new record, which is why producers move to v2 (Wave C). The version guard applies only to v2.
+- Version-guard outcome when `aggregateVersion <= stored`: the effect is skipped (`IGNORED`) and the
+  `eventId` is still recorded in `processed_events`. The stored version is owned by the consumer's
+  projection, not by the runtime.
 - Retention: rows may be pruned after a period well beyond the broker retention + max redelivery
   horizon (suggested: 30 days). Pruning is the package's scheduled job.
 
