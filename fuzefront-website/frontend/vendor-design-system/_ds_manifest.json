@@ -190,6 +190,10 @@
       "sourcePath": "components/layout/Eyebrow.jsx"
     },
     {
+      "name": "HeroHeading",
+      "sourcePath": "components/layout/HeroHeading.jsx"
+    },
+    {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
     },
@@ -895,6 +899,12 @@
       "definedIn": "tokens/typography.css"
     },
     {
+      "name": "--weight-extrabold",
+      "value": "800",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
       "name": "--text-2xs",
       "value": "0.7rem",
       "kind": "font",
@@ -945,6 +955,18 @@
     {
       "name": "--text-3xl",
       "value": "2.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-4xl",
+      "value": "2.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-5xl",
+      "value": "3rem",
       "kind": "font",
       "definedIn": "tokens/typography.css"
     },
@@ -1010,6 +1032,36 @@
     },
     {
       "name": "--role-hero-leading",
+      "value": "var(--leading-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-font",
+      "value": "var(--font-display)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-size",
+      "value": "var(--text-4xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-size-lg",
+      "value": "var(--text-5xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-weight",
+      "value": "var(--weight-extrabold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-marketing-hero-leading",
       "value": "var(--leading-tight)",
       "kind": "font",
       "definedIn": "tokens/typography.css"

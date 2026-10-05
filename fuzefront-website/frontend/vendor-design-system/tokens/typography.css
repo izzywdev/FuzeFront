@@ -15,6 +15,7 @@
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
+  --weight-extrabold: 800;  /* marketing-page hero titles (HeroHeading) */
 
   /* ---- Type scale (rem) ---------------------------------- */
   --text-2xs: 0.7rem;     /* 11px — mono meta, badges */
@@ -26,6 +27,8 @@
   --text-xl: 1.35rem;     /* h2 */
   --text-2xl: 1.75rem;    /* h1 */
   --text-3xl: 2.25rem;    /* page hero */
+  --text-4xl: 2.25rem;    /* 36px — marketing hero title, mobile */
+  --text-5xl: 3rem;       /* 48px — marketing hero title, sm+ */
 
   /* ---- Line heights -------------------------------------- */
   --leading-tight: 1.15;
@@ -43,6 +46,16 @@
   --role-hero-size: var(--text-3xl);
   --role-hero-weight: var(--weight-semibold);
   --role-hero-leading: var(--leading-tight);
+
+  /* Marketing-site page-hero <h1> (HeroHeading) — bigger and bolder than
+     --role-hero-*, which a dashboard/app-shell hero already owns. Responsive:
+     --role-marketing-hero-size below 640px, --role-marketing-hero-size-lg at
+     640px+ (mirrors Container's own breakpoint). */
+  --role-marketing-hero-font: var(--font-display);
+  --role-marketing-hero-size: var(--text-4xl);
+  --role-marketing-hero-size-lg: var(--text-5xl);
+  --role-marketing-hero-weight: var(--weight-extrabold);
+  --role-marketing-hero-leading: var(--leading-tight);
 
   --role-heading-font: var(--font-display);
   --role-heading-size: var(--text-2xl);
