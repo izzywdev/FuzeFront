@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, Text } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
@@ -40,7 +40,7 @@ export const PrivacyPolicyPage: React.FC = () => {
 
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">2. Information We Collect</h2>
-              <h3 className="text-base font-semibold text-gray-800 mb-2">2.1 Information You Provide</h3>
+              <Text as="h3" size="base" weight="semibold" spacing="sm">2.1 Information You Provide</Text>
               <ul className="list-disc pl-6 space-y-1.5">
                 <li>Account registration details (name, email, password hash)</li>
                 <li>Organization and billing information</li>
@@ -48,14 +48,14 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <li>Profile information and preferences</li>
                 <li>Payment information (processed by Stripe; we do not store raw card numbers)</li>
               </ul>
-              <h3 className="text-base font-semibold text-gray-800 mb-2 mt-5">2.2 Information Collected Automatically</h3>
+              <Text as="h3" size="base" weight="semibold" spacing="sm" spacingTop="lg">2.2 Information Collected Automatically</Text>
               <ul className="list-disc pl-6 space-y-1.5">
                 <li>Log data (IP address, browser type, pages visited, timestamps)</li>
                 <li>Device identifiers and usage statistics</li>
                 <li>Cookies and similar tracking technologies (see Section 8)</li>
                 <li>Analytics data about how you interact with our platform</li>
               </ul>
-              <h3 className="text-base font-semibold text-gray-800 mb-2 mt-5">2.3 Information from Third Parties</h3>
+              <Text as="h3" size="base" weight="semibold" spacing="sm" spacingTop="lg">2.3 Information from Third Parties</Text>
               <ul className="list-disc pl-6 space-y-1.5">
                 <li>SSO providers (when you log in via Google, Microsoft, or your organization's identity provider)</li>
                 <li>Payment processors (Stripe)</li>
@@ -103,7 +103,7 @@ export const PrivacyPolicyPage: React.FC = () => {
 
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">6. Your Rights</h2>
-              <h3 className="text-base font-semibold text-gray-800 mb-2">6.1 GDPR Rights (EEA Residents)</h3>
+              <Text as="h3" size="base" weight="semibold" spacing="sm">6.1 GDPR Rights (EEA Residents)</Text>
               <p>If you are located in the European Economic Area, you have the following rights:</p>
               <ul className="list-disc pl-6 space-y-1.5 mt-3">
                 <li><strong>Access:</strong> Request a copy of your personal data</li>
@@ -114,7 +114,7 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <li><strong>Object:</strong> Object to processing based on legitimate interests</li>
                 <li><strong>Withdraw Consent:</strong> Withdraw consent where processing is based on consent</li>
               </ul>
-              <h3 className="text-base font-semibold text-gray-800 mb-2 mt-5">6.2 CCPA Rights (California Residents)</h3>
+              <Text as="h3" size="base" weight="semibold" spacing="sm" spacingTop="lg">6.2 CCPA Rights (California Residents)</Text>
               <p>California residents have the right to:</p>
               <ul className="list-disc pl-6 space-y-1.5 mt-3">
                 <li>Know what personal information we collect and how it is used</li>
