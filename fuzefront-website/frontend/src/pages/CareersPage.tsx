@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroLead } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -116,10 +116,10 @@ export const CareersPage: React.FC = () => {
             <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
               Join <span className="gradient-text">FuzeOne</span>
             </h1>
-            <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
+            <HeroLead>
               We're a small, remote-first team building the operating system for SaaS. Help us
               build it.
-            </p>
+            </HeroLead>
           </motion.div>
         </Container>
       </section>
