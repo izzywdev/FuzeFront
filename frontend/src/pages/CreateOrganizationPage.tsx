@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, AuthCard, Caption, Input, Text } from '@fuzefront/design-system'
 import { useLanguage } from '../contexts/LanguageContext'
 import { createOrganization } from '../services/api'
 import { useAppContext } from '../lib/shared'
@@ -67,12 +67,14 @@ function CreateOrganizationPage() {
 
   if (success) {
     return (
-      <div className="auth-form" style={{ textAlign: 'center' }}>
-        <p style={{ fontSize: '2rem', margin: '0 0 1rem' }}>✓</p>
+      <AuthCard align="center">
+        <Text as="p" style={{ fontSize: 'var(--text-3xl)', margin: '0 0 1rem' }}>
+          ✓
+        </Text>
         <h3 style={{ margin: '0 0 0.5rem' }}>{t('success')}</h3>
-        <p style={{ color: 'var(--text-secondary)', margin: '0 0 1.5rem' }}>
+        <Caption space="none" style={{ margin: '0 0 1.5rem' }}>
           {name} {t('createOrganizationDesc')}
-        </p>
+        </Caption>
         <button
           type="button"
           className="btn btn-primary"
@@ -80,16 +82,16 @@ function CreateOrganizationPage() {
         >
           {t('dashboard')}
         </button>
-      </div>
+      </AuthCard>
     )
   }
 
   return (
-    <div className="auth-form">
+    <AuthCard>
       <h2 style={{ marginBottom: '0.25rem' }}>{t('createOrganization')}</h2>
-      <p style={{ color: 'var(--text-secondary)', marginTop: 0, marginBottom: '1.5rem' }}>
+      <Caption space="none" style={{ marginBottom: 'var(--space-6)' }}>
         {t('createOrganizationDesc')}
-      </p>
+      </Caption>
 
       {error && (
         <Alert tone="error" style={{ marginBottom: '1rem' }}>
@@ -98,10 +100,10 @@ function CreateOrganizationPage() {
       )}
 
       <form onSubmit={handleSubmit}>
-        <div className="form-group">
-          <label htmlFor="org-name">{t('organizationName')}</label>
-          <input
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Input
             id="org-name"
+            label={t('organizationName')}
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
@@ -111,17 +113,24 @@ function CreateOrganizationPage() {
           />
         </div>
 
-        <div className="form-group">
-          <label htmlFor="org-slug">
-            Slug
-            {!slugManuallyEdited && (
-              <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                (auto-derived)
-              </span>
-            )}
-          </label>
-          <input
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <Input
             id="org-slug"
+            label={
+              <>
+                Slug
+                {!slugManuallyEdited && (
+                  <Text
+                    as="span"
+                    tone="muted"
+                    size="xs"
+                    style={{ marginInlineStart: 'var(--space-2)' }}
+                  >
+                    (auto-derived)
+                  </Text>
+                )}
+              </>
+            }
             type="text"
             value={slug}
             onChange={e => {
@@ -132,11 +141,7 @@ function CreateOrganizationPage() {
             pattern="[a-zA-Z0-9_-]+"
             title="Only letters, numbers, hyphens, and underscores"
           />
-          {slug && (
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0' }}>
-              URL: /organizations/{slug}
-            </p>
-          )}
+          {slug && <Caption>URL: /organizations/{slug}</Caption>}
         </div>
 
         <button
@@ -164,7 +169,7 @@ function CreateOrganizationPage() {
           {t('cancel')}
         </button>
       </div>
-    </div>
+    </AuthCard>
   )
 }
 
