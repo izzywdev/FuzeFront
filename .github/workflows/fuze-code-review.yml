@@ -175,7 +175,27 @@ jobs:
     # 12m10s with the step at 7m). 15 leaves room for the steps around the review.
     timeout-minutes: 15
     steps:
+      # A job can dequeue after its PR merged and the head branch was deleted; checkout then
+      # fails with "A branch or tag with the name '...' could not be found". Ask the API
+      # BEFORE checkout and gate every later step on the answer -- a real conditional, not a
+      # swallowed failure: if the API call itself errors this step fails loudly.
+      - name: Check PR is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$STATE" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=fuze-code-review::skipped because PR #${PR_NUMBER} is no longer open (state=${STATE})"
+          fi
+
       - name: Checkout
+        if: steps.pr.outputs.open == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -186,6 +206,7 @@ jobs:
 
       - name: Gather PR context — diff, changed files, sensitive-path check, credential check
         id: context
+        if: steps.pr.outputs.open == 'true'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           # Used ONLY for the one authenticated base-ref fetch below (checkout no
@@ -245,6 +266,10 @@ jobs:
           # because this feeds the self-approval defense in the verdict script.
           SENSITIVE_PATTERN='^(\.github/workflows/|\.github/actions/|workflow-templates/|governance/|scripts/apply_ruleset\.sh$|scripts/bootstrap/)'
           SENSITIVE=$(grep -E "$SENSITIVE_PATTERN" /tmp/changed_files.txt || true)
+          # Deploy surface: charts, images, the release workflow and DB migrations. An
+          # outage (no review performed) on a PR touching these BLOCKS rather than passes.
+          DEPLOY_SENSITIVE_PATTERN='^(deploy/|helm/|.*Dockerfile.*|\.github/workflows/release\.yml$|backend/src/db/migrations/|services/[^/]+/src/db/migrations/|backend/.*/migrations/)'
+          DEPLOY_SENSITIVE=$(grep -E "$DEPLOY_SENSITIVE_PATTERN" /tmp/changed_files.txt || true)
 
           READY=true
           REASON=""
@@ -271,13 +296,16 @@ jobs:
             echo "sensitive_files<<FUZE_SENSITIVE_EOF"
             echo "$SENSITIVE"
             echo "FUZE_SENSITIVE_EOF"
+            echo "deploy_sensitive_files<<FUZE_DEPLOY_SENSITIVE_EOF"
+            echo "$DEPLOY_SENSITIVE"
+            echo "FUZE_DEPLOY_SENSITIVE_EOF"
             echo "diff<<FUZE_DIFF_EOF"
             echo "$DIFF"
             echo "FUZE_DIFF_EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Not reviewing this run
-        if: steps.context.outputs.ready != 'true'
+        if: steps.pr.outputs.open == 'true' && steps.context.outputs.ready != 'true'
         env:
           REASON: ${{ steps.context.outputs.reason }}
         run: echo "::notice title=fuze-code-review::skipping -- ${REASON}"
@@ -431,6 +459,7 @@ jobs:
           FUZE_ACTION_AVAILABILITY: ${{ steps.review.outputs.availability }}
           FUZE_ACTION_VENDOR: ${{ steps.review.outputs.vendor }}
           FUZE_SENSITIVE_FILES: ${{ steps.context.outputs.sensitive_files }}
+          FUZE_DEPLOY_SENSITIVE_FILES: ${{ steps.context.outputs.deploy_sensitive_files }}
         run: python3 scripts/fuze_code_review_verdict.py
 
       - name: Submit GitHub review
@@ -458,12 +487,24 @@ jobs:
             comment)
               gh pr review "$PR_NUMBER" --comment --body-file "$BODY_FILE"
               ;;
-            outage)
-              # The owner's credit-outage exception: a vendor credit/quota exhaustion or an
-              # unreachable provider is not a defect in this PR, so the check PASSES with a
-              # notice. Kept distinct from abstain so the auto-fix loop never fires on it.
-              gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
-              echo "::notice title=fuze-code-review::review skipped on a provider availability/credit outage -- passing per the owner's exception. Re-run once a provider recovers."
+            outage|outage_blocking)
+              # Upsert ONE comment, found by its marker, so reruns PATCH instead of stacking.
+              EXISTING=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --paginate \
+                --jq '[.[] | select(.body | contains("<!-- fuze-code-review-outage -->")) | .id] | first // empty')
+              if [ -n "$EXISTING" ]; then
+                gh api -X PATCH "repos/${GH_REPO}/issues/comments/${EXISTING}" -F body=@"$BODY_FILE" >/dev/null
+              else
+                gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              fi
+              if [ "$DECISION" = "outage_blocking" ]; then
+                echo "::error title=fuze-code-review::NO REVIEW WAS PERFORMED (provider outage) and this PR touches sensitive paths (CI/governance, deploy or DB migrations) -- failing. Re-run once a provider recovers."
+                echo "### fuze-code-review: NO REVIEW WAS PERFORMED (BLOCKING)" >> "$GITHUB_STEP_SUMMARY"
+                echo "Provider outage on a PR touching sensitive paths; the check fails until a real review runs." >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+              echo "::warning title=fuze-code-review::NO REVIEW WAS PERFORMED -- provider availability/credit outage; passing only because no sensitive path is touched. Re-run once a provider recovers."
+              echo "### fuze-code-review: NO REVIEW WAS PERFORMED" >> "$GITHUB_STEP_SUMMARY"
+              echo "Provider outage; check passes only because no sensitive path is touched. This is not a review or an approval." >> "$GITHUB_STEP_SUMMARY"
               ;;
             abstain)
               gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
