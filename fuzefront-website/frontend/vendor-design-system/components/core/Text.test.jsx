@@ -133,4 +133,40 @@ describe("<Text>", () => {
     expect(node.style.fontSize).toBe("var(--text-sm)");
     expect(node.style.marginBlockEnd).toBe("var(--space-4)");
   });
+
+  it("defaults `weight` to inherit — no inline override (unchanged pre-`weight` behavior)", () => {
+    render(<Text>Default weight</Text>);
+    expect(screen.getByText("Default weight").style.fontWeight).toBe("inherit");
+  });
+
+  it("resolves every `weight` step to its DS font-weight token — never a raw Tailwind font-* utility", () => {
+    const cases = [
+      ["regular", "var(--weight-regular)"],
+      ["medium", "var(--weight-medium)"],
+      ["semibold", "var(--weight-semibold)"],
+      ["bold", "var(--weight-bold)"],
+    ];
+    cases.forEach(([weight, expected]) => {
+      const { unmount } = render(<Text weight={weight}>{weight}</Text>);
+      expect(screen.getByText(weight).style.fontWeight).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("falls back to inherit for an unknown weight value", () => {
+    render(<Text weight="not-a-real-weight">Fallback weight</Text>);
+    expect(screen.getByText("Fallback weight").style.fontWeight).toBe("inherit");
+  });
+
+  it("covers the recurring `font-medium text-gray-900` label/heading pattern via tone+weight", () => {
+    render(
+      <Text as="h3" tone="primary" weight="medium">
+        Email
+      </Text>
+    );
+    const node = screen.getByText("Email");
+    expect(node.tagName).toBe("H3");
+    expect(node.style.color).toBe("var(--text-primary)");
+    expect(node.style.fontWeight).toBe("var(--weight-medium)");
+  });
 });

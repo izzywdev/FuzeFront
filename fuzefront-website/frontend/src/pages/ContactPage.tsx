@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
-import { Center, IconTile, Container, FieldLabel } from '@fuzefront/design-system'
+import { Center, IconTile, Container, FieldLabel, Text } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -115,7 +115,7 @@ export const ContactPage: React.FC = () => {
                     <Mail size={24} />
                   </IconTile>
                   <div>
-                    <h3 className="font-medium text-gray-900">Email</h3>
+                    <Text as="h3" weight="medium">Email</Text>
                     <p className="text-gray-600">contact@fuzefront.com</p>
                   </div>
                 </div>
@@ -125,7 +125,7 @@ export const ContactPage: React.FC = () => {
                     <Phone size={24} />
                   </IconTile>
                   <div>
-                    <h3 className="font-medium text-gray-900">Phone</h3>
+                    <Text as="h3" weight="medium">Phone</Text>
                     <a href="tel:+16502763313" className="text-gray-600 hover:text-primary-600 transition-colors">
                       (650) 276-3313
                     </a>
@@ -137,7 +137,7 @@ export const ContactPage: React.FC = () => {
                     <MapPin size={24} />
                   </IconTile>
                   <div>
-                    <h3 className="font-medium text-gray-900">Office</h3>
+                    <Text as="h3" weight="medium">Office</Text>
                     <p className="text-gray-600">San Francisco, CA</p>
                   </div>
                 </div>
