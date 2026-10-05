@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, HeroHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -49,9 +49,9 @@ export const PressPage: React.FC = () => {
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
           >
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
+            <HeroHeading>
               Press &amp; <span className="gradient-text">Media</span>
-            </h1>
+            </HeroHeading>
             <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
               News, announcements, and resources for journalists and media covering FuzeOne.
             </p>

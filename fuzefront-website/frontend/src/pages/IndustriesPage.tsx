@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, HeroHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -207,9 +207,9 @@ export const IndustriesPage: React.FC = () => {
         <div className="absolute inset-0 hero-pattern opacity-20" />
         <Container size="4xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
+            <HeroHeading spacing="md">
               Built for every industry
-            </h1>
+            </HeroHeading>
             <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-8">
               FuzeOne adapts to the compliance, security, and operational requirements of your vertical — not the other way around.
             </p>

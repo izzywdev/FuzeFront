@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, HeroHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -149,9 +149,9 @@ export const PricingPage: React.FC = () => {
         <div className="absolute inset-0 hero-pattern opacity-20" />
         <Container size="4xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
+            <HeroHeading spacing="md">
               Simple, transparent pricing
-            </h1>
+            </HeroHeading>
             <p className="text-lg text-secondary-300 mb-8 max-w-xl mx-auto">
               Start free, scale without surprises. All plans include a 14-day free trial.
             </p>

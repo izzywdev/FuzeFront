@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -113,9 +113,9 @@ export const CareersPage: React.FC = () => {
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
           >
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
+            <HeroHeading>
               Join <span className="gradient-text">FuzeOne</span>
-            </h1>
+            </HeroHeading>
             <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
               We're a small, remote-first team building the operating system for SaaS. Help us
               build it.

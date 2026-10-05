@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -88,9 +88,9 @@ export const AboutPage: React.FC = () => {
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
           >
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
+            <HeroHeading>
               About <span className="gradient-text">FuzeOne</span>
-            </h1>
+            </HeroHeading>
             <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
               We're building the operating system for SaaS — integrated platforms that eliminate
               the need to rebuild common infrastructure, so teams can ship faster.

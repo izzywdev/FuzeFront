@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { HeroHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -173,9 +174,9 @@ export const ProductsPage: React.FC = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
           >
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-4">
+            <HeroHeading spacing="md">
               The complete Fuze family
-            </h1>
+            </HeroHeading>
             <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-8">
               10 products that work standalone and compose seamlessly. Auth, AI, social, finance, security, analytics — everything your business needs.
             </p>
