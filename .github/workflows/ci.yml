@@ -1199,23 +1199,23 @@ jobs:
       - name: Start Kafka (KRaft) test broker
         run: docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 300 kafka-test
 
-      - name: Install TS suite (+ packages/events when it exists)
-        working-directory: tests/events-acceptance/ts
+      - name: Install TS suite (+ build packages/events when it exists)
         run: |
-          npm install
-          if [ -f ../../../packages/events/package.json ]; then
-            (cd ../../../packages/events && npm install && npm run build --if-present)
-            npm install --no-save ../../../packages/events
+          if [ -f packages/events/package.json ]; then
+            # root workspace install links @izzywdev/fuzefront-events where the suite resolves it
+            npm ci --ignore-scripts
+            (cd packages/events && npm run build)
           else
             echo "::warning::packages/events absent - TS acceptance tests run RED-by-design (test.failing)"
           fi
+          cd tests/events-acceptance/ts && npm install
 
       - name: Install Python suite (+ packages/events-py when it exists)
         working-directory: tests/events-acceptance/py
         run: |
           pip install -r requirements.txt
           if [ -f ../../../packages/events-py/pyproject.toml ]; then
-            pip install -e ../../../packages/events-py
+            pip install -e ../../../packages/identity-py -e ../../../packages/events-py
           else
             echo "::warning::packages/events-py absent - Python acceptance tests run RED-by-design (xfail)"
           fi
@@ -1226,7 +1226,7 @@ jobs:
 
       - name: Run Python acceptance suite (incl. cross-language, case 7)
         working-directory: tests/events-acceptance/py
-        run: pytest -v -rxs . ../cross
+        run: pytest -v -rxs .
 
       - name: Dump Kafka logs on failure
         if: failure()

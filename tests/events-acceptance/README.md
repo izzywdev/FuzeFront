@@ -13,13 +13,14 @@ standard §3-§4). It never imports package internals: each language has ONE ada
 | 4 version guard (version-guard.json) | consumer.test.ts | test_consumer.py |
 | 5 replay + shuffled delivery | consumer.test.ts | test_consumer.py |
 | 6 v1 envelope back-compat | consumer.test.ts | test_consumer.py |
-| 7 cross-language | `cross/test_cross_language.py` | |
+| 7 cross-language | | `py/test_cross_language.py` |
 
 While a package is absent its tests are RED by design (`test.failing` / `xfail`, reason names the
 missing package). When the package lands they run for real; no edit needed. Cross-language tests
 are skipped-with-reason unless BOTH packages are present.
 
-Env: `DATABASE_URL` (postgres), `KAFKA_BROKERS` (default `localhost:9094`). Without them the
-suites skip with a reason (same convention as the existing event-propagation job).
+Env: `DATABASE_URL` (postgres) gates the suites (skip with reason when unset). `KAFKA_BROKERS` selects real Kafka
+(CI); when unset an in-process bus using the packages' own ports (RelayTransport/Publisher, processMessage/process)
+is used for fast local runs. Case 7 always needs real Kafka.
 
 Run: `cd ts && npm install && npm test`; `cd py && pip install -r requirements.txt && pytest`.
