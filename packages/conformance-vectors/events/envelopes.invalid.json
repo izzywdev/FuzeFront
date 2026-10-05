@@ -1,0 +1,480 @@
+{
+  "description": "Envelope v2 vectors that MUST be rejected; `why` states the violated rule.",
+  "vectors": [
+    {
+      "name": "missing-eventId",
+      "why": "eventId is required in v2",
+      "envelope": {
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "eventId-wrong-prefix",
+      "why": "eventId must carry the evt prefix",
+      "envelope": {
+        "eventId": "org_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "eventId-bad-suffix-length",
+      "why": "TypeID suffix must be exactly 26 base32 chars",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "eventId-excluded-char",
+      "why": "base32 alphabet excludes i, l, o, u",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02u",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "eventId-suffix-overflow",
+      "why": "first suffix char above 7 overflows 128 bits",
+      "envelope": {
+        "eventId": "evt_81h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "aggregateId-bare-uuid",
+      "why": "aggregateId must be a typed id, never a bare uuid",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "0195a8f2-7c1d-7a3e-9b44-2f6d1c0e8a55",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "aggregateId-uppercase",
+      "why": "TypeIDs are lowercase",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "ORG_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "aggregateVersion-zero",
+      "why": "aggregateVersion is a positive integer",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 0,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "aggregateVersion-negative",
+      "why": "aggregateVersion is a positive integer",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": -1,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "aggregateVersion-fractional",
+      "why": "aggregateVersion must be an integer",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 1.5,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "aggregateVersion-string",
+      "why": "aggregateVersion is a number, not a numeric string",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": "3",
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "schemaVersion-zero",
+      "why": "schemaVersion is a positive integer",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 0,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "schemaVersion-v1-style-string",
+      "why": "v2 schemaVersion is an integer, not the v1 '1.0' string",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": "1.0",
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "missing-aggregateVersion",
+      "why": "aggregateVersion is required in v2",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "missing-producer",
+      "why": "producer is required",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "empty-producer",
+      "why": "producer must be non-empty",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "missing-correlationId",
+      "why": "correlationId is required",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "causationId-not-evt",
+      "why": "causationId must itself be an evt_ id",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        },
+        "causationId": "org_01h455vb4pex5vsknk084sn02q"
+      }
+    },
+    {
+      "name": "occurredAt-not-iso",
+      "why": "occurredAt must be an RFC 3339 timestamp",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "yesterday",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "occurredAt-no-offset",
+      "why": "occurredAt must carry Z or an offset",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "topic-uppercase",
+      "why": "topic names are lowercase dotted",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "Identity.Org.Updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "topic-no-dot",
+      "why": "topic must be <domain>.<name>",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "orgupdated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        }
+      }
+    },
+    {
+      "name": "missing-payload",
+      "why": "payload is required",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1"
+      }
+    },
+    {
+      "name": "unknown-field",
+      "why": "v2 envelope is closed (additionalProperties false)",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        },
+        "extra": "x"
+      }
+    },
+    {
+      "name": "v1-fields-mixed-in",
+      "why": "v2 must not carry the v1 'version' field",
+      "envelope": {
+        "eventId": "evt_01h455vb4pex5vsknk084sn02q",
+        "topic": "identity.org.updated",
+        "schemaVersion": 1,
+        "aggregateType": "organization",
+        "aggregateId": "org_01h455vb4pex5vsknk084sn02q",
+        "aggregateVersion": 3,
+        "producer": "security-service",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-1",
+        "payload": {
+          "id": "org_01h455vb4pex5vsknk084sn02q",
+          "name": "Acme"
+        },
+        "version": "1.0"
+      }
+    },
+    {
+      "name": "not-an-object",
+      "why": "an envelope is a JSON object",
+      "envelope": "identity.org.updated"
+    }
+  ]
+}

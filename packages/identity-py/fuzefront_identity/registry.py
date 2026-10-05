@@ -60,6 +60,9 @@ ENTITY_PREFIXES: Mapping[str, str] = MappingProxyType(
         # reasoning as "cns_"/"ckd_" above. MUST stay in parity with
         # packages/identity/src/registry.ts (registry-parity gate).
         "configHistory": "cvh",
+        # "event" — the envelope-v2 eventId (data-consistency standard §3). Bare
+        # spine prefix; MUST stay in parity with packages/identity/src/registry.ts.
+        "event": "evt",
     }
 )
 
