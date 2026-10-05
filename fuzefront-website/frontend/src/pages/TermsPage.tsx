@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { FileText } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { IconTile, SectionTitle } from '@fuzefront/design-system'
 
 export const TermsPage: React.FC = () => {
   return (
@@ -12,9 +12,7 @@ export const TermsPage: React.FC = () => {
           <IconTile tone="accent" size="lg" className="mb-5">
             <FileText size={28} />
           </IconTile>
-          <h1 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-3">
-            Terms of Service
-          </h1>
+          <SectionTitle as="h1" space="sm">Terms of Service</SectionTitle>
           <p className="text-gray-600">Last updated: September 2026</p>
           <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull; A Delaware Corporation &bull;{' '}

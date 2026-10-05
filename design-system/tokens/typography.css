@@ -64,4 +64,16 @@
   --role-data-font: var(--font-mono);   /* IDs, scopes, remote URLs */
   --role-data-size: var(--text-2xs);
   --role-data-weight: var(--weight-medium);
+
+  /* ---- Section title (SectionTitle component) ------------
+     Responsive marketing-page section heading — replaces the
+     `text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-{3,4}`
+     block duplicated across marketing pages (ds-fp:ec2a9976a21d).
+     Two explicit steps (no computed/clamp value) so it mirrors the
+     source Tailwind breakpoint pair exactly: below 640px and at/above it. */
+  --role-section-title-font: var(--font-display);
+  --role-section-title-size: 1.875rem;            /* < 640px */
+  --role-section-title-size-sm: var(--text-3xl);  /* >= 640px — 2.25rem */
+  --role-section-title-weight: var(--weight-bold);
+  --role-section-title-leading: var(--leading-tight);
 }
