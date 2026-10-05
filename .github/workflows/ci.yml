@@ -1150,6 +1150,92 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
 
+  # ── Events foundation: independent acceptance suite (slice B3) ───────────
+  # Verifies packages/events (TS) and packages/events-py (Python) against the FROZEN
+  # contract (contracts/events/*, packages/conformance-vectors/events/*) on real Postgres +
+  # real Kafka. Sibling of event-propagation-integration (same service container + compose
+  # broker). While a package is absent its tests are RED-by-design (test.failing / xfail,
+  # reason names the package); once it lands they run for real. Cross-language tests skip
+  # unless both packages exist. Adapters: tests/events-acceptance/{ts/adapter.ts,py/adapter.py}.
+  # Not yet in `notify.needs` - promote to a required check once both packages are green.
+  events-acceptance:
+    name: Events acceptance (Postgres + Kafka, TS + Py)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: events_acceptance
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/events_acceptance
+      KAFKA_BROKERS: localhost:9094
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Start Kafka (KRaft) test broker
+        run: docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 300 kafka-test
+
+      - name: Install TS suite (+ packages/events when it exists)
+        working-directory: tests/events-acceptance/ts
+        run: |
+          npm install
+          if [ -f ../../../packages/events/package.json ]; then
+            (cd ../../../packages/events && npm install && npm run build --if-present)
+            npm install --no-save ../../../packages/events
+          else
+            echo "::warning::packages/events absent - TS acceptance tests run RED-by-design (test.failing)"
+          fi
+
+      - name: Install Python suite (+ packages/events-py when it exists)
+        working-directory: tests/events-acceptance/py
+        run: |
+          pip install -r requirements.txt
+          if [ -f ../../../packages/events-py/pyproject.toml ]; then
+            pip install -e ../../../packages/events-py
+          else
+            echo "::warning::packages/events-py absent - Python acceptance tests run RED-by-design (xfail)"
+          fi
+
+      - name: Run TS acceptance suite
+        working-directory: tests/events-acceptance/ts
+        run: npm test
+
+      - name: Run Python acceptance suite (incl. cross-language, case 7)
+        working-directory: tests/events-acceptance/py
+        run: pytest -v -rxs . ../cross
+
+      - name: Dump Kafka logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs kafka-test
+
+      - name: Tear down harness
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
   # ── Tier 4: Contract ─────────────────────────────────────────────────────
   contract-tests:
     name: Contract Tests (OpenAPI)
