@@ -259,7 +259,7 @@ export class MemoryOutboxStore implements OutboxStore {
               p.aggregateType === r.aggregateType &&
               p.aggregateId === r.aggregateId &&
               p.aggregateVersion < r.aggregateVersion &&
-              p.status === 'pending'
+              (p.status === 'pending' || p.status === 'failed')
           )
       )
       .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.aggregateVersion - b.aggregateVersion)

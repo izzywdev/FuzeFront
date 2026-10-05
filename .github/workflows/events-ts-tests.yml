@@ -1,0 +1,57 @@
+name: events-ts tests
+
+# Runs @izzywdev/fuzefront-events against real Postgres 16. The Postgres-backed suites
+# (SKIP LOCKED concurrency, atomic effect+dedupe) self-skip when EVENTS_TEST_PG_URL is unset;
+# here that would be a silent loss of coverage, so the job fails if the variable is missing.
+
+on:
+  pull_request:
+    paths:
+      - 'packages/events/**'
+      - 'shared/src/kafka/**'
+      - 'packages/identity/**'
+      - 'contracts/events/**'
+      - 'packages/conformance-vectors/**'
+      - '.github/workflows/events-ts-tests.yml'
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: events_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EVENTS_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/events_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Build (shared kafka, identity, events)
+        run: npm run build
+        working-directory: packages/events
+
+      - name: Require Postgres for the suite
+        run: test -n "$EVENTS_TEST_PG_URL"
+
+      - name: Tests (incl. Postgres)
+        working-directory: packages/events
+        run: npx jest --ci

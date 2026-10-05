@@ -84,27 +84,31 @@ describePg('Postgres-backed outbox / relay / consumer', () => {
     expect(new Set(ids).size).toBe(40)
   })
 
-  it('bounded attempts -> DLQ, row failed, later versions continue; requeue resumes the parked row', async () => {
+  it('bounded attempts -> DLQ, row failed, failed head blocks later versions; requeue unblocks', async () => {
     const e1 = ev(1), e2 = ev(2)
     await enqueueEvent(knexSql(k as any), e1)
     await enqueueEvent(knexSql(k as any), e2)
     const sent: string[] = []
+    let healthy = false
     const relay = createOutboxRelay({
       db: db(), maxAttempts: 2, logger: silentLogger,
       transport: { send: async (t, m) => {
         const v = JSON.parse(m.value)
-        if (!t.endsWith('.dlq') && v.aggregateVersion === 1) throw new Error('poison')
+        if (!t.endsWith('.dlq') && !healthy && v.aggregateVersion === 1) throw new Error('poison')
         sent.push(t + '#' + (v.aggregateVersion ?? v.raw.aggregateVersion))
       } },
     })
     await relay.drainOnce() // attempt 1 (v1 retry, v2 blocked)
     await relay.drainOnce() // attempt 2 -> dlq
-    await relay.drainOnce() // v2 goes
-    expect(sent).toEqual(['identity.org.updated.dlq#1', 'identity.org.updated#2'])
+    await relay.drainOnce() // v2 stays blocked by the failed v1
+    expect(sent).toEqual(['identity.org.updated.dlq#1'])
     const st = (await k.raw(`SELECT status, attempts, last_error FROM event_outbox WHERE event_id=?`, [e1.eventId])).rows[0]
     expect(st).toMatchObject({ status: 'failed', attempts: 2, last_error: 'poison' })
     expect(await requeueFailedEvent(knexSql(k as any), e1.eventId)).toBe(true)
     expect((await k.raw(`SELECT status FROM event_outbox WHERE event_id=?`, [e1.eventId])).rows[0].status).toBe('pending')
+    healthy = true
+    await relay.drain()
+    expect(sent.slice(1)).toEqual(['identity.org.updated#1', 'identity.org.updated#2'])
   })
 
   describe('consumer', () => {

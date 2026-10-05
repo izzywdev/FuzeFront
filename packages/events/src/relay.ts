@@ -25,7 +25,7 @@ export interface ClaimOps {
   markSent(row: OutboxRow): Promise<void>
   /** Record a failed attempt; the row stays `pending` (and keeps blocking its aggregate). */
   markRetry(row: OutboxRow, error: string): Promise<void>
-  /** Park the row as `failed` (its DLQ copy is already written; later versions of the aggregate continue). */
+  /** Park the row as `failed` (its DLQ copy is already written; it STILL blocks later versions of the aggregate until resolved). */
   markFailed(row: OutboxRow, error: string): Promise<void>
 }
 
@@ -36,7 +36,7 @@ export interface ClaimOps {
 export interface OutboxStore {
   /**
    * Claim up to `batchSize` claimable rows and run `fn` with them. Claimable = `pending` and
-   * no lower-version row of the same aggregate is still `pending` (head-of-line). A `failed` row has already been copied to the DLQ and does not block.
+   * no lower-version row of the same aggregate is `pending` or `failed` (head-of-line; a `failed` row blocks until an operator resolves it).
    * Mutations made through `ops` commit/rollback together with the claim.
    */
   claim<T>(batchSize: number, fn: (rows: OutboxRow[], ops: ClaimOps) => Promise<T>): Promise<T>
@@ -89,7 +89,7 @@ WHERE o.status = 'pending'
     WHERE p.aggregate_type = o.aggregate_type
       AND p.aggregate_id = o.aggregate_id
       AND p.aggregate_version < o.aggregate_version
-      AND p.status = 'pending'
+      AND p.status IN ('pending', 'failed')
   )
 ORDER BY o.created_at ASC, o.aggregate_version ASC
 LIMIT $1
@@ -150,8 +150,8 @@ export function pgOutboxStore(db: Db): OutboxStore {
 
 /**
  * Operator action for a parked (`failed`, dead-lettered) row: put it back to `pending` with a
- * fresh attempt budget (after fixing the cause). Note later versions may already have been
- * published; consumers' version guard absorbs the late, lower version.
+ * fresh attempt budget (after fixing the cause). This is what unblocks the aggregate's later versions
+ * (the other unblock is a deliberate mark-sent).
  */
 export async function requeueFailedEvent(db: SqlClient, eventId: string): Promise<boolean> {
   const r = await db.query(
@@ -204,12 +204,12 @@ export interface OutboxRelay {
  * Generalised transactional-outbox relay (successor of backend/core `drainOutboxOnce`).
  *
  * - Claim: `FOR UPDATE SKIP LOCKED`, so replicas never publish the same row.
- * - Order: PER AGGREGATE by `aggregate_version`; only the head `pending` row of an aggregate is
- *   claimable, so a failing (still retrying) head blocks only its own aggregate. Different aggregates interleave.
+ * - Order: PER AGGREGATE by `aggregate_version`; only the head row of an aggregate is claimable, so a
+ *   failing or parked head blocks only its own aggregate. Different aggregates interleave.
  * - Publish with key = `aggregateId`; mark `sent` only after the transport resolves.
  * - Failure: attempts++ and the row stays `pending`; at `maxAttempts` the envelope is sent to
- *   `<topic>.dlq` and the row is parked `failed`; the aggregate's later versions then continue
- *   (`requeueFailedEvent` re-queues it). If the DLQ send itself fails the row stays `pending` (retried).
+ *   `<topic>.dlq` and the row is parked `failed`; it keeps blocking the aggregate's later versions
+ *   until `requeueFailedEvent` (or a deliberate mark-sent). If the DLQ send itself fails the row stays `pending` (retried).
  * - Crash between commit and publish is safe: the row is still `pending`, the next pass publishes it.
  *   A crash between publish and commit re-publishes; consumers dedupe on `eventId`.
  */
@@ -271,7 +271,7 @@ export function createOutboxRelay(opts: OutboxRelayOptions): OutboxRelay {
           }
           await ops.markFailed(row, error.message)
           res.deadLettered++
-          log.error({ op: 'outbox.dlq', eventId: row.eventId, topic: row.topic, aggregateId: row.aggregateId, attempts: attempt, err: error.message }, 'event dead-lettered; later versions of the aggregate continue')
+          log.error({ op: 'outbox.dlq', eventId: row.eventId, topic: row.topic, aggregateId: row.aggregateId, attempts: attempt, err: error.message }, 'event dead-lettered; aggregate blocked until requeued')
           hooks?.onDeadLetter?.(row, error)
         }
       }

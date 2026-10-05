@@ -90,11 +90,12 @@ describe('outbox relay', () => {
     expect(sent).toEqual([`${ORG_B}:1`, `${ORG_A}:1`, `${ORG_A}:2`])
   })
 
-  it('bounded attempts then DLQ: <topic>.dlq, row parked failed, later versions of the aggregate continue', async () => {
+  it('bounded attempts then DLQ: <topic>.dlq, row parked failed, a failed head STILL blocks later versions; other aggregates unaffected; requeue unblocks', async () => {
     const store = new MemoryOutboxStore()
     const kafka = new InMemoryKafka(3)
     const producer = kafka.producer()
     const dead: string[] = []
+    let healthy = false
     const v1 = ev(1), v2 = ev(2)
     const relay = createOutboxRelay({
       store,
@@ -104,7 +105,7 @@ describe('outbox relay', () => {
       transport: {
         send: async (topic, m) => {
           // v1 never publishes on its main topic; the DLQ and v2 work.
-          if (!topic.endsWith('.dlq') && JSON.parse(m.value).aggregateVersion === 1) throw new Error('boom')
+          if (!topic.endsWith('.dlq') && !healthy && m.key === ORG_A && JSON.parse(m.value).aggregateVersion === 1) throw new Error('boom')
           await producer.send({ topic, messages: [m] })
         },
       },
@@ -119,7 +120,18 @@ describe('outbox relay', () => {
     const [dlq] = kafka.json<any>('identity.org.updated.dlq')
     expect(dlq.raw.eventId).toBe(v1.eventId)
     expect(dlq.reason).toMatch(/max attempts/)
-    expect((await relay.drainOnce()).sent).toBe(1) // v2 continues
+    expect(await relay.drainOnce()).toEqual({ sent: 0, retried: 0, deadLettered: 0 }) // v2 blocked by failed v1
+    expect(store.status(v2.eventId)).toBe('pending')
+    // other aggregates are unaffected
+    store.enqueue(ev(1, { aggregateId: ORG_B }))
+    expect((await relay.drainOnce()).sent).toBe(1)
+    expect(store.status(v2.eventId)).toBe('pending')
+    // operator requeue unblocks (transport now healthy for v1)
+    store.rows.find((r) => r.eventId === v1.eventId)!.status = 'pending'
+    store.rows.find((r) => r.eventId === v1.eventId)!.attempts = 0
+    healthy = true
+    await relay.drain()
+    expect(store.status(v1.eventId)).toBe('sent')
     expect(store.status(v2.eventId)).toBe('sent')
   })
 
