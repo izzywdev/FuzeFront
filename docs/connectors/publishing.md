@@ -25,8 +25,8 @@ A connector's OAuth integration does not automatically qualify as a store app. B
 | google-tasks | Google Workspace Marketplace; qualifying Workspace add-on or integrated web app | Marketplace SDK listing and public review; no standalone Tasks add-on assumed |
 | microsoft-sharepoint | Microsoft Marketplace; modern SharePoint Framework solution or qualifying Microsoft 365 app | Partner Center offer and certification; retired SharePoint Add-ins cannot be newly submitted |
 | microsoft-todo | Microsoft Marketplace; qualifying Microsoft 365 app or SaaS offer | Partner Center offer and certification |
-| jira-cloud | Atlassian Marketplace; qualifying Jira Cloud Forge app | Atlassian Marketplace listing and review; new Connect publication is closed |
-| confluence-cloud | Atlassian Marketplace; qualifying Confluence Cloud Forge app | Atlassian Marketplace listing and review; new Connect publication is closed |
+| jira-cloud | Atlassian Marketplace informational listing for the implemented Jira 3LO integration | Enable sharing in developer console; request integration approval and optionally an informational listing. Forge is a separate route. |
+| confluence-cloud | Atlassian Marketplace informational listing for the implemented Confluence 3LO integration | Enable sharing in developer console; request integration approval and optionally an informational listing. Forge is a separate route. |
 | linear | Linear Integrations Directory; public OAuth integration | Linear integration directory submission and review |
 | trello | Trello Power-Up Directory; qualifying Power-Up | Trello developer support submission and review |
 
