@@ -210,6 +210,10 @@
       "sourcePath": "components/layout/SectionHead.jsx"
     },
     {
+      "name": "SectionTitle",
+      "sourcePath": "components/layout/SectionTitle.jsx"
+    },
+    {
       "name": "Stack",
       "sourcePath": "components/layout/Stack.jsx"
     },
@@ -1107,6 +1111,36 @@
     {
       "name": "--role-data-weight",
       "value": "var(--weight-medium)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-font",
+      "value": "var(--font-display)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-size",
+      "value": "1.875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-size-sm",
+      "value": "var(--text-3xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-weight",
+      "value": "var(--weight-bold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-section-title-leading",
+      "value": "var(--leading-tight)",
       "kind": "font",
       "definedIn": "tokens/typography.css"
     },

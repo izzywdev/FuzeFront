@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, SectionTitle } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -263,9 +263,7 @@ export const HomePage: React.FC = () => {
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-                Everything your SaaS needs, none of the overhead
-              </h2>
+              <SectionTitle>Everything your SaaS needs, none of the overhead</SectionTitle>
               <p className="text-lg text-gray-600 max-w-2xl mx-auto">
                 FuzeOne bundles the primitives that every product team reinvents — so yours doesn't have to.
               </p>
@@ -294,9 +292,7 @@ export const HomePage: React.FC = () => {
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-                10 products. One platform. Zero lock-in.
-              </h2>
+              <SectionTitle>10 products. One platform. Zero lock-in.</SectionTitle>
               <p className="text-lg text-gray-600 max-w-2xl mx-auto">
                 Each Fuze product works standalone and integrates seamlessly with the others.
               </p>
@@ -345,9 +341,7 @@ export const HomePage: React.FC = () => {
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-                Built for every vertical
-              </h2>
+              <SectionTitle>Built for every vertical</SectionTitle>
               <p className="text-lg text-gray-600 max-w-xl mx-auto">
                 From FinTech compliance to HealthTech HIPAA requirements — FuzeOne adapts to your industry's rules.
               </p>
@@ -482,9 +476,7 @@ export const HomePage: React.FC = () => {
         <div className="max-w-3xl mx-auto px-4 text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-                Ready to build on FuzeOne?
-              </h2>
+              <SectionTitle>Ready to build on FuzeOne?</SectionTitle>
               <p className="text-lg text-gray-600 mb-8">
                 Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
               </p>

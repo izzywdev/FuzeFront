@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, SectionTitle } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -150,9 +150,7 @@ export const AboutPage: React.FC = () => {
             transition={{ duration: 0.6 }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-              Leadership
-            </h2>
+            <SectionTitle>Leadership</SectionTitle>
           </motion.div>
 
           <motion.div
@@ -204,9 +202,7 @@ export const AboutPage: React.FC = () => {
             transition={{ duration: 0.6 }}
             className="text-center mb-12"
           >
-            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-              What we offer
-            </h2>
+            <SectionTitle>What we offer</SectionTitle>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Everything a growing SaaS product needs, bundled into one platform.
             </p>
@@ -240,9 +236,7 @@ export const AboutPage: React.FC = () => {
       {/* CTA */}
       <section className="py-20 bg-white border-t border-secondary-100">
         <div className="max-w-3xl mx-auto px-4 text-center">
-          <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-            Want to build with us?
-          </h2>
+          <SectionTitle>Want to build with us?</SectionTitle>
           <p className="text-lg text-gray-600 mb-8">
             Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
           </p>
