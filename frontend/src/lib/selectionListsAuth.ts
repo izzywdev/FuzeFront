@@ -19,7 +19,16 @@
  *     page of requests costs one exchange, not one per call;
  *   - single-flight: concurrent callers share one in-flight exchange;
  *   - fail-quiet: a refused/failed exchange yields `null` (no credential), never
- *     a throw into render, and is never cached, so the next call retries.
+ *     a throw into render;
+ *   - a REFUSAL (any non-2xx answer) is remembered for FAILURE_BACKOFF_MS per
+ *     (session, org). The Security API mounts `tokenAuthRateLimiter` (10 non-2xx
+ *     per IP per minute) in front of EVERY /api/organizations/* route, so
+ *     re-asking on each selection-list call after a 403 (stale active org,
+ *     removed membership, deactivated org) would lock the user, and everyone
+ *     behind the same NAT, out of all org routes for a minute. A network error
+ *     or a malformed body never reached the limiter as a refusal and is retried;
+ *   - a change of session token (logout, account switch) drops every cached
+ *     org token, so no previous account's credential lingers in memory.
  *
  * The org-scoped token never leaves memory: it is not written to storage.
  */
@@ -30,6 +39,9 @@ import { useOrganizations } from './shared'
 
 /** Refresh this long before the token's own expiry so a request never carries a token about to lapse. */
 const REFRESH_SKEW_MS = 60_000
+
+/** After a refused exchange, do not ask again for this (session, org) for this long. */
+export const FAILURE_BACKOFF_MS = 30_000
 
 export interface OrgTokenProviderDeps {
   /** The plain session token (lib/accounts.getActiveAuthToken). */
@@ -49,6 +61,9 @@ export function createOrgSessionTokenProvider(deps: OrgTokenProviderDeps): () =>
   const now = deps.now ?? Date.now
   const cache = new Map<string, CacheEntry>()
   const inflight = new Map<string, Promise<string | null>>()
+  /** key -> time before which a refused exchange is not retried. */
+  const refusedUntil = new Map<string, number>()
+  let lastSessionToken: string | null = null
 
   async function exchange(sessionToken: string, orgId: string, key: string): Promise<string | null> {
     try {
@@ -57,7 +72,10 @@ export function createOrgSessionTokenProvider(deps: OrgTokenProviderDeps): () =>
         method: 'POST',
         headers: { Authorization: `Bearer ${sessionToken}`, Accept: 'application/json' },
       })
-      if (!res.ok) return null
+      if (!res.ok) {
+        refusedUntil.set(key, now() + FAILURE_BACKOFF_MS)
+        return null
+      }
       const body = (await res.json()) as { token?: unknown; expiresIn?: unknown }
       if (typeof body.token !== 'string' || body.token.length === 0) return null
       const ttlMs = (typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 0) * 1000
@@ -72,6 +90,13 @@ export function createOrgSessionTokenProvider(deps: OrgTokenProviderDeps): () =>
   return async function getOrgToken(): Promise<string | null> {
     const orgId = deps.getOrgId()
     const sessionToken = deps.getSessionToken()
+    if (sessionToken !== lastSessionToken) {
+      // Logout / account switch: nothing minted for the previous session may
+      // stay reachable (the keys below would never match again anyway).
+      cache.clear()
+      refusedUntil.clear()
+      lastSessionToken = sessionToken
+    }
     if (!orgId || !sessionToken) return null
 
     // Keyed on the session token as well: switching account (a different
@@ -80,6 +105,11 @@ export function createOrgSessionTokenProvider(deps: OrgTokenProviderDeps): () =>
     const hit = cache.get(key)
     if (hit && now() < hit.refreshAtMs) return hit.token
     cache.delete(key)
+    const refused = refusedUntil.get(key)
+    if (refused !== undefined) {
+      if (now() < refused) return null
+      refusedUntil.delete(key)
+    }
 
     let pending = inflight.get(key)
     if (!pending) {

@@ -22,7 +22,11 @@ vi.mock('../lib/shared', () => ({
 }))
 vi.mock('../lib/accounts', () => ({ getActiveAuthToken: () => 'session.tok' }))
 
-import { createOrgSessionTokenProvider, useSelectionListsAuth } from '../lib/selectionListsAuth'
+import {
+  createOrgSessionTokenProvider,
+  FAILURE_BACKOFF_MS,
+  useSelectionListsAuth,
+} from '../lib/selectionListsAuth'
 
 function ok(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response
@@ -102,18 +106,56 @@ describe('createOrgSessionTokenProvider', () => {
     expect(noSession.fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('fails quiet and does not cache: refused (403), network error, or a body with no token', async () => {
+  it('fails quiet and does not cache a network error or a body with no token', async () => {
     const { fetchImpl, getToken } = setup()
-    fetchImpl.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({}) } as Response)
-    expect(await getToken()).toBeNull()
     fetchImpl.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     expect(await getToken()).toBeNull()
     fetchImpl.mockResolvedValueOnce(ok({}))
     expect(await getToken()).toBeNull()
-    // none of the failures were cached: the next call retries and succeeds
+    // neither failure was remembered: the next call retries and succeeds
     fetchImpl.mockResolvedValueOnce(ok({ token: 'recovered', expiresIn: 900 }))
     expect(await getToken()).toBe('recovered')
-    expect(fetchImpl).toHaveBeenCalledTimes(4)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+  })
+
+  it('backs off after a refusal instead of re-asking on every call (rate-limiter self-lockout)', async () => {
+    // tokenAuthRateLimiter counts every non-2xx on /api/organizations/* per IP
+    // (10/min). A page of selection-list calls with a stale active org must not
+    // spend that budget: one refusal, then silence for FAILURE_BACKOFF_MS.
+    const { fetchImpl, getToken, advance } = setup()
+    fetchImpl.mockResolvedValue({ ok: false, status: 403, json: async () => ({}) } as Response)
+    for (let i = 0; i < 20; i++) expect(await getToken()).toBeNull()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    advance(FAILURE_BACKOFF_MS - 1)
+    expect(await getToken()).toBeNull()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    advance(1)
+    fetchImpl.mockResolvedValueOnce(ok({ token: 'member-now', expiresIn: 900 }))
+    expect(await getToken()).toBe('member-now')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('a refusal for one org does not block another org', async () => {
+    let org = 'org-a'
+    const { fetchImpl, getToken } = setup({ getOrgId: () => org })
+    fetchImpl.mockResolvedValueOnce({ ok: false, status: 403, json: async () => ({}) } as Response)
+    expect(await getToken()).toBeNull()
+    org = 'org-b'
+    fetchImpl.mockResolvedValueOnce(ok({ token: 'for-org-b', expiresIn: 900 }))
+    expect(await getToken()).toBe('for-org-b')
+  })
+
+  it('drops cached org tokens when the session changes (logout / account switch)', async () => {
+    let session: string | null = 'session.A'
+    const { fetchImpl, getToken } = setup({ getSessionToken: () => session })
+    fetchImpl.mockResolvedValueOnce(ok({ token: 'for-A', expiresIn: 900 }))
+    expect(await getToken()).toBe('for-A')
+    session = null // logged out
+    expect(await getToken()).toBeNull()
+    session = 'session.A' // same session token again must NOT resurrect the old entry
+    fetchImpl.mockResolvedValueOnce(ok({ token: 'for-A-again', expiresIn: 900 }))
+    expect(await getToken()).toBe('for-A-again')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
   it('does not cache a token with no usable lifetime (hands it to that caller only)', async () => {
