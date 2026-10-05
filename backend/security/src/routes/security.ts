@@ -31,6 +31,13 @@ import type {
   SessionContext,
 } from '../providers/IdentityProvider'
 import { authenticateToken } from '../middleware/auth'
+import { putBrokerCode, takeBrokerCode } from '../services/brokerCodes'
+import {
+  getBrokerClient,
+  getBrokerClientPublicBranding,
+  isAllowedRedirectUri,
+  verifyClientSecret,
+} from '../services/brokerClients'
 import { db } from '../config/database'
 import { resolveEmployeeStatus } from '../services/employeeRole'
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
@@ -503,6 +510,102 @@ router.get('/social/google/callback', async (req: Request, res: Response) => {
     // Fail-closed: neutral error back to the app. Never surface tokens or vendor.
     res.redirect(302, `${destOrigin}/?error=authentication_failed`)
   }
+})
+
+// ── Broker (consumer-product sign-in handoff, #238) ────────────────────────
+//
+// A registered consumer product ("broker client") sends its user to this
+// app's OWN themed sign-in UI with `?client=&redirect_uri=`. After the user
+// authenticates via the EXISTING session/social/signup surfaces above, the
+// SPA calls `POST /broker/handoff` with its just-established bearer token;
+// the product's BACKEND then redeems the returned single-use code
+// server-to-server via `POST /broker/token-exchange`. No bearer token is
+// ever put in a URL, fragment, or referrer — see packages/security/openapi.yaml
+// (`broker` tag) for the full contract and the boundary-guarantee rationale.
+
+const BROKER_HANDOFF_CODE_TTL_MS = 2 * 60 * 1000 // short-lived; single-use
+
+// GET /v1/security/broker/clients/{client} — public branding lookup.
+router.get('/broker/clients/:client', (req: Request, res: Response) => {
+  const result = getBrokerClientPublicBranding(req.params.client)
+  if (!result) {
+    res.status(404).json({ error: 'Unknown broker client', code: 'NOT_FOUND' })
+    return
+  }
+  res.status(200).json(result)
+})
+
+// POST /v1/security/broker/handoff — mint a one-time handoff code.
+//
+// Requires the bearer session the SPA just established via session/social/
+// signup — this endpoint does not itself authenticate the user. Validates
+// `redirectUri` against the client's registered allowlist (EXACT match only)
+// before minting anything.
+router.post('/broker/handoff', async (req: Request, res: Response) => {
+  const token = requireBearer(req, res)
+  if (!token) return
+  try {
+    const client = req.body?.client
+    const redirectUri = req.body?.redirectUri
+    if (typeof client !== 'string' || !client || typeof redirectUri !== 'string' || !redirectUri) {
+      res.status(400).json({ error: 'client and redirectUri are required', code: 'MALFORMED' })
+      return
+    }
+    if (!getBrokerClient(client)) {
+      res.status(400).json({ error: 'Unknown broker client', code: 'UNKNOWN_CLIENT' })
+      return
+    }
+    if (!isAllowedRedirectUri(client, redirectUri)) {
+      res
+        .status(400)
+        .json({ error: 'redirectUri is not registered for this client', code: 'REDIRECT_URI_NOT_ALLOWED' })
+      return
+    }
+    // Re-validates the bearer session is live and hydrates the user — the
+    // SAME path GET /session uses. A revoked/expired/invalid token fails
+    // closed here (sendError below), never minting a code for a dead session.
+    const { user } = await getIdentityProvider().getUserInfo(token)
+    const code = crypto.randomBytes(32).toString('hex')
+    // SAME single-use store `social/callback` -> `session/exchange` uses — one
+    // code format, one redemption path (backend/security/src/services/brokerCodes.ts).
+    putBrokerCode(code, {
+      token,
+      sessionId: crypto.randomUUID(),
+      user,
+      expiresAt: Date.now() + BROKER_HANDOFF_CODE_TTL_MS,
+    })
+    const dest = new URL(redirectUri)
+    dest.searchParams.set('code', code)
+    res.status(200).json({ redirectUri: dest.toString() })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+// POST /v1/security/broker/token-exchange — server-to-server code redemption.
+//
+// Called by the PRODUCT'S BACKEND (never the browser). Fail-closed and
+// deliberately undifferentiated: an unknown client, a wrong clientSecret, and
+// an unknown/expired/already-redeemed code all return the SAME generic 401 —
+// never a distinguishable response that would make this a guessing oracle.
+// The code is consumed (single-use) on lookup regardless of outcome.
+router.post('/broker/token-exchange', (req: Request, res: Response) => {
+  const client = req.body?.client
+  const clientSecret = req.body?.clientSecret
+  const code = req.body?.code
+  const wellFormed =
+    typeof client === 'string' && !!client && typeof clientSecret === 'string' && typeof code === 'string' && !!code
+  // Always take the code (single-use, consumed regardless of outcome) when the
+  // body is well-formed enough to contain one, so a malformed/missing code
+  // never short-circuits before the client-secret check runs — both checks
+  // happen before either can affect the (identical) response.
+  const entry = wellFormed ? takeBrokerCode(code) : null
+  const credsOk = wellFormed && verifyClientSecret(client, clientSecret)
+  if (!wellFormed || !credsOk || !entry) {
+    res.status(401).json({ error: 'Invalid client credentials or code', code: 'UNAUTHORIZED' })
+    return
+  }
+  res.status(200).json(authenticatedSession({ token: entry.token, sessionId: entry.sessionId, user: entry.user }))
 })
 
 // ── Signup ──────────────────────────────────────────────────────────────────

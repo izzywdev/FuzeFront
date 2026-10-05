@@ -24,10 +24,16 @@ path, schema name, field, config key, or doc. Open-standard protocol terms
 - **Broker** (marketplace / consumer-product handoff, #238) —
   `GET /broker/clients/{client}`, `POST /broker/handoff`,
   `POST /broker/token-exchange`. A registered consumer product sends its user
-  to FuzeFront's own themed sign-in UI and redeems a single-use,
-  server-to-server code for a session — no token ever transits a URL,
-  fragment, or referrer. Contract-frozen; route handlers + `BrokerClient`
-  registration are a follow-up (see `CHANGELOG.md` 0.8.0 "Deferred").
+  to FuzeFront's own themed sign-in UI (`?client=&redirect_uri=`) and redeems
+  a single-use, server-to-server code for a session — no token ever transits
+  a URL, fragment, or referrer. Implemented (`backend/security/src/routes/
+  security.ts` + `services/brokerClients.ts`); the registry itself is
+  server-side config (`BROKER_CLIENTS_JSON`, see `.env.example`) — there is
+  still no public write/registration endpoint in this contract slice, by
+  design (see the `broker` tag description in `openapi.yaml`). Password and
+  signup sign-in complete the full round-trip; preserving `client`/
+  `redirect_uri` through the Google social round-trip (an external redirect
+  away and back) is a tracked follow-up, not yet wired.
 - **AuthZ** — `POST /authz/check`, `POST /authz/bulk-check`,
   `GET /authz/permissions`, and tenant/member/role management under `/tenants`.
 - **M2M** — `POST /tokens`, `POST /tokens/introspect`.

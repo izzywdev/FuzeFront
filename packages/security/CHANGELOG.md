@@ -1,5 +1,16 @@
 # Changelog — @fuzefront/security-client
 
+## 0.9.2 — Broker (#238): named client types for the consumer-product sign-in handoff
+
+**Additive, no shape change.** The `broker` tag's endpoints
+(`GET /broker/clients/{client}`, `POST /broker/handoff`,
+`POST /broker/token-exchange`) and their schemas were already frozen in
+`openapi.yaml`; this release implements the routes server-side and exposes
+convenience named type aliases — `BrokerClient`, `BrokerHandoffRequest`,
+`BrokerHandoffResult`, `BrokerTokenExchangeRequest` — re-exported from
+`components['schemas']`, matching the pattern already used for `SessionResult`
+etc. No existing export changed shape.
+
 ## 0.9.1 — AuthZ: human callers are authorized per tenant on grant/revoke, member/role management and cross-subject reads (security fix, unreleased)
 
 **Behavior tightening, no shape change.** `info.version` 0.9.0 -> 0.9.1,
