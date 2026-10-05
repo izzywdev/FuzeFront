@@ -117,21 +117,48 @@ alias mechanism.
 }
 ```
 
-### TypeScript client — genuinely not published yet, and here is why
+### TypeScript client — published from the root workspace on merge
 
-`@fuzeone/selection-list-client` is **not** in the registry
-(`users/izzywdev/packages/npm/fuzeone-selection-list-client` → 404). The cause
-is not `publishConfig` — that is already correct in
-`selection-list-client/package.json`. It is that `selection-list-client` is
-**absent from the root `package.json` `workspaces` array**, and `workspaces` is
-the single source of truth `publish-packages.mjs` reads: a directory that is
-not a workspace produces no matrix leg, so `packages-publish` never tries to
-publish it and goes green anyway. `api-client/` and `sdk/` had exactly this
-defect until they were added as workspaces. Adding `selection-list-client` (and
-`packages/selection-list-client-py` for the Python side) to `workspaces` is the
-whole fix.
+`@fuzeone/selection-list-client` ships to GitHub Packages under the owner scope
+as **`@izzywdev/fuzeone-selection-list-client`** (same alias rule as the UI
+package above). It is published by `packages-publish.yml`, and the whole
+mechanism is that `selection-list-client` is a root `package.json`
+`workspaces` entry: `publish-packages.mjs --list-json` reads `workspaces` as its
+single source of truth and emits one matrix leg per publishable package. A
+directory that is not a workspace gets no leg, so the workflow never attempts it
+and still goes green (the defect this client had until it was added;
+`api-client/` and `sdk/` had it too).
 
-Until then, install from a local build:
+How and when it publishes:
+
+- **Trigger:** a merge to `master` runs `packages-publish.yml`. Its leg for this
+  package builds the client and its dependency closure
+  (`lerna run build --scope @fuzeone/selection-list-client --include-dependencies`,
+  i.e. `tsup`), dry-runs, then publishes `--only` this package.
+- **What gates a publish:** the `version` in `selection-list-client/package.json`.
+  Publishing is idempotent: a version already in the registry is skipped, never
+  overwritten, so an unchanged version is a no-op and a re-run is safe.
+  **Versions are bumped in the PR, not by the publish job** (`gate-version`
+  enforces the SemVer bump discipline; see
+  [`shared-packages-distribution.md`](./shared-packages-distribution.md#versioning)).
+  A contract change that alters the client's public surface bumps the client in
+  the same PR as the spec.
+- **Verify the registry, not the run conclusion:**
+
+  ```bash
+  gh api users/izzywdev/packages/npm/fuzeone-selection-list-client/versions --jq '[.[].name]'
+  ```
+
+- **Install:** map the `@izzywdev` scope to the registry (see the `.npmrc` above),
+  then depend on `@izzywdev/fuzeone-selection-list-client`, or alias it back to the
+  canonical name with `"@fuzeone/selection-list-client": "npm:@izzywdev/fuzeone-selection-list-client@^2.0.0"`.
+  Inside this repo no mapping is needed: it is an npm workspace and links from the tree.
+
+The Python client is not part of this: it publishes to PyPI through the
+tag-triggered `selection-list-client-py-publish.yml`.
+
+To consume a **local, unpublished** build instead (for example to test a change
+before it merges):
 
 ```bash
 # In the selection-list-client directory

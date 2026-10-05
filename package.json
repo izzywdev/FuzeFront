@@ -38,7 +38,8 @@
     "services/selection-list-service",
     "services/devportal-service",
     "packages/selection-lists-ui",
-    "packages/config-ui"
+    "packages/config-ui",
+    "selection-list-client"
   ],
   "scripts": {
     "dev": "echo 'Use: npm run docker:up for development'",
