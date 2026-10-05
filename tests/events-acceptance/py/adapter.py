@@ -1,23 +1,40 @@
 """THE ONLY FILE that knows `fuzefront_events`' API (slice B3). Adapt HERE when B2's signatures land."""
-import json, os, pathlib, random, string, time, uuid
+
+import asyncio
+import json
+import os
+import pathlib
+import random
+import string
+import time
+
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 PG_URL = os.environ.get("DATABASE_URL")
-BROKERS = os.environ.get("KAFKA_BROKERS", "localhost:9094")
+BROKERS = os.environ.get("KAFKA_BROKERS", "")
+# CI sets KAFKA_BROKERS (real broker). Without it an in-process bus honouring the same package ports
+# (Publisher / EventProcessor.process) is used - fast local verification only.
+USE_KAFKA = bool(BROKERS)
 INFRA_READY = bool(PG_URL)
 SQL = pathlib.Path(__file__).resolve().parents[1] / "sql" / "schema.sql"
 
 try:
-    import fuzefront_events as pkg  # noqa
+    import fuzefront_events as pkg
+
     PKG_AVAILABLE, _err = True, ""
 except Exception as e:  # noqa
     pkg, PKG_AVAILABLE, _err = None, False, str(e)
 PKG_REASON = f"RED pending packages/events-py (fuzefront-events, slice B2) - not importable: {_err}"
 
 # RED-by-design until the package lands: xfail (non-strict) with the reason; real tests afterwards.
-acc = pytest.mark.xfail(not PKG_AVAILABLE, reason=PKG_REASON, strict=False, run=PKG_AVAILABLE)
-needs_infra = pytest.mark.skipif(not INFRA_READY, reason="DATABASE_URL not set (needs Postgres + Kafka; CI job provides them)")
+acc = pytest.mark.xfail(
+    not PKG_AVAILABLE, reason=PKG_REASON, strict=False, run=PKG_AVAILABLE
+)
+needs_infra = pytest.mark.skipif(
+    not INFRA_READY,
+    reason="DATABASE_URL not set (needs Postgres + Kafka; CI job provides them)",
+)
 
 
 def vectors(name):
@@ -26,117 +43,343 @@ def vectors(name):
 
 def envelope_validator():
     import jsonschema
+
     schema = json.loads((ROOT / "contracts/events/envelope.v2.schema.json").read_text())
-    return jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker())
+    return jsonschema.Draft202012Validator(
+        schema, format_checker=jsonschema.FormatChecker()
+    )
 
 
-def engine():
-    from sqlalchemy import create_engine
-    url = PG_URL.replace("postgres://", "postgresql+psycopg2://", 1) if PG_URL.startswith("postgres://") else PG_URL
-    return create_engine(url)
+def _url(driver):
+    base = PG_URL.split("://", 1)[1]
+    return f"postgresql+{driver}://{base}"
 
 
-def reset_schema(eng):
-    raw = eng.raw_connection()
+def async_session_factory():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    eng = create_async_engine(_url("asyncpg"))
+    return eng, async_sessionmaker(eng, expire_on_commit=False)
+
+
+async def reset_schema():
+    import asyncpg
+
+    conn = await asyncpg.connect("postgresql://" + PG_URL.split("://", 1)[1])
     try:
-        cur = raw.cursor(); cur.execute(SQL.read_text()); raw.commit()
+        await conn.execute(
+            SQL.read_text()
+        )  # asyncpg runs multi-statement scripts without params
     finally:
-        raw.close()
+        await conn.close()
 
 
 _B32 = "0123456789abcdefghjkmnpqrstvwxyz"
-def rnd(): return "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
-def type_id(prefix): return f"{prefix}_0" + "".join(random.choices(_B32, k=25))
-def new_topic(): return f"acc.t{rnd()}"
 
 
-def raw_envelope(topic, aggregate_id, aggregate_version, payload=None, event_id=None, aggregate_type="organization"):
+def rnd():
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+
+def type_id(prefix):
+    return f"{prefix}_0" + "".join(random.choices(_B32, k=25))
+
+
+def new_topic():
+    return f"acc.t{rnd()}"
+
+
+def raw_envelope(
+    topic,
+    aggregate_id,
+    aggregate_version,
+    payload=None,
+    event_id=None,
+    aggregate_type="organization",
+):
     return {
-        "eventId": event_id or type_id("evt"), "topic": topic, "schemaVersion": 1,
-        "aggregateType": aggregate_type, "aggregateId": aggregate_id, "aggregateVersion": aggregate_version,
-        "producer": "acceptance-suite", "occurredAt": "2026-10-05T12:00:00Z",
-        "correlationId": "corr-" + rnd(), "payload": payload if payload is not None else {"kind": "updated", "data": {}},
+        "eventId": event_id or type_id("evt"),
+        "topic": topic,
+        "schemaVersion": 1,
+        "aggregateType": aggregate_type,
+        "aggregateId": aggregate_id,
+        "aggregateVersion": aggregate_version,
+        "producer": "acceptance-suite",
+        "occurredAt": "2026-10-05T12:00:00Z",
+        "correlationId": "corr-" + rnd(),
+        "payload": payload if payload is not None else {"kind": "updated", "data": {}},
     }
 
 
-# ---------- Kafka raw access (no package involvement) ----------
-def create_topic(topic, partitions=1):
-    from confluent_kafka.admin import AdminClient, NewTopic
-    a = AdminClient({"bootstrap.servers": BROKERS})
-    for f in a.create_topics([NewTopic(topic, partitions, 1), NewTopic(topic + ".dlq", 1, 1)]).values():
-        f.result()
+# ---------- message bus: real Kafka (CI) or in-process (local) ----------
+_mem: dict = {}  # topic -> [ {key, value(bytes), headers, partition, offset} ]
+_listeners: dict = {}  # topic -> [async callable(msg_dict)]
 
-_producer = None
-def produce_raw(topic, msgs):
-    global _producer
-    from confluent_kafka import Producer
-    _producer = _producer or Producer({"bootstrap.servers": BROKERS})
+
+async def _mem_push(topic, key, value, headers=()):
+    lst = _mem.setdefault(topic, [])
+    m = {
+        "key": key,
+        "value": value,
+        "headers": {k: (v.decode() if isinstance(v, bytes) else v) for k, v in headers},
+        "partition": 0,
+        "offset": len(lst),
+    }
+    lst.append(m)
+    for ls in list(_listeners.get(topic, [])):
+        await ls(m)  # sequential, append order (single partition)
+
+
+class MemPublisher:
+    async def send(self, topic, key, value, headers=()):
+        await _mem_push(
+            topic, key.decode() if isinstance(key, bytes) else key, value, headers
+        )
+
+
+_kproducer = None
+
+
+async def _kafka_publisher():
+    global _kproducer
+    if _kproducer is None:
+        from fuzefront_events import AIOKafkaPublisher
+
+        _kproducer = AIOKafkaPublisher(BROKERS)
+        await _kproducer.start()
+    return _kproducer
+
+
+async def publisher():
+    return await _kafka_publisher() if USE_KAFKA else MemPublisher()
+
+
+async def create_topic(topic, partitions=1):
+    if not USE_KAFKA:
+        _mem.setdefault(topic, [])
+        _mem.setdefault(topic + ".dlq", [])
+        return
+    from aiokafka.admin import AIOKafkaAdminClient, NewTopic
+
+    admin = AIOKafkaAdminClient(bootstrap_servers=BROKERS)
+    await admin.start()
+    try:
+        await admin.create_topics(
+            [NewTopic(topic, partitions, 1), NewTopic(topic + ".dlq", 1, 1)]
+        )
+    finally:
+        await admin.close()
+
+
+async def produce_raw(topic, msgs):
+    p = await publisher()
     for key, value in msgs:
-        _producer.produce(topic, key=key, value=json.dumps(value).encode())
-    _producer.flush(30)
-
-def read_all(topic, idle=4.0):
-    from confluent_kafka import Consumer
-    c = Consumer({"bootstrap.servers": BROKERS, "group.id": "acc-read-" + rnd(), "auto.offset.reset": "earliest"})
-    c.subscribe([topic]); out = []; last = time.time()
-    while time.time() - last < idle:
-        m = c.poll(0.5)
-        if m is None or m.error(): continue
-        last = time.time()
-        out.append((m.key().decode() if m.key() else None, json.loads(m.value())))
-    c.close(); return out
+        await p.send(topic, key.encode() if key else None, json.dumps(value).encode())
 
 
-# ---------- package adapter (ADAPT HERE when B2 lands) ----------
+async def read_all_h(topic, idle=4.0):
+    """-> [(key, value_dict, headers_dict)]"""
+    if not USE_KAFKA:
+        return [
+            (m["key"], json.loads(m["value"]), m["headers"])
+            for m in _mem.get(topic, [])
+        ]
+    from aiokafka import AIOKafkaConsumer
+
+    c = AIOKafkaConsumer(
+        topic,
+        bootstrap_servers=BROKERS,
+        group_id="acc-read-" + rnd(),
+        auto_offset_reset="earliest",
+        enable_auto_commit=False,
+    )
+    await c.start()
+    out = []
+    try:
+        while True:
+            batch = await c.getmany(timeout_ms=int(idle * 1000))
+            if not batch:
+                break
+            for recs in batch.values():
+                for m in recs:
+                    out.append(
+                        (
+                            m.key.decode() if m.key else None,
+                            json.loads(m.value),
+                            {
+                                k: (v.decode() if v else "")
+                                for k, v in (m.headers or [])
+                            },
+                        )
+                    )
+    finally:
+        await c.stop()
+    return out
+
+
+async def read_all(topic, idle=4.0):
+    return [(k, v) for k, v, _ in await read_all_h(topic, idle)]
+
+
+# ---------- package adapter (fuzefront_events; wired to packages/events-py on PR #1292) ----------
 def build_event(topic, aggregate_type, aggregate_id, aggregate_version, payload):
-    return pkg.build_event(topic=topic, aggregate_type=aggregate_type, aggregate_id=aggregate_id,
-                           aggregate_version=aggregate_version, payload=payload,
-                           producer="acceptance-suite", correlation_id="corr-" + rnd(), schema_version=1)
+    return pkg.build_event(
+        topic=topic,
+        aggregate_type=aggregate_type,
+        aggregate_id=aggregate_id,
+        aggregate_version=aggregate_version,
+        payload=payload,
+        producer="acceptance-suite",
+        correlation_id="corr-" + rnd(),
+        schema_version=1,
+    )
 
-def enqueue(session, event):
-    pkg.enqueue_event(session, event)
 
-def real_publisher():
-    return lambda topic, key, envelope: produce_raw(topic, [(key, envelope)])
+async def enqueue(session, event):
+    await pkg.enqueue_event_async(session, event)
 
-def drain(eng, publish, max_attempts=3, rounds=10):
+
+async def drain(sf, pub, max_attempts=3, rounds=10, batch_size=20):
     for _ in range(rounds):
-        pkg.drain_outbox_once(eng, publish=publish, max_attempts=max_attempts)
+        await pkg.drain_once(sf, pub, max_attempts=max_attempts, batch_size=batch_size)
+
+
+async def requeue(sf, event_id):
+    async with sf() as s, s.begin():
+        return await pkg.requeue_failed_event(s, event_id)
+
 
 class Handle:
-    def __init__(self, c): self.c = c
-    def stop(self): self.c.stop()
+    def __init__(self, consumer, topics):
+        self.c, self.topics, self.ls = consumer, topics, []
 
-def start_consumer(group_id, topics, eng, handler):
-    """handler(envelope, conn) runs inside the consumer's dedupe transaction (conn = SQLAlchemy Connection)."""
-    c = pkg.create_consumer(group_id=group_id, topics=topics, db=eng, handler=handler, brokers=BROKERS, from_beginning=True)
-    c.start(); time.sleep(3)
-    return Handle(c)
+    async def stop(self):
+        for t in self.topics:
+            for ls in self.ls:
+                if ls in _listeners.get(t, []):
+                    _listeners[t].remove(ls)
+        await self.c.stop()
 
-def wait_for(fn, secs=40, what="condition"):
+    async def redeliver(self, topic, partition, offset, value):
+        return await self.c.process(
+            pkg.Message(topic, partition, offset, None, json.dumps(value).encode())
+        )
+
+
+async def start_consumer(group_id, topics, sf, handler, max_attempts=3):
+    """handler(NormalizedEnvelope, AsyncSession) runs inside the dedupe transaction."""
+    from sqlalchemy import text
+
+    async def stored(session, env):
+        r = (
+            await session.execute(
+                text("SELECT version FROM acc_proj WHERE aggregate_id=:a"),
+                {"a": env.aggregate_id},
+            )
+        ).first()
+        return int(r[0]) if r else None
+
+    if USE_KAFKA:
+        dlq = await _kafka_publisher()
+        c = pkg.create_consumer(
+            group_id,
+            topics,
+            sf,
+            handler,
+            bootstrap_servers=BROKERS,
+            dlq=dlq,
+            get_stored_version=stored,
+            max_attempts=max_attempts,
+            backoff_s=0.02,
+        )
+        await c.start()
+        await asyncio.sleep(3)  # let the group join before producers send
+        return Handle(c, topics)
+    c = pkg.create_consumer(
+        group_id,
+        topics,
+        sf,
+        handler,
+        dlq=MemPublisher(),
+        get_stored_version=stored,
+        max_attempts=max_attempts,
+        backoff_s=0.02,
+    )
+    h = Handle(c, topics)
+    for t in topics:
+
+        async def ls(m, t=t):
+            await c.process(
+                pkg.Message(t, m["partition"], m["offset"], m["key"], m["value"])
+            )
+
+        _listeners.setdefault(t, []).append(ls)
+        h.ls.append(ls)
+        for m in list(_mem.get(t, [])):
+            await ls(m)  # fromBeginning replay
+    return h
+
+
+async def wait_for(fn, secs=40, what="condition"):
     end = time.time() + secs
     while time.time() < end:
-        if fn(): return
-        time.sleep(0.3)
+        r = fn()
+        if asyncio.iscoroutine(r):
+            r = await r
+        if r:
+            return
+        await asyncio.sleep(0.1)
     raise TimeoutError(what)
 
-def projection_handler(env, conn):
-    from sqlalchemy import text
-    conn.execute(text("INSERT INTO acc_effects(event_key, aggregate_id) VALUES (:k, :a)"),
-                 {"k": env.get("eventId") or "v1", "a": env.get("aggregateId")})
-    if not env.get("aggregateId"): return
-    p = env.get("payload") or {}; kind = p.get("kind")
-    conn.execute(text("""INSERT INTO acc_proj(aggregate_id, version, deleted, data) VALUES (:a,:v,:d,CAST(:data AS jsonb))
-                         ON CONFLICT (aggregate_id) DO UPDATE SET version=:v, deleted=:d, data=CAST(:data AS jsonb)"""),
-                 {"a": env["aggregateId"], "v": env["aggregateVersion"], "d": kind == "deleted",
-                  "data": None if kind == "deleted" else json.dumps(p.get("data"))})
 
-def proj_state(eng):
+async def projection_handler(env, session):
     from sqlalchemy import text
-    with eng.connect() as c:
-        return {r[0]: {"version": int(r[1]), "deleted": r[2], "data": r[3]} for r in c.execute(text("SELECT aggregate_id, version, deleted, data FROM acc_proj"))}
 
-def scalar(eng, sql, **kw):
+    await session.execute(
+        text("INSERT INTO acc_effects(event_key, aggregate_id) VALUES (:k, :a)"),
+        {"k": env.event_id or "v1", "a": env.aggregate_id},
+    )
+    if not env.aggregate_id:
+        return
+    p = env.payload or {}
+    kind = p.get("kind")
+    await session.execute(
+        text(
+            """INSERT INTO acc_proj(aggregate_id, version, deleted, data) VALUES (:a,:v,:d,CAST(:data AS jsonb))
+               ON CONFLICT (aggregate_id) DO UPDATE SET version=:v, deleted=:d, data=CAST(:data AS jsonb)"""
+        ),
+        {
+            "a": env.aggregate_id,
+            "v": env.aggregate_version,
+            "d": kind == "deleted",
+            "data": None if kind == "deleted" else json.dumps(p.get("data")),
+        },
+    )
+
+
+async def proj_state(sf):
     from sqlalchemy import text
-    with eng.connect() as c:
-        return c.execute(text(sql), kw).scalar()
+
+    async with sf() as s:
+        rows = (
+            await s.execute(
+                text("SELECT aggregate_id, version, deleted, data FROM acc_proj")
+            )
+        ).all()
+        return {
+            r[0]: {"version": int(r[1]), "deleted": r[2], "data": r[3]} for r in rows
+        }
+
+
+async def scalar(sf, sql, **kw):
+    from sqlalchemy import text
+
+    async with sf() as s:
+        return (await s.execute(text(sql), kw)).scalar()
+
+
+async def execute(sf, sql, **kw):
+    from sqlalchemy import text
+
+    async with sf() as s, s.begin():
+        await s.execute(text(sql), kw)
