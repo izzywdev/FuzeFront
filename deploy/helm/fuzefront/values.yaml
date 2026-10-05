@@ -255,23 +255,40 @@ securityService:
     clusterRbac:
       # Renders the ClusterRole/ClusterRoleBinding that let fuzefront-security
       # create TokenReviews. TokenReview is a non-namespaced virtual resource, so
-      # this grant CANNOT be narrowed to a Role — the only way to remove it from
-      # this repo is to stop performing TokenReviews here and consume FuzeInfra's
-      # identity broker instead (docs/planning/workload-identity-layering.md).
+      # this grant CANNOT be narrowed to a Role in THIS chart — the only way to
+      # remove it from this repo is to stop performing TokenReviews here and
+      # consume FuzeInfra's identity broker instead
+      # (docs/planning/workload-identity-layering.md).
       #
       # Declared explicitly, with a value, rather than left to a `| default` at
       # the render site: per CLAUDE.md "Helm values hygiene", a coercion filter on
       # a .Values lookup hides a missing default instead of declaring it.
       #
-      # DEFAULT ON, deliberately, and this is NOT the end state. The broker does
-      # not exist yet and `POST /api/v1/security/tokens/workload` is a live route,
-      # so flipping this to false today breaks workload identity and the FuzeKeys
-      # registration that PR #1198 unblocked. Retirement is a single coordinated
-      # change: set this false AND drop ClusterRole/ClusterRoleBinding from
-      # clusterResourceWhitelist in deploy/argocd/project.yaml. Dropping only one
-      # of the two fails deploy/scripts/check-cluster-scoped-whitelist.sh, which
-      # is how that pairing is enforced rather than merely documented.
-      enabled: true
+      # RETIRED to false (issue #1137 / FuzeInfra#1306, #1308). The broker is now
+      # SERVING for prod: FuzeInfra#1306 adopted the `fuzefront-workload-
+      # authenticator` ClusterRole/ClusterRoleBinding into its own chart (same
+      # names — the live objects and the TokenReview grant are UNCHANGED, only
+      # ownership moved) and narrowed them to `tokenreviews: create` only.
+      # FuzeInfra#1308 then deleted FuzeInfra's stale duplicate `fuzefront`
+      # AppProject and gated registration so a wide copy (ClusterRole-permitting)
+      # can never be re-applied — so this chart must stop rendering these two
+      # objects, paired with narrowing clusterResourceWhitelist in
+      # deploy/argocd/project.yaml back to Namespace-only in the same change (see
+      # that file). That pairing is what unblocks every FuzeFront rollout — Argo
+      # aborts the WHOLE sync over one unpermitted cluster-scoped resource, which
+      # is the actual root cause of applications-service migrations 013/014
+      # never executing: the pods that would have run them were never created.
+      #
+      # LOCAL (kind): this is a plain `helm upgrade --install` (no Argo, no
+      # AppProject), so nothing here is enforced locally — but FuzeInfra's
+      # adoption above is PROD-ONLY (helm/fuzeinfra values-contabo.yaml; the base
+      # values.yaml ships `workloadIdentity.authenticators: []`), so a kind
+      # cluster gets NO TokenReview grant for fuzefront-security from either
+      # side once this default is false. If you need to exercise
+      # `POST /api/v1/security/tokens/workload` / the FuzeKeys workload-identity
+      # flow locally, override explicitly:
+      #   --set securityService.workloadIdentity.clusterRbac.enabled=true
+      enabled: false
   # See templates/security-networkpolicy.yaml. port/*Namespace were dropped by the
   # values.yaml rewrite in 8dedb865 (#523) and are restored here — without them the
   # template renders `port: 0`, which the API server rejects (FuzeInfra#501).
