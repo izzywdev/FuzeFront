@@ -61,3 +61,5 @@ export interface FuzeEvent<T = unknown> {
 export function dlqTopic(topic: string): string {
   return `${topic}.dlq`;
 }
+
+export * from './envelope';

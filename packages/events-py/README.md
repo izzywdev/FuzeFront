@@ -1,0 +1,31 @@
+# fuzefront-events
+
+Python peer of `@izzywdev/fuzefront-events`: envelope v2, transactional outbox, relay and
+idempotent consumer for SQLAlchemy 2.x + aiokafka. Standard: FuzeSDLC
+`governance/data-consistency-standard.md` sections 3-4. Contract: `contracts/events/`.
+
+```python
+from fuzefront_events import build_event, enqueue_event_async, create_consumer, OutboxRelay
+
+ev = build_event(topic="identity.org.updated", aggregate_type="organization",
+                 aggregate_id=org_id, aggregate_version=new_version,
+                 producer="security-service", payload={...}, correlation_id=req_id)
+async with session.begin():                 # same tx as the state change
+    ...update row, bump aggregate_version...
+    await enqueue_event_async(session, ev)  # enqueue_event(session, ev) for sync Session
+```
+
+* **Tables:** `fuzefront_events.metadata` (SQLAlchemy) or `OUTBOX_V2_SQL` / `PROCESSED_EVENTS_SQL`.
+* **Relay:** `OutboxRelay(async_sessionmaker, AIOKafkaPublisher(...)).start()` — `FOR UPDATE SKIP LOCKED`,
+  per-aggregate ordering, failed head blocks its aggregate, `<topic>.dlq` after `max_attempts`.
+* **Consumer:** `create_consumer(group, topics, session_factory, handler, bootstrap_servers=..., dlq=...)`;
+  handler `async (envelope, session)` runs in the dedupe transaction. Pass `get_stored_version` for the
+  version guard. v1 messages dedupe on `topic:partition:offset`.
+* **Testkit:** `fuzefront_events.testkit` (`InMemoryBroker`, `duplicate`, `shuffle`, `replay`, `deliver`).
+* **Schema:** `fuzefront_events/envelope.v2.schema.json` is a vendored copy of
+  `contracts/events/envelope.v2.schema.json`; `tests/test_envelope.py` fails if they differ.
+
+## Tests
+
+`pytest` runs on SQLite (aiosqlite). Postgres-only semantics (`SKIP LOCKED` concurrency) run when
+`FUZEFRONT_EVENTS_TEST_PG_URL` is set, e.g. `postgresql+asyncpg://postgres:postgres@localhost/events_test`.
