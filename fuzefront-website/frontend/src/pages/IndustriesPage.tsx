@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, CtaHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -243,9 +243,9 @@ export const IndustriesPage: React.FC = () => {
       {/* CTA */}
       <section className="py-20 bg-white border-t border-gray-100">
         <div className="max-w-3xl mx-auto px-4 text-center">
-          <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
+          <CtaHeading>
             Don't see your industry?
-          </h2>
+          </CtaHeading>
           <p className="text-gray-600 mb-8">
             Every business has unique requirements. Talk to our team — we'll help you map FuzeOne to your specific needs.
           </p>
