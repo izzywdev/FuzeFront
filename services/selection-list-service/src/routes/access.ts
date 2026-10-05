@@ -38,7 +38,7 @@
 
 import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
-import { registerIdParams } from '../middleware/validateInput';
+import { parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
@@ -127,8 +127,8 @@ router.get(
     const orgId = req.orgId as string;
 
     // --- Pagination params ---
-    const rawLimit = parseInt(String(req.query['limit'] ?? DEFAULT_LIMIT), 10);
-    const limit = isNaN(rawLimit) || rawLimit < 1 ? DEFAULT_LIMIT : Math.min(rawLimit, MAX_LIMIT);
+    const limit = parseLimitParam(req, res, DEFAULT_LIMIT, MAX_LIMIT);
+    if (limit === undefined) return;
     const cursorParam = req.query['cursor'] as string | undefined;
     const afterUserId = cursorParam ? decodeCursor(cursorParam) : undefined;
 

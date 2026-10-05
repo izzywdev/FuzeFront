@@ -107,11 +107,12 @@ it('a handler FAILURE propagates to kafkajs (loud, retried) and is NOT dead-lett
   expect(dlqSend).not.toHaveBeenCalled();
 });
 
-it('subscribes all four topics (each in its own consumer group) and disconnect() tears everything down', async () => {
+it('subscribes all five topics (each in its own consumer group) and disconnect() tears everything down', async () => {
   const { disconnect } = await startLifecycleConsumers();
   expect(Object.keys(runners).sort()).toEqual([
     'identity.org.created',
     'identity.org.deleted',
+    'identity.org.updated',
     'identity.user.deleted',
     'selection-lists.seed.requested',
   ]);

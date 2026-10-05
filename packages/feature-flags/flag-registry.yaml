@@ -34,20 +34,21 @@ flags:
   # fuzefront.apps.*
   # ---------------------------------------------------------------------------
   - key: fuzefront.apps.org-context-disabled
-    type: release
+    type: ops-kill-switch
     default: true
     description: >
       Controls whether federated apps requiring active organization context are
-      rendered in disabled state when the user is in personal context. ON in prod.
+      rendered in disabled state when the user is in personal context. ON in prod;
+      OFF is the break-glass that turns the org-context gating off.
     owner: frontend-engineer
-    removal_criterion: Permanent platform capability.
+    removal_criterion: Removed only if org-context gating is removed from the shell.
     gates:
       - "FuzeFront host SidePanel & AppSelector org-context gating"
     web_exposed: true
 
   - key: fuzefront.apps.org-context-hidden
     type: release
-    default: true
+    default: false
     description: >
       Controls whether federated apps requiring active organization context are
       completely hidden from navigation and launchers when in personal context.

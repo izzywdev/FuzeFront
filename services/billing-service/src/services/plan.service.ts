@@ -165,12 +165,19 @@ export class PlanService {
   }
 
   /** Returns active plans from the local cache, refreshing from the repo on TTL miss.
-   *  Falls back to STATIC_DEFAULT_PLANS when the catalogue has not been synced yet. */
+   *  Falls back to STATIC_DEFAULT_PLANS when the catalogue has not been synced yet
+   *  OR when the DB is unavailable (e.g. schema not yet bootstrapped). */
   async getActivePlans(): Promise<Plan[]> {
     if (this.cache && this.now() - this.cache.at < this.ttlMs) {
       return this.cache.plans;
     }
-    const plans = await this.repo.listActive();
+    let plans: Plan[];
+    try {
+      plans = await this.repo.listActive();
+    } catch (err) {
+      console.warn('[plan-service] DB unavailable — serving static default plans:', err);
+      return STATIC_DEFAULT_PLANS;
+    }
     const resolved = plans.length > 0 ? plans : STATIC_DEFAULT_PLANS;
     this.cache = { at: this.now(), plans: resolved };
     return resolved;

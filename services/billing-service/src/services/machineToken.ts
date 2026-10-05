@@ -22,11 +22,23 @@
 // The PATCH /authz/subjects/{type}/{key}/attributes route billing calls is
 // gated identically to grant/revoke (`requireAuthzAdmin` in
 // backend/security/src/routes/authz.ts): a machine caller must hold the
-// `authz:admin` scope. Provisioning billing-service's S2S application with
-// that scope (`register-s2s-cli.js billing-service authz:admin`) and sealing
-// its client_id/client_secret into `billing-secrets` is an in-cluster,
-// credentialed operation this change cannot perform — see the PR description
-// for the exact follow-up command.
+// `authz:admin` scope.
+//
+// Provisioning is AUTOMATED and no longer a manual follow-up. The
+// billing-s2s-register PreSync Job
+// (deploy/helm/fuzefront/templates/billing-s2s-register-job.yaml) runs
+// `register-s2s-cli.js billing-service authz:admin --write-env-file` in-cluster
+// on every chart sync and publishes the resulting credentials as
+// Secret/billing-s2s-credentials, which this service reads as
+// AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET below. The credential is minted
+// and consumed entirely inside the cluster — it is deliberately NOT in
+// `billing-secrets`, because that Secret is owned by the sealed-secrets
+// controller and replaced on every reconcile.
+//
+// This comment previously read "an in-cluster, credentialed operation this
+// change cannot perform — see the PR description for the exact follow-up
+// command". That was true when the migration shipped dark and is now stale:
+// there is no manual command to run.
 
 export interface MachineTokenConfig {
   /** Authentik's client_credentials token endpoint for billing-service's S2S

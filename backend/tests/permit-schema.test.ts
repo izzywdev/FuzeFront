@@ -46,6 +46,11 @@ describe('permit schema IaC', () => {
     expect(Object.keys(app.actions).sort()).toEqual(
       ['create', 'delete', 'install', 'read', 'uninstall', 'update']
     )
+    // creator: instance-scoped, direct-assignment-only role (app-builder ownership model).
+    expect(Object.keys(app.roles ?? {})).toEqual(['creator'])
+    expect(app.roles!.creator.permissions.sort()).toEqual(['install', 'read', 'uninstall', 'update'])
+    expect(app.roles!.creator.permissions).not.toContain('delete')
+    expect(app.roles!.creator.granted_to).toBeUndefined()
     const um = permitSchema.resources.find(r => r.key === 'UserManagement')!
     expect(Object.keys(um.actions).sort()).toEqual(
       ['invite', 'remove', 'update_role', 'view_members']
