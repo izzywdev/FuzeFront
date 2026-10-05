@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.9.1
+  version: 0.9.2
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -1214,7 +1214,16 @@ paths:
       tags: [tenants]
       summary: List tenants visible to the caller
       operationId: listTenants
-      description: Unbounded collection — cursor-paginated per the family pagination standard.
+      description: >-
+        Unbounded collection — cursor-paginated per the family pagination standard.
+
+
+        **Visibility.** A platform administrator (`Organization:manage` on the
+        platform root tenant) or a machine caller holding `authz:admin` sees
+        every tenant; any other authenticated caller sees only the tenants in
+        which they hold a role. This is a filter, never a `403`. A provider
+        outage while deciding which view applies fails closed (`502`) — the
+        caller is never silently widened or downgraded.
       security:
         - bearerAuth: []
       parameters:
@@ -1227,13 +1236,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TenantPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/ProviderError'
     post:
       tags: [tenants]
       summary: Create a tenant
       operationId: createTenant
-      description: Creates a new tenant/organization scope.
+      description: >-
+        Creates a new tenant/organization scope.
+
+
+        **Authorization — platform act.** Creating a tenant mints a new
+        authorization scope that every later grant is made inside, so it is a
+        platform act, not an act inside any one tenant. A human (session)
+        caller must be a platform administrator (`Organization:manage` on the
+        platform root tenant — FuzeFront platform staff); an administrator of
+        an ordinary customer tenant has no standing here. A machine caller
+        must hold the `authz:admin` scope. Anyone else is `403 FORBIDDEN`,
+        decided BEFORE the body is validated (so an unauthorized caller gets
+        `403`, not `400`). A provider outage while deciding fails closed
+        (`502`), never allow. Customer organizations are created through the
+        organization APIs, which provision their tenant themselves.
       security:
         - bearerAuth: []
       requestBody:
@@ -1253,6 +1280,16 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            The caller is authenticated but is not a platform administrator
+            (`Organization:manage` on the platform root tenant), or is a
+            machine caller lacking the `authz:admin` scope (`code:
+            FORBIDDEN`). Fail-closed; no tenant is created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
         '502':
           $ref: '#/components/responses/ProviderError'
       x-pagination: exempt
