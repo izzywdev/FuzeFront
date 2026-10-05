@@ -3,7 +3,7 @@ import { EmailMessage, EmailProvider, SendResult } from './types';
 import { Config } from '../config';
 
 export class SmtpProvider implements EmailProvider {
-  private transporter: nodemailer.Transporter;
+  private transporter: ReturnType<typeof nodemailer.createTransport>;
 
   constructor(smtpConfig: NonNullable<Config['email']['smtp']>) {
     this.transporter = nodemailer.createTransport({

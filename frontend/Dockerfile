@@ -36,13 +36,8 @@ RUN apt-get update \
 # ../design-system, so the build needs the full workspace, not just frontend/.
 COPY . .
 
-# Workspace install at the ROOT so every workspace member's deps hoist into
-# /app/node_modules — e.g. identity-ui's @tanstack/react-table. This mirrors local
-# dev (root `npm install`); a frontend-only install can't see these transitive deps
-# and is exactly what broke the prod frontend image. Drop the host (Windows)
-# lockfile so linux-native optional deps (e.g. @tailwindcss/oxide) re-resolve
-# (npm optional-deps bug npm/cli#4828).
-RUN rm -f package-lock.json && npm install
+# Install the complete root workspace tree from the committed lockfile.
+RUN npm ci
 
 # @fuzefront/telemetry/browser is resolved from SOURCE via a vite alias (see
 # frontend/vite.config.ts), same as identity-ui/i18n/selection-lists-ui — no
@@ -73,7 +68,7 @@ ARG VITE_APP_TITLE="FuzeFront Platform"
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_TITLE=$VITE_APP_TITLE
 
-RUN rm -f package-lock.json && npm install
+RUN npm ci
 
 # Build the application
 RUN npm run build
