@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, HeroContent } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -381,7 +381,7 @@ export const HomePage: React.FC = () => {
       {/* ── Pricing Teaser ── */}
       <section className="py-24 bg-gradient-to-br from-primary-900 via-secondary-900 to-accent-900 relative overflow-hidden">
         <div className="absolute inset-0 hero-pattern opacity-30" />
-        <Container size="4xl" className="relative text-center">
+        <HeroContent size="4xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-white mb-4">
@@ -429,7 +429,7 @@ export const HomePage: React.FC = () => {
               </div>
             </motion.div>
           </SectionWrapper>
-        </Container>
+        </HeroContent>
       </section>
 
       {/* ── Newsletter ── */}

@@ -190,6 +190,10 @@
       "sourcePath": "components/layout/Eyebrow.jsx"
     },
     {
+      "name": "HeroContent",
+      "sourcePath": "components/layout/HeroContent.jsx"
+    },
+    {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
     },

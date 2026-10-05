@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroContent } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -107,7 +107,7 @@ export const CareersPage: React.FC = () => {
             gradient entirely instead of layering. */}
         <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-        <Container size="4xl" className="relative text-center">
+        <HeroContent size="4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
@@ -121,7 +121,7 @@ export const CareersPage: React.FC = () => {
               build it.
             </p>
           </motion.div>
-        </Container>
+        </HeroContent>
       </section>
 
       {/* Perks */}

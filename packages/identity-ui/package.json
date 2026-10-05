@@ -40,7 +40,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@fuzefront/design-system": "1.0.0",
+    "@fuzefront/design-system": "1.0.1",
     "@fuzefront/security-client": "0.9.1",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^16.3.2",
