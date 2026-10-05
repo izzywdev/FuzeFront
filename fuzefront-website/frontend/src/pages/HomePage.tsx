@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, GradientText } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -196,7 +196,9 @@ export const HomePage: React.FC = () => {
               className="text-5xl sm:text-6xl lg:text-7xl font-heading font-extrabold text-white leading-tight mb-6"
             >
               The Software Factory
-              <span className="block gradient-text mt-2">for your SaaS</span>
+              <GradientText as="span" gradient="var(--primary-gradient)" className="block mt-2">
+                for your SaaS
+              </GradientText>
             </motion.h1>
 
             <motion.p

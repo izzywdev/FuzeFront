@@ -50,12 +50,9 @@ body {
 }
 
 /* Custom utility classes */
-.gradient-text {
-  background: var(--primary-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
+/* .gradient-text removed — replaced by the DS <GradientText> component
+   (ds-fp:22df75e86c00); every former call site now sets the equivalent
+   background-clip styling via `gradient="var(--primary-gradient)"`. */
 
 .gradient-border {
   position: relative;

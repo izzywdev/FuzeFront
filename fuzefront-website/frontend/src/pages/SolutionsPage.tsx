@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { Center, GradientText } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -50,7 +50,7 @@ export const SolutionsPage: React.FC = () => {
             transition={{ duration: 0.8 }}
           >
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
-              Solutions for Every <span className="gradient-text">Business</span>
+              Solutions for Every <GradientText gradient="var(--primary-gradient)">Business</GradientText>
             </h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Whether you're a startup building an MVP or an enterprise scaling globally,

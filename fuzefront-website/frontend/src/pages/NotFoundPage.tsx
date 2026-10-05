@@ -2,6 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, Home, Search } from 'lucide-react'
+import { GradientText } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const helpfulLinks = [
@@ -29,9 +30,13 @@ export const NotFoundPage: React.FC = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <div className="text-7xl sm:text-8xl font-heading font-extrabold gradient-text mb-4">
+          <GradientText
+            as="div"
+            gradient="var(--primary-gradient)"
+            className="text-7xl sm:text-8xl font-heading font-extrabold mb-4"
+          >
             404
-          </div>
+          </GradientText>
           <h1 className="text-2xl sm:text-3xl font-heading font-bold text-white mb-4">
             This page doesn't exist
           </h1>
