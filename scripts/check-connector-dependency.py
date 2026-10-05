@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 """Fail closed when the deployed credential service lacks our runtime protocol."""
+import http.client
 import json
 import sys
 import urllib.request
@@ -31,7 +31,7 @@ def check_dependency() -> None:
 def main() -> int:
     try:
         check_dependency()
-    except Exception:
+    except (OSError, ValueError, http.client.HTTPException):
         # Health bodies and exception details are deliberately not reflected.
         print(
             "::error::FuzeKeys production must be healthy and advertise "

@@ -1,8 +1,8 @@
 import importlib.util
 import io
 import json
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
@@ -39,15 +39,13 @@ class ConnectorDependencyTest(unittest.TestCase):
             {"status": "healthy", "database": "disconnected", "connector_credential_protocol": "google-shared-v1"},
             [],
         ):
-            with self.subTest(body=body), patch.object(dependency.urllib.request, "urlopen", return_value=self.response(body)):
-                with self.assertRaises(ValueError):
-                    dependency.check_dependency()
+            with self.subTest(body=body), patch.object(dependency.urllib.request, "urlopen", return_value=self.response(body)), self.assertRaises(ValueError):
+                dependency.check_dependency()
 
     def test_malformed_oversized_and_non_200_responses_fail(self):
         for response in (self.response(b"not JSON"), self.response(b"x" * 65537), self.response({}, 503)):
-            with patch.object(dependency.urllib.request, "urlopen", return_value=response):
-                with self.assertRaises(ValueError):
-                    dependency.check_dependency()
+            with patch.object(dependency.urllib.request, "urlopen", return_value=response), self.assertRaises(ValueError):
+                dependency.check_dependency()
 
     def test_unavailable_dependency_returns_failure_without_reflecting_details(self):
         with patch.object(dependency.urllib.request, "urlopen", side_effect=URLError("private upstream details")), patch("sys.stderr", new_callable=io.StringIO) as error:
