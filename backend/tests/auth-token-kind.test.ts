@@ -36,6 +36,12 @@ describe('host backend authenticateToken — token kind', () => {
     expect(res.body.id).toBe(userId)
   })
 
+  it('a non-HS256 token signed with the same secret is refused (algorithm is pinned)', async () => {
+    const t = jwt.sign({ userId }, process.env.JWT_SECRET!, { algorithm: 'HS512', expiresIn: 60 })
+    const res = await request(app).get('/whoami').set('Authorization', `Bearer ${t}`)
+    expect(res.status).toBe(401)
+  })
+
   it.each(['fuze-org-session', 'fuze-workload', 'fuze-delegation'])(
     'a token with kind=%s is refused (401)',
     async kind => {

@@ -62,7 +62,7 @@ export const authenticateToken = async (
 
   try {
     console.log('🔍 [%s] Verifying JWT token...', oneLine(requestId))
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!, { algorithms: ['HS256'] }) as {
       userId: string
       // FF-EPIC-10-S3 — the portal this token was minted for (routes/auth.ts
       // jwt.sign call sites). Absent on tokens issued before this epic, or
