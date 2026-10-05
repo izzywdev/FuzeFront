@@ -42,6 +42,10 @@
       "sourcePath": "components/core/Caption.jsx"
     },
     {
+      "name": "CardTitle",
+      "sourcePath": "components/core/CardTitle.jsx"
+    },
+    {
       "name": "ExternalLink",
       "sourcePath": "components/core/ExternalLink.jsx"
     },

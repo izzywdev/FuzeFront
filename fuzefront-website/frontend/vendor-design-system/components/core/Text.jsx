@@ -19,6 +19,7 @@ const SIZES = {
   sm: "var(--text-sm)",
   base: "var(--text-base)",
   md: "var(--text-md)",
+  lg: "var(--text-lg)",
 };
 
 // `spacing` maps to the DS spacing scale for the block's bottom margin —
@@ -46,7 +47,8 @@ const SPACING_BOTTOM = {
  * mb-{2,4}` block-caption pattern (de-emphasized supporting copy under a
  * heading, e.g. an empty-state description or a dialog's helper paragraph)
  * without reaching for a raw Tailwind size/margin utility: `size` picks a
- * step of the DS type scale (default `inherit`, unchanged from before), and
+ * step of the DS type scale (default `inherit`, unchanged from before — `lg`
+ * maps to `--text-lg`, the step `CardTitle` builds on), and
  * `spacing` picks a step of the DS spacing scale for `margin-block-end`
  * (default `none`, unchanged from before).
  */

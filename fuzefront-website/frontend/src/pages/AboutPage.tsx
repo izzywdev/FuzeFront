@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, CardTitle } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -131,7 +131,7 @@ export const AboutPage: React.FC = () => {
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center mb-5 shadow-medium group-hover:scale-110 transition-transform duration-300">
                     <Icon size={22} className="text-white" />
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{value.title}</h3>
+                  <CardTitle>{value.title}</CardTitle>
                   <p className="text-gray-600 text-sm leading-relaxed">{value.description}</p>
                 </motion.div>
               )

@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, CardTitle } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -77,7 +77,7 @@ export const PressPage: React.FC = () => {
                 <div className="flex items-center gap-2 text-xs font-medium text-primary-700 uppercase tracking-wider mb-2">
                   <Calendar size={13} /> {release.date}
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">{release.title}</h3>
+                <CardTitle>{release.title}</CardTitle>
                 <p className="text-gray-600 text-sm leading-relaxed">{release.excerpt}</p>
               </div>
             ))}

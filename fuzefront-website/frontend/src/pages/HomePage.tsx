@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, CardTitle } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -279,7 +279,7 @@ export const HomePage: React.FC = () => {
                     <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${prop.gradient} flex items-center justify-center mb-5 shadow-medium group-hover:scale-110 transition-transform duration-300`}>
                       <Icon size={22} className="text-white" />
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">{prop.title}</h3>
+                    <CardTitle>{prop.title}</CardTitle>
                     <p className="text-gray-600 text-sm leading-relaxed">{prop.description}</p>
                   </motion.div>
                 )
@@ -316,7 +316,7 @@ export const HomePage: React.FC = () => {
                         <Icon size={20} className="text-white" />
                       </div>
                       <p className="text-xs font-medium text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-primary-700 transition-colors">{product.name}</h3>
+                      <CardTitle className="group-hover:text-primary-700 transition-colors">{product.name}</CardTitle>
                       <p className="text-sm text-gray-600 leading-relaxed mb-4">{product.description}</p>
                       <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-700 group-hover:gap-2 transition-all">
                         Learn more <ChevronRight size={14} />
