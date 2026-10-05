@@ -30,6 +30,19 @@ const SPACING_BOTTOM = {
   md: "var(--space-4)",
 };
 
+// `leading` maps to the DS line-height scale — replaces the recurring ad-hoc
+// `leading-{snug,normal,relaxed}` Tailwind utility seen on card/feature
+// description paragraphs (ds-fp:f3c504a21277: `text-gray-{500,600} text-sm
+// leading-relaxed`). `inherit` (default) preserves the original behavior of
+// reading the surrounding layout's line-height.
+const LEADING = {
+  inherit: "inherit",
+  tight: "var(--leading-tight)",
+  snug: "var(--leading-snug)",
+  normal: "var(--leading-normal)",
+  relaxed: "var(--leading-relaxed)",
+};
+
 /**
  * Plain text with a semantic color tone — replaces the recurring ad-hoc
  * `className="text-gray-{500,600,900}"` (and `text-red-500`) pattern used
@@ -49,12 +62,20 @@ const SPACING_BOTTOM = {
  * step of the DS type scale (default `inherit`, unchanged from before), and
  * `spacing` picks a step of the DS spacing scale for `margin-block-end`
  * (default `none`, unchanged from before).
+ *
+ * `leading` covers the recurring `text-gray-{500,600} text-sm
+ * leading-relaxed` card/feature-description pattern (a short paragraph of
+ * supporting copy under a card title — feature description, product blurb,
+ * press excerpt, team-member bio): pairs with `tone="secondary"` and
+ * `size="sm"` and picks a step of the DS line-height scale (default
+ * `inherit`, unchanged from before).
  */
 export function Text({
   as: As = "p",
   tone = "primary",
   size = "inherit",
   spacing = "none",
+  leading = "inherit",
   children,
   style,
   ...rest
@@ -65,7 +86,7 @@ export function Text({
         margin: 0,
         fontFamily: "var(--font-sans)",
         fontSize: SIZES[size] || SIZES.inherit,
-        lineHeight: "inherit",
+        lineHeight: LEADING[leading] || LEADING.inherit,
         color: TONES[tone] || TONES.primary,
         marginBlockEnd: SPACING_BOTTOM[spacing] ?? SPACING_BOTTOM.none,
         ...style,

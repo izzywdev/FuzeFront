@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Mail, Github, Twitter, Linkedin, Youtube } from 'lucide-react'
-import { Logo, ListStack } from '@fuzefront/design-system'
+import { Logo, ListStack, Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const footerNavigation = {
@@ -62,10 +62,10 @@ export const Footer: React.FC = () => {
               <Logo src="/logo-icon.svg" name="FuzeOne" size="md" style={{ width: 36, height: 36 }} />
               <span className="font-heading font-bold text-xl text-[var(--text-primary)]">FuzeOne</span>
             </Link>
-            <p className="text-[var(--text-secondary)] mb-6 text-sm leading-relaxed max-w-sm">
+            <Text as="p" tone="secondary" size="sm" leading="relaxed" className="mb-6 max-w-sm">
               The operating system for your SaaS. Enterprise auth, billing, AI, and
               Module Federation architecture — all in one platform.
-            </p>
+            </Text>
             <div className="flex items-center space-x-3 mb-6">
               <Mail size={15} className="text-[var(--accent-color)] flex-shrink-0" />
               <a

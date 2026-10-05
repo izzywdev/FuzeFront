@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -132,7 +132,7 @@ export const AboutPage: React.FC = () => {
                     <Icon size={22} className="text-white" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">{value.title}</h3>
-                  <p className="text-gray-600 text-sm leading-relaxed">{value.description}</p>
+                  <Text as="p" tone="secondary" size="sm" leading="relaxed">{value.description}</Text>
                 </motion.div>
               )
             })}
@@ -186,7 +186,7 @@ export const AboutPage: React.FC = () => {
                     </a>
                   </div>
                   <p className="text-sm text-primary-700 font-medium mb-3">{person.title}</p>
-                  <p className="text-gray-600 text-sm leading-relaxed">{person.bio}</p>
+                  <Text as="p" tone="secondary" size="sm" leading="relaxed">{person.bio}</Text>
                 </div>
               </motion.div>
             ))}
@@ -229,7 +229,7 @@ export const AboutPage: React.FC = () => {
                   <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
                     <Icon size={18} />
                   </IconTile>
-                  <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
+                  <Text as="p" tone="primary" size="sm" leading="relaxed" className="pt-1.5">{item.text}</Text>
                 </motion.div>
               )
             })}
