@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Common list, read-only detail</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Sam Ortiz · member of Acme Logistics">SO</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <a class="nav-item active" href="09-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="01-common-detail">
+
+      <div class="sl-crumb"><a href="09-shared-index.html">Selection Lists</a> · Priority</div>
+      <div class="sl-head">
+        <h1 class="page-title">Priority</h1>
+        <div class="sl-head__actions">
+          <!-- editable:false + visibility:platform → the ONE action offered is fork. -->
+          <a class="btn btn-primary" href="06-fork-dialog.html" data-action="fork-to-edit">Fork to edit…</a>
+        </div>
+      </div>
+      <div class="sl-head__meta">
+        <span class="sl-key">priority</span>
+        <span class="sl-vis sl-vis--platform" data-visibility="platform" data-badge="common" title="visibility: platform">◎ Common list</span>
+        <span class="sl-ro" data-editable="false"><span aria-hidden="true">🔒</span> Read-only for you</span>
+        <span class="sl-uuid">front_sl_01jf8k2m3n4p5q6r7s8t9v0w1x</span>
+      </div>
+
+      <!-- ReadOnlyListNotice: why it is read-only, and the way forward -->
+      <div class="sl-banner sl-banner--shared" data-readonly-notice="platform" role="note">
+        <span class="sl-banner__ico" aria-hidden="true">◎</span>
+        <div class="sl-banner__body">
+          <p class="sl-banner__title">A common list, shared by every organization</p>
+          <p>FuzeFront provides this list to every organization. You can view it and pick its values in
+            any form, but you can't change it here — a change would affect every organization at once.</p>
+          <p>To change it for <b>Acme Logistics</b>, <b>fork</b> it: your organization gets its own copy with the
+            same key (<code class="sl-code">priority</code>), and every form that uses <code class="sl-code">priority</code>
+            switches to your copy. Values already saved in records keep showing correctly.</p>
+          <div class="sl-banner__actions">
+            <a class="btn btn-primary sl-btn-sm" href="06-fork-dialog.html" data-action="fork-to-edit">Fork to edit…</a>
+            <a class="btn btn-ghost sl-btn-sm" href="03-picker-effective.html" data-action="see-in-picker">See how forms use it</a>
+          </div>
+        </div>
+      </div>
+
+      <section class="sl-panel" style="margin-bottom: var(--space-5);" data-panel="list-facts">
+        <div class="sl-panel__body">
+          <dl class="sl-facts" style="margin: 0;">
+            <dt>Owned by</dt>
+            <dd data-owner-org="platform">FuzeFront platform <span class="sl-uuid">org_01h2xcejqtf2nbrexx3vqjhp41</span> — not your organization</dd>
+            <dt>Who can see it</dt>
+            <dd>Everyone in every organization (<code class="sl-code">visibility: platform</code>). Visibility of a common list never changes.</dd>
+            <dt>Values</dt>
+            <dd>4 active · 1 archived · authored in <b>en</b>, translated into 9 locales</dd>
+            <dt>Your access</dt>
+            <dd>Read and pick (shared read). No role on this list — <code class="sl-code">editable: false</code>.</dd>
+          </dl>
+        </div>
+      </section>
+
+      <div class="sl-tabs" role="tablist" data-tabs="list-detail">
+        <a class="sl-tab" role="tab" aria-selected="true" href="01-common-detail.html" data-tab="values">Values</a>
+        <a class="sl-tab" role="tab" aria-selected="false" href="#" data-tab="translations" title="Read-only view of the translations">Translations (view)</a>
+        <!-- No Access tab: GET …/access needs manage_access; a reader of a common list cannot see its
+             roster (contract D4), so the tab is not rendered rather than rendered-and-403. -->
+      </div>
+
+      <section class="sl-panel" data-panel="value-table" data-readonly="true" data-state="ready">
+        <div class="sl-panel__seam"></div>
+        <table class="sl-table">
+          <thead>
+            <tr>
+              <th scope="col">Label (en)</th>
+              <th scope="col">Code</th>
+              <th scope="col">Status</th>
+              <th scope="col">Item id</th>
+            </tr>
+          </thead>
+          <!-- No drag handles, no Add / Edit / Archive / Delete: the table is read-only, not disabled. -->
+          <tbody>
+            <tr data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa1">
+              <td class="name">Low</td><td><span class="sl-key">LOW</span></td>
+              <td><span class="sl-pill sl-pill--active" data-status="active">active</span></td>
+              <td class="sl-uuid">front_sli_01jf8k2m3n4p5q6r7s8t9v0wa1</td>
+            </tr>
+            <tr data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2">
+              <td class="name">Normal</td><td><span class="sl-key">NORMAL</span></td>
+              <td><span class="sl-pill sl-pill--active" data-status="active">active</span></td>
+              <td class="sl-uuid">front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2</td>
+            </tr>
+            <tr data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa3">
+              <td class="name">High</td><td><span class="sl-key">HIGH</span></td>
+              <td><span class="sl-pill sl-pill--active" data-status="active">active</span></td>
+              <td class="sl-uuid">front_sli_01jf8k2m3n4p5q6r7s8t9v0wa3</td>
+            </tr>
+            <tr data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa4">
+              <td class="name">Urgent</td><td><span class="sl-key">URGENT</span></td>
+              <td><span class="sl-pill sl-pill--active" data-status="active">active</span></td>
+              <td class="sl-uuid">front_sli_01jf8k2m3n4p5q6r7s8t9v0wa4</td>
+            </tr>
+            <tr data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa5" data-archived="true">
+              <td class="name" style="color: var(--text-tertiary);">Critical (legacy)</td><td><span class="sl-key">CRITICAL</span></td>
+              <td><span class="sl-pill sl-pill--archived" data-status="archived">archived</span></td>
+              <td class="sl-uuid">front_sli_01jf8k2m3n4p5q6r7s8t9v0wa5</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="sl-panel__foot">
+          <span>5 values · read-only</span>
+          <span class="sl-ro"><span aria-hidden="true">🔒</span> Editing happens in your organization's fork</span>
+        </div>
+      </section>
+
+      <div class="sl-section">
+        <h2>Contrast — an organization list you can read but not edit</h2>
+        <p class="sl-caption">Same read-only table, different way forward. An <code class="sl-code">org</code> list
+          belongs to <b>your own</b> organization, so forking it is refused (<code class="sl-code">409 fork_not_applicable</code>)
+          and the CTA is never offered. The way forward is a role from the list's owner. Full states for this case are on
+          the next frame.</p>
+        <div class="sl-banner sl-banner--info" data-readonly-notice="org" role="note" style="margin-bottom: 0;">
+          <span class="sl-banner__ico" aria-hidden="true">☰</span>
+          <div class="sl-banner__body">
+            <p class="sl-banner__title">Shared with everyone in Acme Logistics</p>
+            <p><span class="sl-vis sl-vis--org" data-visibility="org">◉ Organization</span> &nbsp;You can view this list and pick its
+              values. To change it, ask for an editor role (created by <b>Dana Okafor</b>).</p>
+            <div class="sl-banner__actions">
+              <a class="btn btn-ghost sl-btn-sm" href="02-readonly-states.html" data-action="ask-owner">Ask the owner for access</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='01-common-detail']</code> · <code>[data-visibility='platform']</code> · <code>[data-badge='common']</code> · <code>[data-editable='false']</code> · <code>[data-readonly-notice='platform']</code> · <code>[data-readonly-notice='org']</code> · <code>[data-owner-org='platform']</code> · <code>[data-panel='value-table'][data-readonly='true']</code> · <code>[data-action='fork-to-edit']</code> · <code>[data-action='ask-owner']</code> · <code>[data-item='front_sli_01jf8k2m3n4p5q6r7s8t9v0wa1']</code><br />
+        Contract: <code>GET /v1/selection-lists/{listId}</code> (shared read; <code>visibility</code>, <code>editable</code>, <code>organization_id</code> = platform org) ·
+        <code>GET /v1/selection-lists/{listId}/items?status=all</code>. <code>GET …/access</code> is never called for a list with <code>editable: false</code>.<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="index.html" data-nav="prev">← All frames</a>
+  <span class="caption"><b>(1a) Common list — read-only detail</b> · Flow 1 · Shared read · frame 1 of 10</span>
+  <a class="btn btn-primary" href="02-readonly-states.html" data-nav="next">Read-only states →</a>
+</nav>
+</body>
+</html>
