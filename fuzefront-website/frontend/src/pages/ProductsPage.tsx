@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -132,7 +133,7 @@ function ProductCard({ product }: { product: Product }) {
       <div className={`h-2 bg-gradient-to-r ${product.gradient}`} />
       <div className="p-8">
         <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${product.gradient} flex items-center justify-center mb-5 shadow-sm group-hover:scale-105 transition-transform duration-300`}>
-          <Icon size={22} className="text-white" />
+          <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
         </div>
         <p className="text-xs font-semibold text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
         <h3 className="text-xl font-bold text-gray-900 mb-3">{product.name}</h3>

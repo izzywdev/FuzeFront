@@ -23,6 +23,17 @@ const TONES = {
   warning: { color: "var(--warning-color)", soft: "var(--warning-soft)" },
   error: { color: "var(--error-color)", soft: "var(--error-soft)" },
   neutral: { color: "var(--text-secondary)", soft: "var(--bg-quaternary)" },
+  // ds-fp:c607f2d639f8 — extracted per issue #945. The recurring pattern
+  // was an icon forced to flat white (`className="text-white"`) so it
+  // reads on a colored/gradient brand tile (marketing cards, product
+  // badges, hero icon chips). `--primary-foreground` is the DS token for
+  // "icon/text on a filled accent surface" and is `#ffffff` in both
+  // themes, so `tone="inverse"` replaces the raw white literal with a
+  // token reference. The tile's own background (often a per-item
+  // marketing gradient, not a DS tone) stays owned by the caller — pair
+  // with `variant="plain"` to only tint the icon, leaving an existing
+  // wrapping box untouched.
+  inverse: { color: "var(--primary-foreground)", soft: "rgba(255, 255, 255, 0.16)" },
 };
 
 /**
@@ -39,6 +50,13 @@ const TONES = {
  *  - `plain`: no box at all — just tints `children` in the solid `tone`
  *    color, inline. For an icon that sits directly beside text (a heading,
  *    a notification row) with no chip.
+ *
+ * `tone="inverse"` tints the icon `--primary-foreground` (flat white in both
+ * themes) instead of a hue — for an icon that sits on a caller-owned colored
+ * or gradient surface (a marketing brand tile) rather than one of IconTile's
+ * own tone tints. Pair it with `variant="plain"` when the box itself is
+ * already rendered by the caller (e.g. a per-item gradient chip) and only
+ * the icon's color should come from the design system.
  *
  * The icon itself is passed as `children` (e.g. `<Mail size={24} />`) so the
  * caller keeps full control of which icon and its own `size` — `size` here

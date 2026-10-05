@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -160,7 +160,7 @@ function IndustrySection({ industry }: { industry: Industry }) {
       <div className="p-8">
         <div className="flex items-start gap-4 mb-5">
           <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${industry.gradient} flex items-center justify-center flex-shrink-0 shadow-sm`}>
-            <Icon size={22} className="text-white" />
+            <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
           </div>
           <div>
             <h3 className="text-xl font-bold text-gray-900 mb-1">{industry.name}</h3>

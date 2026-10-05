@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -277,7 +277,7 @@ export const HomePage: React.FC = () => {
                 return (
                   <motion.div key={prop.title} variants={fadeUpVariants} className="group">
                     <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${prop.gradient} flex items-center justify-center mb-5 shadow-medium group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon size={22} className="text-white" />
+                      <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{prop.title}</h3>
                     <p className="text-gray-600 text-sm leading-relaxed">{prop.description}</p>
@@ -313,7 +313,7 @@ export const HomePage: React.FC = () => {
                       onClick={() => trackEvent('product_card_click', { product: product.slug })}
                     >
                       <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${product.color} flex items-center justify-center mb-4 shadow-sm group-hover:scale-110 transition-transform duration-300`}>
-                        <Icon size={20} className="text-white" />
+                        <IconTile tone="inverse" variant="plain"><Icon size={20} /></IconTile>
                       </div>
                       <p className="text-xs font-medium text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
                       <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-primary-700 transition-colors">{product.name}</h3>

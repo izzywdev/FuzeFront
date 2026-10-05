@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { Center, IconTile } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -74,7 +74,7 @@ export const SolutionsPage: React.FC = () => {
                   className="bg-white rounded-2xl p-8 shadow-soft hover:shadow-medium transition-shadow duration-300"
                 >
                   <div className="w-16 h-16 rounded-xl bg-gradient-to-r from-primary-500 to-secondary-500 flex items-center justify-center mb-6">
-                    <Icon size={32} className="text-white" />
+                    <IconTile tone="inverse" variant="plain"><Icon size={32} /></IconTile>
                   </div>
                   
                   <h3 className="text-2xl font-bold text-gray-900 mb-4">

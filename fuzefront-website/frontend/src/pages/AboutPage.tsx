@@ -129,7 +129,7 @@ export const AboutPage: React.FC = () => {
               return (
                 <motion.div key={value.title} variants={fadeUp} className="group">
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center mb-5 shadow-medium group-hover:scale-110 transition-transform duration-300">
-                    <Icon size={22} className="text-white" />
+                    <IconTile tone="inverse" variant="plain"><Icon size={22} /></IconTile>
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">{value.title}</h3>
                   <p className="text-gray-600 text-sm leading-relaxed">{value.description}</p>

@@ -7,7 +7,12 @@ import * as React from "react";
  */
 export interface IconTileProps extends React.HTMLAttributes<HTMLSpanElement> {
   children?: React.ReactNode;
-  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral";
+  /**
+   * `inverse` tints the icon `--primary-foreground` (flat white in both
+   * themes) instead of a hue tone, for an icon on a caller-owned colored or
+   * gradient surface — pair with `variant="plain"`.
+   */
+  tone?: "accent" | "info" | "success" | "warning" | "error" | "neutral" | "inverse";
   size?: "sm" | "md" | "lg";
   /**
    * `soft` (default): fixed box, tone-tinted background, solid-tone icon.
