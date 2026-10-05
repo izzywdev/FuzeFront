@@ -59,6 +59,12 @@ is not an inconsistency. `slug` is free-form and immutable once registered;
 rule in the root `CLAUDE.md` § "`slug`, display name, and the federated serve path
 are THREE INDEPENDENT questions" before changing any of the three.
 
+The example above is for `integration.type: "module-federation"`. For
+`"web-component"`, `integration` drops `remoteEntry`/`module` and instead
+takes a `url` (the script to load) and `scope` (the custom-element tag name)
+— see [`docs/guides/WEB_COMPONENT_INTEGRATION.md`](guides/WEB_COMPONENT_INTEGRATION.md)
+for the full contract and a runnable example.
+
 ### `nav` — where the app lands in the side menu
 
 `section` places the app in the company lifecycle; `order` ranks it within that
