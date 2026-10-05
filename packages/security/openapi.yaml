@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.9.1
+  version: 0.10.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -1898,6 +1898,291 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  # ───────────────────── Org invitations v2 (FFRNT-305 / FFRNT-304) ─────────
+  # Org owner/admin invites people along TWO orthogonal dimensions:
+  #   • invitee kind  — an existing account-holder (by typed userId) OR an
+  #     external identity reached over a `channel` (email address OR WhatsApp
+  #     e164 phone). An external invitee has no account yet: the invite carries
+  #     a single-use, server-minted `bindToken` THROUGH signup/enrollment and
+  #     auto-binds the membership once the account exists (see POST /accept).
+  #   • memberType    — employee | customer, ORTHOGONAL to the access role
+  #     (owner/admin/member/viewer). The root-org owner invites external users
+  #     as `customer`.
+  # Base path is `/api` (servers), so these mount at `/api/organizations/...`
+  # and the public `/api/invitations/...`, matching the deployed routes
+  # (backend/security/src/routes/{organizations,invitations}.ts). The invite
+  # token is opaque and is NEVER a capability on its own — accept still enforces
+  # channel/identity match + org standing (token + Permit), never "knew the id".
+  /organizations/{id}/invitations:
+    get:
+      tags: [organizations]
+      summary: List an organization's invitations
+      operationId: listOrganizationInvitations
+      description: >-
+        Unbounded collection — cursor-paginated per the family pagination
+        standard (`limit` + opaque `cursor`, `{ items, page }` envelope).
+        Optional `status` filter. Org owner/admin capability; a non-privileged
+        caller gets `403 FORBIDDEN` rendered in place (only 401
+        re-authenticates). An id is never a capability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        # limit/cursor inlined (structurally identical to components.parameters)
+        # so gate-pagination — which does not resolve $ref — sees them directly.
+        - name: limit
+          in: query
+          required: false
+          description: Max items per page. Clamped server-side to the maximum.
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque, server-issued cursor for the next page. Omit for the first page.
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Optional filter by invitation lifecycle status.
+          schema:
+            $ref: '#/components/schemas/InvitationStatus'
+      responses:
+        '200':
+          description: A page of invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [organizations]
+      summary: Create an invitation
+      operationId: createOrganizationInvitation
+      description: >-
+        Invites one person to the organization. The `invitee` is a typed,
+        discriminated reference — an existing `account` (by server-minted
+        userId) or an `external` identity reached over a `channel`
+        (email OR WhatsApp e164 phone). `memberType` (employee|customer) is
+        orthogonal to the access `role`. `owner` can never be invited. The
+        service mints the invitation id and the `bindToken`; the body never
+        carries an id (`additionalProperties: false`). A pending invitation to
+        the same identity returns `409`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCreate'
+      responses:
+        '201':
+          description: Invitation created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      x-pagination: exempt
+      x-pagination-reason: Singleton creation.
+  /organizations/{id}/invitations/bulk:
+    post:
+      tags: [organizations]
+      summary: Create invitations in bulk
+      operationId: createOrganizationInvitationsBulk
+      description: >-
+        Creates up to 50 invitations in one call, all sharing one `role` and
+        `memberType`. Each `invitee` is a typed, discriminated reference (as in
+        the single create). Per-invitee outcomes are returned individually so a
+        partial batch (some already pending) still reports precisely. The
+        service mints every id and bindToken; the body carries none
+        (`additionalProperties: false`).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkInvitationCreate'
+      responses:
+        '200':
+          description: Per-invitee results for the batch.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkInvitationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Bounded batch (max 50), echoing the exact inputs; not a growing collection read.
+  /organizations/{id}/invitations/{invitationId}/resend:
+    post:
+      tags: [organizations]
+      summary: Resend a pending invitation
+      operationId: resendOrganizationInvitation
+      description: >-
+        Re-dispatches the invitation over its original `channel` (email or
+        WhatsApp) and extends its expiry. Only a `pending` invitation can be
+        resent. Org owner/admin capability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '200':
+          description: Invitation re-dispatched (expiry extended).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation.
+  /organizations/{id}/invitations/{invitationId}:
+    delete:
+      tags: [organizations]
+      summary: Revoke an invitation
+      operationId: revokeOrganizationInvitation
+      description: >-
+        Revokes a pending invitation (transitions it to `revoked`). Idempotent
+        from the caller's view. Org owner/admin capability.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrganizationId'
+        - $ref: '#/components/parameters/InvitationId'
+      responses:
+        '204':
+          description: Invitation revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation.
+  # Public token surface — the external/invitee side of the flow.
+  /invitations/{token}:
+    get:
+      tags: [organizations]
+      summary: Resolve an invitation by token (public)
+      operationId: resolveInvitation
+      description: >-
+        Public, unauthenticated resolve of an invitation by its opaque token.
+        The invitee's contact identity is MASKED (first char + domain / last
+        digits) — the token is a lookup key, never a data leak and never a
+        capability. Returns `410` when the invitation is expired or revoked.
+      parameters:
+        - $ref: '#/components/parameters/InvitationToken'
+      responses:
+        '200':
+          description: The (masked) invitation and its organization.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationResolveResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+      x-pagination: exempt
+      x-pagination-reason: Singleton resolve by token.
+    parameters: []
+  /invitations/{token}/accept:
+    post:
+      tags: [organizations]
+      summary: Accept an invitation (auth-optional; carries the external-signup bind)
+      operationId: acceptInvitation
+      description: >-
+        Redeems an invitation. Two outcomes, distinguished by status code:
+
+        • **Unauthenticated / no account yet (202)** — returns
+        `{ action: 'enroll', enrollUrl, bindToken }`. The `bindToken` is the
+        single-use, short-lived, server-minted carrier of this invite THROUGH
+        signup/enrollment: the client sends it as `SignupRequest.bindToken`, the
+        server verifies the signup identity matches the invited `channel`
+        identity, provisions the account, and auto-binds the membership — so the
+        handler never has to trust that the caller "knew the token".
+
+        • **Authenticated & identity matches (200)** — the membership is bound
+        immediately (CAS pending→accepted, idempotent) and the result carries
+        the `memberType` and `role`. An identity mismatch is `403`; an
+        expired/revoked invite is `410`; a lost accept race is `409`.
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InvitationToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationAcceptRequest'
+      responses:
+        '200':
+          description: Invitation accepted and membership bound.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationAcceptResult'
+        '202':
+          description: >-
+            The invitee must sign up / sign in first. Carries the `bindToken` to
+            redeem the invite post-signup.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationEnrollResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+      x-pagination: exempt
+      x-pagination-reason: Singleton mutation by token.
+
   # ───────────────────── Employee (platform-staff) surfaces ─────────────────
   # Commissioned by the merged FF-EPIC-17-S9 Employee cross-org console (frames
   # design/frames/employee-console/**, UI PR #673). Closes the S9 contract gap:
@@ -2289,6 +2574,24 @@ components:
       required: true
       schema:
         type: string
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: >-
+        Server-minted, typed invitation id (e.g. `inv_…`). Opaque past its
+        prefix; never a capability — standing comes from the token + Permit.
+      schema:
+        type: string
+    InvitationToken:
+      name: token
+      in: path
+      required: true
+      description: >-
+        Opaque, single-use invitation token from the dispatched invite. A lookup
+        key only — never a capability; accept still enforces identity + standing.
+      schema:
+        type: string
   responses:
     Unauthorized:
       description: Authentication failed (fail-closed).
@@ -2320,6 +2623,22 @@ components:
             $ref: '#/components/schemas/ErrorBody'
     ProviderError:
       description: The configured identity or authorization provider rejected the operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Conflict:
+      description: >-
+        The request conflicts with current state — e.g. a pending invitation to
+        the same identity already exists, or an accept lost its CAS race.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Gone:
+      description: >-
+        The invitation has expired or been revoked and can no longer be resolved
+        or accepted.
       content:
         application/json:
           schema:
@@ -2431,6 +2750,16 @@ components:
         tenantName:
           type: string
           description: Optional tenant/organization name to provision on signup.
+        bindToken:
+          type: string
+          description: >-
+            Optional single-use invitation bind token (from the `202` accept
+            response, `InvitationEnrollResponse.bindToken`). When present, the
+            server verifies the signup identity matches the invited channel
+            identity, then auto-binds the invited membership (with its
+            `memberType`/`role`) as part of signup — redeeming the invite without
+            a second round-trip. Mismatch or an expired token fails signup-bind
+            closed (the account may still be created; the bind is rejected).
       required: [email, password]
     ExchangeRequest:
       type: object
@@ -2853,6 +3182,12 @@ components:
           type: array
           items:
             type: string
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+          description: >-
+            How this member relates to the org (employee|customer), orthogonal
+            to `roles`. Optional for backward compatibility: memberships created
+            before FFRNT-305 may not carry one.
       required: [userId, roles]
     MemberCreate:
       type: object
@@ -2868,6 +3203,9 @@ components:
           type: array
           items:
             type: string
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+          description: How the member relates to the org (employee|customer), orthogonal to roles.
       required: []
     Role:
       type: object
@@ -2885,6 +3223,306 @@ components:
           items:
             type: string
       required: [roles]
+    # ── Org invitations v2 (FFRNT-305) ──
+    MemberType:
+      type: string
+      description: >-
+        How a member relates to the organization — ORTHOGONAL to the access
+        role. `employee` = internal staff of the org; `customer` = an external
+        customer member (the root-org owner invites external users as
+        `customer`). A membership and an invitation each carry exactly one.
+      enum: [employee, customer]
+    InvitationChannel:
+      type: string
+      description: >-
+        The delivery/identity channel for an external invitee. `email` = an
+        email address; `whatsapp` = an E.164 phone reachable over WhatsApp. An
+        invitation to an existing account-holder carries the channel of the
+        contact the invite was dispatched to (defaults to `email`).
+      enum: [email, whatsapp]
+    InvitationRole:
+      type: string
+      description: >-
+        The access role an invitee is granted on accept. `owner` can NEVER be
+        invited (ownership is transferred, not invited), so it is absent here.
+      enum: [admin, member, viewer]
+    InvitationStatus:
+      type: string
+      description: Invitation lifecycle status.
+      enum: [pending, accepted, revoked, expired]
+    AccountInvitee:
+      type: object
+      additionalProperties: false
+      description: >-
+        An invitee who ALREADY has a FuzeFront account. `userId` REFERENCES an
+        existing, server-minted user — it names an entity that already exists, so
+        it is a reference (not identity being created) and carries its referent
+        type via `kind: account`.
+      properties:
+        kind:
+          type: string
+          const: account
+        userId:
+          type: string
+          description: Server-minted, typed user id (e.g. `usr_…`) of the existing account-holder.
+      required: [kind, userId]
+    ExternalInvitee:
+      type: object
+      additionalProperties: false
+      description: >-
+        An invitee with NO account yet, reached over a `channel`. Exactly one
+        contact field is required, selected by `channel`: `email` (RFC 5322) for
+        `channel: email`, `phone` (E.164) for `channel: whatsapp`. The external
+        user must sign up first; the invite then auto-binds via the `bindToken`.
+      properties:
+        kind:
+          type: string
+          const: external
+        channel:
+          $ref: '#/components/schemas/InvitationChannel'
+        email:
+          type: string
+          format: email
+          description: Required when `channel` is `email`.
+        phone:
+          type: string
+          pattern: '^\+[1-9]\d{1,14}$'
+          description: E.164 phone (e.g. `+14155552671`). Required when `channel` is `whatsapp`.
+      required: [kind, channel]
+      allOf:
+        - if:
+            properties:
+              channel:
+                const: email
+          then:
+            required: [email]
+        - if:
+            properties:
+              channel:
+                const: whatsapp
+          then:
+            required: [phone]
+    InviteeRef:
+      description: >-
+        A typed, discriminated invitee reference — an existing `account` or an
+        `external` identity. The `kind` discriminator means no bare id is ever
+        resolved without its referent type (governance/identifier-standard.md 2).
+      oneOf:
+        - $ref: '#/components/schemas/AccountInvitee'
+        - $ref: '#/components/schemas/ExternalInvitee'
+      discriminator:
+        propertyName: kind
+        mapping:
+          account: '#/components/schemas/AccountInvitee'
+          external: '#/components/schemas/ExternalInvitee'
+    InvitationCreate:
+      type: object
+      # additionalProperties:false rejects a client-supplied invitation `id` or
+      # `token` at the boundary — the service mints both
+      # (governance/identifier-standard.md 1). `invitee` carries its own typed
+      # reference; no bare id is accepted.
+      additionalProperties: false
+      description: Create one invitation.
+      properties:
+        invitee:
+          $ref: '#/components/schemas/InviteeRef'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+      required: [invitee, memberType]
+    BulkInvitationCreate:
+      type: object
+      additionalProperties: false
+      description: >-
+        Create up to 50 invitations sharing one `role` and `memberType`. The
+        service mints every id and bindToken; none may be supplied.
+      properties:
+        invitees:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/InviteeRef'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+      required: [invitees, memberType]
+    Invitation:
+      type: object
+      description: >-
+        An invitation as seen by an org owner/admin (list + create + resend
+        responses). The invitee identity is UNMASKED here because the caller
+        administers the org; the public token resolve (`InvitationPublic`) masks
+        it. `bindToken` is NOT included in this admin projection — it is handed
+        only to the invitee via the accept flow.
+      properties:
+        id:
+          type: string
+          description: Server-minted, typed invitation id (e.g. `inv_…`). Opaque past the prefix.
+        organizationId:
+          type: string
+          description: Typed id of the organization the invite is into.
+        invitee:
+          $ref: '#/components/schemas/InviteeRef'
+        channel:
+          $ref: '#/components/schemas/InvitationChannel'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+        status:
+          $ref: '#/components/schemas/InvitationStatus'
+        invitedByUserId:
+          type: string
+          description: Typed user id of the inviter (a reference to an existing user).
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, organizationId, invitee, channel, role, memberType, status]
+    InvitationPublic:
+      type: object
+      additionalProperties: false
+      description: >-
+        Masked public projection of an invitation returned by the unauthenticated
+        token resolve. The contact identity is reduced to a hint
+        (`maskedContact`) — never the full address/number, since the caller is
+        unauthenticated and the token is a lookup key, not a capability.
+      properties:
+        id:
+          type: string
+        maskedContact:
+          type: string
+          description: Masked identity hint, e.g. `u***@example.com` or `+1 *** *** 2671`.
+        channel:
+          $ref: '#/components/schemas/InvitationChannel'
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+        status:
+          $ref: '#/components/schemas/InvitationStatus'
+        expiresAt:
+          type: string
+          format: date-time
+      required: [id, maskedContact, channel, role, memberType, status]
+    InvitationOrgRef:
+      type: object
+      additionalProperties: false
+      description: Minimal, public-safe org summary shown on the invite landing page.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+      required: [id, name]
+    InvitationResolveResult:
+      type: object
+      additionalProperties: false
+      description: The masked invitation plus the organization it is into.
+      properties:
+        invitation:
+          $ref: '#/components/schemas/InvitationPublic'
+        organization:
+          $ref: '#/components/schemas/InvitationOrgRef'
+      required: [invitation, organization]
+    InvitationPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      required: [items, page]
+    BulkInvitationItemResult:
+      type: object
+      additionalProperties: false
+      description: Outcome for one invitee in a bulk create.
+      properties:
+        invitee:
+          $ref: '#/components/schemas/InviteeRef'
+        status:
+          type: string
+          enum: [created, skipped, failed]
+        invitationId:
+          type: string
+          description: Present when `status` is `created`.
+        reason:
+          type: string
+          description: Why an invitee was skipped/failed (e.g. `already-pending`).
+      required: [invitee, status]
+    BulkInvitationResult:
+      type: object
+      additionalProperties: false
+      properties:
+        created:
+          type: integer
+        skipped:
+          type: integer
+        failed:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkInvitationItemResult'
+      required: [created, skipped, failed, results]
+    InvitationAcceptRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Optional accept body. No fields are required: the token is in the path
+        and, for an authenticated accept, the identity comes from the session.
+      properties: {}
+    InvitationEnrollResponse:
+      type: object
+      additionalProperties: false
+      description: >-
+        Returned `202` when the invitee has no session/account yet. Directs them
+        to sign up / sign in and carries the single-use `bindToken` that threads
+        this invite through signup (sent back as `SignupRequest.bindToken`).
+      properties:
+        action:
+          type: string
+          const: enroll
+        enrollUrl:
+          type: string
+          format: uri
+          description: Where to send the invitee to create an account or sign in.
+        bindToken:
+          type: string
+          description: >-
+            Single-use, short-lived, server-minted carrier of this invitation
+            through signup/enrollment. Redeemed server-side on signup (identity
+            must match the invited channel identity) to auto-bind the membership.
+        message:
+          type: string
+      required: [action, enrollUrl, bindToken]
+    InvitationAcceptResult:
+      type: object
+      additionalProperties: false
+      description: Returned `200` when the membership was bound.
+      properties:
+        action:
+          type: string
+          const: bound
+        organizationId:
+          type: string
+        userId:
+          type: string
+          description: Typed id of the now-bound member (a reference to the accepting user).
+        role:
+          $ref: '#/components/schemas/InvitationRole'
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+      required: [action, organizationId, userId, role, memberType]
     # ── M2M shapes ──
     TokenIssueRequest:
       type: object
@@ -3300,6 +3938,11 @@ components:
         isSelf:
           type: boolean
           description: True for the calling user's own row (rendered "You"; data-self).
+        memberType:
+          $ref: '#/components/schemas/MemberType'
+          description: >-
+            How this member relates to the org (employee|customer), orthogonal to
+            `role`. Optional: pre-FFRNT-305 memberships may not carry one.
       required: [userId, displayName, role]
     DirectoryPage:
       type: object

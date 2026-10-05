@@ -1,5 +1,70 @@
 # Changelog — @fuzefront/security-client
 
+## 0.10.0 — Org invitations v2: memberType, external (email/WhatsApp) invitees, and the signup bind-token flow (FFRNT-305 / FFRNT-304, unreleased)
+
+**Additive surface.** `info.version` 0.9.1 -> 0.10.0, `SECURITY_CONTRACT_VERSION`
+0.9.1 -> 0.10.0. First time the invitation surface is described in the contract
+at all (it previously existed only in `backend/security/src/routes/{organizations,invitations}.ts`,
+undocumented). Minor bump: new paths + schemas + two optional fields on existing
+schemas; no existing required field changed.
+
+### Added — invitation HTTP surface (tag `organizations`, base `/api`)
+
+- `GET /organizations/{id}/invitations` — list, **cursor-paginated** (`limit` +
+  opaque `cursor`, `{ items, page }` envelope) with an optional `status` filter.
+  The deployed route returned an unbounded `{ invitations: [] }`; the frozen
+  contract paginates it per the family pagination standard (backend conforms).
+- `POST /organizations/{id}/invitations` — create one (`201 Invitation`).
+- `POST /organizations/{id}/invitations/bulk` — up to 50, per-invitee results.
+- `POST /organizations/{id}/invitations/{invitationId}/resend` — re-dispatch + extend expiry.
+- `DELETE /organizations/{id}/invitations/{invitationId}` — revoke (`204`).
+- `GET /invitations/{token}` — **public** masked resolve (`200` / `410 Gone`).
+- `POST /invitations/{token}/accept` — auth-optional accept: `200` bound, or
+  `202` enroll carrying the `bindToken`; `403` identity mismatch, `409` race,
+  `410` expired/revoked.
+
+### Added — the two orthogonal dimensions
+
+- `MemberType` (`employee | customer`) — orthogonal to the access role. Added to
+  `InvitationCreate`/`BulkInvitationCreate` (required) and `Invitation`, and as
+  an **optional** field on `Member`, `MemberCreate`, and `DirectoryMember` (old
+  memberships may lack one). The root-org owner invites external users as `customer`.
+- `InviteeRef` — a `oneOf` discriminated on `kind`: `AccountInvitee` (existing
+  account-holder, by typed `userId` reference) or `ExternalInvitee` (`channel`
+  `email` → `email` (RFC 5322) OR `whatsapp` → `phone` (E.164 `^\+[1-9]\d{1,14}$`),
+  enforced by `if/then`). Satisfies identifier-standard 2 (every polymorphic
+  reference carries its type).
+
+### Added — external-signup bind-token flow
+
+- `202` accept returns `InvitationEnrollResponse { action:'enroll', enrollUrl,
+  bindToken }`. The `bindToken` is the single-use, short-lived, server-minted
+  carrier of the invite through signup/enrollment.
+- `SignupRequest.bindToken` (optional) threads it in: on signup the server
+  verifies the signup identity matches the invited channel identity and
+  auto-binds the membership (its `memberType`/`role`) — no second round-trip.
+
+### Added — Kafka event schemas (`@fuzefront/shared`, Zod)
+
+- `identity.invitation.created` — carries `organizationId`, `invitationId`,
+  `invitedByUserId`, `role`, `memberType`, `channel`, and the channel-appropriate
+  contact (email OR E.164 phone) so a notification worker dispatches over the
+  right channel (email + WhatsApp).
+- `identity.invitation.accepted` — carries `organizationId`, `invitationId`,
+  `userId`, `role`, `memberType`.
+
+### Identifier-standard conformance
+
+- Every create body (`InvitationCreate`, `BulkInvitationCreate`,
+  `InvitationAcceptRequest`) sets `additionalProperties: false` and accepts no
+  client-chosen `id`/`token` — the service mints the invitation id and the
+  bindToken (identifier-standard 1).
+
+### Consumers
+
+- New typed `paths`/`components` (`Invitation`, `InviteeRef`, `MemberType`, …).
+  No breaking rename. `Member`/`DirectoryMember` gain an optional `memberType`.
+
 ## 0.9.1 — AuthZ: human callers are authorized per tenant on grant/revoke, member/role management and cross-subject reads (security fix, unreleased)
 
 **Behavior tightening, no shape change.** `info.version` 0.9.0 -> 0.9.1,
