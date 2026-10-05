@@ -20,10 +20,10 @@
 
 import { Request, Response } from 'express';
 import { createRouter } from '../lib/http';
-import { registerIdParams } from '../middleware/validateInput';
+import { acceptOnlyBodyProps, isItemId, parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
-import { mintId } from '@izzywdev/fuzefront-identity';
+import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
@@ -46,6 +46,8 @@ registerIdParams(router);
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
+/** SelectionListItemReorder.item_ids maxItems. */
+const REORDER_MAX_IDS = 5000;
 
 // Must equal the openapi `Locale` enum / i18n.languages.json (and the Zod
 // `SELECTION_LIST_LOCALES` the published events validate against).
@@ -214,8 +216,8 @@ router.get('/:listId/items', requireAuthzCheck('SelectionList', 'read'), async (
   }
 
   // Parse + clamp pagination
-  const rawLimit = parseInt(String(req.query.limit ?? DEFAULT_PAGE_SIZE), 10);
-  const limit = isNaN(rawLimit) || rawLimit < 1 ? DEFAULT_PAGE_SIZE : Math.min(rawLimit, MAX_PAGE_SIZE);
+  const limit = parseLimitParam(req, res, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  if (limit === undefined) return;
 
   const rawCursor = req.query.cursor as string | undefined;
   const statusFilter = (req.query.status as string) ?? 'active';
@@ -384,8 +386,9 @@ router.post('/:listId/items', requireAuthzCheck('SelectionList', 'add_value'), e
   // the same MAX().
   let explicitSortOrder: number | undefined;
   if (sort_order !== undefined) {
-    explicitSortOrder = parseInt(String(sort_order), 10);
-    if (isNaN(explicitSortOrder) || explicitSortOrder < 0) {
+    // Contract: `type: integer, minimum: 0` — a numeric string or a fraction is a 400, not coerced.
+    explicitSortOrder = typeof sort_order === 'number' ? sort_order : NaN;
+    if (!Number.isSafeInteger(explicitSortOrder) || explicitSortOrder < 0) {
       res.status(400).json({ code: 'VALIDATION_ERROR', message: 'sort_order must be a non-negative integer.' });
       return;
     }
@@ -502,10 +505,25 @@ router.put('/:listId/items/reorder', requireAuthzCheck('SelectionList', 'update_
   }
 
   const { listId } = req.params;
+  // SelectionListItemReorder: additionalProperties false (no `id`, no `organization_id`).
+  if (!acceptOnlyBodyProps(req, res, ['item_ids'])) return;
   const { item_ids } = req.body ?? {};
 
+  // item_ids: 1..5000 unique `front_sli_` ids (contract: minItems 1, maxItems 5000, uniqueItems).
   if (!Array.isArray(item_ids) || item_ids.length === 0) {
     res.status(400).json({ code: 'VALIDATION_ERROR', message: 'item_ids must be a non-empty array.' });
+    return;
+  }
+  if (item_ids.length > REORDER_MAX_IDS) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `item_ids must contain at most ${REORDER_MAX_IDS} ids.` });
+    return;
+  }
+  if (!item_ids.every(isItemId)) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: `item_ids must all be '${ENTITY_PREFIXES.selectionListItem}_' ids.` });
+    return;
+  }
+  if (new Set(item_ids).size !== item_ids.length) {
+    res.status(400).json({ code: 'VALIDATION_ERROR', message: 'item_ids must not contain duplicates.' });
     return;
   }
 
@@ -639,8 +657,8 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
     return;
   }
   if (body.sort_order !== undefined) {
-    const so = parseInt(String(body.sort_order), 10);
-    if (isNaN(so) || so < 0) {
+    const so = typeof body.sort_order === 'number' ? body.sort_order : NaN;
+    if (!Number.isSafeInteger(so) || so < 0) {
       res.status(400).json({ code: 'VALIDATION_ERROR', message: 'sort_order must be a non-negative integer.' });
       return;
     }

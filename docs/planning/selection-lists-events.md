@@ -1,11 +1,21 @@
 # Selection lists — Kafka event contract (SL5)
 
-**Status:** contract FROZEN on merge of this PR. **No implementation exists yet** — the
-selection-list-service does not publish any of these events, does not consume
-`identity.org.created` or `selection-lists.seed.requested`. (The `fuzefront.selection-lists.seed-defaults` flag IS now registered —
-`packages/feature-flags/flag-registry.yaml`, `FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS`,
-`isSeedDefaultsEnabled()` in the service — default OFF, never enabled by registration.)
-A later wave builds all of that against this contract (see [§14](#14-implementation-wave-for-the-orchestrator)).
+**Status:** contract FROZEN. **Implementation status (updated 2026-10-04, `origin/master` @ `0e70bcee`):**
+the transactional outbox + per-org ordered relay (SL6, #1265), the seed core library, platform
+pack and allowlist (#1270), and the `identity.org.created` / `selection-lists.seed.requested`
+consumers (#1271) are **merged**; the reconciler/backfill (§7.1 step 6) landed in SL7 (§13.0.4), and
+SL8 added the `identity.org.updated` consumer, the org-owner `list-owner` grant on seeded lists and
+the canonical flag context (§13.0.5). Seeding is gated by two default-OFF flags
+(`fuzefront.selection-lists.service` and `fuzefront.selection-lists.seed-defaults`) and by the
+allowlist, which ships with only the internal `platform` source — so **nothing is live**. What
+integrators and operators should read instead of this design document:
+[`docs/guides/SELECTION_LIST_EVENTS.md`](../guides/SELECTION_LIST_EVENTS.md) and
+[`docs/runbooks/selection-lists-seeding-operations.md`](../runbooks/selection-lists-seeding-operations.md).
+The text below is the original design (only the §13.0.x "As implemented" notes track the code);
+where it says "will"/"the reconciler", check those two pages. (The `fuzefront.selection-lists.seed-defaults`
+flag is registered — `packages/feature-flags/flag-registry.yaml`,
+`FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS`, `isSeedDefaultsEnabled()` — default OFF.)
+The implementation wave is described in [§14](#14-implementation-wave-for-the-orchestrator).
 
 | Artifact | Path |
 |---|---|
@@ -194,6 +204,7 @@ stale).
 | `identity.org.deleted` | `${KAFKA_GROUP_ID}-org-deleted` | soft → archive org lists; hard → purge (existing `org-deleted.handler.ts`) | **exists** |
 | `identity.user.deleted` | `${KAFKA_GROUP_ID}-user-deleted` | anonymise `created_by` / `granted_by` (existing) | **exists** |
 | `identity.org.created` | `${KAFKA_GROUP_ID}-org-created` | seed the platform default pack(s) | **new** |
+| `identity.org.updated` | `${KAFKA_GROUP_ID}-org-updated` | refresh the org projection (`type` / `is_active` / `name`); flag-independent; no seeding | **SL8** (§13.0.5) |
 | `selection-lists.seed.requested` | `${KAFKA_GROUP_ID}-seed-requested` | validate, authorise, apply a pack | **new** |
 | `identity.user.created` | — | **not applicable** — no user-scoped lists (decision §2) | declared N/A |
 
@@ -351,11 +362,14 @@ touches a translation row it did not write).
   **`system:selection-list-service`**. Audit rows: `actor_id` = the same,
   `action = 'seed.applied' | 'seed.upgraded' | 'seed.archived'`, `after` includes
   `{ seedSource, packKey, packVersion, requestId }`.
-- **No per-instance `list-owner` grant** is written for seeded lists (there is no human
-  creator). They are administered by org admins through the tenant-level role, exactly
-  like "a list nobody but an org admin can administer" in `routes/lists.ts`. The
-  last-owner guard (`countActiveOwners`) must treat seeded lists with zero owners as
-  valid, so the first human grant on one is not blocked. Open question Q3.
+- **Access (superseded by SL8, see §13.0.5 and Q3):** the original design wrote **no** per-instance
+  `list-owner` grant for seeded lists and left them to org admins' tenant-level role. That left the
+  lists invisible (the list endpoint filters per list by `SelectionList:read`, and a tenant admin has
+  no implicit ownership), so the architect overrode the default: **platform**-seeded lists now get a
+  `list-owner` for the org owner (`identity.org.created.ownerId`), written after the seed transaction
+  commits. **App**-seeded lists (`seed.requested`) still get **no** grant from the service — the
+  requesting app grants through the Security API. The last-owner guard (`countActiveOwners`) still
+  treats a seeded list with zero owners as valid, so the first human grant is never blocked.
 - **HTTP contract ripple (prerequisite, see §13.1).**
 
 ## 10. Platform default seed packs
@@ -622,7 +636,7 @@ Decisions the code makes that §7-§8 left open:
 - **Org projection.** `identity.org.created` upserts `selection_list_ref_index` *always* (flag OFF included); a `deleted` row is a tombstone and is
   never resurrected (the upsert refreshes type/`is_active`, not `status`). `identity.org.deleted` tombstones it *before* cascading (soft and hard) and
   inserts the tombstone for an org it never saw, so delete-before-create ends in `seed.failed` / `ORG_INACTIVE`, not lists. The projection is only
-  written by these two events: an `identity.org.updated` consumer does not exist yet, so `is_active` can go stale.
+  written by these two events (as of SL6; `identity.org.updated` joined in SL8, §13.0.5).
 - **`org.created` flow:** project -> `isActive:false` skips (flag not consulted) -> `isSeedingEnabled(org)` OFF skips + logs -> `applyPlatformDefaults`
   (`appliesTo` / personal / platform rules stay in the pack). Redelivery is `already-applied`.
 - **`seed.requested` order:** schema -> `scope:'user'` (`SCOPE_UNSUPPORTED`) -> flag (`SEEDING_DISABLED`; the token is not even introspected) ->
@@ -638,6 +652,67 @@ Decisions the code makes that §7-§8 left open:
   `attestation.token` is replaced by `[REDACTED]` (this narrows the §7.2 note that the DLQ copy carries the token). Non-JSON is dead-lettered by
   `TypedConsumer` as before. The token reaches nothing but the verifier: tests assert it is in no outbox event, no log line and no DLQ message.
 - **Governance.** `governance/microservice-events-policy.json`: selection-list-service left `knownUnhandled`; `identity.user.created` is `notApplicable`.
+
+### 13.0.4 As implemented (SL7 reconciler / backfill)
+
+`services/selection-list-service/src/seed/reconciler.ts` (exports `runReconcilerOnce(db, opts)`, `startReconciler`, `loadReconcilerConfig`,
+`isReconcilerEnabled`, `ReconcilerBackoff`; tests: `tests/seed.reconciler.db.test.ts`, real Postgres). §7.1 step 6 made concrete:
+
+- **Off by default, independent of the flags.** `src/index.ts` starts it only when `SEED_RECONCILER_ENABLED=true`, after migrations, non-fatal, and
+  stops it first on SIGTERM/SIGINT (waits for the in-flight org; no further org or tick starts). Even when running it seeds nothing for an org unless
+  `isSeedingEnabled(org)` (master gate AND seed flag, evaluated per org) is ON; the OFF verdict is counted (`skipped_flag_off`) and the org is retried next sweep.
+- **Candidates** (one SQL, keyset-paged on `wire_id`): projection rows with `status='active'`, `is_active IS TRUE` (NULL = unknown is not seeded), a `wire_id`, an
+  `org_type` the pack `appliesTo` (so the root `platform` org is never a candidate), and NO ledger row for `(org, 'platform', packKey)` at `version >=` the
+  current pack. That one predicate covers "never seeded" (flag was OFF at create / pre-existing org) and "older pack version" (v1 -> v2 rollout). Deleted
+  tombstones and inactive orgs are not even examined (no `seed.failed` noise for them). The same predicate is re-checked under the per-org lock, so an org
+  deleted/deactivated mid-sweep, or just seeded by a peer, is skipped.
+- **Bounded.** `SEED_RECONCILER_BATCH_SIZE` (20) orgs per page, `SEED_RECONCILER_BATCH_DELAY_MS` (1000) between pages, `SEED_RECONCILER_MAX_ORGS_PER_TICK` (200)
+  examined per tick (flag-OFF orgs count: it bounds work, not writes), `SEED_RECONCILER_INTERVAL_MS` (300000) between ticks (non-overlapping `setTimeout` chain,
+  random initial jitter). The scheduler remembers the cursor between ticks and wraps when the candidate list is exhausted, so a run of flag-OFF orgs at the
+  head of the list cannot starve the rest. Invalid env values fall back to the default with a warning.
+- **Multi-instance safe.** Per org: `pg_try_advisory_xact_lock(hashtextextended('sl-reconciler:' || current_schema() || ':' || org, 0))` on a short idle
+  transaction (released on commit/crash; the loser skips instead of queueing), plus the library's own org-outbox / `sl-seed:` locks and the ledger primary key as
+  the backstop. Two instances racing produce exactly one ledger row and one `seed.completed` per org (tested).
+- **Failure isolation + backoff.** Each org is its own try/catch: a throw or a `seed.failed` never stops the sweep. A failing org is put in an in-memory
+  exponential backoff (`SEED_RECONCILER_BACKOFF_BASE_MS` 60000, doubling, capped by `SEED_RECONCILER_BACKOFF_MAX_MS` 6h); a NON-retryable refusal
+  (`PACK_CONTENT_MISMATCH`, ...) goes straight to the cap because every refusal writes a `seed.failed` outbox row. Faults run with `internalErrors: 'throw'` so a
+  database blip writes no `seed.failed`. The table is bounded (10 000) and lost on restart (one retry, then backed off again). Nothing retries inside a tick.
+- **Trigger.** `applyPlatformDefaults(db, org, { trigger: 'backfill' })`, so the ledger row and `seed.completed` carry `trigger: 'backfill'`.
+- **Metrics** (`/metrics`): `selection_list_seed_reconciler_orgs_seeded_total`, `..._skipped_flag_off_total`, `..._skipped_total{reason=backoff|locked|up_to_date}`,
+  `..._failed_total{retryable}`, `..._sweeps_total{result=ok|error}`, `..._last_sweep_timestamp_seconds`. Logs are pino with `organizationId`, never seed content.
+- ~~**Open:** `identity.org.updated` is still not consumed~~ — closed in SL8 (§13.0.5): the projection now follows `is_active`, so a deactivated org stops being a
+  candidate. Ops can run one bounded pass with `runReconcilerOnce` (it takes a `cursor` and returns `nextCursor`). SL8 also makes an already-seeded org whose owner lacks the
+  `list-owner` grant a candidate (see §13.0.5), so the reconciler heals a grant that failed.
+
+### 13.0.5 As implemented (SL8: owner grants, `identity.org.updated`, canonical flag context)
+
+Tests: `tests/seed.owner-grants.db.test.ts`, `tests/events.org-updated.db.test.ts`, `tests/flags.canonical-context.test.ts` (real Postgres; fake Security API / fake KafkaJS).
+
+- **Migration 10** adds three nullable columns to `selection_list_ref_index`: `owner_id` (the org owner's **`usr_…` wire id**, rendered from `identity.org.created.ownerId`), `org_name`, and
+  `snapshot_at` (envelope `occurredAt` of the newest org snapshot applied). `upsertOrgProjection` stores them; an existing owner is never erased by a snapshot without one.
+- **Q3 decided (default overridden): the org owner is a `list-owner` of every platform-seeded list.** `ensureSeededListOwners` (`src/seed/ownerGrants.ts`) runs at the END of
+  `applyPlatformDefaults`, i.e. for both the `identity.org.created` handler and the reconciler, **after** every seed transaction has committed (the grant is an external call):
+  - it selects the org's *active* `seed_source = 'platform'` lists that have **no `selection_list_access` row at all** for the owner, and for each one, in its own transaction, calls
+    `grantListOwner(owner, org, list, 'system:selection-list-service', trx)` — the same fail-closed path as list creation (machine identity token → Security API grant → mirror upsert) —
+    plus a `selection_list_audit` row `action = 'seed.owner-granted'` (actor = the seed principal), so the mirror row and its audit row commit together;
+  - **idempotent**: it also runs when every pack is `already-applied`, so a grant that failed on an earlier delivery is healed by the retry; a replay makes **no** Security API call and writes no
+    second row. A mirror row in *any* state (revoked, demoted) counts as "a human already decided" and is never re-granted;
+  - **failure throws** (machine identity unavailable, Security API 5xx): the org-created message is retried by kafkajs, the reconciler backs the org off. Lists already granted stay granted; the
+    seed itself is untouched (idempotent). The reconciler's candidate predicate also selects an org that has an owner and a seeded list still missing the grant;
+  - **no owner** (`ownerId` null/absent, e.g. the root org): logged and counted (`selection_list_seed_owner_grant_skipped_total{reason="no-owner"}`), never fails seeding;
+  - inactive / deleted / unknown orgs are skipped (`reason="org-inactive"`); metrics `selection_list_seed_owner_grants_total{result=granted|failed}`.
+  - **`seed.requested` (app seeding) does NOT grant**: the frozen `selection-lists.seed.requested` schema carries no owner, and this change does not touch frozen event schemas. The requesting app
+    must grant through the Security API.
+- **`identity.org.updated` consumer** (`src/events/org-updated.handler.ts`, group `${KAFKA_GROUP_ID}-org-updated`, topic and `identityOrgUpdatedSchemaV1` already exist in `@fuzefront/shared`):
+  refreshes `org_type`, `is_active`, `org_name`; **flag-independent** and never seeds; never resurrects a `deleted` tombstone; ordered by `occurredAt` (a snapshot older than `snapshot_at` is
+  ignored, in both directions — a late `org.created` cannot roll back an `org.updated`); does **not** move the owner (grants must not silently follow an ownership change); an org never seen is
+  inserted as projected; a schema-invalid payload is dead-lettered to `identity.org.updated.dlq` by `TypedConsumer`; an infrastructure fault throws (retried). `governance/microservice-events-policy.json`
+  needed no change: the gate only requires the four created/deleted handlers.
+- **Canonical flag context.** `buildFlagContext` (`src/flags.ts`) normalises `orgId` and `userId` to the **wire TypeID** (`org_…` / `usr_…`; a bare-UUID JWT claim is converted with the identity
+  package's `fromUuid`; anything else passes through) for every evaluation — HTTP gate, quota, routes, seeding consumers, reconciler — so an Unleash `orgId` constraint written as `org_…` matches
+  the same org on every path.
+- **Also in SL8:** request-body / `ids` / `limit` validation per the frozen schemas (`acceptOnlyBodyProps`, `parseLimitParam`; `POST /v1/resolve` with `ids: []` is now `400`), and the service's
+  default port aligned to the chart's `3008`.
 
 ### 13.1 HTTP contract ripple — prerequisite for the implementation wave
 
@@ -803,7 +878,7 @@ SASL via @fuzefront/shared createKafkaClient once credentials exist.
 |---|---|---|
 | Q1 | Do we want user-scoped lists (a user's private lists, or per-user defaults)? It needs a data model (`owner_type`/`owner_id`), quotas, authz and an HTTP contract change. | `scope: 'user'` → `SCOPE_UNSUPPORTED`; `identity.user.created` N/A |
 | Q2 | Platform-global, read-only reference lists (countries, currencies, languages) instead of per-org copies? | Excluded from the platform pack |
-| Q3 | Should seeded lists get a human `list-owner` (e.g. the org owner from `identity.org.created.ownerId`) instead of relying on org-admin tenant roles? | No instance grant; org admins administer |
+| Q3 | Should seeded lists get a human `list-owner` (e.g. the org owner from `identity.org.created.ownerId`) instead of relying on org-admin tenant roles? | **DECIDED (SL8, default overridden):** platform-seeded lists get a `list-owner` for the org owner (§13.0.5); app-seeded lists get none |
 | Q4 | Should users be prevented from creating lists in an allowlisted source's namespace (e.g. reject `fuzecrm-*` over HTTP) to make `KEY_CONFLICT` impossible? | Allowed; conflicts surface as retryable `KEY_CONFLICT` |
 | Q5 | Is the attestation token acceptable operationally, or should app seeding move to the HTTP runner-up (§3)? Decide with FuzeInfra's answer on §15. | Attestation required in v1 |
 | Q6 | Should the core outbox relay also adopt per-org ordered retry (§6 step 4)? It affects every service using it. | Selection-list relay only |

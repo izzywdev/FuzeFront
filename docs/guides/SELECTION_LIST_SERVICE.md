@@ -6,9 +6,13 @@ How a consuming application stores, renders, and manages reference data
 `@fuzeone/selection-list-client`.
 
 The service contract lives at
-`services/selection-list-service/openapi.yaml` (v1.0.0). This guide is a
+`services/selection-list-service/openapi.yaml` (**v4.0.0**). This guide is a
 companion, not a replacement — the spec is the source of truth for any
-discrepancy.
+discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.0.0** and
+`fuzefront-selection-list-client` (Python) **2.0.0**. Kafka events and app
+seeding are covered in [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md);
+how seeding is enabled safely is in
+[`docs/runbooks/selection-lists-seeding-operations.md`](../runbooks/selection-lists-seeding-operations.md).
 
 ---
 
@@ -23,10 +27,12 @@ discrepancy.
 7. [Pagination](#pagination)
 8. [Translations](#translations)
 9. [Access control](#access-control)
-10. [Quota](#quota)
-11. [Error handling](#error-handling)
-12. [Key invariants](#key-invariants)
-13. [Interactive API docs](#interactive-api-docs)
+10. [Authorship and seed provenance](#authorship-and-seed-provenance)
+11. [Events and the outbox](#events-and-the-outbox)
+12. [Quota](#quota)
+13. [Error handling](#error-handling)
+14. [Key invariants](#key-invariants)
+15. [Interactive API docs](#interactive-api-docs)
 
 ---
 
@@ -133,10 +139,10 @@ cd selection-list-client
 npm install
 npm run build
 npm pack
-# → fuzeone-selection-list-client-1.0.0.tgz
+# → fuzeone-selection-list-client-2.0.0.tgz
 
 # In your consuming package
-npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-1.0.0.tgz
+npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-2.0.0.tgz
 ```
 
 **Python client** is in `packages/selection-list-client-py/` and follows the
@@ -151,8 +157,10 @@ import { SelectionListClient } from '@fuzeone/selection-list-client'
 
 // Browser: baseUrl MUST be a same-origin path — never an absolute host.
 // Absolute hosts break under TLS ingress and trigger mixed-content blocks.
+// Paths include `/v1/...`, so baseUrl is the prefix BEFORE `/v1`: '/api' yields
+// `/api/v1/selection-lists`, which is the route the chart's ingress publishes.
 const client = new SelectionListClient({
-  baseUrl: '/api/selection-lists',
+  baseUrl: '/api',
   token: () => getJwt(),          // function so short-lived tokens refresh
   defaultLocale: 'en',            // optional; per-call locale always wins
 })
@@ -163,7 +171,7 @@ const client = new SelectionListClient({
 | Option | Type | Required | Notes |
 |---|---|---|---|
 | `baseUrl` | `string` | Yes | Same-origin path in the browser; absolute URL in server-side callers |
-| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | Bearer token with an `orgId` claim. `resolveIds` also requires it (spec v2.0.0) |
+| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | Bearer token with an `orgId` claim. `resolveIds` also requires it |
 | `fetch` | `typeof fetch` | No | Inject for tests or non-global runtimes; defaults to `globalThis.fetch` |
 | `defaultLocale` | `Locale` | No | Applied to every request that doesn't supply its own |
 | `headers` | `Record<string, string>` | No | Merged into every request (tracing IDs, tenant hints) |
@@ -172,11 +180,15 @@ const client = new SelectionListClient({
 
 ```ts
 const client = new SelectionListClient({
-  baseUrl: 'http://fuzefront-selection-list-service:3011',
+  baseUrl: 'http://fuzefront-selection-list-service:3008',
   token: process.env.SELECTION_LIST_SERVICE_TOKEN,
   fetch,   // node-fetch or native fetch (Node 24+)
 })
 ```
+
+The in-cluster Service port is `selectionListService.port` in the Helm values (**3008**).
+The process default (`PORT` unset) is **3008** too, so a local run, the image and the chart all agree. Only the
+OpenAPI `servers` example still names `3011` (frozen contract; see the SL8 notes in the runbook).
 
 ---
 
@@ -198,7 +210,16 @@ const enabled = await getClient().getBooleanValue(
 )
 ```
 
-Rollout/rollback procedure: `docs/runbooks/selection-lists-flag-rollout.md`.
+There is a **second** flag for seeding, `fuzefront.selection-lists.seed-defaults` (release,
+default OFF, **server-side only** — it is not in `WEB_EXPOSED_FLAGS`). It gates both seeding
+consumers (platform defaults on `identity.org.created`, and app `selection-lists.seed.requested`).
+Seeding needs **both** flags ON for the organization; either OFF means nothing is seeded
+(app requests are answered `seed.failed` / `SEEDING_DISABLED`). Publishing of change events is
+**not** behind either seeding flag. Both flags are OFF everywhere today and fail closed (no flag
+client or an evaluation error reads as OFF).
+
+Rollout/rollback procedure: `docs/runbooks/selection-lists-flag-rollout.md` (master flag) and
+`docs/runbooks/selection-lists-seeding-operations.md` (seeding).
 
 ---
 
@@ -213,7 +234,7 @@ const list = await client.createList({
   source_locale: 'en',
   description: 'ISO 3166-1 alpha-2 country codes',  // optional
 })
-// list.id  — the service-minted TypeID, e.g. 'sl_01h455vb4pex5vsknk084sn02q'
+// list.id  — the service-minted TypeID, e.g. 'front_sl_01h455vb4pex5vsknk084sn02q'
 ```
 
 ### Add items
@@ -405,10 +426,34 @@ autofill knows to refresh only that entry.
 
 ## Access control
 
-Grants are ReBAC resource-instance roles — the creator is automatically
-assigned `list-owner`.
+Authorization is decided by FuzeFront's Security API (Permit-backed), never by this service's
+database and never by a feature flag. The contract splits it across **two resource types** that
+answer different questions — they must not be confused (spec 3.0.0+, review H-3):
 
-### Roles and permissions
+### 1. The catalog — tenant-level (`SelectionListCatalog`)
+
+"May this caller work with selection lists in this org at all?" Keyless (the tenant is the
+caller's organization), granted through **tenant roles**:
+
+| tenant role | `list` | `create` | `read_quota` | `resolve` |
+|---|:---:|:---:|:---:|:---:|
+| `admin` | ✓ | ✓ | ✓ | ✓ |
+| `editor` | ✓ | ✓ | | ✓ |
+| `viewer` | ✓ | | | ✓ |
+| `developer` | | | | |
+
+| Operation | Checked against | Action |
+|---|---|---|
+| `GET /v1/selection-lists` | `SelectionListCatalog` | `list` |
+| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` |
+| `GET /v1/selection-lists/quota` | `SelectionListCatalog` | `read_quota` |
+| `POST /v1/resolve` | `SelectionListCatalog` | `resolve` |
+
+### 2. Per-list actions — instance roles only (`SelectionList`)
+
+"What may this caller do to *this* list?" Keyed on the list id and conferred **only** by
+resource-instance roles on that list. **Tenant roles confer zero per-list actions** — being an org
+`admin` does not by itself let anyone read, edit or delete a list it holds no instance role on.
 
 | Role | read | add item | update item | remove item | translate | update list | delete list | manage access |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -417,6 +462,52 @@ assigned `list-owner`.
 | `list-contributor` | ✓ | ✓ | ✓ | | ✓ | | | |
 | `list-translator` | ✓ | | | | ✓ | | | |
 | `list-viewer` | ✓ | | | | | | | |
+
+(Spec action names: `read`, `add_value`, `update_value`, `remove_value`, `translate`, `update`,
+`delete`, `manage_access`. Roles do not stack.)
+
+How the two meet:
+
+- **Listing** needs `SelectionListCatalog:list`, and the returned rows are **still filtered per
+  list** by `SelectionList:read`: a caller sees only lists it holds an instance role on. A caller
+  with none gets an empty page, not a `403`.
+- **Creating** needs `SelectionListCatalog:create`. The service then grants the creator
+  `list-owner` on the new list **with its own machine identity**.
+- Two actions are stricter than the table suggests: **purging an item**
+  (`DELETE .../items/{itemId}?purge=true`) additionally needs `delete` on the list, so only a
+  `list-owner` can purge (a `list-editor` can archive an item but gets `403` on purge); and
+  **archiving a list via `PATCH` `status: "archived"`** needs `update` **and** the same `delete` as
+  `POST .../archive` — a `list-editor` can no longer archive through PATCH (4.0.0).
+- **`POST /v1/resolve`** needs only the catalog `resolve` action; it does **not** check
+  `SelectionList:read` on each id's list (accepted trade-off: it returns a label, a locale and a
+  status only).
+
+### No implicit admin ownership — and the support path
+
+There is **no** automatic tenant-`admin` (or `org-admin`) → `list-owner` derivation. A tenant
+admin can `list`/`create`/`resolve` but holds no role on lists it did not create. Whether there
+*should* be implicit ownership is an **open design question**
+(`docs/planning/selection-lists-permit-actions.md`, Q1) — do not build UI or integrations that
+assume it.
+
+What works today is an explicit, audited self-grant. A tenant `admin` holds
+`Organization:manage`, which the Security API's grant gate treats as authority to grant any role
+in that tenant, so an admin who must administer a list it holds no role on grants itself
+`list-owner` on that instance:
+
+```http
+POST /api/v1/security/authz/grants
+Authorization: Bearer <tenant admin token>
+Content-Type: application/json
+
+{ "subject": "<admin user>", "tenant": "<org>", "role": "list-owner",
+  "resource": { "type": "SelectionList", "key": "front_sl_..." } }
+```
+
+The grant lands in the Security API's grant log. Note it writes only to the authorization
+backend: the service's `selection_list_access` read-model mirror (the roster behind
+`GET .../access`) will not show it until the service reconciles it. This is also the way to make
+**seeded lists** visible — see below.
 
 ### Managing grants
 
@@ -433,34 +524,107 @@ for await (const grant of client.paginate((p) => client.getAccess(list.id, p))) 
 await client.revokeAccess(list.id, userId)
 ```
 
-### Tenant-level operations vs per-list actions
+> **Important:** an `id` is never a capability. Knowing a list's `id` grants nothing — every
+> route re-checks the caller against the Security API. A resource the caller cannot read returns
+> `404`, not `403`, so the API is not a cross-org existence oracle.
 
-Authorization has two levels, and the roles above only ever apply to the
-second:
+### Seeded lists and who can see them
 
-| Operation | Checked against | Action |
+Lists created by **seeding** (platform defaults such as `yes-no`, or an app's
+`seed.requested` pack) are written by the system principal and **no `list-owner` (or any other)
+grant is created for them**. Because every per-list action is instance-only, the consequence on
+today's code is:
+
+- members — including tenant admins — **do not see seeded lists** in `GET /v1/selection-lists`
+  and get `404` on `GET /v1/selection-lists/{listId}` until a role is granted on that list;
+- the list id is not discoverable through the list endpoint either, so an admin takes it from the
+  `selection-lists.seed.completed` event (`lists[].listId`) or from an operator;
+- once an admin has self-granted `list-owner` (above) the list behaves like any other, and its
+  items and translations can be edited — which marks it `seed.user_modified: true` and stops
+  further seeding upgrades from touching it;
+- `POST /v1/resolve` still resolves seeded item ids for any caller holding the catalog `resolve`
+  action, because it does not check per-list read.
+
+This is a **known gap and an open design question** (grant an owner at seed time? derive admin
+ownership? — owner decision), recorded in the seeding runbook. It is why seeding should not be
+switched on for an org that expects its members to use the seeded lists immediately.
+
+---
+
+## Authorship and seed provenance
+
+Since contract **4.0.0** (a MAJOR bump) two response shapes are no longer "always a user".
+
+**`created_by` (lists, items) and `granted_by` (access grants) are an `AuthorPrincipal`** — one of
+three disjoint forms, distinguishable from the string alone:
+
+| Form | Example | Meaning |
 |---|---|---|
-| `GET /v1/selection-lists` | `SelectionListCatalog` (tenant-level, keyless) | `list` |
-| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` |
-| `GET /v1/selection-lists/quota` | `SelectionListCatalog` | `read_quota` |
-| `POST /v1/resolve` | `SelectionListCatalog` | `resolve` |
-| everything addressed to one list | `SelectionList`, keyed on the list id | the per-list action in the table above |
+| user id | `usr_01h455vb4pex5vsknk084sn02q` | a person; safe to look up as a user |
+| system principal | `system:selection-list-service` | written by the service itself (seeding); pattern `^system:[a-z0-9-]+$` |
+| deleted-user sentinel | `[deleted-user]` | the author was deleted and anonymized — **not an id** |
 
-Tenant roles carry only the four catalog actions, never a per-list action, so
-being allowed to *list* does not let a caller read every list: `GET
-/v1/selection-lists` returns only the lists the caller holds an instance role
-on (a caller with none gets an empty page, not a `403`). Creating a list makes
-the creator its `list-owner` (granted by the service). Two actions are
-stricter than the table suggests: **purging an item** (`DELETE
-.../items/{itemId}?purge=true`) additionally needs `delete` on the list, so only
-a `list-owner` can purge (a `list-editor` can archive an item but gets `403` on
-purge); and **archiving a list via `PATCH` `status: "archived"`** needs the same
-`delete` as `POST .../archive`.
+Never feed `created_by` into a user lookup or profile link without classifying it first. The
+clients ship helpers (2.0.0):
 
-> **Important:** an `id` is never a capability.  Knowing a list's `id` grants
-> nothing — every route re-checks the caller against the Security API / Permit.  A resource the
-> caller cannot read returns `404`, not `403`, so the API is not a cross-org
-> existence oracle.
+```ts
+import { authorPrincipalKind, isUserAuthor, DELETED_USER_SENTINEL } from '@fuzeone/selection-list-client'
+
+authorPrincipalKind('usr_01h455vb4pex5vsknk084sn02q') // 'user'
+authorPrincipalKind('system:selection-list-service')   // 'system'
+authorPrincipalKind(DELETED_USER_SENTINEL)             // 'deleted-user'  ('[deleted-user]')
+authorPrincipalKind('something-else')                  // 'unknown'
+
+if (isUserAuthor(list.created_by)) {
+  // only now is it a usr_ id you may resolve to a person
+}
+```
+
+```python
+from fuzefront_selection_list_client import author_principal_kind, is_user_author, AuthorPrincipalKind
+
+kind = author_principal_kind(lst.created_by)   # AuthorPrincipalKind.USER | SYSTEM | DELETED_USER | UNKNOWN
+if is_user_author(lst.created_by):
+    ...  # only now is it a usr_ id
+```
+
+**`seed`** — every list and every item now carries a required, read-only, nullable `seed`
+object: `null` on a user-authored row, and on a seeded one:
+
+```jsonc
+{ "source": "platform", "pack_key": "platform-defaults", "pack_version": 1, "user_modified": false }
+```
+
+`source` is the app slug (or `platform`). `user_modified` flips to `true` — permanently — once a
+human edits the seeded content; seeding upgrades then leave the row alone. It is never accepted in a
+request body: seeding happens only through the Kafka contract
+([`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md)), never over HTTP. In the TS client it is
+`SelectionList.seed` / `SelectionListItem.seed` (`SeedProvenance | null`); in Python
+`SelectionList.seed` / `SelectionListItem.seed` (`SeedProvenance | None`).
+
+---
+
+## Events and the outbox
+
+The service now publishes a Kafka event for every state change (lists, items, reorders,
+translations, access grants) and consumes `identity.org.created`, `identity.org.deleted`,
+`identity.user.deleted` and `selection-lists.seed.requested`. Full contract, delivery
+semantics and the app-seeding walkthrough: [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md).
+What an integrator needs to know here:
+
+- **Transactional outbox.** Each mutating route writes its events into the `event_outbox` table in
+  the same database transaction as the change; a background relay publishes them to Kafka, strictly
+  in commit order **per organization**, at-least-once (dedupe on `eventId`). A change that rolled
+  back publishes nothing; a Kafka outage delays events but does not lose them.
+- **The relay only runs when the service has `KAFKA_BROKERS` set.** Events otherwise wait in the
+  table.
+- **Failure handling:** 10 failed publish attempts (or a schema-invalid payload) *parks* the event:
+  it is copied to `<topic>.dlq` and marked `failed`; the org then continues with later events, so a
+  consumer sees a `listRevision` gap and should refetch over HTTP.
+- **Seeding is flag-gated; publishing is not.** Seeding needs both flags ON (see
+  [Feature flag](#feature-flag)); change events are emitted regardless.
+- Seeding is **not live** until both flags are ON for the org and an app's source is on the
+  allowlist; the shipped allowlist contains only the internal `platform` source.
 
 ---
 
@@ -590,6 +754,9 @@ catch (e) {
 | `baseUrl` is always same-origin in the browser | Hard-coded absolute hosts break under TLS ingress (mixed-content) |
 | Check `getQuota` before creates | Surfaces the ceiling before the 403, not as a surprise |
 | Gate on `fuzefront.selection-lists.service` flag | Service availability is flag-controlled |
+| Classify `created_by` / `granted_by` before treating it as a user | It may be `system:*` or `[deleted-user]` (4.0.0) |
+| Tenant roles never confer per-list actions; no implicit admin ownership | An admin must self-grant `list-owner` (audited) to administer a list it does not own |
+| Seeding needs BOTH flags and an allowlisted source | Otherwise `SEEDING_DISABLED` / `SOURCE_NOT_ALLOWED`; nothing is written |
 
 ---
 
@@ -599,12 +766,12 @@ The selection-list-service serves Swagger UI at `/docs` when running locally.
 All endpoints are exercisable from the browser with a Bearer token:
 
 ```
-http://localhost:3011/docs
+http://localhost:3008/docs
 ```
 
 In the cluster (via port-forward):
 
 ```bash
-kubectl port-forward svc/fuzefront-selection-list-service 3011:3011 -n fuzefront
-# Then open http://localhost:3011/docs
+kubectl port-forward svc/fuzefront-selection-list-service 3008:3008 -n fuzefront
+# Then open http://localhost:3008/docs
 ```

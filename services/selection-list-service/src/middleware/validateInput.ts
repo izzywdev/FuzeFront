@@ -87,6 +87,54 @@ export function rejectNulBytes(req: Request, res: Response, next: NextFunction):
 }
 
 /**
+ * Enforce a request-body schema's `additionalProperties: false`.
+ *
+ * Answers 400 VALIDATION_ERROR and returns `false` when the body is not a JSON object or carries
+ * a property outside `allowed` — including `id`/`uuid`/`organization_id`, which a client must never
+ * be able to smuggle in (governance/identifier-standard.md §1; the org always comes from the token).
+ * Returns `true` when the body is acceptable. An absent body is treated as `{}`.
+ */
+export function acceptOnlyBodyProps(req: Request, res: Response, allowed: readonly string[]): boolean {
+  const body: unknown = req.body ?? {};
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    validationError(req, res, 'Request body must be a JSON object.', 'body-not-object');
+    return false;
+  }
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(body as Record<string, unknown>).filter((k) => !allowedSet.has(k));
+  if (unknown.length > 0) {
+    validationError(req, res, `Unknown properties: ${unknown.join(', ')}`, 'unknown-body-properties');
+    return false;
+  }
+  return true;
+}
+
+const DIGITS_ONLY = /^[0-9]+$/;
+
+/**
+ * Parse the contract's `limit` query parameter (`integer`, `minimum: 1`, `maximum: <max>`).
+ *
+ * - absent        -> `defaultLimit`
+ * - integer > max -> clamped to `max` (the contract: "an over-max request is never honoured unbounded")
+ * - `0`, negative, non-integer or non-numeric (`abc`, `1.5`, repeated `limit=1&limit=2`) -> 400
+ *   VALIDATION_ERROR and `undefined` is returned (the response has been sent).
+ */
+export function parseLimitParam(
+  req: Request,
+  res: Response,
+  defaultLimit: number,
+  max: number,
+): number | undefined {
+  const raw = req.query['limit'];
+  if (raw === undefined) return defaultLimit;
+  if (typeof raw !== 'string' || !DIGITS_ONLY.test(raw) || raw.length > 15 || Number(raw) < 1) {
+    validationError(req, res, `limit must be an integer between 1 and ${max}.`, 'bad-limit');
+    return undefined;
+  }
+  return Math.min(Number(raw), max);
+}
+
+/**
  * Validate `:listId` / `:itemId` / `:userId` path params for every route on
  * `router` that declares them. Runs before the route's own middleware, so a
  * malformed id never reaches the authz pre-check's DB lookup either.
