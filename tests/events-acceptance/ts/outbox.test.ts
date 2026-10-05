@@ -23,7 +23,7 @@ A.describeInfra('case 1: outbox atomicity', () => {
     ).rejects.toThrow('boom')
     expect(await db('acc_business')).toHaveLength(0)
     expect(await db('event_outbox')).toHaveLength(0)
-    await A.drain(db, { publish: await A.realPublisher() })
+    await A.drain(db, { transport: await A.realTransport() })
     expect(await A.readAll(topic, 2500)).toHaveLength(0)
   })
 
@@ -44,8 +44,8 @@ A.describeInfra('case 1: outbox atomicity', () => {
     const [row] = await db('event_outbox')
     // "crash": no relay ran. A fresh relay (new connection/process equivalent) now drains.
     const db2 = A.connectDb()
-    try { await A.drain(db2, { publish: await A.realPublisher() }) } finally { await db2.destroy() }
-    await A.drain(db, { publish: await A.realPublisher() }) // second relay must not re-publish
+    try { await A.drain(db2, { transport: await A.realTransport() }) } finally { await db2.destroy() }
+    await A.drain(db, { transport: await A.realTransport() }) // second relay must not re-publish
     const msgs = await A.readAll(topic)
     expect(msgs).toHaveLength(1)
     expect(msgs[0].key).toBe(agg) // partition key = aggregateId

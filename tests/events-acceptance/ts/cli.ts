@@ -9,7 +9,7 @@ async function main() {
     const [topic, agg, v] = a
     await db.transaction((trx) =>
       A.enqueue(trx, A.buildEvent({ topic, aggregateType: 'organization', aggregateId: agg, aggregateVersion: Number(v), payload: { kind: 'created', data: { from: 'ts' } } })))
-    await A.drain(db, { publish: await A.realPublisher() })
+    await A.drain(db, { transport: await A.realTransport() })
     console.log(JSON.stringify({ eventId: (await db('event_outbox').where({ aggregate_id: agg }).first()).event_id }))
   } else if (cmd === 'consume') {
     // consume <topic> <group> <expectedEventId> : run the TS consumer until that event is applied; print effects
