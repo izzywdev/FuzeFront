@@ -22,12 +22,16 @@ const SIZES = {
 };
 
 // `spacing` maps to the DS spacing scale for the block's bottom margin —
-// replaces the recurring ad-hoc `mb-2`/`mb-4` utility. `none` (default)
-// preserves the original zero-margin behavior.
+// replaces the recurring ad-hoc `mb-2`/`mb-4`/`mb-6`/`mb-8` utility. `none`
+// (default) preserves the original zero-margin behavior. `lg`/`xl` cover the
+// wider gaps used under a centered CTA/hero heading (`mb-6`/`mb-8`), beyond
+// the original `sm`/`md` block-caption steps.
 const SPACING_BOTTOM = {
   none: 0,
   sm: "var(--space-2)",
   md: "var(--space-4)",
+  lg: "var(--space-6)",
+  xl: "var(--space-8)",
 };
 
 /**
@@ -48,7 +52,9 @@ const SPACING_BOTTOM = {
  * without reaching for a raw Tailwind size/margin utility: `size` picks a
  * step of the DS type scale (default `inherit`, unchanged from before), and
  * `spacing` picks a step of the DS spacing scale for `margin-block-end`
- * (default `none`, unchanged from before).
+ * (default `none`, unchanged from before). `spacing="lg"`/`"xl"` additionally
+ * cover the recurring `text-gray-{500,600} mb-{6,8}` pattern — a centered
+ * lead paragraph under a CTA/section `<h2>`/`<h3>`.
  */
 export function Text({
   as: As = "p",
