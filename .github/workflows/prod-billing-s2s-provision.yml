@@ -1,0 +1,415 @@
+name: Prod billing S2S provisioning (authz-enabled cutover)
+
+# Idempotently provisions the s2s-billing-service Authentik application and
+# seals its client_id / client_secret into the billing-secrets SealedSecret, then
+# commits two changes to master:
+#   1. deploy/contabo/sealed/billing-secrets.yaml  — adds AUTHENTIK_CLIENT_ID +
+#      AUTHENTIK_CLIENT_SECRET sealed keys
+#   2. deploy/helm/fuzefront/templates/billing-service.yaml — removes `optional: true`
+#      from those keys and adds FUZEFRONT_BILLING_AUTHZ_ENABLED: "true"
+#
+# After these changes Argo CD deploys the updated SealedSecret (controller
+# decrypts, adds the keys to the k8s Secret) and rolls the billing-service
+# Deployment with the env vars now required + the authz path enabled.
+#
+# Flip the feature flag separately:
+#   prod-unleash-ops → flags=authz-enabled
+#
+# All secrets are read at runtime from the cluster via the runner pod's mounted
+# SA token — no GitHub repo secrets required (prod-unleash-ops.yml pattern).
+# Commits are via the GitHub contents API so they are server-side-signed and
+# satisfy required_signatures on master.
+#
+# Idempotent: existing Authentik resources are reused; if the sealed keys are
+# already in billing-secrets.yaml the commit is skipped.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  provision:
+    name: Provision + seal + commit
+    runs-on: fuzefront
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+
+      - name: Read cluster secrets
+        id: cluster
+        run: |
+          set -euo pipefail
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+          _SECRET=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/fuzefront-secrets")
+
+          AK_TOKEN=$(echo "$_SECRET" | python3 -c "
+          import sys,json,base64
+          d=json.load(sys.stdin)
+          print(base64.b64decode(d['data']['AUTHENTIK_BOOTSTRAP_TOKEN']).decode().strip())
+          " 2>/dev/null)
+          if [ -z "$AK_TOKEN" ]; then
+            echo "::error::AUTHENTIK_BOOTSTRAP_TOKEN not found in fuzefront-secrets"
+            exit 1
+          fi
+          echo "::add-mask::$AK_TOKEN"
+          echo "ak_token=$AK_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Provision s2s-billing-service in Authentik
+        id: provision
+        env:
+          AK_TOKEN: ${{ steps.cluster.outputs.ak_token }}
+        run: |
+          set -euo pipefail
+
+          python3 << 'PYEOF'
+          import os, sys, json, urllib.request, urllib.error, urllib.parse
+
+          AK_TOKEN = os.environ['AK_TOKEN']
+          AK_URL   = 'https://auth.fuzefront.com'
+          SERVICE  = 'billing-service'
+          SCOPES   = ['authz:admin']
+
+          HEADERS = {
+            'Authorization': f'Bearer {AK_TOKEN}',
+            'Content-Type': 'application/json',
+          }
+
+          def api(method, path, body=None, params=None):
+            url = f'{AK_URL}/api/v3{path}'
+            if params:
+              url += '?' + urllib.parse.urlencode(params)
+            data = json.dumps(body).encode() if body else None
+            req = urllib.request.Request(url, data=data, headers=HEADERS, method=method)
+            try:
+              with urllib.request.urlopen(req) as r:
+                return json.loads(r.read())
+            except urllib.error.HTTPError as e:
+              body_text = e.read().decode()
+              raise RuntimeError(f'Authentik API {method} {path} → {e.code}: {body_text}') from e
+
+          def find_across_pages(path, filter_fn, hint_params=None):
+            page = 1
+            while True:
+              params = {**(hint_params or {}), 'page': page}
+              res = api('GET', path, params=params)
+              for item in res.get('results', []):
+                if filter_fn(item):
+                  return item
+              nxt = (res.get('pagination') or {}).get('next') or 0
+              if not nxt:
+                return None
+              page = nxt
+
+          # 1. Scope mapping s2s:billing-service
+          SCOPE_NAME = 's2s:billing-service'
+          EXPRESSION = (
+            f'return {{"aud": "s2s", '
+            f'"service": "{SERVICE}", '
+            f'"scopes": {json.dumps(SCOPES)}}}'
+          )
+          scope = find_across_pages(
+            '/propertymappings/provider/scope/',
+            lambda m: m.get('name') == SCOPE_NAME
+          )
+          if scope:
+            print(f'[provision-s2s] Scope mapping "{SCOPE_NAME}" already exists (pk={scope["pk"]})')
+            scope_pk = scope['pk']
+          else:
+            scope = api('POST', '/propertymappings/provider/scope/', {
+              'name': SCOPE_NAME, 'scope_name': 's2s', 'expression': EXPRESSION
+            })
+            scope_pk = scope['pk']
+            print(f'[provision-s2s] Created scope mapping "{SCOPE_NAME}" (pk={scope_pk})')
+
+          # 2. Resolve flows
+          def resolve_flow(designation, preferred_slug=None):
+            res = api('GET', '/flows/instances/', params={'designation': designation})
+            flows = res.get('results', [])
+            if preferred_slug:
+              hit = next((f for f in flows if f['slug'] == preferred_slug), None)
+              if hit: return hit['pk']
+            return flows[0]['pk'] if flows else None
+
+          auth_flow = resolve_flow('authorization')
+          inval_flow = resolve_flow('invalidation', 'default-provider-invalidation-flow')
+          if not auth_flow:
+            print('::error::No authorization flow found in Authentik', file=sys.stderr)
+            sys.exit(1)
+          if not inval_flow:
+            print('::error::No invalidation flow found in Authentik', file=sys.stderr)
+            sys.exit(1)
+
+          # 3. OAuth2 provider "billing-service (s2s)"
+          PROVIDER_NAME = f'{SERVICE} (s2s)'
+          provider = find_across_pages(
+            '/providers/oauth2/',
+            lambda p: p.get('name') == PROVIDER_NAME
+          )
+          if provider:
+            print(f'[provision-s2s] OAuth2 provider "{PROVIDER_NAME}" already exists (pk={provider["pk"]})')
+            provider_pk = provider['pk']
+          else:
+            provider = api('POST', '/providers/oauth2/', {
+              'name': PROVIDER_NAME,
+              'authorization_flow': auth_flow,
+              'invalidation_flow': inval_flow,
+              'client_type': 'confidential',
+              'allowed_grant_types': ['client_credentials'],
+              'property_mappings': [scope_pk],
+              'redirect_uris': [],
+              'sub_mode': 'hashed_user_id',
+              'issuer_mode': 'global',
+              'access_code_validity': 'minutes=1',
+              'token_validity': 'hours=1',
+            })
+            provider_pk = provider['pk']
+            print(f'[provision-s2s] Created OAuth2 provider "{PROVIDER_NAME}" (pk={provider_pk})')
+
+          # 4. Application "s2s-billing-service"
+          APP_SLUG = 's2s-billing-service'
+          app = find_across_pages(
+            '/core/applications/',
+            lambda a: a.get('slug') == APP_SLUG,
+            hint_params={'slug': APP_SLUG}
+          )
+          if app:
+            print(f'[provision-s2s] Application "{APP_SLUG}" already exists')
+          else:
+            api('POST', '/core/applications/', {
+              'name': f'{SERVICE} (s2s)',
+              'slug': APP_SLUG,
+              'provider': provider_pk,
+              'meta_description': f'S2S machine identity for {SERVICE} (client_credentials; emits service+scopes claims)',
+              'policy_engine_mode': 'any',
+            })
+            print(f'[provision-s2s] Created application "{APP_SLUG}"')
+
+          # 5. Read back credentials
+          creds = api('GET', f'/providers/oauth2/{provider_pk}/')
+          client_id     = creds.get('client_id', '')
+          client_secret = creds.get('client_secret', '')
+          if not client_id or not client_secret:
+            print('::error::Could not read client_id/client_secret from Authentik', file=sys.stderr)
+            sys.exit(1)
+
+          # Write to tmp files for the next step (never print to logs)
+          with open('/tmp/s2s_client_id', 'w')     as f: f.write(client_id)
+          with open('/tmp/s2s_client_secret', 'w') as f: f.write(client_secret)
+          print('[provision-s2s] Credentials written to /tmp (masked in logs)')
+          PYEOF
+
+          # Mask both values immediately after the Python script writes them
+          CLIENT_ID=$(cat /tmp/s2s_client_id)
+          CLIENT_SECRET=$(cat /tmp/s2s_client_secret)
+          echo "::add-mask::$CLIENT_ID"
+          echo "::add-mask::$CLIENT_SECRET"
+          echo "client_id=$CLIENT_ID"         >> "$GITHUB_OUTPUT"
+          echo "client_secret=$CLIENT_SECRET" >> "$GITHUB_OUTPUT"
+
+      - name: Install kubeseal
+        run: |
+          set -euo pipefail
+          if command -v kubeseal &>/dev/null; then
+            echo "kubeseal already installed: $(kubeseal --version)"
+            exit 0
+          fi
+          KSVER="0.27.0"
+          ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+          curl -sLo /tmp/kubeseal.tar.gz \
+            "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KSVER}/kubeseal-${KSVER}-linux-${ARCH}.tar.gz"
+          tar -xzf /tmp/kubeseal.tar.gz -C /tmp kubeseal
+          chmod +x /tmp/kubeseal
+          sudo mv /tmp/kubeseal /usr/local/bin/kubeseal || mv /tmp/kubeseal "$HOME/.local/bin/kubeseal"
+          echo "Installed kubeseal $(kubeseal --version)"
+
+      - name: Seal credentials
+        id: seal
+        env:
+          CLIENT_ID:     ${{ steps.provision.outputs.client_id }}
+          CLIENT_SECRET: ${{ steps.provision.outputs.client_secret }}
+        run: |
+          set -euo pipefail
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+          # Fetch the SealedSecrets controller's sealing certificate
+          # Standard controller service: sealed-secrets-controller.kube-system:8080
+          # If that fails, fall back to --fetch-cert via kubeconfig (likely unavailable),
+          # which means we cannot seal — hard fail rather than proceed unsafely.
+          CERT_URL="https://kubernetes.default.svc/api/v1/namespaces/kube-system/services/sealed-secrets-controller:8080/proxy/v1/cert.pem"
+          curl -sf --cacert "$_K8S_CA" -H "Authorization: Bearer $_SA_TOKEN" \
+            "$CERT_URL" > /tmp/sealed-secrets-cert.pem \
+            || { echo "::error::Could not fetch SealedSecrets cert from controller"; exit 1; }
+
+          echo "::add-mask::$CLIENT_ID"
+          echo "::add-mask::$CLIENT_SECRET"
+
+          SEALED_ID=$(printf '%s' "$CLIENT_ID" | \
+            kubeseal --cert /tmp/sealed-secrets-cert.pem \
+              --raw --namespace fuzefront --name billing-secrets --scope strict)
+          SEALED_SECRET=$(printf '%s' "$CLIENT_SECRET" | \
+            kubeseal --cert /tmp/sealed-secrets-cert.pem \
+              --raw --namespace fuzefront --name billing-secrets --scope strict)
+
+          echo "sealed_id=$SEALED_ID"         >> "$GITHUB_OUTPUT"
+          echo "sealed_secret=$SEALED_SECRET" >> "$GITHUB_OUTPUT"
+          echo "Sealing complete."
+
+      - name: Patch billing-secrets.yaml
+        id: patch_secrets
+        env:
+          SEALED_ID:     ${{ steps.seal.outputs.sealed_id }}
+          SEALED_SECRET: ${{ steps.seal.outputs.sealed_secret }}
+        run: |
+          set -euo pipefail
+          SECRETS_FILE="deploy/contabo/sealed/billing-secrets.yaml"
+
+          # If already patched, skip
+          if grep -q 'AUTHENTIK_CLIENT_ID' "$SECRETS_FILE"; then
+            echo "AUTHENTIK_CLIENT_ID already present in $SECRETS_FILE — skipping patch"
+            echo "patched=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          python3 << PYEOF
+          import os, re
+
+          path = 'deploy/contabo/sealed/billing-secrets.yaml'
+          content = open(path).read()
+
+          sealed_id     = os.environ['SEALED_ID']
+          sealed_secret = os.environ['SEALED_SECRET']
+
+          # Insert the two new keys before the `template:` section
+          injection = (
+            f'    AUTHENTIK_CLIENT_ID: {sealed_id}\n'
+            f'    AUTHENTIK_CLIENT_SECRET: {sealed_secret}\n'
+          )
+          content = content.replace('  template:\n', injection + '  template:\n', 1)
+          open(path, 'w').write(content)
+          print(f'Patched {path}')
+          PYEOF
+
+          echo "patched=true" >> "$GITHUB_OUTPUT"
+
+      - name: Patch billing-service Helm template
+        id: patch_helm
+        run: |
+          set -euo pipefail
+          HELM_FILE="deploy/helm/fuzefront/templates/billing-service.yaml"
+
+          # Check if already patched (no optional: true on AUTHENTIK keys)
+          if ! grep -A2 'key: AUTHENTIK_CLIENT_ID' "$HELM_FILE" | grep -q 'optional'; then
+            echo "Helm template already patched — skipping"
+            echo "patched=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          python3 << 'PYEOF'
+          content = open('deploy/helm/fuzefront/templates/billing-service.yaml').read()
+
+          # Remove `optional: true` lines immediately after the two AUTHENTIK key lines
+          import re
+          content = re.sub(
+            r'(key: AUTHENTIK_CLIENT_ID\n)([ \t]+optional: true\n)',
+            r'\1', content
+          )
+          content = re.sub(
+            r'(key: AUTHENTIK_CLIENT_SECRET\n)([ \t]+optional: true\n)',
+            r'\1', content
+          )
+
+          # Add FUZEFRONT_BILLING_AUTHZ_ENABLED before the readinessProbe block
+          content = content.replace(
+            '          readinessProbe:\n',
+            '            - name: FUZEFRONT_BILLING_AUTHZ_ENABLED\n'
+            '              value: "true"\n'
+            '          readinessProbe:\n',
+            1  # only the first occurrence (the billing-service container)
+          )
+
+          open('deploy/helm/fuzefront/templates/billing-service.yaml', 'w').write(content)
+          print('Patched deploy/helm/fuzefront/templates/billing-service.yaml')
+          PYEOF
+
+          echo "patched=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit changes to master
+        if: steps.patch_secrets.outputs.patched == 'true' || steps.patch_helm.outputs.patched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          SECRETS_FILE="deploy/contabo/sealed/billing-secrets.yaml"
+          HELM_FILE="deploy/helm/fuzefront/templates/billing-service.yaml"
+          BRANCH="master"
+
+          commit_file() {
+            local FILE="$1" MSG="$2"
+            local SHA
+            SHA=$(gh api "repos/${GITHUB_REPOSITORY}/contents/${FILE}" \
+              --jq '.sha' 2>/dev/null || echo "")
+            if [ -z "$SHA" ]; then
+              echo "::error::Could not fetch SHA for $FILE"
+              return 1
+            fi
+            local CONTENT
+            CONTENT=$(base64 -w0 < "$FILE")
+            gh api "repos/${GITHUB_REPOSITORY}/contents/${FILE}" \
+              -X PUT \
+              -f message="$MSG" \
+              -f content="$CONTENT" \
+              -f sha="$SHA" \
+              -f branch="$BRANCH" \
+              --silent
+            echo "Committed $FILE"
+          }
+
+          if [ "${{ steps.patch_secrets.outputs.patched }}" = "true" ]; then
+            commit_file "$SECRETS_FILE" \
+              "chore(billing): seal AUTHENTIK_CLIENT_ID + CLIENT_SECRET into billing-secrets
+
+          Provisioned by prod-billing-s2s-provision workflow. S2S machine identity
+          for billing-service (authz-enabled cutover, step 1/2).
+
+          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
+          fi
+
+          if [ "${{ steps.patch_helm.outputs.patched }}" = "true" ]; then
+            commit_file "$HELM_FILE" \
+              "feat(billing): enable authz path — remove optional S2S keys, add FUZEFRONT_BILLING_AUTHZ_ENABLED
+
+          Removes optional: true from AUTHENTIK_CLIENT_ID / AUTHENTIK_CLIENT_SECRET
+          (sealed credentials are now in billing-secrets.yaml) and adds
+          FUZEFRONT_BILLING_AUTHZ_ENABLED=true to activate PermitSyncService.
+          Step 2/2 of the authz-enabled cutover.
+
+          Follow-up: trigger prod-unleash-ops with flags=authz-enabled to flip the
+          feature flag after the billing-service pod rolls over.
+
+          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01PzTiipQzh8avhw9qoH7cmT"
+          fi
+
+          echo "All commits pushed to $BRANCH."
+
+      - name: Verify (dry summary)
+        if: always()
+        run: |
+          echo "=== S2S Provisioning Summary ==="
+          echo "  Authentik app:   s2s-billing-service (idempotent — reuses if exists)"
+          echo "  Secrets patched: ${{ steps.patch_secrets.outputs.patched || 'skipped' }}"
+          echo "  Helm patched:    ${{ steps.patch_helm.outputs.patched || 'skipped' }}"
+          echo ""
+          echo "Next: once Argo CD rolls out the updated billing-service pod, trigger"
+          echo "  prod-unleash-ops → flags=authz-enabled"
+          echo "to flip fuzefront.billing.authz-enabled ON."
