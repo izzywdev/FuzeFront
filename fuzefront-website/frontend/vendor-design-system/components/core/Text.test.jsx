@@ -133,4 +133,42 @@ describe("<Text>", () => {
     expect(node.style.fontSize).toBe("var(--text-sm)");
     expect(node.style.marginBlockEnd).toBe("var(--space-4)");
   });
+
+  it("defaults `leading` to inherit (unchanged pre-`leading` behavior)", () => {
+    render(<Text>Default leading</Text>);
+    expect(screen.getByText("Default leading").style.lineHeight).toBe("inherit");
+  });
+
+  it("resolves every `leading` step to its DS line-height-scale token — never a raw value", () => {
+    const cases = [
+      ["tight", "var(--leading-tight)"],
+      ["snug", "var(--leading-snug)"],
+      ["normal", "var(--leading-normal)"],
+      ["relaxed", "var(--leading-relaxed)"],
+    ];
+    cases.forEach(([leading, expected]) => {
+      const { unmount } = render(<Text leading={leading}>{leading}</Text>);
+      expect(screen.getByText(leading).style.lineHeight).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("falls back to inherit for an unknown leading value", () => {
+    render(<Text leading="not-a-real-leading">Fallback leading</Text>);
+    expect(screen.getByText("Fallback leading").style.lineHeight).toBe("inherit");
+  });
+
+  it("covers the recurring `text-gray-{500,600} text-sm leading-relaxed` card-description pattern (ds-fp:f3c504a21277) via tone+size+leading", () => {
+    render(
+      <Text tone="secondary" size="sm" leading="relaxed">
+        FuzeOne bundles the primitives that every product team reinvents.
+      </Text>
+    );
+    const node = screen.getByText(
+      "FuzeOne bundles the primitives that every product team reinvents."
+    );
+    expect(node.style.color).toBe("var(--text-secondary)");
+    expect(node.style.fontSize).toBe("var(--text-sm)");
+    expect(node.style.lineHeight).toBe("var(--leading-relaxed)");
+  });
 });

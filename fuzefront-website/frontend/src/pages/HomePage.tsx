@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -280,7 +280,7 @@ export const HomePage: React.FC = () => {
                       <Icon size={22} className="text-white" />
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{prop.title}</h3>
-                    <p className="text-gray-600 text-sm leading-relaxed">{prop.description}</p>
+                    <Text as="p" tone="secondary" size="sm" leading="relaxed">{prop.description}</Text>
                   </motion.div>
                 )
               })}

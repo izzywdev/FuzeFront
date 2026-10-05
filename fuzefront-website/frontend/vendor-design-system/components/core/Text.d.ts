@@ -26,6 +26,14 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
    * @default "none"
    */
   spacing?: "none" | "sm" | "md";
+  /**
+   * Step of the DS line-height scale. `inherit` (default) reads the
+   * surrounding layout's line-height, unchanged from before `leading`
+   * existed. `relaxed` covers the recurring card/feature-description
+   * paragraph pattern (pairs with `tone="secondary"` `size="sm"`).
+   * @default "inherit"
+   */
+  leading?: "inherit" | "tight" | "snug" | "normal" | "relaxed";
   children?: React.ReactNode;
 }
 

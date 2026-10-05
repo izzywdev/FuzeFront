@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -136,7 +137,7 @@ function ProductCard({ product }: { product: Product }) {
         </div>
         <p className="text-xs font-semibold text-primary-700 uppercase tracking-wider mb-1">{product.tagline}</p>
         <h3 className="text-xl font-bold text-gray-900 mb-3">{product.name}</h3>
-        <p className="text-gray-600 text-sm leading-relaxed mb-6">{product.description}</p>
+        <Text as="p" tone="secondary" size="sm" leading="relaxed" className="mb-6">{product.description}</Text>
 
         <ul className="space-y-2 mb-6">
           {product.features.map((feature) => (
