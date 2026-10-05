@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>App Builder &amp; Ownership — Approval Frames</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+<style>
+  .grouplabel { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--cyan-400); margin: var(--space-8) 0 var(--space-3); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
+  @media (max-width: 640px){ .grid { grid-template-columns: 1fr; } }
+  .frame-link { display: block; text-decoration: none; color: inherit; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: var(--space-6);
+    position: relative; overflow: hidden; transition: transform var(--duration-base) var(--ease-standard); }
+  .frame-link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+  .frame-link .seam { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--seam); opacity: 0; transition: opacity var(--duration-base); }
+  .frame-link:hover .seam { opacity: 1; }
+  .frame-link .step { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); letter-spacing: var(--tracking-wide); }
+  .frame-link h3 { margin: var(--space-2) 0; font-size: var(--text-lg); }
+  .frame-link p { margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
+  .inv { margin-top: var(--space-10); background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg); padding: var(--space-6); }
+  .inv h2 { margin: 0 0 var(--space-2); }
+  .inv .lead2 { color: var(--text-tertiary); font-size: var(--text-sm); margin: 0 0 var(--space-5); }
+  .flowcard { border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: var(--space-5);
+    margin-bottom: var(--space-4); }
+  .flowcard h4 { margin: 0 0 var(--space-1); font-size: var(--text-md); }
+  .flowcard .rt { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-tertiary); }
+  .flowcard .comps { margin: var(--space-3) 0 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .flowcard .comps code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary);
+    background: var(--bg-quaternary); border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+    padding: 0 var(--space-2); }
+  .inv-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); margin-top: var(--space-5); }
+  @media (max-width: 720px){ .inv-grid2 { grid-template-columns: 1fr; } }
+  .inv-col h4 { font-family: var(--font-mono); font-size: var(--text-2xs); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); color: var(--cyan-400); margin: 0 0 var(--space-3); }
+  .inv-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+  .inv-col li { font-size: var(--text-sm); color: var(--text-secondary); }
+  .inv-col code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary); }
+  .pending { display: inline-flex; align-items: center; gap: var(--space-1); font-family: var(--font-mono);
+    font-size: var(--text-2xs); padding: 2px var(--space-2); border-radius: var(--radius-pill);
+    color: var(--warning-color); border: 1px solid var(--border-color); text-transform: uppercase;
+    letter-spacing: var(--tracking-wide); margin-top: var(--space-4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Contract-freeze · UX approval · app-registry 1.2.0</div>
+  <h1>App Builder &amp; Ownership · Approval Frames</h1>
+  <p class="lead">Three capabilities from <code>docs/planning/app-builder-and-ownership.md</code>, in four flows:
+    a <b>Build your application</b> card that starts a FuzeAgent session which develops and deploys an app into
+    your personal workspace or the active org; an <b>org-held, user-originated</b> ownership block (the org owns
+    the app, its creator is the contact while a member); and the <b>marketplace</b> publish request with its
+    platform-admin review queue. All four ship dark behind default-OFF release flags. Approve <b>per flow</b>.</p>
+
+  <div class="grouplabel">Flow 1 · Build entry · route /applications · BuildEntryFlow · fuzefront.apps.build-with-agent</div>
+  <div class="grid" data-nav="frames">
+    <a href="01-build-entry.html" class="frame-link" data-frame-link="01-build-entry">
+      <div class="seam"></div><div class="step">Frame (a) · /applications</div>
+      <h3>“Build your application” card</h3>
+      <p>Sibling of the dashed Add card. Flag OFF ⇒ not rendered; flag resolving ⇒ treated as OFF; in-flight session ⇒ resume shortcut.</p>
+    </a>
+  </div>
+
+  <div class="grouplabel">Flow 2 · Build session · route /applications/build[/:sessionId] · BuildSessionFlow · fuzefront.apps.build-with-agent</div>
+  <div class="grid" data-nav="frames">
+    <a href="02-build-form.html" class="frame-link" data-frame-link="02-build-form">
+      <div class="seam"></div><div class="step">Frame (b) · /applications/build</div>
+      <h3>Describe the app</h3>
+      <p>Where (personal / active org), name, brief ≤ 4000. Validation and submitting states.</p>
+    </a>
+    <a href="03-build-progress.html" class="frame-link" data-frame-link="03-build-progress">
+      <div class="seam"></div><div class="step">Frame (c) · /applications/build/:sessionId</div>
+      <h3>Session in progress</h3>
+      <p>launching → building → deploying → deployed, FuzeAgent deep link (same-origin only), cancel confirm, loading.</p>
+    </a>
+    <a href="04-build-outcomes.html" class="frame-link" data-frame-link="04-build-outcomes">
+      <div class="seam"></div><div class="step">Frame (d) · /applications/build[/:sessionId]</div>
+      <h3>Outcomes, failures &amp; refusals</h3>
+      <p>Deployed (tile appears), failed, cancelled, <b>502</b> launch failed, <b>503</b> builder_unavailable / feature_disabled, <b>403</b>, <b>409</b>, <b>429</b>, <b>404</b>.</p>
+    </a>
+  </div>
+
+  <div class="grouplabel">Flow 3 · Creator ownership · app detail · AppOwnershipCard · fuzefront.apps.creator-ownership</div>
+  <div class="grid" data-nav="frames">
+    <a href="05-creator-ownership.html" class="frame-link" data-frame-link="05-creator-ownership">
+      <div class="seam"></div><div class="step">Frame (e) · /apps/:appId</div>
+      <h3>Owner &amp; creator</h3>
+      <p>Org as owner; creator name + contact while a member, “former member” with no contact after; personal; not recorded; flag OFF.</p>
+    </a>
+  </div>
+
+  <div class="grouplabel">Flow 4 · Marketplace publish · app detail + /admin/marketplace-requests · MarketplacePublishFlow · fuzefront.apps.marketplace-publishing</div>
+  <div class="grid" data-nav="frames">
+    <a href="06-publish-request.html" class="frame-link" data-frame-link="06-publish-request">
+      <div class="seam"></div><div class="step">Frame (f) · /apps/:appId</div>
+      <h3>Publish to marketplace</h3>
+      <p>Request with notes; pending; approved; rejected with reason + resubmit; <b>409</b> already pending / published; read-only.</p>
+    </a>
+    <a href="07-review-queue.html" class="frame-link" data-frame-link="07-review-queue">
+      <div class="seam"></div><div class="step">Frame (g) · /admin/marketplace-requests</div>
+      <h3>Admin review queue</h3>
+      <p>Platform admins: approve, or reject with a required reason; <b>409</b> NOT_PENDING race; empty, loading, error, <b>403</b>.</p>
+    </a>
+  </div>
+
+  <div class="inv" data-panel="build-inventory">
+    <h2>Build inventory</h2>
+    <p class="lead2">Approving a flow approves its component/package plan and its contract binding. Mirrored in
+      <code>manifest.json</code> → <code>build</code>. Everything new lands in one package,
+      <code>@fuzefront/app-builder-ui</code>; the shell only mounts it.</p>
+
+    <div class="flowcard" data-flow="build-entry">
+      <h4><code>BuildEntryFlow</code></h4>
+      <div class="rt">route /applications · flag fuzefront.apps.build-with-agent · approved: false</div>
+      <div class="rt">contract: @fuzefront/app-registry-client (REAL) — GET /build-sessions (resume shortcut) · paths: packages/app-builder-ui/src/entry/** + the one-line mount in frontend/src/pages/ApplicationsPage.tsx</div>
+      <div class="comps"><code>BuildAppCard</code><code>ResumeBuildCard</code></div>
+    </div>
+
+    <div class="flowcard" data-flow="build-session">
+      <h4><code>BuildSessionFlow</code></h4>
+      <div class="rt">route /applications/build, /applications/build/:sessionId · flag fuzefront.apps.build-with-agent · approved: false</div>
+      <div class="rt">contract: @fuzefront/app-registry-client (REAL) — POST /build-sessions, GET /build-sessions/{id}, POST /build-sessions/{id}/cancel</div>
+      <div class="comps">
+        <code>BuildAppForm</code><code>BuildTargetPicker</code><code>BriefField</code><code>BuildSessionView</code>
+        <code>BuildProgressStepper</code><code>BuildStatusPill</code><code>AgentSessionLink</code>
+        <code>CancelBuildDialog</code><code>BuildOutcomeBanner</code><code>BuildErrorBanner</code>
+      </div>
+    </div>
+
+    <div class="flowcard" data-flow="creator-ownership">
+      <h4><code>AppOwnershipCard</code></h4>
+      <div class="rt">mounted in app detail (/apps/:appId) · flag fuzefront.apps.creator-ownership · approved: false</div>
+      <div class="rt">contract: @fuzefront/app-registry-client (REAL) — GET /apps/{slug} → App.organizationId, App.creator · AppCreator.contactEmail ANTICIPATED</div>
+      <div class="comps"><code>AppOwnershipCard</code><code>OwnerRow</code><code>CreatorRow</code><code>FormerMemberNotice</code></div>
+    </div>
+
+    <div class="flowcard" data-flow="marketplace-publish">
+      <h4><code>MarketplacePublishFlow</code></h4>
+      <div class="rt">app detail (/apps/:appId) + /admin/marketplace-requests · flag fuzefront.apps.marketplace-publishing · approved: false</div>
+      <div class="rt">contract: @fuzefront/app-registry-client (REAL) — GET /apps/{slug}/publication, POST …/publication-requests[/approve|/reject] · queue listing ANTICIPATED (GET /publication-requests)</div>
+      <div class="comps">
+        <code>PublicationPanel</code><code>PublicationTierBadge</code><code>PublicationRequestDialog</code>
+        <code>PublicationStatusBanner</code><code>PublicationReviewQueue</code><code>ReviewQueueRow</code>
+        <code>ApprovePublicationDialog</code><code>RejectPublicationDialog</code>
+      </div>
+    </div>
+
+    <div class="inv-grid2">
+      <div class="inv-col" data-inv="packages">
+        <h4>npm packages</h4>
+        <ul>
+          <li><code>@fuzefront/app-builder-ui</code> <span class="muted">(new — private, GitHub Packages, restricted)</span></li>
+          <li><code>@fuzefront/app-registry-client</code> <span class="muted">(existing — regenerate from 1.2.0)</span></li>
+          <li><code>@fuzefront/feature-flags</code> <span class="muted">(existing — the three release flags)</span></li>
+        </ul>
+      </div>
+      <div class="inv-col" data-inv="ds-primitives">
+        <h4>DS primitives needed (foundation PR, frontend-engineer)</h4>
+        <ul>
+          <li><code>Stepper</code> — ordered progress with done/current/failed/cancelled</li>
+          <li><code>RadioCardGroup</code> — choice cards (build target)</li>
+          <li><code>TextareaWithCounter</code> — length-limited text (brief, notes, reason)</li>
+          <li><code>StatusPill</code> / <code>Dialog</code> / <code>DataTable</code> — shared with app-management</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <span class="pending" data-approval-status="pending">● Awaiting approval — per flow (Flow 1 / 2 / 3 / 4)</span>
+
+  <p class="note">
+    Design system: <code>@fuzefront/design-system</code> (fuse-seam, tokens only).
+    Plan: <code>docs/planning/app-builder-and-ownership.md</code>. Contract:
+    <code>services/app-registry-service/openapi.yaml</code> (app-registry 1.2.0, merged in #1261).<br />
+    <b>Coordination with app-management.</b> <code>frontend/src/pages/ApplicationsPage.tsx</code> is also claimed by
+    <code>app-management</code> (whose flows are unapproved). <code>build-entry</code> claims that file too, so
+    approving build-entry unblocks the card mount there; the card itself lives in
+    <code>packages/app-builder-ui/src/entry/**</code>, keeping the page edit to one import + one element.
+    Flows 3 and 4 mount inside app detail, which <code>app-management/app-detail</code> owns; they ship as
+    self-contained components in this package and claim only their own package paths.<br />
+    <b>Commissioned by approval</b> (contract amendments for <code>contract-designer</code>):
+    <code>AppCreator.contactEmail</code> (flow 3) and <code>GET /publication-requests?status=pending</code> (flow 4).<br />
+    <b>Authz is fail-closed.</b> Controls render only when the caller can use them; <code>403</code> is shown in place,
+    only <code>401</code> re-authenticates. Approve per flow with the in-frame control, or reply
+    <code>@claude approve &lt;flow&gt;</code> / <code>@claude reject: &lt;reason&gt;</code>.
+  </p>
+</div>
+</body>
+</html>
