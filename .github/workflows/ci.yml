@@ -234,6 +234,16 @@ jobs:
           cd backend/security
           npx jest tests/api-token.test.ts tests/api-token-auth.test.ts tests/api-tokens.routes.test.ts
 
+      # The org-scoped token exchange (POST /api/organizations/:id/session-token)
+      # and the kind boundary that keeps that token out of account routes. Both
+      # suites mock the DB; until this step existed neither ran anywhere in CI.
+      - name: security — org-session token exchange + kind boundary (DB mocked, no Postgres)
+        env:
+          PERMIT_API_KEY: ci-no-real-permit-calls
+        run: |
+          cd backend/security
+          npx jest tests/org-session-token.test.ts tests/org-session-token.kind-boundary.test.ts
+
       - name: security — OIDC unit tests (openid-client mocked, no Authentik required)
         run: |
           cd backend/security

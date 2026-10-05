@@ -34,8 +34,10 @@ import {
   authentikSetPassword as defaultSetPassword,
 } from '../../services/authentikPassword'
 import { putBrokerCode, takeBrokerCode } from '../../services/brokerCodes'
+import { ORG_SESSION_KIND } from '../../services/orgSessionToken'
 import type {
   IdentityProvider,
+  SessionTokenOptions,
   BrokeredSession,
   BrokeredUser,
   NormalizedIdentity,
@@ -706,12 +708,27 @@ export class AuthentikIdentityProvider implements IdentityProvider {
   }
 
   // ── Identity / session inspection ─────────────────────────────────────────
-  private verifySessionToken(token: string): { userId: string; sessionId?: string; tid?: string; iat?: number; exp?: number } {
-    let decoded: { userId: string; sessionId?: string; tid?: string }
+  private verifySessionToken(
+    token: string,
+    opts: SessionTokenOptions = {}
+  ): { userId: string; sessionId?: string; tid?: string; iat?: number; exp?: number } {
+    let decoded: { userId: string; sessionId?: string; tid?: string; kind?: unknown }
     try {
-      decoded = jwt.verify(token, jwtSecret()) as any
+      // HS256 pinned: every platform session is minted HS256.
+      decoded = jwt.verify(token, jwtSecret(), { algorithms: ['HS256'] }) as any
     } catch {
       throw new UnauthorizedError('invalid token')
+    }
+    // Only a PLAIN session (no `kind`) is an account credential. The org-scoped
+    // token from POST /api/organizations/:id/session-token shares JWT_SECRET and
+    // carries the same userId/sessionId, so without this check a 15-minute token
+    // handed to an org-scoped service (selection-list-service) could set a
+    // password, link a social login, regenerate MFA recovery codes or revoke the
+    // user's other sessions here. It is accepted ONLY where a caller opts in
+    // (the authz decision API, which org-scoped services call WITH that token).
+    if (decoded.kind !== undefined) {
+      const orgSessionAllowed = opts.allowOrgSession === true && decoded.kind === ORG_SESSION_KIND
+      if (!orgSessionAllowed) throw new UnauthorizedError('invalid token')
     }
     // A valid SIGNATURE is not enough: every tenant's sessions are signed with
     // the same secret, so a token minted in one directory would otherwise be
@@ -738,8 +755,11 @@ export class AuthentikIdentityProvider implements IdentityProvider {
     }
   }
 
-  async getUserInfo(token: string): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }> {
-    const decoded = this.verifySessionToken(token)
+  async getUserInfo(
+    token: string,
+    opts: SessionTokenOptions = {}
+  ): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }> {
+    const decoded = this.verifySessionToken(token, opts)
     // Session must still exist (revocation is authoritative).
     if (decoded.sessionId) {
       const session = await this.db('sessions').where('id', decoded.sessionId).first()

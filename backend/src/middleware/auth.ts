@@ -68,6 +68,17 @@ export const authenticateToken = async (
       // jwt.sign call sites). Absent on tokens issued before this epic, or
       // whenever the multi-tenant-portals flag was OFF at mint time.
       portalId?: string
+      kind?: unknown
+    }
+
+    // Only a PLAIN platform session authenticates here — same rule as
+    // @fuzefront/core's authenticateToken. A token carrying a `kind`
+    // (`fuze-org-session` from the Security API's org exchange, `fuze-workload`,
+    // `fuze-delegation`) is a narrowed/machine credential for a different
+    // audience that merely shares JWT_SECRET; it is never a user session here.
+    if (decoded.kind !== undefined) {
+      console.log('❌ [%s] Non-session token kind refused', oneLine(requestId))
+      return res.status(401).json({ error: 'Invalid token.' })
     }
 
     console.log(
