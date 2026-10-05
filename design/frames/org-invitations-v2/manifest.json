@@ -1,0 +1,291 @@
+{
+  "name": "Org invitations v2 — approval frames",
+  "feature": "org-invitations-v2",
+  "description": "Contract-freeze UX artifacts for FuzeFront's organization invitations v2 (Jira FFRNT-306, epic FFRNT-304). Covers three flows: (1) the Members-tab invite modal choosing invitee kind {existing|external}, channel {email|WhatsApp e164}, role {admin|member|viewer} and member type {employee|customer} plus the pending-invitations list (resend/revoke); (2) accept -> sign up (incl. Google/Facebook) -> auto-bind for a brand-new external invitee, showing org + role + member type; (3) the root-org owner inviting an external person (Gmail/WhatsApp) as a customer. States are contract: loading/empty/error and the fail-closed cases (410 expired/revoked, 403 identity mismatch, 409 already-accepted, 409 last-owner, 403 forbidden). Approving a flow approves its visual + interaction model AND its slice of the component/package/contract build inventory before UI implementation. Invitations have NO OpenAPI contract today (v1 is un-contracted Express) so the endpoints here are commissioned for contract-designer to freeze. frontend-test-engineer drives Playwright against these via the data-frame / data-* hooks.",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "plan": "docs/planning/design-first-ui-pipeline.md",
+  "implementation": {
+    "paths": [
+      "packages/identity-ui/src/components/invitations/**",
+      "packages/identity-ui/src/api/invitations*",
+      "packages/identity-ui/src/i18n/invitations*",
+      "frontend/src/pages/InvitationAcceptPage.tsx"
+    ]
+  },
+  "entry": "index.html",
+  "contract": {
+    "openapi": "packages/security/openapi.yaml",
+    "client": "@fuzefront/security-client",
+    "schemas": [
+      "components.schemas.Invitation",
+      "components.schemas.InvitationCreate",
+      "components.schemas.InvitationPreview",
+      "components.schemas.InvitationPage",
+      "components.schemas.InviteChannel",
+      "components.schemas.MemberType",
+      "components.schemas.OrgRole",
+      "components.schemas.Membership",
+      "components.schemas.ErrorBody"
+    ],
+    "endpoints": [
+      "POST /v1/security/tenants/{tenantId}/invitations",
+      "GET /v1/security/tenants/{tenantId}/invitations",
+      "POST /v1/security/tenants/{tenantId}/invitations/{invitationId}/resend",
+      "DELETE /v1/security/tenants/{tenantId}/invitations/{invitationId}",
+      "GET /v1/security/invitations/resolve",
+      "POST /v1/security/invitations/accept"
+    ],
+    "commissionedByApproval": [
+      "ENTIRE invitation contract is net-new: packages/security/openapi.yaml has ZERO invitation endpoints today. v1 is un-contracted hand-rolled Express (backend/src/routes/invitations.ts, backend/src/routes/organizations.ts). contract-designer must freeze all six endpoints above + their schemas into the Security OpenAPI and regenerate @fuzefront/security-client.",
+      "InvitationCreate = { inviteeKind: existing|external, channel: email|whatsapp, address (email string OR e164 phone), role: admin|member|viewer, memberType: employee|customer }. The owning service mints the invitation id + token (never client-supplied); additionalProperties:false (identifier-standard).",
+      "MemberType {employee|customer} is NET-NEW. Today the employee/customer distinction is structural (derived ReBAC staff vs. a direct membership row) with no member_type field anywhere. v2 makes it an explicit, persisted field on the invitation and resulting membership.",
+      "InviteChannel {email|whatsapp}: email delivery reuses services/email-service org-invite template (ZeptoMail). WhatsApp is NET-NEW — services/sms-service is Twilio SMS-only today (channel hard-coded 'sms'); a WhatsApp sender (and e164 validation) must be built. Delegate the Twilio WhatsApp integration to telephony-integrator.",
+      "GET /v1/security/invitations/resolve?token= is PUBLIC (unauthenticated) and returns a masked InvitationPreview { orgName, role, memberType, channel, maskedAddress, expiresAt }. 410 when expired/revoked, 409 when already accepted. Token is opaque; resolving must not be an enumeration oracle.",
+      "POST /v1/security/invitations/accept binds the authenticated caller to the org by the invited identity. Fail-closed: 403 IDENTITY_MISMATCH when the signed-in identity != the invited address; 410 when expired/revoked; 409 INVITATION_ALREADY_ACCEPTED (idempotent success-equivalent). On success emits identity.membership.added via the transactional outbox.",
+      "Accept->signup->bind for a brand-new external invitee: unauthenticated accept routes into the existing @fuzefront/auth-ui sign-up (Authentik enrollment) with the invite token carried through; on return the pending invite auto-accepts by verified identity. The invited email is locked in the sign-up form.",
+      "Facebook social sign-up is NET-NEW: only Google exists today (single SocialButton / data-action='social-google'; connected-accounts links Google only). Facebook needs a new provider + social endpoint; call it out, do not assume it exists.",
+      "409 LAST_OWNER invariant on ownership-affecting actions, extending authz-admin's commissioned LAST_ADMIN (owner|admin|member|viewer is the real membership_role_enum). Role set offered in the invite modal is admin|member|viewer; owner is held by the org creator and not assignable from the modal.",
+      "NEW Kafka Zod events in shared/: identity.invitation.created, identity.invitation.accepted, identity.invitation.revoked (owned by contract-designer alongside the OpenAPI).",
+      "NEW route /root/customers (root/portal customer-management surface) is commissioned by flow 3; distinct from member-directory's /organizations/:id/directory."
+    ],
+    "component": "@fuzefront/identity-ui -> OrgInviteFlow / InvitationAcceptFlow / RootCustomerInviteFlow",
+    "featureFlag": "fuzefront.identity.org-invitations"
+  },
+  "build": {
+    "flows": [
+      {
+        "id": "invite",
+        "orchestrator": "OrgInviteFlow",
+        "route": "/settings/access",
+        "implementation": {
+          "paths": [
+            "packages/identity-ui/src/components/invitations/invite/**"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "accept-bind",
+        "orchestrator": "InvitationAcceptFlow",
+        "route": "/invitations/accept",
+        "implementation": {
+          "paths": [
+            "packages/identity-ui/src/components/invitations/accept/**",
+            "frontend/src/pages/InvitationAcceptPage.tsx"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      {
+        "id": "root-customer-invite",
+        "orchestrator": "RootCustomerInviteFlow",
+        "route": "/root/customers",
+        "implementation": {
+          "paths": [
+            "packages/identity-ui/src/components/invitations/root-customer/**"
+          ]
+        },
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    ],
+    "components": [
+      "OrgInviteButton",
+      "InviteModal",
+      "InviteeKindToggle",
+      "InviteChannelToggle",
+      "InviteeAccountPicker",
+      "EmailInviteField",
+      "PhoneE164Field",
+      "InviteRolePicker",
+      "MemberTypeToggle",
+      "InviteReviewSummary",
+      "PendingInvitationsPanel",
+      "PendingInvitationRow",
+      "InviteStatusPill",
+      "ResendInviteButton",
+      "RevokeInviteDialog",
+      "InvitationAcceptCard",
+      "InvitationSignupPanel",
+      "InvitationBindSuccess",
+      "InvitationErrorState",
+      "RootCustomerInviteForm"
+    ],
+    "packages": [
+      "@fuzefront/identity-ui",
+      "@fuzefront/auth-ui",
+      "@fuzefront/security-client"
+    ],
+    "designSystemAdditions": [
+      "SegmentedControl — token-driven 2-3 option toggle (invitee kind, channel, member type). NET-NEW to @fuzefront/design-system; named for a frontend-engineer foundation PR; drawn here from tokens only.",
+      "PhoneNumberInput — E.164 country-code + number field with validation. NET-NEW (no phone-input / libphonenumber exists in the repo today).",
+      "SocialButton (Facebook variant) — NET-NEW provider; only Google exists today. Extend @fuzefront/auth-ui's SocialButton.",
+      "StatusCallout — soft-tinted inline banner (icon + title + text + actions) for the fail-closed states. Already named by account-security; reuse the same primitive, do not re-invent."
+    ],
+    "packagingDecision": "Primary home is @fuzefront/identity-ui (beside authz-admin, member-directory, employee-console). Only split into a dedicated @fuzefront/org-invitations-ui if the multi-channel + public accept-bind scope earns an independent lifecycle — flagged for the orchestrator, not assumed."
+  },
+  "frames": [
+    {
+      "id": "index",
+      "file": "index.html",
+      "label": "Index",
+      "route": "/",
+      "flow": "index",
+      "summary": "Flow walker + build inventory: three flows (6 ordered screens), the component/package plan, the design-system additions, and the commissioned contract deltas.",
+      "acceptanceNotes": "index links to every frame in order; the build inventory mirrors manifest.build 1:1 (flows, components, packages, DS additions, contract deltas); every named flow card resolves to its screen. data-approval-status='pending' until a flow is approved.",
+      "testHooks": [
+        "[data-frame='index']",
+        "[data-build-inventory]",
+        "[data-contract]",
+        "[data-nav='01-invite-modal']",
+        "[data-nav='02-pending-invitations']",
+        "[data-nav='03-accept-resolve']",
+        "[data-nav='04-accept-signup-bind']",
+        "[data-nav='05-root-customer-invite']",
+        "[data-nav='06-states']",
+        "[data-approval-status='pending']"
+      ]
+    },
+    {
+      "id": "01-invite-modal",
+      "file": "01-invite-modal.html",
+      "label": "(a) Invite modal",
+      "route": "/settings/access",
+      "flow": "invite",
+      "summary": "The invite dialog on the org Members tab: invitee kind (existing account-holder | external) segmented toggle, channel (email | WhatsApp) toggle with the matching address field, role radios (admin|member|viewer), member-type (employee|customer) toggle, and a live review summary before Send.",
+      "acceptanceNotes": "POST /v1/security/tenants/{tenantId}/invitations on Send. data-field='invitee-kind'|'channel'|'role'|'member-type' each drive one control; the selected option carries data-selected='true' and aria-pressed/aria-checked. Channel switches the address field: data-channel-field='email' shows the email input, data-channel-field='whatsapp' shows the PhoneE164Field (country code + number). The review panel (data-panel='invite-preview') reflects address + channel + role + member type live. Role options are admin|member|viewer only — owner is not assignable here. Submit (data-action='send-invite') is blocked until a valid address + role + member type are present (see 06-states for invalid-phone and send-error). No identity-vendor name in the DOM.",
+      "testHooks": [
+        "[data-frame='01-invite-modal']",
+        "[data-panel='invite-modal']",
+        "[data-field='invitee-kind']",
+        "[data-field='channel']",
+        "[data-channel-field='email']",
+        "[data-channel-field='whatsapp']",
+        "[data-input='invite-email']",
+        "[data-input='invite-phone']",
+        "[data-field='role']",
+        "[data-role-option='admin']",
+        "[data-field='member-type']",
+        "[data-panel='invite-preview']",
+        "[data-action='send-invite']",
+        "[data-action='close-invite']"
+      ]
+    },
+    {
+      "id": "02-pending-invitations",
+      "file": "02-pending-invitations.html",
+      "label": "(b) Pending invitations",
+      "route": "/settings/access",
+      "flow": "invite",
+      "summary": "The per-org pending-invitations panel above the member list: each row shows address, channel glyph, role + member-type tags, who/when/expiry, a status pill (sent/pending), and resend (rate-limited, disabled during cooldown) + revoke actions.",
+      "acceptanceNotes": "Rows render from GET /v1/security/tenants/{tenantId}/invitations (InvitationPage). data-list='pending'; each row carries data-invitation (opaque id) and data-status. data-count='pending' shows the true count. Resend (data-action='resend') is disabled during the rate-limit cooldown (POST .../resend -> 202). Revoke (data-action='revoke') opens a confirm (RevokeInviteDialog) then DELETE .../{invitationId} -> 204. Accepted invitations drop off this list. Role/member-type tags key to the invitation record, never hard-coded.",
+      "testHooks": [
+        "[data-frame='02-pending-invitations']",
+        "[data-panel='pending-invitations']",
+        "[data-list='pending']",
+        "[data-invitation='inv_01hy']",
+        "[data-count='pending']",
+        "[data-action='resend']",
+        "[data-action='revoke']"
+      ]
+    },
+    {
+      "id": "03-accept-resolve",
+      "file": "03-accept-resolve.html",
+      "label": "(c) Accept · resolve",
+      "route": "/invitations/accept",
+      "flow": "accept-bind",
+      "summary": "The public accept landing: the resolved invitation preview (org name, role, member type, expiry, masked invited address, inviter) with a 'Create account & accept' primary and a 'sign in to accept' alternative.",
+      "acceptanceNotes": "GET /v1/security/invitations/resolve?token= populates data-panel='invite-summary' with org/role/member-type/expires — never trusting client state. data-value='org-name'/'role'/'member-type'/'invite-email' come from the preview. 'Create account & accept' (data-action='accept-continue') routes to sign-up carrying the token; 'sign in to accept' (data-action='accept-signin') routes to sign-in. Expired/revoked (410) and already-accepted (409) render the fail-closed cards in 06-states, not this happy path. The address is masked server-side; the token is opaque.",
+      "testHooks": [
+        "[data-frame='03-accept-resolve']",
+        "[data-panel='accept-resolve']",
+        "[data-panel='invite-summary']",
+        "[data-value='org-name']",
+        "[data-value='role']",
+        "[data-value='member-type']",
+        "[data-action='accept-continue']",
+        "[data-action='accept-signin']"
+      ]
+    },
+    {
+      "id": "04-accept-signup-bind",
+      "file": "04-accept-signup-bind.html",
+      "label": "(d) Sign up & bind",
+      "route": "/invitations/accept",
+      "flow": "accept-bind",
+      "summary": "Step 1 create-account panel (Continue with Google, Continue with Facebook, or email with the invited address locked) and Step 2 the auto-bind success panel confirming org + role + member type + signed-in account.",
+      "acceptanceNotes": "Sign-up reuses @fuzefront/auth-ui (12+ password policy etc.); this feature only adds the invite binding. Email is readonly, locked to the invited address (data-input='signup-email') — the bind key. Social: data-action='social-google' exists today; data-action='social-facebook' is NET-NEW (commissioned). On submit (data-action='create-and-accept') the account is created then POST /v1/security/invitations/accept auto-binds — no separate accept step. The success panel (data-panel='bind-success', data-state='bound') shows data-value='org'/'role'/'member-type'/'account' from the returned Membership and a 'Go to org' CTA (data-action='go-to-org'). Fail-closed cases (403 mismatch, 410, 409) are in 06-states.",
+      "testHooks": [
+        "[data-frame='04-accept-signup-bind']",
+        "[data-panel='accept-signup']",
+        "[data-panel='social']",
+        "[data-action='social-google']",
+        "[data-action='social-facebook']",
+        "[data-input='signup-email']",
+        "[data-action='create-and-accept']",
+        "[data-panel='bind-success']",
+        "[data-state='bound']",
+        "[data-action='go-to-org']"
+      ]
+    },
+    {
+      "id": "05-root-customer-invite",
+      "file": "05-root-customer-invite.html",
+      "label": "(e) Root customer invite",
+      "route": "/root/customers",
+      "flow": "root-customer-invite",
+      "summary": "The root/portal owner's customer-invite surface: channel (email | WhatsApp), a personal-email/e164 field, role radios (member|viewer), member type fixed to Customer, and a live review before Send.",
+      "acceptanceNotes": "POST /v1/security/tenants/{tenantId}/invitations with memberType='customer' forced. data-panel='root-customer-invite'. The member-type control (data-field='member-type') is fixed/disabled to Customer (aria-disabled). External email (data-input='customer-email') accepts any address — the invitee needs no existing account (they go through accept->signup->bind, flow 2). Role defaults to viewer. The review (data-panel='customer-preview') shows address + channel + role + Customer tag. Only a root/portal owner reaches this surface; a non-owner gets 403 (see 06-states forbidden).",
+      "testHooks": [
+        "[data-frame='05-root-customer-invite']",
+        "[data-panel='root-customer-invite']",
+        "[data-field='channel']",
+        "[data-input='customer-email']",
+        "[data-field='role']",
+        "[data-field='member-type']",
+        "[data-panel='customer-preview']",
+        "[data-action='send-customer-invite']"
+      ]
+    },
+    {
+      "id": "06-states",
+      "file": "06-states.html",
+      "label": "(f) States & fail-closed",
+      "route": "/settings/access",
+      "flow": "invite",
+      "summary": "Every state a consumer must render: loading (aria-busy) / empty / error+retry for the pending list; the WhatsApp channel + invalid-e164 validation + resend-cooldown variants; and the fail-closed contract — 410 expired/revoked token, 403 identity mismatch, 409 already-accepted, 409 last-owner, and 403 forbidden-to-invite.",
+      "acceptanceNotes": "Loading = aria-busy skeleton rows for in-flight GET /invitations. Empty is a real state (no pending invitations) with an invite CTA. Error shows data-action='retry'. Channel-whatsapp shows the PhoneE164Field; invalid-phone shows data-error-code='INVALID_PHONE' on a bad e164 and blocks submit. Resend-cooldown disables data-action='resend' with a countdown. Fail-closed cards each carry data-http + data-error-code: token-invalid (410, INVITATION_EXPIRED) tells the invitee to ask for a new link; identity-mismatch (403, IDENTITY_MISMATCH) names both identities and offers switch-account; already-accepted (409, INVITATION_ALREADY_ACCEPTED) is treated as success with a go-to-org CTA; last-owner (409, LAST_OWNER) refuses an ownership-orphaning action and offers transfer-ownership; forbidden (403, FORBIDDEN) is rendered IN PLACE, never a sign-in redirect (only 401 re-authenticates). send-error (DELIVERY_FAILED) keeps the invite as a draft and offers resend.",
+      "testHooks": [
+        "[data-frame='06-states']",
+        "[data-state='loading']",
+        "[data-state='empty']",
+        "[data-state='error']",
+        "[data-action='retry']",
+        "[data-state='channel-whatsapp']",
+        "[data-state='invalid-phone']",
+        "[data-error-code='INVALID_PHONE']",
+        "[data-state='resend-cooldown']",
+        "[data-state='token-invalid']",
+        "[data-http='410']",
+        "[data-error-code='INVITATION_EXPIRED']",
+        "[data-state='identity-mismatch']",
+        "[data-http='403']",
+        "[data-error-code='IDENTITY_MISMATCH']",
+        "[data-state='already-accepted']",
+        "[data-http='409']",
+        "[data-error-code='INVITATION_ALREADY_ACCEPTED']",
+        "[data-state='last-owner']",
+        "[data-error-code='LAST_OWNER']",
+        "[data-state='forbidden']",
+        "[data-error-code='FORBIDDEN']"
+      ]
+    }
+  ],
+  "stamp": "37aa5f3bcbee9bb2c74f4c490310b5c3fbf950859036bd2e4ec46aee24765540"
+}
