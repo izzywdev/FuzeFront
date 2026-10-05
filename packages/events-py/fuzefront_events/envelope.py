@@ -217,6 +217,9 @@ def build_event(
     else:
         occurred = format_occurred_at(occurred_at or datetime.now(UTC))
     env: dict[str, Any] = {
+        # mint_id takes the ENTITY TYPE NAME, not the prefix: the identity registry maps
+        # "event" -> "evt" (ENTITY_PREFIXES["event"]), so this yields "evt_<26 chars>".
+        # mint_id("evt") would raise KeyError (unregistered entity type).
         "eventId": mint_id("event"),
         "topic": topic,
         "schemaVersion": schema_version,
