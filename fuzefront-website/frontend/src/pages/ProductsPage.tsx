@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { PageHeroBand } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -165,7 +166,7 @@ export const ProductsPage: React.FC = () => {
   return (
     <div>
       {/* Hero */}
-      <section className="bg-gradient-to-br from-secondary-900 to-secondary-800 pt-28 pb-20 relative overflow-hidden">
+      <PageHeroBand>
         <div className="absolute inset-0 hero-pattern opacity-20" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
@@ -196,7 +197,7 @@ export const ProductsPage: React.FC = () => {
             </div>
           </motion.div>
         </div>
-      </section>
+      </PageHeroBand>
 
       {/* Products grid */}
       <section className="py-20 bg-secondary-50">
