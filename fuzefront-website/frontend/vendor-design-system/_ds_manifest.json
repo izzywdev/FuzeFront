@@ -198,6 +198,10 @@
       "sourcePath": "components/layout/ListStack.jsx"
     },
     {
+      "name": "PageHeroTitle",
+      "sourcePath": "components/layout/PageHeroTitle.jsx"
+    },
+    {
       "name": "Panel",
       "sourcePath": "components/layout/Panel.jsx"
     },
@@ -949,6 +953,18 @@
       "definedIn": "tokens/typography.css"
     },
     {
+      "name": "--text-4xl",
+      "value": "2.25rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--text-5xl",
+      "value": "3rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
       "name": "--leading-tight",
       "value": "1.15",
       "kind": "font",
@@ -1010,6 +1026,36 @@
     },
     {
       "name": "--role-hero-leading",
+      "value": "var(--leading-tight)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-font",
+      "value": "var(--font-sans)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-size",
+      "value": "var(--text-4xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-size-lg",
+      "value": "var(--text-5xl)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-weight",
+      "value": "var(--weight-bold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-page-hero-title-leading",
       "value": "var(--leading-tight)",
       "kind": "font",
       "definedIn": "tokens/typography.css"

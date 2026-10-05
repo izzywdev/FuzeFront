@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { Center, PageHeroTitle } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -49,9 +49,9 @@ export const SolutionsPage: React.FC = () => {
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8 }}
           >
-            <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
+            <PageHeroTitle>
               Solutions for Every <span className="gradient-text">Business</span>
-            </h1>
+            </PageHeroTitle>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Whether you're a startup building an MVP or an enterprise scaling globally,
               we have the right solution for you.

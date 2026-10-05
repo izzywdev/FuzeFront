@@ -26,6 +26,8 @@
   --text-xl: 1.35rem;     /* h2 */
   --text-2xl: 1.75rem;    /* h1 */
   --text-3xl: 2.25rem;    /* page hero */
+  --text-4xl: 2.25rem;    /* marketing-site hero h1, mobile */
+  --text-5xl: 3rem;       /* marketing-site hero h1, sm+ */
 
   /* ---- Line heights -------------------------------------- */
   --leading-tight: 1.15;
@@ -43,6 +45,16 @@
   --role-hero-size: var(--text-3xl);
   --role-hero-weight: var(--weight-semibold);
   --role-hero-leading: var(--leading-tight);
+
+  /* Marketing-site page-hero <h1> on a light gradient background (Blog,
+     Contact, Solutions overview pages) — bold weight + the standard
+     light-on-page text color, as opposed to the dark-gradient hero's
+     extrabold/on-dark-white treatment. See PageHeroTitle. */
+  --role-page-hero-title-font: var(--font-sans);
+  --role-page-hero-title-size: var(--text-4xl);
+  --role-page-hero-title-size-lg: var(--text-5xl);
+  --role-page-hero-title-weight: var(--weight-bold);
+  --role-page-hero-title-leading: var(--leading-tight);
 
   --role-heading-font: var(--font-display);
   --role-heading-size: var(--text-2xl);
