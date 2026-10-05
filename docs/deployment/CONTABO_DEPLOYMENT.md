@@ -203,15 +203,42 @@ Notes:
 
 ## 6. Kafka topics
 
-The prefixed topics are meant to be pre-created by a Helm post-install/post-upgrade
-Job (`templates/kafka-topics-job.yaml`, gated by `kafkaTopics.enabled`) rather than
-relying on broker auto-create. **It is currently `enabled: false` in `values-prod.yaml`**
-(the hook wedged Argo syncs; see the comment there), so prod topics fall back to broker
-auto-create until the Job is made non-blocking and re-enabled. The topic set is
-reconciled from the `@fuzefront/shared` `TOPICS` constant plus the planned
-billing/chat events. When that constant changes, edit `kafkaTopics.topics` in
-`values.yaml`. The Job uses `--create --if-not-exists`, so it is safe to re-run on
-every upgrade; it never shrinks partitions/retention.
+The prefixed topics are reconciled by a plain (non-hook) Kubernetes Job,
+`templates/kafka-topics-job.yaml`, gated by `kafkaTopics.enabled` (off in the base
+values and locally, **on in `values-prod.yaml`**). Prod no longer relies on broker
+auto-create, which applies broker defaults and would drop intended retention (e.g. the
+1d retention on `selection-lists.seed.requested` and its `.dlq`, whose messages carry
+bearer tokens).
+
+How it behaves, and why it can no longer wedge Argo syncs (it used to be a
+`post-upgrade` hook running one JVM per topic, ~40s each; Argo deleted and recreated it
+on every sync attempt and blocked the whole sync on it):
+
+- **No `helm.sh/hook*` annotations.** It is an ordinary resource in the LAST Argo sync
+  wave (`argocd.argoproj.io/sync-wave: "100"`), so it cannot hold up any other resource.
+- **Named by content**: `fuzefront-kafka-topics-<8-hex sha256 of topic spec + script +
+  image>`. An unchanged render is the same, already-Complete Job (no-op); a changed
+  topic list renders a new Job and Argo prunes the old one. (A Job's pod template is
+  immutable, which is why the name has to change with the content.)
+- **No `ttlSecondsAfterFinished`.** A TTL would make the Job controller delete the
+  finished Job, Argo would see a desired resource missing and recreate/re-run it
+  forever. Hash-rotation pruning keeps completed Jobs from accumulating.
+- **Bounded**: `activeDeadlineSeconds: 600`, `backoffLimit: 2`. A slow or dead broker
+  fails the Job and Argo shows the app Degraded (a visible signal) instead of hanging.
+- **Fast**: lists topics once, creates only the missing ones, up to 8 in parallel, then
+  does one `kafka-configs.sh --describe` and `--alter --add-config
+  retention.ms=...,cleanup.policy=...` (up to 8 in parallel) only for existing topics
+  that declare an explicit `retentionMs` and have drifted (this is how topics that were
+  auto-created earlier with broker defaults get their declared retention). It exits
+  non-zero, naming the topic, if any create/alter fails.
+- **Never destructive**: it never deletes topics and never touches the partition count
+  of an existing topic.
+
+The topic set is reconciled from the `@fuzefront/shared` `TOPICS` constant plus the
+planned billing/chat events. When that constant changes, edit `kafkaTopics.topics` in
+`values.yaml`; the next sync creates the new Job. Check the result with
+`cluster-query` (`-n fuzefront get jobs -l app.kubernetes.io/component=kafka-topics`,
+then `logs job/<name>`).
 
 ---
 
