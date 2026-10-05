@@ -416,6 +416,43 @@ flags:
     jira: ~
     epic: FF-EPIC-17
 
+  - key: fuzefront.selection-lists.shared-lists
+    type: release
+    default: false
+    description: >
+      Gates ALL shared/common-list behaviour added in selection-lists 4.1.0
+      (docs/planning/selection-lists-shared-and-fork.md, SL9): list
+      `visibility` (private | org | platform) and the shared read, the
+      `include_shared` / `visibility` listing parameters and key shadowing,
+      `POST /v1/selection-lists/{listId}/fork`, `409 fork_required` on common
+      lists, resolve of platform lists + the fork redirect
+      (`effective_item_id`), the `list.forked` / `visibility.changed` events,
+      and honouring seed-list `visibility`. OFF behaviour: the service answers
+      exactly as 4.0.0 in behaviour while still emitting 4.1.0 shapes (every
+      list `visibility: private`, `forked_from: null`, items
+      `origin_item_id: null`); `include_shared`/`visibility` are accepted and
+      ignored; the fork operation answers 404; PATCH/create with a
+      non-`private` visibility is 400; seed-list `visibility` is ignored. Real
+      authorization never routes through this flag: reads stay behind Permit
+      (`SelectionListCatalog:read_shared`, instance `read`) and every
+      mutation behind the instance roles. Independent of, and additionally
+      requires, the master gate fuzefront.selection-lists.service. Created OFF
+      in every Unleash environment (prod-unleash-ops `selection-lists-shared`,
+      create only) — enablement is a deliberate per-org ramp by the owner.
+    owner: izzywdev
+    removal_criterion: >
+      Remove once the flag has been ON for all orgs for 30 consecutive days
+      with no fork / shared-read incident. Delete the flag in Unleash,
+      FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS, the WEB_EXPOSED_FLAGS entry,
+      isSharedListsEnabled() and every off-path branch in
+      services/selection-list-service in one cleanup PR.
+    gates:
+      - selection-list-service shared read, visibility, fork, resolve redirect, events, seed visibility (server-side)
+      - selection-lists UI shared/common badge, fork-to-edit flow, picker effective-list lookup (UI-side, UI wave)
+    web_exposed: true
+    jira: ~
+    epic: FF-EPIC-17
+
   # ---------------------------------------------------------------------------
   # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /
   # portal reconciliation)
