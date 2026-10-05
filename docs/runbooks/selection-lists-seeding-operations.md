@@ -195,6 +195,15 @@ ledger), so it is expected to be safe, but treat that as **inferred**.
 | `selection_list_outbox_publish_failures_total{topic}` | failed publish attempts (retried) | rate > 0 for long ⇒ Kafka/ACL/topic problem |
 | `selection_list_outbox_published_total{topic}` | delivered | flat at 0 while changes happen ⇒ relay disabled |
 
+Authority/mirror consistency (review M-2, L-5) has four more counters, all bounded labels:
+
+| Metric | Meaning | Action |
+|---|---|---|
+| `selection_list_ownerless_lists_total{cause="user_deleted"}` | `identity.user.deleted` removed the **last** list-owner of a list (the grant is revoked anyway; the list is also logged at ERROR with `ownerless: true`, `listId`, `orgId`) | **alert on any increase.** Recover: a tenant admin (holds `Organization:manage`) grants `list-owner` on the instance via `POST /api/v1/security/authz/grants` `{subject, tenant, role:"list-owner", resource:{type:"SelectionList", key:"front_sl_…"}}`, then `PUT …/access/{userId}` (or wait for the roster to be reconciled). Find all of them: `SELECT l.id FROM selection_lists l WHERE NOT EXISTS (SELECT 1 FROM selection_list_access a WHERE a.list_id = l.id AND a.role = 'list-owner' AND a.revoked_at IS NULL) AND l.status = 'active'` (a seeded list in an org with no `ownerId` also shows up here; that one is the §6 "no-owner" case, not this incident) |
+| `selection_list_authz_compensation_total{op,outcome="failed"}` | a failed access change could not be undone in the Security API: the authority and the mirror disagree for that user and list | **alert on any increase.** The log line `COMPENSATION FAILED` names `listId`, `prior` and `target` roles; re-issue the intended `PUT`/`DELETE …/access/{userId}` once the Security API is healthy (both are idempotent). The last-owner guard stays safe meanwhile: it asks the authority |
+| `selection_list_owner_drift_total` | the last-owner guard saw mirror owner rows the Security API does not confirm | sustained growth ⇒ grants being changed outside the service, or a failing PDP (a PDP outage reads as "unconfirmed" and refuses the change with `409`) |
+| `selection_list_grant_cleanup_failed_total{cause}` | a Security API grant revocation failed during a **purge** (`purge`) or an `identity.user.deleted` (`user_deleted`) | `purge`: orphan `SelectionList:<id>` role assignments (harmless, ids are never reused; the warn log names the list/user/role to revoke by hand). `user_deleted`: the event is retried and, after 5 attempts, dead-lettered to `identity.user.deleted.dlq` with the failing grants still in the mirror: replay it once the Security API is healthy |
+
 The reconciler and the owner grants have their own counters (`selection_list_seed_reconciler_*`; `selection_list_seed_owner_grants_total{result=granted|failed}` - alert on any `failed` increase - and `selection_list_seed_owner_grant_skipped_total{reason}`). There are **no other seed-specific metrics.** The signals for seeding are the `seed.failed` events, the
 ledger, and logs (messages `seed: request completed`, `seed: request refused (seed.failed recorded,
 nothing written)`, `seeding flag is OFF for this org`, `attestation refused (ATTESTATION_INVALID)`,
@@ -312,6 +321,8 @@ against the SL8 branch (`claude/sl8-fixes`) and stay in the table as a record, n
 | `ORG_UNKNOWN` | the org's `identity.org.created` has not been consumed | consumer group lag on `identity.org.created`; topic exists? |
 | No outcome event at all | request never consumed, or outcome stuck in the outbox | `selection_list_outbox_pending` / oldest age; consumer group lag on `selection-lists.seed.requested`; topic name |
 | `selection_list_outbox_failed` > 0 | events parked after 10 failed publishes or schema drift | `last_error` on the `failed` rows; the `<topic>.dlq` copy |
+| `403 QUOTA_EXCEEDED` for a user with plenty of lists left | `user_lists` (default 20 per user) or the archived-rows storage ceiling (active limit x `SELECTION_LISTS_STORAGE_CEILING_FACTOR`, default 10) | the response `scope`/`limit`/`current`; the message names archived rows when it is the storage ceiling: purge archived lists/items, or raise the per-org override row |
+| `429` from the ingress on `/api/v1/resolve` or `/api/v1/selection-lists` | the per-client-IP edge rate limit (`selectionListService.ingress.rateLimit.*`) | the ingress/Traefik access log; behind Cloudflare confirm the limiter groups by the real client IP (`clientIpHeader`) and not one shared edge address |
 | `INTERNAL_ERROR` | DB/Security API fault outlasted 5 attempts | service logs around the `requestId`; Security API health (token introspection) |
 | Platform pack missing for an org | created while a flag was OFF, or `appliesTo` excludes its type (`platform` org), or inactive | the §4.2 "never received" query; the reconciler (`SEED_RECONCILER_ENABLED=true`) repairs it once seeding is ON for the org |
 
