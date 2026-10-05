@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, SectionLede } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -266,9 +266,9 @@ export const HomePage: React.FC = () => {
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
                 Everything your SaaS needs, none of the overhead
               </h2>
-              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              <SectionLede>
                 FuzeOne bundles the primitives that every product team reinvents — so yours doesn't have to.
-              </p>
+              </SectionLede>
             </motion.div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -297,9 +297,9 @@ export const HomePage: React.FC = () => {
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
                 10 products. One platform. Zero lock-in.
               </h2>
-              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              <SectionLede>
                 Each Fuze product works standalone and integrates seamlessly with the others.
-              </p>
+              </SectionLede>
             </motion.div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

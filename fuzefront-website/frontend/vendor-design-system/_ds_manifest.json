@@ -210,6 +210,10 @@
       "sourcePath": "components/layout/SectionHead.jsx"
     },
     {
+      "name": "SectionLede",
+      "sourcePath": "components/layout/SectionLede.jsx"
+    },
+    {
       "name": "Stack",
       "sourcePath": "components/layout/Stack.jsx"
     },

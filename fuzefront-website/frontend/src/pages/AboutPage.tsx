@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, SectionLede } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -207,9 +207,9 @@ export const AboutPage: React.FC = () => {
             <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
               What we offer
             </h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            <SectionLede>
               Everything a growing SaaS product needs, bundled into one platform.
-            </p>
+            </SectionLede>
           </motion.div>
 
           <motion.div
