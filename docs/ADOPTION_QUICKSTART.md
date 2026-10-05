@@ -62,6 +62,7 @@ From here, inspect the runtime app registry, the example federated application, 
 - **`open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified`** (Windows): Docker Desktop isn't running. Start it and wait for "Engine running", for example after a reboot.
 - **"Incorrect email or password" when creating an account:** the password didn't meet the policy above. Check `docker compose -f docker-compose.e2e.yml logs security` for the exact reason.
 - **`clock-app` isn't listed after `npm run dev`:** the dev server doesn't produce `remoteEntry.js`, and self-registration from the browser is blocked in this stack. Use the build + preview + register steps above.
+- **Your own app registers but doesn't show up** (init container crash-looping, stuck in `registered`, or activated but blank): work through [`docs/troubleshooting/APP_REGISTRATION_DECISION_TREE.md`](troubleshooting/APP_REGISTRATION_DECISION_TREE.md) — covers connectivity, auth/token, payload validation, duplicate registration, remote URL reachability, and heartbeat/health failures.
 
 ### 2. Platform engineer: run the Kubernetes path
 
