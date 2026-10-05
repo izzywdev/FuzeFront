@@ -4,7 +4,7 @@ import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
 import { Center, IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
-import { ListStack } from '@fuzefront/design-system'
+import { ListStack, GroupLabel } from '@fuzefront/design-system'
 
 interface Position {
   code: string
@@ -204,9 +204,7 @@ export const CareersPage: React.FC = () => {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
-                        Responsibilities
-                      </h4>
+                      <GroupLabel tone="primary">Responsibilities</GroupLabel>
                       <ListStack gap="sm">
                         {position.responsibilities.map((r) => (
                           <li key={r} className="text-sm text-gray-600 flex items-start gap-2">
@@ -217,9 +215,7 @@ export const CareersPage: React.FC = () => {
                       </ListStack>
                     </div>
                     <div>
-                      <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
-                        Qualifications
-                      </h4>
+                      <GroupLabel tone="primary">Qualifications</GroupLabel>
                       <ListStack gap="sm">
                         {position.qualifications.map((q) => (
                           <li key={q} className="text-sm text-gray-600 flex items-start gap-2">
