@@ -171,17 +171,60 @@ const client = new SelectionListClient({
 | Option | Type | Required | Notes |
 |---|---|---|---|
 | `baseUrl` | `string` | Yes | Same-origin path in the browser; absolute URL in server-side callers |
-| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | Bearer token with an `orgId` claim. `resolveIds` also requires it |
+| `token` | `string \| () => string \| Promise<string>` | Yes (all calls) | An **org-scoped** Bearer token (see [Authentication and the org claim](#authentication-and-the-org-claim)). A plain FuzeFront session token carries no org and every call answers `401`. `resolveIds` also requires it |
 | `fetch` | `typeof fetch` | No | Inject for tests or non-global runtimes; defaults to `globalThis.fetch` |
 | `defaultLocale` | `Locale` | No | Applied to every request that doesn't supply its own |
 | `headers` | `Record<string, string>` | No | Merged into every request (tracing IDs, tenant hints) |
+
+### Authentication and the org claim
+
+The service scopes **every** row by organization and takes that organization from **one place only: a claim in the
+verified bearer token**. Never a header, query string or body (an `X-Organization-Id` header is ignored).
+
+The token the shell holds after login is a plain **session token** `{ userId, sessionId, tid }`. It authenticates the
+user but names **no organization**, and `tid` is *not* one: it is the identity-directory tenant (which Authentik
+instance authenticated the user, e.g. `fuzefront`). The service never reads `tid` as an org; treating it as one would put
+every user of a directory in one tenant.
+
+To act in an org, exchange the session token for a short-lived **org-scoped token** at the Security API:
+
+```http
+POST /api/organizations/{orgId}/session-token
+Authorization: Bearer <session token>
+
+200 { "token": "<jwt>", "tokenType": "Bearer", "expiresIn": 900, "organizationId": "<bare uuid>" }
+```
+
+The Security API mints it **only after checking the caller's active membership of `{orgId}`** (`organizationId` may be the
+bare UUID or the `org_…` TypeID; `403` for a non-member and for a nonexistent org alike, `401` for a revoked/expired
+session, a foreign-tenant token, or a token that is not a plain session token). The result is
+`{ userId, sessionId, tid, orgId, kind: "fuze-org-session" }`, lifetime at most 15 minutes and never beyond the session's
+own expiry. Re-exchange when it lapses: the exchange re-checks the session and the membership, which is how a removed
+member or a deactivated org stops being served (the service verifies statelessly and cannot see a later logout, so the
+short lifetime is the revocation bound). The shell does this for the UI (`frontend/src/lib/selectionListsAuth.ts`:
+cached per session+org, refreshed a minute before expiry, never persisted).
+
+What the service accepts (`src/middleware/auth.ts`):
+
+| Rule | Detail |
+|---|---|
+| Algorithm | `HS256` only, signed with the platform `JWT_SECRET`. HS384/HS512 and `alg: none` are `401` |
+| Subject | `userId`, else `sub` |
+| Org claim, precedence | `orgId` (what the Security API mints) → `organization_id` (the name this contract's `bearerAuth` publishes) → `organizationId`. Present under several names with different values, or malformed (empty, whitespace, non-string, over 128 chars) → `401`, never guessed. No org claim at all → authenticated but every org route answers `401` |
+| Org id form | Bare UUID (`organizations.id`, the authz tenant key) or `org_…` TypeID, used **verbatim**; `wireOrgId()` renders either to the wire TypeID for events and flags |
+| Token `kind` | Absent (session) or `fuze-org-session` are accepted. **Any other `kind` is `401`**: `fuze-workload` and `fuze-delegation` tokens are service/act-on-behalf credentials, not users, and verify under the shared secret whenever `DELEGATION_SIGNING_KEY` is unset |
+
+Service-to-service callers that are not acting for a user have no org-scoped token to present; they go through the
+Kafka seeding path or the Security API, not these routes.
 
 ### Server-side (Node / service-to-service)
 
 ```ts
 const client = new SelectionListClient({
   baseUrl: 'http://fuzefront-selection-list-service:3008',
-  token: process.env.SELECTION_LIST_SERVICE_TOKEN,
+  // An org-scoped token (15 min) from the exchange above: pass a function that
+  // re-exchanges on expiry, not a static env value.
+  token: () => getOrgScopedToken(),
   fetch,   // node-fetch or native fetch (Node 24+)
 })
 ```

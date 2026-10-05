@@ -105,7 +105,11 @@ async function caller(req: Request): Promise<ResolvedCaller | null> {
     return null
   }
   try {
-    const { user } = await getIdentityProvider().getUserInfo(token)
+    // allowOrgSession: org-scoped services (selection-list-service) forward the
+    // caller's `fuze-org-session` token here to ask for a decision. This is the
+    // ONLY place that token is accepted by the Security API; account routes
+    // refuse it (providers/authentik/AuthentikIdentityProvider.verifySessionToken).
+    const { user } = await getIdentityProvider().getUserInfo(token, { allowOrgSession: true })
     if (user?.id) return { id: user.id, kind: 'human' }
     log.debug('authz: human token resolution returned no user id — trying machine token')
   } catch (err) {

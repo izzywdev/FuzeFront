@@ -276,6 +276,12 @@ export interface SocialLinkStart {
   codeVerifier: string;
 }
 
+/** Options for resolving a presented bearer as a user session. */
+export interface SessionTokenOptions {
+  /** Also accept a `fuze-org-session` token. Authz-decision callers only. */
+  allowOrgSession?: boolean;
+}
+
 /**
  * The AuthN swap contract. Shaped from the current server-brokered behavior in
  * `backend/security/src/routes/auth.ts` (`/oidc/password` :520, `/oidc/login`
@@ -327,8 +333,18 @@ export interface IdentityProvider {
    */
   emailExists(email: string): Promise<boolean>;
 
-  /** Normalized identity + user for a presented session token ("me"). */
-  getUserInfo(token: string): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }>;
+  /**
+   * Normalized identity + user for a presented session token ("me").
+   *
+   * Only a PLAIN session token is accepted by default. `allowOrgSession` also
+   * accepts the org-scoped `fuze-org-session` token (services/orgSessionToken.ts)
+   * and is for the authz decision API ONLY, which org-scoped services call with
+   * that token; account-management operations must never pass it.
+   */
+  getUserInfo(
+    token: string,
+    opts?: SessionTokenOptions
+  ): Promise<{ identity: NormalizedIdentity; user: BrokeredUser }>;
 
   /** Revoke the presented session. Idempotent. */
   logout(token: string): Promise<void>;

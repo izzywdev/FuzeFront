@@ -108,6 +108,78 @@ describe('same-origin base + request shaping', () => {
   })
 })
 
+describe('authentication (authz review I-1b)', () => {
+  const headersOf = (call: [string, RequestInit | undefined]) =>
+    (call[1]?.headers ?? {}) as Record<string, string>
+
+  afterEach(() => api.configureSelectionListsAuth(undefined))
+
+  it('sends no Authorization header until the host configures auth', async () => {
+    fetchMock.mockResolvedValue(json({}))
+    await api.getQuota()
+    expect(headersOf(lastCall())['Authorization']).toBeUndefined()
+  })
+
+  it('attaches the ORG-scoped token to selection-list and resolve calls', async () => {
+    api.configureSelectionListsAuth({ getOrgToken: async () => 'org.tok', getSessionToken: () => 'sess.tok' })
+    fetchMock.mockResolvedValue(json({}))
+    await api.listSelectionLists()
+    expect(headersOf(lastCall())['Authorization']).toBe('Bearer org.tok')
+    await api.createSelectionList({ key: 'k', source_locale: 'en' })
+    expect(headersOf(lastCall())['Authorization']).toBe('Bearer org.tok')
+    expect(headersOf(lastCall())['Content-Type']).toBe('application/json')
+    await api.resolveItems(['a'])
+    expect(headersOf(lastCall())['Authorization']).toBe('Bearer org.tok')
+  })
+
+  it('sends the plain SESSION token (not the org token) to the host-backend user search', async () => {
+    api.configureSelectionListsAuth({ getOrgToken: async () => 'org.tok', getSessionToken: () => 'sess.tok' })
+    fetchMock.mockResolvedValue(json([]))
+    await api.searchUsers('ann')
+    expect(lastCall()[0]).toBe('/api/v1/users?search=ann')
+    expect(headersOf(lastCall())['Authorization']).toBe('Bearer sess.tok')
+  })
+
+  it('attaches the org token to the HEAD reorder probe too', async () => {
+    api.configureSelectionListsAuth({ getOrgToken: () => 'org.tok' })
+    fetchMock.mockResolvedValue({ status: 204 } as Response)
+    await api.probeReorderPermission('sl_1')
+    expect(lastCall()[1]?.method).toBe('HEAD')
+    expect(headersOf(lastCall())['Authorization']).toBe('Bearer org.tok')
+  })
+
+  it('asks for the token on EVERY request (the active org can change between calls)', async () => {
+    const getOrgToken = vi.fn().mockResolvedValueOnce('org.a').mockResolvedValueOnce('org.b')
+    api.configureSelectionListsAuth({ getOrgToken })
+    fetchMock.mockResolvedValue(json({}))
+    await api.getQuota()
+    expect(headersOf(lastCall())['Authorization']).toBe('Bearer org.a')
+    await api.getQuota()
+    expect(headersOf(lastCall())['Authorization']).toBe('Bearer org.b')
+  })
+
+  it('sends no credential when there is no active org (null token) or resolution throws', async () => {
+    fetchMock.mockResolvedValue(json({}))
+    api.configureSelectionListsAuth({ getOrgToken: async () => null })
+    await api.getQuota()
+    expect(headersOf(lastCall())['Authorization']).toBeUndefined()
+    api.configureSelectionListsAuth({
+      getOrgToken: async () => {
+        throw new Error('exchange failed')
+      },
+    })
+    await api.getQuota()
+    expect(headersOf(lastCall())['Authorization']).toBeUndefined()
+  })
+
+  it('stays same-origin: configuring auth never changes the request URL', async () => {
+    api.configureSelectionListsAuth({ getOrgToken: async () => 'org.tok' })
+    fetchMock.mockResolvedValue(json({}))
+    await api.getQuota()
+    expect(lastCall()[0]).toBe('/api/v1/selection-lists/quota')
+  })
+})
+
 describe('error shaping', () => {
   it('throws an Error carrying the service code/message/scope and HTTP status', async () => {
     fetchMock.mockResolvedValue(
