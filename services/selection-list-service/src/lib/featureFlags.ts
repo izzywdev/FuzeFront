@@ -13,6 +13,13 @@
 //   UNLEASH_APP_NAME       app name reported to Unleash (default selection-list-service)
 //   UNLEASH_CLIENT_TOKEN   Unleash CLIENT token (never an admin/frontend token)
 //
+// Local/CI with no Unleash: set FUZE_FLAGS_PROVIDER=offline (+ FUZE_FLAGS_OFFLINE_ON,
+// a comma list of keys to force ON) to install the ONE explicit offline provider
+// in @fuzefront/feature-flags. It is refused in production and ignored whenever
+// Unleash is configured (Unleash always wins), so a stray env var can never light
+// up a dark feature in prod. This replaces the old FLAGS_FORCE_ON hatch and, unlike
+// it, runs the SAME OpenFeature client path production uses.
+//
 // FAIL-CLOSED BY CONSTRUCTION. Release flag, default OFF: if the URL/token is
 // missing, the package cannot be loaded, init throws, or Unleash is unreachable,
 // the service still starts and every evaluation resolves to the fail-safe OFF —
@@ -27,7 +34,13 @@ export type FlagInitResult = 'initialized' | 'skipped-unconfigured' | 'skipped-u
 
 interface FlagsModule {
   init(
-    options: { url: string; clientToken: string; appName?: string },
+    options: {
+      url?: string;
+      clientToken?: string;
+      appName?: string;
+      provider?: 'unleash' | 'offline';
+      offline?: { on: string[] };
+    },
     context?: Record<string, unknown>,
   ): Promise<void>;
   close?: () => Promise<void>;
@@ -65,12 +78,52 @@ let loaded: FlagsModule | null = null;
 export async function initFeatureFlags({ load = defaultLoad, env = process.env }: FeatureFlagsDeps = {}): Promise<FlagInitResult> {
   const url = env.UNLEASH_URL;
   const clientToken = env.UNLEASH_CLIENT_TOKEN;
+  const offlineRequested = env.FUZE_FLAGS_PROVIDER === 'offline';
+  const appName = env.UNLEASH_APP_NAME || DEFAULT_APP_NAME;
+  const context = {
+    environment: env.NODE_ENV === 'production' ? 'prod' : env.FLAG_ENV || 'local',
+    app: appName,
+  };
+
+  // No Unleash configured. Either install the explicit offline provider (local/
+  // CI, forced ON via FUZE_FLAGS_OFFLINE_ON) or run with in-code defaults (dark).
   if (!url || !clientToken) {
-    logger.warn(
-      { hasUrl: Boolean(url), hasToken: Boolean(clientToken) },
-      'UNLEASH_URL / UNLEASH_CLIENT_TOKEN not set — feature flags use in-code defaults (release flag OFF: feature dark)',
-    );
-    return 'skipped-unconfigured';
+    if (!offlineRequested) {
+      logger.warn(
+        { hasUrl: Boolean(url), hasToken: Boolean(clientToken) },
+        'UNLEASH_URL / UNLEASH_CLIENT_TOKEN not set — feature flags use in-code defaults (release flag OFF: feature dark)',
+      );
+      return 'skipped-unconfigured';
+    }
+
+    const mod = load();
+    if (!mod || typeof mod.init !== 'function') {
+      logger.error('feature-flags package unavailable or has no init() — release flag stays OFF');
+      return 'skipped-unavailable';
+    }
+
+    const on = (env.FUZE_FLAGS_OFFLINE_ON || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const start = performance.now();
+    logger.debug({ op: 'featureflags.init', provider: 'offline', on }, 'featureflags.init start (offline)');
+    try {
+      // Refused in production by the provider itself (throws) — we fail closed.
+      await mod.init({ provider: 'offline', offline: { on }, appName }, context);
+      loaded = mod;
+      logger.info(
+        { op: 'featureflags.init', provider: 'offline', on, elapsedMs: Math.round(performance.now() - start) },
+        'feature flags initialized (offline provider)',
+      );
+      return 'initialized';
+    } catch (err) {
+      logger.error(
+        { err, op: 'featureflags.init', provider: 'offline', elapsedMs: Math.round(performance.now() - start) },
+        'offline feature-flag init failed — continuing with in-code defaults (release flag OFF)',
+      );
+      return 'failed';
+    }
   }
 
   const mod = load();
@@ -79,17 +132,10 @@ export async function initFeatureFlags({ load = defaultLoad, env = process.env }
     return 'skipped-unavailable';
   }
 
-  const appName = env.UNLEASH_APP_NAME || DEFAULT_APP_NAME;
   const start = performance.now();
   logger.debug({ op: 'featureflags.init', appName }, 'featureflags.init start');
   try {
-    await mod.init(
-      { url, clientToken, appName },
-      {
-        environment: env.NODE_ENV === 'production' ? 'prod' : env.FLAG_ENV || 'local',
-        app: appName,
-      },
-    );
+    await mod.init({ url, clientToken, appName }, context);
     loaded = mod;
     logger.info(
       { op: 'featureflags.init', appName, elapsedMs: Math.round(performance.now() - start) },

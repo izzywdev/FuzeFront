@@ -636,6 +636,17 @@ jobs:
     # A REAL gate: this suite was TDD-red (continue-on-error) until the service
     # met the frozen contract; it is green now, so a regression must fail the
     # build and `notify` below treats it as a required result.
+    strategy:
+      fail-fast: false
+      matrix:
+        # BOTH flag states are exercised, per the feature-flags skill.
+        #  on  — the offline OpenFeature provider forces the release flag ON
+        #        (FUZE_FLAGS_PROVIDER=offline); the full suite runs through the
+        #        same OpenFeature client path production uses.
+        #  off — no flag provider at all (the fail-safe default an Unleash outage
+        #        produces); only dark.spec.ts runs, proving the service answers
+        #        404. Omitting the vars is how the OFF leg is selected.
+        flag: [on, off]
     services:
       postgres:
         image: postgres:15
@@ -667,16 +678,25 @@ jobs:
         run: |
           npm run -w @fuzefront/security-client build
           npm run -w @fuzefront/service-auth build
+      - name: Build @fuzefront/feature-flags (runtime dist the service require()s)
+        # The service resolves the release flag through @fuzefront/feature-flags
+        # at runtime (lib/featureFlags.ts initFeatureFlags() + flags.ts), so its
+        # dist/index.cjs must exist or require() throws and the flag stays OFF
+        # (every route 404s). The old FLAGS_FORCE_ON short-circuited before the
+        # require, so this build was not needed then; the offline provider runs
+        # the real client path and needs it. (Prod images already build it for
+        # the Unleash path.)
+        run: npm run -w @fuzefront/feature-flags build
       - name: Build selection-list-service
         run: npm run -w selection-list-service build
       - name: Run DB migrations
         env:
           # 'test', not 'production': src/db/index.ts picks the knex env from
           # NODE_ENV, and the service below must run non-production so the
-          # FLAGS_FORCE_ON escape hatch can enable the release flag. Both steps
-          # must agree or migrations land in a different config than the
-          # service reads. The knexfile's `test` env loads the same compiled
-          # dist migrations as `production`.
+          # offline OpenFeature provider can install and enable the release flag
+          # (it is refused in production). Both steps must agree or migrations
+          # land in a different config than the service reads. The knexfile's
+          # `test` env loads the same compiled dist migrations as `production`.
           NODE_ENV: test
           DB_SSL: 'false'
           DB_HOST: localhost
@@ -713,14 +733,13 @@ jobs:
         env:
           # NOT 'production'. Every route in this service is gated behind the
           # `fuzefront.selection-lists.service` release flag, whose default is
-          # OFF and whose only source of truth is Unleash. CI has no Unleash,
-          # so the flag client degrades to the default and every route answers
-          # 404 "Service not enabled." — correct behaviour that made this suite
-          # unpassable by construction (134 of 148 tests failed against a
-          # service working exactly as designed). FLAGS_FORCE_ON below is the
-          # repo's existing escape hatch (backend/src/routes/flags.ts), and it
-          # is hard-gated to non-production so it can never light up a dark
-          # feature in prod — hence NODE_ENV=test here.
+          # OFF and whose only source of truth is Unleash. CI has no Unleash, so
+          # on the `on` leg we install the ONE explicit offline OpenFeature
+          # provider (FUZE_FLAGS_PROVIDER=offline) to force the flag ON through
+          # the SAME client path production uses — it is refused in production,
+          # hence NODE_ENV=test here. On the `off` leg both vars are omitted, so
+          # the service runs dark (the fail-safe Unleash-outage default) and
+          # dark.spec.ts asserts the 404.
           #
           # Two deliberate side effects, both wanted in CI:
           #  - src/index.ts:55 only starts the Kafka lifecycle consumers when
@@ -734,7 +753,10 @@ jobs:
           #    stand-in Security API started above — the role-denial and
           #    mirror-not-authority tests are only meaningful against that.
           NODE_ENV: test
-          FLAGS_FORCE_ON: fuzefront.selection-lists.service
+          # on leg: offline provider forces the release flag ON. off leg: empty,
+          # so no provider installs and the service stays dark.
+          FUZE_FLAGS_PROVIDER: ${{ matrix.flag == 'on' && 'offline' || '' }}
+          FUZE_FLAGS_OFFLINE_ON: ${{ matrix.flag == 'on' && 'fuzefront.selection-lists.service' || '' }}
           SECURITY_SERVICE_URL: http://localhost:3002
           FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
           # Machine identity for Security API grant/revoke (lib/machineIdentity.ts).
@@ -776,7 +798,8 @@ jobs:
         run: cd tests/selection-list-service && npm ci
       - name: Type-check integration tests
         run: cd tests/selection-list-service && npm run type-check
-      - name: Run integration/acceptance tests
+      - name: Run integration/acceptance tests (flag ON)
+        if: matrix.flag == 'on'
         env:
           SERVICE_BASE_URL: http://localhost:3011
           JWT_SECRET: test-jwt-secret-for-selection-list-service
@@ -786,6 +809,20 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
         run: cd tests/selection-list-service && npm test
+      - name: Run dark spec (flag OFF)
+        if: matrix.flag == 'off'
+        # The service was started with NO flag provider (vars omitted above), so
+        # the release flag is OFF. Only dark.spec.ts runs; it asserts POST
+        # /v1/selection-lists => 404 NOT_FOUND and GET /health => 200.
+        env:
+          SERVICE_BASE_URL: http://localhost:3011
+          JWT_SECRET: test-jwt-secret-for-selection-list-service
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: cd tests/selection-list-service && npm run test:dark
       - name: Dump service logs on failure
         if: failure()
         run: cat /tmp/sls.log

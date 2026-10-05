@@ -9,6 +9,8 @@
  */
 export {
   init,
+  optionsFromEnv,
+  FlagsConfigError,
   setContext,
   getBoolean,
   getString,
