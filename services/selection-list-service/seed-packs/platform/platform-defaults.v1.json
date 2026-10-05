@@ -229,7 +229,7 @@
             },
             {
               "locale": "hi",
-              "label": "कम"
+              "label": "निम्न"
             },
             {
               "locale": "ar",
@@ -367,7 +367,7 @@
             },
             {
               "locale": "hi",
-              "label": "अत्यावश्यक"
+              "label": "तत्काल"
             },
             {
               "locale": "ar",
@@ -396,11 +396,11 @@
         },
         {
           "locale": "de",
-          "name": "Arbeitsstatus"
+          "name": "Bearbeitungsstatus"
         },
         {
           "locale": "pt",
-          "name": "Estado do trabalho"
+          "name": "Situação do trabalho"
         },
         {
           "locale": "ru",
@@ -546,7 +546,7 @@
             },
             {
               "locale": "zh",
-              "label": "已阻塞"
+              "label": "受阻"
             },
             {
               "locale": "ja",
@@ -558,7 +558,7 @@
             },
             {
               "locale": "ar",
-              "label": "محظور"
+              "label": "متوقف"
             },
             {
               "locale": "he",
@@ -572,7 +572,7 @@
           "translations": [
             {
               "locale": "es",
-              "label": "Hecho"
+              "label": "Completado"
             },
             {
               "locale": "fr",
@@ -604,7 +604,7 @@
             },
             {
               "locale": "ar",
-              "label": "تم"
+              "label": "مكتمل"
             },
             {
               "locale": "he",
