@@ -313,7 +313,7 @@ describe('PUT /v1/selection-lists/{listId}/items/reorder', () => {
     createdListIds.push(list.id as SelectionListId);
 
     const ids = items.map((i) => i.id as SelectionListItemId);
-    ids.push('sli_01hnonexistentitemid000000' as SelectionListItemId); // extra
+    ids.push('front_sli_01hnonexistentitemid000000' as SelectionListItemId); // extra
     const { status, body } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(list.id)}/items/reorder`,
       {

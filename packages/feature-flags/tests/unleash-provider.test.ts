@@ -36,7 +36,7 @@ describe('toUnleashContext', () => {
   });
 
   it('drops null/undefined rather than stringifying them to "null"', () => {
-    const ctx = toUnleashContext({ targetingKey: 'u-1', orgId: null as any, tenantId: undefined });
+    const ctx = toUnleashContext({ targetingKey: 'u-1', orgId: null as any, tenantId: undefined as any });
     expect(ctx.properties).toEqual({});
   });
 

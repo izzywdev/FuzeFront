@@ -7,8 +7,9 @@ Derived from the frozen contract at [`services/selection-list-service/openapi.ya
 ```ts
 import { SelectionListClient, isSelectionListApiError } from '@fuzeone/selection-list-client'
 
-// In the browser, baseUrl MUST be same-origin — never an absolute host.
-const client = new SelectionListClient({ baseUrl: '/api/selection-lists', token: () => getJwt() })
+// In the browser, baseUrl MUST be same-origin — never an absolute host. Paths already include
+// /v1/..., so baseUrl is the prefix before /v1: '/api' => /api/v1/selection-lists.
+const client = new SelectionListClient({ baseUrl: '/api', token: () => getJwt() })
 
 const { items } = await client.getItems(listId, { status: 'active', locale: 'fr' })
 

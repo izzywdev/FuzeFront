@@ -110,6 +110,18 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     );
   });
 
+  it('classifies fuzefront.apps.org-context-disabled as a default-ON kill-switch, not a release flag', () => {
+    // Runtime default is `true` (ON in prod; frontend useFlag fallback is true).
+    // A default-ON flag is only valid as an ops-kill-switch per the taxonomy;
+    // typing it `release` would violate release => default OFF.
+    const f = WEB_EXPOSED_FLAGS.find(x => x.key === FLAG_KEYS.APPS_ORG_CONTEXT_DISABLED);
+    expect(f).toEqual({
+      key: 'fuzefront.apps.org-context-disabled',
+      type: 'ops-kill-switch',
+      default: true,
+    });
+  });
+
   it('declares release flags fail-safe OFF', () => {
     for (const f of WEB_EXPOSED_FLAGS) {
       if (f.type === 'release') expect(f.default).toBe(false);
