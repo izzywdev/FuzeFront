@@ -117,6 +117,11 @@ For each real evaluation we want to capture:
 - security or governance concerns;
 - whether a second application becomes materially easier than the first.
 
+Want to turn that into a comparable, publishable number instead of an
+anecdote? See [`docs/benchmarks/app-onboarding-benchmark.md`](benchmarks/app-onboarding-benchmark.md) —
+a fixed procedure and results template for exactly the two bullets above
+("time to onboard" and "second app vs. first").
+
 ## Contribute
 
 Look for issues labeled `good first issue`, `help wanted`, `community`, or `adoption`.
