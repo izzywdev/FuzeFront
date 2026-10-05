@@ -362,7 +362,7 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
   };
 
   // Paginate all Stripe customers
-  let page = await stripe.customers.list({ limit: 100, expand: ['data'] });
+  let page = await stripe.customers.list({ limit: 100 });
   while (true) {
     for (const customer of page.data) {
       console.log(`Customer: ${customer.id}  ${customer.email ?? '(no email)'}`);
@@ -377,7 +377,6 @@ async function syncCustomer(stripeCustomer, priceTierMap, stats) {
     if (!page.has_more) break;
     page = await stripe.customers.list({
       limit: 100,
-      expand: ['data'],
       starting_after: page.data[page.data.length - 1].id,
     });
   }
