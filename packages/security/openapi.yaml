@@ -49,11 +49,14 @@ info:
     the product's BACKEND server-to-server (`POST
     /v1/security/broker/token-exchange`), exactly mirroring the existing
     `social/callback` → `session/exchange` code shape. The redirect-URI
-    allowlist enforcement, and the `BrokerClient` registration surface itself,
-    are contract-frozen here but implemented as a follow-up (#238) — see the
-    `broker` tag description. This is a SEPARATE allowlist from the social
-    broker's own `redirectTo` return-origin allowlist (#352), which governs
-    FuzeFront's first-party social handshake, not this third-party handoff.
+    allowlist enforcement is implemented (`backend/security/src/routes/
+    security.ts` + `services/brokerClients.ts`, registry sourced from
+    `BROKER_CLIENTS_JSON`); the `BrokerClient` registration surface itself
+    (a public write/registration endpoint) remains OUT of this contract
+    slice by design — see the `broker` tag description. This is a SEPARATE
+    allowlist from the social broker's own `redirectTo` return-origin
+    allowlist (#352), which governs FuzeFront's first-party social handshake,
+    not this third-party handoff.
 
 
     ## Fail-closed

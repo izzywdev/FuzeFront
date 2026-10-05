@@ -11,11 +11,14 @@ import type {
   AuthMethods,
   SessionResult,
   SocialProvider,
+  BrokerClient,
+  BrokerHandoffRequest,
+  BrokerHandoffResult,
 } from '@fuzefront/security-client'
 
 // Re-export the provider-neutral contract types so existing consumers can keep
 // importing them from this module (e.g. `import { AuthMethods } from '../services/api'`).
-export type { AuthMethods, SessionResult, SocialProvider }
+export type { AuthMethods, SessionResult, SocialProvider, BrokerClient, BrokerHandoffResult }
 
 // Default to the same origin the app is served from (the in-pod / ingress nginx
 // proxies /api/ to the backend). Same-origin keeps the protocol correct — http
@@ -462,6 +465,35 @@ export const authAPI = {
   // path; on completion the app is returned to with `?code=` for exchange.
   async startSocialLogin(provider: SocialProvider = 'google'): Promise<void> {
     window.location.href = `${API_URL}${SECURITY_BASE}/social/${provider}/start`
+  },
+
+  // ── Broker (consumer-product sign-in handoff, #238) ──────────────────────
+  //
+  // Public, unauthenticated branding lookup for a registered broker client
+  // (`?client=` on the sign-in URL). Fails OPEN to `null` on ANY error
+  // (unknown client -> 404, network, etc.) — this is a convenience branding
+  // read, never a gate: the sign-in page must still render with default
+  // FuzeFront branding rather than block or error out.
+  async getBrokerClient(client: string): Promise<BrokerClient | null> {
+    try {
+      const response = await api.get<BrokerClient>(
+        `${SECURITY_BASE}/broker/clients/${encodeURIComponent(client)}`
+      )
+      return response.data
+    } catch {
+      return null
+    }
+  },
+
+  // Mint a one-time handoff code back to the broker client's redirect_uri.
+  // Requires the bearer session just established by login()/signup() — the
+  // request interceptor attaches it from the active account automatically.
+  // Propagates a rejected redirectUri / unknown client / dead session as a
+  // thrown error; the caller decides how to surface it (never navigates on
+  // a failed handoff).
+  async brokerHandoff(input: BrokerHandoffRequest): Promise<BrokerHandoffResult> {
+    const response = await api.post<BrokerHandoffResult>(`${SECURITY_BASE}/broker/handoff`, input)
+    return response.data
   },
 
   // Current identity ("me"). The Security API returns `{ identity, user }`; the
