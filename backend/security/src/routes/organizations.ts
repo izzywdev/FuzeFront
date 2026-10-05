@@ -23,6 +23,8 @@ import { EMPLOYEE_ROLE_CATALOG_ENTRY, resolveEmployeeStatus } from '../services/
 import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { isMemberDirectoryEnabled } from '../utils/memberDirectoryFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
+import { assertTenantMatches, sessionTenantId } from '../middleware/tenant-context'
+import { mintOrgSessionToken, OrgSessionError } from '../services/orgSessionToken'
 
 const router = express.Router()
 
@@ -268,6 +270,50 @@ router.post('/', authenticateToken, async (req: any, res) => {
     }
 
     res.status(500).json({ error: 'Failed to create organization' })
+  }
+})
+
+/**
+ * POST /api/organizations/:id/session-token
+ *
+ * Exchange the caller's session token for a short-lived ORG-SCOPED token
+ * (`{ userId, sessionId, tid, orgId, kind: 'fuze-org-session' }`), minted only
+ * after the caller's ACTIVE membership of :id is verified. This is the verified
+ * source of the `orgId` claim for org-scoped services (selection-list-service);
+ * see services/orgSessionToken.ts for the full rationale and the fail-closed
+ * rules. The org comes from the path, but the CLAIM in the minted token is the
+ * product of the membership check, which is what downstream services trust.
+ *
+ * 200 -> { token, tokenType: 'Bearer', expiresIn, organizationId }
+ * 400 invalid org id · 401 bad/revoked/expired/non-session token · 403 not an
+ * active member (also for a nonexistent org: no existence oracle).
+ */
+router.post('/:id/session-token', authenticateToken, async (req: any, res) => {
+  try {
+    const authHeader = req.headers['authorization']
+    const sessionToken =
+      typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.slice('Bearer '.length)
+        : ''
+    const result = await mintOrgSessionToken({
+      sessionToken,
+      userId: req.user.id,
+      organizationId: req.params.id,
+      tenantAccepts: tid => assertTenantMatches(req, tid).ok,
+      tenantId: sessionTenantId(),
+    })
+    res.setHeader('Cache-Control', 'no-store')
+    res.json(result)
+  } catch (error) {
+    if (error instanceof OrgSessionError) {
+      logger.info(
+        { userId: req.user?.id, reason: error.code, status: error.status },
+        'org-session: exchange refused'
+      )
+      return res.status(error.status).json({ error: error.message, code: error.code })
+    }
+    logger.error({ err: error }, 'org-session: exchange failed')
+    res.status(500).json({ error: 'Failed to create organization session token' })
   }
 })
 

@@ -135,9 +135,23 @@ function isMember(tenant, subject) {
   return !NON_MEMBERS.has(`${tenant}|${subject}`);
 }
 
+/**
+ * The caller's user id and org, from whichever claim names the token uses: the
+ * REAL FuzeFront shapes are a session token `{userId, sessionId, tid}` and the
+ * org-session token `{userId, ..., orgId, kind:'fuze-org-session'}`; the
+ * Authentik-shaped `{sub, organization_id}` is kept for the published contract.
+ * `tid` is the identity-directory tenant and is never read as an org.
+ */
+function subjectOf(claims) {
+  return claims?.userId ?? claims?.sub;
+}
+function orgOf(claims) {
+  return claims?.orgId ?? claims?.organization_id ?? claims?.organizationId;
+}
+
 /** The caller's tenant role, from the JWT `roles` claim (see header). */
 function tenantRoleOf(claims, subject, tenant) {
-  if (!(claims && claims.sub === subject && claims.organization_id === tenant)) return 'developer'; // unknowable -> least
+  if (!(claims && subjectOf(claims) === subject && orgOf(claims) === tenant)) return 'developer'; // unknowable -> least
   const roles = Array.isArray(claims.roles) ? claims.roles.map((r) => (r === 'org-admin' ? 'admin' : r)) : [];
   return TENANT_ROLE_ORDER.find((r) => roles.includes(r)) ?? 'admin';
 }
@@ -235,7 +249,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/api/v1/security/authz/check') {
     const body = await readBody(req);
     if (!body) return send(res, 400, { error: 'Malformed query', code: 'MALFORMED' });
-    return send(res, 200, { allow: decide({ ...body, subject: body.subject || claims.sub }, claims) });
+    return send(res, 200, { allow: decide({ ...body, subject: body.subject || subjectOf(claims) }, claims) });
   }
 
   if (req.method === 'POST' && path === '/api/v1/security/authz/bulk-check') {
@@ -244,7 +258,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 400, { error: 'Malformed checks', code: 'MALFORMED' });
     }
     return send(res, 200, {
-      decisions: body.checks.map((c) => ({ allow: decide({ ...c, subject: c.subject || claims.sub }, claims) })),
+      decisions: body.checks.map((c) => ({ allow: decide({ ...c, subject: c.subject || subjectOf(claims) }, claims) })),
     });
   }
 

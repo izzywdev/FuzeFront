@@ -66,4 +66,6 @@ export {
   probeReorderPermission,
   unwrapItems,
   unwrapCursor,
+  configureSelectionListsAuth,
 } from './api'
+export type { SelectionListsAuth } from './api'

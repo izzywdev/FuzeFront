@@ -20,14 +20,60 @@ import type {
 
 const BASE = '/api/v1/selection-lists'
 
+// ── Authentication ────────────────────────────────────────────────────────────
+//
+// This package is host-agnostic: it never reads storage and never knows which
+// organization is active. The HOST SHELL injects both, once, via
+// `configureSelectionListsAuth` (see frontend/src/lib/selectionListsAuth.ts).
+//
+//  - `getOrgToken` -> the short-lived ORG-SCOPED token (Security API
+//    `POST /api/organizations/:id/session-token`). selection-list-service derives
+//    the org ONLY from a verified claim in this token, so every
+//    selection-list / resolve call must carry it. Resolves to null when there is
+//    no active org (Personal context): the request is then sent without a
+//    credential and the service answers 401, rendered by the flows' error state.
+//  - `getSessionToken` -> the plain session token, for the one call that goes to
+//    the host backend rather than to selection-list-service (user search).
+//
+// Nothing configured -> no Authorization header (unchanged behaviour, and what
+// the package's own tests rely on).
+export interface SelectionListsAuth {
+  getOrgToken?: () => Promise<string | null | undefined> | string | null | undefined
+  getSessionToken?: () => string | null | undefined
+}
+
+let auth: SelectionListsAuth = {}
+
+/** Called by the host shell. Pass `undefined` to clear (e.g. on unmount). */
+export function configureSelectionListsAuth(next?: SelectionListsAuth): void {
+  auth = next ?? {}
+}
+
+type TokenKind = 'org' | 'session'
+
+async function bearerFor(kind: TokenKind): Promise<string | null> {
+  try {
+    const token = kind === 'org' ? await auth.getOrgToken?.() : auth.getSessionToken?.()
+    return token || null
+  } catch {
+    // A failed token resolution must not throw into render: send no credential
+    // and let the service's 401 surface through the normal error state.
+    return null
+  }
+}
+
 async function request<T>(
   url: string,
   options: RequestInit = {},
+  tokenKind: TokenKind = 'org',
 ): Promise<{ data: T; status: number }> {
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
-    ...options,
-  })
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((options.headers as Record<string, string> | undefined) ?? {}),
+  }
+  const token = await bearerFor(tokenKind)
+  if (token && !headers['Authorization']) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(url, { ...options, headers })
 
   if (!res.ok) {
     let err: ApiError = { code: 'UNKNOWN', message: res.statusText }
@@ -261,7 +307,7 @@ export async function searchUsers(
   const { data } = await request<
     | Array<{ id: string; name: string; email: string; already_granted?: boolean }>
     | { users: Array<{ id: string; name: string; email: string; already_granted?: boolean }> }
-  >(`/api/v1/users?${qs.toString()}`)
+  >(`/api/v1/users?${qs.toString()}`, {}, 'session')
   if (Array.isArray(data)) return data
   return (data as { users: Array<{ id: string; name: string; email: string; already_granted?: boolean }> }).users ?? []
 }
@@ -270,7 +316,11 @@ export async function searchUsers(
 
 export async function probeReorderPermission(listId: string): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE}/${listId}/items/reorder`, { method: 'HEAD' })
+    const token = await bearerFor('org')
+    const res = await fetch(`${BASE}/${listId}/items/reorder`, {
+      method: 'HEAD',
+      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+    })
     return res.status !== 403
   } catch {
     // Network error → assume allowed (fail-open)

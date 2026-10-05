@@ -87,6 +87,7 @@ POST /api/organizations/{}/invitations/{}/resend  # backend: resend invitation; 
 DELETE /api/organizations/{}/invitations/{}  # backend: cancel invitation; backend/src lacks openapi.yaml
 GET /api/organizations/{}/members  # backend: org members; backend/src lacks openapi.yaml
 POST /api/organizations/{}/members  # backend: add member; backend/src lacks openapi.yaml
+POST /api/organizations/{}/session-token  # backend/security: exchange a session token for a short-lived org-scoped token (membership-checked) for org-scoped services (selection-list-service); legacy /api/organizations domain surface (frozen spec is /api/v1/security only), parity with the sibling /api/organizations/* routes above
 PUT /api/organizations/{}/members/{}  # backend: update member; backend/src lacks openapi.yaml
 DELETE /api/organizations/{}/members/{}  # backend: remove member; backend/src lacks openapi.yaml
 GET /api/organizations/{}/roles  # backend: org roles; backend/src lacks openapi.yaml

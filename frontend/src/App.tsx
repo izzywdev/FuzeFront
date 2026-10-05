@@ -62,6 +62,7 @@ import {
   SelectionListAccessFlow,
   SelectionListPickerHarness,
 } from '@fuzeone/selection-lists-ui'
+import { useSelectionListsAuth } from './lib/selectionListsAuth'
 
 // Authentication wrapper component
 function AuthWrapper({ children }: { children: React.ReactNode }) {
@@ -525,6 +526,9 @@ const SELECTION_LISTS_FLAG = 'fuzefront.selection-lists.service'
  * (no redirect); settled OFF — including a failed fetch — redirects (fail-closed).
  */
 function useSelectionListsGate(): ReactNode | null {
+  // Org-scoped bearer for the flows' API client. Installed here, in the guard
+  // every selection-list route runs first, so it exists before any flow mounts.
+  useSelectionListsAuth()
   const { enabled, ready } = useFlagState(SELECTION_LISTS_FLAG, false)
   if (!ready) {
     return (
