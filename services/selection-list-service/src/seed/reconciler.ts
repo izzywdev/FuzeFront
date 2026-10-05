@@ -9,6 +9,7 @@
 //   1. Scan the org projection (`selection_list_ref_index`) for orgs that are ACTIVE (status
 //      'active' AND is_active = true), whose type the current platform pack `appliesTo`, and whose
 //      ledger has NO row for (org, 'platform', packKey) at version >= the pack's current version.
+//      (OR whose owner still lacks the list-owner grant on a seeded list - ownerGrants.ts)
 //      Keyset-paged on wire_id, `batchSize` per page, at most `maxOrgs` examined per tick.
 //      A deleted tombstone, an inactive org, an org of an excluded type (the root `platform` org)
 //      is never a candidate - it is never even handed to the seed library.
@@ -50,6 +51,7 @@ import {
   reconcilerSweepsTotal,
 } from '../lib/metrics';
 import { isSeedingEnabled as defaultIsSeedingEnabled } from './flagGate';
+import { OWNER_GRANT_PENDING_SQL } from './ownerGrants';
 import { applyPlatformDefaults as defaultApplyPlatformDefaults, type PlatformSeedOutcome } from './platform';
 import { currentPlatformPacks, DEFAULT_PLATFORM_PACK_DIR } from './packs';
 import { PLATFORM_SEED_SOURCE } from '@fuzefront/shared/kafka';
@@ -205,6 +207,9 @@ function needsClause(packs: ReturnType<typeof currentPlatformPacks>): { sql: str
     );
     bindings.push(...types, PLATFORM_SEED_SOURCE, p.packKey, p.version);
   }
+  // Also a candidate: an org already seeded whose owner still lacks list-owner on a seeded list (a grant
+  // that failed earlier, or lists seeded before owner grants existed). applyPlatformDefaults heals it.
+  parts.push(OWNER_GRANT_PENDING_SQL);
   return { sql: parts.join(' OR '), bindings };
 }
 

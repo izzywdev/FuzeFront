@@ -33,6 +33,7 @@
 // safely: the route acts as if the service does not yet exist for the org.
 
 import { logger } from './lib/logger'
+import { canonicalFlagOrgId, canonicalFlagUserId } from './lib/flagIdentity'
 
 export interface FlagContext {
   environment: string
@@ -88,8 +89,15 @@ function resolveClient(): FlagClientLike | null {
   }
 }
 
-function buildContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
-  const { organizationId, ...rest } = ctx ?? {}
+/**
+ * The evaluation context for EVERY flag read in this service (HTTP gate, quota, routes, seed
+ * consumers, reconciler). Identities are normalised to ONE canonical form — the wire TypeID
+ * (`org_…` / `usr_…`; see lib/flagIdentity.ts) — so an Unleash `orgId` constraint matches the same
+ * org on the seeding path (which holds the TypeID) and on the HTTP path (which holds the raw JWT
+ * claim, a TypeID or a bare UUID).
+ */
+export function buildFlagContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
+  const { organizationId, userId, ...rest } = ctx ?? {}
   return {
     environment:
       process.env.NODE_ENV === 'production' ? 'prod' : process.env.FLAG_ENV || 'local',
@@ -97,7 +105,8 @@ function buildContext(ctx?: Partial<FlagContext>): Record<string, unknown> {
     // The client context contract names this `orgId` (packages/feature-flags/
     // src/types.ts). Map organizationId -> orgId so Unleash org-targeted
     // constraints match correctly.
-    ...(organizationId ? { orgId: organizationId } : {}),
+    ...(organizationId ? { orgId: canonicalFlagOrgId(organizationId) } : {}),
+    ...(userId ? { userId: canonicalFlagUserId(userId) } : {}),
     ...rest,
   }
 }
@@ -140,7 +149,7 @@ export async function isSelectionListsEnabled(
   const client = resolveClient()
   if (!client) return false // fail-safe: release default OFF
   try {
-    return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SERVICE, false, buildContext(ctx))
+    return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SERVICE, false, buildFlagContext(ctx))
   } catch (err) {
     logger.warn({ err, flag: FLAGS.SELECTION_LISTS_SERVICE }, 'flag evaluation failed — using fail-safe default OFF')
     return false
@@ -164,7 +173,7 @@ export async function isSeedDefaultsEnabled(
   const client = resolveClient()
   if (!client) return false // fail-safe: release default OFF
   try {
-    return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SEED_DEFAULTS, false, buildContext(ctx))
+    return await client.getBooleanValue(FLAGS.SELECTION_LISTS_SEED_DEFAULTS, false, buildFlagContext(ctx))
   } catch (err) {
     logger.warn({ err, flag: FLAGS.SELECTION_LISTS_SEED_DEFAULTS }, 'flag evaluation failed — using fail-safe default OFF')
     return false
