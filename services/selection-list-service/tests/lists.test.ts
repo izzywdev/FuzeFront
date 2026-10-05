@@ -55,10 +55,14 @@ jest.mock('../src/middleware/quota', () => ({
 
 const mockLockQuotaScope = jest.fn().mockResolvedValue(undefined);
 const mockCheckListQuota = jest.fn().mockResolvedValue(undefined);
+const mockCheckActiveListQuota = jest.fn().mockResolvedValue(undefined);
+const mockCheckLocaleQuota = jest.fn().mockResolvedValue(undefined);
 jest.mock('../src/services/quota.service', () => ({
   ...jest.requireActual('../src/services/quota.service'),
   lockQuotaScope: (...args: any[]) => mockLockQuotaScope(...args),
   checkListQuota: (...args: any[]) => mockCheckListQuota(...args),
+  checkActiveListQuota: (...args: any[]) => mockCheckActiveListQuota(...args),
+  checkLocaleQuota: (...args: any[]) => mockCheckLocaleQuota(...args),
 }));
 
 // ─── Creator -> list-owner grant (Security API + mirror, inside the create tx) ─
@@ -136,6 +140,8 @@ beforeEach(() => {
   mockTransaction.mockImplementation(async (cb: (t: typeof mockTrx) => Promise<void>) => cb(mockTrx));
   mockLockQuotaScope.mockReset().mockResolvedValue(undefined);
   mockCheckListQuota.mockReset().mockResolvedValue(undefined);
+  mockCheckActiveListQuota.mockReset().mockResolvedValue(undefined);
+  mockCheckLocaleQuota.mockReset().mockResolvedValue(undefined);
   mockGrantListOwner.mockReset().mockResolvedValue(undefined);
   setFlagClient({ getBooleanValue: async () => true });
 });
@@ -394,7 +400,8 @@ describe('POST /v1/selection-lists', () => {
       .send({ key: 'countries', name: 'Countries' });
 
     expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `org_lists:${TEST_ORG_ID}`);
-    expect(mockCheckListQuota).toHaveBeenCalledWith(TEST_ORG_ID, mockTrx);
+    // The third argument is the creating user: `user_lists` is enforced in the same locked re-check (review M-4).
+    expect(mockCheckListQuota).toHaveBeenCalledWith(TEST_ORG_ID, mockTrx, TEST_USER_ID);
     expect(mockLockQuotaScope.mock.invocationCallOrder[0]).toBeLessThan(
       mockCheckListQuota.mock.invocationCallOrder[0],
     );
@@ -590,6 +597,94 @@ describe('PATCH /v1/selection-lists/:listId', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CONFLICT');
+  });
+
+  // Un-archiving raises the ACTIVE count without any create, so it must hit the same ceilings.
+  describe('un-archive (status archived -> active) is subject to the active quotas (review M-4)', () => {
+    const ARCHIVED_ROW = { id: TEST_LIST_ID, source_locale: 'en', status: 'archived', key: 'countries', created_by: TEST_USER_ID };
+
+    it('takes the org advisory lock and re-checks org_lists + user_lists for the list author', async () => {
+      mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'active' }] });
+      mockTrxRaw
+        .mockResolvedValueOnce({ rows: [ARCHIVED_ROW] }) // existing
+        .mockResolvedValue({ rows: [] });
+
+      const res = await request(app)
+        .patch(`/v1/selection-lists/${TEST_LIST_ID}`)
+        .set(authHeader())
+        .send({ status: 'active' });
+
+      expect(res.status).toBe(200);
+      expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `org_lists:${TEST_ORG_ID}`);
+      expect(mockCheckActiveListQuota).toHaveBeenCalledWith(TEST_ORG_ID, TEST_USER_ID, mockTrx);
+    });
+
+    it('does not apply user_lists to a list authored by the system principal', async () => {
+      mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, status: 'active' }] });
+      mockTrxRaw
+        .mockResolvedValueOnce({ rows: [{ ...ARCHIVED_ROW, created_by: 'system:selection-list-service' }] })
+        .mockResolvedValue({ rows: [] });
+
+      await request(app).patch(`/v1/selection-lists/${TEST_LIST_ID}`).set(authHeader()).send({ status: 'active' });
+
+      expect(mockCheckActiveListQuota).toHaveBeenCalledWith(TEST_ORG_ID, undefined, mockTrx);
+    });
+
+    it('refuses with 403 QUOTA_EXCEEDED (not 500) and writes nothing when a ceiling is hit', async () => {
+      const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+      mockCheckActiveListQuota.mockRejectedValueOnce(new QuotaExceededError('user_lists', 20, 20, 'lists per user'));
+      mockTrxRaw.mockResolvedValueOnce({ rows: [ARCHIVED_ROW] }).mockResolvedValue({ rows: [] });
+
+      const res = await request(app)
+        .patch(`/v1/selection-lists/${TEST_LIST_ID}`)
+        .set(authHeader())
+        .send({ status: 'active' });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'user_lists', limit: 20, current: 20 });
+      expect(mockRaw).not.toHaveBeenCalled(); // the post-commit fetch is never reached
+    });
+
+    it('does not re-check when the list is already active, or when archiving', async () => {
+      mockRaw.mockResolvedValue({ rows: [{ ...LIST_ROW }] });
+      mockTrxRaw.mockResolvedValueOnce({ rows: [{ ...ARCHIVED_ROW, status: 'active' }] }).mockResolvedValue({ rows: [] });
+      await request(app).patch(`/v1/selection-lists/${TEST_LIST_ID}`).set(authHeader()).send({ status: 'active' });
+      mockTrxRaw.mockResolvedValueOnce({ rows: [{ ...ARCHIVED_ROW, status: 'active' }] }).mockResolvedValue({ rows: [] });
+      await request(app).patch(`/v1/selection-lists/${TEST_LIST_ID}`).set(authHeader()).send({ status: 'archived' });
+
+      expect(mockCheckActiveListQuota).not.toHaveBeenCalled();
+    });
+  });
+
+  it('adding a locale through PATCH (a source_locale change with a name) checks list_locales', async () => {
+    mockRaw.mockResolvedValueOnce({ rows: [{ ...LIST_ROW, source_locale: 'fr' }] });
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries', created_by: TEST_USER_ID }] })
+      .mockResolvedValue({ rows: [] });
+
+    await request(app)
+      .patch(`/v1/selection-lists/${TEST_LIST_ID}`)
+      .set(authHeader())
+      .send({ source_locale: 'fr', name: 'Pays' });
+
+    expect(mockLockQuotaScope).toHaveBeenCalledWith(mockTrx, `list_locales:${TEST_LIST_ID}`);
+    expect(mockCheckLocaleQuota).toHaveBeenCalledWith(TEST_LIST_ID, TEST_ORG_ID, 'fr', mockTrx);
+  });
+
+  it('refuses with 403 QUOTA_EXCEEDED list_locales when the list is at its locale ceiling', async () => {
+    const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+    mockCheckLocaleQuota.mockRejectedValueOnce(new QuotaExceededError('list_locales', 3, 3, 'locales'));
+    mockTrxRaw
+      .mockResolvedValueOnce({ rows: [{ id: TEST_LIST_ID, source_locale: 'en', status: 'active', key: 'countries', created_by: TEST_USER_ID }] })
+      .mockResolvedValue({ rows: [] });
+
+    const res = await request(app)
+      .patch(`/v1/selection-lists/${TEST_LIST_ID}`)
+      .set(authHeader())
+      .send({ source_locale: 'fr', name: 'Pays' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_locales' });
   });
 });
 

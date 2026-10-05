@@ -33,9 +33,11 @@
 //
 //  4. The selection_list_access table is a READ-MODEL MIRROR — it is never
 //     consulted for authorization. It is updated by grantListOwner() and
-//     src/routes/access.ts's PUT/DELETE handlers for display purposes and
-//     for the last-owner guard. countActiveOwners() (routes/access.ts) reads
-//     ONLY this mirror and is untouched by this migration.
+//     src/routes/access.ts's PUT/DELETE handlers for display purposes and as
+//     the CANDIDATE set of the last-owner guard — the guard itself asks the
+//     Security API (services/authority.ts hasConfirmedOtherOwner, review M-2).
+//     countActiveOwners() below is a mirror-only count (diagnostics), not the
+//     guard.
 //
 //  5. `resource` is what makes a grant/revoke/check INSTANCE-scoped (ReBAC).
 //     Every call site that has a listId passes
@@ -437,17 +439,17 @@ export async function grantListOwner(
 }
 
 // ---------------------------------------------------------------------------
-// countActiveOwners — last-owner guard helper (UNCHANGED by this migration)
+// countActiveOwners — mirror-only owner count (NOT the last-owner guard)
 // ---------------------------------------------------------------------------
 
 /**
  * Returns the number of active (non-revoked) list-owner assignments for listId
  * in the read-model mirror.
  *
- * Used ONLY for the last-owner guard (409 check before demotion / revocation).
- * NOT used for authorization. Reads the local mirror table exclusively — it
- * has nothing to do with Permit or the Security API, and this migration does
- * not touch it.
+ * A diagnostic count of mirror rows. The last-owner guard (409 before a
+ * demotion / revocation) no longer trusts it: it asks the Security API
+ * (services/authority.ts, review M-2). NOT used for authorization. Reads the
+ * local mirror table exclusively.
  */
 export async function countActiveOwners(listId: string): Promise<number> {
   const result = await db('selection_list_access')

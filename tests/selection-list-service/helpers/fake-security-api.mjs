@@ -226,10 +226,11 @@ const server = http.createServer(async (req, res) => {
   // Everything below authenticates a HUMAN session token (decoded, not verified).
   // GET /authz/grants (listing) and decisions keep using it; the machine-only
   // write routes above were already authorised, so give them a synthetic caller.
-  const claims =
-    machineScopesOf(req) && path === '/api/v1/security/authz/grants'
-      ? { sub: `svc:${MACHINE_CLIENT_ID}` }
-      : claimsOf(req);
+  // A machine token (the service's own identity, minted by POST /tokens above) is a valid caller for
+  // every authz route, like the real Security API's caller(): it is how the service asks decision
+  // questions about OTHER subjects when no end-user token exists (e.g. the identity.user.deleted
+  // handler's last-owner probe). It carries no tenant role, so it can never satisfy a tenant-level check.
+  const claims = machineScopesOf(req) ? { sub: `svc:${MACHINE_CLIENT_ID}` } : claimsOf(req);
   if (!claims) return send(res, 401, { error: 'Authentication required', code: 'AUTH_REQUIRED' });
 
   if (req.method === 'POST' && path === '/api/v1/security/authz/check') {
@@ -288,7 +289,27 @@ const server = http.createServer(async (req, res) => {
       return send(res, 204);
     }
     if (req.method === 'GET') {
-      return send(res, 200, { items: [], page: { nextCursor: null, hasMore: false } });
+      // The caller's (or, with ?subject=, another subject's) grants in a tenant, instance-scoped ones
+      // carrying their `resource`, like the real GET /authz/grants. Single page.
+      const tenant = url.searchParams.get('tenant');
+      if (!tenant) return send(res, 400, { error: 'tenant is required', code: 'MALFORMED' });
+      const subject = url.searchParams.get('subject') || claims.sub;
+      const items = [];
+      for (const [k, roles] of grants) {
+        const [t, res_, s] = k.split('|');
+        if (t !== tenant || s !== subject) continue;
+        const idx = res_.indexOf(':');
+        for (const role of roles) {
+          items.push({
+            id: `${t}:${s}:${role}`,
+            subject: s,
+            tenant: t,
+            role,
+            resource: { type: res_.slice(0, idx), key: res_.slice(idx + 1) },
+          });
+        }
+      }
+      return send(res, 200, { items, page: { nextCursor: null, hasMore: false, total: items.length } });
     }
   }
 

@@ -33,7 +33,17 @@ import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceListQuota, sendQuotaExceeded } from '../middleware/quota';
-import { lockQuotaScope, checkListQuota, QuotaExceededError } from '../services/quota.service';
+import {
+  lockQuotaScope,
+  checkListQuota,
+  checkActiveListQuota,
+  checkLocaleQuota,
+  isUserPrincipal,
+  QuotaExceededError,
+} from '../services/quota.service';
+import { revokeInstanceGrants, type InstanceGrant } from '../services/authority';
+import { getGrantToken } from '../lib/machineIdentity';
+import { grantCleanupFailedTotal } from '../lib/metrics';
 import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
 import { refreshListUserModified } from '../seed/content';
@@ -493,7 +503,7 @@ router.post('/', requireCatalogCheck('create'), enforceListQuota, async (req: Re
       // Exact quota enforcement: serialise creates for this org, re-check the
       // ceiling under the lock, then insert (see quota.service.ts header).
       await lockQuotaScope(trx, `org_lists:${req.orgId}`);
-      await checkListQuota(req.orgId as string, trx);
+      await checkListQuota(req.orgId as string, trx, req.userId);
 
       await trx.raw(
         `
@@ -757,13 +767,26 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
 
       // Fetch the existing list row (scoped to org) inside the transaction; it is
       // also the `before` state the event diff is taken against.
-      const existing = await trx.raw<{ rows: Array<{ id: string; source_locale: string; status: string; key: string }> }>(
-        `SELECT id, source_locale, status, key FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
+      const existing = await trx.raw<{ rows: Array<{ id: string; source_locale: string; status: string; key: string; created_by?: string }> }>(
+        `SELECT id, source_locale, status, key, created_by FROM selection_lists WHERE id = ? AND organization_id = ? FOR NO KEY UPDATE`,
         [listId, req.orgId],
       );
       if (!existing.rows[0]) return 'not-found';
       const current = existing.rows[0];
       const before = await readList(trx, listId);
+
+      // Un-archiving raises the ACTIVE count without any create, so it is subject
+      // to the same ceilings (review M-4): org_lists, and user_lists for a list a
+      // user authored (system / deleted-user authors are not users). Exact: under
+      // the same advisory lock the create handler takes.
+      if (body.status === 'active' && current.status === 'archived') {
+        await lockQuotaScope(trx, `org_lists:${req.orgId}`);
+        await checkActiveListQuota(
+          req.orgId as string,
+          current.created_by && isUserPrincipal(current.created_by) ? current.created_by : undefined,
+          trx,
+        );
+      }
 
       // Update the list row — always bump updated_at (plus any changed scalars)
       const listUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
@@ -786,6 +809,9 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
         const newDesc = body.description !== undefined ? body.description : undefined;
 
         if (newName) {
+          // Writing a locale the list does not have yet adds one (list_locales).
+          await lockQuotaScope(trx, `list_locales:${listId}`);
+          await checkLocaleQuota(listId, req.orgId as string, targetLocale, trx);
           await trx.raw(
             `
             INSERT INTO selection_list_translations (list_id, locale, name, description, source_hash, is_machine)
@@ -860,6 +886,10 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
 
     res.status(200).json(formatList(updatedResult.rows[0]));
   } catch (err: unknown) {
+    if (err instanceof QuotaExceededError) {
+      sendQuotaExceeded(res, err);
+      return;
+    }
     const pg = err as { code?: string };
     if (pg?.code === '23505') {
       res.status(409).json({ code: 'CONFLICT', message: 'A list with that key already exists.' });
@@ -875,6 +905,34 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
 
 // ─── DELETE /:listId — archive or purge ──────────────────────────────────────
 
+/**
+ * Revoke the Security API assignments of a purged list (review L-5). Never
+ * throws: the purge has committed. No machine identity -> nothing can be
+ * revoked; that is logged and counted, not raised.
+ */
+async function cleanupPurgedGrants(req: Request, listId: string, grants: InstanceGrant[]): Promise<void> {
+  if (grants.length === 0) return;
+  const log = getLog(req);
+  try {
+    const token = await getGrantToken();
+    const { revoked, failed } = await revokeInstanceGrants({
+      orgId: req.orgId as string,
+      listId,
+      grants,
+      token,
+      cause: 'purge',
+      log,
+    });
+    log.info({ listId, revoked, failed: failed.length }, 'purge: revoked Security API grants on the purged list');
+  } catch (err) {
+    grantCleanupFailedTotal.inc({ cause: 'purge' }, grants.length);
+    log.warn(
+      { err, listId, orgId: req.orgId, grants: grants.length },
+      'purge: could not revoke Security API grants (machine identity unavailable) — orphan role assignments left for reconciliation',
+    );
+  }
+}
+
 router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (req: Request, res: Response): Promise<void> => {
   if (!(await isSelectionListsEnabled({ organizationId: req.orgId, userId: req.userId }))) {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Not found.' });
@@ -888,6 +946,9 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
 
   const { listId } = req.params;
   const purge = req.query.purge === 'true';
+  // Grants that were live on a purged list (read inside the transaction, before
+  // the mirror rows are deleted) — revoked in the Security API after commit (L-5).
+  let purgedGrants: InstanceGrant[] = [];
 
   try {
     // One transaction for the existence check, the change and its outbox event.
@@ -921,7 +982,14 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
         // Delete list translations
         await trx.raw(`DELETE FROM selection_list_translations WHERE list_id = ?`, [listId]);
         // Delete the access-grant mirror rows (FK ON DELETE RESTRICT) — purge
-        // cascades to every access grant (openapi DELETE /{listId}).
+        // cascades to every access grant (openapi DELETE /{listId}). The live
+        // ones are remembered so the Security API assignments can be revoked
+        // once this transaction has committed (review L-5).
+        const liveGrants = await trx.raw<{ rows?: InstanceGrant[] }>(
+          `SELECT user_id, role FROM selection_list_access WHERE list_id = ? AND revoked_at IS NULL`,
+          [listId],
+        );
+        purgedGrants = liveGrants?.rows ?? [];
         await trx.raw(`DELETE FROM selection_list_access WHERE list_id = ?`, [listId]);
         // Detach the audit rows (selection_list_audit.list_id is an FK without cascade; seeding writes
         // list-level rows) - the trail is kept, the list reference is dropped (seed audit rows also carry
@@ -944,6 +1012,12 @@ router.delete('/:listId', requireAuthzCheck('SelectionList', 'delete'), async (r
     }
 
     if (purge) {
+      // After commit, best-effort: the list and its mirror rows are already gone,
+      // so a Security API hiccup must not turn a successful purge into an error.
+      // Orphaned `SelectionList:<id>` assignments are harmless (ids are never
+      // reused) but are PDP clutter; failures are logged per grant and counted
+      // (selection_list_grant_cleanup_failed_total{cause="purge"}).
+      await cleanupPurgedGrants(req, listId, purgedGrants);
       res.status(204).send();
     } else {
       // Return the archived list

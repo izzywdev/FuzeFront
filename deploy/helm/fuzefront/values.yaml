@@ -908,6 +908,34 @@ selectionListService:
   # and the flag fuzefront.selection-lists.service (default OFF => 404) gates it.
   ingress:
     enabled: true
+    # Edge rate limit on the two published route families (review M-4), per
+    # client IP. ENABLED by default: it only renders when this service AND its
+    # ingress are enabled (the service ships dark), it touches only these two
+    # route families (never another service's traffic), and the defaults are an
+    # abuse bound, not a meter -- interactive use stays far below them.
+    #   rps             sustained requests per second per client
+    #   burstMultiplier extra requests tolerated = rps x burstMultiplier
+    # nginx-ingress: limit-rps / limit-burst-multiplier annotations.
+    # traefik:       a rateLimit Middleware (average = rps, burst = rps x multiplier).
+    # `resolve` is the hot path (one call renders a page of stored ids), so its
+    # ceiling is higher than the CRUD family (`api`), which cannot be split into
+    # reads vs writes at the edge (same path, different method). Every key is
+    # declared here on purpose: the template fails the render if one is missing
+    # (`required`), it never substitutes a default.
+    rateLimit:
+      enabled: true
+      # Traefik only: group clients by this request header instead of the TCP
+      # peer. REQUIRED behind a CDN, where the peer is a shared edge address and
+      # per-peer limiting would throttle unrelated users together. Empty =
+      # Traefik's default source (the peer, or X-Forwarded-For per Traefik's own
+      # trusted-proxy config). values-prod.yaml sets it (Cloudflare).
+      clientIpHeader: ""
+      resolve:
+        rps: 100
+        burstMultiplier: 4
+      api:
+        rps: 30
+        burstMultiplier: 4
 
 # MCP SSE gateway for the selection-list-service. Ships dark by default alongside
 # the service itself. Both selectionListService.enabled AND selectionListsMcp.enabled

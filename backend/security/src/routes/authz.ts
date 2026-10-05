@@ -51,12 +51,14 @@
 import express, { Request, Response } from 'express'
 import { getIdentityProvider } from '../providers/factory'
 import { getAuthorizationProvider } from '../providers/authzFactory'
+import { InvalidCursorError } from '../providers/AuthorizationProvider'
 import type { AttributeValue, AuthzQuery, SubjectType } from '../providers/AuthorizationProvider'
 import { withReqId } from '../lib/logger'
 import { introspectMachineToken } from '../services/machine-identity'
 import {
   AUTHZ_ADMIN_SCOPE,
   authorizeGrantMutation,
+  authorizePlatformAdmin,
   authorizeSubjectRead,
   authorizeTenantAction,
   authorizeTenantAdmin,
@@ -504,25 +506,70 @@ async function gateTenant(
   return enforce(gate, res, log, c, `tenant:${req.method} ${need === 'admin' ? 'admin' : need.action}`, { tenant: tenantId })
 }
 
+/**
+ * `GET /tenants` — tenants VISIBLE TO THE CALLER (contract: "List tenants visible
+ * to the caller"). A platform administrator (`Organization:manage` on the root
+ * tenant) or a machine caller holding `authz:admin` sees every tenant; anyone
+ * else sees only the tenants in which they hold a role. This used to return every
+ * tenant to every authenticated caller, which let any account enumerate the
+ * whole customer base. A provider failure while deciding is a 502, never a
+ * widening: the caller is NOT silently downgraded to the member view, because
+ * "I could not tell" is not "no".
+ */
 router.get('/tenants', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  const page = await getAuthorizationProvider().listTenants(c.id, {
-    limit: req.query.limit ? Number(req.query.limit) : undefined,
-    cursor: req.query.cursor ? String(req.query.cursor) : undefined,
-  })
-  res.status(200).json(page)
+  const provider = getAuthorizationProvider()
+  const platform = await authorizePlatformAdmin(provider, c)
+  if (!platform.allowed && platform.status === 502) {
+    log.warn({ callerId: c.id, callerKind: c.kind }, 'authz: tenant list — platform check unavailable')
+    return res.status(502).json({ error: platform.error, code: platform.code })
+  }
+  try {
+    const page = await provider.listTenants(
+      c.id,
+      {
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+        cursor: req.query.cursor ? String(req.query.cursor) : undefined,
+      },
+      platform.allowed ? 'all' : 'member'
+    )
+    log.info(
+      { callerId: c.id, callerKind: c.kind, scope: platform.allowed ? 'all' : 'member', returned: page.items.length },
+      'authz: tenants listed'
+    )
+    res.status(200).json(page)
+  } catch (err) {
+    if (err instanceof InvalidCursorError) {
+      return res.status(400).json({ error: 'invalid pagination cursor', code: 'MALFORMED' })
+    }
+    log.error({ callerId: c.id, err: (err as Error).message }, 'authz: listTenants failed')
+    res.status(502).json({ error: 'listTenants failed', code: 'PROVIDER_ERROR' })
+  }
 })
 
+/**
+ * `POST /tenants` — creating a tenant is a PLATFORM act (it mints a new
+ * authorization scope every grant is then made inside). It requires
+ * `Organization:manage` on the platform root tenant (FuzeFront staff) or, for a
+ * machine caller, `authz:admin`. Any other authenticated caller is 403, decided
+ * BEFORE the body is looked at. Customer organizations are created through the
+ * organization APIs, which provision their tenant themselves.
+ */
 router.post('/tenants', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  const gate = await authorizePlatformAdmin(getAuthorizationProvider(), c)
+  if (!enforce(gate, res, log, c, 'tenant:create', {})) return
   if (!req.body?.name) return res.status(400).json({ error: 'name is required', code: 'MALFORMED' })
   try {
     const tenant = await getAuthorizationProvider().createTenant({
       name: String(req.body.name),
       slug: req.body.slug ? String(req.body.slug) : undefined,
     })
+    log.info({ callerId: c.id, callerKind: c.kind, tenantId: tenant.id }, 'authz: tenant created')
     res.status(201).json(tenant)
   } catch (err) {
     res.status(502).json({ error: 'createTenant failed', code: 'PROVIDER_ERROR' })

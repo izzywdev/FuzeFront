@@ -14,6 +14,11 @@ let mockQuotaRow: Record<string, unknown> | undefined = undefined;
 let mockListCount = '0';
 let mockItemCount = '0';
 let mockUserListCount = '0';
+// Rows STORED (any status) - the hard storage ceiling counts these, archived included.
+let mockStoredListCount = '0';
+let mockStoredItemCount = '0';
+let mockLocaleExists = false;
+let mockLocaleCount = '0';
 
 // Tracks which table was queried (for assertion in some tests)
 const queriedTables: string[] = [];
@@ -32,9 +37,20 @@ const makeQB = (table: string) => {
         // Determine if this is a user-scoped or org-scoped query
         const whereCall = (qb.where as jest.Mock).mock.calls[0]?.[0];
         if (whereCall?.created_by) return { count: mockUserListCount };
+        // No status filter = the storage-ceiling count (archived rows included).
+        if (whereCall && !('status' in whereCall)) return { count: mockStoredListCount };
         return { count: mockListCount };
       }
-      if (table === 'selection_list_items') return { count: mockItemCount };
+      if (table === 'selection_list_items') {
+        const whereCall = (qb.where as jest.Mock).mock.calls[0]?.[0];
+        if (whereCall && !('status' in whereCall)) return { count: mockStoredItemCount };
+        return { count: mockItemCount };
+      }
+      if (table === 'selection_list_translations') {
+        // count('* as count') = the distinct-locale count; otherwise the "does this locale exist" probe.
+        if ((qb.count as jest.Mock).mock.calls.length > 0) return { count: mockLocaleCount };
+        return mockLocaleExists ? { locale: 'fr' } : undefined;
+      }
       return undefined;
     }),
   };
@@ -52,6 +68,12 @@ import {
   getQuota,
   checkListQuota,
   checkItemQuota,
+  checkActiveListQuota,
+  checkActiveItemQuota,
+  checkLocaleQuota,
+  isUserPrincipal,
+  storageCeilingFactor,
+  DEFAULT_STORAGE_CEILING_FACTOR,
   getQuotaUsage,
   lockQuotaScope,
   DEFAULT_MAX_LISTS,
@@ -67,6 +89,11 @@ function resetMocks() {
   mockListCount = '0';
   mockItemCount = '0';
   mockUserListCount = '0';
+  mockStoredListCount = '0';
+  mockStoredItemCount = '0';
+  mockLocaleExists = false;
+  mockLocaleCount = '0';
+  delete process.env.SELECTION_LISTS_STORAGE_CEILING_FACTOR;
   queriedTables.length = 0;
   (require('../src/db').db as jest.Mock).mockClear();
 }
@@ -398,5 +425,141 @@ describe('checkListQuota / checkItemQuota with an explicit transaction executor'
       current: 5,
     });
     expect(require('../src/db').db).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Review M-4: user_lists, the storage ceiling, list_locales ───────────────
+
+describe('user_lists (checkListQuota with a user)', () => {
+  beforeEach(resetMocks);
+
+  it('throws scope=user_lists with the per-user current/limit when the user is at the ceiling', async () => {
+    mockUserListCount = String(DEFAULT_MAX_LISTS_PER_USER);
+    const err = await checkListQuota('org_abc', undefined, 'usr_me').catch((e) => e);
+    expect(err).toBeInstanceOf(QuotaExceededError);
+    expect(err).toMatchObject({ scope: 'user_lists', current: DEFAULT_MAX_LISTS_PER_USER, limit: DEFAULT_MAX_LISTS_PER_USER });
+  });
+
+  it('passes one below the ceiling, and is not asked at all when no user is given', async () => {
+    mockUserListCount = String(DEFAULT_MAX_LISTS_PER_USER - 1);
+    await expect(checkListQuota('org_abc', undefined, 'usr_me')).resolves.toBeUndefined();
+    mockUserListCount = '9999';
+    await expect(checkListQuota('org_abc')).resolves.toBeUndefined();
+  });
+
+  it('counts ACTIVE lists the user created in THIS org', async () => {
+    const { db } = require('../src/db');
+    await checkListQuota('org_abc', undefined, 'usr_me');
+    const qb = (db as jest.Mock).mock.results.map((r) => r.value).find((q) => (q.where as jest.Mock).mock.calls.some((c) => c[0]?.created_by));
+    expect((qb.where as jest.Mock).mock.calls[0][0]).toEqual({ organization_id: 'org_abc', created_by: 'usr_me', status: 'active' });
+  });
+
+  it('uses the per-org override of max_lists_per_user', async () => {
+    mockQuotaRow = { organization_id: 'org_abc', max_lists: null, max_lists_per_user: 3, max_items_per_list: null, max_locales: null };
+    mockUserListCount = '3';
+    await expect(checkListQuota('org_abc', undefined, 'usr_me')).rejects.toMatchObject({ scope: 'user_lists', limit: 3 });
+  });
+
+  it('the org ceiling is reported first when both are exceeded', async () => {
+    mockListCount = String(DEFAULT_MAX_LISTS);
+    mockUserListCount = String(DEFAULT_MAX_LISTS_PER_USER);
+    await expect(checkListQuota('org_abc', undefined, 'usr_me')).rejects.toMatchObject({ scope: 'org_lists' });
+  });
+
+  it('checkActiveListQuota (the un-archive check) does not apply the storage ceiling', async () => {
+    mockStoredListCount = '100000';
+    await expect(checkActiveListQuota('org_abc', 'usr_me')).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ['usr_01abc', true],
+    ['0195a8f2-aaaa-7a11-8b2d-3f4e5a6b7c8d', true],
+    ['system:selection-list-service', false],
+    ['[deleted-user]', false],
+    ['', false],
+  ])('isUserPrincipal(%p) = %p', (who, expected) => {
+    expect(isUserPrincipal(who)).toBe(expected);
+  });
+});
+
+describe('hard storage ceiling (archived rows count)', () => {
+  beforeEach(resetMocks);
+
+  it('defaults: factor 10 -> lists 1000, items 5000 per list', async () => {
+    expect(DEFAULT_STORAGE_CEILING_FACTOR).toBe(10);
+    mockStoredListCount = String(DEFAULT_MAX_LISTS * 10 - 1);
+    await expect(checkListQuota('org_abc')).resolves.toBeUndefined();
+    mockStoredListCount = String(DEFAULT_MAX_LISTS * 10);
+    await expect(checkListQuota('org_abc')).rejects.toMatchObject({
+      scope: 'org_lists',
+      current: DEFAULT_MAX_LISTS * 10,
+      limit: DEFAULT_MAX_LISTS * 10,
+    });
+
+    mockStoredItemCount = String(DEFAULT_MAX_ITEMS_PER_LIST * 10 - 1);
+    await expect(checkItemQuota('front_sl_x', 'org_abc')).resolves.toBeUndefined();
+    mockStoredItemCount = String(DEFAULT_MAX_ITEMS_PER_LIST * 10);
+    await expect(checkItemQuota('front_sl_x', 'org_abc')).rejects.toMatchObject({ scope: 'list_items', limit: DEFAULT_MAX_ITEMS_PER_LIST * 10 });
+  });
+
+  it('is refused even though the ACTIVE count is nowhere near its limit, and says archived rows count', async () => {
+    mockListCount = '0';
+    mockStoredListCount = String(DEFAULT_MAX_LISTS * 10);
+    const err = (await checkListQuota('org_abc').catch((e) => e)) as QuotaExceededError;
+    expect(err.message).toMatch(/archived/);
+  });
+
+  it('the factor is config-driven (SELECTION_LISTS_STORAGE_CEILING_FACTOR) and scales with a per-org override', async () => {
+    process.env.SELECTION_LISTS_STORAGE_CEILING_FACTOR = '2';
+    mockQuotaRow = { organization_id: 'org_abc', max_lists: 5, max_lists_per_user: null, max_items_per_list: null, max_locales: null };
+    mockStoredListCount = '9';
+    await expect(checkListQuota('org_abc')).resolves.toBeUndefined();
+    mockStoredListCount = '10';
+    await expect(checkListQuota('org_abc')).rejects.toMatchObject({ scope: 'org_lists', current: 10, limit: 10 });
+  });
+
+  it('a factor of 1 is allowed (ceiling == active limit); invalid values fall back to the default, never disable the ceiling', () => {
+    expect(storageCeilingFactor({ SELECTION_LISTS_STORAGE_CEILING_FACTOR: '1' })).toBe(1);
+    for (const bad of ['0', '-1', 'x', '1.5', ' ', 'Infinity']) {
+      expect(storageCeilingFactor({ SELECTION_LISTS_STORAGE_CEILING_FACTOR: bad })).toBe(DEFAULT_STORAGE_CEILING_FACTOR);
+    }
+    expect(storageCeilingFactor({})).toBe(DEFAULT_STORAGE_CEILING_FACTOR);
+  });
+
+  it('checkActiveItemQuota (the un-archive check) is the active ceiling only', async () => {
+    mockStoredItemCount = '1000000';
+    mockItemCount = String(DEFAULT_MAX_ITEMS_PER_LIST - 1);
+    await expect(checkActiveItemQuota('front_sl_x', 'org_abc')).resolves.toBeUndefined();
+    mockItemCount = String(DEFAULT_MAX_ITEMS_PER_LIST);
+    await expect(checkActiveItemQuota('front_sl_x', 'org_abc')).rejects.toMatchObject({ scope: 'list_items' });
+  });
+});
+
+describe('list_locales (checkLocaleQuota)', () => {
+  beforeEach(resetMocks);
+
+  it('a locale the list already has is never refused, whatever the count', async () => {
+    mockLocaleExists = true;
+    mockLocaleCount = '999';
+    await expect(checkLocaleQuota('front_sl_x', 'org_abc', 'fr')).resolves.toBeUndefined();
+  });
+
+  it('a new locale is refused at the ceiling (source locale included in the count) with scope=list_locales', async () => {
+    mockLocaleCount = String(DEFAULT_MAX_LOCALES);
+    await expect(checkLocaleQuota('front_sl_x', 'org_abc', 'fr')).rejects.toMatchObject({
+      scope: 'list_locales',
+      current: DEFAULT_MAX_LOCALES,
+      limit: DEFAULT_MAX_LOCALES,
+    });
+    mockLocaleCount = String(DEFAULT_MAX_LOCALES - 1);
+    await expect(checkLocaleQuota('front_sl_x', 'org_abc', 'fr')).resolves.toBeUndefined();
+  });
+
+  it('uses the per-org max_locales override', async () => {
+    mockQuotaRow = { organization_id: 'org_abc', max_lists: null, max_lists_per_user: null, max_items_per_list: null, max_locales: 2 };
+    mockLocaleCount = '2';
+    await expect(checkLocaleQuota('front_sl_x', 'org_abc', 'de')).rejects.toMatchObject({ scope: 'list_locales', limit: 2 });
+    mockLocaleCount = '1';
+    await expect(checkLocaleQuota('front_sl_x', 'org_abc', 'de')).resolves.toBeUndefined();
   });
 });
