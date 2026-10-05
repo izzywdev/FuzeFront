@@ -245,6 +245,15 @@ export class MemoryOutboxStore implements OutboxStore {
     })
   }
 
+  /** Memory twin of `requeueFailedEvent`: back to pending, attempts reset, `lastError` kept. */
+  requeue(eventId: string): boolean {
+    const r = this.rows.find((x) => x.eventId === eventId && x.status === 'failed')
+    if (!r) return false
+    r.status = 'pending'
+    r.attempts = 0
+    return true
+  }
+
   status(eventId: string): MemoryOutboxRow['status'] | undefined {
     return this.rows.find((r) => r.eventId === eventId)?.status
   }

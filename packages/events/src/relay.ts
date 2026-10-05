@@ -150,12 +150,12 @@ export function pgOutboxStore(db: Db): OutboxStore {
 
 /**
  * Operator action for a parked (`failed`, dead-lettered) row: put it back to `pending` with a
- * fresh attempt budget (after fixing the cause). This is what unblocks the aggregate's later versions
+ * fresh attempt budget (after fixing the cause). `last_error` is KEPT as the audit trail of why it was dead-lettered. This is what unblocks the aggregate's later versions
  * (the other unblock is a deliberate mark-sent).
  */
 export async function requeueFailedEvent(db: SqlClient, eventId: string): Promise<boolean> {
   const r = await db.query(
-    `UPDATE event_outbox SET status = 'pending', attempts = 0, last_error = NULL WHERE event_id = $1 AND status = 'failed'`,
+    `UPDATE event_outbox SET status = 'pending', attempts = 0 WHERE event_id = $1 AND status = 'failed'`,
     [eventId]
   )
   return r.rowCount > 0

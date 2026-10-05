@@ -105,7 +105,7 @@ describePg('Postgres-backed outbox / relay / consumer', () => {
     const st = (await k.raw(`SELECT status, attempts, last_error FROM event_outbox WHERE event_id=?`, [e1.eventId])).rows[0]
     expect(st).toMatchObject({ status: 'failed', attempts: 2, last_error: 'poison' })
     expect(await requeueFailedEvent(knexSql(k as any), e1.eventId)).toBe(true)
-    expect((await k.raw(`SELECT status FROM event_outbox WHERE event_id=?`, [e1.eventId])).rows[0].status).toBe('pending')
+    expect((await k.raw(`SELECT status, attempts, last_error FROM event_outbox WHERE event_id=?`, [e1.eventId])).rows[0]).toMatchObject({ status: 'pending', attempts: 0, last_error: 'poison' })
     healthy = true
     await relay.drain()
     expect(sent.slice(1)).toEqual(['identity.org.updated#1', 'identity.org.updated#2'])

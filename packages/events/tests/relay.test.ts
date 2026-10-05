@@ -127,8 +127,8 @@ describe('outbox relay', () => {
     expect((await relay.drainOnce()).sent).toBe(1)
     expect(store.status(v2.eventId)).toBe('pending')
     // operator requeue unblocks (transport now healthy for v1)
-    store.rows.find((r) => r.eventId === v1.eventId)!.status = 'pending'
-    store.rows.find((r) => r.eventId === v1.eventId)!.attempts = 0
+    expect(store.requeue(v1.eventId)).toBe(true)
+    expect(store.rows.find((r) => r.eventId === v1.eventId)).toMatchObject({ attempts: 0, lastError: 'boom' })
     healthy = true
     await relay.drain()
     expect(store.status(v1.eventId)).toBe('sent')
