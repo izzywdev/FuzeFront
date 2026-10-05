@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, MapPin, Clock, Code2, Server, TrendingUp, Heart, Zap, Globe } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, SectionIntro } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -146,18 +146,19 @@ export const CareersPage: React.FC = () => {
       {/* Open positions */}
       <section className="py-24 bg-secondary-50">
         <Container size="5xl">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-              Open positions
-            </h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Don't see a fit? Email us anyway at{' '}
-              <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline">
-                hr@fuzefront.com
-              </a>
-              — we're always looking for great people.
-            </p>
-          </div>
+          <SectionIntro
+            spacing={14}
+            title="Open positions"
+            description={
+              <>
+                Don't see a fit? Email us anyway at{' '}
+                <a href="mailto:hr@fuzefront.com" className="text-primary-700 hover:underline">
+                  hr@fuzefront.com
+                </a>
+                — we're always looking for great people.
+              </>
+            }
+          />
 
           <div className="space-y-6">
             {positions.map((position, i) => {
