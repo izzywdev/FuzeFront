@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, HeroSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -34,30 +34,20 @@ export const PressPage: React.FC = () => {
   return (
     <div>
       {/* Hero */}
-      <section
-        ref={heroRef}
-        className="relative pt-32 pb-20 bg-gradient-to-br from-secondary-900 via-secondary-800 to-primary-900 overflow-hidden"
-      >
-        {/* Separate overlay div: `hero-pattern` and the gradient classes both
-            set `background-image`, so combining them on one element drops the
-            gradient entirely instead of layering. */}
-        <div className="absolute inset-0 hero-pattern pointer-events-none" />
-        <div className="absolute top-10 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
-        <Container size="4xl" className="relative text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={heroInView ? { opacity: 1, y: 0 } : {}}
-            transition={{ duration: 0.6 }}
-          >
-            <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
-              Press &amp; <span className="gradient-text">Media</span>
-            </h1>
-            <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
-              News, announcements, and resources for journalists and media covering FuzeOne.
-            </p>
-          </motion.div>
-        </Container>
-      </section>
+      <HeroSection ref={heroRef} decor={[{ corner: 'top-right', tone: 'accent', size: 'lg' }]}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={heroInView ? { opacity: 1, y: 0 } : {}}
+          transition={{ duration: 0.6 }}
+        >
+          <h1 className="text-4xl sm:text-5xl font-heading font-extrabold text-white mb-6">
+            Press &amp; <span className="gradient-text">Media</span>
+          </h1>
+          <p className="text-lg sm:text-xl text-secondary-300 max-w-2xl mx-auto leading-relaxed">
+            News, announcements, and resources for journalists and media covering FuzeOne.
+          </p>
+        </motion.div>
+      </HeroSection>
 
       {/* Press releases */}
       <section className="py-24 bg-white">
