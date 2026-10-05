@@ -5,7 +5,7 @@ import * as React from "react";
  */
 export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /** Rendered element. @default "p" */
-  as?: "p" | "span" | "div" | "label";
+  as?: "p" | "span" | "div" | "label" | "h3" | "h4";
   /**
    * Semantic tone: `primary` = default reading text, `secondary` =
    * de-emphasized supporting copy, `muted` = lowest-emphasis placeholder /
@@ -26,6 +26,13 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
    * @default "none"
    */
   spacing?: "none" | "sm" | "md";
+  /**
+   * Step of the DS font-weight scale. `inherit` (default) applies no inline
+   * override, unchanged from before `weight` existed (the surrounding
+   * stylesheet's weight, e.g. Tailwind preflight's heading reset, applies).
+   * @default "inherit"
+   */
+  weight?: "inherit" | "regular" | "medium" | "semibold" | "bold";
   children?: React.ReactNode;
 }
 
