@@ -429,6 +429,15 @@ mcp:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Public Ingress for the MCP SSE gateway. Disabled by default; enable in
+  # values-prod.yaml to expose https://<host>/mcp/{sse,messages,tools.json,healthz}.
+  # Auth: the gateway forwards the CALLER'S bearer token to the upstream app-
+  # registry, which validates it via Authentik/Permit. Calls with no Authorization
+  # header fail closed at the first tool call — the tool SHAPE (/tools.json and
+  # listTools) is intentionally public, matching the published OpenAPI spec.
+  # A Traefik StripPrefix middleware strips /mcp before the request reaches the pod.
+  ingress:
+    enabled: false
 
 # FuzeFront's own per-product A2A (agent-to-agent) pod. Runs the EXISTING shared
 # ghcr.io/izzywdev/fuzeagent-a2a image (izzywdev/FuzeAgent CI builds/publishes
@@ -523,6 +532,13 @@ a2aDeploy:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Public Ingress for the A2A pod. Disabled by default; enable in values-prod.yaml
+  # to expose https://<host>/a2a/rpc (and all sub-paths) publicly. A Traefik
+  # StripPrefix middleware strips /a2a before the request reaches the pod.
+  # Auth: the pod validates OIDC tokens itself (audience: a2a, callerClaim: repo).
+  # No additional auth middleware needed at the Ingress layer.
+  ingress:
+    enabled: false
 
 # Clock-app — the built-in reference Module-Federation REMOTE (clock-app/), a
 # static nginx image serving remoteEntry.js. Deployed as its own Deployment+

@@ -307,6 +307,8 @@ mcp:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
     tag: "1abe510f5981"
     pullPolicy: IfNotPresent
+  ingress:
+    enabled: true
 
 # FuzeFront's per-product A2A pod (owner decision: one pod per product, not a
 # tenant row on the shared izzywdev/FuzeAgent `a2a-shared` server — see
@@ -412,6 +414,8 @@ a2aDeploy:
   providerBaseUrl: http://litellm.fuzeinfra.svc.cluster.local:4000
   gitImage: alpine/git:latest
   agentProvider: anthropic
+  ingress:
+    enabled: true
   resources:
     requests:
       cpu: 100m
