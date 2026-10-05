@@ -78,7 +78,7 @@ describe("<SectionIntro>", () => {
     expect(screen.getByRole("heading").style.marginBottom).toBe("var(--space-3)");
 
     rerender(<SectionIntro title="x" titleGap={0} />);
-    expect(screen.getByRole("heading").style.marginBottom).toBe("0");
+    expect(screen.getByRole("heading").style.marginBottom).toBe("0px");
   });
 
   it("forwards a ref to the underlying element (useInView-compatible)", () => {
