@@ -11,7 +11,9 @@ How another Fuze service (1) seeds selection lists for its app into an organizat
 > - **Seeding is not live until the flag is on and your source is allowlisted.** It is gated
 >   by *two* release flags, both **default OFF** and both evaluated per message, per
 >   organization: `fuzefront.selection-lists.service` (master) **and**
->   `fuzefront.selection-lists.seed-defaults`. With either OFF, a `seed.requested` is answered
+>   `fuzefront.selection-lists.seed-defaults`. Both are created OFF in Unleash by the
+>   `prod-unleash-ops` workflow (`flags=selection-lists-create`; it never enables them) and are
+>   enabled only by a deliberate owner decision. With either OFF, a `seed.requested` is answered
 >   `seed.failed` / `SEEDING_DISABLED`; nothing is written. On top of that your app must be an
 >   enabled row in `services/selection-list-service/seed-sources.json` — the shipped file lists
 >   **only the internal `platform` source**, so every app request is currently refused with
