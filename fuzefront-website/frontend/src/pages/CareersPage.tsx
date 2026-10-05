@@ -173,7 +173,7 @@ export const CareersPage: React.FC = () => {
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-accent-600 flex items-center justify-center flex-shrink-0">
-                        <Icon size={20} className="text-white" />
+                        <IconTile tone="inverse" variant="plain"><Icon size={20} /></IconTile>
                       </div>
                       <div>
                         <span className="inline-block text-xs font-mono font-semibold text-primary-700 bg-primary-50 rounded px-2 py-0.5 mb-1.5">

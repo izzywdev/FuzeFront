@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { IconTile } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -289,7 +290,7 @@ export const ProductDetailPage: React.FC = () => {
 
             <div className="flex items-center gap-4 mb-6">
               <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
-                <Icon size={30} className="text-white" />
+                <IconTile tone="inverse" variant="plain"><Icon size={30} /></IconTile>
               </div>
               <div>
                 <h1 className="text-3xl sm:text-4xl font-heading font-extrabold text-white">
@@ -339,7 +340,7 @@ export const ProductDetailPage: React.FC = () => {
                 className="flex gap-4"
               >
                 <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${product.gradient} flex-shrink-0 flex items-center justify-center shadow-sm`}>
-                  <CheckCircle2 size={16} className="text-white" />
+                  <IconTile tone="inverse" variant="plain"><CheckCircle2 size={16} /></IconTile>
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-gray-900 mb-1">{feature.title}</h3>

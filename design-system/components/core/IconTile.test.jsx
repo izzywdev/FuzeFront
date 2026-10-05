@@ -34,7 +34,7 @@ describe("<IconTile>", () => {
     expect(screen.getByRole("img", { name: "Success" })).toBeInTheDocument();
   });
 
-  it.each(["accent", "info", "success", "warning", "error", "neutral"])(
+  it.each(["accent", "info", "success", "warning", "error", "neutral", "inverse"])(
     "accepts tone=%s without throwing",
     (tone) => {
       render(
@@ -90,6 +90,17 @@ describe("<IconTile>", () => {
     expect(tile.style.height).toBe("");
     expect(tile.style.background).toBe("");
     expect(tile.style.color).toBe("var(--error-color)");
+  });
+
+  it("tone=inverse + variant=plain tints the icon with the on-color token, not a hue (ds-fp:c607f2d639f8)", () => {
+    const { container } = render(
+      <IconTile tone="inverse" variant="plain">
+        <DummyIcon />
+      </IconTile>
+    );
+    const tile = container.firstChild;
+    expect(tile.style.color).toBe("var(--primary-foreground)");
+    expect(tile.style.background).toBe("");
   });
 
   it("forwards arbitrary data-* attributes (test hooks) to the rendered span", () => {
