@@ -40,6 +40,7 @@ from .types import (
     AutofillResult,
     CreateItemRequest,
     CreateListRequest,
+    ForkProvenance,
     ItemTranslationLocaleStatus,
     # Enums
     LifecycleStatus,
@@ -53,17 +54,16 @@ from .types import (
     # Resolve
     ResolveResult,
     SeedProvenance,
-    ForkProvenance,
-    SelectionListVisibility,
-    SelectionListErrorReason,
     # Selection lists
     SelectionList,
     SelectionListAccessRole,
     SelectionListErrorCode,
+    SelectionListErrorReason,
     # Items
     SelectionListItem,
     SelectionListItemTranslation,
     SelectionListQuotaStatus,
+    SelectionListVisibility,
     StatusFilter,
     # Translations
     Translation,

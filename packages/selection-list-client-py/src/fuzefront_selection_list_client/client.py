@@ -30,6 +30,7 @@ from .errors import SelectionListApiError, _code_from_status
 from .types import (
     AccessEntry,
     AutofillResult,
+    ForkProvenance,
     ItemTranslationLocaleStatus,
     LifecycleStatus,
     Page,
@@ -39,7 +40,6 @@ from .types import (
     ResolveResponse,
     ResolveResult,
     SeedProvenance,
-    ForkProvenance,
     SelectionList,
     SelectionListAccessRole,
     SelectionListItem,

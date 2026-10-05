@@ -16,7 +16,6 @@ from fuzefront_selection_list_client import (
     SelectionListClient,
     SelectionListVisibility,
 )
-
 from test_client import StubServer
 
 _NOW = "2026-10-05T12:00:00Z"
