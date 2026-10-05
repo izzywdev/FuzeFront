@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Picker uses the effective list</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="content" data-frame="03-picker-effective" style="padding-top: var(--space-12);">
+
+  <h1 class="page-title" style="text-align:center;">SelectionListPicker — the effective list for a key</h1>
+  <p class="page-sub" style="text-align:center;">Bound to <code class="sl-code">key="priority"</code>, exactly as before. What changes is
+    <b>which list</b> that key means.</p>
+
+  <div class="sl-banner sl-banner--info" style="max-width: calc(var(--space-16) * 12); margin: 0 auto var(--space-8);" data-note="effective-list">
+    <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
+    <div class="sl-banner__body">
+      <p class="sl-banner__title">One lookup, one rule — the picker never chooses between lists itself</p>
+      <p>The picker calls <code class="sl-code">getEffectiveList("priority")</code> → <code class="sl-code">GET /v1/selection-lists?key=priority&amp;include_shared=true&amp;limit=1</code>.
+        The service returns the <b>effective</b> list: your organization's own readable active list with that key (normally its fork)
+        if there is one, else the active common list. The picker renders whatever comes back. It never fetches both and never
+        merges them. Host forms change nothing — the key is the same, and the form still submits the item id.</p>
+    </div>
+  </div>
+
+  <div class="sl-grid2" style="max-width: calc(var(--space-16) * 18); margin: 0 auto;">
+
+    <!-- A. Org fork shadows the common list -->
+    <div>
+      <p class="sl-case">A · Acme has an organization-visible fork → the fork wins</p>
+      <div class="sl-host" data-panel="picker" data-mode="single" data-state="ready" data-effective-source="own">
+        <h2 class="sl-host__title">New support ticket</h2>
+        <p class="sl-host__sub">Helpdesk · a consuming product's form · viewer: Sam Ortiz (member)</p>
+        <div class="sl-field" data-picker="priority" style="margin-bottom: 0;">
+          <label class="sl-field__label" for="pa">Priority</label>
+          <div class="sl-combo">
+            <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true" aria-controls="pa-menu" id="pa" tabindex="0" data-combo-control>
+              <span class="sl-combo__value" data-selected-label>Medium</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+            </div>
+            <div class="sl-combo__menu" id="pa-menu" role="listbox" data-combo-menu>
+              <div class="sl-combo__list">
+                <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b1"><span>Low</span></div>
+                <div class="sl-opt" role="option" aria-selected="true" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b2"><span>Medium</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b3"><span>High</span></div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b4"><span>Urgent</span></div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jfq3w8z6y5x4c3b2a1n9m8b6"><span>Blocker</span></div>
+              </div>
+            </div>
+          </div>
+          <!-- EffectiveListSource: OPT-IN (showSource). Off by default in end-user forms. -->
+          <div class="sl-source" data-effective-source-caption="own">
+            <span class="sl-fork" data-badge="fork">⑂ Your organization's version</span>
+            <span>of the common list <b>Priority</b></span>
+            <span class="sl-behind" data-behind="true"><span class="sl-behind__dot" aria-hidden="true"></span><a href="08-fork-detail.html" data-action="view-fork">Common list updated since your fork</a></span>
+          </div>
+          <p class="sl-field__hint">The caption renders only with <code class="sl-code">showSource</code> (admin/config screens). The
+            “updated since your fork” link renders only when the fork's <code class="sl-code">editable</code> is true — a member who
+            can't act on it is not shown it, and the end-user form never pays for the extra source lookup.</p>
+        </div>
+        <div class="sl-persist" data-persisted data-effective-inspector>
+          <div class="sl-persist__label">Harness inspector — which list the key resolved to</div>
+          <code>front_sl_01jfq3w8z6y5x4c3b2a1n9m8k7 · org Acme · visibility org · forked_from front_sl_01jf8k2m3n4p5q6r7s8t9v0w1x</code>
+          <p>Submits <code>{ "priority": "front_sli_01jfq3w8z6y5x4c3b2a1n9m8b2" }</code> — the fork's item id.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- B. No fork: the common list -->
+    <div>
+      <p class="sl-case">B · No fork → the common list</p>
+      <div class="sl-host" data-panel="picker" data-mode="single" data-state="ready" data-effective-source="platform">
+        <h2 class="sl-host__title">New support ticket</h2>
+        <p class="sl-host__sub">Same form, in Globex (no fork) · viewer: a member</p>
+        <div class="sl-field" data-picker="priority" style="margin-bottom: 0;">
+          <label class="sl-field__label" for="pb">Priority</label>
+          <div class="sl-combo">
+            <div class="sl-combo__control sl-combo__control--open" role="combobox" aria-expanded="true" aria-controls="pb-menu" id="pb" tabindex="0" data-combo-control>
+              <span class="sl-combo__value" data-selected-label>Normal</span><span class="sl-combo__caret" aria-hidden="true">▾</span>
+            </div>
+            <div class="sl-combo__menu" id="pb-menu" role="listbox" data-combo-menu>
+              <div class="sl-combo__list">
+                <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa1"><span>Low</span></div>
+                <div class="sl-opt" role="option" aria-selected="true" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa2"><span>Normal</span><span class="sl-opt__check" aria-hidden="true">✓</span></div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa3"><span>High</span></div>
+                <div class="sl-opt" role="option" aria-selected="false" data-item="front_sli_01jf8k2m3n4p5q6r7s8t9v0wa4"><span>Urgent</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="sl-source" data-effective-source-caption="platform">
+            <span class="sl-vis sl-vis--platform" data-badge="common">◎ Common list</span><span>provided by FuzeFront</span>
+          </div>
+        </div>
+        <div class="sl-persist" data-persisted data-effective-inspector>
+          <div class="sl-persist__label">Harness inspector</div>
+          <code>front_sl_01jf8k2m3n4p5q6r7s8t9v0w1x · platform org · visibility platform</code>
+          <p>Archived “Critical (legacy)” is not offered — active values only, authored order, as in 4.0.0.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
+    <h2>Shadowing edge cases</h2>
+    <p class="sl-caption">All decided by the service (design record D8). The picker's only job is to render the one list it is given —
+      these panels exist so QA can assert it does not second-guess the answer.</p>
+    <div class="sl-grid2">
+      <div>
+        <p class="sl-case">C · Private fork (a draft) — shadows only for grant-holders</p>
+        <div class="sl-host" data-panel="picker" data-state="ready" data-case="private-fork">
+          <div class="sl-field">
+            <label class="sl-field__label">Priority — viewer Dana (list-owner of the draft)</label>
+            <div class="sl-combo__control"><span class="sl-combo__value" data-selected-label>Medium</span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+            <div class="sl-source" data-effective-source-caption="own"><span class="sl-fork">⑂ Draft — only people with a role see this</span></div>
+          </div>
+          <div class="sl-field" style="margin-bottom: 0;">
+            <label class="sl-field__label">Priority — viewer Sam (member, no role)</label>
+            <div class="sl-combo__control"><span class="sl-combo__value" data-selected-label>Normal</span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+            <div class="sl-source" data-effective-source-caption="platform"><span class="sl-vis sl-vis--platform">◎ Common list</span></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="sl-case">D · Fork archived → falls through to the common list</p>
+        <div class="sl-host" data-panel="picker" data-state="ready" data-case="archived-fork" data-effective-source="platform">
+          <div class="sl-field" style="margin-bottom: 0;">
+            <label class="sl-field__label">Priority</label>
+            <div class="sl-combo__control"><span class="sl-combo__value sl-combo__value--ph">Select…</span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+            <div class="sl-source" data-effective-source-caption="platform"><span class="sl-vis sl-vis--platform">◎ Common list</span><span>— your organization's version is archived</span></div>
+            <p class="sl-field__hint">Archiving the fork <b>is</b> the “revert to common” action. Values saved from the fork keep rendering
+              (archived items still resolve) — see the next frame.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sl-section" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
+    <h2>States</h2>
+    <p class="sl-caption">Embedded in someone else's form: never throw into the host, never silently render an empty control.</p>
+    <div class="sl-grid2">
+      <div class="sl-host" data-panel="picker" data-state="loading">
+        <p class="sl-case">Loading</p>
+        <label class="sl-field__label">Priority</label>
+        <div class="sl-combo__control" aria-busy="true"><span class="sl-skel" style="width: 45%;"></span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+        <p class="sl-field__hint">One skeleton for both requests (effective-list lookup, then items) at final height. The source caption
+          (if enabled) appears with the options, never before.</p>
+      </div>
+      <div class="sl-host" data-panel="picker" data-state="error">
+        <p class="sl-case">Error — either request failed</p>
+        <label class="sl-field__label">Priority</label>
+        <div class="sl-combo__control sl-combo__control--invalid"><span class="sl-combo__value sl-combo__value--ph">Couldn't load options</span><button class="btn btn-ghost sl-btn-sm" data-action="retry">Retry</button></div>
+        <p class="sl-field__err" data-error="load-failed"><span aria-hidden="true">⚠</span><span>Retry in place; keep any selected value.
+          A failed lookup must <b>not</b> fall back to a second, different list — that would show values the service didn't choose.</span></p>
+      </div>
+      <div class="sl-host" data-panel="picker" data-state="not-found">
+        <p class="sl-case">No effective list — <code class="sl-code">getEffectiveList</code> → <code class="sl-code">null</code></p>
+        <label class="sl-field__label">Priority</label>
+        <div class="sl-combo__control" aria-disabled="true"><span class="sl-combo__value sl-combo__value--ph">List unavailable</span></div>
+        <p class="sl-field__err" data-error="NOT_FOUND"><span aria-hidden="true">⚠</span><span>No readable active list with key
+          <code class="sl-code">priority</code> in this organization and no common one. An empty page is not an error from the service —
+          the picker renders this state; it does not throw. Callers without shared read (the <code class="sl-code">developer</code> role) land here too.</span></p>
+      </div>
+      <div class="sl-host" data-panel="picker" data-state="flag-off" data-flag="shared-lists:off">
+        <p class="sl-case">Flag OFF — 4.0.0 lookup</p>
+        <label class="sl-field__label">Priority</label>
+        <div class="sl-combo__control"><span class="sl-combo__value">Normal</span><span class="sl-combo__caret" aria-hidden="true">▾</span></div>
+        <p class="sl-field__hint">With <code class="sl-code">fuzefront.selection-lists.shared-lists</code> OFF the picker does <b>not</b> send
+          <code class="sl-code">include_shared</code> and renders no source caption: <code class="sl-code">GET ?key=priority</code> exactly as the
+          approved 4.0.0 picker. Common lists are invisible; a key with no own list renders “List unavailable”.</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="sl-notes" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
+    <b>Test hooks:</b> <code>[data-frame='03-picker-effective']</code> · <code>[data-panel='picker']</code> · <code>[data-picker='priority']</code> · <code>[data-effective-source='own']</code> · <code>[data-effective-source='platform']</code> · <code>[data-effective-source-caption='own']</code> · <code>[data-effective-source-caption='platform']</code> · <code>[data-badge='fork']</code> · <code>[data-badge='common']</code> · <code>[data-behind='true']</code> · <code>[data-case='private-fork']</code> · <code>[data-case='archived-fork']</code> · <code>[data-effective-inspector]</code> · <code>[data-combo-control]</code> · <code>[data-selected-label]</code> · <code>[data-item='front_sli_01jfq3w8z6y5x4c3b2a1n9m8b6']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-state='not-found']</code> · <code>[data-state='flag-off']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-action='retry']</code><br />
+    Contract: <code>GET /v1/selection-lists?key=&amp;include_shared=true&amp;limit=1</code> (client <code>getEffectiveList</code>) ·
+    <code>GET /v1/selection-lists/{listId}/items?status=active&amp;locale=</code>.<br />
+    Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+  </p>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="02-readonly-states.html" data-nav="prev">← Read-only states</a>
+  <span class="caption"><b>(2a) Picker — effective list</b> · Flow 2 · Effective picker · frame 3 of 10</span>
+  <a class="btn btn-primary" href="04-picker-stored-values.html" data-nav="next">Stored values across a fork →</a>
+</nav>
+</body>
+</html>
