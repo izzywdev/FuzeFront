@@ -617,7 +617,8 @@ describe('DELETE /:listId/access/:userId', () => {
 
 // Exact instance grant mutations carry the caller token for Security policy.
 describe('caller identity for instance grant/revoke writes', () => {
-  const userToken = () => makeToken();
+  // Reuse one token so assertions do not depend on JWT issuance timing.
+  const userToken = makeToken();
 
   it('PUT: grant uses the caller token; the membership check keeps the end-user token', async () => {
     const check = jest.fn().mockResolvedValue({ allow: true });
@@ -626,17 +627,18 @@ describe('caller identity for instance grant/revoke writes', () => {
 
     const res = await request(makeApp())
       .put(`/lists/${LIST_ID}/access/${USER_ID}`)
-      .set({ Authorization: `Bearer ${userToken()}` })
+      .set({ Authorization: `Bearer ${userToken}` })
       .send({ role: 'list-viewer' });
 
     expect(res.status).toBe(200);
     expect(machineGetToken).not.toHaveBeenCalled();
     const [, grantToken] = (grant as jest.Mock).mock.calls[0];
-    expect(grantToken).toBe(userToken());
+    expect(grantToken).toBe(userToken);
     expect(grantToken).not.toBe(MACHINE_TOKEN);
     // Membership probe (a READ about the target) still carries the human's token.
     const [, checkToken] = check.mock.calls[0];
-    expect(checkToken).toBe(userToken());
+    expect(checkToken).toBe(userToken);
+    expect(checkToken).not.toBe(MACHINE_TOKEN);
   });
 
   it('PUT: role change revokes the old role with the caller token too', async () => {
@@ -646,11 +648,11 @@ describe('caller identity for instance grant/revoke writes', () => {
 
     const res = await request(makeApp())
       .put(`/lists/${LIST_ID}/access/${USER_ID}`)
-      .set(auth())
+      .set({ Authorization: `Bearer ${userToken}` })
       .send({ role: 'list-editor' });
 
     expect(res.status).toBe(200);
-    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(userToken());
+    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(userToken);
   });
 
   it('DELETE: revoke uses the caller token', async () => {
@@ -658,10 +660,10 @@ describe('caller identity for instance grant/revoke writes', () => {
     const revoke = jest.fn(async () => undefined);
     _setAuthzClientForTesting(makeAuthzClient({ revoke }));
 
-    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set(auth());
+    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set({ Authorization: `Bearer ${userToken}` });
 
     expect(res.status).toBe(204);
-    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(userToken());
+    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(userToken);
   });
 
   it('PUT fails closed (500, no Security API write, mirror untouched) when the Security API denies the mutation', async () => {
@@ -670,7 +672,7 @@ describe('caller identity for instance grant/revoke writes', () => {
 
     const res = await request(makeApp())
       .put(`/lists/${LIST_ID}/access/${USER_ID}`)
-      .set(auth())
+      .set({ Authorization: `Bearer ${userToken}` })
       .send({ role: 'list-viewer' });
 
     expect(res.status).toBe(500);
@@ -683,7 +685,7 @@ describe('caller identity for instance grant/revoke writes', () => {
     const revoke = jest.fn().mockRejectedValue(new Error('policy denied revoke'));
     _setAuthzClientForTesting(makeAuthzClient({ revoke }));
 
-    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set(auth());
+    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set({ Authorization: `Bearer ${userToken}` });
 
     expect(res.status).toBe(500);
     expect(revoke).toHaveBeenCalled();
@@ -693,10 +695,10 @@ describe('caller identity for instance grant/revoke writes', () => {
   it('malformed path ids are 400 VALIDATION_ERROR at the edge (before any DB / Security API call)', async () => {
     const check = jest.fn();
     _setAuthzClientForTesting(makeAuthzClient({ check }));
-    const res = await request(makeApp()).delete(`/lists/not-a-list-id/access/${USER_ID}`).set(auth());
+    const res = await request(makeApp()).delete(`/lists/not-a-list-id/access/${USER_ID}`).set({ Authorization: `Bearer ${userToken}` });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
-    const res2 = await request(makeApp()).delete(`/lists/${LIST_ID}/access/not-a-user`).set(auth());
+    const res2 = await request(makeApp()).delete(`/lists/${LIST_ID}/access/not-a-user`).set({ Authorization: `Bearer ${userToken}` });
     expect(res2.status).toBe(400);
     expect(res2.body.code).toBe('VALIDATION_ERROR');
     expect(check).not.toHaveBeenCalled();

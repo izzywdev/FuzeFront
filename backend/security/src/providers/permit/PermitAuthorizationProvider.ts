@@ -62,6 +62,15 @@ function singlePage<T>(items: T[]): Page<T> {
   return { items, page: { nextCursor: null, hasMore: false, total: items.length } }
 }
 
+/** Best-effort map of a Permit role-assignment row → its `Type:key` resource instance, if scoped. */
+function resourceInstanceOf(a: any): string | undefined {
+  const v = a?.resource_instance
+  if (typeof v === 'string' && v) return v
+  const type = a?.resource
+  const key = a?.resource_instance_key ?? a?.resource_instance?.key
+  return type && key ? `${type}:${key}` : undefined
+}
+
 /** Best-effort map of an unknown Permit role-assignment row → its role key. */
 function roleKeyOf(a: any): string | undefined {
   return a?.role ?? a?.role_key ?? undefined
@@ -319,7 +328,19 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
     const rows = (await getUserRoleAssignments(userId, tenantId)) as any[]
     for (const r of rows ?? []) {
       const role = roleKeyOf(r)
-      if (role) await unassignRoleInPermit({ user: userId, role, tenant: tenantId })
+      if (!role) continue
+      // Permit identifies an assignment by (user, role, tenant, resource_instance).
+      // An instance-scoped grant (e.g. `App#creator` on `App:<slug>`) is a different
+      // record from the tenant-wide one, so leaving resource_instance off would
+      // leave it behind after the member is removed — a departed user keeping
+      // access to an object their org owns. Pass it through when the row has one.
+      const instance = resourceInstanceOf(r)
+      await unassignRoleInPermit({
+        user: userId,
+        role,
+        tenant: tenantId,
+        ...(instance ? { resource_instance: instance } : {}),
+      })
     }
   }
 

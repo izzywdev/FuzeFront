@@ -79,6 +79,10 @@ RUN cd packages/service-auth && npm run build
 # STATICALLY. Without this build the workspace symlink resolves to an empty
 # package and the custom-domain layer would be inert in the running image.
 RUN cd custom-hostname-client && npm run build
+# @fuzefront/core's `main` points at dist/ and backend/src imports enqueueEvent
+# STATICALLY; build it (after shared, whose kafka barrel it consumes) or the
+# workspace symlink resolves to an empty package and the container crashloops.
+RUN cd backend/core && npm run build
 RUN cd backend && npm run build
 
 # ---------- production ----------
@@ -100,6 +104,8 @@ COPY --from=build --chown=backend:nodejs /app/backend/node_modules ./backend/nod
 # Built shared kafka output + compiled backend.
 COPY --from=build --chown=backend:nodejs /app/shared/dist ./shared/dist
 COPY --from=build --chown=backend:nodejs /app/shared/package.json ./shared/package.json
+COPY --from=build --chown=backend:nodejs /app/backend/core/dist ./backend/core/dist
+COPY --from=build --chown=backend:nodejs /app/backend/core/package.json ./backend/core/package.json
 COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/dist ./packages/feature-flags/dist
 COPY --from=build --chown=backend:nodejs /app/packages/feature-flags/package.json ./packages/feature-flags/package.json
 COPY --from=build --chown=backend:nodejs /app/packages/identity/dist ./packages/identity/dist

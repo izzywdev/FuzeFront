@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Build outcomes &amp; errors — frame (d)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="04-build-outcomes">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Flow 2 · Build session · Frame (d) · routes /applications/build[/:sessionId]</div>
+  <h1>Outcomes, failures and refusals</h1>
+  <p class="lead">The three terminal states (<b>deployed</b>, <b>failed</b>, <b>cancelled</b>) and every refusal
+    <code>POST /build-sessions</code> can return. Each says what happened, whether anything was created, and
+    the one thing the user can do next. Refusals at submit keep the form's values.</p>
+
+  <!-- d1 deployed -->
+  <div class="state-block">
+    <div class="state-label">(d1) Deployed — terminal; the app tile appears on Applications</div>
+    <div class="panel panel--seam" data-panel="build-session" data-session-status="deployed">
+      <div class="panel-body">
+        <ol class="stepper" aria-label="Build progress">
+          <li class="step" data-step-state="done"><span class="bar"></span><span class="name">Launching</span></li>
+          <li class="step" data-step-state="done"><span class="bar"></span><span class="name">Building</span></li>
+          <li class="step" data-step-state="done"><span class="bar"></span><span class="name">Deploying</span></li>
+          <li class="step" data-step-state="done"><span class="bar"></span><span class="name">Deployed</span></li>
+        </ol>
+        <div class="banner banner-success">
+          <span><b>“Expense tracker” is live in Acme Corp</b>
+            <p>It's now on your Applications page and in the menu for members who can see it. You're
+              recorded as its creator; Acme Corp owns it.</p>
+            <span class="actions">
+              <a class="btn btn-accent" href="#" data-action="open-app" data-app-slug="expense-tracker">Open app</a>
+              <a class="btn" href="05-creator-ownership.html" data-action="view-app-details">App details</a>
+            </span></span>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top: var(--space-5)"><div class="panel-body">
+      <div class="appgrid" data-panel="applications-grid">
+        <div class="apptile apptile--new" data-app="expense-tracker" data-built-by-agent="true">
+          <div class="rowflex"><div class="appicon" aria-hidden="true">🧾</div><span class="appname">Expense tracker</span></div>
+          <p>Log and approve team expenses.</p>
+          <div class="rowflex"><span class="vis vis--private">private</span><span class="status status--success"><span class="dot"></span>activated</span></div>
+        </div>
+        <a class="cta-card" href="#" role="button" data-action="add-application">
+          <div><div class="cta-glyph" aria-hidden="true">＋</div><h3>Add application</h3><p>Register a federated or standalone app.</p></div></a>
+        <a class="cta-card cta-card--build" href="02-build-form.html" role="button" data-action="build-application">
+          <div><div class="cta-glyph" aria-hidden="true">✦</div><h3>Build your application</h3><p>Describe it — FuzeAgent builds and deploys it for you.</p></div></a>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- d2 failed -->
+  <div class="state-block">
+    <div class="state-label">(d2) Failed — terminal; agent reported failure (errorCode / errorMessage)</div>
+    <div class="panel" data-panel="build-session" data-session-status="failed">
+      <div class="panel-body">
+        <ol class="stepper" aria-label="Build progress">
+          <li class="step" data-step-state="done"><span class="bar"></span><span class="name">Launching</span></li>
+          <li class="step" data-step-state="done"><span class="bar"></span><span class="name">Building</span></li>
+          <li class="step" data-step-state="failed"><span class="bar"></span><span class="name">Deploying — failed</span></li>
+          <li class="step" data-step-state="todo"><span class="bar"></span><span class="name">Deployed</span></li>
+        </ol>
+        <div class="banner banner-error" data-error-code="build_failed">
+          <span><b>The build didn't finish</b>
+            <p>FuzeAgent reported: “Remote entry failed health check after deploy.” No app was added.</p>
+            <p class="mono-sm" style="margin-top: var(--space-2)">errorCode: deploy_healthcheck_failed</p>
+            <span class="actions">
+              <a class="btn btn-accent" href="02-build-form.html" data-action="start-new-build">Start a new build</a>
+              <a class="btn" href="#" data-action="open-agent-session">See details in FuzeAgent ↗</a>
+            </span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- d3 cancelled -->
+  <div class="state-block">
+    <div class="state-label">(d3) Cancelled — terminal</div>
+    <div class="panel" data-panel="build-session" data-session-status="cancelled">
+      <div class="panel-body">
+        <ol class="stepper" aria-label="Build progress">
+          <li class="step" data-step-state="done"><span class="bar"></span><span class="name">Launching</span></li>
+          <li class="step" data-step-state="cancelled"><span class="bar"></span><span class="name">Building — cancelled</span></li>
+          <li class="step" data-step-state="cancelled"><span class="bar"></span><span class="name">Deploying</span></li>
+          <li class="step" data-step-state="cancelled"><span class="bar"></span><span class="name">Deployed</span></li>
+        </ol>
+        <div class="banner">
+          <span><b>Build cancelled</b><p>This build was cancelled. No app was added from this session.</p>
+            <span class="actions"><a class="btn" href="02-build-form.html" data-action="start-new-build">Start a new build</a></span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- d4 502 launch failed -->
+  <div class="state-block">
+    <div class="state-label">(d4) 502 — FuzeAgent launch failed; session recorded as failed (launch_failed)</div>
+    <div class="panel" data-panel="build-form" data-http="502"><div class="panel-body">
+      <div class="banner banner-error" data-error-code="launch_failed">
+        <span><b>FuzeAgent couldn't start the session</b>
+          <p>Nothing was built. Your name and brief are kept below — try again in a moment.</p>
+          <span class="actions"><button class="btn btn-accent" data-action="retry-build">Try again</button></span></span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- d5 503 builder_unavailable -->
+  <div class="state-block">
+    <div class="state-label">(d5) 503 builder_unavailable — builder not configured here; nothing persisted</div>
+    <div class="panel" data-panel="build-form" data-http="503"><div class="panel-body">
+      <div class="banner banner-warn" data-error-code="builder_unavailable">
+        <span><b>Building with FuzeAgent isn't available right now</b>
+          <p>The app builder isn't connected on this environment. Nothing was created. You can still
+            register an app yourself.</p>
+          <span class="actions"><a class="btn" href="#" data-action="add-application">Add application instead</a></span></span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- d6 503 feature_disabled -->
+  <div class="state-block">
+    <div class="state-label">(d6) 503 feature_disabled — flag turned OFF under an open page / stale link</div>
+    <div class="panel" data-http="503"><div class="empty" data-error-code="feature_disabled">
+      <h3>This feature isn't available</h3>
+      <p>Building apps with FuzeAgent isn't turned on for your account.</p>
+      <a class="btn" href="01-build-entry.html" data-action="back-to-applications">Back to Applications</a>
+    </div></div>
+  </div>
+
+  <!-- d7 403 not a member -->
+  <div class="state-block">
+    <div class="state-label">(d7) 403 — not an active member of the org / no apps:register there (in place, never a sign-in redirect)</div>
+    <div class="panel" data-panel="build-form" data-http="403"><div class="panel-body">
+      <div class="banner banner-error" data-error-code="FORBIDDEN">
+        <span><b>You can't build apps in Acme Corp</b>
+          <p>Building into an organization needs an active membership and permission to register apps
+            there. Ask an Acme Corp admin, or build in your personal workspace.</p>
+          <span class="actions"><button class="btn" data-action="switch-to-personal">Build in personal workspace</button></span></span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- d8 409 no_personal_org -->
+  <div class="state-block">
+    <div class="state-label">(d8) 409 no_personal_org — personal chosen, but the account has no personal workspace</div>
+    <div class="panel" data-panel="build-form" data-http="409"><div class="panel-body">
+      <div class="banner banner-warn" data-error-code="no_personal_org">
+        <span><b>You don't have a personal workspace</b>
+          <p>Choose an organization you belong to instead.</p></span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- d9 429 -->
+  <div class="state-block">
+    <div class="state-label">(d9) 429 — rate limited</div>
+    <div class="panel" data-panel="build-form" data-http="429"><div class="panel-body">
+      <div class="banner banner-warn" data-error-code="RATE_LIMITED">
+        <span><b>Too many builds started</b><p>Wait a minute before starting another. Your form is kept.</p></span>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- d10 404 -->
+  <div class="state-block">
+    <div class="state-label">(d10) 404 — unknown session, or one you aren't entitled to see (never 403)</div>
+    <div class="panel" data-http="404"><div class="empty" data-error-code="NOT_FOUND">
+      <h3>Build session not found</h3>
+      <p>It doesn't exist, or it isn't one you can see.</p>
+      <a class="btn" href="01-build-entry.html" data-action="back-to-applications">Back to Applications</a>
+    </div></div>
+  </div>
+
+  <!-- d11 transient read error -->
+  <div class="state-block">
+    <div class="state-label">(d11) Polling error — last known state kept, retrying (not a failed build)</div>
+    <div class="panel" data-panel="build-session" data-session-status="building" data-state="stale"><div class="panel-body">
+      <div class="banner banner-warn">
+        <span><b>Can't reach the server</b><p>Showing the last known status (Building, 2 min ago). Retrying…</p>
+          <span class="actions"><button class="btn btn-sm" data-action="retry">Retry now</button></span></span>
+      </div>
+    </div></div>
+  </div>
+
+  <p class="note">
+    <b>Deployed.</b> The tile comes from the normal <code>GET /apps</code> list — no special-casing; the flow
+    invalidates that query when the session turns <code>deployed</code> and links <code>appSlug</code>. Open app uses
+    the app's normal route. <b>Failed vs refused:</b> <code>failed</code> is a session that exists (from the agent
+    callback, or <code>502 launch_failed</code>); a <code>503</code>/<code>403</code>/<code>409</code>/<code>429</code> at submit
+    created nothing. Copy never blames the user for a platform fault.<br />
+    <b>Authz.</b> <code>403</code> is shown in place; only <code>401</code> re-authenticates. A session the caller can't
+    see is <code>404</code> by contract — the UI never distinguishes "forbidden" from "missing".<br />
+    Test hooks: <code>[data-frame='04-build-outcomes']</code> · <code>[data-session-status='deployed']</code> ·
+    <code>[data-app='expense-tracker']</code> · <code>[data-action='open-app']</code> ·
+    <code>[data-session-status='failed']</code> · <code>[data-session-status='cancelled']</code> ·
+    <code>[data-action='start-new-build']</code> · <code>[data-error-code='launch_failed']</code> ·
+    <code>[data-error-code='builder_unavailable']</code> · <code>[data-error-code='feature_disabled']</code> ·
+    <code>[data-error-code='FORBIDDEN']</code> · <code>[data-error-code='no_personal_org']</code> ·
+    <code>[data-http='429']</code> · <code>[data-http='404']</code> · <code>[data-state='stale']</code>.
+  </p>
+
+  <div class="pager"><a href="03-build-progress.html">← Session progress</a><a href="05-creator-ownership.html">Creator &amp; ownership →</a></div>
+</div>
+</body>
+</html>

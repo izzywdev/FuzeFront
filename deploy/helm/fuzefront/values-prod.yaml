@@ -88,7 +88,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -102,7 +102,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -130,7 +130,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -256,7 +256,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -270,6 +270,13 @@ applicationsService:
     appName: "applications-service"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Build-with-agent. buildApiUrl is deliberately empty: set FuzeAgent's
+  # in-cluster build URL (and seal FUZEAGENT_BUILD_API_TOKEN, then set
+  # tokenSecretName: fuzefront-secrets - see docs/runbooks/app-builder-secrets.md)
+  # once FuzeAgent exposes the build endpoint. Until then the API answers 503
+  # builder_unavailable.
+  appBuilder:
+    publicBaseUrl: "https://app.fuzefront.com"
   <<: *elasticPlacement
 
 # ---- MCP SSE gateway: ON ---------------------------------------------------
@@ -300,6 +307,8 @@ mcp:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
     tag: "1abe510f5981"
     pullPolicy: IfNotPresent
+  ingress:
+    enabled: true
 
 # FuzeFront's per-product A2A pod (owner decision: one pod per product, not a
 # tenant row on the shared izzywdev/FuzeAgent `a2a-shared` server — see
@@ -405,6 +414,8 @@ a2aDeploy:
   providerBaseUrl: http://litellm.fuzeinfra.svc.cluster.local:4000
   gitImage: alpine/git:latest
   agentProvider: anthropic
+  ingress:
+    enabled: true
   resources:
     requests:
       cpu: 100m
@@ -454,7 +465,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
 
 # fuzefront-website — public site at fuzefront.com.
 # Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
@@ -486,7 +497,7 @@ websiteFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-frontend
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   host: fuzefront.com
   aliasHosts:
     - www.fuzefront.com
@@ -495,7 +506,7 @@ websiteBackend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-backend
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -506,7 +517,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -551,7 +562,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -571,7 +582,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   <<: *elasticPlacement
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
@@ -607,7 +618,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -615,6 +626,47 @@ billingService:
     productKeys: "mendys-datasets"
     currencies: "usd,eur"
     maxTotalCents: "5000000"
+  # PLACED HERE, AFTER `payment:`, NOT next to `image:` — deliberately.
+  # This block first sat immediately below `image.tag`, which is the one line
+  # release.yml rewrites on every release. Git saw an edit adjacent to an edit and
+  # this PR went `dirty` on EVERY release while it waited for review: three
+  # conflicts in one afternoon, each costing a full CI cycle to re-resolve, each
+  # resolved identically (take master's tag, keep this block). Moving it away from
+  # that line removes the collision at its cause instead of re-resolving it
+  # forever. CLAUDE.md flags adjacent edits to one values key as the highest-risk
+  # spot for exactly this; the cheap mitigation is simply not to be adjacent.
+  # THE AUTHZ CUTOVER. billing-service's migration off the embedded Permit SDK
+  # (#1053) shipped dark: the code was live but `enabled: false` meant
+  # syncPlanToPermit() logged "flag is OFF — skipping" and returned false. This
+  # turns it on in production, and is the whole point of this block.
+  #
+  # WHAT HAPPENS ON SYNC, in order:
+  #   1. PreSync: billing-s2s-register Job provisions the Authentik
+  #      `s2s-billing-service` client_credentials application with the
+  #      `authz:admin` scope and publishes Secret/billing-s2s-credentials.
+  #   2. The billing Deployment is updated — AUTHENTIK_CLIENT_ID/SECRET are now
+  #      REQUIRED (optional tracks `enabled`), and the Secret exists because
+  #      step 1 ran first and a failed PreSync aborts the sync.
+  #   3. syncPlanToPermit() starts calling PATCH /authz/subjects/.../attributes
+  #      with a machine token on the four Stripe webhook paths.
+  #
+  # BLAST RADIUS IF SOMETHING IS WRONG. Small and reversible, by construction:
+  #   - Job fails      → sync aborts, Deployment untouched, live pod unaffected.
+  #   - Creds bad      → getMachineToken() throws, syncPlanToPermit() catches,
+  #                      logs and returns false. The Stripe webhook still
+  #                      returns 200, so Stripe does not retry, and the DB
+  #                      mirror (billingProjection off Kafka) is independent of
+  #                      this path and keeps updating.
+  #   - Need to revert → set `enabled: false` here. One line, one sync. That
+  #                      also restores `optional: true` automatically.
+  #
+  # REMOVAL CRITERION for the flag itself (from authz.flags.ts): after the
+  # Security-API-backed sync has run clean in prod for >= 2 sprints, delete the
+  # flag and the dead OFF-path rather than leaving a permanent toggle.
+  authz:
+    enabled: true
+    register:
+      enabled: true
   # Was: a soft `preferred` affinity to hostname `fuzefront-node-2`, which does
   # not exist as a node label anywhere in the live Contabo cluster (see the
   # note by chatService below) — so this never actually steered anything; the
@@ -642,7 +694,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   # Same dead node-2 hostname affinity as billingService above (fuzefront-node-2
   # is not a real node label) — replaced with the real elastic-pool placement.
   # Currently disabled (enabled: false) so this has zero live effect yet, but
@@ -908,7 +960,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -956,7 +1008,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -986,7 +1038,7 @@ selectionListService:
   authzEnabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   # Unleash CLIENT token read from the Unleash chart's own sealed Secret (same
   # wiring as applicationsService/securityService/chatService above); server-side
   # only. The service now calls @fuzefront/feature-flags init() at startup.
@@ -1010,13 +1062,13 @@ devportalService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
 
 devportalFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   host: developers.fuzefront.com
 
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
@@ -1066,7 +1118,7 @@ configService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
-    tag: b0cdfa20082a
+    tag: c77ec8c70153
   <<: *elasticPlacement
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo

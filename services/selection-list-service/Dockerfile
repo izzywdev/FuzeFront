@@ -236,10 +236,10 @@ RUN find ./services/selection-list-service/dist -name "*.d.ts" -type f -delete
 
 WORKDIR /app/services/selection-list-service
 
-ENV PORT=3011
+ENV PORT=3008
 ENV NODE_ENV=production
 
-EXPOSE 3011
+EXPOSE 3008
 
 USER selectionlistsvc
 

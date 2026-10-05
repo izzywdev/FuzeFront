@@ -112,6 +112,8 @@ POST /internal/set-roles  # backend: S2S role grant (INTERNAL_PROVISION_SECRET-g
 POST /internal/deprovision  # backend/security: Authentik lifecycle hook; internal, not REST API
 POST /internal/user-sync  # backend/security: Authentik lifecycle hook; internal, not REST API
 POST /internal/user-delete  # backend/security: Authentik lifecycle hook; internal, not REST API
+POST /internal/membership-sync  # backend/security: S2S membership→Permit role reconcile (INTERNAL_PROVISION_SECRET-gated, cluster-only), called by provisioning-service; not consumer-facing
+POST /internal/membership-unsync  # backend/security: S2S membership→Permit role unassign (INTERNAL_PROVISION_SECRET-gated, cluster-only), called by provisioning-service; not consumer-facing
 DELETE /apps/${}  # frontend api.ts call — client-side call, not a server route
 DELETE /organizations/{}  # Permit.io SDK call — not a FuzeFront-owned route
 GET /organizations/{}  # Permit.io SDK call — not a FuzeFront-owned route

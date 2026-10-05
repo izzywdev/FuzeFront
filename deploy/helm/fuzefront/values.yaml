@@ -369,6 +369,17 @@ applicationsService:
     # Key in fuzefront-secrets holding the scoped Unleash client token.
     tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
     tokenSecretName: ""
+  # Build-with-agent sessions. Every field is optional: with buildApiUrl or the
+  # token absent, POST builds answers 503 builder_unavailable. The token is a
+  # SECRET (sealed) - tokenSecretName "" means "not wired" and renders no env.
+  appBuilder:
+    buildApiUrl: ""          # absolute URL of FuzeAgent's build endpoint
+    publicBaseUrl: ""        # absolute public base for the status callbackUrl
+    tokenSecretName: ""      # Secret holding the bearer token; "" = unset
+    tokenSecretKey: "FUZEAGENT_BUILD_API_TOKEN"
+    readRateLimit: ""        # APP_BUILD_READ_RATE_LIMIT (code default 60)
+    writeRateLimit: ""       # APP_BUILD_WRITE_RATE_LIMIT (code default 10)
+    callbackRateLimit: ""    # APP_BUILD_CALLBACK_RATE_LIMIT (code default 120)
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -421,6 +432,15 @@ mcp:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Public Ingress for the MCP SSE gateway. Disabled by default; enable in
+  # values-prod.yaml to expose https://<host>/mcp/{sse,messages,tools.json,healthz}.
+  # Auth: the gateway forwards the CALLER'S bearer token to the upstream app-
+  # registry, which validates it via Authentik/Permit. Calls with no Authorization
+  # header fail closed at the first tool call — the tool SHAPE (/tools.json and
+  # listTools) is intentionally public, matching the published OpenAPI spec.
+  # A Traefik StripPrefix middleware strips /mcp before the request reaches the pod.
+  ingress:
+    enabled: false
 
 # FuzeFront's own per-product A2A (agent-to-agent) pod. Runs the EXISTING shared
 # ghcr.io/izzywdev/fuzeagent-a2a image (izzywdev/FuzeAgent CI builds/publishes
@@ -515,6 +535,13 @@ a2aDeploy:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Public Ingress for the A2A pod. Disabled by default; enable in values-prod.yaml
+  # to expose https://<host>/a2a/rpc (and all sub-paths) publicly. A Traefik
+  # StripPrefix middleware strips /a2a before the request reaches the pod.
+  # Auth: the pod validates OIDC tokens itself (audience: a2a, callerClaim: repo).
+  # No additional auth middleware needed at the Ingress layer.
+  ingress:
+    enabled: false
 
 # Clock-app — the built-in reference Module-Federation REMOTE (clock-app/), a
 # static nginx image serving remoteEntry.js. Deployed as its own Deployment+
@@ -1117,6 +1144,44 @@ billingService:
   # fuzefront.billing.authz-enabled defaults OFF regardless).
   secretName: billing-secrets
   meterFlushIntervalSec: 60
+  # Authorization-sync cutover (fuzefront.billing.authz-enabled).
+  #
+  # `enabled` gates billing's Permit ABAC attribute sync through FuzeFront's
+  # Security API. Default OFF: billing is live in production, so the migration
+  # off the embedded Permit SDK shipped dark and turning it on is a deliberate
+  # act. It is also the kill-switch — set back to false to revert to a no-op.
+  # The DB mirror and the billing.subscription.changed projection do not depend
+  # on it either way.
+  #
+  # `register.enabled` gates the PreSync Job that provisions the Authentik S2S
+  # application and publishes its credentials as Secret/<secretName>. OFF by
+  # default so a dev/local install never reaches for an Authentik Admin API it
+  # has no token for; prod turns it on.
+  #
+  # Turning `enabled` on without `register.enabled` (or an equivalently
+  # provisioned Secret) is a misconfiguration: `enabled` makes the credentials
+  # a REQUIRED env for the Deployment (see billing-service.yaml), so the pod
+  # would not start. billing-service.yaml ASSERTS the two agree at render time
+  # (billing.assertAuthzCredentialSource) rather than failing at runtime.
+  #
+  # `externallyProvisioned` is the escape hatch: set it when Secret/<secretName>
+  # is published by something other than the Job (a hand-sealed SealedSecret, an
+  # external-secrets operator) so the assertion does not block a legitimate
+  # configuration.
+  authz:
+    enabled: false
+    register:
+      enabled: false
+    externallyProvisioned: false
+    # Deliberately NOT billing-secrets — that Secret is owned by the
+    # sealed-secrets controller and is replaced on every reconcile, so a
+    # Job-minted key cannot live there. See billing-s2s-register-job.yaml.
+    secretName: billing-s2s-credentials
+    # Passed to register-s2s-cli.js as <service-name> <scopes>. `authz:admin` is
+    # what backend/security's requireAuthzAdmin demands of a machine caller on
+    # the PATCH /authz/subjects/{type}/{key}/attributes route billing calls.
+    serviceName: billing-service
+    scopes: authz:admin
   payment: {}
   # Pre-install Job that creates the billing_svc role + `billing` schema + grants.
   dbBootstrap:
