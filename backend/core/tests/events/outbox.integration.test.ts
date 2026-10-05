@@ -5,16 +5,17 @@ import { drainOutboxOnce, OutboxRecord } from '../../src/events/outboxRelay'
 /**
  * REAL-POSTGRES integration test for the transactional outbox (FFRNT-175).
  *
- * The unit test (`outbox.test.ts`) runs against in-memory sqlite, which cannot
- * exercise two things the production path depends on:
- *   1. the explicit `?::jsonb` cast in `enqueueEvent` (sqlite stores the JSON as
- *      text and `isPostgres()` is false, so that branch is never taken);
- *   2. `FOR UPDATE SKIP LOCKED` in the relay claim (a Postgres-only clause).
+ * Postgres is the only supported datastore (the in-memory sqlite test fallback
+ * was removed). This suite therefore owns the full outbox/relay coverage against
+ * a real Postgres — the two production-only concerns a portable-SQL fake could
+ * never exercise:
+ *   1. the explicit `?::jsonb` cast in `enqueueEvent`;
+ *   2. `FOR UPDATE SKIP LOCKED` in the relay claim;
+ * plus atomic business-write + event-enqueue commit/rollback, and the drain
+ * control-flow (retry / attempts / dead-letter / recovery) over real rows.
  *
- * This suite runs the SAME code against a real Postgres so both are covered, and
- * asserts business-write + event-enqueue commit/rollback atomically in one
- * transaction. It is SKIPPED unless a Postgres URL is provided (DATABASE_URL or
- * OUTBOX_TEST_PG_URL), so the normal infra-less test run is unaffected; CI's
+ * It is SKIPPED unless a Postgres URL is provided (DATABASE_URL or
+ * OUTBOX_TEST_PG_URL), so an infra-less `npm test` is unaffected; CI's
  * `event-propagation-integration` job sets it.
  */
 
@@ -132,5 +133,78 @@ describePg('transactional outbox against real Postgres (FFRNT-175)', () => {
     ])
     const statuses = await db('event_outbox').orderBy('created_at').pluck('status')
     expect(statuses).toEqual(['sent', 'sent'])
+  })
+
+  // Drain control-flow (retry / attempts / dead-letter / recovery). These assert
+  // the relay's own logic with a fake publish fn — no broker — but over real
+  // Postgres rows, which is why they live here (the sqlite unit suite that used
+  // to cover them was removed with the sqlite fallback). The real-broker
+  // transport is covered separately in relay.integration.test.ts.
+  async function seed(topic: string, payload: unknown, correlationId: string): Promise<void> {
+    await db.transaction(trx => enqueueEvent(trx, topic, payload, correlationId))
+  }
+
+  it('keeps a row pending and increments attempts on a publish failure', async () => {
+    await seed('identity.org.created', { organizationId: 'o1' }, 'c1')
+
+    const result = await drainOutboxOnce({
+      db,
+      publish: async () => {
+        throw new Error('kafka down')
+      },
+    })
+
+    expect(result).toEqual({ sent: 0, failed: 1 })
+    const [row] = await db('event_outbox')
+    expect(row.status).toBe('pending')
+    expect(row.attempts).toBe(1)
+    expect(row.last_error).toContain('kafka down')
+  })
+
+  it('parks a row as failed and dead-letters it after maxAttempts', async () => {
+    await seed('identity.org.created', { organizationId: 'o1' }, 'c1')
+    const deadLettered: OutboxRecord[] = []
+
+    // maxAttempts=2 → first drain leaves it pending(attempts=1), second parks it.
+    const opts = {
+      db,
+      maxAttempts: 2,
+      publish: async () => {
+        throw new Error('permanent')
+      },
+      onDeadLetter: async (record: OutboxRecord) => {
+        deadLettered.push(record)
+      },
+    }
+    await drainOutboxOnce(opts)
+    await drainOutboxOnce(opts)
+
+    const [row] = await db('event_outbox')
+    expect(row.status).toBe('failed')
+    expect(row.attempts).toBe(2)
+    expect(deadLettered).toHaveLength(1)
+    expect(deadLettered[0].topic).toBe('identity.org.created')
+  })
+
+  it('drains accumulated rows once publishing recovers (Kafka-down resilience)', async () => {
+    await seed('identity.org.created', { organizationId: 'o1' }, 'c1')
+    await seed('identity.org.created', { organizationId: 'o2' }, 'c2')
+    await seed('identity.org.created', { organizationId: 'o3' }, 'c3')
+
+    let brokerUp = false
+    const publish = async () => {
+      if (!brokerUp) throw new Error('kafka down')
+    }
+
+    // Broker down: all three stay pending.
+    const down = await drainOutboxOnce({ db, publish })
+    expect(down).toEqual({ sent: 0, failed: 3 })
+    expect(await db('event_outbox').where('status', 'pending').count({ n: '*' }).first()).toEqual({ n: '3' })
+
+    // Broker recovers: next drain sends all three.
+    brokerUp = true
+    const up = await drainOutboxOnce({ db, publish })
+    expect(up).toEqual({ sent: 3, failed: 0 })
+    expect(await db('event_outbox').where('status', 'sent').count({ n: '*' }).first()).toEqual({ n: '3' })
   })
 })
