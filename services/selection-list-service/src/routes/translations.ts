@@ -132,8 +132,6 @@ router.get('/:listId/translations', requireAuthzCheck('SelectionList', 'read'), 
   const { listId } = req.params;
   const orgId = req.orgId as string;
 
-  // TODO(S7): permit.check('read', listId, req.userId)
-
   const list = await getListByOrg(listId, orgId);
   if (!list) {
     return res.status(404).json({ code: 'NOT_FOUND', message: 'List not found.' });
@@ -202,8 +200,6 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
 
   const { listId, locale } = req.params;
   const orgId = req.orgId as string;
-
-  // TODO(S7): permit.check('translate', listId, req.userId)
 
   if (!SUPPORTED_LOCALES.has(locale)) {
     return res.status(400).json({
@@ -308,8 +304,6 @@ router.delete('/:listId/translations/:locale', requireAuthzCheck('SelectionList'
   const { listId, locale } = req.params;
   const orgId = req.orgId as string;
 
-  // TODO(S7): permit.check('translate', listId, req.userId)
-
   if (!SUPPORTED_LOCALES.has(locale)) {
     return res.status(400).json({
       code: 'VALIDATION_ERROR',
@@ -359,8 +353,6 @@ router.get('/:listId/items/:itemId/translations', requireAuthzCheck('SelectionLi
   const { listId, itemId } = req.params;
   const orgId = req.orgId as string;
 
-  // TODO(S7): permit.check('read', listId, req.userId)
-
   const list = await getListByOrg(listId, orgId);
   if (!list) {
     return res.status(404).json({ code: 'NOT_FOUND', message: 'List not found.' });
@@ -407,8 +399,6 @@ router.put('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('Sel
 
   const { listId, itemId, locale } = req.params;
   const orgId = req.orgId as string;
-
-  // TODO(S7): permit.check('translate', listId, req.userId)
 
   if (!SUPPORTED_LOCALES.has(locale)) {
     return res.status(400).json({
@@ -509,8 +499,6 @@ router.delete('/:listId/items/:itemId/translations/:locale', requireAuthzCheck('
   const { listId, itemId, locale } = req.params;
   const orgId = req.orgId as string;
 
-  // TODO(S7): permit.check('translate', listId, req.userId)
-
   if (!SUPPORTED_LOCALES.has(locale)) {
     return res.status(400).json({
       code: 'VALIDATION_ERROR',
@@ -572,8 +560,6 @@ router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('Selecti
   // SelectionListAutofillRequest: additionalProperties false.
   if (!acceptOnlyBodyProps(req, res, ['overwrite_machine', 'item_ids'])) return;
   const { overwrite_machine = false, item_ids } = req.body ?? {};
-
-  // TODO(S7): permit.check('translate', listId, req.userId)
 
   if (!SUPPORTED_LOCALES.has(locale)) {
     return res.status(400).json({
