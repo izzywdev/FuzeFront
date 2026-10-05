@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Building, Rocket, RefreshCw, Code, ArrowRight } from 'lucide-react'
-import { Center } from '@fuzefront/design-system'
+import { Center, PageShell } from '@fuzefront/design-system'
 
 const solutions = [
   {
@@ -40,7 +40,7 @@ export const SolutionsPage: React.FC = () => {
   const [solutionsRef, solutionsInView] = useInView({ triggerOnce: true })
 
   return (
-    <div className="bg-white pt-16">
+    <PageShell>
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <Center
@@ -103,6 +103,6 @@ export const SolutionsPage: React.FC = () => {
           </div>
         </div>
       </section>
-    </div>
+    </PageShell>
   )
 }
