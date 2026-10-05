@@ -20,6 +20,8 @@
  * states in tests/routes/config.write.test.ts.
  */
 
+import { randomUUID } from 'crypto';
+import { isDeepStrictEqual } from 'util';
 import { Router, Request, Response } from 'express';
 import { Pool, PoolClient } from 'pg';
 import { requireAuth } from '../middleware/auth';
@@ -37,6 +39,7 @@ import { validateWriteRequestShape } from '../validation/requestShapes';
 import { buildWriteChain, findAncestorLock, findRowAtTargetScope } from '../services/scope-chain';
 import { computeResolvedVersion } from '../services/version';
 import { ErrorDetail, sendError } from '../http/errors';
+import { ConfigChangeNotifier } from '../events/publisher';
 import { ConfigValue, KeyDefinition, Scope } from '../types';
 
 interface ConfigOperationInput {
@@ -65,7 +68,32 @@ function hasOwn(obj: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-export function createConfigWriteRouter(pool: Pool): Router {
+/**
+ * Did this operation actually change persisted state at the target scope?
+ * `before` is the row at the EXACT target scope from the batch's pre-write
+ * snapshot. A no-op (re-setting the identical unlocked value, unsetting
+ * nothing, locking an identical lock, unlocking an unlocked row) must not
+ * emit `config.changed` — consumers would invalidate caches for nothing.
+ */
+function changesState(op: ConfigOperationInput, before: ConfigValue | undefined | null): boolean {
+  switch (op.op) {
+    case 'set':
+      return !before || before.isLocked || !isDeepStrictEqual(before.value, op.value);
+    case 'unset':
+      return !!before;
+    case 'lock':
+      return (
+        !before ||
+        !before.isLocked ||
+        !isDeepStrictEqual(before.value, op.value) ||
+        (before.lockReason ?? null) !== (op.lockReason ?? null)
+      );
+    case 'unlock':
+      return !!before && before.isLocked;
+  }
+}
+
+export function createConfigWriteRouter(pool: Pool, events?: ConfigChangeNotifier | null): Router {
   const namespaces = new PgNamespaceRepository(pool);
   const keyDefs = new PgKeyDefinitionRepository(pool);
   const values = new PgValueRepository(pool);
@@ -255,6 +283,8 @@ export function createConfigWriteRouter(pool: Pool): Router {
     // ── 6. Apply the batch atomically. ───────────────────────────────────────
     const client: PoolClient = await pool.connect();
     const applied: string[] = [];
+    // Key NAMES that really changed state — the only thing config.changed carries.
+    const changedKeys = new Set<string>();
     try {
       await client.query('BEGIN');
       const txValues = new PgValueRepository(client as unknown as Pool);
@@ -373,6 +403,7 @@ export function createConfigWriteRouter(pool: Pool): Router {
           }
         }
         applied.push(op.key);
+        if (changesState(op, before)) changedKeys.add(op.key);
       }
 
       await client.query('COMMIT');
@@ -408,6 +439,39 @@ export function createConfigWriteRouter(pool: Pool): Router {
       return;
     }
     client.release();
+
+    // Publish AFTER the COMMIT (never on rollback — the catch above returns
+    // first), ONE coalesced event per (namespace, scope) for the whole batch
+    // (FF-EPIC-18-S4: a settings-page save is not an invalidation storm), and
+    // none at all for a batch that changed nothing. Carries key NAMES + scope
+    // only — never a value, so an isSecret key cannot leak through the bus.
+    // Fire-and-forget: configChanged() never rejects, and a broker outage must
+    // not fail or delay a write that already committed.
+    if (events && changedKeys.size > 0) {
+      const correlationId =
+        (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id']) || randomUUID();
+      // Belt and braces: even a notifier that violates the never-rejects
+      // contract (sync throw or rejected promise) cannot fail the response or
+      // surface as an unhandled rejection.
+      try {
+        Promise.resolve(
+          events.configChanged(
+            {
+              namespace: body.namespace,
+              scope: { scopeType: body.scope.scopeType, scopeId: body.scope.scopeId ?? null },
+              changedKeys: [...changedKeys],
+            },
+            correlationId,
+          ),
+        ).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error('[config-service] config.changed notifier rejected (write committed):', err);
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[config-service] config.changed notifier threw (write committed):', err);
+      }
+    }
 
     const afterValues = await values.listForDefinitions(
       definitions.map((d) => d.id),

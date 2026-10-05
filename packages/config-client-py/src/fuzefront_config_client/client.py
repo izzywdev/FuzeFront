@@ -34,6 +34,9 @@ from typing import Any
 from ._paginator import paginate as _paginate
 from .errors import ConfigApiError
 from .types import (
+    Actor,
+    ConfigHistoryAction,
+    ConfigHistoryEntry,
     ConfigOperation,
     ConfigWriteRequest,
     ConfigWriteResult,
@@ -46,6 +49,7 @@ from .types import (
     Namespace,
     Paged,
     Precedence,
+    RevealSecretResult,
     Scope,
     ScopeType,
     ValueType,
@@ -424,6 +428,73 @@ class ConfigClient:
             applied=raw.get("applied", []),
         )
 
+    def reveal_secret(
+        self, namespace: str, scope: Scope, key: str, reason: str
+    ) -> RevealSecretResult:
+        """
+        ``POST /v1/config/secrets/reveal`` -- reveal a stored secret's
+        plaintext exactly once.
+
+        Separately authorized from read and write; every call is audited with
+        the required ``reason`` (1-500 chars). The response is ``no-store``:
+        never cache or log ``value``. 404 = nothing stored at that exact
+        scope; 409 ``SECRET_UNAVAILABLE`` = a value IS stored but its key is
+        unavailable.
+        """
+        raw = self._request(
+            "POST",
+            "/v1/config/secrets/reveal",
+            body={
+                "namespace": namespace,
+                "scope": scope_to_wire(scope),
+                "key": key,
+                "reason": reason,
+            },
+        )
+        return RevealSecretResult(
+            namespace=raw["namespace"],
+            scope=scope_from_wire(raw["scope"]),
+            key=raw["key"],
+            value=raw["value"],
+            revealed_at=raw["revealedAt"],
+            history_entry_id=raw["historyEntryId"],
+        )
+
+    # ------------------------------------------------------------------
+    # History
+    # ------------------------------------------------------------------
+
+    def list_config_history(
+        self,
+        namespace: str,
+        scope: Scope,
+        key: str,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> Paged[ConfigHistoryEntry]:
+        """
+        ``GET /v1/config/history`` -- the append-only change trail for one key
+        at one exact scope, newest first. Needs an audit grant. ``isSecret``
+        keys come back with ``redacted=True`` and ``None`` old/new values.
+        """
+        raw = self._request(
+            "GET",
+            "/v1/config/history",
+            query={
+                "namespace": namespace,
+                "scopeType": enum_value(scope.scope_type),
+                "scopeId": scope.scope_id,
+                "key": key,
+                "cursor": cursor,
+                "limit": limit,
+            },
+        )
+        return Paged(
+            items=[_parse_history_entry(e) for e in raw.get("items", [])],
+            page_info=page_info_from_wire(raw.get("pageInfo", {})),
+        )
+
     # ------------------------------------------------------------------
     # Paginator helper
     # ------------------------------------------------------------------
@@ -476,6 +547,28 @@ def _parse_namespace(raw: dict) -> Namespace:
         created_at=raw["createdAt"],
         description=raw.get("description"),
         owner_app_id=raw.get("ownerAppId"),
+    )
+
+
+def _parse_history_entry(raw: dict) -> ConfigHistoryEntry:
+    actor = raw["actor"]
+    return ConfigHistoryEntry(
+        id=raw["id"],
+        namespace=raw["namespace"],
+        key=raw["key"],
+        scope=scope_from_wire(raw["scope"]),
+        action=ConfigHistoryAction(raw["action"]),
+        redacted=raw["redacted"],
+        actor=Actor(
+            actor_type=actor["actorType"],
+            actor_redacted=actor["actorRedacted"],
+            actor_id=actor.get("actorId"),
+        ),
+        occurred_at=raw["occurredAt"],
+        old_value=raw.get("oldValue"),
+        new_value=raw.get("newValue"),
+        reason=raw.get("reason"),
+        revert_of=raw.get("revertOf"),
     )
 
 

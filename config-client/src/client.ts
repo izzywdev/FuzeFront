@@ -1,6 +1,10 @@
 import { ConfigApiError } from './errors'
 import type {
   ConfigErrorBody,
+  ConfigHistoryEntry,
+  ListConfigHistoryParams,
+  RevealSecretRequest,
+  RevealSecretResult,
   ConfigWriteRequest,
   ConfigWriteResult,
   EffectiveConfig,
@@ -211,6 +215,44 @@ export class ConfigClient {
   ): Promise<ConfigWriteResult> {
     return this.#request<ConfigWriteResult>('PUT', '/v1/config', {
       body: request,
+    })
+  }
+
+  /**
+   * Reveal a stored secret's plaintext, exactly once (`POST /v1/config/secrets/reveal`).
+   *
+   * Separately authorized from read and write, and every call is audited with
+   * the required `reason`. The response is `no-store`: never cache or log the
+   * returned `value`. A 404 means nothing is stored at that exact scope; a 409
+   * `SECRET_UNAVAILABLE` means a value IS stored but its key is unavailable.
+   */
+  async revealSecret(request: RevealSecretRequest): Promise<RevealSecretResult> {
+    return this.#request<RevealSecretResult>('POST', '/v1/config/secrets/reveal', {
+      body: request,
+    })
+  }
+
+  // ---------------------------------------------------------------------------
+  // History
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The append-only change trail for one key at one exact scope, newest first
+   * (`GET /v1/config/history`). Needs an audit grant. `isSecret` keys come back
+   * with `redacted: true` and null `oldValue`/`newValue`.
+   */
+  async listConfigHistory(
+    params: ListConfigHistoryParams,
+  ): Promise<Paged<ConfigHistoryEntry>> {
+    return this.#request<Paged<ConfigHistoryEntry>>('GET', '/v1/config/history', {
+      query: {
+        namespace: params.namespace,
+        scopeType: params.scope.scopeType,
+        scopeId: params.scope.scopeId ?? undefined,
+        key: params.key,
+        cursor: params.cursor,
+        limit: params.limit,
+      },
     })
   }
 

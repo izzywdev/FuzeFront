@@ -3,6 +3,7 @@ import { loadConfig } from './config';
 import { createApp } from './app';
 import { createPool, runMigrations } from './db';
 import { startLifecycleConsumers, LifecycleConsumers } from './events/consumer';
+import { createConfigChangePublisher } from './events/publisher';
 
 // governance/identifier-standard.md §8 ("Migration"): portal/organization/user
 // ids are spine types minted elsewhere in the family that have NOT yet been
@@ -48,7 +49,17 @@ async function main(): Promise<void> {
   // Liveness stays on the shallow `/health`; readiness uses `/health/ready`,
   // which pings the DB — so a database that disappears LATER takes the pod
   // out of the Service without triggering a liveness restart loop.
-  const app = createApp(pool ? { pool } : undefined);
+  // config.changed producer (FF-EPIC-18-S4). null when KAFKA_BROKERS is unset;
+  // otherwise connects lazily on first publish, so it can never delay startup
+  // or fail a write (see src/events/publisher.ts).
+  const events = createConfigChangePublisher();
+  // eslint-disable-next-line no-console
+  console.log(
+    events
+      ? '[config-service] config.changed publisher enabled'
+      : '[config-service] KAFKA_BROKERS unset — config.changed events not published',
+  );
+  const app = createApp(pool ? { pool, events } : undefined);
   const server = app.listen(config.port, () => {
     // eslint-disable-next-line no-console
     console.log(`[config-service] Listening on port ${config.port}`);
@@ -85,7 +96,11 @@ async function main(): Promise<void> {
     console.log('[config-service] Shutting down...');
     // Disconnect the consumers before closing the server so in-flight handlers
     // finish against a live pool rather than being cut off mid-transaction.
-    const closeServer = () => server.close(() => process.exit(0));
+    const closeServer = () => {
+      const done = () => server.close(() => process.exit(0));
+      if (events) events.disconnect().finally(done);
+      else done();
+    };
     if (lifecycle) {
       lifecycle
         .disconnect()

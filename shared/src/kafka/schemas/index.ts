@@ -41,3 +41,4 @@ export * from './selection-lists.access.revoked';
 export * from './selection-lists.seed.requested';
 export * from './selection-lists.seed.completed';
 export * from './selection-lists.seed.failed';
+export * from './config.changed';

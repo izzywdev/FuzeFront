@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/config-client",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Typed HTTP client for the FuzeFront config-service REST API",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -20,6 +20,7 @@
     "build": "tsup",
     "clean": "rimraf dist",
     "type-check": "tsc --noEmit",
+    "test": "vitest run",
     "lint:contract": "spectral lint ../services/config-service/openapi.yaml --ruleset ../services/config-service/.spectral.yaml --fail-severity=hint",
     "prepublishOnly": "npm run clean && npm run build"
   },
@@ -49,6 +50,7 @@
     "@types/node": "^24.13.3",
     "rimraf": "^5.0.1",
     "tsup": "^8.0.2",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.4"
   }
 }

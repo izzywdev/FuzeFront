@@ -34,6 +34,7 @@ exports.SCHEMA_BY_TOPIC = {
     [types_1.TOPICS.NOTIFY_EMAIL_STATUS]: schemas_1.notifyEmailStatusSchemaV1,
     [types_1.TOPICS.PORTAL_CREATED]: schemas_1.portalCreatedSchemaV1,
     [types_1.TOPICS.CHAT_RESPONSE_CHUNK]: schemas_1.chatResponseChunkSchemaV1,
+    [types_1.TOPICS.CONFIG_CHANGED]: schemas_1.configChangedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_LIST_CREATED]: schemas_1.selectionListsListCreatedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_LIST_UPDATED]: schemas_1.selectionListsListUpdatedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_LIST_ARCHIVED]: schemas_1.selectionListsListArchivedSchemaV1,
