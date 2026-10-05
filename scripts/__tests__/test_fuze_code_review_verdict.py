@@ -353,11 +353,11 @@ class CreditOutageExceptionTests(unittest.TestCase):
     def test_outage_is_a_declared_decision(self):
         self.assertIn("outage", V.DECISIONS)
 
-    def test_outage_body_says_it_passes(self):
+    def test_outage_body_says_no_review_was_performed(self):
         r = V.decide("failure", "", "n0nce", [], mode="", availability=True)
         body = V.render_body(r, "", "")
-        self.assertIn("not a failure", body)
-        self.assertIn("PASSES", body)
+        self.assertIn("NO REVIEW WAS PERFORMED", body)
+        self.assertIn("check passes", body)
 
 
 class ActionNeverReported(unittest.TestCase):
@@ -394,5 +394,48 @@ class ActionNeverReported(unittest.TestCase):
     def test_defaults_to_reported_so_existing_callers_are_unchanged(self):
         r = V.decide("failure", "", V.make_nonce(), [], availability=False)
         self.assertEqual(r["decision"], "abstain")
+
+
+class OutagePathSensitivityTests(unittest.TestCase):
+    """The outage exception is narrowed by path: no review + sensitive paths = blocked."""
+
+    def test_outage_on_sensitive_path_blocks(self):
+        r = V.decide("failure", "", NONCE, [".github/workflows/x.yml"], availability=True)
+        self.assertEqual(r["decision"], "outage_blocking")
+
+    def test_outage_on_deploy_sensitive_path_blocks(self):
+        r = V.decide("failure", "", NONCE, [], availability=True,
+                     deploy_sensitive_files=["helm/fuzefront/values.yaml"])
+        self.assertEqual(r["decision"], "outage_blocking")
+
+    def test_hang_on_sensitive_path_blocks(self):
+        r = V.decide("", "", NONCE, [], action_reported=False,
+                     deploy_sensitive_files=["backend/src/db/migrations/001.sql"])
+        self.assertEqual(r["decision"], "outage_blocking")
+
+    def test_outage_on_plain_path_passes(self):
+        r = V.decide("failure", "", NONCE, [], availability=True, deploy_sensitive_files=[])
+        self.assertEqual(r["decision"], "outage")
+        self.assertIn("NO REVIEW WAS PERFORMED", V.render_body(r, "", ""))
+
+    def test_task_failure_still_abstains(self):
+        r = V.decide("failure", "", NONCE, [], availability=False,
+                     deploy_sensitive_files=["deploy/x.yaml"])
+        self.assertEqual(r["decision"], "abstain")
+
+    def test_blocking_and_plain_outage_bodies_carry_dedupe_marker(self):
+        for kwargs in ({}, {"deploy_sensitive_files": ["deploy/a"]}):
+            r = V.decide("failure", "", NONCE, [], availability=True, **kwargs)
+            self.assertIn(V.OUTAGE_MARKER, V.render_body(r, "", ""))
+
+    def test_outage_blocking_is_a_declared_decision(self):
+        self.assertIn("outage_blocking", V.DECISIONS)
+
+    def test_outage_blocking_never_approves(self):
+        r = V.decide("failure", sentinel(NONCE, CLEAN_APPROVE), NONCE, ["governance/x"],
+                     availability=True)
+        self.assertNotEqual(r["decision"], "approve")
+
+
 if __name__ == "__main__":
     unittest.main()
