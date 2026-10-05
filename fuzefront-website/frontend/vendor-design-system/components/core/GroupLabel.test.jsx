@@ -52,21 +52,21 @@ describe("<GroupLabel>", () => {
 
   it("defaults to the sm spacing token for the bottom margin", () => {
     render(<GroupLabel>Default spacing</GroupLabel>);
-    expect(screen.getByText("Default spacing").style.marginBottom).toBe(
+    expect(screen.getByText("Default spacing").style.marginBlockEnd).toBe(
       "var(--space-2)"
     );
   });
 
   it("resolves the md spacing value to its DS spacing token", () => {
     render(<GroupLabel spacing="md">Wider gap</GroupLabel>);
-    expect(screen.getByText("Wider gap").style.marginBottom).toBe(
+    expect(screen.getByText("Wider gap").style.marginBlockEnd).toBe(
       "var(--space-3)"
     );
   });
 
   it("falls back to the sm spacing token for an unknown `spacing` value", () => {
     render(<GroupLabel spacing="not-a-real-space">Fallback</GroupLabel>);
-    expect(screen.getByText("Fallback").style.marginBottom).toBe(
+    expect(screen.getByText("Fallback").style.marginBlockEnd).toBe(
       "var(--space-2)"
     );
   });
