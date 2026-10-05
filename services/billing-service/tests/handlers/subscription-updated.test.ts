@@ -8,7 +8,7 @@ function makeCtx() {
       }),
     },
     subscriptions: { upsert: jest.fn().mockResolvedValue({}) },
-    plans: { findByPriceId: jest.fn().mockResolvedValue({ tierName: 'pro' }) },
+    plans: { findByPriceId: jest.fn().mockResolvedValue({ tierName: 'professional' }) },
     permit: { syncPlanToPermit: jest.fn().mockResolvedValue(true) },
     emitter: { subscriptionChanged: jest.fn().mockResolvedValue(undefined) },
   } as any;
@@ -37,10 +37,10 @@ describe('handleSubscriptionUpdated', () => {
 
     expect(ctx.subscriptions.upsert).toHaveBeenCalledTimes(1);
     expect(ctx.permit.syncPlanToPermit).toHaveBeenCalledWith(
-      expect.objectContaining({ entityType: 'organization', entityId: 'org-1', planTier: 'pro', status: 'active', seatQuantity: 3 }),
+      expect.objectContaining({ entityType: 'organization', entityId: 'org-1', planTier: 'professional', status: 'active', seatQuantity: 3 }),
     );
     expect(ctx.emitter.subscriptionChanged).toHaveBeenCalledWith(
-      expect.objectContaining({ planTier: 'pro', status: 'active', stripeSubscriptionId: 'sub_1' }),
+      expect.objectContaining({ planTier: 'professional', status: 'active', stripeSubscriptionId: 'sub_1' }),
     );
   });
 
