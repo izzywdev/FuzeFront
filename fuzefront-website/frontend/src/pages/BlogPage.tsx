@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Center, Container } from '@fuzefront/design-system'
+import { Center, Container, PageHeroTitle } from '@fuzefront/design-system'
 
 export const BlogPage: React.FC = () => {
   const [heroRef, heroInView] = useInView({ triggerOnce: true })
@@ -16,9 +16,9 @@ export const BlogPage: React.FC = () => {
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8 }}
           >
-            <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
+            <PageHeroTitle>
               <span className="gradient-text">Blog</span> & Insights
-            </h1>
+            </PageHeroTitle>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Stay updated with the latest in SaaS development, best practices, and FuzeFront updates.
             </p>

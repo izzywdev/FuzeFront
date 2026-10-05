@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
-import { Center, IconTile, Container, FieldLabel } from '@fuzefront/design-system'
+import { Center, IconTile, Container, FieldLabel, PageHeroTitle } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -86,9 +86,9 @@ export const ContactPage: React.FC = () => {
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8 }}
           >
-            <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
+            <PageHeroTitle>
               Get in <span className="gradient-text">Touch</span>
-            </h1>
+            </PageHeroTitle>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Ready to build something amazing? Let's discuss how FuzeFront can help.
             </p>
