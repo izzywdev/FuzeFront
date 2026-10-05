@@ -194,6 +194,10 @@
       "sourcePath": "components/layout/InfoRow.jsx"
     },
     {
+      "name": "InverseHeading",
+      "sourcePath": "components/layout/InverseHeading.jsx"
+    },
+    {
       "name": "ListStack",
       "sourcePath": "components/layout/ListStack.jsx"
     },
