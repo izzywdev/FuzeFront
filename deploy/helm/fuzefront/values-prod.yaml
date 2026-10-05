@@ -270,6 +270,13 @@ applicationsService:
     appName: "applications-service"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Build-with-agent. buildApiUrl is deliberately empty: set FuzeAgent's
+  # in-cluster build URL (and seal FUZEAGENT_BUILD_API_TOKEN, then set
+  # tokenSecretName: fuzefront-secrets - see docs/runbooks/app-builder-secrets.md)
+  # once FuzeAgent exposes the build endpoint. Until then the API answers 503
+  # builder_unavailable.
+  appBuilder:
+    publicBaseUrl: "https://app.fuzefront.com"
   <<: *elasticPlacement
 
 # ---- MCP SSE gateway: ON ---------------------------------------------------
