@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Cookie } from 'lucide-react'
-import { Text } from '@fuzefront/design-system'
+import { Text, TextLink } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 export const CookieNotice: React.FC = () => {
@@ -81,13 +81,13 @@ export const CookieNotice: React.FC = () => {
                 
                 <p className="text-xs text-gray-500 mt-2">
                   Learn more in our{' '}
-                  <a href="/privacy" className="text-primary-600 hover:text-primary-700">
+                  <TextLink href="/privacy">
                     Privacy Policy
-                  </a>
+                  </TextLink>
                   {' '}and{' '}
-                  <a href="/cookies" className="text-primary-600 hover:text-primary-700">
+                  <TextLink href="/cookies">
                     Cookie Policy
-                  </a>
+                  </TextLink>
                 </p>
               </div>
               
