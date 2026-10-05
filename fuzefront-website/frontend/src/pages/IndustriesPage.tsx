@@ -6,7 +6,7 @@ import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
   Cloud, Briefcase, Building, ArrowRight, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Wrap, Container, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -230,7 +230,7 @@ export const IndustriesPage: React.FC = () => {
       </section>
 
       {/* Industries Grid */}
-      <section className="py-20 bg-secondary-50">
+      <Section tone="muted" spacing="md">
         <Container size="7xl">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {industries.map((industry) => (
@@ -238,7 +238,7 @@ export const IndustriesPage: React.FC = () => {
             ))}
           </div>
         </Container>
-      </section>
+      </Section>
 
       {/* CTA */}
       <section className="py-20 bg-white border-t border-gray-100">

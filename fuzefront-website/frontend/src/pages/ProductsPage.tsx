@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -199,7 +200,7 @@ export const ProductsPage: React.FC = () => {
       </section>
 
       {/* Products grid */}
-      <section className="py-20 bg-secondary-50">
+      <Section tone="muted" spacing="md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {allProducts.map((product) => (
@@ -207,7 +208,7 @@ export const ProductsPage: React.FC = () => {
             ))}
           </div>
         </div>
-      </section>
+      </Section>
 
       {/* CTA */}
       <section className="py-20 bg-white border-t border-gray-100">

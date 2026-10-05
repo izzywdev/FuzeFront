@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -290,7 +290,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Products Grid ── */}
-      <section className="py-24 bg-secondary-50">
+      <Section tone="muted" spacing="lg">
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
@@ -338,7 +338,7 @@ export const HomePage: React.FC = () => {
             </motion.div>
           </SectionWrapper>
         </Container>
-      </section>
+      </Section>
 
       {/* ── Industries ── */}
       <section className="py-24 bg-white">
@@ -478,7 +478,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Final CTA ── */}
-      <section className="py-20 bg-secondary-50 border-t border-secondary-100">
+      <Section tone="muted" spacing="md" border="top">
         <div className="max-w-3xl mx-auto px-4 text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
@@ -510,7 +510,7 @@ export const HomePage: React.FC = () => {
             </motion.div>
           </SectionWrapper>
         </div>
-      </section>
+      </Section>
     </div>
   )
 }

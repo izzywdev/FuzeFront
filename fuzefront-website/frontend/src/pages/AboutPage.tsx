@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -195,7 +195,7 @@ export const AboutPage: React.FC = () => {
       </section>
 
       {/* What we offer */}
-      <section className="py-24 bg-secondary-50">
+      <Section tone="muted" spacing="lg">
         <Container size="5xl">
           <motion.div
             ref={offerRef}
@@ -235,7 +235,7 @@ export const AboutPage: React.FC = () => {
             })}
           </motion.div>
         </Container>
-      </section>
+      </Section>
 
       {/* CTA */}
       <section className="py-20 bg-white border-t border-secondary-100">
