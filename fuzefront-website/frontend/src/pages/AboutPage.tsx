@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -115,7 +115,7 @@ export const AboutPage: React.FC = () => {
       </section>
 
       {/* Values */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <motion.div
             ref={valuesRef}
@@ -138,7 +138,7 @@ export const AboutPage: React.FC = () => {
             })}
           </motion.div>
         </Container>
-      </section>
+      </PageSection>
 
       {/* Leadership */}
       <section className="py-24 bg-white border-t border-secondary-100">

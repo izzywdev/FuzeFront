@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -324,7 +325,7 @@ export const ProductDetailPage: React.FC = () => {
       </section>
 
       {/* Features */}
-      <section className="py-20 bg-white">
+      <PageSection spacing="md">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-12 text-center">
             Key capabilities
@@ -349,7 +350,7 @@ export const ProductDetailPage: React.FC = () => {
             ))}
           </div>
         </div>
-      </section>
+      </PageSection>
 
       {/* Use cases */}
       <section className="py-16 bg-secondary-50">

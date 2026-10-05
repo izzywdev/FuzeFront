@@ -16,6 +16,8 @@
   --space-10: 2.5rem;   /* 40px */
   --space-12: 3rem;     /* 48px */
   --space-16: 4rem;     /* 64px */
+  --space-20: 5rem;     /* 80px — PageSection "md" block padding */
+  --space-24: 6rem;     /* 96px — PageSection "lg" block padding */
 
   /* ---- Radii --------------------------------------------- */
   --radius: 0.625rem;   /* 10px base */

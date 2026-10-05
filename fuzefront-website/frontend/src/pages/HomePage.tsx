@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -259,7 +259,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Value Props ── */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-16">
@@ -287,7 +287,7 @@ export const HomePage: React.FC = () => {
             </div>
           </SectionWrapper>
         </Container>
-      </section>
+      </PageSection>
 
       {/* ── Products Grid ── */}
       <section className="py-24 bg-secondary-50">
@@ -341,7 +341,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Industries ── */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="7xl">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants} className="text-center mb-12">
@@ -376,7 +376,7 @@ export const HomePage: React.FC = () => {
             </motion.div>
           </SectionWrapper>
         </Container>
-      </section>
+      </PageSection>
 
       {/* ── Pricing Teaser ── */}
       <section className="py-24 bg-gradient-to-br from-primary-900 via-secondary-900 to-accent-900 relative overflow-hidden">
@@ -433,7 +433,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* ── Newsletter ── */}
-      <section className="py-20 bg-white">
+      <PageSection spacing="md">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
@@ -475,7 +475,7 @@ export const HomePage: React.FC = () => {
             </motion.div>
           </SectionWrapper>
         </div>
-      </section>
+      </PageSection>
 
       {/* ── Final CTA ── */}
       <section className="py-20 bg-secondary-50 border-t border-secondary-100">
