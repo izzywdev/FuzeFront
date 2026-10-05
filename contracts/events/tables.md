@@ -74,6 +74,13 @@ CREATE TABLE processed_events (
 
 - `consumer` — stable consumer-group / handler name; the same `event_id` for two consumers is two rows.
 - Dedupe is `INSERT ... ON CONFLICT DO NOTHING`; zero rows inserted means duplicate, skip the effect.
+- **v1 envelopes** (no `eventId`) are still consumed during the migration window. Their dedupe key is
+  `<topic>:<partition>:<offset>`, written to `processed_events.event_id`. It is stable for a given
+  Kafka record, so redelivery of that record is absorbed; it does not dedupe a v1 event re-published
+  as a new record, which is why producers move to v2 (Wave C). The version guard applies only to v2.
+- Version-guard outcome when `aggregateVersion <= stored`: the effect is skipped (`IGNORED`) and the
+  `eventId` is still recorded in `processed_events`. The stored version is owned by the consumer's
+  projection, not by the runtime.
 - Retention: rows may be pruned after a period well beyond the broker retention + max redelivery
   horizon (suggested: 30 days). Pruning is the package's scheduled job.
 

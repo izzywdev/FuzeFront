@@ -80,8 +80,11 @@ export const V2_ONLY_KEYS = [
 
 /**
  * Normalized envelope: what consumers should code against while v1 and v2
- * coexist. For v1 the aggregate/event fields are `undefined` — a consumer that
- * needs dedupe or version-guarding must reject (or dead-letter) v1.
+ * coexist. For v1 the aggregate/event fields are `undefined`. A deduping
+ * consumer keeps consuming v1 during the migration window and dedupes it on the
+ * fallback key `<topic>:<partition>:<offset>` (stored in
+ * `processed_events.event_id`); v1 has no aggregate version, so the version
+ * guard does not apply to it. See contracts/events/tables.md.
  * `schemaVersion` is the v1 `version` string verbatim, or `String(n)` for v2.
  */
 export interface NormalizedEnvelope<T = unknown> {
