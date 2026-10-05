@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, HeroContent } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -83,7 +83,7 @@ export const FuzeHubPage: React.FC = () => {
         {/* Accent glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
 
-        <Container size="5xl" className="relative text-center">
+        <HeroContent size="5xl">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-500/15 border border-primary-500/25 text-primary-400 text-sm font-medium mb-8">
               <Monitor size={14} /> FuzeHub — Unified Operations Hub
@@ -110,7 +110,7 @@ export const FuzeHubPage: React.FC = () => {
               </Link>
             </div>
           </motion.div>
-        </Container>
+        </HeroContent>
       </section>
 
       {/* Mock Dashboard Visual */}

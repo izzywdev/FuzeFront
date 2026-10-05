@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, HeroContent } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -43,7 +43,7 @@ export const PressPage: React.FC = () => {
             gradient entirely instead of layering. */}
         <div className="absolute inset-0 hero-pattern pointer-events-none" />
         <div className="absolute top-10 right-1/4 w-80 h-80 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
-        <Container size="4xl" className="relative text-center">
+        <HeroContent size="4xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
@@ -56,7 +56,7 @@ export const PressPage: React.FC = () => {
               News, announcements, and resources for journalists and media covering FuzeOne.
             </p>
           </motion.div>
-        </Container>
+        </HeroContent>
       </section>
 
       {/* Press releases */}
