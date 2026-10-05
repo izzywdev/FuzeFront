@@ -19,6 +19,8 @@ securityService:
 
 applicationsService:
   enabled: true
+  appBuilder:
+    publicBaseUrl: "https://fuzefront.dev.local"
 
 # Clock-app built-in MF remote, served same-origin at
 # https://fuzefront.dev.local/apps/clock/remoteEntry.js. Build + load the image
