@@ -46,6 +46,10 @@
       "sourcePath": "components/core/ExternalLink.jsx"
     },
     {
+      "name": "GroupLabel",
+      "sourcePath": "components/core/GroupLabel.jsx"
+    },
+    {
       "name": "IconButton",
       "sourcePath": "components/core/IconButton.jsx"
     },
