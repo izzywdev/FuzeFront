@@ -10,6 +10,12 @@ export interface StackProps extends HTMLAttributes<HTMLDivElement> {
   justify?: "start" | "center" | "end" | "between" | "around";
   /** Gap between children, mapped to the spacing scale. Defaults to `sm` (--space-2, 8px). */
   gap?: "xs" | "sm" | "md" | "lg" | "xl";
+  /**
+   * Optional trailing margin-bottom, same spacing scale as `gap`. Omitted by
+   * default (no margin set). For a Stack used as a heading row sitting above
+   * following body copy (icon + title, title + subtitle).
+   */
+  mb?: "xs" | "sm" | "md" | "lg" | "xl";
   /** Allow children to wrap onto multiple lines. */
   wrap?: boolean;
   style?: CSSProperties;
