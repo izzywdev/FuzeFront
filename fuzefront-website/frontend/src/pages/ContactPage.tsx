@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
-import { Center, IconTile, Container, FieldLabel } from '@fuzefront/design-system'
+import { Center, IconTile, Container, FieldLabel, PageShell } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -77,7 +77,7 @@ export const ContactPage: React.FC = () => {
   }
 
   return (
-    <div className="bg-white pt-16">
+    <PageShell>
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <Container size="7xl">
           <Center
@@ -288,6 +288,6 @@ export const ContactPage: React.FC = () => {
           </div>
         </Container>
       </section>
-    </div>
+    </PageShell>
   )
 }

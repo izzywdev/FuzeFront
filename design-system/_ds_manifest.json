@@ -198,6 +198,10 @@
       "sourcePath": "components/layout/ListStack.jsx"
     },
     {
+      "name": "PageShell",
+      "sourcePath": "components/layout/PageShell.jsx"
+    },
+    {
       "name": "Panel",
       "sourcePath": "components/layout/Panel.jsx"
     },

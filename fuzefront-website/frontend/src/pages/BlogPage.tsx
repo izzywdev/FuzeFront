@@ -1,13 +1,13 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { Center, Container } from '@fuzefront/design-system'
+import { Center, Container, PageShell } from '@fuzefront/design-system'
 
 export const BlogPage: React.FC = () => {
   const [heroRef, heroInView] = useInView({ triggerOnce: true })
 
   return (
-    <div className="bg-white pt-16">
+    <PageShell>
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
         <Container size="7xl">
           <Center
@@ -39,6 +39,6 @@ export const BlogPage: React.FC = () => {
           </Center>
         </Container>
       </section>
-    </div>
+    </PageShell>
   )
 }
