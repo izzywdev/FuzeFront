@@ -33,6 +33,16 @@ jest.mock('../src/db', () => {
   return { db };
 });
 jest.mock('../src/flags', () => ({ isSelectionListsEnabled: jest.fn() }));
+// `list_locales` (review M-4): the lock + the locale count are covered against the real counting code in
+// quota.service.test.ts and quota.db.test.ts; here the route's REACTION to a refusal is what is pinned, and
+// the chain fixtures below (a fixed sequence of db() calls) stay exactly as they were.
+const mockLockQuotaScope = jest.fn().mockResolvedValue(undefined);
+const mockCheckLocaleQuota = jest.fn().mockResolvedValue(undefined);
+jest.mock('../src/services/quota.service', () => ({
+  ...jest.requireActual('../src/services/quota.service'),
+  lockQuotaScope: (...args: any[]) => mockLockQuotaScope(...args),
+  checkLocaleQuota: (...args: any[]) => mockCheckLocaleQuota(...args),
+}));
 // Outbox event layer is a stub in this ROUTE-behaviour suite; its real behaviour
 // is covered against real Postgres (tests/outbox.db.test.ts, outbox.routes.db.test.ts).
 jest.mock('../src/events/outbox');
@@ -139,6 +149,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   // Default: feature flag ON
   mockFlag.mockResolvedValue(true);
+  mockLockQuotaScope.mockReset().mockResolvedValue(undefined);
+  mockCheckLocaleQuota.mockReset().mockResolvedValue(undefined);
 });
 
 // ─── computeSourceHash ───────────────────────────────────────────────────────
@@ -454,6 +466,72 @@ describe('PUT /:listId/translations/:locale', () => {
     expect(res.body.name).toBe('Pays');
     expect(res.body.is_machine).toBe(false);
     expect(res.body.source_hash).toBeTruthy();
+  });
+});
+
+describe('list_locales quota on PUT /:listId/translations/:locale (review M-4)', () => {
+  const url = `/v1/selection-lists/${LIST_ID}/translations/fr`;
+
+  it('takes the per-list advisory lock, then asks for the locale being added', async () => {
+    mockDb.mockReturnValueOnce(chain(mockList)).mockReturnValueOnce(chain(mockSourceListTrans));
+    mockDb.mockReturnValueOnce({
+      insert: jest.fn().mockReturnThis(),
+      onConflict: jest.fn().mockReturnThis(),
+      merge: jest.fn().mockResolvedValue(undefined),
+    });
+    mockDb.mockReturnValueOnce(chain({ ...mockFrListTrans, is_machine: false }));
+
+    const res = await request(createApp()).put(url).set('Authorization', `Bearer ${TOKEN}`).send({ name: 'Pays' });
+
+    expect(res.status).toBe(200);
+    expect(mockLockQuotaScope).toHaveBeenCalledWith(expect.anything(), `list_locales:${LIST_ID}`);
+    expect(mockCheckLocaleQuota).toHaveBeenCalledWith(LIST_ID, 'org_01test', 'fr', expect.anything());
+    expect(mockLockQuotaScope.mock.invocationCallOrder[0]).toBeLessThan(mockCheckLocaleQuota.mock.invocationCallOrder[0]);
+  });
+
+  it('403 QUOTA_EXCEEDED list_locales when the list is at its ceiling, and nothing is written', async () => {
+    const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+    mockCheckLocaleQuota.mockRejectedValueOnce(new QuotaExceededError('list_locales', 3, 3, 'locales'));
+    mockDb.mockReturnValueOnce(chain(mockList)); // getListByOrg; the next db() call would be the source-translation read
+
+    const res = await request(createApp()).put(url).set('Authorization', `Bearer ${TOKEN}`).send({ name: 'Pays' });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_locales', current: 3, limit: 3 });
+    expect(mockDb).toHaveBeenCalledTimes(1); // no source read, no insert
+  });
+
+  it('a non-quota failure of the check is a real error, not a 403', async () => {
+    mockCheckLocaleQuota.mockRejectedValueOnce(new Error('db down'));
+    mockDb.mockReturnValueOnce(chain(mockList));
+    const res = await request(createApp()).put(url).set('Authorization', `Bearer ${TOKEN}`).send({ name: 'Pays' });
+    expect(res.status).toBe(500);
+  });
+
+  it('autofill into a NEW locale is also subject to list_locales; refreshing an existing one is not', async () => {
+    const { QuotaExceededError } = jest.requireActual('../src/services/quota.service');
+    const autofill = `/v1/selection-lists/${LIST_ID}/translations/fr/autofill`;
+    mockCheckLocaleQuota.mockRejectedValueOnce(new QuotaExceededError('list_locales', 3, 3, 'locales'));
+    mockDb
+      .mockReturnValueOnce(chain(mockList))
+      .mockReturnValueOnce(chain(mockSourceListTrans))
+      .mockReturnValueOnce(chain(undefined)); // no existing fr row -> adding a locale
+
+    const refused = await request(createApp()).post(autofill).set('Authorization', `Bearer ${TOKEN}`).send({});
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_locales' });
+
+    mockLockQuotaScope.mockClear();
+    mockCheckLocaleQuota.mockClear();
+    mockDb
+      .mockReturnValueOnce(chain(mockList))
+      .mockReturnValueOnce(chain(mockSourceListTrans))
+      .mockReturnValueOnce(chain({ ...mockFrListTrans, source_hash: 'stale' })) // an existing machine fr row
+      .mockReturnValueOnce({ insert: jest.fn().mockReturnThis(), onConflict: jest.fn().mockReturnThis(), merge: jest.fn().mockResolvedValue(undefined) })
+      .mockReturnValueOnce(chain([]));
+    const refreshed = await request(createApp()).post(autofill).set('Authorization', `Bearer ${TOKEN}`).send({});
+    expect(refreshed.status).toBe(200);
+    expect(mockCheckLocaleQuota).not.toHaveBeenCalled();
   });
 });
 

@@ -62,6 +62,7 @@ import { handleOrgCreated } from '../../../services/selection-list-service/dist/
 import { handleOrgDeleted } from '../../../services/selection-list-service/dist/events/org-deleted.handler';
 import { handleSeedRequested } from '../../../services/selection-list-service/dist/events/seed-requested.handler';
 import { handleUserDeleted } from '../../../services/selection-list-service/dist/events/user-deleted.handler';
+import { _setGrantTokenProviderForTesting } from '../../../services/selection-list-service/dist/lib/machineIdentity';
 import { applyPlatformDefaults } from '../../../services/selection-list-service/dist/seed';
 import { db } from '../../../services/selection-list-service/dist/db';
 
@@ -961,26 +962,41 @@ describe('seeded rows over HTTP (contract 4.0.0)', () => {
   it('after identity.user.deleted the author renders as the [deleted-user] sentinel and the response still conforms', async () => {
     const org = newOrg();
     const author = newUser();
+    const peer = newUser();
     const tok = () => mintTestToken({ userId: author.wire, organizationId: org.wire });
+    const peerTok = () => mintTestToken({ userId: peer.wire, organizationId: org.wire });
     const created = await rawFetch('/v1/selection-lists', { method: 'POST', token: tok(), body: JSON.stringify({ key: `sl7-del-${nonce()}`, name: 'Authored' }) });
     expect(created.status).toBe(201);
     const id = (created.body as { id: string }).id;
     const item = await rawFetch(`/v1/selection-lists/${id}/items`, { method: 'POST', token: tok(), body: JSON.stringify({ code: 'X', label: 'X' }) });
     expect(item.status).toBe(201);
+    // the author hands a second user ownership (so the list is NOT left ownerless by the author's deletion)
+    const grant = await rawFetch(`/v1/selection-lists/${id}/access/${peer.wire}`, { method: 'PUT', token: tok(), body: JSON.stringify({ role: 'list-owner' }) });
+    expect(grant.status).toBe(200);
 
-    await handleUserDeleted(userDeletedEnvelope(author) as never);
+    // The deletion also revokes the deleted user's own list grants (review M-2), which needs the service's
+    // machine identity; this in-process handler gets the same seam the unit suites use.
+    _setGrantTokenProviderForTesting({ getToken: async () => 'machine-token-authz-admin' });
+    try {
+      await handleUserDeleted(userDeletedEnvelope(author) as never);
+    } finally {
+      _setGrantTokenProviderForTesting(null);
+    }
 
-    const list = await rawFetch(`/v1/selection-lists/${id}`, { method: 'GET', token: tok() });
+    const list = await rawFetch(`/v1/selection-lists/${id}`, { method: 'GET', token: peerTok() });
     expect(list.status).toBe(200);
     assertResponse('GET', '/v1/selection-lists/{listId}', 200, list.body);
     expect((list.body as { created_by: string }).created_by).toBe('[deleted-user]');
-    const items = await rawFetch(`/v1/selection-lists/${id}/items`, { method: 'GET', token: tok() });
+    const items = await rawFetch(`/v1/selection-lists/${id}/items`, { method: 'GET', token: peerTok() });
     assertResponse('GET', '/v1/selection-lists/{listId}/items', 200, items.body);
     expect((items.body as { items: Array<{ created_by: string }> }).items[0].created_by).toBe('[deleted-user]');
-    const access = await rawFetch(`/v1/selection-lists/${id}/access`, { method: 'GET', token: tok() });
+    const access = await rawFetch(`/v1/selection-lists/${id}/access`, { method: 'GET', token: peerTok() });
     assertResponse('GET', '/v1/selection-lists/{listId}/access', 200, access.body);
-    expect((access.body as { items: Array<{ granted_by: string }> }).items[0].granted_by).toBe('[deleted-user]');
-    // anonymisation emits no event (§4: it changes no consumer-visible field)
+    // the deleted user's OWN grant is gone from the roster; the grant they handed out stays, now authored by the sentinel
+    const roster = (access.body as { items: Array<{ user_id: string; granted_by: string }> }).items;
+    expect(roster.map((g) => g.user_id)).toEqual([peer.wire]);
+    expect(roster[0].granted_by).toBe('[deleted-user]');
+    // anonymisation and the grant removal emit no list.updated (§4: no consumer-visible list field changes)
     expect(countTopic(await allEvents(org.wire), TOPICS.SELECTION_LISTS_LIST_UPDATED)).toBe(0);
   });
 });

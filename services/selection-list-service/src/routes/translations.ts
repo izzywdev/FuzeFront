@@ -38,6 +38,7 @@ import { isSelectionListsEnabled } from '../flags';
 import { requireAuthzCheck } from '../middleware/authz';
 import type { Knex } from 'knex';
 import { lockOrgOutbox } from '../events/outbox';
+import { checkLocaleQuota, lockQuotaScope, QuotaExceededError } from '../services/quota.service';
 import {
   eventContextFromRequest,
   emitItemTranslationUpserted,
@@ -100,6 +101,30 @@ interface Answer {
 
 function reply(res: Response, a: Answer) {
   return a.body === undefined ? res.status(a.status).send() : res.status(a.status).json(a.body);
+}
+
+/**
+ * Add-a-locale guard (`list_locales`, review M-4), run inside the write
+ * transaction under a per-list advisory lock. Returns the ready 403
+ * QUOTA_EXCEEDED answer when the list is at its locale ceiling, else null.
+ */
+async function localeQuotaAnswer(
+  trx: Knex.Transaction,
+  listId: string,
+  orgId: string,
+  locale: string,
+): Promise<Answer | null> {
+  await lockQuotaScope(trx, `list_locales:${listId}`);
+  try {
+    await checkLocaleQuota(listId, orgId, locale, trx);
+    return null;
+  } catch (err) {
+    if (!(err instanceof QuotaExceededError)) throw err;
+    return {
+      status: 403,
+      body: { code: 'QUOTA_EXCEEDED', scope: err.scope, current: err.current, limit: err.limit, message: err.message },
+    };
+  }
 }
 
 async function requireFeatureEnabled(req: Request, res: Response): Promise<boolean> {
@@ -246,6 +271,9 @@ router.put('/:listId/translations/:locale', requireAuthzCheck('SelectionList', '
         },
       };
     }
+
+    const overQuota = await localeQuotaAnswer(trx, listId, orgId, locale);
+    if (overQuota) return overQuota;
 
     const sourceTrans = await trx('selection_list_translations')
       .where({ list_id: listId, locale: list.source_locale })
@@ -654,6 +682,11 @@ router.post('/:listId/translations/:locale/autofill', requireAuthzCheck('Selecti
     let list_translated = false;
 
     if (shouldTranslateList) {
+      // A machine translation into a locale the list does not have yet adds one.
+      if (!existingListTrans) {
+        const overQuota = await localeQuotaAnswer(trx, listId, orgId, locale);
+        if (overQuota) return overQuota;
+      }
       const translatedName = machineText(sourceListTrans.name, NAME_MAX);
       const translatedDesc = sourceListTrans.description
         ? machineText(sourceListTrans.description, DESCRIPTION_MAX)

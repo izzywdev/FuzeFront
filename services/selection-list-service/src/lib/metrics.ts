@@ -136,6 +136,43 @@ export const ownerGrantSkippedTotal = new client.Counter({
   registers: [registry],
 });
 
+// ---------------------------------------------------------------------------
+// Authorization-authority consistency (review M-2 / L-5). `selection_list_access` is a
+// read-model mirror; the Security API is the authority. These counters make every way the
+// two can diverge (or be repaired) visible. Labels are bounded constants, never an id.
+// ---------------------------------------------------------------------------
+
+/** A compensating Security API write after a failed access change. */
+export const authzCompensationTotal = new client.Counter({
+  name: 'selection_list_authz_compensation_total',
+  help: 'Compensating Security API writes after a failed PUT/DELETE access change, by op (put | delete) and outcome (restored | failed). ALERT on outcome="failed": the authority and the mirror now disagree.',
+  labelNames: ['op', 'outcome'] as const,
+  registers: [registry],
+});
+
+/** The mirror says list-owner, the authority says that user cannot manage_access. */
+export const ownerDriftTotal = new client.Counter({
+  name: 'selection_list_owner_drift_total',
+  help: 'Mirror rows claiming list-owner that the Security API does not confirm (seen by the last-owner guard)',
+  registers: [registry],
+});
+
+/** A list was left with no list-owner by a cascade (a deleted user was its last owner). */
+export const ownerlessListsTotal = new client.Counter({
+  name: 'selection_list_ownerless_lists_total',
+  help: 'Lists left with zero list-owners by a cascade, by cause (user_deleted). ALERT on any increase: recovery is a tenant admin granting list-owner via the Security API.',
+  labelNames: ['cause'] as const,
+  registers: [registry],
+});
+
+/** Best-effort Security API grant cleanup that did not complete (purge / user deletion). */
+export const grantCleanupFailedTotal = new client.Counter({
+  name: 'selection_list_grant_cleanup_failed_total',
+  help: 'Security API grant revocations that failed during a cascade, by cause (purge | user_deleted). Orphan role assignments remain until reconciled.',
+  labelNames: ['cause'] as const,
+  registers: [registry],
+});
+
 /** Low-cardinality route label: the matched pattern, or "unmatched". */
 export function routeLabel(req: Request): string {
   const matched = req.route && typeof req.route.path === 'string' ? req.route.path : null;

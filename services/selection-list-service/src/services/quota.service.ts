@@ -15,8 +15,27 @@
 // (contract/quota.test.ts "advisory lock"). The pre-INSERT check in
 // middleware/quota.ts remains as a cheap fast-path refusal only.
 //
-// All counts are over NON-ARCHIVED rows only (status = 'active'). Archived
-// lists/items do not consume quota so orgs can rotate rather than be locked out.
+// The per-scope ceilings (org_lists, user_lists, list_items, list_locales) are
+// counted over NON-ARCHIVED rows only (status = 'active'): archived lists/items
+// do not consume them, so orgs can rotate rather than be locked out.
+//
+// STORAGE CEILING (review M-4). Archiving is not deleting: repeating
+// archive + create would otherwise grow `selection_lists` and
+// `selection_list_items` without bound while the active counts never move. So
+// archived rows count toward a HARD ceiling on rows STORED, whatever their
+// status: `active limit x SELECTION_LISTS_STORAGE_CEILING_FACTOR` (default 10,
+// so the default org may store 1000 lists and a default list 5000 items). The
+// ceiling scales with a per-org override automatically, can never fall below
+// the active limit (the factor is clamped to >= 1), and is reported with the
+// SAME wire shape as any other QUOTA_EXCEEDED (scope `org_lists` / `list_items`,
+// limit = the ceiling) so no contract change is needed; the message says the
+// stored rows include archived ones and that purging archived rows frees space.
+//
+// ENFORCEMENT POINTS. Creates (lists, items) check under the advisory lock;
+// un-archiving (PATCH status "active" on a list or item) re-checks the ACTIVE
+// ceilings, because it raises the active count without any create; adding a
+// locale (PUT translation, autofill, a PATCH that writes a new source-locale
+// row) checks `list_locales`.
 
 import type { Knex } from 'knex';
 import { db } from '../db';
@@ -30,6 +49,21 @@ export const DEFAULT_MAX_LISTS = 100;
 export const DEFAULT_MAX_LISTS_PER_USER = 20;
 export const DEFAULT_MAX_ITEMS_PER_LIST = 500;
 export const DEFAULT_MAX_LOCALES = 11; // matches the supported locale set in i18n.languages.json
+
+/**
+ * Default multiplier from an active ceiling to the hard storage ceiling (archived
+ * rows included). Override with the SELECTION_LISTS_STORAGE_CEILING_FACTOR env
+ * var (a positive integer; anything else falls back to this default).
+ */
+export const DEFAULT_STORAGE_CEILING_FACTOR = 10;
+
+/** Effective storage factor. Read per call so a config change needs a restart, not a rebuild. */
+export function storageCeilingFactor(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.SELECTION_LISTS_STORAGE_CEILING_FACTOR;
+  if (raw === undefined || raw === '') return DEFAULT_STORAGE_CEILING_FACTOR;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 ? n : DEFAULT_STORAGE_CEILING_FACTOR;
+}
 
 // ─── QuotaLimits / QuotaResolver — kept from S3 for S4/S5 DI compat ──────────
 
@@ -141,33 +175,74 @@ export async function lockQuotaScope(trx: Knex.Transaction, scopeKey: string): P
 }
 
 /**
- * Guard: throws `QuotaExceededError` when the org has reached its `org_lists`
- * ceiling (count of non-archived selection lists).
- *
- * Call inside the create transaction after lockQuotaScope() (exact), or bare as
- * the middleware's fast-path pre-check.
+ * True when a stored `created_by` names a USER (as opposed to the platform's
+ * `system:*` principal that seeds lists, or the `[deleted-user]` sentinel).
+ * Only users are subject to `user_lists`.
  */
-export async function checkListQuota(orgId: string, executor: Executor = db): Promise<void> {
+export function isUserPrincipal(createdBy: string): boolean {
+  return createdBy !== '' && createdBy !== '[deleted-user]' && !createdBy.startsWith('system:');
+}
+
+/**
+ * Active ceilings for creating or re-activating a list: `org_lists` (active
+ * lists in the org) then, when `userId` is given, `user_lists` (active lists that
+ * user created in the org). Counts ACTIVE rows only.
+ */
+export async function checkActiveListQuota(
+  orgId: string,
+  userId: string | undefined,
+  executor: Executor = db,
+): Promise<void> {
   const quota = await getQuota(orgId, executor);
   const current = await countRows(
     'selection_lists',
     { organization_id: orgId, status: 'active' },
     executor,
   );
-
   if (current >= quota.maxLists) {
     throw new QuotaExceededError('org_lists', current, quota.maxLists, 'lists');
+  }
+
+  if (userId) {
+    const mine = await countRows(
+      'selection_lists',
+      { organization_id: orgId, created_by: userId, status: 'active' },
+      executor,
+    );
+    if (mine >= quota.maxListsPerUser) {
+      throw new QuotaExceededError('user_lists', mine, quota.maxListsPerUser, 'lists per user');
+    }
   }
 }
 
 /**
- * Guard: throws `QuotaExceededError` when the list has reached its `list_items`
- * ceiling (count of non-archived items in the list).
+ * Guard for CREATING a list: the active ceilings (`org_lists`, `user_lists`) and
+ * the hard storage ceiling (every stored list, archived included; see the file
+ * header). Throws `QuotaExceededError`.
  *
  * Call inside the create transaction after lockQuotaScope() (exact), or bare as
  * the middleware's fast-path pre-check.
  */
-export async function checkItemQuota(
+export async function checkListQuota(
+  orgId: string,
+  executor: Executor = db,
+  userId?: string,
+): Promise<void> {
+  await checkActiveListQuota(orgId, userId, executor);
+
+  const quota = await getQuota(orgId, executor);
+  const ceiling = quota.maxLists * storageCeilingFactor();
+  const stored = await countRows('selection_lists', { organization_id: orgId }, executor);
+  if (stored >= ceiling) {
+    throw new QuotaExceededError('org_lists', stored, ceiling, 'stored lists (archived included; purge archived lists to free space)');
+  }
+}
+
+/**
+ * Active `list_items` ceiling (non-archived items in the list). Used on its own
+ * when an item is RE-ACTIVATED; item creates use `checkItemQuota`.
+ */
+export async function checkActiveItemQuota(
   listId: string,
   orgId: string,
   executor: Executor = db,
@@ -181,6 +256,57 @@ export async function checkItemQuota(
 
   if (current >= quota.maxItemsPerList) {
     throw new QuotaExceededError('list_items', current, quota.maxItemsPerList, 'items');
+  }
+}
+
+/**
+ * Guard for CREATING an item: the active `list_items` ceiling plus the hard
+ * storage ceiling (every stored item in the list, archived included).
+ *
+ * Call inside the create transaction after lockQuotaScope() (exact), or bare as
+ * the middleware's fast-path pre-check.
+ */
+export async function checkItemQuota(
+  listId: string,
+  orgId: string,
+  executor: Executor = db,
+): Promise<void> {
+  await checkActiveItemQuota(listId, orgId, executor);
+
+  const quota = await getQuota(orgId, executor);
+  const ceiling = quota.maxItemsPerList * storageCeilingFactor();
+  const stored = await countRows('selection_list_items', { list_id: listId }, executor);
+  if (stored >= ceiling) {
+    throw new QuotaExceededError('list_items', stored, ceiling, 'stored items (archived included; purge archived items to free space)');
+  }
+}
+
+/**
+ * Guard for ADDING a locale to a list: `list_locales` is the number of distinct
+ * locales with a list-level translation row (the source locale included). A
+ * locale the list already has is an update, never refused.
+ *
+ * Call inside the write transaction after lockQuotaScope(`list_locales:<id>`).
+ */
+export async function checkLocaleQuota(
+  listId: string,
+  orgId: string,
+  locale: string,
+  executor: Executor = db,
+): Promise<void> {
+  const existing = await executor('selection_list_translations')
+    .where({ list_id: listId, locale })
+    .first('locale');
+  if (existing) return;
+
+  const quota = await getQuota(orgId, executor);
+  const result = await (executor('selection_list_translations')
+    .where({ list_id: listId })
+    .count('* as count')
+    .first() as Promise<any>);
+  const current = parseInt(String(result?.count ?? '0'), 10);
+  if (current >= quota.maxLocales) {
+    throw new QuotaExceededError('list_locales', current, quota.maxLocales, 'locales');
   }
 }
 

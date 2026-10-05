@@ -10,7 +10,10 @@
 // AuthzClient — see middleware/authz.ts). It is NEVER consulted for
 // authorization decisions — only for:
 //   a) returning the grant roster on GET
-//   b) the last-owner guard (count of non-revoked owners before demotion/revoke)
+//   b) the CANDIDATE list for the last-owner guard. The guard itself is decided
+//      by the authority (review M-2): at least one OTHER mirror owner must be
+//      confirmed by the Security API (`manage_access` on the instance) before an
+//      owner may be demoted or removed — see services/authority.ts.
 //
 // Wire shape: snake_case, exactly `SelectionListAccessGrant` in the openapi
 // (list_id, user_id, role, granted_by, granted_at, updated_at). Errors use the
@@ -31,6 +34,17 @@
 // any point rolls the mirror back; the lock also makes the last-owner guard
 // race-free (two concurrent demotions of a 2-owner list cannot both pass it).
 //
+// Compensation (review M-2): the Security API write is NOT part of the database
+// transaction, so rolling the mirror back does not undo it. When a handler fails
+// after it attempted a revoke/grant, the route restores the authority to the
+// user's prior role (services/authority.ts restoreAuthority) before answering
+// 500 — otherwise a failed role change leaves the user with NO role in the
+// authority while the mirror still says they hold the old one. Compensation is
+// best-effort and idempotent; if it too fails it is logged at ERROR and counted
+// (selection_list_authz_compensation_total{outcome="failed"}), and the guard,
+// which asks the authority, still refuses to treat the stale mirror row as an
+// owner.
+//
 // Pagination (GET):
 //   - Default limit: 50; max: 200 (clamped server-side).
 //   - Cursor: opaque base64url encoding of the last user_id in the page.
@@ -46,6 +60,11 @@ import { getGrantToken } from '../lib/machineIdentity';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
 import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
+import {
+  hasConfirmedOtherOwner,
+  restoreAuthority,
+  type AuthorityWrites,
+} from '../services/authority';
 
 const router = createRouter();
 registerIdParams(router);
@@ -231,6 +250,11 @@ router.put(
       return;
     }
 
+    // Authority-write bookkeeping for compensation (see header).
+    const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
+    let prior: string | null = null;
+    let machineTokenForRestore: string | null = null;
+
     try {
       if (!(await listExistsInOrg(listId, orgId))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
@@ -256,6 +280,7 @@ router.put(
       // Resolved BEFORE the transaction opens: a missing/failed machine identity
       // fails closed (-> 500 below) without taking a row lock first.
       const machineToken = await getGrantToken();
+      machineTokenForRestore = machineToken;
 
       const row = await db.transaction(async (trx) => {
         // Lock order is ALWAYS org outbox lock first (events/outbox.ts): a list
@@ -269,14 +294,21 @@ router.put(
           .whereNull('revoked_at')
           .first('role');
 
-        // Last-owner guard: demoting the only list-owner is refused.
+        prior = existing ? (existing['role'] as string) : null;
+
+        // Last-owner guard: demoting the only list-owner is refused. Decided by
+        // the AUTHORITY (review M-2): another mirror owner must be confirmed by
+        // the Security API, not merely counted.
         if (existing && existing['role'] === 'list-owner' && role !== 'list-owner') {
-          const owners = await trx('selection_list_access')
-            .where({ list_id: listId, role: 'list-owner' })
-            .whereNull('revoked_at')
-            .count<{ count: string }>('user_id as count')
-            .first();
-          if (parseInt(owners?.count ?? '0', 10) <= 1) {
+          const otherOwner = await hasConfirmedOtherOwner({
+            executor: trx,
+            listId,
+            orgId,
+            excludeUserIds: [userId],
+            token,
+            log: getLog(req),
+          });
+          if (!otherOwner) {
             throw new HttpError(409, {
               code: 'CONFLICT',
               message: 'Cannot demote the last list-owner of a list.',
@@ -288,6 +320,7 @@ router.put(
         // granting the new one. Revoke-first fails safe — a failure between the
         // two leaves the user with LESS access, never more.
         if (existing && existing['role'] !== role) {
+          writes.revokeAttempted = true;
           await getAuthzClient().revoke(
             {
               subject: userId,
@@ -303,6 +336,7 @@ router.put(
         // resource is REQUIRED: it scopes this grant to this one list rather
         // than tenant-wide. grant() THROWS on a Security API failure, which
         // rolls this transaction back before the mirror is touched.
+        writes.grantAttempted = true;
         await getAuthzClient().grant(
           {
             subject: userId,
@@ -355,6 +389,21 @@ router.put(
         res.status(err.status).json(err.body);
         return;
       }
+      // The mirror rolled back with the transaction; the Security API did not.
+      // Put the authority back to the user's prior role (never throws).
+      if (machineTokenForRestore && (writes.revokeAttempted || writes.grantAttempted)) {
+        await restoreAuthority({
+          op: 'put',
+          subject: userId,
+          tenant: orgId,
+          listId,
+          prior,
+          target: role,
+          writes,
+          token: machineTokenForRestore,
+          log: getLog(req),
+        });
+      }
       getLog(req).error(
       { err, op: 'access.PUT error', userId: req.userId, orgId: req.orgId, params: req.params },
       'access.PUT error failed',
@@ -376,6 +425,19 @@ router.delete(
     const { listId, userId } = req.params;
     const orgId = req.orgId as string;
 
+    // The owner guard asks the Security API about the OTHER owners with the
+    // caller's token (decisions are asked for the presented principal).
+    const token = bearer(req);
+    if (!token) {
+      res.status(401).json({ code: 'UNAUTHENTICATED', message: 'Missing bearer token.' });
+      return;
+    }
+
+    // Authority-write bookkeeping for compensation (see file header).
+    const writes: AuthorityWrites = { revokeAttempted: false, grantAttempted: false };
+    let prior: string | null = null;
+    let machineTokenForRestore: string | null = null;
+
     try {
       if (!(await listExistsInOrg(listId, orgId))) {
         res.status(404).json({ code: 'NOT_FOUND', message: 'Selection list not found.' });
@@ -384,6 +446,7 @@ router.delete(
 
       // Machine identity resolved BEFORE the transaction opens (fail closed).
       const machineToken = await getGrantToken();
+      machineTokenForRestore = machineToken;
 
       await db.transaction(async (trx) => {
         // Org outbox lock first (see PUT above), then serialise every access
@@ -399,15 +462,20 @@ router.delete(
 
         // Idempotent: no active grant → nothing to do (204).
         if (!existing) return;
+        prior = existing['role'] as string;
 
-        // Last-owner guard.
+        // Last-owner guard, decided by the AUTHORITY (review M-2): another
+        // mirror owner must be confirmed by the Security API.
         if (existing['role'] === 'list-owner') {
-          const owners = await trx('selection_list_access')
-            .where({ list_id: listId, role: 'list-owner' })
-            .whereNull('revoked_at')
-            .count<{ count: string }>('user_id as count')
-            .first();
-          if (parseInt(owners?.count ?? '0', 10) <= 1) {
+          const otherOwner = await hasConfirmedOtherOwner({
+            executor: trx,
+            listId,
+            orgId,
+            excludeUserIds: [userId],
+            token,
+            log: getLog(req),
+          });
+          if (!otherOwner) {
             throw new HttpError(409, {
               code: 'CONFLICT',
               message: 'Cannot remove the last list-owner of a list.',
@@ -419,6 +487,7 @@ router.delete(
         // revocation to this list's instance. revoke() THROWS on failure,
         // rolling back before the mirror soft-delete, so a failed revoke never
         // leaves the mirror claiming access was removed when it was not.
+        writes.revokeAttempted = true;
         await getAuthzClient().revoke(
           {
             subject: userId,
@@ -445,6 +514,22 @@ router.delete(
       if (err instanceof HttpError) {
         res.status(err.status).json(err.body);
         return;
+      }
+      // The mirror rolled back with the transaction (a later step, e.g. the
+      // outbox write, can fail after the revoke landed); the Security API did
+      // not. Restore the user's role there (never throws).
+      if (machineTokenForRestore && writes.revokeAttempted) {
+        await restoreAuthority({
+          op: 'delete',
+          subject: userId,
+          tenant: orgId,
+          listId,
+          prior,
+          target: null,
+          writes,
+          token: machineTokenForRestore,
+          log: getLog(req),
+        });
       }
       getLog(req).error(
       { err, op: 'access.DELETE error', userId: req.userId, orgId: req.orgId, params: req.params },

@@ -94,7 +94,7 @@ suite('lifecycle handlers on real Postgres', () => {
   async function seedOrg(org: string, tag: string, owner: string): Promise<{ listId: string; itemId: string }> {
     const listId = `front_sl_${tag}list`;
     const itemId = `front_sli_${tag}item`;
-    await db('selection_lists').insert({ id: listId, organization_id: org, key: `k_${tag}`, created_by: owner });
+    await db('selection_lists').insert({ id: listId, organization_id: org, key: `k-${tag}`, created_by: owner });
     await db('selection_list_items').insert({ id: itemId, list_id: listId, code: 'C', sort_order: 1, created_by: owner });
     await db('selection_list_translations').insert({ list_id: listId, locale: 'en', name: 'N' });
     await db('selection_list_item_translations').insert({ item_id: itemId, locale: 'en', label: 'L' });
@@ -208,12 +208,16 @@ suite('lifecycle handlers on real Postgres', () => {
       await seedOrg(ORG_B, 'b', OTHER_USER);
       // a row authored under the bare-UUID rendering as well
       await db('selection_list_items').insert({ id: 'front_sli_aaitem2', list_id: a.listId, code: 'D', sort_order: 2, created_by: USER_UUID });
+      // a grant the deleted user HANDED OUT (the deleted user's OWN grant is removed, see below)
+      await db('selection_list_access').insert({ list_id: a.listId, user_id: OTHER_USER, role: 'list-viewer', granted_by: USER });
 
       await handleUserDeleted(userEvent(USER_UUID));
 
       expect(await db('selection_lists').where({ created_by: '[deleted-user]' }).count('* as n').first()).toMatchObject({ n: '1' });
       expect(await db('selection_list_items').where({ created_by: '[deleted-user]' }).count('* as n').first()).toMatchObject({ n: '2' });
       expect(await db('selection_list_access').where({ granted_by: '[deleted-user]' }).count('* as n').first()).toMatchObject({ n: '1' });
+      // ...and the deleted user's own grant row is gone (review M-2; the Security API revoke is covered in user-deleted.grants.db.test.ts)
+      expect(await db('selection_list_access').where({ user_id: USER }).count('* as n').first()).toMatchObject({ n: '0' });
       expect(await db('selection_lists').where({ created_by: OTHER_USER }).count('* as n').first()).toMatchObject({ n: '1' });
       await expect(handleUserDeleted(userEvent(USER_UUID))).resolves.toBeUndefined(); // idempotent
     });
