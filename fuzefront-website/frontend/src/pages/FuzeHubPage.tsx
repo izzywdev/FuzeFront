@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, ResponsiveGrid } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -184,7 +184,7 @@ export const FuzeHubPage: React.FC = () => {
           <h2 className="text-2xl font-heading font-bold text-white mb-10 text-center">
             Who uses FuzeHub
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <ResponsiveGrid columns={2} gap="md">
             {useCases.map((useCase) => (
               <div key={useCase.title} className="bg-secondary-900 rounded-xl border border-secondary-700 p-5">
                 <div className="flex items-center gap-2 mb-2">
@@ -196,7 +196,7 @@ export const FuzeHubPage: React.FC = () => {
                 <p className="text-secondary-400 text-sm leading-relaxed">{useCase.description}</p>
               </div>
             ))}
-          </div>
+          </ResponsiveGrid>
         </Container>
       </section>
 

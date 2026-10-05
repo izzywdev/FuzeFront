@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { ResponsiveGrid } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -357,14 +358,14 @@ export const ProductDetailPage: React.FC = () => {
           <h2 className="text-2xl font-heading font-bold text-gray-900 mb-8 text-center">
             Built for teams who need to
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <ResponsiveGrid columns={2} gap="md">
             {product.useCases.map((useCase) => (
               <div key={useCase} className="flex items-start gap-3 bg-white rounded-xl border border-gray-100 p-5">
                 <CheckCircle2 size={18} className="text-success-500 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-gray-700 leading-relaxed">{useCase}</p>
               </div>
             ))}
-          </div>
+          </ResponsiveGrid>
         </div>
       </section>
 
