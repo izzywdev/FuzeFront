@@ -93,7 +93,7 @@ const SESSION_ID = '11111111-2222-4333-8444-555555555555'
 
 interface Fixture {
   session?: { expires_at: Date | null } | undefined
-  membership?: { org_is_active: boolean } | undefined
+  membership?: { org_is_active: unknown } | undefined
 }
 
 /** db(table) -> chain whose terminal `.first()` resolves the fixture row. */
@@ -206,6 +206,19 @@ describe('POST /api/organizations/:id/session-token', () => {
       .set('Authorization', `Bearer ${sessionToken()}`)
     expect(res.status).toBe(403)
   })
+
+  it.each([null, undefined, 'true', 1])(
+    '403 when the org is_active is not exactly true (%p): fail closed',
+    async isActive => {
+      installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: isActive } })
+      const res = await request(app())
+        .post(`/api/organizations/${ORG_UUID}/session-token`)
+        .set('Authorization', `Bearer ${sessionToken()}`)
+      expect(res.status).toBe(403)
+      expect(res.body.code).toBe('NOT_A_MEMBER')
+      expect(res.body.token).toBeUndefined()
+    }
+  )
 
   it('400 on a malformed org id, before any DB access', async () => {
     installDb({})

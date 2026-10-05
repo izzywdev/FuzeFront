@@ -135,7 +135,10 @@ export async function mintOrgSessionToken(input: OrgSessionTokenInput): Promise<
     .join('organizations as o', 'o.id', 'm.organization_id')
     .where({ 'm.user_id': input.userId, 'm.organization_id': orgUuid, 'm.status': 'active' })
     .first('o.is_active as org_is_active')
-  if (!membership || membership.org_is_active === false) {
+  // Fail closed: only an org whose is_active is EXACTLY true can be entered.
+  // The column is nullable (default true); a NULL, or anything a driver might
+  // return other than boolean true, is "not proven active" and is refused.
+  if (!membership || membership.org_is_active !== true) {
     throw new OrgSessionError(403, 'NOT_A_MEMBER', 'Insufficient permissions')
   }
 
