@@ -108,10 +108,10 @@ jobs:
           ARGS=""
           if [ "$MODE" = "apply" ]; then
             ARGS="--apply"
-            # sk_live_ key requires --live
-            if echo "$STRIPE_SECRET_KEY" | grep -q '^sk_live'; then
-              ARGS="$ARGS --live"
-            fi
+          fi
+          # --live is required whenever the key is sk_live_, regardless of mode
+          if echo "$STRIPE_SECRET_KEY" | grep -q '^sk_live'; then
+            ARGS="$ARGS --live"
           fi
 
           echo "Running: node scripts/stripe-subscription-sync.mjs $ARGS"
