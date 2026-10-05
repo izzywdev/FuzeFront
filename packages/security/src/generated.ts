@@ -514,12 +514,16 @@ export interface paths {
         /**
          * List tenants visible to the caller
          * @description Unbounded collection — cursor-paginated per the family pagination standard.
+         *
+         *     **Visibility.** A platform administrator (`Organization:manage` on the platform root tenant) or a machine caller holding `authz:admin` sees every tenant; any other authenticated caller sees only the tenants in which they hold a role. This is a filter, never a `403`. A provider outage while deciding which view applies fails closed (`502`) — the caller is never silently widened or downgraded.
          */
         get: operations["listTenants"];
         put?: never;
         /**
          * Create a tenant
          * @description Creates a new tenant/organization scope.
+         *
+         *     **Authorization — platform act.** Creating a tenant mints a new authorization scope that every later grant is made inside, so it is a platform act, not an act inside any one tenant. A human (session) caller must be a platform administrator (`Organization:manage` on the platform root tenant — FuzeFront platform staff); an administrator of an ordinary customer tenant has no standing here. A machine caller must hold the `authz:admin` scope. Anyone else is `403 FORBIDDEN`, decided BEFORE the body is validated (so an unauthorized caller gets `403`, not `400`). A provider outage while deciding fails closed (`502`), never allow. Customer organizations are created through the organization APIs, which provision their tenant themselves.
          */
         post: operations["createTenant"];
         delete?: never;
@@ -2612,7 +2616,9 @@ export interface operations {
                     "application/json": components["schemas"]["TenantPage"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            502: components["responses"]["ProviderError"];
         };
     };
     createTenant: {
@@ -2639,6 +2645,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description The caller is authenticated but is not a platform administrator (`Organization:manage` on the platform root tenant), or is a machine caller lacking the `authz:admin` scope (`code: FORBIDDEN`). Fail-closed; no tenant is created. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             502: components["responses"]["ProviderError"];
         };
     };
