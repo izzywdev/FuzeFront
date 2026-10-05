@@ -1,6 +1,7 @@
 {
   "packKey": "platform-defaults",
   "version": 1,
+  "translationProvenance": "machine",
   "appliesTo": [
     "organization",
     "personal"
@@ -391,7 +392,7 @@
         },
         {
           "locale": "fr",
-          "name": "Statut du travail"
+          "name": "État d’avancement"
         },
         {
           "locale": "de",

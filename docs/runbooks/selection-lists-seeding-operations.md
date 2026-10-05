@@ -120,16 +120,91 @@ Skip for platform-defaults-only pilots.
 - [ ] Both halves exist: a registered client **without** an allowlist row is refused
       `SOURCE_NOT_ALLOWED`; an allowlist row **without** a client can never produce a valid token.
 
-### 2.5 Platform pack translations reviewed by native speakers
+### 2.5 Platform pack translations: machine-translated, pending native-speaker review
 
-- [ ] `services/selection-list-service/seed-packs/platform/platform-defaults.v1.json` carries
-      list names and item labels in 10 non-English locales (`es fr de pt ru zh ja hi ar he`).
-      Seeding writes them with `is_machine: false` — i.e. they present as **human-reviewed**. The
-      code cannot prove they are. Get a native-speaker review of every string.
-- [ ] Do it **before** the first apply: **a pack version's content is immutable once applied
-      anywhere** (a changed v1 is `PACK_CONTENT_MISMATCH`). Fixing a translation after rollout
-      means shipping `platform-defaults.v2.json` — and with no backfill (§6) v2 reaches only orgs
-      created afterwards.
+**Status: the 10 non-English locales of `platform-defaults` v1 are MACHINE-translated (AI-written)
+and have NOT been reviewed by a native speaker.** The pack file says so
+(`"translationProvenance": "machine"`), and the service stores every non-English row of it with
+`is_machine: true` (the English source rows are `false`), so the API and the translation events
+(`isMachine: true`, `machine_translated` in the translation status) report them honestly and a
+client can badge or down-rank them. Nothing presents them as human-reviewed. The pack is **not
+applied anywhere yet** (the service is disabled), so nothing has to be migrated.
+
+The 10 locales: `es fr de pt ru zh ja hi ar he` (the 11th is the source locale `en`). Scope: 3 lists
+(`yes-no`, `priority`, `work-status`), 10 items, i.e. 30 list-name rows + 100 item-label rows.
+
+What `is_machine: true` means for the seeded rows (so nobody is surprised later):
+
+- A machine row is **not** an edit: it is outside the "seeded-then-edited" hash, so an org keeps
+  receiving pack upgrades. A **human** who rewrites one (`PUT …/translations/{locale}`) sets
+  `is_machine: false`, which *is* an edit: that list/item is then skipped by every later upgrade.
+- `POST …/translations/{locale}/autofill` with `overwrite_machine: true` may refresh these rows.
+- A later pack version that still says `"machine"` and only changes translation text **is**
+  propagated to already-seeded, unedited orgs (translation events only, no `list.updated`).
+  A later version that drops the key (or says `"human"`) replaces the machine rows with
+  `is_machine: false` text in those orgs. So **native review ships as `platform-defaults.v2.json`**
+  without `translationProvenance` — never by editing v1 once it has been applied anywhere
+  (a changed applied version is `PACK_CONTENT_MISMATCH`).
+
+- [ ] **Decide** whether the pilot may run on machine translations (the owner's call, recorded
+      with the other §3 decisions). Short, common words like these are low risk, but they are
+      user-visible text in 10 languages that no native speaker has read: prefer a pilot org whose
+      users read English (the source locale is never machine) until the locales you will expose
+      are signed off.
+- [ ] **Native review** (any time before or after the pilot) — see the checklist below. Until every
+      locale is signed off, the pack stays `"machine"`.
+
+#### Reviewer checklist (one native speaker per locale)
+
+Review in the file `services/selection-list-service/seed-packs/platform/platform-defaults.v1.json`
+(the JSON is the source; each locale appears 3 times as a list `name` and 10 times as an item
+`label`). English is the source of truth for meaning:
+
+| List | English → what the label must mean |
+|---|---|
+| `yes-no` — "Yes / No" | `YES` Yes, `NO` No (the answer to a yes/no form field) |
+| `priority` — "Priority" | `LOW` Low, `MEDIUM` Medium, `HIGH` High, `URGENT` Urgent (ticket / task priority) |
+| `work-status` — "Work status" | `NOT_STARTED` Not started, `IN_PROGRESS` In progress, `BLOCKED` Blocked (cannot proceed because of something else), `DONE` Done (finished) |
+
+For **every** string in your locale, confirm:
+
+- [ ] **Meaning** — it means the English, in the sense above (e.g. *Blocked* is "stuck waiting on
+      something", not "forbidden"; *Work status* is the status of a work item/task, not
+      "employment status"; *Urgent* is a priority level, not an adjective for the person).
+- [ ] **Register** — formal-neutral, the tone of a business product; no slang, no overly casual
+      or overly bureaucratic wording.
+- [ ] **Short dropdown label** — as short as the language allows, no trailing punctuation, no
+      explanatory text; it must fit a narrow select / chip.
+- [ ] **Agreement and consistency** — the four `priority` labels agree with one another (and with
+      the grammatical gender of "Priority" in that language); the four `work-status` labels use
+      one grammatical form; `yes-no` list name uses the same two words as the item labels.
+- [ ] **Regional variety** — the locale code is the bare language (`pt`, `es`, `fr`, `de`, `ar`,
+      `zh`, …). Confirm the wording is acceptable for the broad audience; if a regional split is
+      needed (e.g. `pt` Brazil vs Portugal, `zh` Simplified vs Traditional, Arabic standard vs
+      regional), note it — the platform has no regional locales today, so it is a product
+      decision, not a pack edit.
+- [ ] **Script and direction** — correct script (`zh` = Simplified assumed, `ar`/`he` right-to-left),
+      correct diacritics, and the `/` in "Yes / No" renders sensibly in RTL.
+- [ ] **Terminology match** — consistent with how the product's own UI in that locale already
+      words priority and task status (check the i18n bundles) so the lists do not clash with it.
+
+Flagged for reviewers from the engineering pass (a non-native check; **not** verdicts):
+
+| Locale | String | Concern |
+|---|---|---|
+| `fr` | `work-status` name | was "Statut du travail", which reads as *employment* status; changed to "État d’avancement" — confirm or propose better |
+| `pt` | `work-status` name + `IN_PROGRESS` | "Estado do trabalho" leans European Portuguese while "Em andamento" leans Brazilian — pick one variety |
+| `ar` | `BLOCKED` "محظور" | can read as "forbidden/prohibited"; confirm it conveys "blocked on a dependency" (alternatives: متوقف) |
+| `ar` | `DONE` "تم" | very terse; confirm vs "مكتمل" |
+| `hi` | `URGENT` "अत्यावश्यक" | formal and long; confirm vs "तत्काल" |
+| `zh` | `BLOCKED` "已阻塞" | confirm vs "受阻" |
+| `es` / `pt` / `de` | `work-status` name | "work status" has no single idiom; confirm "Estado del trabajo" / "Estado do trabalho" / "Arbeitsstatus" |
+
+When every locale is signed off: add `services/selection-list-service/seed-packs/platform/platform-defaults.v2.json`
+(same content with the reviewers' corrections, **no** `translationProvenance` key), bump nothing
+else, update the pack-catalogue test in `tests/seed.unit.test.ts` (it pins v1 to `machine`) and
+the acceptance test, and replace this section's status line. Orgs seeded from v1 pick v2 up on
+the next reconciler pass (`SEED_RECONCILER_ENABLED=true`, §6) or on their next pack upgrade.
 
 ### 2.6 The known gaps are accepted by the owner
 
@@ -299,7 +374,7 @@ against the SL8 branch (`claude/sl8-fixes`) and stay in the table as a record, n
 | **Prod topic pre-creation is disabled** | `kafkaTopics.enabled: false` in `values-prod.yaml` | topics may be auto-created with broker defaults; token retention on `seed.requested`/`.dlq` not guaranteed to be 1 d; change-event DLQs undeclared | `devops-engineer` / FuzeInfra via `@fuze` |
 | **Service not deployed; secrets not sealed** | `selectionListService.enabled: false`; no `selection-list-secrets.yaml` under `deploy/contabo/sealed/` | nothing above can run in prod yet | `devops-engineer` |
 | **Allowlist has no app sources; no seed clients exist** | `seed-sources.json` lists only `platform`; seed-clients runbook is scaffolding | every app request is `SOURCE_NOT_ALLOWED` | per onboarding PR |
-| **Platform pack translations unreviewed (as far as the repo can show)** | `is_machine: false` is written for all of them | see §2.5 | owner / translators |
+| **Platform pack translations are machine-translated, not native-reviewed** | the pack says `"translationProvenance": "machine"`; the service writes `is_machine: true` for every non-English row | marked honestly (clients can badge them); native review ships as `platform-defaults.v2.json` — checklist in §2.5 | owner / translators |
 | **`selection_list_access` mirror lags self-grants** | a Security-API-only grant is not mirrored until the service reconciles | the roster (`GET …/access`) can omit an admin's self-granted owner | `backend-engineer` |
 
 ## 7. Quick triage
