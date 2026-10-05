@@ -479,7 +479,7 @@ export const HomePage: React.FC = () => {
 
       {/* ── Final CTA ── */}
       <section className="py-20 bg-secondary-50 border-t border-secondary-100">
-        <div className="max-w-3xl mx-auto px-4 text-center">
+        <Container size="3xl" className="text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
               <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
@@ -509,7 +509,7 @@ export const HomePage: React.FC = () => {
               </Caption>
             </motion.div>
           </SectionWrapper>
-        </div>
+        </Container>
       </section>
     </div>
   )
