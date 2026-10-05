@@ -117,7 +117,7 @@
       "acceptanceNotes": "index links to every frame in order; the reconciliation notes are visible, not just in manifest.json.",
       "testHooks": [
         "[data-frame='index']",
-        "[data-inventory]",
+        "[data-build-inventory]",
         "[data-nav='01-choose-factor']",
         "[data-nav='02-enter-code']",
         "[data-nav='03-confirm-contact']",
