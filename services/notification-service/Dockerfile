@@ -45,6 +45,7 @@ COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
 COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
+COPY selection-list-client/package.json ./selection-list-client/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
@@ -85,6 +86,7 @@ COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
 COPY packages/security/package.json ./packages/security/
 COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
+COPY selection-list-client/package.json ./selection-list-client/
 COPY design-system/package.json ./design-system/
 COPY services/chat-service/package.json ./services/chat-service/
 COPY services/email-service/package.json ./services/email-service/
