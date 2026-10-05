@@ -4,8 +4,9 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
-  CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
+  CheckCircle2, BarChart3, Palette, Monitor, ChevronRight
 } from 'lucide-react'
+import { Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -180,13 +181,14 @@ export const ProductsPage: React.FC = () => {
               10 products that work standalone and compose seamlessly. Auth, AI, social, finance, security, analytics — everything your business needs.
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <a
+              <Button
                 href="https://app.fuzefront.com/signup"
-                className="btn-primary flex items-center justify-center gap-2"
+                variant="primary"
+                withArrow
                 onClick={() => trackEvent('cta_click', { button: 'products_start', location: 'products_hero' })}
               >
-                Start free <ArrowRight size={16} />
-              </a>
+                Start free
+              </Button>
               <Link
                 to="/pricing"
                 className="btn-ghost flex items-center justify-center gap-2"

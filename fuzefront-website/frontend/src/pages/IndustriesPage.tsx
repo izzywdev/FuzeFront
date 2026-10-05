@@ -4,9 +4,9 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import {
   DollarSign, Heart, ShoppingBag, Scale, GraduationCap,
-  Cloud, Briefcase, Building, ArrowRight, CheckCircle2
+  Cloud, Briefcase, Building, CheckCircle2
 } from 'lucide-react'
-import { Wrap, Container } from '@fuzefront/design-system'
+import { Button, Wrap, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Industry {
@@ -250,13 +250,15 @@ export const IndustriesPage: React.FC = () => {
             Every business has unique requirements. Talk to our team — we'll help you map FuzeOne to your specific needs.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <Link
+            <Button
+              as={Link}
               to="/contact"
-              className="btn-primary flex items-center justify-center gap-2"
+              variant="primary"
+              withArrow
               onClick={() => trackEvent('cta_click', { button: 'industries_contact', location: 'industries_cta' })}
             >
-              Talk to us <ArrowRight size={16} />
-            </Link>
+              Talk to us
+            </Button>
             <Link to="/products" className="btn-secondary">
               Explore products
             </Link>
