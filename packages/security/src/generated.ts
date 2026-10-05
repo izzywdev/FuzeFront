@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Current identity ("me")
-         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode.
+         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode. An optional tenant query proves active membership in an active organization; without it, behavior is unchanged.
          */
         get: operations["getSession"];
         put?: never;
@@ -1799,7 +1799,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getSession: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional organization UUID or typed organization ID. When supplied, requires canonical active membership in an active organization and returns its canonical UUID as identity.tenantId. */
+                tenant?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1815,7 +1818,16 @@ export interface operations {
                     "application/json": components["schemas"]["SessionInfo"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description Active tenant membership is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createSession: {

@@ -37,6 +37,8 @@ import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { authenticateKubernetesWorkload } from '../services/workload-identity'
 
+import { canonicalSessionTenant, proveSessionTenant } from '../services/session-tenant'
+
 const router = express.Router()
 
 const DELEGATION_TOKEN_TTL_SECONDS = 300
@@ -312,6 +314,16 @@ router.get('/session', async (req: Request, res: Response) => {
   if (!token) return
   try {
     const { identity, user } = await getIdentityProvider().getUserInfo(token)
+    if (req.query.tenant !== undefined) {
+      let tenant: string
+      try { tenant = canonicalSessionTenant(req.query.tenant) }
+      catch { return void res.status(400).json({ error: 'Invalid tenant identifier' }) }
+      let verifiedTenant: string | null
+      try { verifiedTenant = await proveSessionTenant(identity.userId, tenant) }
+      catch { return void res.status(503).json({ error: 'Tenant verification unavailable' }) }
+      if (!verifiedTenant) return void res.status(403).json({ error: 'Active tenant membership required' })
+      return void res.status(200).json({ identity: { ...identity, tenantId: verifiedTenant }, user: toApiUser(user) })
+    }
     res.status(200).json({ identity, user: toApiUser(user) })
   } catch (err) {
     sendError(res, err)

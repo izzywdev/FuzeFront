@@ -210,10 +210,19 @@ paths:
       tags: [session]
       summary: Current identity ("me")
       operationId: getSession
+      parameters:
+        - name: tenant
+          in: query
+          required: false
+          description: Optional organization UUID or typed organization ID. When supplied, requires canonical active membership in an active organization and returns its canonical UUID as identity.tenantId.
+          schema:
+            type: string
+            maxLength: 255
       description: >-
         Returns the normalized `Identity` and hydrated user for the presented
         session token. This is the source of any out-of-band role/tenant
-        hydration in legacy token mode.
+        hydration in legacy token mode. An optional tenant query proves active
+        membership in an active organization; without it, behavior is unchanged.
       security:
         - bearerAuth: []
       responses:
@@ -223,6 +232,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Active tenant membership is required.
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
       x-pagination: exempt
