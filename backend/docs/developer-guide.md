@@ -1,4 +1,4 @@
-# FrontFuse Developer Guide
+# FuzeFront Developer Guide
 
 ## Table of Contents
 
@@ -8,7 +8,7 @@
 4. [Creating Your First App](#creating-your-first-app)
 5. [Integration Types](#integration-types)
 6. [Module Federation Setup](#module-federation-setup)
-7. [Using the FrontFuse SDK](#using-the-frontfuse-sdk)
+7. [Using the FuzeFront SDK](#using-the-fuzefront-sdk)
 8. [User Session Management](#user-session-management)
 9. [Menu Integration](#menu-integration)
 10. [Deployment Guide](#deployment-guide)
@@ -17,11 +17,11 @@
 
 ## Introduction
 
-FrontFuse is a microfrontend hosting platform that enables you to build, deploy, and manage federated applications seamlessly. This guide will walk you through creating and deploying your own pluggable applications.
+FuzeFront is a microfrontend hosting platform that enables you to build, deploy, and manage federated applications seamlessly. This guide will walk you through creating and deploying your own pluggable applications.
 
 ## Architecture Overview
 
-FrontFuse uses a hub-and-spoke architecture where:
+FuzeFront uses a hub-and-spoke architecture where:
 
 - **Platform Core**: The main portal that hosts and manages all applications
 - **Federated Apps**: Independent applications that integrate with the platform
@@ -46,11 +46,11 @@ FrontFuse uses a hub-and-spoke architecture where:
 
 ### Development Environment Setup
 
-1. **Clone the FrontFuse repository**:
+1. **Clone the FuzeFront repository**:
 
    ```bash
-   git clone https://github.com/your-org/frontfuse.git
-   cd frontfuse
+   git clone https://github.com/your-org/fuzefront.git
+   cd fuzefront
    ```
 
 2. **Install dependencies**:
@@ -89,7 +89,7 @@ cd my-frontfuse-app
 npm install
 ```
 
-### 2. Install FrontFuse SDK
+### 2. Install FuzeFront SDK
 
 ```bash
 npm install @frontfuse/sdk
@@ -217,7 +217,7 @@ Add these scripts to your `package.json`:
 
 ## Integration Types
 
-FrontFuse supports three integration types:
+FuzeFront supports three integration types:
 
 ### 1. Module Federation (Recommended)
 
@@ -340,7 +340,7 @@ class ErrorBoundary extends Component<Props, State> {
 export default ErrorBoundary
 ```
 
-## Using the FrontFuse SDK
+## Using the FuzeFront SDK
 
 ### Available Hooks
 
@@ -585,7 +585,7 @@ aws cloudfront create-invalidation --distribution-id YOUR_DISTRIBUTION_ID --path
 
 ### 3. Register Your App
 
-Once deployed, register your app with FrontFuse:
+Once deployed, register your app with FuzeFront:
 
 ```bash
 curl -X POST http://localhost:3001/api/apps \
@@ -770,4 +770,4 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ## License
 
-FrontFuse is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+FuzeFront is licensed under the MIT License. See [LICENSE](LICENSE) for details.

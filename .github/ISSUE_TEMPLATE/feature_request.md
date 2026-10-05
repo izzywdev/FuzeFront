@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea for FrontFuse
+about: Suggest an idea for FuzeFront
 title: '[FEATURE] '
 labels: ['enhancement', 'needs-triage']
 assignees: ''
@@ -30,7 +30,7 @@ A clear and concise description of any alternative solutions or features you've 
 
 ### Component Impact
 
-Which parts of FrontFuse would this feature affect?
+Which parts of FuzeFront would this feature affect?
 
 - [ ] Frontend (Container Shell)
 - [ ] Backend (API Server)
@@ -98,7 +98,7 @@ If applicable, add mockups, wireframes, or design concepts to help visualize the
 
 ### Business Value
 
-How would this feature benefit FrontFuse users?
+How would this feature benefit FuzeFront users?
 
 - [ ] Critical - Essential for core functionality
 - [ ] High - Significantly improves user experience

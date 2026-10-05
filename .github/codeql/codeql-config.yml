@@ -1,4 +1,4 @@
-name: 'FrontFuse CodeQL Config'
+name: 'FuzeFront CodeQL Config'
 
 disable-default-queries: false
 
