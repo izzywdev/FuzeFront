@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { CtaBand } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -369,28 +370,26 @@ export const ProductDetailPage: React.FC = () => {
       </section>
 
       {/* CTA */}
-      <section className="py-20 bg-white border-t border-gray-100">
-        <div className="max-w-2xl mx-auto px-4 text-center">
-          <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-4">
-            Ready to get started with {product.name}?
-          </h2>
-          <p className="text-gray-600 mb-8">
-            Try free for 14 days. No credit card required.
-          </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a
-              href="https://app.fuzefront.com/signup"
-              className="btn-primary flex items-center justify-center gap-2"
-              onClick={() => trackEvent('cta_click', { button: 'product_detail_start', product: product.slug })}
-            >
-              {product.ctaText} <ArrowRight size={16} />
-            </a>
-            <Link to="/pricing" className="btn-secondary">
-              Compare plans
-            </Link>
-          </div>
+      <CtaBand maxWidth="2xl">
+        <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-4">
+          Ready to get started with {product.name}?
+        </h2>
+        <p className="text-gray-600 mb-8">
+          Try free for 14 days. No credit card required.
+        </p>
+        <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <a
+            href="https://app.fuzefront.com/signup"
+            className="btn-primary flex items-center justify-center gap-2"
+            onClick={() => trackEvent('cta_click', { button: 'product_detail_start', product: product.slug })}
+          >
+            {product.ctaText} <ArrowRight size={16} />
+          </a>
+          <Link to="/pricing" className="btn-secondary">
+            Compare plans
+          </Link>
         </div>
-      </section>
+      </CtaBand>
     </div>
   )
 }
