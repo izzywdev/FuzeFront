@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { AmbientGlow, IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -81,7 +81,13 @@ export const FuzeHubPage: React.FC = () => {
       <section className="bg-secondary-900 pt-28 pb-24 relative overflow-hidden">
         <div className="absolute inset-0 hero-pattern opacity-10" />
         {/* Accent glow */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-primary-600/10 rounded-full blur-3xl pointer-events-none" />
+        <AmbientGlow
+          tone="primary"
+          width={600}
+          height={400}
+          opacity={0.1}
+          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+        />
 
         <Container size="5xl" className="relative text-center">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>

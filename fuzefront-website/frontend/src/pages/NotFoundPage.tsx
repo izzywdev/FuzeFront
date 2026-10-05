@@ -2,6 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, Home, Search } from 'lucide-react'
+import { AmbientGlow } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const helpfulLinks = [
@@ -20,8 +21,8 @@ export const NotFoundPage: React.FC = () => {
           set `background-image`, so combining them on one element drops the
           gradient entirely instead of layering. */}
       <div className="absolute inset-0 hero-pattern pointer-events-none" />
-      <div className="absolute top-1/4 left-1/4 w-80 h-80 bg-primary-600/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-accent-600/15 rounded-full blur-3xl pointer-events-none" />
+      <AmbientGlow tone="primary" size={320} style={{ top: '25%', left: '25%' }} />
+      <AmbientGlow tone="accent" size={288} opacity={0.15} style={{ bottom: '25%', right: '25%' }} />
 
       <div className="relative max-w-2xl mx-auto px-4 sm:px-6 text-center py-20">
         <motion.div

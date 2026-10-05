@@ -3,6 +3,7 @@
 */
 export { RoleBadge } from './components/access/RoleBadge.jsx'
 export { PricingCard } from './components/billing/PricingCard.jsx'
+export { AmbientGlow } from './components/brand/AmbientGlow.jsx'
 export { BrandMark } from './components/brand/BrandMark.jsx'
 export { BrandTokenScope } from './components/brand/BrandTokenScope.jsx'
 export { Logo } from './components/brand/Logo.jsx'
