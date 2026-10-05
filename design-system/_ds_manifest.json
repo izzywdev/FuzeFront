@@ -198,6 +198,10 @@
       "sourcePath": "components/layout/ListStack.jsx"
     },
     {
+      "name": "PageSection",
+      "sourcePath": "components/layout/PageSection.jsx"
+    },
+    {
       "name": "Panel",
       "sourcePath": "components/layout/Panel.jsx"
     },
@@ -1179,6 +1183,18 @@
     {
       "name": "--space-16",
       "value": "4rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-20",
+      "value": "5rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-24",
+      "value": "6rem",
       "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },

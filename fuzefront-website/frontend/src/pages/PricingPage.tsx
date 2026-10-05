@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -281,7 +281,7 @@ export const PricingPage: React.FC = () => {
       </section>
 
       {/* Feature Comparison Table */}
-      <section className="py-20 bg-white">
+      <PageSection spacing="md">
         <Container size="5xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 text-center">
             Compare all features
@@ -320,7 +320,7 @@ export const PricingPage: React.FC = () => {
             </table>
           </div>
         </Container>
-      </section>
+      </PageSection>
 
       {/* Enterprise CTA */}
       <section

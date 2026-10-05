@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, PageSection } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -60,7 +60,7 @@ export const PressPage: React.FC = () => {
       </section>
 
       {/* Press releases */}
-      <section className="py-24 bg-white">
+      <PageSection>
         <Container size="4xl">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-10 flex items-center gap-3">
             <IconTile tone="accent" variant="plain">
@@ -83,7 +83,7 @@ export const PressPage: React.FC = () => {
             ))}
           </div>
         </Container>
-      </section>
+      </PageSection>
 
       {/* Fact sheet + media kit */}
       <section className="py-24 bg-secondary-50">
