@@ -1047,6 +1047,16 @@ selectionListService:
     appName: "selection-list-service"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Edge rate limit (review M-4; the rps/burst defaults are in values.yaml). Prod is
+  # behind Cloudflare, so the TCP peer Traefik sees is a shared edge address:
+  # limiting per peer would throttle unrelated users together. Group by the header
+  # Cloudflare sets to the real client IP instead. (UNVERIFIED from this repo: that
+  # the origin receives CF-Connecting-IP unmodified -- confirm with a request through
+  # app.fuzefront.com before enabling the service; if it is absent every such request
+  # shares one bucket.)
+  ingress:
+    rateLimit:
+      clientIpHeader: "CF-Connecting-IP"
   # Fleet placement policy (see .elasticPlacement above): every backend service
   # runs on the elastic pool; this one was missed when it was added dark.
   <<: *elasticPlacement
