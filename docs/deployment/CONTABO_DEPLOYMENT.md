@@ -8,6 +8,11 @@ here.
 > Architecture/design rationale lives in the second half of this doc
 > ([Design background](#design-background)). Read the runbook first.
 
+> **Adopting this on your own infrastructure?** The
+> [Production Readiness Checklist](../PRODUCTION_READINESS_CHECKLIST.md) turns
+> the steps below into a required-vs-recommended list and calls out which
+> parts are Contabo/k3s-specific vs. infrastructure-neutral.
+
 ---
 
 ## 0. TL;DR — how a change ships
