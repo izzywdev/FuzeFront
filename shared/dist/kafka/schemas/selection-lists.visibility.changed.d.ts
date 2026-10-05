@@ -1,13 +1,22 @@
 import { z } from 'zod';
-export declare const SELECTION_LIST_UPDATABLE_FIELDS: readonly ["key", "sourceLocale", "status", "name", "description"];
 /**
- * `selection-lists.list.updated` — list metadata changed. A RESTORE
- * (archived -> active) is an update with `status` in `changedFields`; an
- * archive has its own topic (`list.archived`). `key` is mutable over HTTP, so
- * a key change carries `previousKey` — a consumer that indexes by key must
- * re-key on it. `listKey` (top level) is the key AFTER the change.
+ * `selection-lists.visibility.changed` (shared 1.3.0, HTTP contract 4.1.0) — a
+ * list's `visibility` changed through `PATCH /v1/selection-lists/{listId}`:
+ * `private` ↔ `org` by the list owner, or `private`/`org` → `platform` by a
+ * platform operator. Design: docs/planning/selection-lists-shared-and-fork.md.
+ *
+ * Its own topic rather than a `list.updated` `changedFields` value, so a
+ * consumer that strictly enumerates `changedFields` is not broken by a value it
+ * has never seen, and so the access-relevant change is easy to subscribe to
+ * alone (a read model of "who can pick from this list" needs only this topic,
+ * `list.created` and `list.deleted`).
+ *
+ * `platform` is one-way: `previousVisibility` is never `platform`. When a
+ * single PATCH changes visibility AND other fields, the service emits
+ * `list.updated` for the other fields and this event for the visibility, both
+ * in the same transaction, each with its own `listRevision`.
  */
-export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject<{
+export declare const selectionListsVisibilityChangedSchemaV1: z.ZodEffects<z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
     listRevision: z.ZodNumber;
@@ -122,12 +131,13 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     }>;
-    changedFields: z.ZodArray<z.ZodEnum<["key", "sourceLocale", "status", "name", "description"]>, "many">;
-    previousKey: z.ZodNullable<z.ZodString>;
+    previousVisibility: z.ZodEnum<["private", "org", "platform"]>;
+    visibility: z.ZodEnum<["private", "org", "platform"]>;
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
     listRevision: number;
+    visibility: "platform" | "private" | "org";
     eventId: string;
     actor: {
         type: "user";
@@ -161,12 +171,12 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    previousVisibility: "platform" | "private" | "org";
 }, {
     organizationId: string;
     listId: string;
     listRevision: number;
+    visibility: "platform" | "private" | "org";
     eventId: string;
     actor: {
         type: "user";
@@ -200,12 +210,12 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    previousVisibility: "platform" | "private" | "org";
 }>, {
     organizationId: string;
     listId: string;
     listRevision: number;
+    visibility: "platform" | "private" | "org";
     eventId: string;
     actor: {
         type: "user";
@@ -239,12 +249,12 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    previousVisibility: "platform" | "private" | "org";
 }, {
     organizationId: string;
     listId: string;
     listRevision: number;
+    visibility: "platform" | "private" | "org";
     eventId: string;
     actor: {
         type: "user";
@@ -278,7 +288,6 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    previousVisibility: "platform" | "private" | "org";
 }>;
-export type SelectionListsListUpdatedPayloadV1 = z.infer<typeof selectionListsListUpdatedSchemaV1>;
+export type SelectionListsVisibilityChangedPayloadV1 = z.infer<typeof selectionListsVisibilityChangedSchemaV1>;

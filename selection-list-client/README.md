@@ -2,7 +2,7 @@
 
 Typed client for the FuzeFront **selection-list-service**. Zero runtime dependencies; uses the platform `fetch`.
 
-Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.0.0**. The spec wins any disagreement.
+Derived from the frozen contract at [`services/selection-list-service/openapi.yaml`](../services/selection-list-service/openapi.yaml) **v4.1.0**. The spec wins any disagreement.
 
 ```ts
 import { SelectionListClient, isSelectionListApiError } from '@fuzeone/selection-list-client'
@@ -48,6 +48,32 @@ else render('Deleted user')
 Lists and items also carry a read-only `seed` (`SeedProvenance` or `null`):
 `source`, `pack_key`, `pack_version`, `user_modified`. It is `null` for every
 user-authored row.
+
+## Shared and common lists, forks (2.1.0, contract 4.1.0)
+
+Lists carry `visibility` (`private` / `org` / `platform`), `forked_from` and a
+caller-relative `editable` hint; items carry `origin_item_id`. `org` lists are
+pickable by every member of their org and `platform` lists are common lists
+pickable by every org — read-only without an instance role. The service
+implements this in the wave after the contract (see
+`docs/planning/selection-lists-shared-and-fork.md`).
+
+```ts
+const list = await client.getEffectiveList('priority') // own org's list/fork first, else the common list
+try {
+  await client.updateList(list!.id, { name: 'Urgency' })
+} catch (e) {
+  if (isSelectionListApiError(e) && e.isForkRequired) {
+    const { list: fork } = await client.forkList(e.sourceListId!) // same key; items keep origin_item_id
+    await client.updateList(fork.id, { name: 'Urgency' })
+  } else throw e
+}
+```
+
+`getLists({ include_shared: true })` adds lists readable through visibility
+(the default is unchanged). `resolveIds` resolves common-list ids in every org
+and, where the org holds an `org`-visible fork, answers from the fork item with
+`effective_item_id` set.
 
 ## Install locally (pre-publish)
 

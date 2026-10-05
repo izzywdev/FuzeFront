@@ -34,6 +34,10 @@ class SelectionListApiError(Exception):
         self.limit: int | None = extra.get("limit")  # type: ignore[assignment]
         self.current: int | None = extra.get("current")  # type: ignore[assignment]
         self.details: list | None = extra.get("details")  # type: ignore[assignment]
+        # 4.1.0: refinement of a CONFLICT, and the fork hints that come with fork_required.
+        self.reason: str | None = extra.get("reason")  # type: ignore[assignment]
+        self.fork_url: str | None = extra.get("fork_url")  # type: ignore[assignment]
+        self.source_list_id: str | None = extra.get("source_list_id")  # type: ignore[assignment]
 
     @property
     def is_quota_exceeded(self) -> bool:
@@ -49,6 +53,15 @@ class SelectionListApiError(Exception):
     def is_conflict(self) -> bool:
         """True for a duplicate ``key``/``code``, or a last-owner removal."""
         return self.code == "CONFLICT"
+
+    @property
+    def is_fork_required(self) -> bool:
+        """
+        True when the caller tried to change a common (``platform``) list it holds
+        no role on and may fork it (4.1.0): call
+        ``client.fork_list(err.source_list_id)`` and edit the fork instead.
+        """
+        return self.code == "CONFLICT" and self.reason == "fork_required"
 
     def __repr__(self) -> str:
         return (

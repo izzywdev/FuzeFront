@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Selection List Service API
-  version: 4.0.0
+  version: 4.1.0
   summary: Org-scoped, translatable selection lists (reference data) for the Fuze family.
   description: >-
     **FROZEN CONTRACT — FFRNT-187 (S1).** This file is the single source of truth
@@ -124,6 +124,62 @@ info:
     flips to `true` (permanently) once a human edits the seeded content, after
     which seeding upgrades leave the row alone.
 
+    ### Visibility, shared lists and forks (4.1.0)
+
+    Design record: `docs/planning/selection-lists-shared-and-fork.md`.
+
+    Every list has a `visibility` that says who may **read** it *without* an
+    instance grant. Visibility only ever widens **reading** (fetching the
+    list and its items/translations, picking a value, resolving it); it never
+    confers a mutation. Mutations stay gated by the per-list instance roles
+    exactly as before.
+
+    | `visibility` | Owned by | Readable without an instance grant by |
+    |---|---|---|
+    | `private` (default) | an organization | nobody — today's behaviour; only instance-role holders |
+    | `org` | an organization | every member of the **owning** organization who holds `SelectionListCatalog:read_shared` (every customer tenant role) |
+    | `platform` | the **platform organization** (FuzeFront's root organization) | every authenticated caller, in **any** organization, who holds `SelectionListCatalog:read_shared` |
+
+    A `platform` list is a **common list**: one instance, shared by every
+    tenant, immutable for them. It is owned by the platform organization (so
+    `organization_id` is always an `org_` id — never `null`) and only a
+    **platform operator** may create one or promote a list to it (see
+    *Authorization*). Visibility `platform` is **one-way**: a `platform`
+    list can be archived but never demoted, because demoting it would turn
+    every tenant's stored item ids into `missing`.
+
+    **Copy-on-write (fork).** A tenant that wants to change a common list
+    forks it: `POST /v1/selection-lists/{listId}/fork` copies the list, its
+    items (all non-purged, with their status and order) and every
+    translation into the caller's organization as an ordinary, editable
+    list with the **same `key`**, `forked_from` provenance, and the caller as
+    `list-owner`. Each copied item records the source item it came from in
+    `origin_item_id`. At most one fork of a given source exists per
+    organization; forking again returns the existing fork (`200`).
+
+    Attempting to **mutate** a `platform` list you hold no instance role on
+    returns `409 CONFLICT` with `reason: fork_required`, a `source_list_id`
+    and a same-origin-relative `fork_url` — when you could fork (you hold
+    `SelectionListCatalog:create`). Without `create` it is a plain `403`.
+
+    **Which list a key means (precedence).** For a caller in organization X
+    asking for key K (`GET /v1/selection-lists?key=K&include_shared=true`),
+    the effective list is the first of: (1) X's own **active** list with key
+    K that the caller can read (a fork, an `org` list, or a list it holds a
+    grant on); (2) the **active** `platform` list with key K. Keys are
+    unique per organization, so each step has at most one candidate. Because
+    a fork keeps the source's key, forking automatically shadows the common
+    list for the forking organization; archiving the fork reverts to it.
+
+    **Stored values keep working across a fork.** Forked items get **new**
+    service-minted ids (the copy is a different entity in a different
+    organization). Ids already stored that point at the common list's items
+    keep resolving; for a caller in an organization holding an active
+    `org`-visible fork, `POST /v1/resolve` follows `origin_item_id` and
+    returns the fork's label/status for them, naming the fork item in
+    `effective_item_id` so a consumer can migrate the stored value lazily.
+
+
     **Registry note (S3 amendment):** prefixes `front_sl` and `front_sli` are
     registered in `packages/identity/src/registry.ts` (keys `selectionList` and
     `selectionListItem`). They are product-local types namespaced as `front_*`
@@ -142,15 +198,28 @@ info:
     * **`SelectionListCatalog`** — the organization's collection of lists, as
       a **tenant-level** resource (no instance key; the tenant is the caller's
       organization). It answers "may this caller work with selection lists in
-      this org at all?". Actions: `list`, `create`, `read_quota`, `resolve`.
-      It is granted through **tenant roles**:
+      this org at all?". Actions: `list`, `create`, `read_quota`, `resolve`,
+      and (4.1.0) `read_shared`, `publish_platform`. It is granted through
+      **tenant roles**:
 
-      | tenant role | list | create | read_quota | resolve |
-      |---|---|---|---|---|
-      | `admin`     | x | x | x | x |
-      | `editor`    | x | x |   | x |
-      | `viewer`    | x |   |   | x |
-      | `developer` |   |   |   |   |
+      | tenant role | list | create | read_quota | resolve | read_shared | publish_platform |
+      |---|---|---|---|---|---|---|
+      | `admin`     | x | x | x | x | x | x |
+      | `editor`    | x | x |   | x | x |   |
+      | `viewer`    | x |   |   | x | x |   |
+      | `developer` |   |   |   |   |   |   |
+
+      `read_shared` is held by every **customer** tenant role (a plain
+      member is `editor`). It is the membership proof behind visibility:
+      the service grants a shared read only when Permit says the caller holds
+      `read_shared` **in its own tenant** — the token's org claim alone is
+      never trusted as membership. `developer` (the root-org developer-portal
+      role) deliberately holds none of these actions.
+
+      `publish_platform` is only **effective in the platform organization's
+      tenant**: the service evaluates it there, and additionally requires the
+      caller to be acting in the platform organization. A customer-org
+      `admin` therefore cannot publish a common list.
 
     * **`SelectionList`** — one list **instance** (key = the `front_sl_` id).
       It answers "what may this caller do to *this* list?". Actions: `read`,
@@ -172,10 +241,39 @@ info:
 
     How the two meet:
 
+    * **Reading a list (shared read, 4.1.0).** Every read operation on one
+      list (`getSelectionList`, `listSelectionListItems`,
+      `listSelectionListTranslations`, `listSelectionListItemTranslations`,
+      and the source read of `forkSelectionList`) is satisfied by
+      `SelectionList:read` on the instance **or**, when the list's
+      `visibility` is not `private`, by the *shared read*:
+      `SelectionListCatalog:read_shared` in the caller's tenant **and** the
+      service-owned data predicate (`org`: the list belongs to the caller's
+      organization; `platform`: always). Declared per operation in
+      `x-permit-shared-read`. Permit stays the authority on *who* is a member
+      (the tenant role); the service is the authority on the list's
+      `visibility`, which it owns. Shared read never confers any other
+      `SelectionList:*` action, so the invariant "tenant roles confer zero
+      instance actions" holds.
     * **Listing** (`GET /v1/selection-lists`) requires `SelectionListCatalog:list`,
       and the returned rows are **still filtered per list** by
       `SelectionList:read` — catalog access lets a caller ask, it does not
-      widen what comes back.
+      widen what comes back. With `include_shared=true` (4.1.0) the filter
+      also admits rows the caller can read through the shared read above.
+    * **Forking** (`POST /v1/selection-lists/{listId}/fork`) requires
+      `SelectionListCatalog:create` (the fork is a new list in the caller's
+      org, subject to the same quotas) **and** read on the source (grant or
+      shared read). The service grants the caller `list-owner` on the fork
+      with its machine identity, exactly as on create.
+    * **Visibility changes** (`PATCH` with `visibility`) require
+      `SelectionList:manage_access` (owner-only: who may read a list is an
+      access decision); promoting to `platform` additionally requires
+      `SelectionListCatalog:publish_platform` and a list owned by the
+      platform organization. **Creating** a list with `visibility: platform`
+      requires `publish_platform` likewise.
+    * **Purging a `platform` list or one of its items** additionally
+      requires `SelectionListCatalog:publish_platform`: it turns stored ids
+      in every tenant into `missing`.
     * **Creating** (`POST /v1/selection-lists`) requires
       `SelectionListCatalog:create`. The service then grants the creator
       `list-owner` on the new instance, using **its own machine identity**
@@ -218,6 +316,50 @@ info:
 
 
     ### Changelog
+
+    * **4.1.0** — shared lists, common (`platform`) lists and copy-on-write
+      forks (`docs/planning/selection-lists-shared-and-fork.md`; owner
+      requirement "members can pick from the app's common lists without
+      owning them; ACL with copy-on-write").
+      (1) `SelectionList` gains required, read-only `visibility`
+      (`private|org|platform`), `forked_from` (nullable
+      `SelectionListForkProvenance`) and `editable` (caller-relative hint);
+      `SelectionListItem` gains required, nullable `origin_item_id`.
+      (2) `SelectionListCreate` accepts optional `visibility` (default
+      `private`); `SelectionListUpdate` accepts `visibility` (owner-only;
+      `platform` operator-only and one-way).
+      (3) New operation `forkSelectionList`
+      (`POST /v1/selection-lists/{listId}/fork`).
+      (4) `listSelectionLists` gains `include_shared` (default `false` =
+      the 4.0.0 result set, unchanged) and a `visibility` filter; with
+      `include_shared=true` and `key`, it returns the *effective* list for
+      the key (precedence above).
+      (5) `ResolvedSelectionListItem` gains optional `effective_item_id`;
+      resolve also resolves items of `platform` lists and follows
+      `origin_item_id` into the caller org's `org`-visible fork.
+      (6) `Error` gains optional `reason` (`fork_required`, `fork_exists`,
+      `fork_not_applicable`, `visibility_locked`), `fork_url` and
+      `source_list_id`; `409` is declared on every per-list mutation that
+      can answer `fork_required`.
+      (7) `SelectionListCatalog` gains `read_shared` (every customer tenant
+      role) and `publish_platform` (`admin`, effective only in the platform
+      organization); new extension `x-permit-shared-read` on read
+      operations; new `x-permit-additional-actions` entries on
+      `createSelectionList`, `updateSelectionList`, `deleteSelectionList`,
+      `deleteSelectionListItem`.
+      (8) `servers` example port corrected `3011` → `3008` (the service's
+      default and the chart's `selectionListService.port`).
+      MINOR: no existing request changes its response or its authorization
+      for existing data. Every list that exists at 4.0.0 is `private`, so it
+      reads, lists, resolves and authorizes exactly as before; the default
+      listing is unchanged; the widened behaviour is reachable only through
+      new opt-in parameters, the new operation, or lists created/changed
+      with a non-`private` visibility, which cannot exist before 4.1.0.
+      Response objects gain properties (additive, as `seed` was).
+      Clients: `@fuzeone/selection-list-client` 2.1.0,
+      `fuzefront-selection-list-client` (Python) 2.1.0; events:
+      `@fuzefront/shared` 1.3.0 (`selection-lists.list.forked`,
+      `selection-lists.visibility.changed`).
 
     * **4.0.0** — authorship and seed provenance (prerequisite for seeding,
       `docs/planning/selection-lists-events.md` §13.1), plus review finding
@@ -284,7 +426,7 @@ servers:
       hard-coded absolute host (see CLAUDE.md).
     variables:
       baseUrl:
-        default: http://fuzefront-selection-list-service:3011
+        default: http://fuzefront-selection-list-service:3008
         description: Base URL of the selection-list-service.
 
 security:
@@ -316,9 +458,33 @@ paths:
         `read` (`SelectionList:read`, an instance-only action); a list the
         caller has no instance grant on is simply absent, never a `403`. Each
         row carries its source-locale-resolved (or `locale`-resolved) `name`.
+
+
+        **Shared lists (4.1.0).** By default (`include_shared=false`) the
+        result set is exactly the 4.0.0 one: lists of the caller's
+        organization that it holds an instance role on. With
+        `include_shared=true` the per-row filter also admits lists the caller
+        can read through the *shared read* (`org` lists of its own
+        organization and `platform` common lists, given
+        `SelectionListCatalog:read_shared`; a caller without it simply gets
+        no extra rows). Unless a `visibility` filter is given, a `platform`
+        list that the caller's organization **shadows** (its own active list
+        with the same `key`, e.g. a fork, is readable by the caller) is
+        omitted, so a picker sees each key once. With `key` and
+        `include_shared=true` the page holds at most one row: the
+        **effective** list for that key (see *Visibility, shared lists and
+        forks*). Pagination is unchanged.
       tags: [lists]
       x-permit-resource: SelectionListCatalog
       x-permit-action: list
+      x-permit-shared-read:
+        when: include_shared=true
+        resource: SelectionListCatalog
+        action: read_shared
+        predicate: >-
+          Admits rows with `visibility: org` owned by the caller's
+          organization and rows with `visibility: platform`, in addition to
+          the rows admitted by `SelectionList:read`.
       parameters:
         - name: limit
           in: query
@@ -369,9 +535,34 @@ paths:
           description: >-
             Exact-match filter on the org-unique list `key`. Returns a page of at
             most one row; present so a consumer can look a list up by its stable
-            slug without knowing its id.
+            slug without knowing its id. With `include_shared=true` the row is
+            the **effective** list for the key: the caller organization's own
+            readable active list with that key if there is one, else the
+            active `platform` list with that key.
           schema:
             $ref: '#/components/schemas/SelectionListKey'
+        - name: include_shared
+          in: query
+          required: false
+          description: >-
+            Also return lists the caller can read through visibility (`org`
+            lists of its own organization, `platform` common lists), not only
+            lists it holds an instance role on. Defaults to `false`, which is
+            the 4.0.0 result set. A picker passes `true`.
+          schema:
+            type: boolean
+            description: Include lists readable through visibility.
+            default: false
+        - name: visibility
+          in: query
+          required: false
+          description: >-
+            Return only lists with this visibility. Supplying it also turns off
+            platform-list shadowing, so an administrator can see the common
+            list behind its organization's fork. A caller outside the platform
+            organization sees `platform` rows only with `include_shared=true`.
+          schema:
+            $ref: '#/components/schemas/SelectionListVisibility'
       responses:
         '200':
           description: A page of selection lists.
@@ -407,9 +598,25 @@ paths:
         caller `list-owner` on the new list instance using its own machine
         identity (the caller cannot hold `manage_access` on a list that did not
         exist yet). Subject to the `org_lists` and `user_lists` quotas.
+
+
+        `visibility` defaults to `private`. `org` needs nothing extra (the
+        creator owns the list). `platform` creates a **common** list and
+        additionally requires `SelectionListCatalog:publish_platform`
+        **and** that the caller is acting in the platform organization; a
+        caller in any other organization gets `403` (the list would have to
+        be owned by the platform organization).
       tags: [lists]
       x-permit-resource: SelectionListCatalog
       x-permit-action: create
+      x-permit-additional-actions:
+        - when: body.visibility=platform
+          resource: SelectionListCatalog
+          action: publish_platform
+          reason: >-
+            A common list is readable by every tenant and immutable for them;
+            only a platform operator acting in the platform organization may
+            publish one. Evaluated in the platform organization's tenant.
       requestBody:
         required: true
         description: The list to create.
@@ -443,9 +650,20 @@ paths:
         Returns the list with its translation resolved through the locale
         fallback chain. Returns `404` — never `403` — when the caller cannot
         `read` it, so the endpoint is not a cross-org existence oracle.
+        Readable through an instance grant or, for an `org`/`platform` list,
+        the shared read (`x-permit-shared-read`) — so any tenant member can
+        fetch a common list by id.
       tags: [lists]
       x-permit-resource: SelectionList
       x-permit-action: read
+      x-permit-shared-read:
+        when: list.visibility!=private
+        resource: SelectionListCatalog
+        action: read_shared
+        predicate: >-
+          `org`: the list's organization is the caller's organization.
+          `platform`: always. Satisfies this operation's `read` without an
+          instance grant; confers no other action.
       parameters:
         - name: locale
           in: query
@@ -488,6 +706,26 @@ paths:
         PATCH every other field. The check applies whenever the body carries
         `status: archived`, even if the list is already archived — the
         decision depends on the request, not on stored state.
+
+
+        **Changing `visibility` (4.1.0)** is an access decision, so a body
+        carrying `visibility` additionally requires `manage_access`
+        (`list-owner`). Allowed transitions: `private` ↔ `org`, and
+        `private`/`org` → `platform`. Promoting to `platform` additionally
+        requires `SelectionListCatalog:publish_platform` and a list owned by
+        the platform organization (`403` otherwise). A `platform` list can
+        never be demoted: any other `visibility` on it is
+        `409 CONFLICT` with `reason: visibility_locked` (archive it instead —
+        archived items keep resolving). Sending the current visibility is a
+        no-op that still requires `manage_access`. A change emits
+        `selection-lists.visibility.changed`.
+
+
+        **Shared lists.** A caller that can read a `platform` list through
+        the shared read but holds no instance role on it gets
+        `409 CONFLICT` / `reason: fork_required` (with `fork_url`) if it holds
+        `SelectionListCatalog:create`, else `403`. The same holds for every
+        per-list mutation below.
       tags: [lists]
       x-permit-resource: SelectionList
       x-permit-action: update
@@ -500,6 +738,20 @@ paths:
             (`deleteSelectionList`, `archiveSelectionList`). `update` alone
             (held by `list-editor`) must not reach it through PATCH; the
             archive outcome additionally requires `delete` on the list.
+        - when: body.visibility
+          resource: SelectionList
+          action: manage_access
+          reason: >-
+            Visibility decides who may read the list without a grant — an
+            access decision, reserved to the holder of `manage_access`
+            (`list-owner`), not to `update` (held by `list-editor`).
+        - when: body.visibility=platform
+          resource: SelectionListCatalog
+          action: publish_platform
+          reason: >-
+            Publishing a common list to every tenant is a platform-operator
+            act, evaluated in the platform organization's tenant; the list
+            must be owned by the platform organization.
       requestBody:
         required: true
         description: The fields to change. Omitted fields are left untouched.
@@ -533,10 +785,21 @@ paths:
         **Purging is irreversible**, cascades to every item, translation and
         access grant, and permanently breaks any consumer row still holding one
         of the purged item ids — which is why it requires `delete` (owner only)
-        and an explicit opt-in rather than being the default verb.
+        and an explicit opt-in rather than being the default verb. Purging a
+        `platform` list breaks stored ids in **every** tenant, so it
+        additionally requires `SelectionListCatalog:publish_platform` (4.1.0).
+        Forks of a purged list are untouched; their `forked_from` keeps
+        naming the purged id.
       tags: [lists]
       x-permit-resource: SelectionList
       x-permit-action: delete
+      x-permit-additional-actions:
+        - when: purge=true AND list.visibility=platform
+          resource: SelectionListCatalog
+          action: publish_platform
+          reason: >-
+            A common list's item ids are stored by every tenant; purging it is
+            a platform-operator decision, not only the list owner's.
       parameters:
         - name: purge
           in: query
@@ -563,6 +826,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/archive:
     parameters:
@@ -590,6 +855,115 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/selection-lists/{listId}/fork:
+    parameters:
+      - $ref: '#/components/parameters/ListIdParam'
+    post:
+      operationId: forkSelectionList
+      summary: Fork a common list into the caller's organization (copy-on-write)
+      description: >-
+        Copies a `platform` (common) list into the caller's organization as an
+        ordinary list the caller owns, so the organization can change it. The
+        copy carries:
+
+
+        * the **same `key`** — so it shadows the common list for this
+          organization in key lookups (archiving the fork reverts to the
+          common list);
+        * every non-purged item with its `code`, `status`, `sort_order`,
+          source-locale text and **every translation** (with their
+          `is_machine` flags), each item under a **new, service-minted id**
+          and with `origin_item_id` naming the source item;
+        * the list's source-locale text and every translation;
+        * `forked_from: {list_id, organization_id, revision, forked_at}`
+          (the source's revision at the moment of copying), `seed: null`,
+          `created_by` = the caller, and `visibility` from the body
+          (default `org`, so the organization's members keep seeing the
+          values; `private` for a draft only grant-holders see).
+
+
+        The service mints every id — the body carries none and rejects
+        unknown properties (`governance/identifier-standard.md` §1). The
+        caller is granted `list-owner` with the service's machine identity,
+        exactly as on create. Subject to the `org_lists`, `user_lists` and
+        `list_items` quotas (`403 QUOTA_EXCEEDED`). A source with more than
+        5000 non-purged items is refused with `400 VALIDATION_ERROR` (the
+        bound of the `list.forked` item map).
+
+
+        **Idempotent per (organization, source).** If the caller's
+        organization already holds a fork of this source (active or
+        archived), nothing is copied: the existing fork is returned with
+        `200` when the caller can read it, and `409 CONFLICT` /
+        `reason: fork_exists` when it cannot (ask its owner for a
+        role). A different list in the organization already using the key
+        (one that is not a fork of this source) is `409 CONFLICT`.
+
+
+        **Only lists of another organization are forkable** — in practice
+        `platform` lists. Forking a list of the caller's own organization is
+        `409 CONFLICT` / `reason: fork_not_applicable` (ask the owner for a
+        role instead); an unreadable source is `404`.
+
+
+        Emits, in one transaction: the `list.created` / `item.created` /
+        `translation.upserted` events for the copied content,
+        `selection-lists.list.forked` (provenance + the source→fork item id
+        map), and `access.granted` for the owner.
+      tags: [lists]
+      x-permit-resource: SelectionListCatalog
+      x-permit-action: create
+      x-permit-additional-actions:
+        - when: always
+          resource: SelectionList
+          action: read
+          reason: >-
+            The source must be readable by the caller — through an instance
+            grant or through the shared read (`x-permit-shared-read`). A
+            source the caller cannot read is `404`.
+      x-permit-shared-read:
+        when: list.visibility!=private
+        resource: SelectionListCatalog
+        action: read_shared
+        predicate: >-
+          Satisfies the source `read` above without an instance grant
+          (`platform`: always; `org`: same organization, which is then
+          refused as `fork_not_applicable`).
+      requestBody:
+        required: false
+        description: Optional fork settings. An absent body means all defaults.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionListForkRequest'
+      responses:
+        '200':
+          description: >-
+            The organization already held a fork of this source; it is
+            returned unchanged and nothing was copied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionList'
+        '201':
+          description: The new fork.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/items:
     parameters:
@@ -605,6 +979,14 @@ paths:
       tags: [items]
       x-permit-resource: SelectionList
       x-permit-action: read
+      x-permit-shared-read:
+        when: list.visibility!=private
+        resource: SelectionListCatalog
+        action: read_shared
+        predicate: >-
+          `org`: the list's organization is the caller's organization.
+          `platform`: always. Satisfies this operation's `read` without an
+          instance grant; confers no other action.
       parameters:
         - name: limit
           in: query
@@ -760,6 +1142,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/items/{itemId}:
     parameters:
@@ -799,6 +1183,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     delete:
       operationId: deleteSelectionListItem
       summary: Archive (default) or purge an item
@@ -822,6 +1208,12 @@ paths:
             Purge is irreversible and owner-only. `remove_value` alone (held
             by `list-editor`) authorizes the archive outcome; the purge
             outcome additionally requires `delete` on the parent list.
+        - when: purge=true AND list.visibility=platform
+          resource: SelectionListCatalog
+          action: publish_platform
+          reason: >-
+            An item of a common list is stored by every tenant; purging it is
+            a platform-operator decision (4.1.0).
       parameters:
         - name: purge
           in: query
@@ -848,6 +1240,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/items/{itemId}/archive:
     parameters:
@@ -875,6 +1269,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/translations:
     parameters:
@@ -893,6 +1289,14 @@ paths:
       tags: [translations]
       x-permit-resource: SelectionList
       x-permit-action: read
+      x-permit-shared-read:
+        when: list.visibility!=private
+        resource: SelectionListCatalog
+        action: read_shared
+        predicate: >-
+          `org`: the list's organization is the caller's organization.
+          `platform`: always. Satisfies this operation's `read` without an
+          instance grant; confers no other action.
       x-pagination: exempt
       x-pagination-reason: >-
         Bounded by the supported locale count (max 11). Not a user-data
@@ -954,6 +1358,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     delete:
       operationId: deleteSelectionListTranslation
       summary: Remove a list's translation for one locale
@@ -977,6 +1383,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/items/{itemId}/translations:
     parameters:
@@ -992,6 +1400,14 @@ paths:
       tags: [translations]
       x-permit-resource: SelectionList
       x-permit-action: read
+      x-permit-shared-read:
+        when: list.visibility!=private
+        resource: SelectionListCatalog
+        action: read_shared
+        predicate: >-
+          `org`: the list's organization is the caller's organization.
+          `platform`: always. Satisfies this operation's `read` without an
+          instance grant; confers no other action.
       x-pagination: exempt
       x-pagination-reason: >-
         Bounded by the supported locale count (max 11).
@@ -1050,6 +1466,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     delete:
       operationId: deleteSelectionListItemTranslation
       summary: Remove an item's translation for one locale
@@ -1071,6 +1489,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/translations/{locale}/autofill:
     parameters:
@@ -1118,6 +1538,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /v1/selection-lists/{listId}/access:
     parameters:
@@ -1324,6 +1746,20 @@ paths:
         instance grant on its list. The minimal response above is what bounds
         that exposure; a per-id list check would turn this one round trip into
         N authorization decisions on the hottest path in the service.
+
+
+        **Common lists and forks (4.1.0).** The resolvable set is the
+        caller's organization's items **plus** the items of every `platform`
+        list — a common list is readable by every tenant, so its ids resolve
+        everywhere (any other organization's ids still land in `missing`).
+        When an id belongs to a `platform` list and the caller's
+        organization holds an **active, `org`-visible fork** of that list
+        containing a non-purged item whose `origin_item_id` is that id, the
+        result is the **fork item's** label/locale/status and carries
+        `effective_item_id` = the fork item's id; a consumer may rewrite its
+        stored value to it at leisure (both keep resolving). A `private` fork
+        never redirects (it is a draft, not the organization's choice).
+        `effective_item_id` is absent whenever no redirect happened.
       tags: [resolve]
       x-permit-resource: SelectionListCatalog
       x-permit-action: resolve
@@ -1506,6 +1942,69 @@ components:
             row where it is `true`.
           examples: [false]
 
+    SelectionListVisibility:
+      type: string
+      description: >-
+        Who may **read** a list without an instance grant (4.1.0). `private`
+        — nobody (only instance-role holders; the default and every 4.0.0
+        list). `org` — every member of the owning organization holding
+        `SelectionListCatalog:read_shared`. `platform` — a common list owned
+        by the platform organization, readable by every authenticated
+        caller in any organization holding `read_shared`; one-way (never
+        demoted). Visibility never confers a mutation.
+      enum: [private, org, platform]
+      examples: ['org']
+
+    SelectionListForkProvenance:
+      type: object
+      description: >-
+        **Read-only.** Where a forked list was copied from (4.1.0). The
+        source may since have changed, been archived or been purged — this
+        records the moment of copying and is never updated; `list_id` is a
+        provenance reference, not a capability, and may answer `404`.
+      required: [list_id, organization_id, revision, forked_at]
+      additionalProperties: false
+      readOnly: true
+      properties:
+        list_id:
+          $ref: '#/components/schemas/SelectionListId'
+        organization_id:
+          $ref: '#/components/schemas/OrganizationId'
+        revision:
+          type: integer
+          description: >-
+            The source list's revision (the event contract's `listRevision`)
+            at the moment of copying. A consumer comparing it with the
+            source's current revision can tell the fork is behind.
+          minimum: 1
+          examples: [3]
+        forked_at:
+          type: string
+          format: date-time
+          description: When the fork was made (RFC 3339, UTC).
+          examples: ['2026-10-05T12:00:00Z']
+
+    SelectionListForkRequest:
+      type: object
+      description: >-
+        Optional settings for `POST /v1/selection-lists/{listId}/fork`.
+        Carries **no `id`** and no `key` — the service mints every id and the
+        fork keeps the source's key — and rejects unknown properties
+        (`governance/identifier-standard.md` §1).
+      additionalProperties: false
+      properties:
+        visibility:
+          type: string
+          description: >-
+            Visibility of the fork. `org` (default) makes it the
+            organization's version of the list for every member; `private`
+            keeps it a draft only grant-holders see (it then neither shadows
+            the common list for others nor redirects resolve). A fork can
+            never be `platform`.
+          enum: [private, org]
+          default: org
+          examples: ['org']
+
     Locale:
       type: string
       description: >-
@@ -1587,6 +2086,9 @@ components:
         - resolved_locale
         - is_machine
         - seed
+        - visibility
+        - forked_from
+        - editable
         - created_by
         - created_at
         - updated_at
@@ -1595,6 +2097,9 @@ components:
         id:
           $ref: '#/components/schemas/SelectionListId'
         organization_id:
+          description: >-
+            The owning organization. For a `platform` list this is the
+            platform organization, not the caller's — never `null`.
           $ref: '#/components/schemas/OrganizationId'
         key:
           $ref: '#/components/schemas/SelectionListKey'
@@ -1638,6 +2143,30 @@ components:
             - $ref: '#/components/schemas/SeedProvenance'
             - type: 'null'
               description: Not a seeded list.
+        visibility:
+          $ref: '#/components/schemas/SelectionListVisibility'
+        forked_from:
+          description: >-
+            **Read-only, always present.** Fork provenance when this list was
+            made by `forkSelectionList`; `null` otherwise.
+          readOnly: true
+          oneOf:
+            - $ref: '#/components/schemas/SelectionListForkProvenance'
+            - type: 'null'
+              description: Not a fork.
+        editable:
+          type: boolean
+          readOnly: true
+          description: >-
+            **Caller-relative hint**, not an authorization grant: `true` when
+            the caller holds at least one write action on this list through
+            an instance role (by the role table, exactly the roles other than
+            `list-viewer`; the service decides it with one bulk check of
+            `SelectionList:translate`, which every such role holds). `false`
+            for a list read only through visibility — a UI shows it read-only
+            and, for a `platform` list, offers "fork to edit". Every mutation
+            is still authorized on its own.
+          examples: [false]
         created_by:
           $ref: '#/components/schemas/AuthorPrincipal'
         created_at:
@@ -1675,6 +2204,14 @@ components:
           description: Optional list description in `source_locale`.
           maxLength: 2000
           examples: ['ISO 3166-1 countries offered in the address picker.']
+        visibility:
+          allOf:
+            - $ref: '#/components/schemas/SelectionListVisibility'
+          description: >-
+            Defaults to `private`. `platform` requires
+            `SelectionListCatalog:publish_platform` and a caller acting in the
+            platform organization.
+          default: private
 
     SelectionListUpdate:
       type: object
@@ -1703,6 +2240,14 @@ components:
             it.
           maxLength: 2000
           examples: ['Countries offered in the EMEA address picker.']
+        visibility:
+          allOf:
+            - $ref: '#/components/schemas/SelectionListVisibility'
+          description: >-
+            New visibility (4.1.0). Requires `manage_access` on the list;
+            `platform` additionally requires `publish_platform` and a list
+            owned by the platform organization. A `platform` list cannot be
+            given any other visibility (`409`, `reason: visibility_locked`).
 
     SelectionListItem:
       type: object
@@ -1718,6 +2263,7 @@ components:
         - resolved_locale
         - is_machine
         - seed
+        - origin_item_id
         - created_by
         - created_at
         - updated_at
@@ -1767,6 +2313,19 @@ components:
             - $ref: '#/components/schemas/SeedProvenance'
             - type: 'null'
               description: Not a seeded item.
+        origin_item_id:
+          description: >-
+            **Read-only, always present (4.1.0).** On an item copied by
+            `forkSelectionList`, the id of the source item it was copied from
+            — the mapping that lets stored values pointing at the common list
+            be migrated to the fork (and that `POST /v1/resolve` follows).
+            `null` on every other item, including items added to a fork after
+            it was made. A provenance reference, not a capability.
+          readOnly: true
+          oneOf:
+            - $ref: '#/components/schemas/SelectionListItemId'
+            - type: 'null'
+              description: Not a forked item.
         created_by:
           $ref: '#/components/schemas/AuthorPrincipal'
         created_at:
@@ -2216,6 +2775,12 @@ components:
           examples: [false]
         status:
           $ref: '#/components/schemas/LifecycleStatus'
+        effective_item_id:
+          description: >-
+            Present only when the requested id belongs to a `platform` list
+            and the result was taken from the caller organization's
+            `org`-visible fork (4.1.0): the fork item's id. Absent otherwise.
+          $ref: '#/components/schemas/SelectionListItemId'
 
     ResolveResponse:
       type: object
@@ -2291,6 +2856,38 @@ components:
             Per-field validation problems. Present only on `VALIDATION_ERROR`.
           items:
             $ref: '#/components/schemas/ErrorDetail'
+        reason:
+          $ref: '#/components/schemas/ErrorReason'
+        fork_url:
+          type: string
+          description: >-
+            Present only with `reason: fork_required`: the **same-origin
+            relative** path of the fork operation for the list the caller
+            tried to change (`/v1/selection-lists/{listId}/fork`). Prefix it
+            with the same base the client already uses; never an absolute
+            host.
+          pattern: '^/v1/selection-lists/front_sl_[0-9a-z]+/fork$'
+          maxLength: 300
+          examples: ['/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/fork']
+        source_list_id:
+          description: >-
+            Present only with `reason: fork_required`: the common list the
+            caller tried to change (the list `fork_url` forks).
+          $ref: '#/components/schemas/SelectionListId'
+
+    ErrorReason:
+      type: string
+      description: >-
+        Refines a `CONFLICT` (4.1.0) so a client can act on it without parsing
+        `message`. Absent on every other error. `fork_required` — the caller
+        tried to change a `platform` list it holds no instance role on, and
+        may fork it (`fork_url`). `fork_exists` — the organization already
+        holds a fork of this source the caller cannot read. `fork_not_applicable`
+        — the source belongs to the caller's own organization. `visibility_locked`
+        — a `platform` list cannot be demoted. Treat an unknown value as a
+        plain `CONFLICT`.
+      enum: [fork_required, fork_exists, fork_not_applicable, visibility_locked]
+      examples: ['fork_required']
 
     ErrorDetail:
       type: object
@@ -2343,7 +2940,11 @@ components:
     Conflict:
       description: >-
         `CONFLICT` — duplicate list `key`, duplicate item `code`, or an
-        operation that would remove the last `list-owner`.
+        operation that would remove the last `list-owner`; and (4.1.0), with
+        a `reason`, a change attempted on a common list the caller must fork
+        first (`fork_required`, with `fork_url` and `source_list_id`), a
+        fork that cannot be made (`fork_exists`, `fork_not_applicable`), or a
+        `platform` list demotion (`visibility_locked`).
       content:
         application/json:
           schema:

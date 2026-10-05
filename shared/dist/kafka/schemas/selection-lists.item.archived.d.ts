@@ -3,6 +3,7 @@ import { z } from 'zod';
 export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
+    listRevision: z.ZodNumber;
     eventId: z.ZodString;
     actor: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"user">;
@@ -27,7 +28,6 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     }>]>;
     listKey: z.ZodString;
-    listRevision: z.ZodNumber;
     item: z.ZodObject<{
         itemId: z.ZodString;
         code: z.ZodString;
@@ -51,6 +51,7 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
             packVersion: number;
             userModified: boolean;
         }>>;
+        originItemId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
@@ -68,6 +69,7 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     }, {
         status: "active" | "archived";
         code: string;
@@ -83,10 +85,12 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -97,7 +101,6 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     item: {
         status: "active" | "archived";
         code: string;
@@ -113,10 +116,12 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     };
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -127,7 +132,6 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     item: {
         status: "active" | "archived";
         code: string;
@@ -143,10 +147,12 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     };
 }>, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -157,7 +163,6 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     item: {
         status: "active" | "archived";
         code: string;
@@ -173,10 +178,12 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     };
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -187,7 +194,6 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     item: {
         status: "active" | "archived";
         code: string;
@@ -203,6 +209,7 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         itemId: string;
         label: string;
         sortOrder: number;
+        originItemId?: string | null | undefined;
     };
 }>;
 export type SelectionListsItemArchivedPayloadV1 = z.infer<typeof selectionListsItemArchivedSchemaV1>;

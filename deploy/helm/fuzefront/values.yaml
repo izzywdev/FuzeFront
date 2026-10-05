@@ -1540,6 +1540,18 @@ kafkaTopics:
       replicationFactor: 1
       retentionMs: 604800000
       cleanupPolicy: delete
+    # Shared + common lists and copy-on-write forks (HTTP contract 4.1.0, @fuzefront/shared 1.3.0;
+    # docs/planning/selection-lists-shared-and-fork.md). Same settings as the other change events.
+    - name: selection-lists.list.forked
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.visibility.changed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
     - name: selection-lists.item.created
       partitions: 3
       replicationFactor: 1

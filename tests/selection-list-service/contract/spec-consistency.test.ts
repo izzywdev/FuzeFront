@@ -12,8 +12,9 @@
  *   1. The client actually issues the HTTP method + path the spec declares for each operation,
  *      sends only declared query parameters, and sends request bodies that validate against the
  *      spec's request schema (a method NAME can exist while calling the wrong route).
- *   2. The spec's `x-permit-resource` / `x-permit-action` / `x-permit-additional-actions` on all
- *      24 operations equal the 3.0.0 authorization matrix in
+ *   2. The spec's `x-permit-resource` / `x-permit-action` / `x-permit-additional-actions` /
+ *      `x-permit-shared-read` on all 25 operations equal the authorization matrix (3.0.0, amended
+ *      4.0.0 and 4.1.0) in
  *      docs/planning/selection-lists-permit-actions.md §3 (design record) — either side drifting
  *      fails; the spec is normative, so a failure means the document is stale or the spec changed
  *      without the matrix being reviewed.
@@ -38,6 +39,7 @@ type Op = {
   'x-permit-resource'?: string;
   'x-permit-action'?: string;
   'x-permit-additional-actions'?: Array<{ when: string; resource: string; action: string }>;
+  'x-permit-shared-read'?: { when: string; resource: string; action: string; predicate: string };
 };
 
 function operations(): Array<{ method: string; path: string; op: Op }> {
@@ -76,10 +78,11 @@ const U = 'usr_01h455vb4pex5vsknk084sn02q';
 type Call = (c: SelectionListClient) => Promise<unknown>;
 /** operationId -> how to invoke its client method with representative arguments. */
 const DRIVERS: Record<string, { call: Call; queryKeys?: string[] }> = {
-  listSelectionLists: { call: (c) => c.getLists({ limit: 5, cursor: 'c', status: 'active', key: 'k', locale: 'en' }), queryKeys: ['limit', 'cursor', 'status', 'key', 'locale'] },
-  createSelectionList: { call: (c) => c.createList({ key: 'my-list', name: 'My list', source_locale: 'en', description: 'd' }) },
+  listSelectionLists: { call: (c) => c.getLists({ limit: 5, cursor: 'c', status: 'active', key: 'k', locale: 'en', include_shared: true, visibility: 'org' }), queryKeys: ['limit', 'cursor', 'status', 'key', 'locale', 'include_shared', 'visibility'] },
+  createSelectionList: { call: (c) => c.createList({ key: 'my-list', name: 'My list', source_locale: 'en', description: 'd', visibility: 'org' }) },
+  forkSelectionList: { call: (c) => c.forkList(L as never, { visibility: 'org' }) },
   getSelectionList: { call: (c) => c.getList(L as never, 'en'), queryKeys: ['locale'] },
-  updateSelectionList: { call: (c) => c.updateList(L as never, { name: 'n', description: null, status: 'active', key: 'new-key', source_locale: 'en' }) },
+  updateSelectionList: { call: (c) => c.updateList(L as never, { name: 'n', description: null, status: 'active', key: 'new-key', source_locale: 'en', visibility: 'private' }) },
   deleteSelectionList: { call: (c) => c.deleteList(L as never, { purge: true }), queryKeys: ['purge'] },
   archiveSelectionList: { call: (c) => c.archiveList(L as never) },
   listSelectionListItems: { call: (c) => c.getItems(L as never, { limit: 5, cursor: 'c', status: 'active', locale: 'en' } as never), queryKeys: ['limit', 'cursor', 'status', 'locale'] },
@@ -116,7 +119,7 @@ function recordingClient(): { client: SelectionListClient; calls: Array<{ method
 describe('the client issues the routes the spec declares', () => {
   it('has a driver for every operation in the spec (and no stale driver)', () => {
     expect(Object.keys(DRIVERS).sort()).toEqual(OPS.map((o) => o.op.operationId).sort());
-    expect(OPS).toHaveLength(24);
+    expect(OPS).toHaveLength(25);
   });
 
   it.each(OPS.map((o) => [o.op.operationId, o.method, o.path] as const))('%s -> %s %s', async (operationId, method, pathTemplate) => {
@@ -142,7 +145,7 @@ describe('the client issues the routes the spec declares', () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// 2. spec x-permit-* == the documented 3.0.0 matrix
+// 2. spec x-permit-* == the documented matrix (3.0.0, amended 4.0.0 + 4.1.0)
 // ---------------------------------------------------------------------------------------------
 
 function markdownRows(section: RegExp, header: RegExp): string[][] {
@@ -159,11 +162,11 @@ function markdownRows(section: RegExp, header: RegExp): string[][] {
 }
 const unquote = (s: string): string => s.replace(/`/g, '').trim();
 
-describe('x-permit-* annotations equal the documented 3.0.0 authorization matrix', () => {
+describe('x-permit-* annotations equal the documented authorization matrix', () => {
   const docRows = markdownRows(/^## 3\. /, /^\| operationId /);
   const docMatrix = new Map(docRows.map((r) => [unquote(r[0]), { resource: unquote(r[2]), action: unquote(r[3]), notes: r[4] ?? '' }]));
 
-  it('the document tabulates exactly the spec\'s 24 operations', () => {
+  it('the document tabulates exactly the spec\'s 25 operations', () => {
     expect([...docMatrix.keys()].sort()).toEqual(OPS.map((o) => o.op.operationId).sort());
   });
 
@@ -174,20 +177,69 @@ describe('x-permit-* annotations equal the documented 3.0.0 authorization matrix
     expect(op['x-permit-action']).toBe(doc.action);
   });
 
-  it('the extra `delete` requirements (item purge M-1, PATCH archive L-1) are in the spec exactly where the matrix says', () => {
+  it('the extra requirements (M-1, L-1, and the 4.1.0 visibility/platform/fork rules) are in the spec exactly where the matrix says', () => {
     const withExtra = OPS.filter((o) => o.op['x-permit-additional-actions']);
-    expect(withExtra.map((o) => o.op.operationId).sort()).toEqual(['deleteSelectionListItem', 'updateSelectionList']);
+    expect(withExtra.map((o) => o.op.operationId).sort()).toEqual([
+      'createSelectionList',
+      'deleteSelectionList',
+      'deleteSelectionListItem',
+      'forkSelectionList',
+      'updateSelectionList',
+    ]);
     const byId = Object.fromEntries(withExtra.map((o) => [o.op.operationId, o.op['x-permit-additional-actions']!]));
-    expect(byId['deleteSelectionListItem']).toEqual([expect.objectContaining({ when: 'purge=true', resource: 'SelectionList', action: 'delete' })]);
-    expect(byId['updateSelectionList']).toEqual([expect.objectContaining({ when: 'body.status=archived', resource: 'SelectionList', action: 'delete' })]);
+    expect(byId['deleteSelectionListItem']).toEqual([
+      expect.objectContaining({ when: 'purge=true', resource: 'SelectionList', action: 'delete' }),
+      expect.objectContaining({ when: 'purge=true AND list.visibility=platform', resource: 'SelectionListCatalog', action: 'publish_platform' }),
+    ]);
+    expect(byId['updateSelectionList']).toEqual([
+      expect.objectContaining({ when: 'body.status=archived', resource: 'SelectionList', action: 'delete' }),
+      expect.objectContaining({ when: 'body.visibility', resource: 'SelectionList', action: 'manage_access' }),
+      expect.objectContaining({ when: 'body.visibility=platform', resource: 'SelectionListCatalog', action: 'publish_platform' }),
+    ]);
+    expect(byId['createSelectionList']).toEqual([
+      expect.objectContaining({ when: 'body.visibility=platform', resource: 'SelectionListCatalog', action: 'publish_platform' }),
+    ]);
+    expect(byId['deleteSelectionList']).toEqual([
+      expect.objectContaining({ when: 'purge=true AND list.visibility=platform', resource: 'SelectionListCatalog', action: 'publish_platform' }),
+    ]);
+    expect(byId['forkSelectionList']).toEqual([expect.objectContaining({ when: 'always', resource: 'SelectionList', action: 'read' })]);
     expect(docMatrix.get('deleteSelectionListItem')!.notes).toMatch(/purge=true.*delete/);
+    expect(docMatrix.get('deleteSelectionListItem')!.notes).toMatch(/platform.*publish_platform/);
     expect(docMatrix.get('updateSelectionList')!.notes).toMatch(/status: archived.*delete/);
+    expect(docMatrix.get('updateSelectionList')!.notes).toMatch(/visibility.*manage_access/);
+    expect(docMatrix.get('updateSelectionList')!.notes).toMatch(/platform.*publish_platform/);
+    expect(docMatrix.get('createSelectionList')!.notes).toMatch(/platform.*publish_platform/);
+    expect(docMatrix.get('deleteSelectionList')!.notes).toMatch(/platform.*publish_platform/);
+    expect(docMatrix.get('forkSelectionList')!.notes).toMatch(/read/);
   });
 
   it('every tenant-scoped (keyless) operation uses SelectionListCatalog and every per-list operation SelectionList', () => {
     const catalog = OPS.filter((o) => o.op['x-permit-resource'] === 'SelectionListCatalog').map((o) => o.op.operationId).sort();
-    expect(catalog).toEqual(['createSelectionList', 'getSelectionListQuota', 'listSelectionLists', 'resolveSelectionListItems']);
+    // forkSelectionList (4.1.0) is addressed by a source list id but CREATES a list in the caller's
+    // org, so its base check is the catalog `create`; the source read is an additional action.
+    expect(catalog).toEqual(['createSelectionList', 'forkSelectionList', 'getSelectionListQuota', 'listSelectionLists', 'resolveSelectionListItems']);
     for (const o of OPS) expect(['SelectionList', 'SelectionListCatalog']).toContain(o.op['x-permit-resource']);
+  });
+
+  it('the shared read (4.1.0) is declared on exactly the read operations, always as SelectionListCatalog:read_shared', () => {
+    const shared = OPS.filter((o) => o.op['x-permit-shared-read']).map((o) => o.op.operationId).sort();
+    expect(shared).toEqual([
+      'forkSelectionList',
+      'getSelectionList',
+      'listSelectionListItemTranslations',
+      'listSelectionListItems',
+      'listSelectionListTranslations',
+      'listSelectionLists',
+    ]);
+    for (const o of OPS.filter((x) => x.op['x-permit-shared-read'])) {
+      expect(o.op['x-permit-shared-read']).toEqual(expect.objectContaining({ resource: 'SelectionListCatalog', action: 'read_shared' }));
+      // shared read only ever widens a READ: the base action is `read` (or a catalog read/create).
+      expect(['read', 'list', 'create']).toContain(o.op['x-permit-action']);
+    }
+    // ...and no mutation carries it.
+    for (const o of OPS.filter((x) => !x.op['x-permit-shared-read'] && x.op['x-permit-resource'] === 'SelectionList')) {
+      expect(o.op['x-permit-action']).not.toBe('read');
+    }
   });
 });
 
@@ -230,13 +282,15 @@ describe('helpers/fake-security-api.mjs implements the documented policy (so the
     for (const role of Object.keys(expected)) expect([...actual[role]].sort()).toEqual([...expected[role]].sort());
   });
 
-  it('the spec only references actions the instance-role table defines', () => {
+  it('the spec only references actions the instance-role / tenant-role tables define', () => {
     const defined = new Set(Object.values(fakeConst('ROLE_ACTIONS')).flat());
     const catalogActions = new Set(Object.values(fakeConst('TENANT_ROLE_ACTIONS')).flat());
+    const setFor = (resource: string | undefined): Set<string> => (resource === 'SelectionListCatalog' ? catalogActions : defined);
     for (const o of OPS) {
-      const set = o.op['x-permit-resource'] === 'SelectionListCatalog' ? catalogActions : defined;
-      expect(set.has(o.op['x-permit-action']!)).toBe(true);
-      for (const extra of o.op['x-permit-additional-actions'] ?? []) expect(defined.has(extra.action)).toBe(true);
+      expect(setFor(o.op['x-permit-resource']).has(o.op['x-permit-action']!)).toBe(true);
+      for (const extra of o.op['x-permit-additional-actions'] ?? []) expect(setFor(extra.resource).has(extra.action)).toBe(true);
+      const sr = o.op['x-permit-shared-read'];
+      if (sr) expect(setFor(sr.resource).has(sr.action)).toBe(true);
     }
   });
 });

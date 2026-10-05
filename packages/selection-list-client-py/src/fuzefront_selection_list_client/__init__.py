@@ -8,7 +8,7 @@ Quick start::
     from fuzefront_selection_list_client import SelectionListClient
 
     client = SelectionListClient(
-        base_url="http://fuzefront-selection-list-service:3011",
+        base_url="http://fuzefront-selection-list-service:3008",
         token="<bearer-token>",
     )
     page = client.get_lists()
@@ -53,6 +53,9 @@ from .types import (
     # Resolve
     ResolveResult,
     SeedProvenance,
+    ForkProvenance,
+    SelectionListVisibility,
+    SelectionListErrorReason,
     # Selection lists
     SelectionList,
     SelectionListAccessRole,
@@ -89,6 +92,7 @@ __all__ = [
     "AutofillResult",
     "CreateItemRequest",
     "CreateListRequest",
+    "ForkProvenance",
     "ItemTranslationLocaleStatus",
     # Enums
     "LifecycleStatus",
@@ -108,9 +112,11 @@ __all__ = [
     # Client
     "SelectionListClient",
     "SelectionListErrorCode",
+    "SelectionListErrorReason",
     "SelectionListItem",
     "SelectionListItemTranslation",
     "SelectionListQuotaStatus",
+    "SelectionListVisibility",
     "StatusFilter",
     "TokenProvider",
     "Translation",

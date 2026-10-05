@@ -43,6 +43,7 @@ export declare const selectionListsTranslationTargetV1: z.ZodDiscriminatedUnion<
 export declare const selectionListsTranslationUpsertedSchemaV1: z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
+    listRevision: z.ZodNumber;
     eventId: z.ZodString;
     actor: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"user">;
@@ -67,7 +68,6 @@ export declare const selectionListsTranslationUpsertedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     }>]>;
     listKey: z.ZodString;
-    listRevision: z.ZodNumber;
     locale: z.ZodEnum<["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"]>;
     isMachine: z.ZodBoolean;
     target: z.ZodDiscriminatedUnion<"kind", [z.ZodObject<{
@@ -104,6 +104,7 @@ export declare const selectionListsTranslationUpsertedSchemaV1: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -114,7 +115,6 @@ export declare const selectionListsTranslationUpsertedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     isMachine: boolean;
     target: {
@@ -131,6 +131,7 @@ export declare const selectionListsTranslationUpsertedSchemaV1: z.ZodObject<{
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -141,7 +142,6 @@ export declare const selectionListsTranslationUpsertedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     isMachine: boolean;
     target: {

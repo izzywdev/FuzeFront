@@ -1,13 +1,23 @@
 import { z } from 'zod';
-export declare const SELECTION_LIST_UPDATABLE_FIELDS: readonly ["key", "sourceLocale", "status", "name", "description"];
 /**
- * `selection-lists.list.updated` — list metadata changed. A RESTORE
- * (archived -> active) is an update with `status` in `changedFields`; an
- * archive has its own topic (`list.archived`). `key` is mutable over HTTP, so
- * a key change carries `previousKey` — a consumer that indexes by key must
- * re-key on it. `listKey` (top level) is the key AFTER the change.
+ * `selection-lists.list.forked` (shared 1.3.0, HTTP contract 4.1.0) — an
+ * organization copied a common (`platform`) list into itself with
+ * `POST /v1/selection-lists/{listId}/fork` (copy-on-write). Design:
+ * docs/planning/selection-lists-shared-and-fork.md.
+ *
+ * Emitted in the SAME transaction as the `list.created` / `item.created` /
+ * `translation.upserted` events for the copied content (so a consumer that does
+ * not know about forks still builds a correct read model) and the owner's
+ * `access.granted`. This event adds what those cannot carry: the provenance and
+ * the complete source→fork item id map, which is what a consumer needs to
+ * migrate values it stored against the common list's item ids.
+ *
+ * Partitioned like every selection-lists event: `organizationId` is the
+ * FORKING organization (the fork's owner), `listId`/`listKey`/`listRevision`
+ * describe the fork. The source's organization is `source.organizationId`
+ * (the platform organization for a common list).
  */
-export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject<{
+export declare const selectionListsListForkedSchemaV1: z.ZodEffects<z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
     listRevision: z.ZodNumber;
@@ -122,10 +132,41 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     }>;
-    changedFields: z.ZodArray<z.ZodEnum<["key", "sourceLocale", "status", "name", "description"]>, "many">;
-    previousKey: z.ZodNullable<z.ZodString>;
+    source: z.ZodObject<{
+        listId: z.ZodString;
+        organizationId: z.ZodString;
+        listKey: z.ZodString;
+        /** The source's revision at the moment of copying. */
+        listRevision: z.ZodNumber;
+    }, "strip", z.ZodTypeAny, {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        listKey: string;
+    }, {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        listKey: string;
+    }>;
+    itemMap: z.ZodArray<z.ZodObject<{
+        originItemId: z.ZodString;
+        itemId: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        itemId: string;
+        originItemId: string;
+    }, {
+        itemId: string;
+        originItemId: string;
+    }>, "many">;
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
+    source: {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        listKey: string;
+    };
     listId: string;
     listRevision: number;
     eventId: string;
@@ -161,10 +202,18 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    itemMap: {
+        itemId: string;
+        originItemId: string;
+    }[];
 }, {
     organizationId: string;
+    source: {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        listKey: string;
+    };
     listId: string;
     listRevision: number;
     eventId: string;
@@ -200,10 +249,18 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    itemMap: {
+        itemId: string;
+        originItemId: string;
+    }[];
 }>, {
     organizationId: string;
+    source: {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        listKey: string;
+    };
     listId: string;
     listRevision: number;
     eventId: string;
@@ -239,10 +296,18 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    itemMap: {
+        itemId: string;
+        originItemId: string;
+    }[];
 }, {
     organizationId: string;
+    source: {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        listKey: string;
+    };
     listId: string;
     listRevision: number;
     eventId: string;
@@ -278,7 +343,9 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
             forkedAt: string;
         } | null | undefined;
     };
-    changedFields: ("name" | "status" | "key" | "sourceLocale" | "description")[];
-    previousKey: string | null;
+    itemMap: {
+        itemId: string;
+        originItemId: string;
+    }[];
 }>;
-export type SelectionListsListUpdatedPayloadV1 = z.infer<typeof selectionListsListUpdatedSchemaV1>;
+export type SelectionListsListForkedPayloadV1 = z.infer<typeof selectionListsListForkedSchemaV1>;

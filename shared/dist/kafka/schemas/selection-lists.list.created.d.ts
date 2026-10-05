@@ -8,6 +8,7 @@ import { z } from 'zod';
 export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
+    listRevision: z.ZodNumber;
     eventId: z.ZodString;
     actor: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"user">;
@@ -32,7 +33,6 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     }>]>;
     listKey: z.ZodString;
-    listRevision: z.ZodNumber;
     list: z.ZodObject<{
         listId: z.ZodString;
         key: z.ZodString;
@@ -56,6 +56,23 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
             packVersion: number;
             userModified: boolean;
         }>>;
+        visibility: z.ZodOptional<z.ZodEnum<["private", "org", "platform"]>>;
+        forkedFrom: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+            listId: z.ZodString;
+            organizationId: z.ZodString;
+            listRevision: z.ZodNumber;
+            forkedAt: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        }, {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        }>>>;
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
@@ -73,6 +90,13 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     }, {
         name: string;
         status: "active" | "archived";
@@ -88,10 +112,18 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     }>;
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -102,7 +134,6 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     list: {
         name: string;
         status: "active" | "archived";
@@ -118,10 +149,18 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     };
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -132,7 +171,6 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     list: {
         name: string;
         status: "active" | "archived";
@@ -148,6 +186,13 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         } | null;
         createdAt: string;
         updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
     };
 }>;
 export type SelectionListsListCreatedPayloadV1 = z.infer<typeof selectionListsListCreatedSchemaV1>;

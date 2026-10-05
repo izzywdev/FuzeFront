@@ -94,9 +94,10 @@ const ROLE_ACTIONS = {
  * (review H-3). No tenant role carries any per-list (`SelectionList`) action.
  */
 const TENANT_ROLE_ACTIONS = {
-  admin: ['list', 'create', 'read_quota', 'resolve'],
-  editor: ['list', 'create', 'resolve'],
-  viewer: ['list', 'resolve'],
+  // read_shared / publish_platform: contract 4.1.0 (shared + common lists).
+  admin: ['list', 'create', 'read_quota', 'resolve', 'read_shared', 'publish_platform'],
+  editor: ['list', 'create', 'resolve', 'read_shared'],
+  viewer: ['list', 'resolve', 'read_shared'],
   developer: [],
 };
 /** most privileged first */
