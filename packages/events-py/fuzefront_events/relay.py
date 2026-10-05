@@ -154,6 +154,20 @@ async def drain_once(
     return DrainResult(sent, failed, dead)
 
 
+async def requeue_failed_event(session: AsyncSession, event_id: str) -> bool:
+    """Operator action: put a dead-lettered (``failed``) row back to ``pending``.
+
+    Resets ``attempts`` to 0 (``last_error`` is kept for the record). Until this
+    (or a deliberate mark-``sent``) runs, the failed row blocks later versions of
+    its aggregate. Runs in the caller's transaction; returns whether a ``failed``
+    row was found and requeued.
+    """
+    res = await session.execute(
+        update(o).where(o.c.event_id == event_id, o.c.status == "failed").values(status="pending", attempts=0)
+    )
+    return res.rowcount == 1
+
+
 class OutboxRelay:
     """Background poller around :func:`drain_once`."""
 

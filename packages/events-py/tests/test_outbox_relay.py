@@ -180,3 +180,25 @@ async def test_skip_locked_two_relays_never_double_publish(sf):
     for a in aggs:
         vs = [json.loads(m.value)["aggregateVersion"] for m in broker.messages() if m.key == a.encode()]
         assert vs == [1, 2, 3]
+
+
+async def test_requeue_failed_event_unblocks_aggregate(sf):
+    from fuzefront_events import requeue_failed_event
+
+    e1, e2 = ev(ORG1, 1), ev(ORG1, 2)
+    await enqueue(sf, e1, e2)
+    broker = InMemoryBroker()
+    broker.fail_topic("identity.org.updated")
+    await drain_once(sf, broker, max_attempts=1)  # v1 dead-lettered -> failed
+    broker.heal()
+    assert (await drain_once(sf, broker)).sent == 0  # failed v1 still blocks v2
+    async with sf() as s, s.begin():
+        assert await requeue_failed_event(s, e1["eventId"]) is True
+    async with sf() as s, s.begin():
+        assert await requeue_failed_event(s, e1["eventId"]) is False  # no longer failed
+        assert await requeue_failed_event(s, e2["eventId"]) is False  # pending, not failed
+    st = {v: (s, n) for _, v, s, n in await statuses(sf)}
+    assert st[1] == ("pending", 0)
+    assert (await drain_once(sf, broker)).sent == 2
+    got = [json.loads(m.value)["aggregateVersion"] for m in broker.messages("identity.org.updated")]
+    assert got == [1, 2]

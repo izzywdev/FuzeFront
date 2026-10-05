@@ -31,7 +31,7 @@ from .envelope import (
 )
 from .outbox import enqueue_event, enqueue_event_async
 from .publisher import AIOKafkaPublisher, Publisher
-from .relay import DrainResult, OutboxRelay, dlq_topic, drain_once, row_to_envelope
+from .relay import DrainResult, OutboxRelay, dlq_topic, drain_once, requeue_failed_event, row_to_envelope
 from .tables import (
     OUTBOX_V2_SQL,
     PROCESSED_EVENTS_SQL,
