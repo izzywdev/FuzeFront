@@ -54,6 +54,10 @@
       "sourcePath": "components/core/IconTile.jsx"
     },
     {
+      "name": "SectionIcon",
+      "sourcePath": "components/core/SectionIcon.jsx"
+    },
+    {
       "name": "Text",
       "sourcePath": "components/core/Text.jsx"
     },
