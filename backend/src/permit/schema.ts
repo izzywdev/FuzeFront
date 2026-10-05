@@ -106,6 +106,21 @@ export const permitSchema: PermitSchema = {
         install: action('Install'),
         uninstall: action('Uninstall'),
       },
+      // "Org-held, user-originated" ownership (docs/planning/app-builder-and-ownership.md).
+      // The creator of an app holds this role ON that app instance, in the owning
+      // org's tenant (applications-service assigns it via assignAppCreatorRole,
+      // behind fuzefront.apps.creator-ownership). Direct assignment only — no
+      // `granted_to` derivation; org owners/admins keep control through their
+      // tenant roles, never through this one. Deliberately NO `delete`/`create`:
+      // removing an org's app stays an org-admin decision. The grant lives and
+      // dies with the org membership — see PermitAuthorizationProvider.removeMember,
+      // which revokes instance-scoped assignments too.
+      roles: {
+        creator: {
+          name: 'App Creator',
+          permissions: ['read', 'update', 'install', 'uninstall'],
+        },
+      },
     },
     {
       key: 'UserManagement',

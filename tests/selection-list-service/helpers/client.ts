@@ -1,13 +1,13 @@
 /**
  * Typed SelectionListClient factory pointed at the test service instance.
  *
- * Service URL is read from SERVICE_BASE_URL (default http://localhost:3011).
+ * Service URL is read from SERVICE_BASE_URL (default http://localhost:3008).
  * Uses Node 18+ native fetch — no external dependency needed.
  */
 import { SelectionListClient } from '@fuzeone/selection-list-client';
 
 export const SERVICE_BASE_URL: string =
-  process.env['SERVICE_BASE_URL'] ?? 'http://localhost:3011';
+  process.env['SERVICE_BASE_URL'] ?? 'http://localhost:3008';
 
 /** Build a client for the given bearer token. */
 export function makeClient(token?: string | (() => string)): SelectionListClient {

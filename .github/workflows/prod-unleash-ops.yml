@@ -27,6 +27,7 @@ on:
             portal-console      — fuzefront.identity.portal-scoped-users + fuzefront.apps.portal-catalog + fuzefront.billing.reseller-connect (100%)
             org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
+            app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
         required: true
         default: billing-portal
         type: choice
@@ -36,6 +37,7 @@ on:
           - portal-console
           - org-context-gating
           - selection-lists
+          - app-builder
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -239,6 +241,34 @@ jobs:
             fi
           }
 
+          # ── App builder / creator ownership / marketplace (CREATE ONLY) ─────
+          # Release flags, default OFF (packages/feature-flags/flag-registry.yaml).
+          # This set ONLY creates the flags so they exist in Unleash and can be
+          # targeted; it deliberately never turns the environment on, never adds a
+          # strategy, and never calls `off` — so re-running it can't undo a later
+          # deliberate enablement. Enable via the unleash-flag-enable procedure.
+          create_only() {
+            local FLAG="$1" DESC="$2" BODY STATUS
+            echo "=== $FLAG (create only, stays OFF) ==="
+            BODY=$(FLAG="$FLAG" DESC="$DESC" python3 -c 'import json,os;print(json.dumps({"name":os.environ["FLAG"],"type":"release","description":os.environ["DESC"]}))')
+            STATUS=$(curl -sS -o /tmp/resp_co.json -w '%{http_code}' -X POST \
+              "$UNLEASH/api/admin/projects/$PROJECT/features" \
+              -H "Authorization: $TOKEN" -H 'Content-Type: application/json' -d "$BODY")
+            if echo "$STATUS" | grep -qE '^(201|409)$'; then
+              echo "  create: ok ($STATUS)"
+            else
+              echo "  create: FAILED ($STATUS)"; cat /tmp/resp_co.json; return 1
+            fi
+          }
+          apply_app_builder() {
+            create_only "fuzefront.apps.build-with-agent" \
+              "Release flag, default OFF. Gates the build-session API (/api/v1/app-registry/build-sessions*) and the Build your application card on the Applications page. Owner: backend-engineer. Removal: once rolled out to 100% and stable for 30 days."
+            create_only "fuzefront.apps.creator-ownership" \
+              "Release flag, default OFF. Gates writing apps.created_by_user_id, the Permit App#creator grant, and createdBy/creator on App DTOs. Real authority stays in Permit and the org role. Owner: backend-engineer. Removal: once rolled out and the Permit tenant-removal check is verified."
+            create_only "fuzefront.apps.marketplace-publishing" \
+              "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
             billing-portal)      apply_billing ;;
@@ -246,6 +276,7 @@ jobs:
             portal-console)      apply_portal_console ;;
             org-context-gating)  apply_org_context_gating ;;
             selection-lists)     apply_selection_lists ;;
+            app-builder)         apply_app_builder ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -307,4 +338,8 @@ jobs:
               check_flag "fuzefront.apps.org-context-hidden" ;;
             selection-lists)
               check_flag "fuzefront.selection-lists.service" ;;
+            app-builder)
+              check_flag "fuzefront.apps.build-with-agent"
+              check_flag "fuzefront.apps.creator-ownership"
+              check_flag "fuzefront.apps.marketplace-publishing" ;;
           esac
