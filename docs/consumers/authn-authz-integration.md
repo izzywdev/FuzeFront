@@ -277,6 +277,21 @@ Neutralized authorization primitives for multi-tenant org management:
 Authorization is **per-tenant**: a role in tenant A does not grant it in tenant
 B. Assign per tenant.
 
+The tenant **collection** is platform-level, not tenant-level:
+
+- `POST /tenants` (create a tenant) needs `Organization:manage` on the platform
+  root tenant (FuzeFront staff) or, for a machine caller, the `authz:admin`
+  scope. Being the admin of an ordinary tenant is **not** enough, and neither is
+  being authenticated. Everyone else gets `403 FORBIDDEN` (decided before the
+  body is read); provider unreachable → `502` (fail-closed). Customer
+  organizations are created through the organization APIs, which provision their
+  tenant themselves — do not create a tenant over this endpoint to onboard a
+  customer.
+- `GET /tenants` returns the tenants **visible to the caller**: the tenants in
+  which they hold a role. A platform administrator (or an `authz:admin` machine
+  caller) sees every tenant. It never reveals a tenant you do not belong to. A
+  malformed `cursor` is `400`; `limit` is clamped to 200 (default 50).
+
 ---
 
 ## 5. Cross-product session handoff — coming

@@ -428,10 +428,27 @@ describe('Security API OpenAPI authorization contracts', () => {
 
       expect(response.type).toMatch(/json/)
       expect(response.body.items).toEqual([{ id: 'tenant-1', name: 'Tenant One' }])
-      expect(authorizationProvider.listTenants).toHaveBeenCalledWith('user-1', {
-        limit: undefined,
-        cursor: undefined,
-      })
+      // The provider double allows every check, so this caller is a platform administrator and gets the
+      // unfiltered ('all') view; the member-only default is covered below and in authz.tenants-platform.test.ts.
+      expect(authorizationProvider.listTenants).toHaveBeenCalledWith(
+        'user-1',
+        { limit: undefined, cursor: undefined },
+        'all'
+      )
+    })
+
+    it('returns 200 with the MEMBER view for a caller who is not a platform administrator', async () => {
+      // @fuzequality api listTenants
+      authorizationProvider.check.mockResolvedValueOnce(false)
+      await request(buildApp())
+        .get('/api/v1/security/tenants')
+        .set('Authorization', 'Bearer valid-token')
+        .expect(200)
+      expect(authorizationProvider.listTenants).toHaveBeenCalledWith(
+        'user-1',
+        { limit: undefined, cursor: undefined },
+        'member'
+      )
     })
 
     it('returns 401 application/json when tenants are listed without authentication', async () => {

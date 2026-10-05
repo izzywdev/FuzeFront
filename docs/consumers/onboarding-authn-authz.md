@@ -336,6 +336,9 @@ await fetch('/api/v1/security/authz/grants', {
 ```
 
 - Tenants: `GET`/`POST /api/v1/security/tenants`, `GET /tenants/{tenantId}`.
+  `GET` lists only the tenants you belong to; `POST` (create a tenant) is a
+  platform act — it needs `Organization:manage` on the platform root tenant or
+  an `authz:admin` machine token, otherwise `403`.
 - Members: `GET`/`POST /tenants/{tenantId}/members`,
   `DELETE /tenants/{tenantId}/members/{userId}`,
   `PUT /tenants/{tenantId}/members/{userId}/roles`.

@@ -21,11 +21,20 @@
  *  - Fail closed: a provider that throws is a 502 (never an allow); a falsy or
  *    non-`true` decision is a 403.
  *
+ * Platform scope (`/tenants` collection). Creating a tenant, and enumerating
+ * EVERY tenant, are platform acts, not acts inside any one tenant. They require
+ * `Organization:manage` on the platform ROOT tenant (`ROOT_ORG_ID`) — held only
+ * by FuzeFront platform staff (the root-org `admin` / the derived ReBAC
+ * `org-admin`, i.e. an "Employee", see services/employeeRole.ts) — or, for a
+ * machine caller, the `authz:admin` scope. Everyone else may list only the
+ * tenants they belong to (see `authorizePlatformAdmin`).
+ *
  * Machine (client_credentials) callers keep the existing `AUTHZ_ADMIN_SCOPE`
  * contract; that check lives in the route and is intentionally NOT changed
  * here. A machine caller that already passed it is allowed through.
  */
 import type { AuthorizationProvider, AuthzQuery, ResourceRef } from '../providers/AuthorizationProvider'
+import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 
 export interface GateCaller {
   id: string
@@ -199,4 +208,20 @@ export async function authorizeSubjectRead(
 ): Promise<GateResult> {
   if (subject === caller.id) return { allowed: true }
   return authorizeTenantAdmin(provider, caller, tenant, { mutating: true })
+}
+
+/**
+ * May the caller act on the PLATFORM — create a tenant, or enumerate every tenant?
+ *
+ * Exactly `authorizeTenantAdmin` against the platform root tenant: a machine
+ * caller needs `authz:admin`; a human needs `Organization:manage` on
+ * `ROOT_ORG_ID`. An admin of an ordinary customer tenant has NO standing here
+ * (they administer their tenant, not the platform), and neither does any
+ * authenticated user. Fail-closed: a provider error is a 502, never an allow.
+ */
+export async function authorizePlatformAdmin(
+  provider: AuthorizationProvider,
+  caller: GateCaller
+): Promise<GateResult> {
+  return authorizeTenantAdmin(provider, caller, ROOT_ORG_ID, { mutating: true })
 }
