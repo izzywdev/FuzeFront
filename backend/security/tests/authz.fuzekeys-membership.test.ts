@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken'
+import { createHash } from 'node:crypto'
 import express from 'express'
 import request from 'supertest'
 import { fromUuid } from '@izzywdev/fuzefront-identity'
@@ -21,7 +22,8 @@ const tenant = fromUuid('organization', '22222222-2222-4222-8222-222222222222')
 const provider = { check: jest.fn(), grant: jest.fn() }
 const app = express().use(express.json()).use('/api/v1/security', router)
 const tuple = { subject, tenant, role: 'owner', resource: { type: 'fuzekeys_Account', key: 'account:42' } }
-const grant = (body = tuple, token = 'operator') => request(app).post('/api/v1/security/authz/grants').set('Authorization', `Bearer ${token}`).send(body)
+const connectorKey = (targetTenant = tenant, targetSubject = subject, provider = 'gmail') => `connector:${createHash('sha256').update(JSON.stringify([targetTenant, targetSubject, provider]), 'utf8').digest('hex')}`
+const grant = (body: typeof tuple & { connectorProvider?: unknown; membershipProof?: unknown; permission?: string } = tuple, token = 'operator') => request(app).post('/api/v1/security/authz/grants').set('Authorization', `Bearer ${token}`).send(body)
 const proof = (token = 'operator') => request(app).get('/api/v1/security/authz/membership-proof').query({ subject, tenant }).set('Authorization', `Bearer ${token}`)
 
 beforeEach(() => {
@@ -62,6 +64,13 @@ test.each([
   { type: 'fuzekeys_Account', key: '' }, { type: 'fuzekeys_Account', key: 'account:01' },
   { type: 'fuzekeys_Account', key: 'identity:42' }, { type: 'fuzekeys_Account', key: 'account:0' },
   { type: 'fuzekeys_Unknown', key: 'account:1' },
+  { type: 'fuzekeys_Connector', key: '' },
+  { type: 'fuzekeys_Connector', key: `connector:${'a'.repeat(63)}` },
+  { type: 'fuzekeys_Connector', key: `connector:${'a'.repeat(65)}` },
+  { type: 'fuzekeys_Connector', key: `connector:${'A'.repeat(64)}` },
+  { type: 'fuzekeys_Connector', key: `connector:${'g'.repeat(64)}` },
+  { type: 'fuzekeys_Connector', key: 'connector:*' },
+  { type: 'fuzekeys_Connector', key: 'account:42' },
 ])('rejects a malformed or tenant-wide FuzeKeys resource %j', async resource => {
   await grant({ ...tuple, resource }).expect(400)
   expect(provider.grant).not.toHaveBeenCalled()
@@ -113,6 +122,67 @@ test('invalid typed principal is rejected', async () => {
 test('unauthenticated proof is denied before membership access', async () => {
   await request(app).get('/api/v1/security/authz/membership-proof').query({ subject, tenant }).expect(401)
   expect(findMembershipByUserAndOrg).not.toHaveBeenCalled()
+})
+
+describe('exact Connector owner grants', () => {
+  const connector = { ...tuple, connectorProvider: 'gmail', resource: { type: 'fuzekeys_Connector', key: connectorKey() } }
+  test('the reviewed exact owner tuple reaches the provider without metadata authority', async () => {
+    const response = await grant(connector).expect(201)
+    expect(provider.grant).toHaveBeenCalledWith({ ...tuple, resource: connector.resource, permission: undefined })
+    expect(findMembershipByUserAndOrg).toHaveBeenCalledWith(subject, tenant)
+    expect(response.body.connectorProvider).toBe('gmail')
+  })
+  test('the Python inventory hash vector matches the exact UTF-8 wire tuple', async () => {
+    const rawSubject = '11111111-1111-4111-8111-111111111111'
+    const rawTenant = '22222222-2222-4222-8222-222222222222'
+    await grant({ ...connector, subject: rawSubject, tenant: rawTenant, connectorProvider: 'google-drive',
+      resource: { type: 'fuzekeys_Connector', key: 'connector:2c54e5b0a0f8fcc1acb627fdb060289490ba622a184b964326dd97c804c89fff' } } as any).expect(201)
+    expect(provider.grant).toHaveBeenCalledWith({ subject: rawSubject, tenant: rawTenant, role: 'owner', permission: undefined,
+      resource: { type: 'fuzekeys_Connector', key: 'connector:2c54e5b0a0f8fcc1acb627fdb060289490ba622a184b964326dd97c804c89fff' } })
+    expect(findMembershipByUserAndOrg).toHaveBeenCalledWith(subject, tenant)
+  })
+  test.each([undefined, '', 'Gmail', 'gmail/drive', 'g'.repeat(81), 'google_drive'])('invalid provider %j cannot provision', async connectorProvider => {
+    await grant({ ...connector, connectorProvider }).expect(400)
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
+  test('a well-shaped key for another immutable owner tuple is rejected', async () => {
+    await grant({ ...connector, resource: { ...connector.resource, key: `connector:${'a'.repeat(64)}` } }).expect(400)
+    await grant({ ...connector, connectorProvider: 'github' }).expect(400)
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
+  test('runtime callers cannot mint grants from a claimed owner or proof', async () => {
+    await grant({ ...connector, membershipProof: { subject, tenant, active: true } } as any, 'reader').expect(403)
+    expect(findMembershipByUserAndOrg).not.toHaveBeenCalled()
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
+  test('membership is read afresh rather than accepting caller proof', async () => {
+    await proof().expect(200)
+    ;(findMembershipByUserAndOrg as jest.Mock).mockResolvedValue(undefined)
+    await grant({ ...connector, membershipProof: { subject, tenant, active: true } } as any).expect(403)
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
+  test('membership for another tenant does not authorize the target', async () => {
+    const otherTenant = fromUuid('organization', '33333333-3333-4333-8333-333333333333')
+    ;(findMembershipByUserAndOrg as jest.Mock).mockImplementation(async (_subject, targetTenant) => targetTenant === tenant ? { status: 'active' } : undefined)
+    await grant({ ...connector, tenant: otherTenant, resource: { ...connector.resource, key: connectorKey(otherTenant) } }).expect(403)
+    expect(findMembershipByUserAndOrg).toHaveBeenCalledWith(subject, otherTenant)
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
+  test('malformed subject and tenant cannot become mapped principals', async () => {
+    await grant({ ...connector, subject: 'claimed-owner' } as any).expect(400)
+    await grant({ ...connector, tenant: 'directory-tenant' } as any).expect(400)
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
+  test('membership database failure does not provision Connector access', async () => {
+    ;(findMembershipByUserAndOrg as jest.Mock).mockRejectedValue(new Error('database unavailable'))
+    await grant(connector).expect(503)
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
+  test('role escalation and arbitrary permissions are denied', async () => {
+    await grant({ ...connector, role: 'admin' }).expect(400)
+    await grant({ ...connector, permission: 'write_credential' } as any).expect(400)
+    expect(provider.grant).not.toHaveBeenCalled()
+  })
 })
 
 describe('Security workload operator token', () => {

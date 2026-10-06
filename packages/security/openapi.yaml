@@ -2760,6 +2760,17 @@ components:
           description: Optional explicit `resource:action` permission to grant alongside the role.
         resource:
           $ref: '#/components/schemas/ResourceRef'
+        connectorProvider:
+          type: string
+          maxLength: 80
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: >-
+            Required for fuzekeys_Connector owner grants. Canonical provider
+            from the reviewed ownership inventory; the exact resource key must
+            equal connector: plus lowercase SHA256 of UTF-8 JSON [tenant,
+            subject, connectorProvider]. This metadata confers no grant
+            authority. Operator authorization and fresh SQL membership are
+            independently required; no email or directory tenant inference.
       required: [subject, tenant, role]
     Grant:
       type: object
@@ -2779,6 +2790,9 @@ components:
           $ref: '#/components/schemas/ResourceRef'
         createdAt:
           type: integer
+        connectorProvider:
+          type: string
+          description: Canonical provider acknowledged by a validated fuzekeys_Connector owner grant.
       required: [id, subject, tenant, role]
     GrantRevokeRequest:
       type: object

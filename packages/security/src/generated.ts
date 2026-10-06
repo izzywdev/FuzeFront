@@ -1286,6 +1286,8 @@ export interface components {
             /** @description Optional explicit `resource:action` permission to grant alongside the role. */
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
+            /** @description Required for fuzekeys_Connector owner grants. Canonical provider from the reviewed ownership inventory; the exact resource key must equal connector: plus lowercase SHA256 of UTF-8 JSON [tenant, subject, connectorProvider]. This metadata confers no grant authority. Operator authorization and fresh SQL membership are independently required; no email or directory tenant inference. */
+            connectorProvider?: string;
         };
         /** @description A created, revocable grant wrapping the provider's assignment. */
         Grant: {
@@ -1296,6 +1298,8 @@ export interface components {
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
             createdAt?: number;
+            /** @description Canonical provider acknowledged by a validated fuzekeys_Connector owner grant. */
+            connectorProvider?: string;
         };
         /** @description Revoke a grant by `grantId` OR by its identity tuple `{ subject, tenant, role, resource? }`. Supply exactly one form. */
         GrantRevokeRequest: {

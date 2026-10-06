@@ -150,6 +150,8 @@ export interface GrantRequest {
   role: string;
   permission?: string;
   resource?: ResourceRef;
+  /** Required for exact fuzekeys_Connector owner tuples; no additional authority. */
+  connectorProvider?: string;
 }
 
 /** A created, revocable grant. */
@@ -161,6 +163,8 @@ export interface Grant {
   permission?: string;
   resource?: ResourceRef;
   createdAt?: number;
+  /** Acknowledged provider metadata for a validated Connector owner grant. */
+  connectorProvider?: string;
 }
 
 /**

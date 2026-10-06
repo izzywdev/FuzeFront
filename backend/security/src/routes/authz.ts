@@ -49,6 +49,7 @@
  * full rule set. Fail-closed: provider error ⇒ 502, never allow.
  */
 import jwt from 'jsonwebtoken'
+import { createHash } from 'node:crypto'
 import { findMembershipByUserAndOrg, findOrgById } from '../repositories/organizationRepository'
 import { parseId, fromUuid, type EntityType } from '@izzywdev/fuzefront-identity'
 import express, { Request, Response } from 'express'
@@ -72,6 +73,17 @@ const fuzeKeysOwnerResources: Record<string, RegExp> = {
   fuzekeys_Identity: /^identity:[1-9][0-9]*$/,
   fuzekeys_Account: /^account:[1-9][0-9]*$/,
   fuzekeys_VaultAsset: /^api-credential:[1-9][0-9]*$/,
+  // The operator's reviewed FuzeKeys inventory derives this key from the
+  // verified tenant/subject/provider tuple. Membership and admin authority
+  // are independently rechecked below; runtime callers gain no grant power.
+  fuzekeys_Connector: /^connector:[a-f0-9]{64}$/,
+}
+
+/** Match the immutable tuple exported by the trusted FuzeKeys ownership inventory. */
+function exactConnectorKey(tenant: string, subject: string, provider: unknown): string | null {
+  if (typeof provider !== 'string' || provider.length > 80 ||
+      !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(provider)) return null
+  return `connector:${createHash('sha256').update(JSON.stringify([tenant, subject, provider]), 'utf8').digest('hex')}`
 }
 
 /** Re-read SQL at the grant boundary; an organization owner is not membership proof. */
@@ -392,6 +404,10 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
       role !== 'owner' || b.permission !== undefined)) {
     return res.status(400).json({ error: 'FuzeKeys owner grants require an exact supported resource instance', code: 'MALFORMED' })
   }
+  const isConnectorGrant = resource?.type === 'fuzekeys_Connector'
+  if (isConnectorGrant && exactConnectorKey(tenant, subject, b.connectorProvider) !== resource.key) {
+    return res.status(400).json({ error: 'Connector key must match the exact tenant, subject and canonical provider', code: 'MALFORMED' })
+  }
 
   // Authorize the TARGET tenant/resource for human callers (machine callers
   // already passed the AUTHZ_ADMIN_SCOPE gate above). What is authorized here
@@ -418,7 +434,7 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
   try {
     const grant = await provider.grant({ subject, tenant, role, permission: b.permission, resource })
     log.info({ callerId: c.id, callerKind: c.kind, tenant, role, resourceType: resource?.type }, 'authz: grant created')
-    res.status(201).json(grant)
+    res.status(201).json(isConnectorGrant ? { ...grant, connectorProvider: b.connectorProvider } : grant)
   } catch (err) {
     res.status(502).json({ error: 'grant failed', code: 'PROVIDER_ERROR' })
   }
