@@ -236,7 +236,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       if (identityEmail !== undefined && (typeof identityEmail !== 'string' || identityEmail.length > 320)) {
         throw new Error('Invalid connector identity')
       }
-      await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}/credential`, {
+      const stored = await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}/credential`, {
         credential: { access_token: secret }, identity_email: identityEmail,
         configuration: provider.initialConfiguration || {},
       }, { headers: delegatedHeaders, timeout: 10000 })
