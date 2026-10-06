@@ -22,7 +22,12 @@ import authzRoutes, { AUTHZ_ADMIN_SCOPE } from '../src/routes/authz'
 import { permitSchema } from '../src/permit/schema'
 import { setIdentityProvider } from '../src/providers/factory'
 import { setAuthorizationProvider } from '../src/providers/authzFactory'
+import { findMembershipByUserAndOrg } from '../src/repositories/organizationRepository'
 import { introspectMachineToken } from '../src/services/machine-identity'
+
+jest.mock('../src/repositories/organizationRepository', () => ({
+  findMembershipByUserAndOrg: jest.fn(async () => ({ status: 'active' })),
+}))
 
 jest.mock('../src/services/machine-identity', () => ({
   introspectMachineToken: jest.fn(),
@@ -101,12 +106,13 @@ const SESSIONS: Record<string, string> = {
 const CALLER_TOKEN = 'machine-no-scope'
 const OPERATOR_TOKEN = 'machine-operator'
 
-const T1 = 't1'
-const T2 = 't2'
-const GRANT_OK = { id: 't1:target:editor', subject: 'target', tenant: T1, role: 'editor' }
+const T1 = '11111111-1111-4111-8111-111111111111'
+const T2 = '22222222-2222-4222-8222-222222222222'
+const GRANT_OK = { id: 't1:33333333-3333-4333-8333-333333333333:editor', subject: '33333333-3333-4333-8333-333333333333', tenant: T1, role: 'editor' }
 
 beforeEach(() => {
   jest.resetAllMocks()
+  jest.mocked(findMembershipByUserAndOrg).mockResolvedValue({ status: 'active' } as any)
   for (const k of Object.keys(tenantRoles)) delete tenantRoles[k]
   for (const k of Object.keys(instanceRoles)) delete instanceRoles[k]
   tenantRoles['viewer-1'] = { [T1]: 'viewer' }
@@ -156,13 +162,13 @@ const GET = (token: string, path: string) =>
   request(buildApp()).get(path).set('Authorization', `Bearer ${token}`)
 
 const tenantGrant = (tenant: string, role: string, extra: object = {}) => ({
-  subject: 'target',
+  subject: '33333333-3333-4333-8333-333333333333',
   tenant,
   role,
   ...extra,
 })
 const listGrant = (key: string, role: string, tenant = T1) => ({
-  subject: 'target',
+  subject: '33333333-3333-4333-8333-333333333333',
   tenant,
   role,
   resource: { type: 'SelectionList', key },
@@ -190,7 +196,7 @@ describe('POST /authz/grants — human callers', () => {
     const res = await POST('tok-admin', tenantGrant(T1, 'editor')).expect(201)
     expect(res.body).toEqual(GRANT_OK)
     expect(authorizationProvider.grant).toHaveBeenCalledWith(
-      expect.objectContaining({ subject: 'target', tenant: T1, role: 'editor' })
+      expect.objectContaining({ subject: '33333333-3333-4333-8333-333333333333', tenant: T1, role: 'editor' })
     )
     // The authorization decision was evaluated against the TARGET tenant for the CALLER.
     expect(authorizationProvider.check).toHaveBeenCalledWith(
@@ -249,7 +255,7 @@ describe('POST /authz/grants — human callers', () => {
       await POST('tok-owner', listGrant('L1', 'org-admin')).expect(403)
       await POST('tok-owner', tenantGrant(T1, 'list-viewer')).expect(403) // tenant-wide, no resource
       await POST('tok-owner', {
-        subject: 'target',
+        subject: '33333333-3333-4333-8333-333333333333',
         tenant: T1,
         role: 'org-admin',
         resource: { type: 'Organization', key: T1 },
@@ -362,7 +368,7 @@ describe('POST /authz/grants — human callers', () => {
 // ═════════════════════════════════════════════════════════════════════════════
 describe('DELETE /authz/grants — human callers (same matrix)', () => {
   const revokeBody = (tenant: string, role: string, extra: object = {}) => ({
-    subject: 'target',
+    subject: '33333333-3333-4333-8333-333333333333',
     tenant,
     role,
     ...extra,
@@ -382,7 +388,7 @@ describe('DELETE /authz/grants — human callers (same matrix)', () => {
   it('tenant admin may revoke in their own tenant', async () => {
     await DEL('tok-admin', revokeBody(T1, 'editor')).expect(204)
     expect(authorizationProvider.revoke).toHaveBeenCalledWith(
-      expect.objectContaining({ subject: 'target', tenant: T1, role: 'editor' })
+      expect.objectContaining({ subject: '33333333-3333-4333-8333-333333333333', tenant: T1, role: 'editor' })
     )
   })
 
@@ -392,18 +398,18 @@ describe('DELETE /authz/grants — human callers (same matrix)', () => {
   })
 
   it('a grantId is resolved to its effective tuple and authorized against ITS tenant', async () => {
-    await DEL('tok-admin', { grantId: `${T2}:target:admin` }).expect(403)
+    await DEL('tok-admin', { grantId: `${T2}:33333333-3333-4333-8333-333333333333:admin` }).expect(403)
     expect(authorizationProvider.revoke).not.toHaveBeenCalled()
-    await DEL('tok-admin', { grantId: `${T1}:target:editor` }).expect(204)
+    await DEL('tok-admin', { grantId: `${T1}:33333333-3333-4333-8333-333333333333:editor` }).expect(204)
     expect(authorizationProvider.revoke).toHaveBeenCalledWith(
-      expect.objectContaining({ subject: 'target', tenant: T1, role: 'editor' })
+      expect.objectContaining({ subject: '33333333-3333-4333-8333-333333333333', tenant: T1, role: 'editor' })
     )
   })
 
   it('an explicit tenant cannot be paired with another tenant’s grantId to smuggle a revoke', async () => {
     // Body says t1 (authorized), grantId says t2. The provider resolves explicit
     // fields first, so the effective — and executed — tenant is t1, never t2.
-    await DEL('tok-admin', { grantId: `${T2}:target:admin`, tenant: T1 }).expect(204)
+    await DEL('tok-admin', { grantId: `${T2}:33333333-3333-4333-8333-333333333333:admin`, tenant: T1 }).expect(204)
     expect(authorizationProvider.revoke).toHaveBeenCalledWith(
       expect.objectContaining({ tenant: T1 })
     )

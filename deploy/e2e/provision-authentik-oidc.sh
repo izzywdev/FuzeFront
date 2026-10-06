@@ -93,17 +93,35 @@ wait_for_discovery() {
   return 0
 }
 
-# If the app already exists, just point its provider at the implicit-consent flow.
+# The REST fallback is independent of the blueprint. Reconcile both new and
+# pre-existing/race-resolved providers: Authentik 2026.x rejects authorization
+# when its grant_types allow-list is empty even if discovery returns HTTP 200.
+configure_provider() {
+  local patch_http provider_state
+  patch_http=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X PATCH "$BASE/providers/oauth2/${PROVIDER_PK}/" \
+    -H "$AUTH" -H "$CT" \
+    -d "{\"authorization_flow\":\"$FLOW_PK\",\"grant_types\":[\"authorization_code\",\"refresh_token\"]}")
+  if [ "$patch_http" != "200" ]; then
+    echo "::error::Failed to configure provider authorization flow and grant types (HTTP $patch_http)"
+    exit 1
+  fi
+  provider_state=$(curl -fsS -H "$AUTH" "$BASE/providers/oauth2/${PROVIDER_PK}/")
+  if ! printf '%s' "$provider_state" | jq -e --arg flow "$FLOW_PK" \
+    '.authorization_flow == $flow and ((.grant_types // []) | index("authorization_code") != null and index("refresh_token") != null)' >/dev/null; then
+    echo "::error::Provider authorization flow or grant types did not persist"
+    exit 1
+  fi
+  echo "Provider authorization flow and browser grant types verified"
+}
+
+# Existing apps also require explicit browser grant reconciliation.
 if [ "$APP_EXISTS" = "true" ]; then
   echo "App exists — updating provider authorization_flow to pk=$FLOW_PK..."
   PROVIDER_RAW=$(curl -s -H "$AUTH" "$BASE/providers/oauth2/?search=FuzeFront")
   PROVIDER_PK=$(echo "$PROVIDER_RAW" | jq -r '.results[]? | select(.name=="FuzeFront") | .pk' 2>/dev/null | head -1 || true)
   if [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ]; then
-    PATCH_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-      -X PATCH "$BASE/providers/oauth2/${PROVIDER_PK}/" \
-      -H "$AUTH" -H "$CT" \
-      -d "{\"authorization_flow\": \"$FLOW_PK\"}")
-    echo "Provider PATCH HTTP $PATCH_HTTP (pk=$PROVIDER_PK → flow=$FLOW_PK)"
+    configure_provider
     wait_for_discovery
     exit 0
   fi
@@ -244,7 +262,7 @@ PYEOF
     --arg flow "$FLOW_PK" \
     --arg inv_flow "$INV_FLOW_PK" \
     --arg m1 "$SCOPE_OPENID" --arg m2 "$SCOPE_EMAIL" --arg m3 "$SCOPE_PROFILE" \
-    '{name:"FuzeFront",client_type:"confidential",client_id:"fuzefront-oidc-client",client_secret:$secret,redirect_uris:[{matching_mode:"strict",url:"http://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://app.fuzefront.com/api/auth/oidc/callback"},{matching_mode:"strict",url:"http://localhost:3001/api/auth/oidc/callback"}],property_mappings:[$m1,$m2,$m3],sub_mode:"user_email",include_claims_in_id_token:true,authorization_flow:$flow,invalidation_flow:$inv_flow}')
+    '{name:"FuzeFront",client_type:"confidential",client_id:"fuzefront-oidc-client",client_secret:$secret,redirect_uris:[{matching_mode:"strict",url:"http://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://fuzefront.dev.local/api/auth/oidc/callback"},{matching_mode:"strict",url:"https://app.fuzefront.com/api/auth/oidc/callback"},{matching_mode:"strict",url:"http://localhost:3001/api/auth/oidc/callback"}],property_mappings:[$m1,$m2,$m3],sub_mode:"user_email",include_claims_in_id_token:true,grant_types:["authorization_code","refresh_token"],authorization_flow:$flow,invalidation_flow:$inv_flow}')
   PROVIDER_HTTP=$(curl -s -X POST "$BASE/providers/oauth2/" -H "$AUTH" -H "$CT" \
     -o /tmp/provider_create.json -w "%{http_code}" -d "$PROVIDER_BODY")
   PROVIDER_RAW=$(cat /tmp/provider_create.json)
@@ -284,6 +302,8 @@ PYORM
   sleep "$BACKOFF"
 done
 [ -n "$PROVIDER_PK" ] && [ "$PROVIDER_PK" != "null" ] || { echo "::error::could not resolve OAuth2 provider pk after $PROVIDER_MAX_ATTEMPTS attempts"; exit 1; }
+
+configure_provider
 
 # ── Application ───────────────────────────────────────────────────────────────
 # Check by slug directly — the initial search (?search=fuzefront) can return

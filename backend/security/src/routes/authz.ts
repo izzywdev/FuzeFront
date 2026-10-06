@@ -48,6 +48,10 @@
  * through `AuthorizationProvider.check()`; see `services/authz-gate.ts` for the
  * full rule set. Fail-closed: provider error ⇒ 502, never allow.
  */
+import jwt from 'jsonwebtoken'
+import { createHash } from 'node:crypto'
+import { findMembershipByUserAndOrg, findOrgById } from '../repositories/organizationRepository'
+import { parseId, fromUuid, type EntityType } from '@izzywdev/fuzefront-identity'
 import express, { Request, Response } from 'express'
 import { getIdentityProvider } from '../providers/factory'
 import { getAuthorizationProvider } from '../providers/authzFactory'
@@ -65,8 +69,90 @@ import {
 
 const router = express.Router()
 
+const fuzeKeysOwnerResources: Record<string, RegExp> = {
+  fuzekeys_Identity: /^identity:[1-9][0-9]*$/,
+  fuzekeys_Account: /^account:[1-9][0-9]*$/,
+  fuzekeys_VaultAsset: /^api-credential:[1-9][0-9]*$/,
+  // The operator's reviewed FuzeKeys inventory derives this key from the
+  // verified tenant/subject/provider tuple. Membership and admin authority
+  // are independently rechecked below; runtime callers gain no grant power.
+  fuzekeys_Connector: /^connector:[a-f0-9]{64}$/,
+}
+
+/** Match the immutable tuple exported by the trusted FuzeKeys ownership inventory. */
+function exactConnectorKey(tenant: string, subject: string, provider: unknown): string | null {
+  if (typeof provider !== 'string' || provider.length > 80 ||
+      !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(provider)) return null
+  return `connector:${createHash('sha256').update(JSON.stringify([tenant, subject, provider]), 'utf8').digest('hex')}`
+}
+
+/** Re-read SQL at the grant boundary; an organization owner is not membership proof. */
+async function activeMemberProof(subject: unknown, tenant: unknown) {
+  const user = parseMembershipRef('user', subject)
+  const organization = parseMembershipRef('organization', tenant)
+  const [membership, org] = await Promise.all([
+    findMembershipByUserAndOrg(user, organization), findOrgById(organization),
+  ])
+  return membership?.status === 'active' && org?.is_active === true
+    ? { subject: user, tenant: organization, active: true as const }
+    : null
+}
+
+/** Authz provider tuples retain UUID compatibility; repository references are typed. */
+function parseMembershipRef<T extends EntityType>(type: T, raw: unknown) {
+  return parseId(type, typeof raw === 'string' && !raw.includes('_') ? fromUuid(type, raw) : raw)
+}
+
+
+
 /** Scope a machine caller must hold to create/revoke grants (see file header). */
 export { AUTHZ_ADMIN_SCOPE }
+export const SELECTION_LIST_OWNER_GRANT_SCOPE = 'selection-list:owner-grant'
+
+const selectionListRoles = new Set([
+  'list-owner', 'list-editor', 'list-contributor', 'list-translator', 'list-viewer',
+])
+
+function validateListMemberRefs(subject: unknown, tenant: unknown, res: Response): boolean {
+  try {
+    parseMembershipRef('user', subject)
+    parseMembershipRef('organization', tenant)
+    return true
+  } catch {
+    res.status(400).json({ error: 'List grant requires valid user and organization references', code: 'MALFORMED' })
+    return false
+  }
+}
+
+/** List grants are constrained to the caller's list and an active org member. */
+async function authorizeSelectionListGrant(
+  c: ResolvedCaller,
+  body: any,
+  revoke: boolean,
+): Promise<boolean> {
+  if (body?.resource?.type !== 'SelectionList') return false
+  if (!body.resource.key || !selectionListRoles.has(body.role) || !body.subject || !body.tenant) return false
+
+  const membership = await findMembershipByUserAndOrg(
+    parseMembershipRef('user', body.subject),
+    parseMembershipRef('organization', body.tenant),
+  )
+  if (membership?.status !== 'active') return false
+
+  if (c.kind === 'machine') {
+    if ((c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE)) return true
+    return !revoke && c.id === 'service:selection-list-service' && body.role === 'list-owner' &&
+      (c.scopes ?? []).includes(SELECTION_LIST_OWNER_GRANT_SCOPE)
+  }
+  const gate = await authorizeGrantMutation(getAuthorizationProvider(), c, {
+    tenant: body.tenant, role: body.role,
+    resource: { type: 'SelectionList', key: body.resource.key },
+  })
+  if (gate.status === 502) throw new Error('Authorization provider unavailable')
+  return gate.allowed
+}
+
+
 
 function bearer(req: Request): string | null {
   const h = req.headers['authorization']
@@ -103,6 +189,25 @@ async function caller(req: Request): Promise<ResolvedCaller | null> {
   if (!token) {
     log.debug('authz: caller resolution failed — no bearer token')
     return null
+  }
+  // Workload tokens come from Security's Kubernetes TokenReview-backed
+  // /tokens/workload endpoint. Verify their issuer, audience and signature
+  // here; Authentik introspection does not recognize this token kind.
+  const signingKey = process.env.DELEGATION_SIGNING_KEY || process.env.JWT_SECRET
+  if (signingKey) {
+    try {
+      const claims = jwt.verify(token, signingKey, {
+        algorithms: ['HS256'],
+        issuer: 'fuzefront-security',
+        audience: 'fuzefront-services',
+      }) as jwt.JwtPayload
+      if (claims.kind === 'fuze-workload' && typeof claims.sub === 'string' &&
+          typeof claims.scope === 'string') {
+        return { id: claims.sub, kind: 'machine', scopes: claims.scope.split(' ').filter(Boolean) }
+      }
+    } catch {
+      // Other token kinds follow the existing human / Authentik machine paths.
+    }
   }
   try {
     const { user } = await getIdentityProvider().getUserInfo(token)
@@ -198,6 +303,31 @@ function toQuery(body: any, callerId: string): AuthzQuery | null {
 }
 
 // ── Decisions ─────────────────────────────────────────────────────────────
+
+/** Operator-only, current SQL proof used before scoped ownership provisioning. */
+router.get('/authz/membership-proof', async (req: Request, res: Response) => {
+  const c = await caller(req)
+  if (!c) return unauthorized(res)
+  if (!requireAuthzAdmin(c, res)) return
+  let subject: string
+  let tenant: string
+  try {
+    subject = parseMembershipRef('user', req.query.subject)
+    tenant = parseMembershipRef('organization', req.query.tenant)
+  } catch {
+    return res.status(400).json({ error: 'Valid subject and tenant are required', code: 'MALFORMED' })
+  }
+  const gate = await authorizeTenantAdmin(getAuthorizationProvider(), c, tenant, { mutating: true })
+  if (!enforce(gate, res, withReqId((req as any).requestId, req), c, 'membership-proof', { tenant })) return
+  res.set('Cache-Control', 'no-store')
+  try {
+    const proof = await activeMemberProof(subject, tenant)
+    if (!proof) return res.status(403).json({ error: 'Active membership required', code: 'FORBIDDEN' })
+    return res.status(200).json(proof)
+  } catch {
+    return res.status(503).json({ error: 'Membership proof unavailable', code: 'PROVIDER_UNAVAILABLE' })
+  }
+})
 
 router.post('/authz/check', async (req: Request, res: Response) => {
   const log = withReqId((req as any).requestId, req)
@@ -302,7 +432,6 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
   const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  if (!requireAuthzAdmin(c, res)) return
   const b = req.body || {}
   if (!b.subject || !b.tenant || !b.role) {
     return res.status(400).json({ error: 'subject, tenant and role are required', code: 'MALFORMED' })
@@ -315,17 +444,54 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
   const tenant = String(b.tenant)
   const role = String(b.role)
   const provider = getAuthorizationProvider()
+  const isFuzeKeysGrant = typeof b.resource?.type === 'string' && b.resource.type.startsWith('fuzekeys_')
+  if (isFuzeKeysGrant && (!resource || !fuzeKeysOwnerResources[resource.type]?.test(resource.key) ||
+      role !== 'owner' || b.permission !== undefined)) {
+    return res.status(400).json({ error: 'FuzeKeys owner grants require an exact supported resource instance', code: 'MALFORMED' })
+  }
+  const isConnectorGrant = resource?.type === 'fuzekeys_Connector'
+  if (isConnectorGrant && exactConnectorKey(tenant, subject, b.connectorProvider) !== resource.key) {
+    return res.status(400).json({ error: 'Connector key must match the exact tenant, subject and canonical provider', code: 'MALFORMED' })
+  }
 
   // Authorize the TARGET tenant/resource for human callers (machine callers
   // already passed the AUTHZ_ADMIN_SCOPE gate above). What is authorized here
   // is exactly what is passed to the provider below.
-  const gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  const isListGrant = resource?.type === 'SelectionList' || selectionListRoles.has(role)
+  let gate: GateResult
+  if (isListGrant) {
+    if (!validateListMemberRefs(subject, tenant, res)) return
+    try {
+      gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, false), status: 403, code: 'FORBIDDEN', error: 'List grant forbidden' }
+    } catch {
+      gate = { allowed: false, status: 502, code: 'PROVIDER_UNAVAILABLE', error: 'Authorization provider unavailable' }
+    }
+  } else {
+    if (!requireAuthzAdmin(c, res)) return
+    gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  }
   if (!enforce(gate, res, log, c, 'grant', { tenant, role, resourceType: resource?.type })) return
+
+  if (isFuzeKeysGrant) {
+    try {
+      parseMembershipRef('user', subject)
+      parseMembershipRef('organization', tenant)
+    } catch {
+      return res.status(400).json({ error: 'Valid subject and tenant are required', code: 'MALFORMED' })
+    }
+    try {
+      if (!(await activeMemberProof(subject, tenant))) {
+        return res.status(403).json({ error: 'Active membership required', code: 'FORBIDDEN' })
+      }
+    } catch {
+      return res.status(503).json({ error: 'Membership proof unavailable', code: 'PROVIDER_UNAVAILABLE' })
+    }
+  }
 
   try {
     const grant = await provider.grant({ subject, tenant, role, permission: b.permission, resource })
     log.info({ callerId: c.id, callerKind: c.kind, tenant, role, resourceType: resource?.type }, 'authz: grant created')
-    res.status(201).json(grant)
+    res.status(201).json(isConnectorGrant ? { ...grant, connectorProvider: b.connectorProvider } : grant)
   } catch (err) {
     res.status(502).json({ error: 'grant failed', code: 'PROVIDER_ERROR' })
   }
@@ -362,7 +528,17 @@ router.delete('/authz/grants', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'grantId or subject+tenant+role required', code: 'MALFORMED' })
   }
   const provider = getAuthorizationProvider()
-  const gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  let gate: GateResult
+  if (resource?.type === 'SelectionList' || selectionListRoles.has(role)) {
+    if (!validateListMemberRefs(subject, tenant, res)) return
+    try {
+      gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, true), status: 403, code: 'FORBIDDEN', error: 'List revoke forbidden' }
+    } catch {
+      gate = { allowed: false, status: 502, code: 'PROVIDER_UNAVAILABLE', error: 'Authorization provider unavailable' }
+    }
+  } else {
+    gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  }
   if (!enforce(gate, res, log, c, 'revoke', { tenant, role, resourceType: resource?.type })) return
 
   try {

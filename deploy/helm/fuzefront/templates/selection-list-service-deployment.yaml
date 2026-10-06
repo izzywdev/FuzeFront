@@ -19,6 +19,15 @@ spec:
       annotations:
         {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.selectionListService.port "root" .) | nindent 8 }}
     spec:
+      serviceAccountName: fuzefront-selection-list-service
+      volumes:
+        - name: fuzefront-workload-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: fuzefront-security
+                  audience: fuzefront-security
+                  expirationSeconds: 600
       {{- include "fuzefront.scheduling" (dict "svc" .Values.selectionListService "root" .) | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -110,26 +119,10 @@ spec:
                   key: {{ .Values.selectionListService.featureFlags.tokenSecretKey | quote }}
                   optional: true
             {{- end }}
-            # Machine identity (OAuth client_credentials) the service uses for
-            # Security API grant/revoke -- NOT the end user's token (review C-1).
-            # Both come from the same SealedSecret as DB_PASSWORD;
-            # `optional` so the pod still starts before the keys are sealed, in
-            # which case list creation / access grants fail CLOSED (500) and the
-            # service logs "machine identity NOT configured" at boot. The OAuth
-            # client must be provisioned with scope authz:admin -- see
-            # deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
-            - name: SELECTION_LIST_SERVICE_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: selection-list-secrets
-                  key: SERVICE_CLIENT_ID
-                  optional: true
-            - name: SELECTION_LIST_SERVICE_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: selection-list-secrets
-                  key: SERVICE_CLIENT_SECRET
-                  optional: true
+          volumeMounts:
+            - name: fuzefront-workload-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
           readinessProbe:
             httpGet:
               # /ready checks the DB (bounded); /health stays a cheap liveness probe.

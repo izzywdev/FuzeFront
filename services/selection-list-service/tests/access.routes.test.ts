@@ -389,7 +389,7 @@ describe('PUT /:listId/access/:userId', () => {
     // list-scoped grant into a tenant-wide one (real privilege escalation).
     expect(grant).toHaveBeenCalledWith(
       { subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource: { type: 'SelectionList', key: LIST_ID } },
-      MACHINE_TOKEN,
+      makeToken(),
     );
     expect(accessRow(USER_ID)).toMatchObject({ role: 'list-viewer', org_id: ORG_ID });
   });
@@ -412,7 +412,7 @@ describe('PUT /:listId/access/:userId', () => {
     expect(res.body.granted_at).toBe('2026-01-01T00:00:00.000Z'); // first-created time is preserved
     expect(revoke).toHaveBeenCalledWith(
       { subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource: { type: 'SelectionList', key: LIST_ID } },
-      MACHINE_TOKEN,
+      makeToken(),
     );
     // Revoke-first fails safe (a failure between the two leaves LESS access).
     expect(callLog.indexOf('authz:revoke')).toBeLessThan(callLog.indexOf('authz:grant'));
@@ -463,6 +463,30 @@ describe('PUT /:listId/access/:userId', () => {
 
     expect(res.status).toBe(200);
     expect(accessRow(USER_ID)!.role).toBe('list-editor');
+  });
+
+  it('an owner can demote themselves without losing authority before the replacement grant', async () => {
+    seedAccess(ACTOR_ID, 'list-owner');
+    seedAccess('usr_other_owner', 'list-owner');
+    const roles = new Set(['list-owner']);
+    _setAuthzClientForTesting(makeAuthzClient({
+      grant: jest.fn(async (assignment) => {
+        if (!roles.has('list-owner')) throw new AuthzError('PROVIDER_ERROR', 'Manager authority lost');
+        roles.add(assignment.role);
+        return { id: 'self-demotion', ...assignment };
+      }),
+      revoke: jest.fn(async (assignment) => {
+        if (!roles.has('list-owner')) throw new AuthzError('PROVIDER_ERROR', 'Manager authority lost');
+        roles.delete(assignment.role);
+      }),
+    }));
+
+    const res = await request(makeApp()).put(`/lists/${LIST_ID}/access/${ACTOR_ID}`).set(auth()).send({ role: 'list-editor' });
+
+    expect(res.status).toBe(200);
+    expect([...roles]).toEqual(['list-editor']);
+    expect(accessRow(ACTOR_ID)!.role).toBe('list-editor');
+    expect(accessRow('usr_other_owner')!.role).toBe('list-owner');
   });
 
   it('returns 500 and leaves the mirror UNCHANGED when AuthzClient.grant() throws (write-ordering fail-closed guarantee)', async () => {
@@ -554,7 +578,7 @@ describe('DELETE /:listId/access/:userId', () => {
     // resource MUST reach the wire on revoke too — same rationale as grant.
     expect(revoke).toHaveBeenCalledWith(
       { subject: USER_ID, tenant: ORG_ID, role: 'list-owner', resource: { type: 'SelectionList', key: LIST_ID } },
-      MACHINE_TOKEN,
+      makeToken(),
     );
     expect(accessRow(USER_ID)!.revoked_at).not.toBeNull();
   });
@@ -615,24 +639,12 @@ describe('DELETE /:listId/access/:userId', () => {
   });
 });
 
-// ─── D) Machine identity: grant/revoke WRITES never use the end user's token ──
-//
-// Review C-1: the Security API is being fixed so a non-admin human is denied
-// grant/revoke. These writes are therefore authenticated as THIS SERVICE
-// (client_credentials, scope authz:admin — lib/machineIdentity.ts). Decisions
-// about the human (route-level manage_access, the membership probe) keep using
-// the human's token.
-describe('machine identity for grant/revoke writes', () => {
-  // Mint the caller's token ONCE and reuse the exact string. `makeToken()` is
-  // `jwt.sign(...)`, which stamps a per-second `iat`, so calling it twice can
-  // yield two byte-different tokens whenever the two calls straddle a 1-second
-  // boundary (e.g. when the handler's async work is slow on a loaded CI runner).
-  // Comparing the token the route actually forwarded against a *freshly* minted
-  // one therefore flaked (`iat` off by one) even though the route forwarded the
-  // right token. Pin one value so the assertion tests the principal, not the clock.
+// Exact instance grant mutations carry the caller token for Security policy.
+describe('caller identity for instance grant/revoke writes', () => {
+  // Reuse one token so assertions do not depend on JWT issuance timing.
   const userToken = makeToken();
 
-  it('PUT: grant uses the machine token; the membership check keeps the end-user token', async () => {
+  it('PUT: grant uses the caller token; the membership check keeps the end-user token', async () => {
     const check = jest.fn().mockResolvedValue({ allow: true });
     const grant = jest.fn(async () => ({ id: 'g1', subject: USER_ID, tenant: ORG_ID, role: 'list-viewer' }));
     _setAuthzClientForTesting(makeAuthzClient({ check, grant }));
@@ -643,78 +655,74 @@ describe('machine identity for grant/revoke writes', () => {
       .send({ role: 'list-viewer' });
 
     expect(res.status).toBe(200);
-    expect(machineGetToken).toHaveBeenCalled();
+    expect(machineGetToken).not.toHaveBeenCalled();
     const [, grantToken] = (grant as jest.Mock).mock.calls[0];
-    expect(grantToken).toBe(MACHINE_TOKEN);
-    expect(grantToken).not.toBe(userToken);
-    // Membership probe (a READ about the target) still carries the human's token,
-    // and NOT the service's machine token — the regression this guards against is
-    // the probe evaluating the wrong principal's authority over the target.
+    expect(grantToken).toBe(userToken);
+    expect(grantToken).not.toBe(MACHINE_TOKEN);
+    // Membership probe (a READ about the target) still carries the human's token.
     const [, checkToken] = check.mock.calls[0];
     expect(checkToken).toBe(userToken);
     expect(checkToken).not.toBe(MACHINE_TOKEN);
   });
 
-  it('PUT: role change revokes the old role with the machine token too', async () => {
+  it('PUT: role change revokes the old role with the caller token too', async () => {
     seedAccess(USER_ID, 'list-viewer');
     const revoke = jest.fn(async () => undefined);
     _setAuthzClientForTesting(makeAuthzClient({ revoke }));
 
     const res = await request(makeApp())
       .put(`/lists/${LIST_ID}/access/${USER_ID}`)
-      .set(auth())
+      .set({ Authorization: `Bearer ${userToken}` })
       .send({ role: 'list-editor' });
 
     expect(res.status).toBe(200);
-    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(MACHINE_TOKEN);
+    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(userToken);
   });
 
-  it('DELETE: revoke uses the machine token', async () => {
+  it('DELETE: revoke uses the caller token', async () => {
     seedAccess(USER_ID, 'list-viewer');
     const revoke = jest.fn(async () => undefined);
     _setAuthzClientForTesting(makeAuthzClient({ revoke }));
 
-    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set(auth());
+    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set({ Authorization: `Bearer ${userToken}` });
 
     expect(res.status).toBe(204);
-    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(MACHINE_TOKEN);
+    expect((revoke as jest.Mock).mock.calls[0][1]).toBe(userToken);
   });
 
-  it('PUT fails closed (500, no Security API write, mirror untouched) when the machine token cannot be minted', async () => {
-    machineGetToken.mockRejectedValue(new Error('token issuance failed'));
-    const grant = jest.fn();
+  it('PUT fails closed (500, no Security API write, mirror untouched) when the Security API denies the mutation', async () => {
+    const grant = jest.fn().mockRejectedValue(new Error('policy denied grant'));
     _setAuthzClientForTesting(makeAuthzClient({ grant }));
 
     const res = await request(makeApp())
       .put(`/lists/${LIST_ID}/access/${USER_ID}`)
-      .set(auth())
+      .set({ Authorization: `Bearer ${userToken}` })
       .send({ role: 'list-viewer' });
 
     expect(res.status).toBe(500);
-    expect(grant).not.toHaveBeenCalled();
+    expect(grant).toHaveBeenCalled();
     expect(accessRow(USER_ID)).toBeUndefined();
   });
 
-  it('DELETE fails closed (500, nothing revoked, mirror untouched) when the machine token cannot be minted', async () => {
+  it('DELETE fails closed (500, nothing revoked, mirror untouched) when the Security API denies the mutation', async () => {
     seedAccess(USER_ID, 'list-viewer');
-    machineGetToken.mockRejectedValue(new Error('token issuance failed'));
-    const revoke = jest.fn();
+    const revoke = jest.fn().mockRejectedValue(new Error('policy denied revoke'));
     _setAuthzClientForTesting(makeAuthzClient({ revoke }));
 
-    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set(auth());
+    const res = await request(makeApp()).delete(`/lists/${LIST_ID}/access/${USER_ID}`).set({ Authorization: `Bearer ${userToken}` });
 
     expect(res.status).toBe(500);
-    expect(revoke).not.toHaveBeenCalled();
+    expect(revoke).toHaveBeenCalled();
     expect(accessRow(USER_ID)!.revoked_at).toBeNull();
   });
 
   it('malformed path ids are 400 VALIDATION_ERROR at the edge (before any DB / Security API call)', async () => {
     const check = jest.fn();
     _setAuthzClientForTesting(makeAuthzClient({ check }));
-    const res = await request(makeApp()).delete(`/lists/not-a-list-id/access/${USER_ID}`).set(auth());
+    const res = await request(makeApp()).delete(`/lists/not-a-list-id/access/${USER_ID}`).set({ Authorization: `Bearer ${userToken}` });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
-    const res2 = await request(makeApp()).delete(`/lists/${LIST_ID}/access/not-a-user`).set(auth());
+    const res2 = await request(makeApp()).delete(`/lists/${LIST_ID}/access/not-a-user`).set({ Authorization: `Bearer ${userToken}` });
     expect(res2.status).toBe(400);
     expect(res2.body.code).toBe('VALIDATION_ERROR');
     expect(check).not.toHaveBeenCalled();

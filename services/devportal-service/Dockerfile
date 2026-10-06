@@ -52,7 +52,10 @@ COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
 
-RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts
+RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts && \
+    mkdir -p packages/auth/node_modules
+# npm may hoist every auth runtime dependency into /app/node_modules. Keep the
+# optional workspace dependency directory copyable in either locked layout.
 
 # ---------- specs: gather this repo's own openapi.yaml files ----------
 # Only the spec FILES are needed here, not each service's full source — see

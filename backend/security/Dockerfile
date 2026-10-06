@@ -11,31 +11,44 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 
 COPY package.json package-lock.json ./
-COPY shared/package.json ./shared/
+COPY backend/package.json ./backend/
 COPY backend/core/package.json ./backend/core/
 COPY backend/security/package.json ./backend/security/
-# @fuzefront/telemetry is a workspace dep of security-service (OTel tracing +
-# trace_id-correlated logging). Its manifest MUST be present so `npm install`
-# links it from the local workspace instead of trying to fetch it from the
-# registry (where it is GitHub Packages-only, same reasoning as feature-flags
-# below).
-COPY packages/telemetry/package.json ./packages/telemetry/
-# @izzywdev/fuzefront-identity is a workspace dep (like @fuzefront/core). Its
-# manifest MUST be present so `npm install` links it from the local workspace
-# instead of trying to fetch @izzywdev/fuzefront-identity@1.0.0 from the registry.
+COPY backend/applications/package.json ./backend/applications/
+COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
-# @fuzefront/feature-flags is a workspace package (packages/feature-flags/).
-# Its manifest MUST be present so `npm install` links it from the local workspace
-# instead of trying to fetch @fuzefront/feature-flags@1.0.0 from the registry
-# (where it is not published — it is GitHub Packages-only).
+COPY packages/auth/package.json ./packages/auth/
+COPY packages/telemetry/package.json ./packages/telemetry/
+COPY packages/service-auth/package.json ./packages/service-auth/
+COPY api-client/package.json ./api-client/
+COPY sdk/package.json ./sdk/
+COPY billing-client/package.json ./billing-client/
+COPY config-client/package.json ./config-client/
+COPY custom-hostname-client/package.json ./custom-hostname-client/
+COPY packages/billing-ui/package.json ./packages/billing-ui/
+COPY packages/chat-client/package.json ./packages/chat-client/
+COPY packages/chat-ui/package.json ./packages/chat-ui/
+COPY packages/identity-ui/package.json ./packages/identity-ui/
+COPY packages/auth-ui/package.json ./packages/auth-ui/
+COPY packages/account-security-ui/package.json ./packages/account-security-ui/
+COPY packages/portal-admin-ui/package.json ./packages/portal-admin-ui/
+COPY packages/portal-branding-ui/package.json ./packages/portal-branding-ui/
+COPY portal-client/package.json ./portal-client/
+COPY packages/i18n/package.json ./packages/i18n/
+COPY packages/i18n-translate/package.json ./packages/i18n-translate/
 COPY packages/feature-flags/package.json ./packages/feature-flags/
+COPY packages/security/package.json ./packages/security/
+COPY design-system/package.json ./design-system/
+COPY services/chat-service/package.json ./services/chat-service/
+COPY services/email-service/package.json ./services/email-service/
+COPY services/notification-service/package.json ./services/notification-service/
+COPY services/selection-list-service/package.json ./services/selection-list-service/
+COPY services/devportal-service/package.json ./services/devportal-service/
+COPY packages/selection-lists-ui/package.json ./packages/selection-lists-ui/
+COPY packages/config-ui/package.json ./packages/config-ui/
 
-# --no-package-lock: the root package-lock.json is stale — express-rate-limit
-# (a backend/security dependency) is an orphan entry not linked to the security
-# workspace, so a lockfile-honoring `npm install` PRUNES it → the image crashes
-# at boot with "Cannot find module 'express-rate-limit'". Resolving fresh from
-# package.json installs it. (Proper long-term fix: regenerate package-lock.json.)
-RUN npm install --no-package-lock
+# Install the complete workspace tree exactly as recorded in the root lockfile.
+RUN npm ci
 
 # Copy source
 COPY shared/ ./shared/

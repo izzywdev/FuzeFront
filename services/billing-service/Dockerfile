@@ -36,7 +36,7 @@ RUN cd services/billing-service && npm install --omit=dev --ignore-scripts
 # does. Without this line the production stage's
 # `COPY --from=base /app/packages/auth/node_modules` has no source directory and
 # the build fails outright.
-RUN cd packages/auth && npm install --omit=dev --ignore-scripts
+RUN cd packages/auth && npm install --workspaces=false --omit=dev --ignore-scripts
 
 # ---------- build: full compile ----------
 FROM node:24-alpine AS build

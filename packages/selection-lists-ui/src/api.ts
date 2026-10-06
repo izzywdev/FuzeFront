@@ -20,13 +20,25 @@ import type {
 
 const BASE = '/api/v1/selection-lists'
 
+// Supplied by the host shell so switching accounts changes the bearer token
+// on the next request. The package must not inspect localStorage itself.
+let authTokenProvider: (() => string | null) | undefined
+export function setSelectionListAuthTokenProvider(provider: () => string | null): void {
+  authTokenProvider = provider
+}
+
 async function request<T>(
   url: string,
   options: RequestInit = {},
 ): Promise<{ data: T; status: number }> {
+  const token = authTokenProvider?.()
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
     ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
   })
 
   if (!res.ok) {

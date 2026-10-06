@@ -33,7 +33,7 @@
     "@fuzefront/chat-ui": "file:../packages/chat-ui",
     "@fuzefront/telemetry": "file:../packages/telemetry",
     "@originjs/vite-plugin-federation": "^1.4.1",
-    "axios": "^1.9.0",
+    "axios": "^1.20.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "i18next": "^23.11.5",
