@@ -264,7 +264,6 @@ class TestRungGating(unittest.TestCase):
             ctx = {
                 "steps.classify-claude.outputs.code": code,
                 "inputs.task-prompt": prompt,
-                "inputs.codex-auth-json": "",
                 "inputs.openai-api-key": okey,
                 "inputs.gemini-api-key": gkey,
                 "steps.codex.outcome": cout,
@@ -299,8 +298,7 @@ class TestRungGating(unittest.TestCase):
         base = {
             "steps.classify-claude.outputs.code": "1",
             "inputs.task-prompt": "do the thing",
-            "inputs.codex-auth-json": "",
-                "inputs.openai-api-key": "sk-openai",
+            "inputs.openai-api-key": "sk-openai",
             "inputs.gemini-api-key": "sk-gemini",
             "steps.codex.outcome": "failure",
         }
