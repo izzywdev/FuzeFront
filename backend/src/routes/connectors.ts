@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express'
+import { connectorResourceTenant } from '../connector-platform/tenant'
 import axios, { AxiosError, Method } from 'axios'
 import crypto from 'crypto'
 import { googleAccountIdentity, requireGoogleBinding, requireGoogleScopes, refreshGoogleCredential, GoogleReauthorizationRequired } from '../connector-platform/google-account'
@@ -29,8 +30,9 @@ async function delegatedHeaders(req: Request, scopes: string[], subjectToken = u
 }
 
 async function delegatedHeadersForSubject(subjectToken: string, scopes: string[]) {
+  const tenant = connectorResourceTenant()
   const serviceToken = await workloadAuth.getToken()
-  const delegated = await delegation.exchange({ subjectToken, audience: 'service:fuzekeys', scopes })
+  const delegated = await delegation.exchange({ subjectToken, audience: 'service:fuzekeys', scopes, tenant })
   return { Authorization: `Bearer ${serviceToken}`, 'X-Fuze-Delegation': `Bearer ${delegated.accessToken}` }
 }
 
@@ -173,6 +175,7 @@ router.post('/google-gmail/connect', async (req, res) => {
       subjectToken: userBearer(req),
       audience: 'service:fuzekeys',
       scopes: ['connectors:credentials:write'],
+      tenant: connectorResourceTenant(),
     })
     const state = sealState({ subjectToken: continuation.accessToken, returnTo, exp: Math.floor(Date.now() / 1000) + 300 })
     const params = new URLSearchParams({

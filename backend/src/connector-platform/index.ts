@@ -1,5 +1,6 @@
 /** Shared connector transport. Provider implementations never receive user login tokens. */
 import axios from 'axios'
+import { connectorResourceTenant } from './tenant'
 import crypto from 'crypto'
 import express, { Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
@@ -49,6 +50,8 @@ export interface ConnectorActionContext {
 export interface ConnectorPlatformOptions {
   fuzekeysUrl?: string
   securityUrl?: string
+  /** Explicit resource organization, matched to FuzeKeys authorization configuration. */
+  resourceTenant?: string
   frontendUrl?: string
   /** Required in multi-replica deployments: atomically consume a nonce across all replicas. */
   consumeNonce?: (nonce: string, expiresAt: number) => Promise<boolean>
@@ -132,8 +135,9 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
   const authenticatedLimit = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false })
 
   async function headers(subject: string, scopes: string[]) {
+    const tenant = connectorResourceTenant(options.resourceTenant)
     const [serviceToken, delegated] = await Promise.all([
-      workload.getToken(), delegation.exchange({ subjectToken: subject, audience: 'service:fuzekeys', scopes }),
+      workload.getToken(), delegation.exchange({ subjectToken: subject, audience: 'service:fuzekeys', scopes, tenant }),
     ])
     return { Authorization: `Bearer ${serviceToken}`, 'X-Fuze-Delegation': `Bearer ${delegated.accessToken}` }
   }
@@ -246,7 +250,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     if (!provider) return res.status(404).json({ error: 'Unknown connector' })
     if (provider.authentication === 'api-key') return res.status(404).json({ error: 'OAuth is unavailable for this connector' })
     try {
-      const continuation = await delegation.exchange({ subjectToken: bearer(req), audience: 'service:fuzekeys', scopes: ['connectors:credentials:write'] })
+      const continuation = await delegation.exchange({ subjectToken: bearer(req), audience: 'service:fuzekeys', scopes: ['connectors:credentials:write'], tenant: connectorResourceTenant(options.resourceTenant) })
       const verifier = crypto.randomBytes(32).toString('base64url')
       const challenge = crypto.createHash('sha256').update(verifier).digest('base64url')
       const state = seal({ provider: provider.id, delegation: continuation.accessToken, verifier,
