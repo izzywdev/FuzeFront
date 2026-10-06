@@ -1,3 +1,4 @@
+import { credentialStoreOutcome } from '../connector-platform/credential-outcome'
 import express, { Request, Response } from 'express'
 import { connectorResourceTenant } from '../connector-platform/tenant'
 import axios, { AxiosError, Method } from 'axios'
@@ -111,7 +112,7 @@ router.get('/google-gmail/oauth/callback', async (req, res) => {
       Authorization: `Bearer ${await workloadAuth.getToken()}`,
       'X-Fuze-Delegation': `Bearer ${state.subjectToken}`,
     }
-    await axios.put(`${FUZEKEYS_URL}/api/v1/connectors/google-gmail/credential`, {
+    const stored = await axios.put(`${FUZEKEYS_URL}/api/v1/connectors/google-gmail/credential`, {
       credential,
       identity_email: account.email,
       google_identity: account.identity,
@@ -119,7 +120,7 @@ router.get('/google-gmail/oauth/callback', async (req, res) => {
       configuration: { query: 'in:inbox', include_spam_trash: false },
     }, { headers, timeout: 5000 })
     const separator = state.returnTo.includes('?') ? '&' : '?'
-    res.redirect(`${state.returnTo}${separator}connected=google-gmail`)
+    res.redirect(`${state.returnTo}${separator}${credentialStoreOutcome(stored)}=google-gmail`)
   } catch (error) {
     if (error instanceof GoogleReauthorizationRequired || (axios.isAxiosError(error) && error.response?.status === 409)) {
       return res.status(409).json({ error: 'Google account authorization cannot be combined. Disconnect existing Google connectors and authorize the same Google account again.', code: 'GOOGLE_REAUTHORIZATION_REQUIRED' })

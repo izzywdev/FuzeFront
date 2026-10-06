@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@fuzefront/design-system'
 import { getActiveAuthToken } from '../lib/accounts'
 
 type GmailStatus = {
   provider: 'google-gmail'
-  status: 'connected' | 'disconnected' | 'error'
+  status: 'connected' | 'disconnected' | 'error' | 'authorization_pending'
   identity_email?: string
   configuration?: { query?: string; include_spam_trash?: boolean }
 }
 
-type ConnectorEntry = { id: string; name: string; authentication?: 'oauth' | 'api-key'; configured?: boolean; status?: 'connected' | 'disconnected' | 'error'; identity_email?: string }
+type ConnectorEntry = { id: string; name: string; authentication?: 'oauth' | 'api-key'; configured?: boolean; status?: 'connected' | 'disconnected' | 'error' | 'authorization_pending'; identity_email?: string }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/v1/connectors${path}`, {
@@ -28,6 +28,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export default function ConnectorsPage() {
+  const pending = useRef(new Set<string>([new URLSearchParams(window.location.search).get('authorization_pending') || ''].filter(value => /^[a-z][a-z0-9-]{1,63}$/.test(value))))
+  const [notice, setNotice] = useState(pending.current.size ? 'Connection awaiting approval. Contact your administrator, then connect again.' : '')
   const [gmail, setGmail] = useState<GmailStatus | null>(null)
   const [otherConnectors, setOtherConnectors] = useState<ConnectorEntry[]>([])
   const [busy, setBusy] = useState(false)
@@ -40,13 +42,16 @@ export default function ConnectorsPage() {
     try {
       const catalog = await request<{ connectors: ConnectorEntry[] }>('/catalog')
       const status = await request<GmailStatus>('/google-gmail').catch(() => null)
-      setGmail(status)
+      setGmail(status?.status === 'connected' || !pending.current.has('google-gmail') ? status : { provider: 'google-gmail', status: 'authorization_pending' })
       setQuery(status?.configuration?.query || 'in:inbox')
       setIncludeSpamTrash(Boolean(status?.configuration?.include_spam_trash))
       const entries = catalog.connectors.filter(item => item.id !== 'google-gmail')
       setOtherConnectors(await Promise.all(entries.map(async item => {
-        try { return { ...item, ...await request<ConnectorEntry>(`/${item.id}`) } }
-        catch { return { ...item, status: 'error' as const } }
+        try {
+          const result = await request<ConnectorEntry>(`/${item.id}`)
+          return { ...item, ...result, ...(pending.current.has(item.id) && result.status !== 'connected' ? { status: 'authorization_pending' as const } : {}) }
+        }
+        catch { return { ...item, status: pending.current.has(item.id) ? 'authorization_pending' as const : 'error' as const } }
       })))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -93,7 +98,12 @@ export default function ConnectorsPage() {
     if (!key) { setError('Enter an API key first'); return }
     setBusy(true); setError('')
     try {
-      await request(`/${id}/credential`, { method: 'POST', body: JSON.stringify({ api_key: key }) })
+      const result = await request<{ status: string }>(`/${id}/credential`, { method: 'POST', body: JSON.stringify({ api_key: key }) })
+      if (result.status === 'authorization_pending') {
+        pending.current.add(id)
+        setNotice('Connection awaiting approval. Contact your administrator, then connect again.')
+      } else if (result.status === 'connected') { pending.current.delete(id); setNotice('') }
+      else { throw new Error('Connection was not confirmed') }
       setApiKeys(current => ({ ...current, [id]: '' }))
       await load()
     } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
@@ -112,6 +122,7 @@ export default function ConnectorsPage() {
     <main style={{ padding: 'var(--space-8)', maxWidth: '960px', margin: '0 auto' }}>
       <h1 style={{ marginTop: 0 }}>Connectors</h1>
       <p style={{ color: 'var(--text-secondary)' }}>Connect accounts that FuzeFront agents may use on your behalf. Credentials stay in your FuzeKeys vault.</p>
+      {notice && <div role="status" style={{ marginBottom: 'var(--space-4)' }}>{notice}</div>}
       {error && <div role="alert" style={{ color: 'var(--error-color)', marginBottom: 'var(--space-4)' }}>{error}</div>}
       <section style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-6)', background: 'var(--bg-secondary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
@@ -119,7 +130,7 @@ export default function ConnectorsPage() {
           <div style={{ flex: 1 }}>
             <h2 style={{ margin: 0 }}>Google Gmail</h2>
             <div style={{ color: 'var(--text-secondary)' }}>
-              {gmail?.status === 'connected' ? `Connected as ${gmail.identity_email || 'Google user'}` : 'Not connected'}
+              {gmail?.status === 'connected' ? `Connected as ${gmail.identity_email || 'Google user'}` : gmail?.status === 'authorization_pending' ? 'Awaiting approval — connect again after approval' : 'Not connected'}
             </div>
           </div>
           {gmail?.status === 'connected'
@@ -140,7 +151,7 @@ export default function ConnectorsPage() {
         {otherConnectors.map(item => <section key={item.id} style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-6)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
           <div style={{ flex: 1 }}>
             <h2 style={{ margin: 0 }}>{item.name}</h2>
-            <div style={{ color: 'var(--text-secondary)' }}>{item.status === 'connected' ? `Connected${item.identity_email ? ` as ${item.identity_email}` : ''}` : !item.configured ? 'Provider setup pending' : item.status === 'error' ? 'Status unavailable' : 'Not connected'}</div>
+            <div style={{ color: 'var(--text-secondary)' }}>{item.status === 'connected' ? `Connected${item.identity_email ? ` as ${item.identity_email}` : ''}` : item.status === 'authorization_pending' ? 'Awaiting approval — connect again after approval' : !item.configured ? 'Provider setup pending' : item.status === 'error' ? 'Status unavailable' : 'Not connected'}</div>
           </div>
           {item.authentication === 'api-key' && item.status !== 'connected' && item.configured &&
             <label>API key

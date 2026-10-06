@@ -1,5 +1,6 @@
 /** Shared connector transport. Provider implementations never receive user login tokens. */
 import axios from 'axios'
+import { credentialStoreOutcome } from './credential-outcome'
 import { connectorResourceTenant } from './tenant'
 import crypto from 'crypto'
 import express, { Request, Response } from 'express'
@@ -190,14 +191,14 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       if (googleAccount) requireGoogleScopes(token, provider.scopes)
       const identityEmail = googleAccount?.email || (provider.tokenIdentity ? await provider.tokenIdentity(token) : await provider.identity!(token.access_token))
       const credential = { ...token, ...(Number(token.expires_in) > 0 ? { expires_at: Math.floor(Date.now() / 1000) + Number(token.expires_in) } : {}) }
-      await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}/credential`, {
+      const stored = await axios.put(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider.id)}/credential`, {
         credential, identity_email: identityEmail,
         ...(googleAccount ? { google_identity: googleAccount.identity } : {}),
         scopes: typeof token.scope === 'string' ? token.scope.split(/[\s,]+/).filter(Boolean) : provider.scopes,
         configuration: provider.initialConfiguration || {},
       }, { headers: { Authorization: `Bearer ${await workload.getToken()}`, 'X-Fuze-Delegation': `Bearer ${state.delegation}` }, timeout: 10000 })
       const returnTo = new URL('/connectors', options.frontendUrl || process.env.FRONTEND_URL || 'http://localhost:5173')
-      returnTo.searchParams.set('connected', provider.id)
+      returnTo.searchParams.set(credentialStoreOutcome(stored), provider.id)
       res.redirect(returnTo.toString())
     } catch (error) {
       if (error instanceof GoogleReauthorizationRequired || (GOOGLE_CONNECTORS.has(req.params.provider) && axios.isAxiosError(error) && error.response?.status === 409)) {
@@ -239,7 +240,9 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
         credential: { access_token: secret }, identity_email: identityEmail,
         configuration: provider.initialConfiguration || {},
       }, { headers: delegatedHeaders, timeout: 10000 })
-      return res.status(201).json({ status: 'connected', provider: provider.id })
+      const outcome = credentialStoreOutcome(stored)
+      return res.status(outcome === 'authorization_pending' ? 202 : 201).json({ status: outcome, provider: provider.id,
+        ...(outcome === 'authorization_pending' ? { retry_after_authorization: true } : {}) })
     } catch {
       return res.status(502).json({ error: 'Unable to validate or store connector credential' })
     }
