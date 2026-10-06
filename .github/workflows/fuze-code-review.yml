@@ -212,6 +212,7 @@ jobs:
           # Used ONLY for the one authenticated base-ref fetch below (checkout no
           # longer persists a credential). This step runs no LLM.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
           HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
@@ -284,9 +285,9 @@ jobs:
           # to prefer -- reported "no LLM credential configured" and skipped the
           # review outright, with a working credential already wired to line 260.
           elif [ "${HAS_OAUTH:-false}" != "true" ] && [ "${HAS_LITELLM:-false}" != "true" ] \
-               && [ "${HAS_ANTHROPIC:-false}" != "true" ]; then
+               && [ "${HAS_ANTHROPIC:-false}" != "true" ] && [ "${HAS_CODEX:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY; the OpenAI/Gemini rungs are disabled for this read-only reviewer) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, CODEX_AUTH_JSON; the OpenAI/Gemini rungs are disabled for this read-only reviewer) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           {
@@ -397,6 +398,8 @@ jobs:
           # path. Omitting it does not fail loudly -- the rung is skipped by name
           # and the chain silently falls through to per-token billing, which is
           # what every run here was doing until 2026-09-16.
+          # fuze:secret-sourcing CODEX_AUTH_JSON=fleet — provision-llm-vendor-keys.yml; optional ChatGPT subscription auth
+          codex-auth-json: ${{ secrets.CODEX_AUTH_JSON }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
