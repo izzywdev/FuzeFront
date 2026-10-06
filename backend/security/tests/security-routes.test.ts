@@ -1,3 +1,8 @@
+jest.mock('../src/services/session-tenant', () => ({
+  ...jest.requireActual('../src/services/session-tenant'),
+  proveSessionTenant: jest.fn(),
+}))
+import { proveSessionTenant } from '../src/services/session-tenant'
 /**
  * Unit tests for the `/api/v1/security` AuthN router.
  *
@@ -1344,5 +1349,30 @@ describe('M2M tokens', () => {
       .expect(200)
     expect(res.type).toMatch(/json/)
     expect(res.body).toEqual({ active: false })
+  })
+})
+
+describe('GET /session explicit tenant proof', () => {
+  const tenant = '0195a8f2-6c3d-7f11-8b2e-012345678901'
+  const app = express().use('/api/v1/security', securityRouter)
+  beforeEach(() => setIdentityProvider(fakeProvider()))
+  it('sets canonical tenant only after trusted active membership proof', async () => {
+    ;(proveSessionTenant as jest.Mock).mockResolvedValue(tenant)
+    const res = await request(app).get('/api/v1/security/session').query({tenant}).set('Authorization', 'Bearer tok')
+    expect(res.status).toBe(200)
+    expect(res.body.identity.tenantId).toBe(tenant)
+    expect(proveSessionTenant).toHaveBeenCalledWith('u1', tenant)
+  })
+  it('denies non-members and hides upstream errors', async () => {
+    ;(proveSessionTenant as jest.Mock).mockResolvedValue(null)
+    expect((await request(app).get('/api/v1/security/session').query({tenant}).set('Authorization','Bearer tok')).status).toBe(403)
+    ;(proveSessionTenant as jest.Mock).mockRejectedValue(new Error('private SQL'))
+    const res = await request(app).get('/api/v1/security/session').query({tenant}).set('Authorization','Bearer tok')
+    expect(res.status).toBe(503)
+    expect(res.text).not.toContain('private')
+  })
+  it('rejects malformed tenant query and missing bearer', async () => {
+    expect((await request(app).get('/api/v1/security/session?tenant=invalid').set('Authorization','Bearer tok')).status).toBe(400)
+    expect((await request(app).get('/api/v1/security/session').query({tenant})).status).toBe(401)
   })
 })
