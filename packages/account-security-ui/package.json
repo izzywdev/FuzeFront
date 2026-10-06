@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/account-security-ui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
