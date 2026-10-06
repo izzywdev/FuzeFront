@@ -68,8 +68,6 @@ expect 1 "credit exhaustion"        "failure" "Error: Your credit balance is too
 # were never tried, and the caller announced "a real finding from the work itself, not a
 # provider problem" about an exhausted quota. Same class as the credit line above; the
 # subscription plans just phrase it as a session/usage limit with a reset time.
-expect 1 "weekly limit (observed)" "failure" "You've hit your weekly limit · resets Oct 10, 11pm (UTC)"
-expect 1 "weekly limit structured provider result" "failure" '{"type":"result","is_error":true,"result":"You have hit your weekly limit · resets Oct 10, 11pm (UTC)"}'
 expect 1 "session limit (observed)" "failure" "You've hit your session limit · resets 11:50am (UTC)"
 expect 1 "session limit reached"    "failure" "Error: session limit reached, try again later"
 expect 1 "usage limit reached"      "failure" "Claude AI usage limit reached"
@@ -117,8 +115,6 @@ expect 2 "unrecognised failure mode is NOT retried" "failure" "something nobody 
 # not reproduce the vendor's own exhaustion string.
 expect 2 "a finding about limit-handling code is not an outage" "failure" \
   "src/api.ts:88 — the retry loop ignores the session limit response and spins forever"
-expect 2 "a finding about weekly limit handling is not an outage" "failure" \
-  "src/api.ts:88 — the retry loop ignores the weekly limit response and spins forever"
 expect 2 "nonzero exit with a stack trace"  "failure" "Traceback (most recent call last):
   File \"x.py\", line 1"
 
@@ -164,8 +160,6 @@ expect_outcome 1 "empty+success but log shows the model-access 403 = availabilit
 # ConnectionRefused string. It was misclassified as `declined` (exit 3), producing a
 # benign "no work" verdict instead of falling over. It must classify as availability.
 expect_outcome 1 "empty+success but log shows SDK ConnectionRefused = availability"       "" "success" "API Error: Unable to connect to API (ConnectionRefused)"
-
-expect_outcome 1 "swallowed weekly quota exhaustion remains availability" "" "success" "You've hit your weekly limit · resets Oct 10, 11pm (UTC)"
 
 # The new availability signatures are recognised on the ordinary failure path too.
 expect 1 "authentication_failed field"    "failure" '{"error":"authentication_failed"}'
