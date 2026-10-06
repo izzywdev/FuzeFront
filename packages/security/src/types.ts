@@ -24,7 +24,7 @@
  */
 import type { components } from './generated';
 
-export const SECURITY_CONTRACT_VERSION = '0.9.1' as const;
+export const SECURITY_CONTRACT_VERSION = '0.10.0' as const;
 
 /**
  * The stable, normalized identity every consumer receives regardless of which
@@ -150,6 +150,8 @@ export interface GrantRequest {
   role: string;
   permission?: string;
   resource?: ResourceRef;
+  /** Required for exact fuzekeys_Connector owner tuples; no additional authority. */
+  connectorProvider?: string;
 }
 
 /** A created, revocable grant. */
@@ -161,6 +163,8 @@ export interface Grant {
   permission?: string;
   resource?: ResourceRef;
   createdAt?: number;
+  /** Acknowledged provider metadata for a validated Connector owner grant. */
+  connectorProvider?: string;
 }
 
 /**

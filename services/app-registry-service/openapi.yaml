@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront App Registry API
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     REST API for the FuzeFront **app registry** — the contract by which a
     federated (or standalone) application is registered, activated, and surfaced
@@ -1290,6 +1290,16 @@ components:
             May NOT contain `_` — that is the namespace separator and the key must
             split cleanly at the first one.
         name: { type: string }
+        relations:
+          type: object
+          description: Map of bare relation names to bare resources in this same product.
+          additionalProperties:
+            { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+        roles:
+          type: object
+          description: Instance-scoped roles; these do not create tenant-wide grants.
+          additionalProperties:
+            { $ref: '#/components/schemas/ProductInstanceRoleDecl' }
         actions:
           type: object
           description: 'Map of action key -> { name }, e.g. { create: { name: Create } }.'
@@ -1299,6 +1309,34 @@ components:
             required: [name]
             properties:
               name: { type: string }
+
+    ProductInstanceRoleDecl:
+      type: object
+      additionalProperties: false
+      required: [name, permissions]
+      properties:
+        name: { type: string }
+        permissions:
+          type: array
+          description: Bare actions of the containing resource; grants apply to one instance only.
+          items: { type: string }
+        granted_to:
+          type: object
+          additionalProperties: false
+          required: [users_with_role]
+          properties:
+            users_with_role:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [role, on_resource, linked_by_relation]
+                properties:
+                  role: { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+                  on_resource:
+                    { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+                  linked_by_relation:
+                    { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
 
     ProductRoleDecl:
       type: object
