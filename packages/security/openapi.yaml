@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront Security API
-  version: 0.9.2
+  version: 0.10.0
   description: >-
     The FuzeFront-owned, **provider-agnostic** Security API for the whole Fuze
     family. It exposes both authentication (AuthN) and authorization (AuthZ)
@@ -221,8 +221,8 @@ paths:
       description: >-
         Returns the normalized `Identity` and hydrated user for the presented
         session token. This is the source of any out-of-band role/tenant
-        hydration in legacy token mode. An optional tenant query proves active
-        membership in an active organization; without it, behavior is unchanged.
+        hydration in legacy token mode. An explicit tenant requires active SQL
+        membership and an active organization and returns its canonical UUID.
       security:
         - bearerAuth: []
       responses:
@@ -2765,6 +2765,17 @@ components:
           description: Optional explicit `resource:action` permission to grant alongside the role.
         resource:
           $ref: '#/components/schemas/ResourceRef'
+        connectorProvider:
+          type: string
+          maxLength: 80
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'
+          description: >-
+            Required for fuzekeys_Connector owner grants. Canonical provider
+            from the reviewed ownership inventory; the exact resource key must
+            equal connector: plus lowercase SHA256 of UTF-8 JSON [tenant,
+            subject, connectorProvider]. This metadata confers no grant
+            authority. Operator authorization and fresh SQL membership are
+            independently required; no email or directory tenant inference.
       required: [subject, tenant, role]
     Grant:
       type: object
@@ -2784,6 +2795,9 @@ components:
           $ref: '#/components/schemas/ResourceRef'
         createdAt:
           type: integer
+        connectorProvider:
+          type: string
+          description: Canonical provider acknowledged by a validated fuzekeys_Connector owner grant.
       required: [id, subject, tenant, role]
     GrantRevokeRequest:
       type: object
