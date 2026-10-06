@@ -683,13 +683,38 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Requested delegation exceeds service scopes' })
     }
 
+    // Organization authorization is independent of the Authentik directory.
+    // A requested tenant is a selector, never proof of membership.
     const previous = (subject as any).actor
+    const isDelegated = (subject as any).tokenKind === 'fuze-delegation'
+    let tenant: string
+    try {
+      tenant = canonicalSessionTenant(isDelegated ? subject.tenantId : req.body?.tenant)
+      if (req.body?.tenant !== undefined && canonicalSessionTenant(req.body.tenant) !== tenant) {
+        return void res.status(403).json({ error: 'Delegation tenant cannot change' })
+      }
+    } catch {
+      return void res.status(400).json({ error: 'Canonical organization tenant is required' })
+    }
+    if (isDelegated) {
+      if ((subject as any).audience !== actor.subject || !isSubset(scopes, subject.scope)) {
+        return void res.status(403).json({ error: 'Delegation audience or scopes cannot expand' })
+      }
+    } else {
+      // getUserInfo also checks session revocation; introspection alone does not.
+      const session = await getIdentityProvider().getUserInfo(subjectToken)
+      if (session.identity.userId !== subject.subject) throw new UnauthorizedError('Subject session mismatch')
+    }
+    let verifiedTenant: string | null
+    try { verifiedTenant = await proveSessionTenant(subject.subject, tenant) }
+    catch { return void res.status(503).json({ error: 'Tenant verification unavailable' }) }
+    if (!verifiedTenant) return void res.status(403).json({ error: 'Active tenant membership required' })
     const claims: DelegationClaims = {
       kind: 'fuze-delegation',
       sub: subject.subject,
       aud: audience,
       scope: scopes.join(' '),
-      tenantId: subject.tenantId ?? null,
+      tenantId: verifiedTenant,
       act: { sub: actor.subject, ...(previous ? { previous } : {}) },
       jti: crypto.randomUUID(),
     }

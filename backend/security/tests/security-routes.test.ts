@@ -95,7 +95,10 @@ describe('delegation token exchange', () => {
   afterEach(() => { delete process.env.DELEGATION_SIGNING_KEY })
 
   it('binds the user, audience, scopes and immediate workload actor', async () => {
+    const tenant = '0195a8f2-6c3d-7f11-8b2e-012345678901'
+    ;(proveSessionTenant as jest.Mock).mockResolvedValue(tenant)
     const provider = fakeProvider({
+      getUserInfo: jest.fn().mockResolvedValue({ identity: { userId: 'user-1' }, user: USER }),
       introspectToken: jest.fn()
         .mockResolvedValueOnce({ active: true, subject: 'service:chat', scope: 'connectors:metadata', tokenKind: 'fuze-workload' })
         .mockResolvedValueOnce({ active: true, subject: 'user-1', tenantId: 'org-1' }),
@@ -103,7 +106,7 @@ describe('delegation token exchange', () => {
     const exchange = await request(makeApp(provider))
       .post('/api/v1/security/tokens/exchange')
       .set('Authorization', 'Bearer workload')
-      .send({ subjectToken: 'user-session', audience: 'service:fuzekeys', scope: 'connectors:metadata' })
+      .send({ subjectToken: 'user-session', audience: 'service:fuzekeys', scope: 'connectors:metadata', tenant })
     expect(exchange.status).toBe(200)
     expect(exchange.body).toMatchObject({ subject: 'user-1', audience: 'service:fuzekeys', actor: { sub: 'service:chat' } })
 
