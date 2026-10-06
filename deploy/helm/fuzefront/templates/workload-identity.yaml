@@ -153,3 +153,23 @@ data:
   serviceAccountName: fuzefront-chat-service
   scopes: connectors:gmail:read
   tokenTtlSeconds: "600"
+
+{{- if .Values.selectionListService.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-selection-list-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuzefront-selection-list-service
+  labels:
+    security.fuze.dev/workload-identity: "true"
+data:
+  service: service:selection-list-service
+  serviceAccountName: fuzefront-selection-list-service
+  scopes: selection-list:owner-grant
+  tokenTtlSeconds: "600"
+{{- end }}

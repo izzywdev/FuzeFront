@@ -1824,7 +1824,7 @@ export interface operations {
     getSession: {
         parameters: {
             query?: {
-                /** @description Explicit organization UUID or typed ID to verify. */
+                /** @description Optional organization UUID or typed organization ID. When supplied, requires canonical active membership in an active organization and returns its canonical UUID as identity.tenantId. */
                 tenant?: string;
             };
             header?: never;
@@ -1842,28 +1842,16 @@ export interface operations {
                     "application/json": components["schemas"]["SessionInfo"];
                 };
             };
-            /** @description Malformed tenant */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            /** @description Active tenant membership required */
+            /** @description Active tenant membership is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Tenant verification unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createSession: {

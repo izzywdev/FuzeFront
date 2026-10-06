@@ -184,6 +184,9 @@ secret:
   # Override via --set or a gitignored values file. NEVER commit real creds.
   googleClientId: ""
   googleClientSecret: ""
+  # Supply via a private values file or existingSecret. Never commit OAuth secrets.
+  connectorStateEncryptionKey: ""
+  connectorOAuth: {}
   # SMTP password for Authentik's email backend (leave empty for MailHog / open relay).
   smtpPassword: ""
   # AI provider keys for the chat-service and LiteLLM gateway.

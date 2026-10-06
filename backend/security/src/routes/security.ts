@@ -38,6 +38,7 @@ import { isEmployeeConsoleEnabled } from '../utils/employeeFlag'
 import { ROOT_ORG_ID } from '../migrations/014_seed_root_platform_organization'
 import { authenticateKubernetesWorkload } from '../services/workload-identity'
 
+
 const router = express.Router()
 
 const DELEGATION_TOKEN_TTL_SECONDS = 300

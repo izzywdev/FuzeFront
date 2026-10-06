@@ -96,6 +96,14 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Test credential dependency preflight
+        run: python3 -m unittest discover -s scripts/__tests__ -p 'test_connector_dependency.py' -v
+
+      - name: Require deployed FuzeKeys credential protocol
+        # Must precede image publication and the GitOps bump. A merged runtime
+        # cannot consume a credential protocol that has not deployed yet.
+        run: python3 scripts/check-connector-dependency.py
+
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Log in to GHCR

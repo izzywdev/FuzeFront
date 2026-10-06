@@ -22,7 +22,7 @@
     "express-rate-limit": "^7.2.0",
     "express-validator": "^7.0.1",
     "helmet": "^7.1.0",
-    "morgan": "^1.11.0",
+    "morgan": "^1.12.1",
     "node-addon-api": "^8.5.0",
     "nodemailer": "^10.0.11",
     "prebuild-install": "^7.1.3",

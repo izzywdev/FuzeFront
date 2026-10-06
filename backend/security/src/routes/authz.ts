@@ -107,6 +107,52 @@ function parseMembershipRef<T extends EntityType>(type: T, raw: unknown) {
 
 /** Scope a machine caller must hold to create/revoke grants (see file header). */
 export { AUTHZ_ADMIN_SCOPE }
+export const SELECTION_LIST_OWNER_GRANT_SCOPE = 'selection-list:owner-grant'
+
+const selectionListRoles = new Set([
+  'list-owner', 'list-editor', 'list-contributor', 'list-translator', 'list-viewer',
+])
+
+function validateListMemberRefs(subject: unknown, tenant: unknown, res: Response): boolean {
+  try {
+    parseMembershipRef('user', subject)
+    parseMembershipRef('organization', tenant)
+    return true
+  } catch {
+    res.status(400).json({ error: 'List grant requires valid user and organization references', code: 'MALFORMED' })
+    return false
+  }
+}
+
+/** List grants are constrained to the caller's list and an active org member. */
+async function authorizeSelectionListGrant(
+  c: ResolvedCaller,
+  body: any,
+  revoke: boolean,
+): Promise<boolean> {
+  if (body?.resource?.type !== 'SelectionList') return false
+  if (!body.resource.key || !selectionListRoles.has(body.role) || !body.subject || !body.tenant) return false
+
+  const membership = await findMembershipByUserAndOrg(
+    parseMembershipRef('user', body.subject),
+    parseMembershipRef('organization', body.tenant),
+  )
+  if (membership?.status !== 'active') return false
+
+  if (c.kind === 'machine') {
+    if ((c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE)) return true
+    return !revoke && c.id === 'service:selection-list-service' && body.role === 'list-owner' &&
+      (c.scopes ?? []).includes(SELECTION_LIST_OWNER_GRANT_SCOPE)
+  }
+  const gate = await authorizeGrantMutation(getAuthorizationProvider(), c, {
+    tenant: body.tenant, role: body.role,
+    resource: { type: 'SelectionList', key: body.resource.key },
+  })
+  if (gate.status === 502) throw new Error('Authorization provider unavailable')
+  return gate.allowed
+}
+
+
 
 function bearer(req: Request): string | null {
   const h = req.headers['authorization']
@@ -386,7 +432,6 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
   const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  if (!requireAuthzAdmin(c, res)) return
   const b = req.body || {}
   if (!b.subject || !b.tenant || !b.role) {
     return res.status(400).json({ error: 'subject, tenant and role are required', code: 'MALFORMED' })
@@ -412,7 +457,19 @@ router.post('/authz/grants', async (req: Request, res: Response) => {
   // Authorize the TARGET tenant/resource for human callers (machine callers
   // already passed the AUTHZ_ADMIN_SCOPE gate above). What is authorized here
   // is exactly what is passed to the provider below.
-  const gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  const isListGrant = resource?.type === 'SelectionList' || selectionListRoles.has(role)
+  let gate: GateResult
+  if (isListGrant) {
+    if (!validateListMemberRefs(subject, tenant, res)) return
+    try {
+      gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, false), status: 403, code: 'FORBIDDEN', error: 'List grant forbidden' }
+    } catch {
+      gate = { allowed: false, status: 502, code: 'PROVIDER_UNAVAILABLE', error: 'Authorization provider unavailable' }
+    }
+  } else {
+    if (!requireAuthzAdmin(c, res)) return
+    gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  }
   if (!enforce(gate, res, log, c, 'grant', { tenant, role, resourceType: resource?.type })) return
 
   if (isFuzeKeysGrant) {
@@ -471,7 +528,17 @@ router.delete('/authz/grants', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'grantId or subject+tenant+role required', code: 'MALFORMED' })
   }
   const provider = getAuthorizationProvider()
-  const gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  let gate: GateResult
+  if (resource?.type === 'SelectionList' || selectionListRoles.has(role)) {
+    if (!validateListMemberRefs(subject, tenant, res)) return
+    try {
+      gate = { allowed: await authorizeSelectionListGrant(c, { subject, tenant, role, resource }, true), status: 403, code: 'FORBIDDEN', error: 'List revoke forbidden' }
+    } catch {
+      gate = { allowed: false, status: 502, code: 'PROVIDER_UNAVAILABLE', error: 'Authorization provider unavailable' }
+    }
+  } else {
+    gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
+  }
   if (!enforce(gate, res, log, c, 'revoke', { tenant, role, resourceType: resource?.type })) return
 
   try {
