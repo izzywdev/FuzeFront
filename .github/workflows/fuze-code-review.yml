@@ -209,35 +209,15 @@ jobs:
         if: steps.pr.outputs.open == 'true'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          # Used ONLY for the one authenticated base-ref fetch below (checkout no
-          # longer persists a credential). This step runs no LLM.
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
           HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
         run: |
           set -uo pipefail
-          # NOT --depth=1. `actions/checkout` above already fetched full history
-          # (fetch-depth: 0), but a shallow fetch of the base ref makes the whole
-          # repository shallow, and `origin/$BASE_REF...HEAD` then dies with
-          # "fatal: no merge base" whenever the base has moved past what the
-          # checkout holds. Both diffs below swallowed that with `|| true`, so an
-          # empty DIFF read as "nothing to review" and the job SKIPPED TO A PASS
-          # on a PR with a real diff -- while $SENSITIVE went empty too, silently
-          # disarming the sensitive-path input to the self-approval defense below.
-          # Measured on #1042 (+1376/-115 across 27 files): with --depth=1 the
-          # diff is 0 bytes and exits 128; without it, 81558 bytes and exits 0.
-          #
-          # persist-credentials is false, so authenticate this one fetch explicitly
-          # (the header lives only in this git process's arguments, never in
-          # .git/config). A failed fetch is not fatal by itself because the checkout
-          # already fetched every branch, but the ref MUST resolve or the diff below
-          # would be computed against nothing.
-          AUTH_HEADER="Authorization: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          if ! git -c "http.extraheader=${AUTH_HEADER}" fetch origin "$BASE_REF"; then
-            echo "::warning title=fuze-code-review::could not refresh origin/$BASE_REF; using the ref the checkout already fetched"
-          fi
+          # Checkout fetched all branches with fetch-depth: 0 and removed its
+          # credentials. Use that base snapshot without exposing a job token
+          # to this shell step or the review model.
           if ! git rev-parse --verify --quiet "origin/$BASE_REF" > /dev/null; then
             echo "::error title=fuze-code-review::origin/$BASE_REF does not resolve -- refusing to report a verdict on a diff this job cannot see"
             exit 1
