@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Current identity ("me")
-         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode.
+         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode. An explicit tenant requires active SQL membership and an active organization and returns its canonical UUID.
          */
         get: operations["getSession"];
         put?: never;
@@ -434,6 +434,26 @@ export interface paths {
          * @description Returns the effective permission set for `subject` scoped to `tenant`. The permission set for a single subject within one tenant is bounded by the policy model (a fixed catalogue of resource/action pairs), not by user-controlled data growth, so it is returned whole.
          */
         get: operations["getPermissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/authz/membership-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify current active SQL tenant membership for ownership provisioning
+         * @description Requires an authz:admin machine or a human authorized to manage the target Organization. Reads active SQL membership and active organization; organization ownership alone is insufficient. Returns canonical typed IDs and Cache-Control no-store. Grant creation independently repeats the check.
+         */
+        get: operations["getMembershipProof"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1799,7 +1819,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getSession: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Explicit organization UUID or typed ID to verify. */
+                tenant?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1815,7 +1838,28 @@ export interface operations {
                     "application/json": components["schemas"]["SessionInfo"];
                 };
             };
+            /** @description Malformed tenant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
+            /** @description Active tenant membership required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Tenant verification unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     createSession: {
@@ -2466,6 +2510,70 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getMembershipProof: {
+        parameters: {
+            query: {
+                subject: string;
+                tenant: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active membership */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        subject: string;
+                        tenant: string;
+                        /** @enum {boolean} */
+                        active: true;
+                    };
+                };
+            };
+            /** @description Malformed subject or tenant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller forbidden or membership inactive */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authorization provider unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SQL membership proof unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     listGrants: {
