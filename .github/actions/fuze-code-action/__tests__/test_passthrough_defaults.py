@@ -41,6 +41,11 @@ ACTION = os.path.join(os.path.dirname(__file__), os.pardir, "action.yml")
 # action.yml at that SHA. Only non-empty defaults are listed: an input whose
 # callee default is already empty cannot be harmed by forwarding an empty value.
 CALLEE_DEFAULTS = {
+    "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020": {
+        "check-latest": "false",
+        "token": "${{ github.server_url == 'https://github.com' && github.token || '' }}",
+        "package-manager-cache": "true",
+    },
     "anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d": {
         "trigger_phrase": "@claude",
         "label_trigger": "claude",
