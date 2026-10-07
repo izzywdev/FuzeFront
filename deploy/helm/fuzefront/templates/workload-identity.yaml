@@ -32,6 +32,23 @@ docs/planning/workload-identity-layering.md.
 `deploy/scripts/check-cluster-scoped-whitelist.sh` (helm-validate.yml) now fails
 a PR whose rendered cluster-scoped kinds are not permitted by
 deploy/argocd/project.yaml, so that specific freeze cannot recur silently.
+
+RETIRED 2026-10-05 (issue #1137): `securityService.workloadIdentity.
+clusterRbac.enabled` now defaults to `false`, so the ClusterRole/
+ClusterRoleBinding below render NOWHERE by default. FuzeInfra#1306 adopted the
+same-named objects into its own chart (prod only, via
+helm/fuzeinfra/values-contabo.yaml) and narrowed them to `tokenreviews: create`
+— the live grant in prod is unchanged, only ownership moved off this chart, so
+turning this off is a true no-op for prod. FuzeInfra#1308 then deleted
+FuzeInfra's stale duplicate `fuzefront` AppProject and gated registration so a
+ClusterRole-permitting copy can never be re-applied — this chart rendering
+either object again would permanently wedge every FuzeFront Argo sync (the
+2026-09-28 / 2026-10-02 incidents, both caused by exactly that). Local kind
+(`helm upgrade --install`, no Argo involved) gets no equivalent grant from
+FuzeInfra, so a developer exercising `POST /api/v1/security/tokens/workload`
+locally overrides explicitly:
+  --set securityService.workloadIdentity.clusterRbac.enabled=true
+See deploy/argocd/project.yaml and docs/planning/workload-identity-layering.md.
 */}}
 apiVersion: v1
 kind: ServiceAccount
@@ -39,18 +56,19 @@ metadata:
   name: fuzefront-security
 {{- if and .Values.securityService.enabled .Values.securityService.workloadIdentity.clusterRbac.enabled }}
 ---
-# ── THE ONLY CLUSTER-SCOPED GRANT THIS CHART HOLDS ──────────────────────────
-# Gated so the flip to FuzeInfra's identity broker is a one-line values change
-# rather than a template rewrite under time pressure. Default ON because the
-# broker DOES NOT EXIST YET: `POST /tokens/workload` is a live route, and
-# turning this off today breaks workload identity and the FuzeKeys registration
-# that PR #1198 was merged to unblock. Set
-# `securityService.workloadIdentity.clusterRbac.enabled: false` once the broker
-# is serving — and remove ClusterRole/ClusterRoleBinding from
-# `clusterResourceWhitelist` in deploy/argocd/project.yaml in the SAME change
-# (the whitelist-vs-rendered closed-set layer of
-# check-cluster-scoped-whitelist.sh will fail the PR until you do, which is
-# deliberate: it makes retiring the grant an enforced step, not a remembered one).
+# ── THE ONLY CLUSTER-SCOPED GRANT THIS CHART CAN HOLD ───────────────────────
+# Gated so re-enabling it (or flipping it off) is a one-line values change
+# rather than a template rewrite under time pressure. DEFAULT OFF as of #1137 —
+# FuzeInfra#1306 now serves this grant for prod (same object names, adopted
+# into its own chart) and FuzeInfra#1308 forbids a ClusterRole-permitting
+# `fuzefront` AppProject from ever being registered again, so rendering this by
+# default would permanently wedge Argo. See the header comment and
+# deploy/argocd/project.yaml. Override `securityService.workloadIdentity.
+# clusterRbac.enabled=true` only for local kind work that needs
+# `POST /tokens/workload` — never for prod/values-prod.yaml (the
+# whitelist-vs-rendered closed-set layer of check-cluster-scoped-whitelist.sh
+# will fail the PR if you do, which is deliberate: it makes the pairing with
+# deploy/argocd/project.yaml an enforced step, not a remembered one).
 #
 # Also gated on securityService.enabled: this used to render unconditionally, so
 # a deployment with the security service switched OFF — which is the base
