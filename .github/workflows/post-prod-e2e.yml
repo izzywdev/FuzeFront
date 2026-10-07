@@ -109,6 +109,19 @@ jobs:
           POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
         run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy" --reporter=list,html
 
+      - name: Export connector UX video at 3 fps
+        if: always()
+        run: |
+          if find frontend/test-results-post-prod -path '*connectors-catalog-smoke*' -name '*.webm' -print -quit | grep -q .; then
+            if ! command -v ffmpeg >/dev/null; then
+              sudo apt-get update
+              sudo apt-get install -y ffmpeg
+            fi
+            while IFS= read -r -d '' video; do
+              ffmpeg -nostdin -y -i "$video" -vf fps=3 -an -c:v libx264 -pix_fmt yuv420p "${video%.webm}-3fps.mp4"
+            done < <(find frontend/test-results-post-prod -path '*connectors-catalog-smoke*' -name '*.webm' -print0)
+          fi
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
