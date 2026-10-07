@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exhaustive check of fuze-code-action's rung `if:` gates.
 
 These four invariants are the whole safety argument for the fallover chain. Each
@@ -264,6 +263,7 @@ class TestRungGating(unittest.TestCase):
             ctx = {
                 "steps.classify-claude.outputs.code": code,
                 "inputs.task-prompt": prompt,
+                "inputs.codex-auth-json": "",
                 "inputs.openai-api-key": okey,
                 "inputs.gemini-api-key": gkey,
                 "steps.codex.outcome": cout,
@@ -298,7 +298,8 @@ class TestRungGating(unittest.TestCase):
         base = {
             "steps.classify-claude.outputs.code": "1",
             "inputs.task-prompt": "do the thing",
-            "inputs.openai-api-key": "sk-openai",
+            "inputs.codex-auth-json": "",
+                "inputs.openai-api-key": "sk-openai",
             "inputs.gemini-api-key": "sk-gemini",
             "steps.codex.outcome": "failure",
         }
