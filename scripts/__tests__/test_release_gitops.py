@@ -1,10 +1,10 @@
 """Exercise release publication without network, credentials or repository writes."""
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/publish-release-gitops.sh"
@@ -70,7 +70,7 @@ class ReleaseGitOpsTest(unittest.TestCase):
                        HEAD_COUNT=str(temp / "heads"), MASTER_COUNT=str(temp / "masters"),
                        GITOPS_MERGE_TIMEOUT_SECONDS="0", GITOPS_POLL_SECONDS="1")
             result = subprocess.run(["bash", str(SCRIPT), file, tag, SOURCE],
-                                    cwd=temp, env=env, capture_output=True, text=True, timeout=10)
+                                    cwd=temp, env=env, capture_output=True, text=True, timeout=10, check=False)
             calls = [json.loads(line) for line in (temp / "calls").read_text().splitlines()] if (temp / "calls").exists() else []
             return result, calls
 
@@ -147,7 +147,7 @@ class ReleaseGitOpsTest(unittest.TestCase):
     def test_tag_merge_recursion_guard_also_covers_manual_dispatch(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         guard = workflow.split("        run: |\n", 1)[1].split("\n  build-and-bump:", 1)[0]
-        lines = [line[10:] if line.startswith("          ") else line for line in guard.splitlines()]
+        lines = [line.removeprefix("          ") for line in guard.splitlines()]
         script = "\n".join(lines).replace('$(git log -1 --format=%s)', '$SUBJECT')
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
