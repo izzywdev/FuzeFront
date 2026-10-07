@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run an isolated, subscription-only reviewer; never export or print auth."""
 import json
 import os
@@ -38,7 +37,7 @@ def review(auth, prompt, executable="codex"):
                 "-c", "features.code_mode=false", "-c", 'web_search="disabled"', "-c", "approval_policy=\"never\"",
                 "--output-last-message", str(output), "-"]
         result = subprocess.run(args, input=prompt, text=True, cwd=work, env=env,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600, check=False)
         if result.returncode != 0 or not output.exists() or not output.read_text().strip():
             raise RuntimeError("Codex review failed or produced no verdict; check auth, quota and sandbox support")
         return output.read_text()
