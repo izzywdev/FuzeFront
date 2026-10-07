@@ -21,7 +21,7 @@ interface CatalogEntry {
 
 // Keep successful visual proof too. Traces can contain session headers;
 // this credentialed journey publishes screenshots/video and a safe inventory.
-test.use({ video: 'on', trace: 'off' })
+test.use({ video: 'on', trace: 'off', navigationTimeout: 30_000, actionTimeout: 20_000 })
 
 test.describe('Connectors — live post-production UX', () => {
   test('all released connectors appear with working status controls', async ({ page, request }, testInfo) => {
@@ -30,6 +30,7 @@ test.describe('Connectors — live post-production UX', () => {
     expect(password, 'POST_PROD_PASSWORD is required: missing connector coverage must fail, not skip').toBeTruthy()
     // Existing synthetic only: no signup, password reset, grants, or provider mutations.
     const session = await request.post('/api/v1/security/session', {
+      timeout: 30_000,
       data: { email: process.env.POST_PROD_EMAIL || 'postprod-smoke@fuzefront.com', password },
     })
     expect(session.status(), 'production synthetic sign-in failed').toBe(200)
@@ -71,6 +72,7 @@ test.describe('Connectors — live post-production UX', () => {
         await expect(heading).toBeVisible()
         const card = page.locator('section').filter({ has: heading })
         const metadata = await request.get(`/api/v1/connectors/${encodeURIComponent(entry.id)}`, {
+          timeout: 15_000,
           headers: { Authorization: `Bearer ${token}` },
         })
         expect(metadata.status(), `${entry.id} status route failed`).toBe(200)

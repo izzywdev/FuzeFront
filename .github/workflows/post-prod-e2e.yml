@@ -20,10 +20,19 @@ on:
         type: boolean
         required: false
         default: false
+      connectors_only:
+        description: 'Collect only connector UX evidence (one attempt); full post-deploy suite remains the default'
+        type: boolean
+        required: false
+        default: false
 
   # Called as a reusable workflow by prod-post-deploy.yml after each release
   workflow_call:
     inputs:
+      connectors_only:
+        type: boolean
+        required: false
+        default: false
       base_url:
         description: 'Target base URL'
         type: string
@@ -78,6 +87,7 @@ jobs:
 
       - name: Run post-prod smoke
         env:
+          CONNECTORS_ONLY: ${{ inputs.connectors_only || false }}
           POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
           # Synthetic account for the authenticated journey (API login path).
           # Falls back to the seeded admin creds inside the spec when unset.
@@ -95,7 +105,13 @@ jobs:
           # assertion; when unset that one test self-skips as missing coverage.
           POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
           POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
+        run: |
+          cd frontend
+          if [[ "$CONNECTORS_ONLY" == 'true' ]]; then
+            npx playwright test --config playwright.post-prod.config.ts connectors-catalog-smoke.spec.ts --retries=0 --reporter=list,html
+          else
+            npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
+          fi
 
       # AuthN provider-boundary smoke (contract PR #243). Runs only when
       # explicitly requested; until the AuthN deploy lands these tests self-skip

@@ -27,6 +27,10 @@ be limited to repository collaborators.
 
 Run against production after rollout:
 
+For an immediate evidence capture, dispatch `post-prod-e2e.yml` on the test
+branch with `connectors_only=true`. This runs one attempt and uploads its
+result even when it fails. The full post-deploy suite remains the default.
+
 ```sh
 cd frontend
 npx playwright test --config playwright.post-prod.config.ts connectors-catalog-smoke.spec.ts
