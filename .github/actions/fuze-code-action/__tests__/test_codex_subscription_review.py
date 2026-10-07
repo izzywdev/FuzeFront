@@ -19,6 +19,7 @@ class SubscriptionReviewTest(unittest.TestCase):
         def run(args, **kwargs):
             roots.append(pathlib.Path(kwargs["cwd"]).parent)
             self.assertEqual(kwargs["input"], "review this diff")
+            self.assertIs(kwargs["check"], False)
             self.assertIn("read-only", args)
             self.assertIn("shell_tool", args)
             self.assertNotIn("danger-full-access", args)

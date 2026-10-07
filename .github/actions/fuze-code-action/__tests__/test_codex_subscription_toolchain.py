@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
 """Pin the Codex subscription reviewer toolchain on minimal self-hosted runners."""
 
-from pathlib import Path
 import unittest
+from pathlib import Path
+
 import yaml
 
 ACTION = Path(__file__).resolve().parents[1] / "action.yml"

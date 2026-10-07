@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exhaustive check of fuze-code-action's rung `if:` gates.
 
 These four invariants are the whole safety argument for the fallover chain. Each
