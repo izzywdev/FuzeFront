@@ -148,15 +148,17 @@ class ReleaseGitOpsTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         guard = workflow.split("        run: |\n", 1)[1].split("\n  build-and-bump:", 1)[0]
         lines = [line.removeprefix("          ") for line in guard.splitlines()]
-        script = "\n".join(lines).replace('$(git log -1 --format=%s)', '$SUBJECT')
+        script = "\n".join(lines).replace('$(git log -1 --format=%s)', '$SUBJECT').replace('$(git diff-tree --no-commit-id --name-only -r HEAD)', '$CHANGED_FILES')
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
-            for subject, expected in (("release: fuzefront images aaaaaaaaaaaa", "false"),
-                                      ("release: fuzefront images aaaaaaaaaaaa (#42)", "false"),
-                                      ("fix(connectors): release provider", "true")):
+            for subject, changed, expected in (("release: fuzefront images aaaaaaaaaaaa", FILE, "false"),
+                                               ("release: fuzefront images aaaaaaaaaaaa (#42)", FILE, "false"),
+                                               ("release: fuzefront images aaaaaaaaaaaa", "backend/src/server.ts", "true"),
+                                               ("release: fuzefront images aaaaaaaaaaaa", FILE + "\nbackend/src/server.ts", "true"),
+                                               ("fix(connectors): release provider", FILE, "true")):
                 output.write_text("")
                 subprocess.run(["bash", "-c", script], check=True,
-                               env=dict(os.environ, SUBJECT=subject, GITHUB_OUTPUT=str(output)))
+                               env=dict(os.environ, SUBJECT=subject, CHANGED_FILES=changed, GITHUB_OUTPUT=str(output)))
                 self.assertEqual(output.read_text().strip(), f"build={expected}")
 
 

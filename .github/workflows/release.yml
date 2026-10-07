@@ -96,13 +96,16 @@ jobs:
       build: ${{ steps.source.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
       - name: Exclude image-tag-only merges from rebuilds
         id: source
         run: |
           set -euo pipefail
           # Check the actual checked-out commit, including workflow_dispatch.
           # auto-merge.yml may dispatch this even for the GitOps PR itself.
-          if [[ "$(git log -1 --format=%s)" =~ ^release:\ fuzefront\ images\ [0-9a-f]{12}($|\ ) ]]; then
+          changed=$(git diff-tree --no-commit-id --name-only -r HEAD)
+          if [[ "$changed" == deploy/helm/fuzefront/values-prod.yaml && "$(git log -1 --format=%s)" =~ ^release:\ fuzefront\ images\ [0-9a-f]{12}($|\ ) ]]; then
             echo "build=false" >> "$GITHUB_OUTPUT"
           else
             echo "build=true" >> "$GITHUB_OUTPUT"
