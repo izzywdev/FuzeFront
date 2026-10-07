@@ -129,6 +129,37 @@ spec:
                 echo "Deployment." >&2
                 exit 1
               fi
+              # A newly created pod may precede kube-router's endpoint/ipset
+              # update. Wait on unauthenticated readiness before making the
+              # single privileged registration call; never retry a denied call.
+              node <<'NODE'
+              const http = require('node:http');
+              const base = process.env.AUTHENTIK_BASE_URL;
+              const timeout = Number(process.env.AUTHENTIK_READY_TIMEOUT_MS || 120000);
+              const deadline = Date.now() + timeout;
+              const ready = new URL('/-/health/ready/', base);
+              async function probe() {
+                return new Promise(resolve => {
+                  const req = http.get(ready, res => {
+                    res.resume();
+                    resolve(res.statusCode === 200);
+                  });
+                  req.setTimeout(3000, () => req.destroy());
+                  req.on('error', () => resolve(false));
+                });
+              }
+              (async () => {
+                while (Date.now() < deadline) {
+                  if (await probe()) {
+                    console.log('Authentik readiness confirmed; registering identity.');
+                    return;
+                  }
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+                console.error('FATAL: internal Authentik readiness timed out; registration was not attempted.');
+                process.exitCode = 1;
+              })().catch(() => { process.exitCode = 1; });
+              NODE
               AUTHENTIK_ADMIN_TOKEN="$(cat "$TOKEN_FILE")" \
               node dist/authentik/register-s2s-cli.js \
                 {{ .Values.billingService.authz.serviceName | quote }} \
