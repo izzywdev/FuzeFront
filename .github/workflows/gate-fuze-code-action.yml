@@ -73,3 +73,6 @@ jobs:
 
       - name: Every run block is parseable bash
         run: python3 .github/actions/fuze-code-action/__tests__/test_run_blocks_parse.py
+
+      - name: Codex subscription isolation and fail-closed behavior
+        run: python3 .github/actions/fuze-code-action/__tests__/test_codex_subscription_review.py
