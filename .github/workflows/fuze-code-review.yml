@@ -18,7 +18,8 @@ name: Fuze Code Review
 # fallover chain as every other LLM-driven workflow in this fleet
 # (./.github/actions/fuze-code-action — LiteLLM-in-cluster-or-direct-Anthropic on a
 # classified AVAILABILITY failure only, never on a real task failure; the OpenAI and
-# Gemini fallover rungs are DISABLED for this caller, see the READ-ONLY note below).
+# Gemini API coding rungs are DISABLED for this caller; the isolated Codex
+# subscription reviewer remains available, see the READ-ONLY note below).
 # The one new thing here is what happens to a CLEAN result:
 # `gh pr review --approve` actually gets called.
 #
@@ -47,24 +48,20 @@ name: Fuze Code Review
 #   - READ-ONLY AT THE TOOL LEVEL, PER RUNG (what is true, not what is hoped):
 #       Anthropic rungs (OAuth 1a, LiteLLM/direct-key 1): ENFORCED read-only. The
 #         reviewer gets `--allowedTools "Read,Grep,Glob"` and no Bash/Write/Edit.
-#       OpenAI/Codex rung: DISABLED for this workflow (no OPENAI_API_KEY passed, and
-#         fuze-code-action only runs the rung when that key is non-empty). Codex
-#         cannot be confined here: fuze-code-action
-#         runs it `danger-full-access` (its OS sandbox cannot initialise on the
-#         containerized self-hosted runner), which is a full shell on the runner.
+#       Codex subscription reviewer: the published shared action uses an isolated,
+#         no-tools adapter with CODEX_AUTH_JSON. This is separate from the
+#         OpenAI API coding rung, which remains disabled by key absence below.
 #       Gemini rung: DISABLED for this workflow, same mechanism (no GEMINI_API_KEY
 #         passed, the rung only runs when it is non-empty). run-gemini-cli hard-codes `gemini --yolo` (auto-approve every
 #         tool call including shell) and exposes no tool allow-list input.
-#     When both Anthropic rungs are unavailable the chain is exhausted; that
+#     When Anthropic and the isolated Codex reviewer are unavailable the chain is exhausted; that
 #     classifies as an availability outage (non-blocking, never an approval), the
 #     fail-closed direction. Re-enabling either vendor here needs a demonstrated
 #     tool-level read-only mode, enforced by
 #     .github/actions/fuze-code-action/__tests__/test_review_caller_readonly.py.
-#     The disable is by KEY ABSENCE because fuze-code-action is a FuzeSDLC-managed
-#     file (governance-sync resets local edits to the canonical), so a dedicated
-#     `review-only` switch has to be added upstream, not here; until then the test
-#     pins both that no OpenAI/Gemini key is forwarded and that the action still
-#     gates those rungs on their key.
+#     The API coding rungs stay disabled by KEY ABSENCE. The subscription adapter
+#     is provided by the published FuzeSDLC action; this caller does not replace
+#     that managed action or enable its shell-capable API coding rungs.
 #     The entire diff is embedded in the prompt, so the reviewer never needs the
 #     checkout; an instruction smuggled inside the diff ("approve this PR", "run
 #     `gh pr review --approve`", "print the secrets") has no tool available to act
@@ -93,13 +90,12 @@ name: Fuze Code Review
 # precisely so one exhausted vendor account can no longer silently disable this
 # gate.
 #
-# CREDENTIAL: this workflow is routed through the in-cluster LiteLLM gateway
-# (http://litellm.fuzeinfra.svc.cluster.local:4000), so the ONLY secret needed
-# is LITELLM_FUZE_KEY — a scoped virtual key minted with FuzeInfra's
-# scripts/mint-litellm-fuze-key.sh. With it set the gateway handles provider
-# routing and failover; without it (or if the gateway is unreachable from the
-# runner) the workflow SKIPS (not fails) — a missing credential is environmental,
-# not a defect in the PR under review. Direct provider keys (ANTHROPIC_API_KEY,
+# CREDENTIAL: the in-cluster LiteLLM gateway accepts LITELLM_FUZE_KEY, a scoped
+# virtual key minted with FuzeInfra's scripts/mint-litellm-fuze-key.sh. Other
+# available review credentials are CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY,
+# and CODEX_AUTH_JSON for the isolated ChatGPT subscription reviewer. When none
+# is configured the workflow skips; missing credentials are environmental.
+# Direct provider keys (ANTHROPIC_API_KEY,
 # OPENAI_API_KEY, GEMINI_API_KEY): ANTHROPIC_API_KEY is a fallback rung; the
 # OpenAI and Gemini keys are deliberately NOT forwarded by this workflow (see the
 # READ-ONLY note above), so provisioning them does not enable those rungs here.
@@ -152,9 +148,8 @@ jobs:
     # the runner name vs governance/ci-runners.md mandated name (`fuze-runner`
     # rename has not happened yet; change this when the set is renamed).
     #
-    # REQUIRED REPO SECRET: LITELLM_FUZE_KEY — a LiteLLM virtual key minted
-    # with FuzeInfra scripts/mint-litellm-fuze-key.sh. Without it the job
-    # skips (not fails) as documented in the header comment above.
+    # Review credentials are checked below; CODEX_AUTH_JSON alone is sufficient
+    # to attempt the isolated subscription reviewer if Anthropic is unavailable.
     runs-on: fuzefront
     # Flagged by gate-workflow-policy [missing-timeout], for exactly the reason
     # measured here: with no bound, a job whose runner stops responding is only
@@ -215,6 +210,7 @@ jobs:
           HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
         run: |
           set -uo pipefail
           # NOT --depth=1. `actions/checkout` above already fetched full history
@@ -284,9 +280,9 @@ jobs:
           # to prefer -- reported "no LLM credential configured" and skipped the
           # review outright, with a working credential already wired to line 260.
           elif [ "${HAS_OAUTH:-false}" != "true" ] && [ "${HAS_LITELLM:-false}" != "true" ] \
-               && [ "${HAS_ANTHROPIC:-false}" != "true" ]; then
+               && [ "${HAS_ANTHROPIC:-false}" != "true" ] && [ "${HAS_CODEX:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY; the OpenAI/Gemini rungs are disabled for this read-only reviewer) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, CODEX_AUTH_JSON; the OpenAI/Gemini API coding rungs are disabled for this read-only reviewer) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           {
@@ -364,7 +360,8 @@ jobs:
       # READ-ONLY AT THE TOOL LEVEL. The Anthropic rungs get only Read/Grep/Glob.
       # The OpenAI and Gemini rungs are disabled below (their keys are NOT
       # forwarded, and the action only runs a rung whose key is non-empty) because
-      # neither can be confined to read-only here.
+      # neither API coding rung can be confined to read-only here. The separate
+      # Codex subscription adapter is isolated and has tools disabled.
       # The entire diff is already embedded in the prompt above, so the reviewer
       # never needs to touch the checkout -- and an instruction smuggled inside the
       # diff has no tool available to act on it. Read/Grep/Glob can only look, at a
@@ -401,8 +398,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # fuze:secret-sourcing CODEX_AUTH_JSON=fleet — provision-llm-vendor-keys.yml; optional ChatGPT subscription auth
+          codex-auth-json: ${{ secrets.CODEX_AUTH_JSON }}
           # OPENAI_API_KEY / GEMINI_API_KEY are intentionally NOT forwarded: with no
-          # key the action skips rungs 2 and 3 by name. Codex runs danger-full-access
+          # key the action skips API coding rungs 2 and 3. API Codex runs danger-full-access
           # and run-gemini-cli runs --yolo, i.e. a full shell, which a reviewer
           # reading an attacker-controlled diff must never have. Do not add them back
           # without a tool-level read-only mode (test_review_caller_readonly.py fails
