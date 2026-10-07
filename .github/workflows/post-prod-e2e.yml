@@ -108,9 +108,9 @@ jobs:
         run: |
           cd frontend
           if [[ "$CONNECTORS_ONLY" == 'true' ]]; then
-            npx playwright test --config playwright.post-prod.config.ts connectors-catalog-smoke.spec.ts --retries=0 --reporter=list,html
+            npx playwright test --config playwright.post-prod.config.ts connectors-catalog-smoke.spec.ts --retries=0
           else
-            npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
+            npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy"
           fi
 
       # AuthN provider-boundary smoke (contract PR #243). Runs only when
@@ -123,7 +123,7 @@ jobs:
         continue-on-error: true
         env:
           POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy" --reporter=list,html
+        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy"
 
       # Preserve evidence before optional export tooling: a slow package mirror
       # or cancelled transcode must not discard the actual browser result.
