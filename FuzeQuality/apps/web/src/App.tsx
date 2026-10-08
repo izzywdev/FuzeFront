@@ -49,11 +49,26 @@ import type {
   TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import { api, configurePlatformSecurity, type OrganizationMember, type OrganizationRole } from './api'
+import {
+  api,
+  configurePlatformSecurity,
+  type OrganizationMember,
+  type OrganizationRole,
+} from './api'
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 
-type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'intelligence' | 'review' | 'operations' | 'organization' | 'administration'
+type View =
+  | 'overview'
+  | 'repositories'
+  | 'api'
+  | 'frontend'
+  | 'requirements'
+  | 'intelligence'
+  | 'review'
+  | 'operations'
+  | 'organization'
+  | 'administration'
 
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
@@ -79,16 +94,33 @@ const portalMenuItems = navigation
   }))
 
 function executionOutcomeTrend(executions: TestExecution[]) {
-  const results = new Map<string, { date: string; passed: number; failed: number; cancelled: number; running: number }>()
+  const results = new Map<
+    string,
+    {
+      date: string
+      passed: number
+      failed: number
+      cancelled: number
+      running: number
+    }
+  >()
   for (const execution of executions) {
     const timestamp = execution.completedAt ?? execution.startedAt
     if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
     const date = timestamp.slice(0, 10)
-    const current = results.get(date) ?? { date, passed: 0, failed: 0, cancelled: 0, running: 0 }
+    const current = results.get(date) ?? {
+      date,
+      passed: 0,
+      failed: 0,
+      cancelled: 0,
+      running: 0,
+    }
     current[execution.status]++
     results.set(date, current)
   }
-  return [...results.values()].sort((left, right) => left.date.localeCompare(right.date))
+  return [...results.values()].sort((left, right) =>
+    left.date.localeCompare(right.date)
+  )
 }
 
 function isView(value: unknown): value is View {
@@ -103,10 +135,20 @@ function viewFromPathname(pathname: string): View | undefined {
 /** Publish the app's IA to the portal sidebar; the host remains its renderer. */
 function usePortalMenu(setView: (view: View) => void) {
   useEffect(() => {
-    const bridge = (window as Window & { __FUZEFRONT__?: { menu?: { add: (appId: string, items: typeof portalMenuItems) => void; remove: (appId: string) => void } } }).__FUZEFRONT__
+    const bridge = (
+      window as Window & {
+        __FUZEFRONT__?: {
+          menu?: {
+            add: (appId: string, items: typeof portalMenuItems) => void
+            remove: (appId: string) => void
+          }
+        }
+      }
+    ).__FUZEFRONT__
     bridge?.menu?.add('fuzequality', portalMenuItems)
     const onNavigate = (event: Event) => {
-      const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>).detail
+      const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>)
+        .detail
       const target = detail?.section ?? detail?.id
       if (isView(target)) setView(target)
     }
@@ -130,13 +172,19 @@ const coverageLabel: Record<CoverageState, string> = {
 }
 
 function coverageSummary(expectations: TestExpectation[]) {
-  const relevant = expectations.filter(item => item.priority !== 'not-applicable')
-  const covered = relevant.filter(item => item.coverage.startsWith('covered')).length
+  const relevant = expectations.filter(
+    item => item.priority !== 'not-applicable'
+  )
+  const covered = relevant.filter(item =>
+    item.coverage.startsWith('covered')
+  ).length
   return {
     total: relevant.length,
     covered,
     gaps: relevant.filter(item => item.coverage === 'gap').length,
-    percent: relevant.length ? Math.round((covered / relevant.length) * 100) : 0,
+    percent: relevant.length
+      ? Math.round((covered / relevant.length) * 100)
+      : 0,
   }
 }
 
@@ -160,10 +208,18 @@ function CoverageRail({ expectations }: { expectations: TestExpectation[] }) {
 }
 
 function StatusPill({ state }: { state: CoverageState }) {
-  return <span className={`status-pill state-${state}`}>{coverageLabel[state]}</span>
+  return (
+    <span className={`status-pill state-${state}`}>{coverageLabel[state]}</span>
+  )
 }
 
-function GapPlanDrawer({ subject, repository, expectations, selectedId, onClose }: {
+function GapPlanDrawer({
+  subject,
+  repository,
+  expectations,
+  selectedId,
+  onClose,
+}: {
   subject: ApiOperation | FrontendSurface
   repository?: Repository
   expectations: TestExpectation[]
@@ -171,9 +227,14 @@ function GapPlanDrawer({ subject, repository, expectations, selectedId, onClose 
   onClose: () => void
 }) {
   const closeButton = useRef<HTMLButtonElement>(null)
-  const gaps = expectations.filter(item => item.coverage === 'gap' && item.priority !== 'not-applicable')
-  const [selected, setSelected] = useState(() => new Set(gaps.map(item => item.id)))
-  const [implementation, setImplementation] = useState<TestImplementationRequest>()
+  const gaps = expectations.filter(
+    item => item.coverage === 'gap' && item.priority !== 'not-applicable'
+  )
+  const [selected, setSelected] = useState(
+    () => new Set(gaps.map(item => item.id))
+  )
+  const [implementation, setImplementation] =
+    useState<TestImplementationRequest>()
   const [implementationError, setImplementationError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   useEffect(() => {
@@ -183,9 +244,17 @@ function GapPlanDrawer({ subject, repository, expectations, selectedId, onClose 
     return () => window.removeEventListener('keydown', close)
   }, [onClose])
   useEffect(() => {
-    if (!implementation || !['queued', 'running'].includes(implementation.status)) return
+    if (
+      !implementation ||
+      !['queued', 'running'].includes(implementation.status)
+    )
+      return
     const timer = window.setInterval(async () => {
-      try { setImplementation(await api.testImplementation(implementation.id)) } catch { /* retain last known state */ }
+      try {
+        setImplementation(await api.testImplementation(implementation.id))
+      } catch {
+        /* retain last known state */
+      }
     }, 5000)
     return () => window.clearInterval(timer)
   }, [implementation])
@@ -194,90 +263,326 @@ function GapPlanDrawer({ subject, repository, expectations, selectedId, onClose 
     setSubmitting(true)
     setImplementationError('')
     try {
-      setImplementation(await api.implementTests({
-        repositoryId: repository.id,
-        sourceRevision: repository.lastScanRevision,
-        expectationIds: [...selected],
-      }))
+      setImplementation(
+        await api.implementTests({
+          repositoryId: repository.id,
+          sourceRevision: repository.lastScanRevision,
+          expectationIds: [...selected],
+        })
+      )
     } catch (error) {
-      setImplementationError(error instanceof Error ? error.message : String(error))
+      setImplementationError(
+        error instanceof Error ? error.message : String(error)
+      )
     } finally {
       setSubmitting(false)
     }
   }
-  const subjectLabel = 'method' in subject ? `${subject.method.toUpperCase()} ${subject.path}` : `${subject.name} · ${subject.packageName}`
-  return <div className="drawer-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-    <aside className="gap-drawer" role="dialog" aria-modal="true" aria-labelledby="gap-plan-title">
-      <header className="drawer-header">
-        <div><p className="eyebrow">Deterministic test planner</p><h2 id="gap-plan-title">{gaps.length} tests to close this gap</h2><code>{subjectLabel}</code></div>
-        <button ref={closeButton} className="icon-button" onClick={onClose} aria-label="Close test plan"><X /></button>
-      </header>
-      <p className="drawer-intro">Generated from catalog policy and source metadata. These are authoritative expected tests—not AI suggestions.</p>
-      <div className="implementation-toolbar">
-        <label><input type="checkbox" checked={selected.size === gaps.length} onChange={event => setSelected(event.target.checked ? new Set(gaps.map(item => item.id)) : new Set())} /> Select all</label>
-        <button className="primary-button" disabled={submitting || selected.size === 0 || !repository?.lastScanRevision} onClick={implement}>
-          <Sparkles size={15} /> {submitting ? 'Launching…' : `Implement ${selected.size} selected`}
-        </button>
-      </div>
-      {implementation && <div className={`implementation-status implementation-${implementation.status}`} role="status">
-        <strong>Cloud Codex: {implementation.status}</strong>
-        <span>{implementation.agentProfile} · {implementation.skills.join(', ')}</span>
-        {implementation.workflowUrl && <a href={implementation.workflowUrl} target="_blank" rel="noreferrer">View workflow <ExternalLink size={13} /></a>}
-        {implementation.pullRequestUrl && <a href={implementation.pullRequestUrl} target="_blank" rel="noreferrer">Open pull request <ExternalLink size={13} /></a>}
-        {implementation.error && <span>{implementation.error}</span>}
-      </div>}
-      {implementationError && <div className="form-error" role="alert">{implementationError}</div>}
-      <div className="planned-tests">{gaps.map((expectation, index) => {
-        const plan = planGap(expectation, subject)
-        return <article className={expectation.id === selectedId ? 'planned-test selected' : 'planned-test'} key={expectation.id}>
-          <div className="plan-index"><input type="checkbox" aria-label={`Select ${plan.title}`} checked={selected.has(expectation.id)} onChange={event => setSelected(current => { const next = new Set(current); event.target.checked ? next.add(expectation.id) : next.delete(expectation.id); return next })} /><span>{String(index + 1).padStart(2, '0')}</span></div>
-          <div className="plan-body">
-            <div className="plan-heading"><div><span>{plan.priority} · {plan.level}</span><h3>{plan.title}</h3></div>{expectation.id === selectedId && <b>Selected gap</b>}</div>
-            <dl className="plan-path"><dt>Suggested file</dt><dd><code>{plan.suggestedFile}</code></dd></dl>
-            <div className="aaa-grid"><section><h4>Arrange</h4><p>{plan.arrange}</p></section><section><h4>Act</h4><p>{plan.act}</p></section><section><h4>Assert</h4><ul>{plan.assertions.map(assertion => <li key={assertion}>{assertion}</li>)}</ul></section></div>
-            <footer><BookOpen size={13} /><span>{plan.provenance}</span></footer>
+  const subjectLabel =
+    'method' in subject
+      ? `${subject.method.toUpperCase()} ${subject.path}`
+      : `${subject.name} · ${subject.packageName}`
+  return (
+    <div
+      className="drawer-backdrop"
+      role="presentation"
+      onMouseDown={event => event.target === event.currentTarget && onClose()}
+    >
+      <aside
+        className="gap-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="gap-plan-title"
+      >
+        <header className="drawer-header">
+          <div>
+            <p className="eyebrow">Deterministic test planner</p>
+            <h2 id="gap-plan-title">{gaps.length} tests to close this gap</h2>
+            <code>{subjectLabel}</code>
           </div>
-        </article>
-      })}</div>
-    </aside>
-  </div>
+          <button
+            ref={closeButton}
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close test plan"
+          >
+            <X />
+          </button>
+        </header>
+        <p className="drawer-intro">
+          Generated from catalog policy and source metadata. These are
+          authoritative expected tests—not AI suggestions.
+        </p>
+        <div className="implementation-toolbar">
+          <label>
+            <input
+              type="checkbox"
+              checked={selected.size === gaps.length}
+              onChange={event =>
+                setSelected(
+                  event.target.checked
+                    ? new Set(gaps.map(item => item.id))
+                    : new Set()
+                )
+              }
+            />{' '}
+            Select all
+          </label>
+          <button
+            className="primary-button"
+            disabled={
+              submitting || selected.size === 0 || !repository?.lastScanRevision
+            }
+            onClick={implement}
+          >
+            <Sparkles size={15} />{' '}
+            {submitting ? 'Launching…' : `Implement ${selected.size} selected`}
+          </button>
+        </div>
+        {implementation && (
+          <div
+            className={`implementation-status implementation-${implementation.status}`}
+            role="status"
+          >
+            <strong>Cloud Codex: {implementation.status}</strong>
+            <span>
+              {implementation.agentProfile} · {implementation.skills.join(', ')}
+            </span>
+            {implementation.workflowUrl && (
+              <a
+                href={implementation.workflowUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                View workflow <ExternalLink size={13} />
+              </a>
+            )}
+            {implementation.pullRequestUrl && (
+              <a
+                href={implementation.pullRequestUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open pull request <ExternalLink size={13} />
+              </a>
+            )}
+            {implementation.error && <span>{implementation.error}</span>}
+          </div>
+        )}
+        {implementationError && (
+          <div className="form-error" role="alert">
+            {implementationError}
+          </div>
+        )}
+        <div className="planned-tests">
+          {gaps.map((expectation, index) => {
+            const plan = planGap(expectation, subject)
+            return (
+              <article
+                className={
+                  expectation.id === selectedId
+                    ? 'planned-test selected'
+                    : 'planned-test'
+                }
+                key={expectation.id}
+              >
+                <div className="plan-index">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${plan.title}`}
+                    checked={selected.has(expectation.id)}
+                    onChange={event =>
+                      setSelected(current => {
+                        const next = new Set(current)
+                        event.target.checked
+                          ? next.add(expectation.id)
+                          : next.delete(expectation.id)
+                        return next
+                      })
+                    }
+                  />
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                </div>
+                <div className="plan-body">
+                  <div className="plan-heading">
+                    <div>
+                      <span>
+                        {plan.priority} · {plan.level}
+                      </span>
+                      <h3>{plan.title}</h3>
+                    </div>
+                    {expectation.id === selectedId && <b>Selected gap</b>}
+                  </div>
+                  <dl className="plan-path">
+                    <dt>Suggested file</dt>
+                    <dd>
+                      <code>{plan.suggestedFile}</code>
+                    </dd>
+                  </dl>
+                  <div className="aaa-grid">
+                    <section>
+                      <h4>Arrange</h4>
+                      <p>{plan.arrange}</p>
+                    </section>
+                    <section>
+                      <h4>Act</h4>
+                      <p>{plan.act}</p>
+                    </section>
+                    <section>
+                      <h4>Assert</h4>
+                      <ul>
+                        {plan.assertions.map(assertion => (
+                          <li key={assertion}>{assertion}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  </div>
+                  <footer>
+                    <BookOpen size={13} />
+                    <span>{plan.provenance}</span>
+                  </footer>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </aside>
+    </div>
+  )
 }
 
-function ComponentPreviewDrawer({ surface, repository, onClose }: {
+function ComponentPreviewDrawer({
+  surface,
+  repository,
+  onClose,
+}: {
   surface: FrontendSurface
   repository?: Repository
   onClose: () => void
 }) {
   const closeButton = useRef<HTMLButtonElement>(null)
-  const [story, setStory] = useState<StorybookStory | undefined>(surface.stories[0])
-  const previewUrl = story && storybookPreviewUrl(repository?.storybookBaseUrl, story)
+  const [story, setStory] = useState<StorybookStory | undefined>(
+    surface.stories[0]
+  )
+  const previewUrl =
+    story && storybookPreviewUrl(repository?.storybookBaseUrl, story)
   useEffect(() => {
     closeButton.current?.focus()
     const close = (event: KeyboardEvent) => event.key === 'Escape' && onClose()
     window.addEventListener('keydown', close)
     return () => window.removeEventListener('keydown', close)
   }, [onClose])
-  return <div className="drawer-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-    <aside className="preview-drawer" role="dialog" aria-modal="true" aria-labelledby="component-preview-title">
-      <header className="drawer-header">
-        <div><p className="eyebrow">Storybook visual reference</p><h2 id="component-preview-title">{surface.name}</h2><code>{surface.packageName} · {surface.sourcePath}</code></div>
-        <button ref={closeButton} className="icon-button" onClick={onClose} aria-label="Close component preview"><X /></button>
-      </header>
-      {surface.stories.length > 0 ? <>
-        <div className="preview-toolbar">
-          <label>Story<select value={story?.id} onChange={event => setStory(surface.stories.find(item => item.id === event.target.value))}>{surface.stories.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          {previewUrl && <a href={previewUrl} target="_blank" rel="noreferrer">Open Storybook <ExternalLink size={14} /></a>}
-        </div>
-        {previewUrl
-          ? <div className="storybook-frame"><iframe title={`${surface.name}: ${story?.name}`} src={previewUrl} sandbox="allow-scripts allow-forms" referrerPolicy="no-referrer" /></div>
-          : <div className="preview-empty"><Eye /><strong>Story discovered; preview host not configured</strong><span>Add this repository’s HTTPS Storybook URL to render its isolated story here.</span><code>{story?.sourcePath} · {story?.exportName}</code></div>}
-        <footer className="preview-provenance"><BookOpen size={14} /> Static CSF metadata from the scanned commit. The iframe runs sandboxed without same-origin, navigation, or popup privileges.</footer>
-      </> : <div className="preview-empty"><Eye /><strong>No Storybook visual reference found</strong><span>Add a co-located <code>*.stories.tsx</code> file and publish Storybook to make this component renderable.</span></div>}
-    </aside>
-  </div>
+  return (
+    <div
+      className="drawer-backdrop"
+      role="presentation"
+      onMouseDown={event => event.target === event.currentTarget && onClose()}
+    >
+      <aside
+        className="preview-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="component-preview-title"
+      >
+        <header className="drawer-header">
+          <div>
+            <p className="eyebrow">Storybook visual reference</p>
+            <h2 id="component-preview-title">{surface.name}</h2>
+            <code>
+              {surface.packageName} · {surface.sourcePath}
+            </code>
+          </div>
+          <button
+            ref={closeButton}
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close component preview"
+          >
+            <X />
+          </button>
+        </header>
+        {surface.stories.length > 0 ? (
+          <>
+            <div className="preview-toolbar">
+              <label>
+                Story
+                <select
+                  value={story?.id}
+                  onChange={event =>
+                    setStory(
+                      surface.stories.find(
+                        item => item.id === event.target.value
+                      )
+                    )
+                  }
+                >
+                  {surface.stories.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {previewUrl && (
+                <a href={previewUrl} target="_blank" rel="noreferrer">
+                  Open Storybook <ExternalLink size={14} />
+                </a>
+              )}
+            </div>
+            {previewUrl ? (
+              <div className="storybook-frame">
+                <iframe
+                  title={`${surface.name}: ${story?.name}`}
+                  src={previewUrl}
+                  sandbox="allow-scripts allow-forms"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            ) : (
+              <div className="preview-empty">
+                <Eye />
+                <strong>Story discovered; preview host not configured</strong>
+                <span>
+                  Add this repository’s HTTPS Storybook URL to render its
+                  isolated story here.
+                </span>
+                <code>
+                  {story?.sourcePath} · {story?.exportName}
+                </code>
+              </div>
+            )}
+            <footer className="preview-provenance">
+              <BookOpen size={14} /> Static CSF metadata from the scanned
+              commit. The iframe runs sandboxed without same-origin, navigation,
+              or popup privileges.
+            </footer>
+          </>
+        ) : (
+          <div className="preview-empty">
+            <Eye />
+            <strong>No Storybook visual reference found</strong>
+            <span>
+              Add a co-located <code>*.stories.tsx</code> file and publish
+              Storybook to make this component renderable.
+            </span>
+          </div>
+        )}
+      </aside>
+    </div>
+  )
 }
 
-function Stat({ label, value, detail, tone = 'neutral' }: { label: string; value: string | number; detail: string; tone?: string }) {
+function Stat({
+  label,
+  value,
+  detail,
+  tone = 'neutral',
+}: {
+  label: string
+  value: string | number
+  detail: string
+  tone?: string
+}) {
   return (
     <article className={`stat stat-${tone}`}>
       <span>{label}</span>
@@ -287,7 +592,13 @@ function Stat({ label, value, detail, tone = 'neutral' }: { label: string; value
   )
 }
 
-function Overview({ data, onNavigate }: { data: Portfolio; onNavigate: (view: View) => void }) {
+function Overview({
+  data,
+  onNavigate,
+}: {
+  data: Portfolio
+  onNavigate: (view: View) => void
+}) {
   const summary = coverageSummary(data.expectations)
   const openFindings = data.findings.filter(item => item.status === 'open')
   return (
@@ -297,47 +608,104 @@ function Overview({ data, onNavigate }: { data: Portfolio; onNavigate: (view: Vi
           <p className="eyebrow">Coverage snapshot / default branches</p>
           <h1>See what the platform promises—and where proof stops.</h1>
           <p className="lede">
-            One evidence map across API contracts, frontend surfaces, tests, and product intent.
+            One evidence map across API contracts, frontend surfaces, tests, and
+            product intent.
           </p>
         </div>
-        <div className="coverage-dial" style={{ '--coverage': `${summary.percent * 3.6}deg` } as React.CSSProperties}>
-          <span><strong>{summary.percent}%</strong> authoritative</span>
+        <div
+          className="coverage-dial"
+          style={
+            {
+              '--coverage': `${summary.percent * 3.6}deg`,
+            } as React.CSSProperties
+          }
+        >
+          <span>
+            <strong>{summary.percent}%</strong> authoritative
+          </span>
         </div>
       </header>
 
       <CoverageRail expectations={data.expectations} />
       <div className="rail-key">
-        <span><i className="key-covered" /> accepted evidence</span>
-        <span><i className="key-gap" /> required gap</span>
-        <span><i className="key-likely" /> review needed</span>
+        <span>
+          <i className="key-covered" /> accepted evidence
+        </span>
+        <span>
+          <i className="key-gap" /> required gap
+        </span>
+        <span>
+          <i className="key-likely" /> review needed
+        </span>
       </div>
 
       <section className="stats-grid">
-        <Stat label="Repositories" value={data.repositories.length} detail="default branches indexed" />
-        <Stat label="API operations" value={data.operations.length} detail="across discovered contracts" />
-        <Stat label="Frontend surfaces" value={data.surfaces.length} detail="routes, pages, components" />
-        <Stat label="Required gaps" value={summary.gaps} detail="without accepted evidence" tone="danger" />
+        <Stat
+          label="Repositories"
+          value={data.repositories.length}
+          detail="default branches indexed"
+        />
+        <Stat
+          label="API operations"
+          value={data.operations.length}
+          detail="across discovered contracts"
+        />
+        <Stat
+          label="Frontend surfaces"
+          value={data.surfaces.length}
+          detail="routes, pages, components"
+        />
+        <Stat
+          label="Required gaps"
+          value={summary.gaps}
+          detail="without accepted evidence"
+          tone="danger"
+        />
       </section>
 
       <section className="split-grid">
         <article className="panel">
           <div className="panel-heading">
-            <div><p className="eyebrow">Repository pulse</p><h2>Latest inventory</h2></div>
-            <button className="text-button" onClick={() => onNavigate('repositories')}>Manage <ArrowRight size={15} /></button>
+            <div>
+              <p className="eyebrow">Repository pulse</p>
+              <h2>Latest inventory</h2>
+            </div>
+            <button
+              className="text-button"
+              onClick={() => onNavigate('repositories')}
+            >
+              Manage <ArrowRight size={15} />
+            </button>
           </div>
           <div className="repo-list">
             {data.repositories.map(repository => {
               const expectations = data.expectations.filter(item => {
-                const operation = data.operations.find(op => op.id === item.subjectId)
-                const surface = data.surfaces.find(ui => ui.id === item.subjectId)
-                return operation?.repositoryId === repository.id || surface?.repositoryId === repository.id
+                const operation = data.operations.find(
+                  op => op.id === item.subjectId
+                )
+                const surface = data.surfaces.find(
+                  ui => ui.id === item.subjectId
+                )
+                return (
+                  operation?.repositoryId === repository.id ||
+                  surface?.repositoryId === repository.id
+                )
               })
               const repoSummary = coverageSummary(expectations)
               return (
                 <div className="repo-row" key={repository.id}>
-                  <div className="repo-mark">{repository.name.slice(0, 2).toUpperCase()}</div>
-                  <div className="repo-copy"><strong>{repository.name}</strong><small>{repository.owner} / {repository.defaultBranch}</small></div>
-                  <div className="mini-progress"><span style={{ width: `${repoSummary.percent}%` }} /></div>
+                  <div className="repo-mark">
+                    {repository.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="repo-copy">
+                    <strong>{repository.name}</strong>
+                    <small>
+                      {repository.owner} / {repository.defaultBranch}
+                    </small>
+                  </div>
+                  <div className="mini-progress">
+                    <span style={{ width: `${repoSummary.percent}%` }} />
+                  </div>
                   <b>{repoSummary.percent}%</b>
                 </div>
               )
@@ -347,18 +715,34 @@ function Overview({ data, onNavigate }: { data: Portfolio; onNavigate: (view: Vi
 
         <article className="panel findings-panel">
           <div className="panel-heading">
-            <div><p className="eyebrow">Attention queue</p><h2>Highest-impact gaps</h2></div>
-            <button className="icon-button" aria-label="Refresh"><RefreshCw size={16} /></button>
+            <div>
+              <p className="eyebrow">Attention queue</p>
+              <h2>Highest-impact gaps</h2>
+            </div>
+            <button className="icon-button" aria-label="Refresh">
+              <RefreshCw size={16} />
+            </button>
           </div>
           <div className="finding-list">
             {openFindings.slice(0, 5).map(finding => (
               <div className="finding-row" key={finding.id}>
                 <AlertTriangle size={17} />
-                <div><strong>{finding.title}</strong><small>{finding.detail}</small></div>
-                <span className={`severity severity-${finding.severity}`}>{finding.severity}</span>
+                <div>
+                  <strong>{finding.title}</strong>
+                  <small>{finding.detail}</small>
+                </div>
+                <span className={`severity severity-${finding.severity}`}>
+                  {finding.severity}
+                </span>
               </div>
             ))}
-            {!openFindings.length && <div className="empty-state"><ShieldCheck /><strong>No open findings</strong><span>Run a repository scan to calculate gaps.</span></div>}
+            {!openFindings.length && (
+              <div className="empty-state">
+                <ShieldCheck />
+                <strong>No open findings</strong>
+                <span>Run a repository scan to calculate gaps.</span>
+              </div>
+            )}
           </div>
         </article>
       </section>
@@ -366,11 +750,19 @@ function Overview({ data, onNavigate }: { data: Portfolio; onNavigate: (view: Vi
   )
 }
 
-function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
+function Repositories({
+  data,
+  reload,
+}: {
+  data: Portfolio
+  reload: () => Promise<void>
+}) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [history, setHistory] = useState<Record<string, RepositoryScanHistoryEntry[]>>({})
+  const [history, setHistory] = useState<
+    Record<string, RepositoryScanHistoryEntry[]>
+  >({})
   const [form, setForm] = useState({
     owner: 'izzywdev',
     name: '',
@@ -380,166 +772,1059 @@ function Repositories({ data, reload }: { data: Portfolio; reload: () => Promise
     storybookBaseUrl: '',
   })
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('')
+    event.preventDefault()
+    setBusy(true)
+    setError('')
     try {
-      const payload = { ...form, storybookBaseUrl: form.storybookBaseUrl || undefined, includeGlobs: [], excludeGlobs: [], jiraProjects: [] }
+      const payload = {
+        ...form,
+        storybookBaseUrl: form.storybookBaseUrl || undefined,
+        includeGlobs: [],
+        excludeGlobs: [],
+        jiraProjects: [],
+      }
       await api.verifyRepository(payload)
       await api.addRepository(payload)
-      setOpen(false); await reload()
+      setOpen(false)
+      await reload()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Repository onboarding failed')
-    } finally { setBusy(false) }
+      setError(
+        cause instanceof Error ? cause.message : 'Repository onboarding failed'
+      )
+    } finally {
+      setBusy(false)
+    }
   }
   async function scan(id: string, localPath?: string) {
     setBusy(true)
-    try { await api.scanRepository(id, localPath); await reload() } finally { setBusy(false) }
+    try {
+      await api.scanRepository(id, localPath)
+      await reload()
+    } finally {
+      setBusy(false)
+    }
   }
   async function loadHistory(id: string) {
     if (history[id]) return
     try {
       const entries = await api.repositoryScanHistory(id)
       setHistory(current => ({ ...current, [id]: entries }))
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Scan history could not be loaded') }
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Scan history could not be loaded'
+      )
+    }
   }
   return (
     <>
-      <PageHeading eyebrow="Source control" title="Repository inventory" detail="Onboard read-only sources and inspect their latest deterministic scan." action={<button className="primary-button" onClick={() => setOpen(true)}><Plus size={16} /> Add repository</button>} />
+      <PageHeading
+        eyebrow="Source control"
+        title="Repository inventory"
+        detail="Onboard read-only sources and inspect their latest deterministic scan."
+        action={
+          <button className="primary-button" onClick={() => setOpen(true)}>
+            <Plus size={16} /> Add repository
+          </button>
+        }
+      />
       <section className="repo-cards">
         {data.repositories.map(repository => {
-          const diagnostics = data.diagnostics.filter(item => item.repositoryId === repository.id)
-          return <article className="repo-card" key={repository.id}>
-            <div className="repo-card-top"><div className="repo-mark large">{repository.name.slice(0, 2).toUpperCase()}</div><span className={`scan-status scan-${repository.lastScanStatus}`}>{repository.lastScanStatus}</span></div>
-            <h3>{repository.name}</h3><p>{repository.canonicalUrl}</p>
-            <dl><div><dt>Branch</dt><dd>{repository.defaultBranch}</dd></div><div><dt>Kind</dt><dd>{repository.kind}</dd></div><div><dt>Revision</dt><dd title={repository.lastScanRevision}>{repository.lastScanRevision?.slice(0, 12) ?? 'Not scanned'}</dd></div><div><dt>Last scan</dt><dd>{repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'Never'}</dd></div></dl>
-            {diagnostics.length > 0 && <details className="scan-diagnostics"><summary><AlertTriangle size={14} /> {diagnostics.length} scan {diagnostics.length === 1 ? 'diagnostic' : 'diagnostics'}</summary><div>{diagnostics.map(item => <article key={`${item.sourcePath}:${item.code}`}><span className={`diagnostic-severity diagnostic-${item.severity}`}>{item.severity}</span><code>{item.sourcePath}</code><strong>{item.code}</strong><p>{item.message}</p></article>)}</div></details>}
-            <details className="scan-diagnostics" onToggle={event => { if ((event.currentTarget as HTMLDetailsElement).open) void loadHistory(repository.id) }}><summary><GitBranch size={14} /> Scan history</summary><div>{history[repository.id] ? history[repository.id].length ? history[repository.id].map(entry => <article key={`${entry.revision}:${entry.scannedAt}`}><span className={`scan-status scan-${entry.status}`}>{entry.status}</span><code>{entry.revision.slice(0, 12)} · {entry.branch}</code><strong>{entry.counts.operations} API · {entry.counts.surfaces} surfaces · {entry.counts.tests} tests</strong><p>{entry.scannedAt ? new Date(entry.scannedAt).toLocaleString() : 'Scan queued'}</p></article>) : <p>No scan runs recorded yet.</p> : <p>Loading scan history…</p>}</div></details>
-            <button className="secondary-button" disabled={busy} onClick={() => scan(repository.id, repository.localPath)}><RefreshCw size={15} /> Scan now</button>
-          </article>
+          const diagnostics = data.diagnostics.filter(
+            item => item.repositoryId === repository.id
+          )
+          return (
+            <article className="repo-card" key={repository.id}>
+              <div className="repo-card-top">
+                <div className="repo-mark large">
+                  {repository.name.slice(0, 2).toUpperCase()}
+                </div>
+                <span
+                  className={`scan-status scan-${repository.lastScanStatus}`}
+                >
+                  {repository.lastScanStatus}
+                </span>
+              </div>
+              <h3>{repository.name}</h3>
+              <p>{repository.canonicalUrl}</p>
+              <dl>
+                <div>
+                  <dt>Branch</dt>
+                  <dd>{repository.defaultBranch}</dd>
+                </div>
+                <div>
+                  <dt>Kind</dt>
+                  <dd>{repository.kind}</dd>
+                </div>
+                <div>
+                  <dt>Revision</dt>
+                  <dd title={repository.lastScanRevision}>
+                    {repository.lastScanRevision?.slice(0, 12) ?? 'Not scanned'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Last scan</dt>
+                  <dd>
+                    {repository.lastScanAt
+                      ? new Date(repository.lastScanAt).toLocaleString()
+                      : 'Never'}
+                  </dd>
+                </div>
+              </dl>
+              {diagnostics.length > 0 && (
+                <details className="scan-diagnostics">
+                  <summary>
+                    <AlertTriangle size={14} /> {diagnostics.length} scan{' '}
+                    {diagnostics.length === 1 ? 'diagnostic' : 'diagnostics'}
+                  </summary>
+                  <div>
+                    {diagnostics.map(item => (
+                      <article key={`${item.sourcePath}:${item.code}`}>
+                        <span
+                          className={`diagnostic-severity diagnostic-${item.severity}`}
+                        >
+                          {item.severity}
+                        </span>
+                        <code>{item.sourcePath}</code>
+                        <strong>{item.code}</strong>
+                        <p>{item.message}</p>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+              )}
+              <details
+                className="scan-diagnostics"
+                onToggle={event => {
+                  if ((event.currentTarget as HTMLDetailsElement).open)
+                    void loadHistory(repository.id)
+                }}
+              >
+                <summary>
+                  <GitBranch size={14} /> Scan history
+                </summary>
+                <div>
+                  {history[repository.id] ? (
+                    history[repository.id].length ? (
+                      history[repository.id].map(entry => (
+                        <article key={`${entry.revision}:${entry.scannedAt}`}>
+                          <span className={`scan-status scan-${entry.status}`}>
+                            {entry.status}
+                          </span>
+                          <code>
+                            {entry.revision.slice(0, 12)} · {entry.branch}
+                          </code>
+                          <strong>
+                            {entry.counts.operations} API ·{' '}
+                            {entry.counts.surfaces} surfaces ·{' '}
+                            {entry.counts.tests} tests
+                          </strong>
+                          <p>
+                            {entry.scannedAt
+                              ? new Date(entry.scannedAt).toLocaleString()
+                              : 'Scan queued'}
+                          </p>
+                        </article>
+                      ))
+                    ) : (
+                      <p>No scan runs recorded yet.</p>
+                    )
+                  ) : (
+                    <p>Loading scan history…</p>
+                  )}
+                </div>
+              </details>
+              <button
+                className="secondary-button"
+                disabled={busy}
+                onClick={() => scan(repository.id, repository.localPath)}
+              >
+                <RefreshCw size={15} /> Scan now
+              </button>
+            </article>
+          )
         })}
       </section>
-      {open && <div className="modal-backdrop" role="presentation"><form className="modal" onSubmit={submit}><div className="modal-title"><div><p className="eyebrow">GitHub App source</p><h2>Add repository</h2></div><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Owner<input value={form.owner} onChange={event => setForm({ ...form, owner: event.target.value })} required /></label><label>Repository name<input value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="FuzeService" required /></label><label>GitHub App installation ID<input value={form.installationId} onChange={event => setForm({ ...form, installationId: event.target.value.trim() })} inputMode="numeric" placeholder="148577461" required /><small>The read-only FuzeQuality GitHub App installation that can access this repository.</small></label><label>Storybook URL (optional)<input type="url" value={form.storybookBaseUrl} onChange={event => setForm({ ...form, storybookBaseUrl: event.target.value.trim() })} placeholder="https://storybook.example.com" /><small>HTTPS host for sandboxed component previews. Story metadata is cataloged even without it.</small></label><div className="form-row"><label>Default branch<input value={form.defaultBranch} onChange={event => setForm({ ...form, defaultBranch: event.target.value })} /></label><label>Kind<select value={form.kind} onChange={event => setForm({ ...form, kind: event.target.value })}><option value="mixed">Mixed</option><option value="service">Service</option><option value="application">Application</option><option value="library">Library</option><option value="infrastructure">Infrastructure</option></select></label></div>{error && <p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setOpen(false)}>Cancel</button><button className="primary-button" disabled={busy}>{busy ? 'Verifying…' : 'Verify and add'}</button></div></form></div>}
+      {open && (
+        <div className="modal-backdrop" role="presentation">
+          <form className="modal" onSubmit={submit}>
+            <div className="modal-title">
+              <div>
+                <p className="eyebrow">GitHub App source</p>
+                <h2>Add repository</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setOpen(false)}
+              >
+                <X />
+              </button>
+            </div>
+            <label>
+              Owner
+              <input
+                value={form.owner}
+                onChange={event =>
+                  setForm({ ...form, owner: event.target.value })
+                }
+                required
+              />
+            </label>
+            <label>
+              Repository name
+              <input
+                value={form.name}
+                onChange={event =>
+                  setForm({ ...form, name: event.target.value })
+                }
+                placeholder="FuzeService"
+                required
+              />
+            </label>
+            <label>
+              GitHub App installation ID
+              <input
+                value={form.installationId}
+                onChange={event =>
+                  setForm({
+                    ...form,
+                    installationId: event.target.value.trim(),
+                  })
+                }
+                inputMode="numeric"
+                placeholder="148577461"
+                required
+              />
+              <small>
+                The read-only FuzeQuality GitHub App installation that can
+                access this repository.
+              </small>
+            </label>
+            <label>
+              Storybook URL (optional)
+              <input
+                type="url"
+                value={form.storybookBaseUrl}
+                onChange={event =>
+                  setForm({
+                    ...form,
+                    storybookBaseUrl: event.target.value.trim(),
+                  })
+                }
+                placeholder="https://storybook.example.com"
+              />
+              <small>
+                HTTPS host for sandboxed component previews. Story metadata is
+                cataloged even without it.
+              </small>
+            </label>
+            <div className="form-row">
+              <label>
+                Default branch
+                <input
+                  value={form.defaultBranch}
+                  onChange={event =>
+                    setForm({ ...form, defaultBranch: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                Kind
+                <select
+                  value={form.kind}
+                  onChange={event =>
+                    setForm({ ...form, kind: event.target.value })
+                  }
+                >
+                  <option value="mixed">Mixed</option>
+                  <option value="service">Service</option>
+                  <option value="application">Application</option>
+                  <option value="library">Library</option>
+                  <option value="infrastructure">Infrastructure</option>
+                </select>
+              </label>
+            </div>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setOpen(false)}
+              >
+                Cancel
+              </button>
+              <button className="primary-button" disabled={busy}>
+                {busy ? 'Verifying…' : 'Verify and add'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </>
   )
 }
 
-function Matrix({ items, expectations, kind, repositories = [] }: { items: Array<ApiOperation | FrontendSurface>; expectations: TestExpectation[]; kind: 'api' | 'frontend'; repositories?: Repository[] }) {
+function Matrix({
+  items,
+  expectations,
+  kind,
+  repositories = [],
+}: {
+  items: Array<ApiOperation | FrontendSurface>
+  expectations: TestExpectation[]
+  kind: 'api' | 'frontend'
+  repositories?: Repository[]
+}) {
   const [query, setQuery] = useState('')
-  const [selection, setSelection] = useState<{ subject: ApiOperation | FrontendSurface; expectationId: string }>()
+  const [selection, setSelection] = useState<{
+    subject: ApiOperation | FrontendSurface
+    expectationId: string
+  }>()
   const [preview, setPreview] = useState<FrontendSurface>()
   const trigger = useRef<HTMLButtonElement | null>(null)
-  const filtered = items.filter(item => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()))
+  const filtered = items.filter(item =>
+    JSON.stringify(item).toLowerCase().includes(query.toLowerCase())
+  )
   function closePlan() {
     setSelection(undefined)
     requestAnimationFrame(() => trigger.current?.focus())
   }
-  return <><div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`} /><span>{filtered.length} shown</span></div><div className="matrix"><div className="matrix-head"><span>{kind === 'api' ? 'Operation' : 'Surface'}</span><span>Expected evidence</span><span>Status</span></div>{filtered.map(item => { const rows = expectations.filter(expectation => expectation.subjectId === item.id); const surface = kind === 'frontend' ? item as FrontendSurface : undefined; return <div className="matrix-group" key={item.id}><div className="matrix-subject">{kind === 'api' ? <code><b>{(item as ApiOperation).method.toUpperCase()}</b> {(item as ApiOperation).path}</code> : <><strong>{surface?.name}</strong><small>{surface?.packageName} · {surface?.kind}</small><button className="preview-button" onClick={() => setPreview(surface)}><Eye size={14} /> {surface?.stories.length ? `${surface.stories.length} visual ${surface.stories.length === 1 ? 'state' : 'states'}` : 'Visual reference'}</button></>}</div><div className="matrix-expectations">{rows.map(row => <div key={row.id}><span>{row.label}</span><small>{row.rule}</small></div>)}</div><div className="matrix-states">{rows.map(row => row.coverage === 'gap' ? <button key={row.id} className="gap-button state-gap" onClick={event => { trigger.current = event.currentTarget; setSelection({ subject: item, expectationId: row.id }) }} aria-label={`Gap: ${row.label}. Show ${rows.filter(candidate => candidate.coverage === 'gap').length} tests to add.`}>Gap <ChevronRight size={14} /></button> : <StatusPill key={row.id} state={row.coverage} />)}</div></div> })}{!filtered.length && <div className="empty-state roomy"><FileCode2 /><strong>No catalog entries match</strong><span>Adjust the filter or scan a repository.</span></div>}</div>{selection && <GapPlanDrawer subject={selection.subject} repository={repositories.find(item => item.id === selection.subject.repositoryId)} expectations={expectations.filter(item => item.subjectId === selection.subject.id)} selectedId={selection.expectationId} onClose={closePlan} />}{preview && <ComponentPreviewDrawer surface={preview} repository={repositories.find(item => item.id === preview.repositoryId)} onClose={() => setPreview(undefined)} />}</>
+  return (
+    <>
+      <div className="filter-bar">
+        <Search size={16} />
+        <input
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          placeholder={`Filter ${kind === 'api' ? 'operations' : 'surfaces'}…`}
+        />
+        <span>{filtered.length} shown</span>
+      </div>
+      <div className="matrix">
+        <div className="matrix-head">
+          <span>{kind === 'api' ? 'Operation' : 'Surface'}</span>
+          <span>Expected evidence</span>
+          <span>Status</span>
+        </div>
+        {filtered.map(item => {
+          const rows = expectations.filter(
+            expectation => expectation.subjectId === item.id
+          )
+          const surface =
+            kind === 'frontend' ? (item as FrontendSurface) : undefined
+          return (
+            <div className="matrix-group" key={item.id}>
+              <div className="matrix-subject">
+                {kind === 'api' ? (
+                  <code>
+                    <b>{(item as ApiOperation).method.toUpperCase()}</b>{' '}
+                    {(item as ApiOperation).path}
+                  </code>
+                ) : (
+                  <>
+                    <strong>{surface?.name}</strong>
+                    <small>
+                      {surface?.packageName} · {surface?.kind}
+                    </small>
+                    <button
+                      className="preview-button"
+                      onClick={() => setPreview(surface)}
+                    >
+                      <Eye size={14} />{' '}
+                      {surface?.stories.length
+                        ? `${surface.stories.length} visual ${surface.stories.length === 1 ? 'state' : 'states'}`
+                        : 'Visual reference'}
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="matrix-expectations">
+                {rows.map(row => (
+                  <div key={row.id}>
+                    <span>{row.label}</span>
+                    <small>{row.rule}</small>
+                  </div>
+                ))}
+              </div>
+              <div className="matrix-states">
+                {rows.map(row =>
+                  row.coverage === 'gap' ? (
+                    <button
+                      key={row.id}
+                      className="gap-button state-gap"
+                      onClick={event => {
+                        trigger.current = event.currentTarget
+                        setSelection({ subject: item, expectationId: row.id })
+                      }}
+                      aria-label={`Gap: ${row.label}. Show ${rows.filter(candidate => candidate.coverage === 'gap').length} tests to add.`}
+                    >
+                      Gap <ChevronRight size={14} />
+                    </button>
+                  ) : (
+                    <StatusPill key={row.id} state={row.coverage} />
+                  )
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {!filtered.length && (
+          <div className="empty-state roomy">
+            <FileCode2 />
+            <strong>No catalog entries match</strong>
+            <span>Adjust the filter or scan a repository.</span>
+          </div>
+        )}
+      </div>
+      {selection && (
+        <GapPlanDrawer
+          subject={selection.subject}
+          repository={repositories.find(
+            item => item.id === selection.subject.repositoryId
+          )}
+          expectations={expectations.filter(
+            item => item.subjectId === selection.subject.id
+          )}
+          selectedId={selection.expectationId}
+          onClose={closePlan}
+        />
+      )}
+      {preview && (
+        <ComponentPreviewDrawer
+          surface={preview}
+          repository={repositories.find(
+            item => item.id === preview.repositoryId
+          )}
+          onClose={() => setPreview(undefined)}
+        />
+      )}
+    </>
+  )
 }
 
-function CatalogPage({ type, data }: { type: 'api' | 'frontend'; data: Portfolio }) {
+function CatalogPage({
+  type,
+  data,
+}: {
+  type: 'api' | 'frontend'
+  data: Portfolio
+}) {
   const isApi = type === 'api'
-  const expectations = data.expectations.filter(item => item.subjectType === (isApi ? 'api-operation' : 'frontend-surface'))
-  const items: Array<ApiOperation | FrontendSurface> = isApi ? data.operations : data.surfaces
-  return <><PageHeading eyebrow={isApi ? 'Contract inventory' : 'Implemented surface'} title={isApi ? 'API coverage matrix' : 'Frontend coverage matrix'} detail={isApi ? 'Every operation measured against schema-derived test expectations.' : 'Routes, pages, components, states, Storybook documentation, and test evidence.'} action={<div className="header-badge">{isApi ? <Braces /> : <Code2 />} {items.length} indexed</div>} /><CoverageRail expectations={expectations} /><Matrix items={items} expectations={expectations} kind={type} repositories={data.repositories} /></>
+  const expectations = data.expectations.filter(
+    item => item.subjectType === (isApi ? 'api-operation' : 'frontend-surface')
+  )
+  const items: Array<ApiOperation | FrontendSurface> = isApi
+    ? data.operations
+    : data.surfaces
+  return (
+    <>
+      <PageHeading
+        eyebrow={isApi ? 'Contract inventory' : 'Implemented surface'}
+        title={isApi ? 'API coverage matrix' : 'Frontend coverage matrix'}
+        detail={
+          isApi
+            ? 'Every operation measured against schema-derived test expectations.'
+            : 'Routes, pages, components, states, Storybook documentation, and test evidence.'
+        }
+        action={
+          <div className="header-badge">
+            {isApi ? <Braces /> : <Code2 />} {items.length} indexed
+          </div>
+        }
+      />
+      <CoverageRail expectations={expectations} />
+      <Matrix
+        items={items}
+        expectations={expectations}
+        kind={type}
+        repositories={data.repositories}
+      />
+    </>
+  )
 }
 
-function FindingDetail({ finding, onClose }: { finding: Portfolio['findings'][number]; onClose: () => void }) {
-  return <div className="modal-backdrop" role="presentation"><aside className="modal finding-detail" role="dialog" aria-modal="true" aria-labelledby="finding-detail-title"><div className="modal-title"><div><p className="eyebrow">Coverage finding</p><h2 id="finding-detail-title">{finding.title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close finding detail"><X /></button></div><p>{finding.detail}</p><dl className="finding-detail-grid"><div><dt>Severity</dt><dd>{finding.severity}</dd></div><div><dt>Rule / policy</dt><dd>{finding.policyVersion ?? finding.type ?? 'catalog policy'}</dd></div><div><dt>Evidence strength</dt><dd>{finding.evidenceStrength ?? 'unknown'}</dd></div><div><dt>Source revision</dt><dd>{finding.sourceRevision ?? 'catalog'}</dd></div><div><dt>Owner</dt><dd>{finding.owner ?? 'Unassigned'}</dd></div><div><dt>Status</dt><dd>{finding.status}</dd></div></dl>{(finding.evidence?.length ?? 0) > 0 && <section><b>Evidence</b><div className="evidence-list">{finding.evidence?.map(item => <blockquote key={item}>“{item}”</blockquote>)}</div></section>}{(finding.affectedTargetIds?.length ?? 0) > 0 && <section><b>Related targets</b><div className="finding-impact">{finding.affectedTargetIds?.map(item => <code key={item}>{item}</code>)}</div></section>}{finding.remediation && <section><b>Remediation</b><p>{finding.remediation}</p></section>}<small>Generated {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'} · schema {finding.schemaVersion ?? 'unknown'}</small></aside></div>
+function FindingDetail({
+  finding,
+  onClose,
+}: {
+  finding: Portfolio['findings'][number]
+  onClose: () => void
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <aside
+        className="modal finding-detail"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="finding-detail-title"
+      >
+        <div className="modal-title">
+          <div>
+            <p className="eyebrow">Coverage finding</p>
+            <h2 id="finding-detail-title">{finding.title}</h2>
+          </div>
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close finding detail"
+          >
+            <X />
+          </button>
+        </div>
+        <p>{finding.detail}</p>
+        <dl className="finding-detail-grid">
+          <div>
+            <dt>Severity</dt>
+            <dd>{finding.severity}</dd>
+          </div>
+          <div>
+            <dt>Rule / policy</dt>
+            <dd>{finding.policyVersion ?? finding.type ?? 'catalog policy'}</dd>
+          </div>
+          <div>
+            <dt>Evidence strength</dt>
+            <dd>{finding.evidenceStrength ?? 'unknown'}</dd>
+          </div>
+          <div>
+            <dt>Source revision</dt>
+            <dd>{finding.sourceRevision ?? 'catalog'}</dd>
+          </div>
+          <div>
+            <dt>Owner</dt>
+            <dd>{finding.owner ?? 'Unassigned'}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{finding.status}</dd>
+          </div>
+        </dl>
+        {(finding.evidence?.length ?? 0) > 0 && (
+          <section>
+            <b>Evidence</b>
+            <div className="evidence-list">
+              {finding.evidence?.map(item => (
+                <blockquote key={item}>“{item}”</blockquote>
+              ))}
+            </div>
+          </section>
+        )}
+        {(finding.affectedTargetIds?.length ?? 0) > 0 && (
+          <section>
+            <b>Related targets</b>
+            <div className="finding-impact">
+              {finding.affectedTargetIds?.map(item => (
+                <code key={item}>{item}</code>
+              ))}
+            </div>
+          </section>
+        )}
+        {finding.remediation && (
+          <section>
+            <b>Remediation</b>
+            <p>{finding.remediation}</p>
+          </section>
+        )}
+        <small>
+          Generated{' '}
+          {finding.generatedAt
+            ? new Date(finding.generatedAt).toLocaleString()
+            : 'pending projection'}{' '}
+          · schema {finding.schemaVersion ?? 'unknown'}
+        </small>
+      </aside>
+    </div>
+  )
 }
 
 function ApiCatalogPage({ data }: { data: Portfolio }) {
   const [repositoryId, setRepositoryId] = useState('')
   const [tag, setTag] = useState('')
   const [coverage, setCoverage] = useState<CoverageState | ''>('')
-  const [selectedFinding, setSelectedFinding] = useState<Portfolio['findings'][number]>()
-  const apiExpectations = data.expectations.filter(item => item.subjectType === 'api-operation')
-  const tags = [...new Set(data.operations.flatMap(operation => operation.tags))].sort()
+  const [selectedFinding, setSelectedFinding] =
+    useState<Portfolio['findings'][number]>()
+  const apiExpectations = data.expectations.filter(
+    item => item.subjectType === 'api-operation'
+  )
+  const tags = [
+    ...new Set(data.operations.flatMap(operation => operation.tags)),
+  ].sort()
   const operations = data.operations.filter(operation => {
-    const expectations = apiExpectations.filter(item => item.subjectId === operation.id)
-    return (!repositoryId || operation.repositoryId === repositoryId) &&
+    const expectations = apiExpectations.filter(
+      item => item.subjectId === operation.id
+    )
+    return (
+      (!repositoryId || operation.repositoryId === repositoryId) &&
       (!tag || operation.tags.includes(tag)) &&
       (!coverage || expectations.some(item => item.coverage === coverage))
+    )
   })
   const visibleIds = new Set(operations.map(operation => operation.id))
-  const expectations = apiExpectations.filter(item => visibleIds.has(item.subjectId))
-  const findings = data.findings.filter(item =>
-    item.status === 'open' &&
-    (visibleIds.has(item.subjectId ?? '') || (!item.subjectId && operations.some(operation => operation.repositoryId === item.repositoryId)))
+  const expectations = apiExpectations.filter(item =>
+    visibleIds.has(item.subjectId)
+  )
+  const findings = data.findings.filter(
+    item =>
+      item.status === 'open' &&
+      (visibleIds.has(item.subjectId ?? '') ||
+        (!item.subjectId &&
+          operations.some(
+            operation => operation.repositoryId === item.repositoryId
+          )))
   )
   const summary = coverageSummary(expectations)
-  return <>
-    <PageHeading
-      eyebrow="Contract inventory / authoritative snapshot"
-      title="API coverage matrix"
-      detail="Every operation measured against schema-derived expectations, accepted test evidence, and actionable contract findings."
-      action={<div className="header-badge"><Braces /> {operations.length} operations</div>}
-    />
-    <section className="stats-grid compact-stats" aria-label="API coverage totals">
-      <Stat label="Coverage" value={`${summary.percent}%`} detail={`${summary.covered} of ${summary.total} expectations`} />
-      <Stat label="Required gaps" value={summary.gaps} detail="without accepted evidence" tone="danger" />
-      <Stat label="Open findings" value={findings.length} detail="contract and coverage actions" tone={findings.length ? 'danger' : 'neutral'} />
-      <Stat label="Revision set" value={data.repositories.filter(repository => repository.lastScanRevision).length} detail="scanned repositories represented" />
-    </section>
-    <div className="catalog-filters" aria-label="API catalog filters">
-      <label>Repository<select value={repositoryId} onChange={event => setRepositoryId(event.target.value)}><option value="">All repositories</option>{data.repositories.map(repository => <option key={repository.id} value={repository.id}>{repository.name}</option>)}</select></label>
-      <label>Tag<select value={tag} onChange={event => setTag(event.target.value)}><option value="">All tags</option>{tags.map(value => <option key={value}>{value}</option>)}</select></label>
-      <label>Coverage<select value={coverage} onChange={event => setCoverage(event.target.value as CoverageState | '')}><option value="">All states</option>{Object.entries(coverageLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      <div className="snapshot-stamp"><span>Policy</span><strong>api-coverage-v1</strong><small>{data.repositories.filter(repository => repository.lastScanAt).length} fresh scan snapshots</small></div>
-    </div>
-    <CoverageRail expectations={expectations} />
-    <Matrix items={operations} expectations={expectations} kind="api" repositories={data.repositories} />
-    <section className="panel catalog-findings">
-      <div className="panel-heading"><div><p className="eyebrow">Remediation queue</p><h2>OpenAPI quality and coverage findings</h2></div><span className="header-badge"><AlertTriangle /> {findings.length}</span></div>
-      <div className="finding-list">
-        {findings.map(finding => <button className="finding-row finding-action" key={finding.id} onClick={() => setSelectedFinding(finding)}>
-          <AlertTriangle size={17} />
-          <div><strong>{finding.title}</strong><small>{finding.detail}</small>{finding.remediation && <p><b>Next:</b> {finding.remediation}</p>}</div>
-          <div className="finding-owner"><span className={`severity severity-${finding.severity}`}>{finding.severity}</span><small>{finding.owner ?? 'Unassigned'}</small></div>
-        </button>)}
-        {!findings.length && <div className="empty-state"><ShieldCheck /><strong>No findings in this view</strong><span>Adjust filters or scan another repository.</span></div>}
+  return (
+    <>
+      <PageHeading
+        eyebrow="Contract inventory / authoritative snapshot"
+        title="API coverage matrix"
+        detail="Every operation measured against schema-derived expectations, accepted test evidence, and actionable contract findings."
+        action={
+          <div className="header-badge">
+            <Braces /> {operations.length} operations
+          </div>
+        }
+      />
+      <section
+        className="stats-grid compact-stats"
+        aria-label="API coverage totals"
+      >
+        <Stat
+          label="Coverage"
+          value={`${summary.percent}%`}
+          detail={`${summary.covered} of ${summary.total} expectations`}
+        />
+        <Stat
+          label="Required gaps"
+          value={summary.gaps}
+          detail="without accepted evidence"
+          tone="danger"
+        />
+        <Stat
+          label="Open findings"
+          value={findings.length}
+          detail="contract and coverage actions"
+          tone={findings.length ? 'danger' : 'neutral'}
+        />
+        <Stat
+          label="Revision set"
+          value={
+            data.repositories.filter(repository => repository.lastScanRevision)
+              .length
+          }
+          detail="scanned repositories represented"
+        />
+      </section>
+      <div className="catalog-filters" aria-label="API catalog filters">
+        <label>
+          Repository
+          <select
+            value={repositoryId}
+            onChange={event => setRepositoryId(event.target.value)}
+          >
+            <option value="">All repositories</option>
+            {data.repositories.map(repository => (
+              <option key={repository.id} value={repository.id}>
+                {repository.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Tag
+          <select value={tag} onChange={event => setTag(event.target.value)}>
+            <option value="">All tags</option>
+            {tags.map(value => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Coverage
+          <select
+            value={coverage}
+            onChange={event =>
+              setCoverage(event.target.value as CoverageState | '')
+            }
+          >
+            <option value="">All states</option>
+            {Object.entries(coverageLabel).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="snapshot-stamp">
+          <span>Policy</span>
+          <strong>api-coverage-v1</strong>
+          <small>
+            {
+              data.repositories.filter(repository => repository.lastScanAt)
+                .length
+            }{' '}
+            fresh scan snapshots
+          </small>
+        </div>
       </div>
-    </section>
-    {selectedFinding && <FindingDetail finding={selectedFinding} onClose={() => setSelectedFinding(undefined)} />}
-  </>
+      <CoverageRail expectations={expectations} />
+      <Matrix
+        items={operations}
+        expectations={expectations}
+        kind="api"
+        repositories={data.repositories}
+      />
+      <section className="panel catalog-findings">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Remediation queue</p>
+            <h2>OpenAPI quality and coverage findings</h2>
+          </div>
+          <span className="header-badge">
+            <AlertTriangle /> {findings.length}
+          </span>
+        </div>
+        <div className="finding-list">
+          {findings.map(finding => (
+            <button
+              className="finding-row finding-action"
+              key={finding.id}
+              onClick={() => setSelectedFinding(finding)}
+            >
+              <AlertTriangle size={17} />
+              <div>
+                <strong>{finding.title}</strong>
+                <small>{finding.detail}</small>
+                {finding.remediation && (
+                  <p>
+                    <b>Next:</b> {finding.remediation}
+                  </p>
+                )}
+              </div>
+              <div className="finding-owner">
+                <span className={`severity severity-${finding.severity}`}>
+                  {finding.severity}
+                </span>
+                <small>{finding.owner ?? 'Unassigned'}</small>
+              </div>
+            </button>
+          ))}
+          {!findings.length && (
+            <div className="empty-state">
+              <ShieldCheck />
+              <strong>No findings in this view</strong>
+              <span>Adjust filters or scan another repository.</span>
+            </div>
+          )}
+        </div>
+      </section>
+      {selectedFinding && (
+        <FindingDetail
+          finding={selectedFinding}
+          onClose={() => setSelectedFinding(undefined)}
+        />
+      )}
+    </>
+  )
 }
 
 function Requirements({ data }: { data: Portfolio }) {
-  const [freshness, setFreshness] = useState<'unknown' | 'fresh' | 'stale' | 'failed'>('unknown')
-  useEffect(() => { api.requirementFreshness().then(value => setFreshness(value.freshnessStatus)).catch(() => setFreshness('failed')) }, [])
-  return <><PageHeading eyebrow="Product intent" title="Requirements & inferred flows" detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed." action={<div className={`header-badge freshness-${freshness}`}><Database /> Jira {freshness}</div>} /><div className="requirements-grid">{data.requirements.map(requirement => {
-    const flows = data.flows.filter(flow => flow.requirementId === requirement.id)
-    const suggestions = data.suggestions.filter(item => item.requirementId === requirement.id && item.state === 'proposed')
-    const findings = data.findings.filter(item => item.subjectId === requirement.id || item.sourceRevision?.startsWith(`${requirement.jiraKey}@`))
-    return <article className="requirement-card" key={requirement.id}>
-      <div className="requirement-key">{requirement.jiraKey}</div><span className="issue-type">{requirement.issueType}</span>
-      <h3>{requirement.summary}</h3><p>{requirement.description}</p>
-      <div className="requirement-meta"><span><CircleDot /> {requirement.status}</span><span><Network /> {flows.length} confirmed flows</span><span><Sparkles /> {suggestions.length} proposals</span><span className={findings.length ? 'requirement-gap-count' : ''}><AlertTriangle /> {findings.length} quality findings</span></div>
-      <details className="requirement-flows"><summary><Network size={14} /> Confirmed actor-step flows</summary>{flows.length ? flows.map(flow => { const steps = flow.steps ?? []; return <section className="requirement-flow" key={flow.id}><strong>{flow.title}</strong><small>{flow.origin ?? 'confirmed'} · {steps.length} steps</small><ol className="flow-steps">{steps.map(step => <li key={step.id} className={`flow-step-${step.variant}`}><b>{step.position}</b><div><strong>{step.actor}</strong><span>{step.action}</span><small>Expected: {step.expectedOutcome}</small>{(step.targetIds ?? []).length > 0 && <div className="flow-targets">{step.targetIds.map(target => <code key={target}>{target}</code>)}</div>}</div></li>)}</ol>{!steps.length && <p className="flow-empty">This reviewed flow has no stored steps yet.</p>}</section> }) : <p className="flow-empty">No reviewed flow is attached to this requirement yet. AI proposals remain in the review queue until confirmed.</p>}</details>
-      {findings.length > 0 && <div className="requirement-findings">{findings.map(finding => <details key={finding.id}>
-        <summary><span className={`severity severity-${finding.severity}`}>{finding.severity}</span>{finding.title}</summary>
-        <p>{finding.detail}</p>
-        <small>{finding.evidenceStrength ?? 'unknown'} evidence{finding.confidence !== undefined ? ` · ${Math.round(finding.confidence * 100)}% confidence` : ''} · policy {finding.policyVersion ?? 'unknown'} · schema {finding.schemaVersion ?? 'unknown'} · source {finding.sourceRevision ?? 'catalog'} · {finding.generatedAt ? new Date(finding.generatedAt).toLocaleString() : 'pending projection'}</small>
-        {(finding.sourcePassages?.length ?? 0) > 0 && <div className="finding-passages"><b>Conflicting or incomplete source</b>{finding.sourcePassages?.map((passage, index) => <blockquote key={`${finding.id}:passage:${index}`}>“{passage}”</blockquote>)}</div>}
-        {((finding.affectedFlowIds?.length ?? 0) > 0 || (finding.affectedTargetIds?.length ?? 0) > 0) && <div className="finding-impact"><b>Affected graph</b>{finding.affectedFlowIds?.map(id => <code key={id}>{id}</code>)}{finding.affectedTargetIds?.map(id => <code key={id}>{id}</code>)}</div>}
-        {finding.remediation && <p className="finding-remediation"><b>Next:</b> {finding.remediation}</p>}
-        {(finding.remediationOptions?.length ?? 0) > 0 && <div className="remediation-options" aria-label="Remediation choices">{finding.remediationOptions?.map(option => <span key={option}>{option}</span>)}</div>}
-        {(finding.evidence?.length ?? 0) > 0 && <code>{finding.evidence?.join(' · ')}</code>}
-      </details>)}</div>}
-    </article>
-  })}</div></>
+  const [freshness, setFreshness] = useState<
+    'unknown' | 'fresh' | 'stale' | 'failed'
+  >('unknown')
+  useEffect(() => {
+    api
+      .requirementFreshness()
+      .then(value => setFreshness(value.freshnessStatus))
+      .catch(() => setFreshness('failed'))
+  }, [])
+  return (
+    <>
+      <PageHeading
+        eyebrow="Product intent"
+        title="Requirements & inferred flows"
+        detail="Jira stays authoritative. AI proposals remain visibly separate until reviewed."
+        action={
+          <div className={`header-badge freshness-${freshness}`}>
+            <Database /> Jira {freshness}
+          </div>
+        }
+      />
+      <div className="requirements-grid">
+        {data.requirements.map(requirement => {
+          const flows = data.flows.filter(
+            flow => flow.requirementId === requirement.id
+          )
+          const suggestions = data.suggestions.filter(
+            item =>
+              item.requirementId === requirement.id && item.state === 'proposed'
+          )
+          const findings = data.findings.filter(
+            item =>
+              item.subjectId === requirement.id ||
+              item.sourceRevision?.startsWith(`${requirement.jiraKey}@`)
+          )
+          return (
+            <article className="requirement-card" key={requirement.id}>
+              <div className="requirement-key">{requirement.jiraKey}</div>
+              <span className="issue-type">{requirement.issueType}</span>
+              <h3>{requirement.summary}</h3>
+              <p>{requirement.description}</p>
+              <div className="requirement-meta">
+                <span>
+                  <CircleDot /> {requirement.status}
+                </span>
+                <span>
+                  <Network /> {flows.length} confirmed flows
+                </span>
+                <span>
+                  <Sparkles /> {suggestions.length} proposals
+                </span>
+                <span
+                  className={findings.length ? 'requirement-gap-count' : ''}
+                >
+                  <AlertTriangle /> {findings.length} quality findings
+                </span>
+              </div>
+              <details className="requirement-flows">
+                <summary>
+                  <Network size={14} /> Confirmed actor-step flows
+                </summary>
+                {flows.length ? (
+                  flows.map(flow => {
+                    const steps = flow.steps ?? []
+                    return (
+                      <section className="requirement-flow" key={flow.id}>
+                        <strong>{flow.title}</strong>
+                        <small>
+                          {flow.origin ?? 'confirmed'} · {steps.length} steps
+                        </small>
+                        <ol className="flow-steps">
+                          {steps.map(step => (
+                            <li
+                              key={step.id}
+                              className={`flow-step-${step.variant}`}
+                            >
+                              <b>{step.position}</b>
+                              <div>
+                                <strong>{step.actor}</strong>
+                                <span>{step.action}</span>
+                                <small>Expected: {step.expectedOutcome}</small>
+                                {(step.targetIds ?? []).length > 0 && (
+                                  <div className="flow-targets">
+                                    {step.targetIds.map(target => (
+                                      <code key={target}>{target}</code>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                        {!steps.length && (
+                          <p className="flow-empty">
+                            This reviewed flow has no stored steps yet.
+                          </p>
+                        )}
+                      </section>
+                    )
+                  })
+                ) : (
+                  <p className="flow-empty">
+                    No reviewed flow is attached to this requirement yet. AI
+                    proposals remain in the review queue until confirmed.
+                  </p>
+                )}
+              </details>
+              {findings.length > 0 && (
+                <div className="requirement-findings">
+                  {findings.map(finding => (
+                    <details key={finding.id}>
+                      <summary>
+                        <span
+                          className={`severity severity-${finding.severity}`}
+                        >
+                          {finding.severity}
+                        </span>
+                        {finding.title}
+                      </summary>
+                      <p>{finding.detail}</p>
+                      <small>
+                        {finding.evidenceStrength ?? 'unknown'} evidence
+                        {finding.confidence !== undefined
+                          ? ` · ${Math.round(finding.confidence * 100)}% confidence`
+                          : ''}{' '}
+                        · policy {finding.policyVersion ?? 'unknown'} · schema{' '}
+                        {finding.schemaVersion ?? 'unknown'} · source{' '}
+                        {finding.sourceRevision ?? 'catalog'} ·{' '}
+                        {finding.generatedAt
+                          ? new Date(finding.generatedAt).toLocaleString()
+                          : 'pending projection'}
+                      </small>
+                      {(finding.sourcePassages?.length ?? 0) > 0 && (
+                        <div className="finding-passages">
+                          <b>Conflicting or incomplete source</b>
+                          {finding.sourcePassages?.map((passage, index) => (
+                            <blockquote key={`${finding.id}:passage:${index}`}>
+                              “{passage}”
+                            </blockquote>
+                          ))}
+                        </div>
+                      )}
+                      {((finding.affectedFlowIds?.length ?? 0) > 0 ||
+                        (finding.affectedTargetIds?.length ?? 0) > 0) && (
+                        <div className="finding-impact">
+                          <b>Affected graph</b>
+                          {finding.affectedFlowIds?.map(id => (
+                            <code key={id}>{id}</code>
+                          ))}
+                          {finding.affectedTargetIds?.map(id => (
+                            <code key={id}>{id}</code>
+                          ))}
+                        </div>
+                      )}
+                      {finding.remediation && (
+                        <p className="finding-remediation">
+                          <b>Next:</b> {finding.remediation}
+                        </p>
+                      )}
+                      {(finding.remediationOptions?.length ?? 0) > 0 && (
+                        <div
+                          className="remediation-options"
+                          aria-label="Remediation choices"
+                        >
+                          {finding.remediationOptions?.map(option => (
+                            <span key={option}>{option}</span>
+                          ))}
+                        </div>
+                      )}
+                      {(finding.evidence?.length ?? 0) > 0 && (
+                        <code>{finding.evidence?.join(' · ')}</code>
+                      )}
+                    </details>
+                  ))}
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </>
+  )
 }
 
 function Operations({ data }: { data: Portfolio }) {
-  const failed = data.repositories.filter(item => item.lastScanStatus === 'failed')
-  const active = data.repositories.filter(item => item.lastScanStatus === 'queued' || item.lastScanStatus === 'running')
-  const parserErrors = data.diagnostics.filter(item => item.severity === 'error')
-  return <><PageHeading eyebrow="Runtime control" title="Operations" detail="Inspect scan freshness, parser failures, and asynchronous workflow recovery signals." action={<div className="header-badge"><Activity /> live catalog</div>} /><section className="stats-grid compact-stats"><Stat label="Active scans" value={active.length} detail="queued or running" /><Stat label="Failed scans" value={failed.length} detail="safe retry from repository inventory" tone={failed.length ? 'danger' : 'neutral'} /><Stat label="Parser errors" value={parserErrors.length} detail="from the latest revision" tone={parserErrors.length ? 'danger' : 'neutral'} /><Stat label="Jira sources" value={data.requirements.length} detail="requirements currently indexed" /></section><section className="panel"><div className="panel-heading"><div><p className="eyebrow">Workflow health</p><h2>Source and parser diagnostics</h2></div></div>{data.repositories.map(repository => { const diagnostics = data.diagnostics.filter(item => item.repositoryId === repository.id); return <article className="finding-row" key={repository.id}><GitBranch size={17} /><div><strong>{repository.name} · {repository.lastScanStatus}</strong><small>{repository.lastScanRevision?.slice(0, 12) ?? 'No completed revision'} · {repository.lastScanAt ? new Date(repository.lastScanAt).toLocaleString() : 'not scanned'}</small>{diagnostics.length ? <p>{diagnostics.length} parser diagnostics: {diagnostics.map(item => item.code).join(', ')}</p> : <p>No parser diagnostics in the latest scan.</p>}</div></article>})}</section></>
+  const failed = data.repositories.filter(
+    item => item.lastScanStatus === 'failed'
+  )
+  const active = data.repositories.filter(
+    item =>
+      item.lastScanStatus === 'queued' || item.lastScanStatus === 'running'
+  )
+  const parserErrors = data.diagnostics.filter(
+    item => item.severity === 'error'
+  )
+  return (
+    <>
+      <PageHeading
+        eyebrow="Runtime control"
+        title="Operations"
+        detail="Inspect scan freshness, parser failures, and asynchronous workflow recovery signals."
+        action={
+          <div className="header-badge">
+            <Activity /> live catalog
+          </div>
+        }
+      />
+      <section className="stats-grid compact-stats">
+        <Stat
+          label="Active scans"
+          value={active.length}
+          detail="queued or running"
+        />
+        <Stat
+          label="Failed scans"
+          value={failed.length}
+          detail="safe retry from repository inventory"
+          tone={failed.length ? 'danger' : 'neutral'}
+        />
+        <Stat
+          label="Parser errors"
+          value={parserErrors.length}
+          detail="from the latest revision"
+          tone={parserErrors.length ? 'danger' : 'neutral'}
+        />
+        <Stat
+          label="Jira sources"
+          value={data.requirements.length}
+          detail="requirements currently indexed"
+        />
+      </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Workflow health</p>
+            <h2>Source and parser diagnostics</h2>
+          </div>
+        </div>
+        {data.repositories.map(repository => {
+          const diagnostics = data.diagnostics.filter(
+            item => item.repositoryId === repository.id
+          )
+          return (
+            <article className="finding-row" key={repository.id}>
+              <GitBranch size={17} />
+              <div>
+                <strong>
+                  {repository.name} · {repository.lastScanStatus}
+                </strong>
+                <small>
+                  {repository.lastScanRevision?.slice(0, 12) ??
+                    'No completed revision'}{' '}
+                  ·{' '}
+                  {repository.lastScanAt
+                    ? new Date(repository.lastScanAt).toLocaleString()
+                    : 'not scanned'}
+                </small>
+                {diagnostics.length ? (
+                  <p>
+                    {diagnostics.length} parser diagnostics:{' '}
+                    {diagnostics.map(item => item.code).join(', ')}
+                  </p>
+                ) : (
+                  <p>No parser diagnostics in the latest scan.</p>
+                )}
+              </div>
+            </article>
+          )
+        })}
+      </section>
+    </>
+  )
 }
 
 function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
 }
 
-function FlowReviewDetail({ data, requirement, payload, evidence }: { data: Portfolio; requirement: Portfolio['requirements'][number] | undefined; payload: Record<string, unknown>; evidence: string[] }) {
+function FlowReviewDetail({
+  data,
+  requirement,
+  payload,
+  evidence,
+}: {
+  data: Portfolio
+  requirement: Portfolio['requirements'][number] | undefined
+  payload: Record<string, unknown>
+  evidence: string[]
+}) {
   const flow = payload as unknown as Partial<Flow>
   const steps = Array.isArray(flow.steps) ? flow.steps : []
   const targetName = (targetId: string) => {
@@ -547,97 +1832,427 @@ function FlowReviewDetail({ data, requirement, payload, evidence }: { data: Port
     if (operation) return `${operation.method.toUpperCase()} ${operation.path}`
     const surface = data.surfaces.find(item => item.id === targetId)
     if (surface) return `${surface.kind}: ${surface.name}`
-    return targetId.startsWith('criterion:') ? `Jira criterion: ${targetId.slice('criterion:'.length)}` : targetId
+    return targetId.startsWith('criterion:')
+      ? `Jira criterion: ${targetId.slice('criterion:'.length)}`
+      : targetId
   }
-  const suggestedTests = requirement ? data.suggestions.filter(item => item.requirementId === requirement.id && item.type === 'expected-test') : []
-  const analysis = payload.analysis && typeof payload.analysis === 'object' ? payload.analysis as Record<string, unknown> : undefined
-  return <div className="flow-review-detail">
-    <section className="jira-source-panel" aria-label="Jira source">
-      <div className="flow-panel-label"><BookOpen size={14} /> Jira source</div>
-      <strong>{requirement?.jiraKey ?? 'Source unavailable'} · {requirement?.updatedAt ? new Date(requirement.updatedAt).toLocaleString() : 'revision unavailable'}</strong>
-      <p>{requirement?.description || 'No Jira description was synchronized.'}</p>
-      <ol>{requirement?.acceptanceCriteria?.map(criterion => <li key={criterion.fingerprint}>{criterion.text}</li>) ?? <li>No acceptance criteria were synchronized.</li>}</ol>
-      <small>Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small>
-    </section>
-    <section className="flow-graph-panel" aria-label="Proposed flow graph">
-      <div className="flow-panel-label"><Network size={14} /> Proposed flow graph</div>
-      <div className="flow-context"><span>Actors: {stringList(flow.actors).join(' · ') || 'not inferred'}</span>{typeof flow.trigger === 'string' && <span>Trigger: {flow.trigger}</span>}</div>
-      <ol className="flow-steps">{steps.map((step, index) => <li key={step.id ?? index} className={`flow-step-${step.variant}`}><b>{step.position ?? index + 1}</b><div><strong>{step.actor}</strong><span>{step.action}</span><small>Expected: {step.expectedOutcome}</small>{step.targetIds.length > 0 && <div className="flow-targets">{step.targetIds.map(target => <code key={target}>{targetName(target)}</code>)}</div>}</div></li>)}</ol>
-      {!steps.length && <p className="flow-empty">No structured steps were proposed.</p>}
-    </section>
-    <section className="flow-provenance-panel" aria-label="Review evidence and provenance">
-      <div className="flow-panel-label"><Sparkles size={14} /> Evidence & provenance</div>
-      <div className="flow-boundaries">{stringList(flow.preconditions).map(item => <span key={`pre:${item}`}>Precondition: {item}</span>)}{stringList(flow.authorizationBoundaries).map(item => <span key={`auth:${item}`}>Authorization: {item}</span>)}{stringList(flow.tenantBoundaries).map(item => <span key={`tenant:${item}`}>Tenant: {item}</span>)}</div>
-      <div className="evidence-list">{evidence.map(item => <blockquote key={item}>“{item}”</blockquote>)}</div>
-      <div className="suggested-test-list"><b>Suggested tests</b>{suggestedTests.length ? suggestedTests.map(item => <span key={item.id}>{item.title}</span>) : <span>No test proposals were generated for this revision.</span>}</div>
-      <small>Prompt {String(analysis?.promptVersion ?? 'unknown')} · schema {String(analysis?.schemaVersion ?? 'unknown')} · model {String(analysis?.model ?? 'unknown')} · unreviewed semantic evidence</small>
-    </section>
-  </div>
+  const suggestedTests = requirement
+    ? data.suggestions.filter(
+        item =>
+          item.requirementId === requirement.id && item.type === 'expected-test'
+      )
+    : []
+  const analysis =
+    payload.analysis && typeof payload.analysis === 'object'
+      ? (payload.analysis as Record<string, unknown>)
+      : undefined
+  return (
+    <div className="flow-review-detail">
+      <section className="jira-source-panel" aria-label="Jira source">
+        <div className="flow-panel-label">
+          <BookOpen size={14} /> Jira source
+        </div>
+        <strong>
+          {requirement?.jiraKey ?? 'Source unavailable'} ·{' '}
+          {requirement?.updatedAt
+            ? new Date(requirement.updatedAt).toLocaleString()
+            : 'revision unavailable'}
+        </strong>
+        <p>
+          {requirement?.description || 'No Jira description was synchronized.'}
+        </p>
+        <ol>
+          {requirement?.acceptanceCriteria?.map(criterion => (
+            <li key={criterion.fingerprint}>{criterion.text}</li>
+          )) ?? <li>No acceptance criteria were synchronized.</li>}
+        </ol>
+        <small>
+          Source revision:{' '}
+          {requirement
+            ? `${requirement.jiraKey}@${requirement.updatedAt}`
+            : 'unknown'}
+        </small>
+      </section>
+      <section className="flow-graph-panel" aria-label="Proposed flow graph">
+        <div className="flow-panel-label">
+          <Network size={14} /> Proposed flow graph
+        </div>
+        <div className="flow-context">
+          <span>
+            Actors: {stringList(flow.actors).join(' · ') || 'not inferred'}
+          </span>
+          {typeof flow.trigger === 'string' && (
+            <span>Trigger: {flow.trigger}</span>
+          )}
+        </div>
+        <ol className="flow-steps">
+          {steps.map((step, index) => (
+            <li key={step.id ?? index} className={`flow-step-${step.variant}`}>
+              <b>{step.position ?? index + 1}</b>
+              <div>
+                <strong>{step.actor}</strong>
+                <span>{step.action}</span>
+                <small>Expected: {step.expectedOutcome}</small>
+                {step.targetIds.length > 0 && (
+                  <div className="flow-targets">
+                    {step.targetIds.map(target => (
+                      <code key={target}>{targetName(target)}</code>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+        {!steps.length && (
+          <p className="flow-empty">No structured steps were proposed.</p>
+        )}
+      </section>
+      <section
+        className="flow-provenance-panel"
+        aria-label="Review evidence and provenance"
+      >
+        <div className="flow-panel-label">
+          <Sparkles size={14} /> Evidence & provenance
+        </div>
+        <div className="flow-boundaries">
+          {stringList(flow.preconditions).map(item => (
+            <span key={`pre:${item}`}>Precondition: {item}</span>
+          ))}
+          {stringList(flow.authorizationBoundaries).map(item => (
+            <span key={`auth:${item}`}>Authorization: {item}</span>
+          ))}
+          {stringList(flow.tenantBoundaries).map(item => (
+            <span key={`tenant:${item}`}>Tenant: {item}</span>
+          ))}
+        </div>
+        <div className="evidence-list">
+          {evidence.map(item => (
+            <blockquote key={item}>“{item}”</blockquote>
+          ))}
+        </div>
+        <div className="suggested-test-list">
+          <b>Suggested tests</b>
+          {suggestedTests.length ? (
+            suggestedTests.map(item => <span key={item.id}>{item.title}</span>)
+          ) : (
+            <span>No test proposals were generated for this revision.</span>
+          )}
+        </div>
+        <small>
+          Prompt {String(analysis?.promptVersion ?? 'unknown')} · schema{' '}
+          {String(analysis?.schemaVersion ?? 'unknown')} · model{' '}
+          {String(analysis?.model ?? 'unknown')} · unreviewed semantic evidence
+        </small>
+      </section>
+    </div>
+  )
 }
 
-function SuggestionActions({ id, payload, onComplete }: { id: string; payload: Record<string, unknown>; onComplete: () => Promise<void> }) {
+function SuggestionActions({
+  id,
+  payload,
+  onComplete,
+}: {
+  id: string
+  payload: Record<string, unknown>
+  onComplete: () => Promise<void>
+}) {
   const [reason, setReason] = useState('')
   const [owner, setOwner] = useState('')
   const [expiresAt, setExpiresAt] = useState('')
   const [mergeIntoSuggestionId, setMergeIntoSuggestionId] = useState('')
-  const [editedPayload, setEditedPayload] = useState(JSON.stringify(payload, null, 2))
+  const [editedPayload, setEditedPayload] = useState(
+    JSON.stringify(payload, null, 2)
+  )
   const [error, setError] = useState('')
-  async function submit(decision: 'confirm' | 'edit' | 'reject' | 'merge' | 'suppress') {
+  async function submit(
+    decision: 'confirm' | 'edit' | 'reject' | 'merge' | 'suppress'
+  ) {
     setError('')
     try {
-      const value: Record<string, unknown> = { decision, reason: reason || undefined }
+      const value: Record<string, unknown> = {
+        decision,
+        reason: reason || undefined,
+      }
       if (decision === 'edit') value.editedPayload = JSON.parse(editedPayload)
-      if (decision === 'merge') value.mergeIntoSuggestionId = mergeIntoSuggestionId
+      if (decision === 'merge')
+        value.mergeIntoSuggestionId = mergeIntoSuggestionId
       // Assign the two suppression fields explicitly rather than spreading an
       // object into `value`: an Object.assign here is a mass-assignment shape
       // that grows silently if the source object ever gains fields.
-      if (decision === 'suppress') { value.owner = owner; value.expiresAt = expiresAt }
+      if (decision === 'suppress') {
+        value.owner = owner
+        value.expiresAt = expiresAt
+      }
       await api.decideSuggestion(id, value)
       await onComplete()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
   }
-  return <div className="suggestion-actions"><div className="review-actions"><button className="reject-button" onClick={() => submit('reject')}><X size={16} /> Reject</button><button className="confirm-button" onClick={() => submit('confirm')}><Check size={16} /> Confirm</button></div><details><summary>Govern this proposal</summary><label>Reason<input value={reason} onChange={event => setReason(event.target.value)} placeholder="Required for suppression" /></label><label>Edited payload<textarea value={editedPayload} onChange={event => setEditedPayload(event.target.value)} /></label><button className="secondary-button" onClick={() => submit('edit')}>Save edit for review</button><label>Merge into suggestion ID<input value={mergeIntoSuggestionId} onChange={event => setMergeIntoSuggestionId(event.target.value)} placeholder="Target proposal UUID" /></label><button className="secondary-button" onClick={() => submit('merge')}>Merge and confirm</button><label>Suppression owner<input value={owner} onChange={event => setOwner(event.target.value)} placeholder="Owning team" /></label><label>Suppression expiry<input type="datetime-local" value={expiresAt} onChange={event => setExpiresAt(event.target.value ? new Date(event.target.value).toISOString() : '')} /></label><button className="reject-button" onClick={() => submit('suppress')}>Suppress with expiry</button>{error && <p className="form-error">{error}</p>}</details></div>
+  return (
+    <div className="suggestion-actions">
+      <div className="review-actions">
+        <button className="reject-button" onClick={() => submit('reject')}>
+          <X size={16} /> Reject
+        </button>
+        <button className="confirm-button" onClick={() => submit('confirm')}>
+          <Check size={16} /> Confirm
+        </button>
+      </div>
+      <details>
+        <summary>Govern this proposal</summary>
+        <label>
+          Reason
+          <input
+            value={reason}
+            onChange={event => setReason(event.target.value)}
+            placeholder="Required for suppression"
+          />
+        </label>
+        <label>
+          Edited payload
+          <textarea
+            value={editedPayload}
+            onChange={event => setEditedPayload(event.target.value)}
+          />
+        </label>
+        <button className="secondary-button" onClick={() => submit('edit')}>
+          Save edit for review
+        </button>
+        <label>
+          Merge into suggestion ID
+          <input
+            value={mergeIntoSuggestionId}
+            onChange={event => setMergeIntoSuggestionId(event.target.value)}
+            placeholder="Target proposal UUID"
+          />
+        </label>
+        <button className="secondary-button" onClick={() => submit('merge')}>
+          Merge and confirm
+        </button>
+        <label>
+          Suppression owner
+          <input
+            value={owner}
+            onChange={event => setOwner(event.target.value)}
+            placeholder="Owning team"
+          />
+        </label>
+        <label>
+          Suppression expiry
+          <input
+            type="datetime-local"
+            value={expiresAt}
+            onChange={event =>
+              setExpiresAt(
+                event.target.value
+                  ? new Date(event.target.value).toISOString()
+                  : ''
+              )
+            }
+          />
+        </label>
+        <button className="reject-button" onClick={() => submit('suppress')}>
+          Suppress with expiry
+        </button>
+        {error && <p className="form-error">{error}</p>}
+      </details>
+    </div>
+  )
 }
 
-function ReviewQueue({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
+function ReviewQueue({
+  data,
+  reload,
+}: {
+  data: Portfolio
+  reload: () => Promise<void>
+}) {
   const proposals = data.suggestions.filter(item => item.state === 'proposed')
-  return <><PageHeading eyebrow="Human-in-the-loop" title="AI review queue" detail="Review Jira source, the proposed graph, candidates, and provenance before a semantic proposal can affect coverage." /><div className="review-list">{proposals.map(item => { const requirement = data.requirements.find(req => req.id === item.requirementId); const payload = item.payload ?? {}; return <article className="review-card" key={item.id}><div className="confidence"><Sparkles /><strong>{Math.round(item.confidence * 100)}%</strong><span>confidence</span></div><div className="review-body"><div className="review-context"><span>{requirement?.jiraKey ?? 'Unknown story'}</span><ChevronRight size={14} /><span>{item.type}</span></div><h3>{item.title}</h3>{item.type === 'flow' ? <FlowReviewDetail data={data} requirement={requirement} payload={payload} evidence={item.evidence} /> : <><div className="evidence-list">{item.evidence.map(evidence => <blockquote key={evidence}>“{evidence}”</blockquote>)}</div><small className="review-source-revision">Source revision: {requirement ? `${requirement.jiraKey}@${requirement.updatedAt}` : 'unknown'}</small></>}</div><SuggestionActions id={item.id} payload={payload} onComplete={reload} /></article>})}{!proposals.length && <div className="empty-state roomy"><ShieldCheck /><strong>Review queue cleared</strong><span>New semantic proposals will appear after Jira analysis.</span></div>}</div></>
+  return (
+    <>
+      <PageHeading
+        eyebrow="Human-in-the-loop"
+        title="AI review queue"
+        detail="Review Jira source, the proposed graph, candidates, and provenance before a semantic proposal can affect coverage."
+      />
+      <div className="review-list">
+        {proposals.map(item => {
+          const requirement = data.requirements.find(
+            req => req.id === item.requirementId
+          )
+          const payload = item.payload ?? {}
+          return (
+            <article className="review-card" key={item.id}>
+              <div className="confidence">
+                <Sparkles />
+                <strong>{Math.round(item.confidence * 100)}%</strong>
+                <span>confidence</span>
+              </div>
+              <div className="review-body">
+                <div className="review-context">
+                  <span>{requirement?.jiraKey ?? 'Unknown story'}</span>
+                  <ChevronRight size={14} />
+                  <span>{item.type}</span>
+                </div>
+                <h3>{item.title}</h3>
+                {item.type === 'flow' ? (
+                  <FlowReviewDetail
+                    data={data}
+                    requirement={requirement}
+                    payload={payload}
+                    evidence={item.evidence}
+                  />
+                ) : (
+                  <>
+                    <div className="evidence-list">
+                      {item.evidence.map(evidence => (
+                        <blockquote key={evidence}>“{evidence}”</blockquote>
+                      ))}
+                    </div>
+                    <small className="review-source-revision">
+                      Source revision:{' '}
+                      {requirement
+                        ? `${requirement.jiraKey}@${requirement.updatedAt}`
+                        : 'unknown'}
+                    </small>
+                  </>
+                )}
+              </div>
+              <SuggestionActions
+                id={item.id}
+                payload={payload}
+                onComplete={reload}
+              />
+            </article>
+          )
+        })}
+        {!proposals.length && (
+          <div className="empty-state roomy">
+            <ShieldCheck />
+            <strong>Review queue cleared</strong>
+            <span>New semantic proposals will appear after Jira analysis.</span>
+          </div>
+        )}
+      </div>
+    </>
+  )
 }
 
-function RepositoryAdministrationCard({ repository, reload }: { repository: Repository; reload: () => Promise<void> }) {
+function RepositoryAdministrationCard({
+  repository,
+  reload,
+}: {
+  repository: Repository
+  reload: () => Promise<void>
+}) {
   const [team, setTeam] = useState(repository.ownership?.team ?? '')
   const [contact, setContact] = useState(repository.ownership?.contact ?? '')
-  const [jiraProject, setJiraProject] = useState(repository.jiraBindings[0]?.project ?? '')
-  const [jiraComponent, setJiraComponent] = useState(repository.jiraBindings[0]?.component ?? '')
-  const [storybookBaseUrl, setStorybookBaseUrl] = useState(repository.storybookBaseUrl ?? '')
+  const [jiraProject, setJiraProject] = useState(
+    repository.jiraBindings[0]?.project ?? ''
+  )
+  const [jiraComponent, setJiraComponent] = useState(
+    repository.jiraBindings[0]?.component ?? ''
+  )
+  const [storybookBaseUrl, setStorybookBaseUrl] = useState(
+    repository.storybookBaseUrl ?? ''
+  )
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   async function save() {
-    setBusy(true); setSaved(false)
+    setBusy(true)
+    setSaved(false)
     try {
       await api.updateRepositoryAdministration(repository.id, {
         ownership: team ? { team, contact: contact || undefined } : undefined,
-        jiraBindings: jiraProject ? [{ project: jiraProject.toUpperCase(), component: jiraComponent || undefined }] : [],
+        jiraBindings: jiraProject
+          ? [
+              {
+                project: jiraProject.toUpperCase(),
+                component: jiraComponent || undefined,
+              },
+            ]
+          : [],
         storybookBaseUrl: storybookBaseUrl || undefined,
       })
       setSaved(true)
       await reload()
-    } finally { setBusy(false) }
+    } finally {
+      setBusy(false)
+    }
   }
-  return <article className="repository-admin-card">
-    <div className="repository-admin-title"><div className="repo-mark">{repository.name.slice(0, 2).toUpperCase()}</div><div><strong>{repository.name}</strong><small>{repository.owner}</small></div>{saved && <span>Saved</span>}</div>
-    <div className="repository-admin-fields">
-      <label>Owning team<input value={team} onChange={event => setTeam(event.target.value)} placeholder="Platform" /></label>
-      <label>Owner contact<input value={contact} onChange={event => setContact(event.target.value)} type="email" placeholder="team@example.com" /></label>
-      <label>Jira project<input value={jiraProject} onChange={event => setJiraProject(event.target.value)} placeholder="FQ" /></label>
-      <label>Jira component<input value={jiraComponent} onChange={event => setJiraComponent(event.target.value)} placeholder="Catalog" /></label>
-      <label className="wide-field">Storybook URL<input value={storybookBaseUrl} onChange={event => setStorybookBaseUrl(event.target.value)} type="url" placeholder="https://storybook.example.com" /></label>
-    </div>
-    <button className="secondary-button" disabled={busy} onClick={save}><Save size={14} /> {busy ? 'Saving…' : 'Save bindings'}</button>
-  </article>
+  return (
+    <article className="repository-admin-card">
+      <div className="repository-admin-title">
+        <div className="repo-mark">
+          {repository.name.slice(0, 2).toUpperCase()}
+        </div>
+        <div>
+          <strong>{repository.name}</strong>
+          <small>{repository.owner}</small>
+        </div>
+        {saved && <span>Saved</span>}
+      </div>
+      <div className="repository-admin-fields">
+        <label>
+          Owning team
+          <input
+            value={team}
+            onChange={event => setTeam(event.target.value)}
+            placeholder="Platform"
+          />
+        </label>
+        <label>
+          Owner contact
+          <input
+            value={contact}
+            onChange={event => setContact(event.target.value)}
+            type="email"
+            placeholder="team@example.com"
+          />
+        </label>
+        <label>
+          Jira project
+          <input
+            value={jiraProject}
+            onChange={event => setJiraProject(event.target.value)}
+            placeholder="FQ"
+          />
+        </label>
+        <label>
+          Jira component
+          <input
+            value={jiraComponent}
+            onChange={event => setJiraComponent(event.target.value)}
+            placeholder="Catalog"
+          />
+        </label>
+        <label className="wide-field">
+          Storybook URL
+          <input
+            value={storybookBaseUrl}
+            onChange={event => setStorybookBaseUrl(event.target.value)}
+            type="url"
+            placeholder="https://storybook.example.com"
+          />
+        </label>
+      </div>
+      <button className="secondary-button" disabled={busy} onClick={save}>
+        <Save size={14} /> {busy ? 'Saving…' : 'Save bindings'}
+      </button>
+    </article>
+  )
 }
 
-function OrganizationSettings({ data, reload }: { data: Portfolio; reload: () => Promise<void> }) {
+function OrganizationSettings({
+  data,
+  reload,
+}: {
+  data: Portfolio
+  reload: () => Promise<void>
+}) {
   const roles: OrganizationRole[] = ['owner', 'admin', 'member', 'viewer']
   const [members, setMembers] = useState<OrganizationMember[]>([])
   const [email, setEmail] = useState('')
@@ -648,136 +2263,446 @@ function OrganizationSettings({ data, reload }: { data: Portfolio; reload: () =>
     setLoading(true)
     try {
       const result = await api.organizationMembers()
-      setMembers(Array.isArray(result) ? result : result.items ?? result.members ?? [])
+      setMembers(
+        Array.isArray(result) ? result : (result.items ?? result.members ?? [])
+      )
       setError('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
-  useEffect(() => { void loadMembers() }, [])
+  useEffect(() => {
+    void loadMembers()
+  }, [])
   async function invite(event: FormEvent) {
     event.preventDefault()
     await api.inviteOrganizationMember(email, role)
     setEmail('')
     await loadMembers()
   }
-  async function updateRole(member: OrganizationMember, nextRole: OrganizationRole) {
+  async function updateRole(
+    member: OrganizationMember,
+    nextRole: OrganizationRole
+  ) {
     await api.updateOrganizationMember(member.id, nextRole)
     await loadMembers()
   }
   async function remove(member: OrganizationMember) {
-    if (!window.confirm(`Remove ${member.email ?? member.name ?? member.id} from this organization?`)) return
+    if (
+      !window.confirm(
+        `Remove ${member.email ?? member.name ?? member.id} from this organization?`
+      )
+    )
+      return
     await api.removeOrganizationMember(member.id)
     await loadMembers()
   }
-  return <>
-    <PageHeading eyebrow="Tenant administration" title="Organization access & integrations" detail="Membership delegates to FuzeFront security. FuzeQuality owns only QA repository ownership and integration bindings." />
-    <section className="organization-settings-grid">
-      <article className="panel">
-        <div className="panel-heading"><div><p className="eyebrow">FuzeFront security</p><h2>Members & roles</h2></div><span className="header-badge"><Users /> {members.length}</span></div>
-        <form className="member-invite" onSubmit={invite}><input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="teammate@example.com" required /><select value={role} onChange={event => setRole(event.target.value as OrganizationRole)}>{roles.map(item => <option key={item}>{item}</option>)}</select><button className="primary-button"><UserPlus size={15} /> Invite</button></form>
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="member-list">
-          {members.map(member => <div className="member-row" key={member.id}><div><strong>{member.displayName ?? member.name ?? member.email ?? member.userId ?? member.user_id ?? member.id}</strong><small>{member.email ?? member.status ?? 'Active member'}</small></div><select value={member.role} onChange={event => updateRole(member, event.target.value as OrganizationRole)}>{roles.map(item => <option key={item}>{item}</option>)}</select><button className="icon-button danger-button" onClick={() => remove(member)} aria-label="Remove member"><Trash2 size={14} /></button></div>)}
-          {!loading && !members.length && <div className="empty-state"><Users /><strong>No members returned</strong><span>Membership remains authoritative in FuzeFront security.</span></div>}
-          {loading && <div className="loading-row"><RefreshCw className="spin" size={15} /> Loading members…</div>}
-        </div>
-      </article>
-      <article className="panel">
-        <div className="panel-heading"><div><p className="eyebrow">QA source ownership</p><h2>Repositories & bindings</h2></div><span className="header-badge"><GitBranch /> {data.repositories.length}</span></div>
-        <div className="repository-admin-list">{data.repositories.map(repository => <RepositoryAdministrationCard key={repository.id} repository={repository} reload={reload} />)}</div>
-      </article>
-    </section>
-  </>
+  return (
+    <>
+      <PageHeading
+        eyebrow="Tenant administration"
+        title="Organization access & integrations"
+        detail="Membership delegates to FuzeFront security. FuzeQuality owns only QA repository ownership and integration bindings."
+      />
+      <section className="organization-settings-grid">
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">FuzeFront security</p>
+              <h2>Members & roles</h2>
+            </div>
+            <span className="header-badge">
+              <Users /> {members.length}
+            </span>
+          </div>
+          <form className="member-invite" onSubmit={invite}>
+            <input
+              type="email"
+              value={email}
+              onChange={event => setEmail(event.target.value)}
+              placeholder="teammate@example.com"
+              required
+            />
+            <select
+              value={role}
+              onChange={event =>
+                setRole(event.target.value as OrganizationRole)
+              }
+            >
+              {roles.map(item => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+            <button className="primary-button">
+              <UserPlus size={15} /> Invite
+            </button>
+          </form>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="member-list">
+            {members.map(member => (
+              <div className="member-row" key={member.id}>
+                <div>
+                  <strong>
+                    {member.displayName ??
+                      member.name ??
+                      member.email ??
+                      member.userId ??
+                      member.user_id ??
+                      member.id}
+                  </strong>
+                  <small>
+                    {member.email ?? member.status ?? 'Active member'}
+                  </small>
+                </div>
+                <select
+                  value={member.role}
+                  onChange={event =>
+                    updateRole(member, event.target.value as OrganizationRole)
+                  }
+                >
+                  {roles.map(item => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+                <button
+                  className="icon-button danger-button"
+                  onClick={() => remove(member)}
+                  aria-label="Remove member"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+            {!loading && !members.length && (
+              <div className="empty-state">
+                <Users />
+                <strong>No members returned</strong>
+                <span>
+                  Membership remains authoritative in FuzeFront security.
+                </span>
+              </div>
+            )}
+            {loading && (
+              <div className="loading-row">
+                <RefreshCw className="spin" size={15} /> Loading members…
+              </div>
+            )}
+          </div>
+        </article>
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">QA source ownership</p>
+              <h2>Repositories & bindings</h2>
+            </div>
+            <span className="header-badge">
+              <GitBranch /> {data.repositories.length}
+            </span>
+          </div>
+          <div className="repository-admin-list">
+            {data.repositories.map(repository => (
+              <RepositoryAdministrationCard
+                key={repository.id}
+                repository={repository}
+                reload={reload}
+              />
+            ))}
+          </div>
+        </article>
+      </section>
+    </>
+  )
 }
 
-function OrganizationAdministration({ organizations }: { organizations: OrganizationQualitySummary[] }) {
+function OrganizationAdministration({
+  organizations,
+}: {
+  organizations: OrganizationQualitySummary[]
+}) {
   const [query, setQuery] = useState('')
   const [context, setContext] = useState<AdminTenantContext>()
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
-  const visible = organizations.filter(item => item.organizationId.toLowerCase().includes(query.toLowerCase()))
+  const visible = organizations.filter(item =>
+    item.organizationId.toLowerCase().includes(query.toLowerCase())
+  )
   async function enter(organizationId: string) {
     setBusy(organizationId)
     setError('')
     try {
-      setContext(await api.enterOrganizationContext(organizationId, 'Platform QA portfolio review'))
+      setContext(
+        await api.enterOrganizationContext(
+          organizationId,
+          'Platform QA portfolio review'
+        )
+      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setBusy('')
     }
   }
-  const contextSummary = context ? coverageSummary(context.portfolio.expectations) : undefined
-  return <>
-    {context && <div className="tenant-context-banner" role="status">
-      <LockKeyhole size={17} />
-      <div><strong>Read-only organization context</strong><span>{context.organizationId} · audited as {context.auditId.slice(0, 8)}</span></div>
-      <button className="secondary-button" onClick={() => setContext(undefined)}><LogOut size={15} /> Exit context</button>
-    </div>}
-    <PageHeading
-      eyebrow="Platform administration"
-      title={context ? `Organization ${context.organizationId}` : 'Organization QA portfolio'}
-      detail={context ? 'This audited context exposes QA evidence only. Repository, integration, and review mutations remain unavailable.' : 'Compare inventory freshness, coverage, gaps, and scan health across organizations.'}
-      action={<div className="header-badge"><Building2 /> {organizations.length} organizations</div>}
-    />
-    {error && <div className="error-banner"><AlertTriangle /><div><strong>Organization context unavailable</strong><span>{error}</span></div></div>}
-    {context && contextSummary ? <section className="stats-grid" aria-label="Selected organization totals">
-      <Stat label="Repositories" value={context.portfolio.repositories.length} detail="read-only sources" />
-      <Stat label="API operations" value={context.portfolio.operations.length} detail="cataloged contracts" />
-      <Stat label="Frontend surfaces" value={context.portfolio.surfaces.length} detail="routes and components" />
-      <Stat label="Coverage" value={`${contextSummary.percent}%`} detail={`${contextSummary.gaps} gaps`} tone={contextSummary.gaps ? 'danger' : 'neutral'} />
-    </section> : <>
-      <div className="filter-bar"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Filter organizations…" /><span>{visible.length} shown</span></div>
-      <div className="organization-table">
-        <div className="organization-table-head"><span>Organization</span><span>Inventory</span><span>Coverage</span><span>Risk</span><span /></div>
-        {visible.map(item => <article key={item.organizationId}>
-          <div><strong>{item.organizationId}</strong><small>{item.latestScanAt ? `Latest scan ${new Date(item.latestScanAt).toLocaleString()}` : 'No completed scan'}</small></div>
-          <div><b>{item.repositories}</b><small>{item.apiOperations} APIs · {item.frontendSurfaces} UI · {item.tests} tests</small></div>
-          <div><b>{item.coveragePercent}%</b><small>{item.coveredExpectations} / {item.expectations} expectations</small></div>
-          <div className={item.gaps || item.failedScans ? 'organization-risk' : ''}><b>{item.gaps} gaps</b><small>{item.openFindings} findings · {item.failedScans} failed · {item.staleScans} stale</small></div>
-          <button className="secondary-button" disabled={busy === item.organizationId} onClick={() => enter(item.organizationId)}><LockKeyhole size={14} /> Review</button>
-        </article>)}
-        {!visible.length && <div className="empty-state"><Building2 /><strong>No organizations match</strong><span>Adjust the filter or onboard a tenant repository.</span></div>}
-      </div>
-    </>}
-  </>
+  const contextSummary = context
+    ? coverageSummary(context.portfolio.expectations)
+    : undefined
+  return (
+    <>
+      {context && (
+        <div className="tenant-context-banner" role="status">
+          <LockKeyhole size={17} />
+          <div>
+            <strong>Read-only organization context</strong>
+            <span>
+              {context.organizationId} · audited as{' '}
+              {context.auditId.slice(0, 8)}
+            </span>
+          </div>
+          <button
+            className="secondary-button"
+            onClick={() => setContext(undefined)}
+          >
+            <LogOut size={15} /> Exit context
+          </button>
+        </div>
+      )}
+      <PageHeading
+        eyebrow="Platform administration"
+        title={
+          context
+            ? `Organization ${context.organizationId}`
+            : 'Organization QA portfolio'
+        }
+        detail={
+          context
+            ? 'This audited context exposes QA evidence only. Repository, integration, and review mutations remain unavailable.'
+            : 'Compare inventory freshness, coverage, gaps, and scan health across organizations.'
+        }
+        action={
+          <div className="header-badge">
+            <Building2 /> {organizations.length} organizations
+          </div>
+        }
+      />
+      {error && (
+        <div className="error-banner">
+          <AlertTriangle />
+          <div>
+            <strong>Organization context unavailable</strong>
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+      {context && contextSummary ? (
+        <section
+          className="stats-grid"
+          aria-label="Selected organization totals"
+        >
+          <Stat
+            label="Repositories"
+            value={context.portfolio.repositories.length}
+            detail="read-only sources"
+          />
+          <Stat
+            label="API operations"
+            value={context.portfolio.operations.length}
+            detail="cataloged contracts"
+          />
+          <Stat
+            label="Frontend surfaces"
+            value={context.portfolio.surfaces.length}
+            detail="routes and components"
+          />
+          <Stat
+            label="Coverage"
+            value={`${contextSummary.percent}%`}
+            detail={`${contextSummary.gaps} gaps`}
+            tone={contextSummary.gaps ? 'danger' : 'neutral'}
+          />
+        </section>
+      ) : (
+        <>
+          <div className="filter-bar">
+            <Search size={16} />
+            <input
+              value={query}
+              onChange={event => setQuery(event.target.value)}
+              placeholder="Filter organizations…"
+            />
+            <span>{visible.length} shown</span>
+          </div>
+          <div className="organization-table">
+            <div className="organization-table-head">
+              <span>Organization</span>
+              <span>Inventory</span>
+              <span>Coverage</span>
+              <span>Risk</span>
+              <span />
+            </div>
+            {visible.map(item => (
+              <article key={item.organizationId}>
+                <div>
+                  <strong>{item.organizationId}</strong>
+                  <small>
+                    {item.latestScanAt
+                      ? `Latest scan ${new Date(item.latestScanAt).toLocaleString()}`
+                      : 'No completed scan'}
+                  </small>
+                </div>
+                <div>
+                  <b>{item.repositories}</b>
+                  <small>
+                    {item.apiOperations} APIs · {item.frontendSurfaces} UI ·{' '}
+                    {item.tests} tests
+                  </small>
+                </div>
+                <div>
+                  <b>{item.coveragePercent}%</b>
+                  <small>
+                    {item.coveredExpectations} / {item.expectations}{' '}
+                    expectations
+                  </small>
+                </div>
+                <div
+                  className={
+                    item.gaps || item.failedScans ? 'organization-risk' : ''
+                  }
+                >
+                  <b>{item.gaps} gaps</b>
+                  <small>
+                    {item.openFindings} findings · {item.failedScans} failed ·{' '}
+                    {item.staleScans} stale
+                  </small>
+                </div>
+                <button
+                  className="secondary-button"
+                  disabled={busy === item.organizationId}
+                  onClick={() => enter(item.organizationId)}
+                >
+                  <LockKeyhole size={14} /> Review
+                </button>
+              </article>
+            ))}
+            {!visible.length && (
+              <div className="empty-state">
+                <Building2 />
+                <strong>No organizations match</strong>
+                <span>Adjust the filter or onboard a tenant repository.</span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </>
+  )
 }
 
 function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
-  const [flowCandidates, setFlowCandidates] = useState<RepositoryFlowCandidate[]>([])
-  const [policyGateEvaluations, setPolicyGateEvaluations] = useState<PolicyGateEvaluation[]>([])
+  const [flowCandidates, setFlowCandidates] = useState<
+    RepositoryFlowCandidate[]
+  >([])
+  const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
+    PolicyGateEvaluation[]
+  >([])
   const [executions, setExecutions] = useState<TestExecution[]>([])
-  const [executionPerformance, setExecutionPerformance] = useState<Array<{ policyArtifactId: string; gateArtifactId: string; passed: number; failed: number; cancelled: number; running: number; latestCompletedAt?: string }>>([])
+  const [executionPerformance, setExecutionPerformance] = useState<
+    Array<{
+      policyArtifactId: string
+      gateArtifactId: string
+      passed: number
+      failed: number
+      cancelled: number
+      running: number
+      latestCompletedAt?: string
+    }>
+  >([])
   const [executionRepositoryId, setExecutionRepositoryId] = useState('')
-  const [executionKind, setExecutionKind] = useState<TestExecution['kind'] | ''>('')
-  const [executionStatus, setExecutionStatus] = useState<TestExecution['status'] | ''>('')
+  const [executionKind, setExecutionKind] = useState<
+    TestExecution['kind'] | ''
+  >('')
+  const [executionStatus, setExecutionStatus] = useState<
+    TestExecution['status'] | ''
+  >('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
-  const invalidExecutionRange = Boolean(executionFrom && executionUntil && Date.parse(executionFrom) > Date.parse(executionUntil))
-  const [policyGateKind, setPolicyGateKind] = useState<PolicyGateEvaluation['kind'] | ''>('')
-  const [policyGateSeverity, setPolicyGateSeverity] = useState<PolicyGateEvaluation['severity'] | ''>('')
-  const [policyGateReviewStatus, setPolicyGateReviewStatus] = useState<PolicyGateEvaluation['reviewStatus'] | ''>('')
+  const invalidExecutionRange = Boolean(
+    executionFrom &&
+    executionUntil &&
+    Date.parse(executionFrom) > Date.parse(executionUntil)
+  )
+  const [policyGateKind, setPolicyGateKind] = useState<
+    PolicyGateEvaluation['kind'] | ''
+  >('')
+  const [policyGateSeverity, setPolicyGateSeverity] = useState<
+    PolicyGateEvaluation['severity'] | ''
+  >('')
+  const [policyGateReviewStatus, setPolicyGateReviewStatus] = useState<
+    PolicyGateEvaluation['reviewStatus'] | ''
+  >('')
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
-  const reviewFlow = async (flow: RepositoryFlowCandidate, status: 'confirmed' | 'rejected') => {
-    const reviewed = await api.reviewRepositoryFlowCandidate(flow.repositoryId, flow.id, status)
-    setFlowCandidates(current => current.map(item => item.id === reviewed.id ? reviewed : item))
+  const reviewFlow = async (
+    flow: RepositoryFlowCandidate,
+    status: 'confirmed' | 'rejected'
+  ) => {
+    const reviewed = await api.reviewRepositoryFlowCandidate(
+      flow.repositoryId,
+      flow.id,
+      status
+    )
+    setFlowCandidates(current =>
+      current.map(item => (item.id === reviewed.id ? reviewed : item))
+    )
   }
-  const reviewPolicyGate = async (evaluation: PolicyGateEvaluation, status: 'accepted' | 'dismissed') => {
-    const reason = window.prompt(`Optional rationale for ${status === 'accepted' ? 'accepting' : 'dismissing'} this recommendation:`)?.trim()
-    const reviewed = await api.reviewPolicyGateEvaluation(evaluation.repositoryId, evaluation.id, status, reason || undefined)
-    setPolicyGateEvaluations(current => current.map(item => item.id === reviewed.id ? reviewed : item))
+  const reviewPolicyGate = async (
+    evaluation: PolicyGateEvaluation,
+    status: 'accepted' | 'dismissed'
+  ) => {
+    const reason = window
+      .prompt(
+        `Optional rationale for ${status === 'accepted' ? 'accepting' : 'dismissing'} this recommendation:`
+      )
+      ?.trim()
+    const reviewed = await api.reviewPolicyGateEvaluation(
+      evaluation.repositoryId,
+      evaluation.id,
+      status,
+      reason || undefined
+    )
+    setPolicyGateEvaluations(current =>
+      current.map(item => (item.id === reviewed.id ? reviewed : item))
+    )
   }
   const runPerformanceTest = async (artifact: QualityArtifact) => {
-    if (!window.confirm(`Dispatch ${artifact.title} on the repository default branch?`)) return
+    if (
+      !window.confirm(
+        `Dispatch ${artifact.title} on the repository default branch?`
+      )
+    )
+      return
     setDispatchingArtifact(artifact.id)
-    try { await api.runPerformanceTest(artifact.repositoryId, artifact.id) } finally { setDispatchingArtifact(undefined) }
+    try {
+      await api.runPerformanceTest(artifact.repositoryId, artifact.id)
+    } finally {
+      setDispatchingArtifact(undefined)
+    }
   }
   const executionFilter = useMemo(() => {
-    const iso = (value: string) => value ? new Date(value).toISOString() : ''
-    return Object.fromEntries(Object.entries({ kind: executionKind, status: executionStatus, from: iso(executionFrom), until: iso(executionUntil) }).filter(([, value]) => Boolean(value))) as Record<string, string>
+    const iso = (value: string) => (value ? new Date(value).toISOString() : '')
+    return Object.fromEntries(
+      Object.entries({
+        kind: executionKind,
+        status: executionStatus,
+        from: iso(executionFrom),
+        until: iso(executionUntil),
+      }).filter(([, value]) => Boolean(value))
+    ) as Record<string, string>
   }, [executionKind, executionStatus, executionFrom, executionUntil])
   useEffect(() => {
     if (invalidExecutionRange) {
@@ -787,44 +2712,583 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
       return
     }
     let active = true
-    void Promise.all(data.repositories.map(async repository => ({ artifacts: await api.qualityArtifacts(repository.id), flows: await api.repositoryFlowCandidates(repository.id), evaluations: await api.policyGateEvaluations(repository.id), executions: executionRepositoryId && executionRepositoryId !== repository.id ? [] : await api.testExecutions(repository.id, executionFilter), performance: executionRepositoryId && executionRepositoryId !== repository.id ? [] : await api.executionPerformance(repository.id, executionFilter) }))).then(groups => {
-      if (active) { setArtifacts(groups.flatMap(group => group.artifacts)); setFlowCandidates(groups.flatMap(group => group.flows)); setPolicyGateEvaluations(groups.flatMap(group => group.evaluations)); setExecutions(groups.flatMap(group => group.executions)); setExecutionPerformance(groups.flatMap(group => group.performance)) }
-    }).catch(() => { if (active) { setArtifacts([]); setFlowCandidates([]); setPolicyGateEvaluations([]); setExecutions([]); setExecutionPerformance([]) } }).finally(() => { if (active) setLoadingArtifacts(false) })
-    return () => { active = false }
-  }, [data.repositories, executionFilter, executionRepositoryId, invalidExecutionRange])
-  const outcomeTrend = useMemo(() => executionOutcomeTrend(executions), [executions])
-  const filteredPolicyGateEvaluations = useMemo(() => policyGateEvaluations.filter(evaluation =>
-    (!policyGateKind || evaluation.kind === policyGateKind) &&
-    (!policyGateSeverity || evaluation.severity === policyGateSeverity) &&
-    (!policyGateReviewStatus || evaluation.reviewStatus === policyGateReviewStatus)
-  ), [policyGateEvaluations, policyGateKind, policyGateSeverity, policyGateReviewStatus])
+    void Promise.all(
+      data.repositories.map(async repository => ({
+        artifacts: await api.qualityArtifacts(repository.id),
+        flows: await api.repositoryFlowCandidates(repository.id),
+        evaluations: await api.policyGateEvaluations(repository.id),
+        executions:
+          executionRepositoryId && executionRepositoryId !== repository.id
+            ? []
+            : await api.testExecutions(repository.id, executionFilter),
+        performance:
+          executionRepositoryId && executionRepositoryId !== repository.id
+            ? []
+            : await api.executionPerformance(repository.id, executionFilter),
+      }))
+    )
+      .then(groups => {
+        if (active) {
+          setArtifacts(groups.flatMap(group => group.artifacts))
+          setFlowCandidates(groups.flatMap(group => group.flows))
+          setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
+          setExecutions(groups.flatMap(group => group.executions))
+          setExecutionPerformance(groups.flatMap(group => group.performance))
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setArtifacts([])
+          setFlowCandidates([])
+          setPolicyGateEvaluations([])
+          setExecutions([])
+          setExecutionPerformance([])
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingArtifacts(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [
+    data.repositories,
+    executionFilter,
+    executionRepositoryId,
+    invalidExecutionRange,
+  ])
+  const outcomeTrend = useMemo(
+    () => executionOutcomeTrend(executions),
+    [executions]
+  )
+  const filteredPolicyGateEvaluations = useMemo(
+    () =>
+      policyGateEvaluations.filter(
+        evaluation =>
+          (!policyGateKind || evaluation.kind === policyGateKind) &&
+          (!policyGateSeverity || evaluation.severity === policyGateSeverity) &&
+          (!policyGateReviewStatus ||
+            evaluation.reviewStatus === policyGateReviewStatus)
+      ),
+    [
+      policyGateEvaluations,
+      policyGateKind,
+      policyGateSeverity,
+      policyGateReviewStatus,
+    ]
+  )
   const groups: Array<[QualityArtifact['kind'], string, string]> = [
-    ['route', 'UX flows', 'Routes and API transitions discovered from repository analysis'],
-    ['policy', 'Policies', 'Repository policy evidence awaiting governance review'],
-    ['gate', 'Gates', 'CI and repository guard evidence linked to policy candidates'],
-    ['load-test', 'Load tests', 'Load-test definitions and thresholds discovered in source'],
-    ['stress-test', 'Stress tests', 'Stress and soak-test definitions discovered in source'],
+    [
+      'route',
+      'UX flows',
+      'Routes and API transitions discovered from repository analysis',
+    ],
+    [
+      'policy',
+      'Policies',
+      'Repository policy evidence awaiting governance review',
+    ],
+    [
+      'gate',
+      'Gates',
+      'CI and repository guard evidence linked to policy candidates',
+    ],
+    [
+      'load-test',
+      'Load tests',
+      'Load-test definitions and thresholds discovered in source',
+    ],
+    [
+      'stress-test',
+      'Stress tests',
+      'Stress and soak-test definitions discovered in source',
+    ],
   ]
-  return <>
-    <PageHeading eyebrow="Repository analysis" title="Quality intelligence" detail="Deterministic repository evidence is stored by revision. LiteLLM proposals remain reviewable suggestions before they affect flows or policy governance." />
-    {loadingArtifacts ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading repository evidence…</span></div> : <><div className="catalog-filters" aria-label="Policy and gate finding filters"><label>Anomaly<select value={policyGateKind} onChange={event => setPolicyGateKind(event.target.value as PolicyGateEvaluation['kind'] | '')}><option value="">All anomalies</option>{['unguarded-policy', 'guard-without-policy', 'contradictory-policy', 'ambiguous-policy'].map(kind => <option key={kind} value={kind}>{kind}</option>)}</select></label><label>Severity<select value={policyGateSeverity} onChange={event => setPolicyGateSeverity(event.target.value as PolicyGateEvaluation['severity'] | '')}><option value="">All severities</option>{['high', 'medium', 'low'].map(severity => <option key={severity} value={severity}>{severity}</option>)}</select></label><label>Review<select value={policyGateReviewStatus} onChange={event => setPolicyGateReviewStatus(event.target.value as PolicyGateEvaluation['reviewStatus'] | '')}><option value="">All review states</option>{['proposed', 'accepted', 'dismissed'].map(status => <option key={status} value={status}>{status}</option>)}</select></label></div><div className="catalog-grid">{groups.map(([kind, title, detail]) => {
-      const items = artifacts.filter(item => item.kind === kind)
-      return <section className="catalog-panel" key={kind}><header><div><p className="eyebrow">{items.length} discovered</p><h2>{title}</h2><p>{detail}</p></div></header>
-        <div className="catalog-list">{kind === 'route' && flowCandidates.map(flow => <article className="catalog-row" key={flow.id}><div><strong>{flow.title}</strong><code>{flow.source} · {Math.round(flow.confidence * 100)}% confidence · {flow.status}</code><p>{flow.steps[0]?.action}</p><ol className="flow-wireframe" aria-label={`${flow.title} wireframe`}>{flow.wireframe.nodes.map((node, index) => <li key={`${node.label}:${index}`}><span>{String(index + 1).padStart(2, '0')}</span>{node.label}</li>)}</ol>{flow.status === 'proposed' && <div className="row-actions"><button className="secondary-button" onClick={() => void reviewFlow(flow, 'confirmed')}><Check size={14} /> Confirm</button><button className="secondary-button" onClick={() => void reviewFlow(flow, 'rejected')}><X size={14} /> Reject</button></div>}</div></article>)}{(kind === 'policy' || kind === 'gate') && filteredPolicyGateEvaluations.filter(evaluation => kind === 'policy' ? evaluation.policyArtifactIds.length : evaluation.gateArtifactIds.length).map(evaluation => <article className="catalog-row" key={evaluation.id}><div><strong>{evaluation.title}</strong><code>{evaluation.severity} · {evaluation.kind} · {evaluation.reviewStatus}</code><p>{evaluation.detail}</p><small>{evaluation.recommendation}{evaluation.reviewedAt ? ` · Reviewed ${new Date(evaluation.reviewedAt).toLocaleString()}${evaluation.reviewedBy ? ` by ${evaluation.reviewedBy}` : ''}` : ''}{evaluation.reviewReason ? ` · ${evaluation.reviewReason}` : ''}</small>{evaluation.reviewStatus === 'proposed' && <div className="row-actions"><button className="secondary-button" onClick={() => void reviewPolicyGate(evaluation, 'accepted')}><Check size={14} /> Accept recommendation</button><button className="secondary-button" onClick={() => void reviewPolicyGate(evaluation, 'dismissed')}><X size={14} /> Dismiss</button></div>}</div></article>)}{items.slice(0, 12).map(item => <article className="catalog-row" key={item.id}><div><strong>{item.title}</strong><code>{item.sourcePath}</code><p>{item.summary}</p>{item.evidence.length > 0 && <small>{item.evidence[0]}</small>}{['load-test', 'stress-test'].includes(item.kind) && item.sourcePath.startsWith('.github/workflows/') && <div className="row-actions"><button className="secondary-button" disabled={dispatchingArtifact === item.id} onClick={() => void runPerformanceTest(item)}><Activity size={14} /> {dispatchingArtifact === item.id ? 'Dispatching…' : 'Run on default branch'}</button></div>}</div></article>)}{items.length === 0 && !(kind === 'route' && flowCandidates.length) && <div className="empty-state"><Search /><strong>No evidence indexed yet</strong><span>Run a repository analysis to populate this inventory.</span></div>}</div>
-      </section>
-    })}</div></>}
-    {!loadingArtifacts && <section className="catalog-panel"><header><div><p className="eyebrow">Execution evidence</p><h2>CI and post-production results</h2><p>Imported CI, integration, post-production, load, and stress evidence retains the source revision and linked policy/gates.</p></div></header><div className="catalog-filters" aria-label="Execution evidence filters"><label>Repository<select value={executionRepositoryId} onChange={event => setExecutionRepositoryId(event.target.value)}><option value="">All repositories</option>{data.repositories.map(repository => <option key={repository.id} value={repository.id}>{repository.name}</option>)}</select></label><label>Suite<select value={executionKind} onChange={event => setExecutionKind(event.target.value as TestExecution['kind'] | '')}><option value="">All suites</option>{['ci', 'integration', 'post-production', 'load', 'stress'].map(kind => <option key={kind} value={kind}>{kind}</option>)}</select></label><label>Outcome<select value={executionStatus} onChange={event => setExecutionStatus(event.target.value as TestExecution['status'] | '')}><option value="">All outcomes</option>{['passed', 'failed', 'cancelled', 'running'].map(status => <option key={status} value={status}>{status}</option>)}</select></label><label>From<input type="datetime-local" value={executionFrom} onChange={event => setExecutionFrom(event.target.value)} /></label><label>Until<input type="datetime-local" value={executionUntil} onChange={event => setExecutionUntil(event.target.value)} /></label>{(executionFrom || executionUntil) && <button className="secondary-button execution-filter-reset" onClick={() => { setExecutionFrom(''); setExecutionUntil('') }}>Clear dates</button>}</div><div className="execution-trend" aria-label="Execution outcome trend">{outcomeTrend.map(day => <div key={day.date}><strong>{day.date}</strong><span>{day.passed} passed</span><span>{day.failed} failed</span><span>{day.cancelled} cancelled</span><span>{day.running} running</span></div>)}{!outcomeTrend.length && <span>No timestamped outcomes for this filter.</span>}</div><div className="catalog-list">{executions.slice(0, 25).map(execution => <article className="catalog-row" key={execution.id}><div><strong>{execution.name}</strong><code>{execution.kind} · {execution.status} · {execution.revision.slice(0, 12)}</code><p>{execution.summary ?? 'No execution summary supplied.'}</p><small>{execution.policyArtifactIds.length} policies · {execution.gateArtifactIds.length} gates{execution.completedAt ? ` · Completed ${new Date(execution.completedAt).toLocaleString()}` : execution.startedAt ? ` · Started ${new Date(execution.startedAt).toLocaleString()}` : ''}</small>{execution.sourceUrl && <a className="execution-source" href={execution.sourceUrl} target="_blank" rel="noreferrer">Open CI run <ExternalLink size={13} /></a>}</div></article>)}{!executions.length && <div className="empty-state"><TestTube2 /><strong>No execution evidence received</strong><span>Connect CI or submit authenticated execution results for an onboarded repository.</span></div>}</div></section>}
-    {!loadingArtifacts && <section className="catalog-panel"><header><div><p className="eyebrow">Policy–gate performance</p><h2>Observed outcomes</h2><p>Only explicitly linked execution evidence is included; an absent pair is never treated as passing.</p></div></header><div className="catalog-list">{executionPerformance.map(pair => <article className="catalog-row" key={`${pair.policyArtifactId}:${pair.gateArtifactId}`}><div><strong>{pair.policyArtifactId} → {pair.gateArtifactId}</strong><code>{pair.passed} passed · {pair.failed} failed · {pair.cancelled} cancelled · {pair.running} running</code><small>{pair.latestCompletedAt ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}` : 'No completed run yet'}</small></div></article>)}{!executionPerformance.length && <div className="empty-state"><ShieldCheck /><strong>No linked performance yet</strong><span>Execution results will appear after a detected workflow matches a policy-backed gate.</span></div>}</div></section>}
-  </>
+  return (
+    <>
+      <PageHeading
+        eyebrow="Repository analysis"
+        title="Quality intelligence"
+        detail="Deterministic repository evidence is stored by revision. LiteLLM proposals remain reviewable suggestions before they affect flows or policy governance."
+      />
+      {loadingArtifacts ? (
+        <div className="loading-screen">
+          <RefreshCw className="spin" />
+          <span>Loading repository evidence…</span>
+        </div>
+      ) : (
+        <>
+          <div
+            className="catalog-filters"
+            aria-label="Policy and gate finding filters"
+          >
+            <label>
+              Anomaly
+              <select
+                value={policyGateKind}
+                onChange={event =>
+                  setPolicyGateKind(
+                    event.target.value as PolicyGateEvaluation['kind'] | ''
+                  )
+                }
+              >
+                <option value="">All anomalies</option>
+                {[
+                  'unguarded-policy',
+                  'guard-without-policy',
+                  'contradictory-policy',
+                  'ambiguous-policy',
+                ].map(kind => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Severity
+              <select
+                value={policyGateSeverity}
+                onChange={event =>
+                  setPolicyGateSeverity(
+                    event.target.value as PolicyGateEvaluation['severity'] | ''
+                  )
+                }
+              >
+                <option value="">All severities</option>
+                {['high', 'medium', 'low'].map(severity => (
+                  <option key={severity} value={severity}>
+                    {severity}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Review
+              <select
+                value={policyGateReviewStatus}
+                onChange={event =>
+                  setPolicyGateReviewStatus(
+                    event.target.value as
+                      PolicyGateEvaluation['reviewStatus'] | ''
+                  )
+                }
+              >
+                <option value="">All review states</option>
+                {['proposed', 'accepted', 'dismissed'].map(status => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="catalog-grid">
+            {groups.map(([kind, title, detail]) => {
+              const items = artifacts.filter(item => item.kind === kind)
+              return (
+                <section className="catalog-panel" key={kind}>
+                  <header>
+                    <div>
+                      <p className="eyebrow">{items.length} discovered</p>
+                      <h2>{title}</h2>
+                      <p>{detail}</p>
+                    </div>
+                  </header>
+                  <div className="catalog-list">
+                    {kind === 'route' &&
+                      flowCandidates.map(flow => (
+                        <article className="catalog-row" key={flow.id}>
+                          <div>
+                            <strong>{flow.title}</strong>
+                            <code>
+                              {flow.source} ·{' '}
+                              {Math.round(flow.confidence * 100)}% confidence ·{' '}
+                              {flow.status}
+                            </code>
+                            <p>{flow.steps[0]?.action}</p>
+                            <ol
+                              className="flow-wireframe"
+                              aria-label={`${flow.title} wireframe`}
+                            >
+                              {flow.wireframe.nodes.map((node, index) => (
+                                <li key={`${node.label}:${index}`}>
+                                  <span>
+                                    {String(index + 1).padStart(2, '0')}
+                                  </span>
+                                  {node.label}
+                                </li>
+                              ))}
+                            </ol>
+                            <details className="flow-provenance">
+                              <summary>Source evidence</summary>
+                              <small>Revision {flow.revision}</small>
+                              <ul>
+                                {flow.evidence.map(evidence => <li key={evidence}><code>{evidence}</code></li>)}
+                              </ul>
+                              <ol>
+                                {flow.steps.map((step, index) => <li key={`${step.action}:${index}`}><strong>{step.actor}</strong> — {step.action} → {step.expectedOutcome}{step.targetIds.length ? <small> ({step.targetIds.join(', ')})</small> : null}</li>)}
+                              </ol>
+                            </details>
+                            {flow.status === 'proposed' && (
+                              <div className="row-actions">
+                                <button
+                                  className="secondary-button"
+                                  onClick={() =>
+                                    void reviewFlow(flow, 'confirmed')
+                                  }
+                                >
+                                  <Check size={14} /> Confirm
+                                </button>
+                                <button
+                                  className="secondary-button"
+                                  onClick={() =>
+                                    void reviewFlow(flow, 'rejected')
+                                  }
+                                >
+                                  <X size={14} /> Reject
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    {(kind === 'policy' || kind === 'gate') &&
+                      filteredPolicyGateEvaluations
+                        .filter(evaluation =>
+                          kind === 'policy'
+                            ? evaluation.policyArtifactIds.length
+                            : evaluation.gateArtifactIds.length
+                        )
+                        .map(evaluation => (
+                          <article className="catalog-row" key={evaluation.id}>
+                            <div>
+                              <strong>{evaluation.title}</strong>
+                              <code>
+                                {evaluation.severity} · {evaluation.kind} ·{' '}
+                                {evaluation.reviewStatus}
+                              </code>
+                              <p>{evaluation.detail}</p>
+                              <small>
+                                {evaluation.recommendation}
+                                {evaluation.reviewedAt
+                                  ? ` · Reviewed ${new Date(evaluation.reviewedAt).toLocaleString()}${evaluation.reviewedBy ? ` by ${evaluation.reviewedBy}` : ''}`
+                                  : ''}
+                                {evaluation.reviewReason
+                                  ? ` · ${evaluation.reviewReason}`
+                                  : ''}
+                              </small>
+                              {evaluation.reviewStatus === 'proposed' && (
+                                <div className="row-actions">
+                                  <button
+                                    className="secondary-button"
+                                    onClick={() =>
+                                      void reviewPolicyGate(
+                                        evaluation,
+                                        'accepted'
+                                      )
+                                    }
+                                  >
+                                    <Check size={14} /> Accept recommendation
+                                  </button>
+                                  <button
+                                    className="secondary-button"
+                                    onClick={() =>
+                                      void reviewPolicyGate(
+                                        evaluation,
+                                        'dismissed'
+                                      )
+                                    }
+                                  >
+                                    <X size={14} /> Dismiss
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </article>
+                        ))}
+                    {items.slice(0, 12).map(item => (
+                      <article className="catalog-row" key={item.id}>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <code>{item.sourcePath}</code>
+                          <p>{item.summary}</p>
+                          {item.evidence.length > 0 && (
+                            <small>{item.evidence[0]}</small>
+                          )}
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            item.sourcePath.startsWith(
+                              '.github/workflows/'
+                            ) && (
+                              <div className="row-actions">
+                                <button
+                                  className="secondary-button"
+                                  disabled={dispatchingArtifact === item.id}
+                                  onClick={() => void runPerformanceTest(item)}
+                                >
+                                  <Activity size={14} />{' '}
+                                  {dispatchingArtifact === item.id
+                                    ? 'Dispatching…'
+                                    : 'Run on default branch'}
+                                </button>
+                              </div>
+                            )}
+                        </div>
+                      </article>
+                    ))}
+                    {items.length === 0 &&
+                      !(kind === 'route' && flowCandidates.length) && (
+                        <div className="empty-state">
+                          <Search />
+                          <strong>No evidence indexed yet</strong>
+                          <span>
+                            Run a repository analysis to populate this
+                            inventory.
+                          </span>
+                        </div>
+                      )}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+        </>
+      )}
+      {!loadingArtifacts && (
+        <section className="catalog-panel">
+          <header>
+            <div>
+              <p className="eyebrow">Execution evidence</p>
+              <h2>CI and post-production results</h2>
+              <p>
+                Imported CI, integration, post-production, load, and stress
+                evidence retains the source revision and linked policy/gates.
+              </p>
+            </div>
+          </header>
+          <div
+            className="catalog-filters"
+            aria-label="Execution evidence filters"
+          >
+            <label>
+              Repository
+              <select
+                value={executionRepositoryId}
+                onChange={event => setExecutionRepositoryId(event.target.value)}
+              >
+                <option value="">All repositories</option>
+                {data.repositories.map(repository => (
+                  <option key={repository.id} value={repository.id}>
+                    {repository.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Suite
+              <select
+                value={executionKind}
+                onChange={event =>
+                  setExecutionKind(
+                    event.target.value as TestExecution['kind'] | ''
+                  )
+                }
+              >
+                <option value="">All suites</option>
+                {['ci', 'integration', 'post-production', 'load', 'stress'].map(
+                  kind => (
+                    <option key={kind} value={kind}>
+                      {kind}
+                    </option>
+                  )
+                )}
+              </select>
+            </label>
+            <label>
+              Outcome
+              <select
+                value={executionStatus}
+                onChange={event =>
+                  setExecutionStatus(
+                    event.target.value as TestExecution['status'] | ''
+                  )
+                }
+              >
+                <option value="">All outcomes</option>
+                {['passed', 'failed', 'cancelled', 'running'].map(status => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              From
+              <input
+                type="datetime-local"
+                value={executionFrom}
+                onChange={event => setExecutionFrom(event.target.value)}
+              />
+            </label>
+            <label>
+              Until
+              <input
+                type="datetime-local"
+                value={executionUntil}
+                onChange={event => setExecutionUntil(event.target.value)}
+              />
+            </label>
+            {(executionFrom || executionUntil) && (
+              <button
+                className="secondary-button execution-filter-reset"
+                onClick={() => {
+                  setExecutionFrom('')
+                  setExecutionUntil('')
+                }}
+              >
+                Clear dates
+              </button>
+            )}
+          </div>
+          <div className="execution-trend" aria-label="Execution outcome trend">
+            {outcomeTrend.map(day => (
+              <div key={day.date}>
+                <strong>{day.date}</strong>
+                <span>{day.passed} passed</span>
+                <span>{day.failed} failed</span>
+                <span>{day.cancelled} cancelled</span>
+                <span>{day.running} running</span>
+              </div>
+            ))}
+            {!outcomeTrend.length && (
+              <span>No timestamped outcomes for this filter.</span>
+            )}
+          </div>
+          <div className="catalog-list">
+            {executions.slice(0, 25).map(execution => (
+              <article className="catalog-row" key={execution.id}>
+                <div>
+                  <strong>{execution.name}</strong>
+                  <code>
+                    {execution.kind} · {execution.status} ·{' '}
+                    {execution.revision.slice(0, 12)}
+                  </code>
+                  <p>{execution.summary ?? 'No execution summary supplied.'}</p>
+                  <small>
+                    {execution.policyArtifactIds.length} policies ·{' '}
+                    {execution.gateArtifactIds.length} gates
+                    {execution.completedAt
+                      ? ` · Completed ${new Date(execution.completedAt).toLocaleString()}`
+                      : execution.startedAt
+                        ? ` · Started ${new Date(execution.startedAt).toLocaleString()}`
+                        : ''}
+                  </small>
+                  {execution.sourceUrl && (
+                    <a
+                      className="execution-source"
+                      href={execution.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open CI run <ExternalLink size={13} />
+                    </a>
+                  )}
+                </div>
+              </article>
+            ))}
+            {!executions.length && (
+              <div className="empty-state">
+                <TestTube2 />
+                <strong>No execution evidence received</strong>
+                <span>
+                  Connect CI or submit authenticated execution results for an
+                  onboarded repository.
+                </span>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+      {!loadingArtifacts && (
+        <section className="catalog-panel">
+          <header>
+            <div>
+              <p className="eyebrow">Policy–gate performance</p>
+              <h2>Observed outcomes</h2>
+              <p>
+                Only explicitly linked execution evidence is included; an absent
+                pair is never treated as passing.
+              </p>
+            </div>
+          </header>
+          <div className="catalog-list">
+            {executionPerformance.map(pair => (
+              <article
+                className="catalog-row"
+                key={`${pair.policyArtifactId}:${pair.gateArtifactId}`}
+              >
+                <div>
+                  <strong>
+                    {pair.policyArtifactId} → {pair.gateArtifactId}
+                  </strong>
+                  <code>
+                    {pair.passed} passed · {pair.failed} failed ·{' '}
+                    {pair.cancelled} cancelled · {pair.running} running
+                  </code>
+                  <small>
+                    {pair.latestCompletedAt
+                      ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
+                      : 'No completed run yet'}
+                  </small>
+                </div>
+              </article>
+            ))}
+            {!executionPerformance.length && (
+              <div className="empty-state">
+                <ShieldCheck />
+                <strong>No linked performance yet</strong>
+                <span>
+                  Execution results will appear after a detected workflow
+                  matches a policy-backed gate.
+                </span>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+    </>
+  )
 }
 
-function PageHeading({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail: string; action?: React.ReactNode }) { return <header className="page-header compact"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="lede">{detail}</p></div>{action}</header> }
+function PageHeading({
+  eyebrow,
+  title,
+  detail,
+  action,
+}: {
+  eyebrow: string
+  title: string
+  detail: string
+  action?: React.ReactNode
+}) {
+  return (
+    <header className="page-header compact">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        <p className="lede">{detail}</p>
+      </div>
+      {action}
+    </header>
+  )
+}
 
 export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const [view, setView] = useState<View>('overview')
   const [data, setData] = useState<Portfolio | null>(null)
   const [error, setError] = useState<string>()
-  const [organizations, setOrganizations] = useState<OrganizationQualitySummary[]>()
+  const [organizations, setOrganizations] =
+    useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
   usePortalMenu(setView)
   // The portal owns the active account vault. A federated remote receives its
@@ -835,13 +3299,128 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
     try {
       setData(await api.portfolio())
       setError(undefined)
-      try { setOrganizations(await api.platformOrganizations()) } catch { setOrganizations(undefined) }
+      try {
+        setOrganizations(await api.platformOrganizations())
+      } catch {
+        setOrganizations(undefined)
+      }
     } catch (value) {
       setError(value instanceof Error ? value.message : String(value))
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }
-  useEffect(() => { void reload() }, [])
-  const visibleNavigation = useMemo(() => navigation.filter(item => item.id !== 'administration' || organizations), [organizations])
-  const active = useMemo(() => visibleNavigation.find(item => item.id === view), [view, visibleNavigation])
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'intelligence' && <RepositoryIntelligence data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'operations' && <Operations data={data} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
+  useEffect(() => {
+    void reload()
+  }, [])
+  const visibleNavigation = useMemo(
+    () =>
+      navigation.filter(item => item.id !== 'administration' || organizations),
+    [organizations]
+  )
+  const active = useMemo(
+    () => visibleNavigation.find(item => item.id === view),
+    [view, visibleNavigation]
+  )
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-symbol">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div>
+            <strong>FuzeQuality</strong>
+            <small>Evidence control</small>
+          </div>
+        </div>
+        <nav>
+          {visibleNavigation.map(item => {
+            const Icon = item.icon
+            const count =
+              item.id === 'review'
+                ? data?.suggestions.filter(s => s.state === 'proposed').length
+                : undefined
+            return (
+              <button
+                key={item.id}
+                className={view === item.id ? 'active' : ''}
+                onClick={() => setView(item.id)}
+              >
+                <Icon size={18} />
+                <span>{item.label}</span>
+                {count ? <b>{count}</b> : null}
+              </button>
+            )
+          })}
+        </nav>
+        <div className="sidebar-footer">
+          <Database size={16} />
+          <div>
+            <span>Catalog revision</span>
+            <strong>{data ? 'live / v1' : 'connecting'}</strong>
+          </div>
+        </div>
+      </aside>
+      <main>
+        <div className="topbar">
+          <span>{active?.label}</span>
+          <div>
+            <span className="live-dot" /> default branches{' '}
+            <button
+              className="icon-button"
+              onClick={() => reload()}
+              aria-label="Reload"
+            >
+              <RefreshCw size={15} className={loading ? 'spin' : ''} />
+            </button>
+          </div>
+        </div>
+        <div className="content">
+          {error && (
+            <div className="error-banner">
+              <AlertTriangle />{' '}
+              <div>
+                <strong>Catalog API unavailable</strong>
+                <span>{error}</span>
+              </div>
+            </div>
+          )}
+          {!data ? (
+            <div className="loading-screen">
+              <RefreshCw className="spin" />
+              <span>Loading evidence graph…</span>
+            </div>
+          ) : (
+            <>
+              {view === 'overview' && (
+                <Overview data={data} onNavigate={setView} />
+              )}
+              {view === 'repositories' && (
+                <Repositories data={data} reload={reload} />
+              )}
+              {view === 'api' && <ApiCatalogPage data={data} />}
+              {view === 'frontend' && (
+                <CatalogPage type="frontend" data={data} />
+              )}
+              {view === 'requirements' && <Requirements data={data} />}
+              {view === 'intelligence' && (
+                <RepositoryIntelligence data={data} />
+              )}
+              {view === 'review' && <ReviewQueue data={data} reload={reload} />}
+              {view === 'operations' && <Operations data={data} />}
+              {view === 'organization' && (
+                <OrganizationSettings data={data} reload={reload} />
+              )}
+              {view === 'administration' && organizations && (
+                <OrganizationAdministration organizations={organizations} />
+              )}
+            </>
+          )}
+        </div>
+      </main>
+    </div>
+  )
 }
