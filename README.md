@@ -52,7 +52,7 @@ Do not just star the repository. If you think a boundary is wrong, an enterprise
 - Contribute adapters, design system tokens, tests, or developer-experience fixes;
 - Compare Fuze to Backstage, internal developer platforms (IDPs), traditional PaaS products, or agentic coding frameworks.
 
-Read the full [Software Factory architecture](docs/SOFTWARE_FACTORY.md) and [Community guide](COMMUNITY.md).
+Read the full [Software Factory architecture](docs/SOFTWARE_FACTORY.md), the [non-goals and architectural boundaries](docs/NON_GOALS.md), and the [Community guide](COMMUNITY.md).
 
 ---
 
