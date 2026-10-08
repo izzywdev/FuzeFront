@@ -221,6 +221,18 @@ POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint;
 GET /api/v1/requirements/freshness  # fuzequality: tenant-authorized Jira freshness evidence; not public contract surface
 POST /api/v1/internal/intelligence/failure  # fuzequality: S2S worker failure signal; bounded/redacted and not consumer-facing
 GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review audit history; not public contract surface
+GET /api/v1/internal/repositories/{}/quality-artifacts  # fuzequality: S2S worker evidence retrieval; not consumer-facing
+POST /api/v1/internal/repository-flow-candidates  # fuzequality: S2S LiteLLM candidate ingest; not consumer-facing
+GET /api/v1/internal/repositories/{}/policy-gate-evaluations  # fuzequality: S2S worker governance retrieval; not consumer-facing
+POST /api/v1/internal/policy-gate-evaluations  # fuzequality: S2S governance evaluation ingest; not consumer-facing
+POST /api/v1/internal/test-executions  # fuzequality: S2S CI execution ingest; not consumer-facing
+POST /api/v1/internal/identity-lifecycle  # fuzequality: S2S FuzeFront identity projection; not consumer-facing
+GET /api/v1/repositories/{}/flow-candidates  # fuzequality: tenant-authorized reviewed flow proposals; not public contract surface
+POST /api/v1/repositories/{}/flow-candidates/{}/review  # fuzequality: tenant-authorized flow review action; not public contract surface
+GET /api/v1/repositories/{}/policy-gate-evaluations  # fuzequality: tenant-authorized governance evidence; not public contract surface
+POST /api/v1/repositories/{}/policy-gate-evaluations/{}/review  # fuzequality: tenant-authorized governance review action; not public contract surface
+GET /api/v1/repositories/{}/test-executions  # fuzequality: tenant-authorized CI evidence; not public contract surface
+GET /api/v1/repositories/{}/execution-performance  # fuzequality: tenant-authorized derived gate performance; not public contract surface
 #
 # --- O1: applications-service Kubernetes readiness probe (#1137) ---
 # NOT a debt in the sense this file's header warns about (a spec gap to close):
