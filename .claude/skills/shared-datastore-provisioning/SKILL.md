@@ -94,7 +94,12 @@ Known operations to inspect and reuse:
   already-declared disabled allocation and credential-handoff registry, then
   opens a reviewed GitOps PR. FuzeInfra workflow code must not name or branch
   on a particular consuming product. A consumer may invoke the named event with
-  its already-scoped `FUZEINFRA_DISPATCH_TOKEN`. Do not create a generic
+  a short-lived `fuze-agent` App installation token, minted in GitHub Actions
+  from the fleet-propagated `FUZE_AGENT_APP_ID` and
+  `FUZE_AGENT_APP_PRIVATE_KEY` secrets and restricted to FuzeInfra with
+  `Contents: write`. Do not add or reuse a long-lived
+  `FUZEINFRA_DISPATCH_TOKEN`; it is the legacy manual-onboarding transport.
+  Do not create a generic
   "dispatch any workflow" relay: it turns a Contents-scoped repository-dispatch
   credential into unconstrained Actions execution. `infra-dispatch.yml` remains
   the family-wide Terraform `infra-request` transport, not a general workflow
