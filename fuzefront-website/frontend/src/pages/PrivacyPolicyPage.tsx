@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, Subheading } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
@@ -29,7 +29,7 @@ export const PrivacyPolicyPage: React.FC = () => {
           <div className="space-y-10 text-gray-700 leading-relaxed">
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">1. Introduction</h2>
+              <Subheading>1. Introduction</Subheading>
               <p>
                 FuzeOne, Inc. ("FuzeOne," "we," "our," or "us") is a Delaware corporation operating the FuzeFront platform and the FuzeOne family of software products available at fuzefront.com and related domains. We are committed to protecting your personal information and your right to privacy.
               </p>
@@ -39,7 +39,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">2. Information We Collect</h2>
+              <Subheading>2. Information We Collect</Subheading>
               <h3 className="text-base font-semibold text-gray-800 mb-2">2.1 Information You Provide</h3>
               <ul className="list-disc pl-6 space-y-1.5">
                 <li>Account registration details (name, email, password hash)</li>
@@ -64,7 +64,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">3. How We Use Your Information</h2>
+              <Subheading>3. How We Use Your Information</Subheading>
               <p>We use the information we collect to:</p>
               <ul className="list-disc pl-6 space-y-1.5 mt-3">
                 <li>Provide, operate, and maintain our platform and services</li>
@@ -80,7 +80,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">4. Sharing Your Information</h2>
+              <Subheading>4. Sharing Your Information</Subheading>
               <p>We do not sell your personal information. We may share your information in the following circumstances:</p>
               <ul className="list-disc pl-6 space-y-1.5 mt-3">
                 <li><strong>Service Providers:</strong> We share information with vendors who assist in delivering our services (hosting, analytics, payment processing, customer support).</li>
@@ -92,7 +92,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">5. Data Retention</h2>
+              <Subheading>5. Data Retention</Subheading>
               <p>
                 We retain your personal information for as long as your account is active or as needed to provide our services. When you delete your account, we will delete or anonymize your personal information within 90 days, except where we are required to retain it for legal, regulatory, or legitimate business purposes (e.g., fraud prevention, accounting records).
               </p>
@@ -102,7 +102,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">6. Your Rights</h2>
+              <Subheading>6. Your Rights</Subheading>
               <h3 className="text-base font-semibold text-gray-800 mb-2">6.1 GDPR Rights (EEA Residents)</h3>
               <p>If you are located in the European Economic Area, you have the following rights:</p>
               <ul className="list-disc pl-6 space-y-1.5 mt-3">
@@ -126,7 +126,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">7. Security</h2>
+              <Subheading>7. Security</Subheading>
               <p>
                 We implement administrative, technical, and physical security measures to protect your personal information from unauthorized access, disclosure, alteration, or destruction. These measures include:
               </p>
@@ -143,7 +143,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">8. Cookies</h2>
+              <Subheading>8. Cookies</Subheading>
               <p>We use cookies and similar technologies for:</p>
               <ul className="list-disc pl-6 space-y-1.5 mt-3">
                 <li><strong>Essential cookies:</strong> Required for the platform to function (authentication sessions, security tokens)</li>
@@ -155,28 +155,28 @@ export const PrivacyPolicyPage: React.FC = () => {
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">9. International Transfers</h2>
+              <Subheading>9. International Transfers</Subheading>
               <p>
                 FuzeOne is headquartered in the United States. If you are accessing our services from outside the US, your information may be transferred to, stored, and processed in the US or other countries where we or our service providers operate. We ensure appropriate safeguards are in place for international transfers, including Standard Contractual Clauses (SCCs) where required by GDPR.
               </p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">10. Children's Privacy</h2>
+              <Subheading>10. Children's Privacy</Subheading>
               <p>
                 Our services are not directed to individuals under 16 years of age. We do not knowingly collect personal information from children under 16. If you become aware that a child has provided us with personal information, please contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">privacy@fuzefront.com</a> and we will take steps to delete such information.
               </p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">11. Changes to This Policy</h2>
+              <Subheading>11. Changes to This Policy</Subheading>
               <p>
                 We may update this Privacy Policy from time to time. We will notify you of material changes by email or a prominent notice on our platform at least 30 days before the changes take effect. The "Last updated" date at the top of this page reflects the most recent revision.
               </p>
             </section>
 
             <section>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">12. Contact Us</h2>
+              <Subheading>12. Contact Us</Subheading>
               <p>For privacy-related inquiries, requests, or concerns, contact us at:</p>
               <div className="mt-4 p-5 bg-secondary-50 rounded-xl border border-secondary-200">
                 <p className="font-semibold text-gray-900">FuzeOne, Inc.</p>

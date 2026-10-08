@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { FileText } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { IconTile, Subheading } from '@fuzefront/design-system'
 
 export const TermsPage: React.FC = () => {
   return (
@@ -27,7 +27,7 @@ export const TermsPage: React.FC = () => {
         <div className="space-y-10 text-gray-700 leading-relaxed">
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">1. Acceptance of Terms</h2>
+            <Subheading>1. Acceptance of Terms</Subheading>
             <p>
               These Terms of Service ("Terms") constitute a legally binding agreement between you ("Customer," "you," or "your") and FuzeOne, Inc., a Delaware corporation ("FuzeOne," "Company," "we," "our," or "us"), governing your access to and use of the FuzeFront platform, the FuzeOne family of products, and related services (collectively, the "Services").
             </p>
@@ -40,7 +40,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">2. Description of Services</h2>
+            <Subheading>2. Description of Services</Subheading>
             <p>
               FuzeOne provides a suite of software-as-a-service products including, but not limited to: FuzeFront Platform (Module-Federation host shell), FuzeAgent (AI orchestration), FuzeSocial (social media management), FuzeFinance (financial management), FuzeKeys (credential management), FuzeMarket (marketing intelligence), FuzeQuality (quality engineering), FuzeBI (business intelligence), FuzeX (design-engineering workflow), and FuzeHub (operations hub).
             </p>
@@ -50,7 +50,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">3. Accounts</h2>
+            <Subheading>3. Accounts</Subheading>
             <p>To use our Services, you must create an account. You agree to:</p>
             <ul className="list-disc pl-6 space-y-1.5 mt-3">
               <li>Provide accurate, current, and complete registration information</li>
@@ -65,7 +65,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">4. Payment and Billing</h2>
+            <Subheading>4. Payment and Billing</Subheading>
             <h3 className="text-base font-semibold text-gray-800 mb-2">4.1 Subscription Fees</h3>
             <p>
               Paid plans are billed in advance on a monthly or annual basis. All fees are non-refundable except as expressly set forth in these Terms or required by applicable law.
@@ -85,7 +85,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">5. Intellectual Property</h2>
+            <Subheading>5. Intellectual Property</Subheading>
             <h3 className="text-base font-semibold text-gray-800 mb-2">5.1 FuzeOne IP</h3>
             <p>
               FuzeOne and its licensors retain all right, title, and interest in and to the Services, including all intellectual property rights therein. These Terms do not grant you any ownership rights in the Services.
@@ -101,7 +101,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">6. Confidentiality</h2>
+            <Subheading>6. Confidentiality</Subheading>
             <p>
               Each party agrees to keep confidential any non-public information of the other party that is designated as confidential or that reasonably should be understood to be confidential given the nature of the information ("Confidential Information"). Neither party shall use the other's Confidential Information except as necessary to fulfill obligations under these Terms.
             </p>
@@ -111,7 +111,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">7. Acceptable Use</h2>
+            <Subheading>7. Acceptable Use</Subheading>
             <p>You agree not to use our Services to:</p>
             <ul className="list-disc pl-6 space-y-1.5 mt-3">
               <li>Violate any applicable law or regulation</li>
@@ -126,7 +126,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">8. Disclaimers and Warranties</h2>
+            <Subheading>8. Disclaimers and Warranties</Subheading>
             <p className="uppercase text-sm font-medium text-gray-600">
               THE SERVICES ARE PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTY OF ANY KIND. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, FUZEONE EXPRESSLY DISCLAIMS ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
             </p>
@@ -136,7 +136,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">9. Limitation of Liability</h2>
+            <Subheading>9. Limitation of Liability</Subheading>
             <p className="uppercase text-sm font-medium text-gray-600">
               TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, FUZEONE AND ITS AFFILIATES, OFFICERS, EMPLOYEES, AGENTS, PARTNERS, AND LICENSORS WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING LOST PROFITS, LOST REVENUE, LOSS OF DATA, OR BUSINESS INTERRUPTION.
             </p>
@@ -146,14 +146,14 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">10. Indemnification</h2>
+            <Subheading>10. Indemnification</Subheading>
             <p>
               You agree to indemnify, defend, and hold harmless FuzeOne and its officers, directors, employees, agents, and successors from and against any claims, liabilities, damages, losses, and expenses (including reasonable attorneys' fees) arising from: (a) your use of the Services; (b) your violation of these Terms; (c) your violation of any third-party rights; or (d) your Customer Data.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">11. Termination</h2>
+            <Subheading>11. Termination</Subheading>
             <h3 className="text-base font-semibold text-gray-800 mb-2">11.1 Termination by You</h3>
             <p>
               You may cancel your account at any time through the account settings page. Cancellation takes effect at the end of your current billing period.
@@ -169,14 +169,14 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">12. Governing Law</h2>
+            <Subheading>12. Governing Law</Subheading>
             <p>
               These Terms shall be governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to its conflict of law provisions. You consent to the personal jurisdiction of the federal and state courts located in Delaware for any disputes arising under these Terms.
             </p>
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">13. Dispute Resolution</h2>
+            <Subheading>13. Dispute Resolution</Subheading>
             <p>
               Any dispute arising from or relating to these Terms or the Services shall first be attempted to be resolved through good-faith negotiation between the parties. If negotiation fails after 30 days, disputes shall be submitted to binding arbitration administered by the American Arbitration Association ("AAA") under its Commercial Arbitration Rules, with proceedings conducted in Delaware.
             </p>
@@ -186,7 +186,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">14. Miscellaneous</h2>
+            <Subheading>14. Miscellaneous</Subheading>
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Entire Agreement:</strong> These Terms constitute the entire agreement between you and FuzeOne regarding the Services and supersede all prior agreements.</li>
               <li><strong>Severability:</strong> If any provision of these Terms is held invalid, the remaining provisions remain in full force.</li>
@@ -198,7 +198,7 @@ export const TermsPage: React.FC = () => {
           </section>
 
           <section>
-            <h2 className="text-xl font-bold text-gray-900 mb-4">15. Contact</h2>
+            <Subheading>15. Contact</Subheading>
             <p>For legal inquiries related to these Terms, contact us at:</p>
             <div className="mt-4 p-5 bg-secondary-50 rounded-xl border border-secondary-200">
               <p className="font-semibold text-gray-900">FuzeOne, Inc.</p>
