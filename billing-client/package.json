@@ -1,6 +1,6 @@
 {
   "name": "@fuzefront/billing-client",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -15,7 +15,7 @@
     "build": "tsup",
     "type-check": "tsc --noEmit",
     "test": "jest",
-    "clean": "rimraf dist",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "gen:types": "openapi-typescript ../services/billing-service/openapi.yaml -o src/schema.ts",
     "lint:contract": "spectral lint ../services/billing-service/openapi.yaml --ruleset ../services/billing-service/.spectral.yaml",
     "prepublishOnly": "npm run clean && npm run build"
