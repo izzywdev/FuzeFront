@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { Button, IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -95,13 +95,15 @@ export const FuzeHubPage: React.FC = () => {
               Real-time monitoring, deployment dashboards, team activity feeds, and integrated alerting — across every Fuze product and your own services. No more tab-switching.
             </p>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <a
+              <Button
                 href="https://app.fuzefront.com/signup"
-                className="btn-primary flex items-center justify-center gap-2 text-base"
+                variant="primary"
+                size="md"
+                withArrow
                 onClick={() => trackEvent('cta_click', { button: 'fuzehub_start', location: 'fuzehub_hero' })}
               >
-                Get full visibility <ArrowRight size={16} />
-              </a>
+                Get full visibility
+              </Button>
               <Link
                 to="/contact"
                 className="btn-ghost flex items-center justify-center gap-2 text-base"
