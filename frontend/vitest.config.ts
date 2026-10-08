@@ -31,6 +31,9 @@ const accountSecurityUiSrc = fileURLToPath(
 const configClientSrc = fileURLToPath(
   new URL('../config-client/src/index.ts', import.meta.url)
 )
+const fuzepickerUiSrc = fileURLToPath(
+  new URL('../packages/fuzepicker-ui/src/index.ts', import.meta.url)
+)
 const configUiSrc = fileURLToPath(
   new URL('../packages/config-ui/src/index.ts', import.meta.url)
 )
@@ -147,6 +150,7 @@ export default defineConfig({
       // already does this; vitest.config.ts is a SEPARATE config and needs its own.
       '@fuzefront/config-client': configClientSrc,
       '@fuzefront/config-ui': configUiSrc,
+      '@fuzefront/fuzepicker-ui': fuzepickerUiSrc,
     },
     // @fuzefront/i18n is resolved from source and pulls react-i18next, which has
     // its own nested react copy under packages/i18n/node_modules. Without dedupe
