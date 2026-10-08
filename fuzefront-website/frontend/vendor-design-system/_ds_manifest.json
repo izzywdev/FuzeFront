@@ -190,6 +190,10 @@
       "sourcePath": "components/layout/Eyebrow.jsx"
     },
     {
+      "name": "IconListItem",
+      "sourcePath": "components/layout/IconListItem.jsx"
+    },
+    {
       "name": "InfoRow",
       "sourcePath": "components/layout/InfoRow.jsx"
     },

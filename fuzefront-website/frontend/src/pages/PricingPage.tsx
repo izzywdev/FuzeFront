@@ -5,7 +5,7 @@ import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
 import { Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
-import { ListStack } from '@fuzefront/design-system'
+import { ListStack, IconListItem } from '@fuzefront/design-system'
 
 interface Plan {
   name: string
@@ -260,16 +260,14 @@ export const PricingPage: React.FC = () => {
 
                     <ListStack gap="md">
                       {plan.features.map((feature) => (
-                        <li key={feature} className="flex items-start gap-2 text-sm">
-                          <Check size={14} className="text-success-500 flex-shrink-0 mt-0.5" />
+                        <IconListItem key={feature} icon={Check} className="text-sm">
                           <span className="text-gray-700">{feature}</span>
-                        </li>
+                        </IconListItem>
                       ))}
                       {plan.notIncluded?.map((feature) => (
-                        <li key={feature} className="flex items-start gap-2 text-sm">
-                          <X size={14} className="text-gray-300 flex-shrink-0 mt-0.5" />
+                        <IconListItem key={feature} icon={X} tone="muted" className="text-sm">
                           <span className="text-gray-600">{feature}</span>
-                        </li>
+                        </IconListItem>
                       ))}
                     </ListStack>
                   </div>
