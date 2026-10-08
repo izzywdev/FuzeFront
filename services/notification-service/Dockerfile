@@ -30,6 +30,7 @@ COPY sdk/package.json ./sdk/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY packages/config-ui/package.json ./packages/config-ui/
+COPY packages/fuzepicker-ui/package.json ./packages/fuzepicker-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
@@ -70,6 +71,7 @@ COPY packages/service-auth/package.json ./packages/service-auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/
 COPY packages/config-ui/package.json ./packages/config-ui/
+COPY packages/fuzepicker-ui/package.json ./packages/fuzepicker-ui/
 COPY custom-hostname-client/package.json ./custom-hostname-client/
 COPY packages/billing-ui/package.json ./packages/billing-ui/
 COPY packages/chat-client/package.json ./packages/chat-client/
