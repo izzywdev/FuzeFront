@@ -34,6 +34,10 @@
       "sourcePath": "components/core/Badge.jsx"
     },
     {
+      "name": "BlockHeading",
+      "sourcePath": "components/core/BlockHeading.jsx"
+    },
+    {
       "name": "Button",
       "sourcePath": "components/core/Button.jsx"
     },
