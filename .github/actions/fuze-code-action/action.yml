@@ -29,6 +29,12 @@ description: >-
   SHA. It is reached only on the availability cascade, and it fails closed when
   `gemini-api-key` is empty rather than silently skipping.
   .
+  Optional codex-auth-json adds an isolated ChatGPT subscription REVIEW rung
+  before the API-billed Codex rung. It is read-only, receives only the explicit
+  prompt, and cannot perform maintainer write tasks. When selected, its failure
+  never retries against API-billed providers. Auth is stored only in a private
+  temporary CLI home, removed on normal exit; never logged or uploaded.
+  .
   If every configured rung fails, THIS ACTION FAILS (non-zero). It never exits 0
   because the chain is exhausted — a caller relying on this action's success must be
   able to trust that signal.
@@ -162,6 +168,10 @@ inputs:
       Empty is a supported state: the rung is skipped by name and the chain
       starts at the LiteLLM/API-key rung exactly as before. This input can
       therefore be added fleet-wide before any token exists.
+    required: false
+    default: ''
+  codex-auth-json:
+    description: ChatGPT Codex auth.json cache for an isolated read-only subscription reviewer. Never an API key.
     required: false
     default: ''
   openai-api-key:
@@ -638,12 +648,42 @@ runs:
     # skipped outright for lack of any Anthropic/LiteLLM credential (empty
     # `conclusion` = "action-could-not-start", itself an availability gap). A task
     # failure (code=2) or success (code=0) never reaches here.
+    # Subscription review precedes the API-billed Codex rung. It accepts only
+    # explicit review prompts and uses a fresh empty workdir, no shell tools,
+    # no inherited secrets/config, and a read-only OS sandbox. Never downgrade.
+    - name: Install pinned Node.js for Codex subscription reviewer
+      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != ''
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: '24'
+        package-manager-cache: 'false'
+
+    - name: Install pinned Codex subscription reviewer
+      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != ''
+      shell: bash
+      run: |
+        cd "${RUNNER_TEMP}"
+        NPM_CONFIG_USERCONFIG=/dev/null npm install --prefix "${RUNNER_TEMP}/fuze-codex-review-cli" @openai/codex@0.160.1 --registry https://registry.npmjs.org --ignore-scripts --no-audit --no-fund
+
+    - name: Codex subscription review
+      id: codex-subscription
+      if: (steps.classify-claude-oauth.outputs.code == '' || steps.classify-claude-oauth.outputs.code == '1') && steps.classify-claude.outputs.code == '1' && inputs.task-prompt != '' && inputs.codex-auth-json != ''
+      continue-on-error: true
+      shell: bash
+      env:
+        FUZE_CODEX_AUTH_JSON: ${{ inputs.codex-auth-json }}
+        FUZE_REVIEW_PROMPT: ${{ inputs.task-prompt }}
+      run: |
+        export PATH="${RUNNER_TEMP}/fuze-codex-review-cli/node_modules/.bin:${PATH}"
+        python3 "${GITHUB_ACTION_PATH}/codex_subscription_review.py"
+
     - name: 'Rung 2: openai/codex-action'
       id: codex
       # inputs.task-prompt != '' — mention mode has no fallover (see task-prompt).
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.codex-auth-json == '' &&
         inputs.openai-api-key != ''
       continue-on-error: true
       uses: openai/codex-action@52fe01ec70a42f454c9d2ebd47598f9fd6893d56 # v1
@@ -660,6 +700,7 @@ runs:
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.codex-auth-json == '' &&
         inputs.openai-api-key == ''
       shell: bash
       run: |
@@ -748,6 +789,7 @@ runs:
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.codex-auth-json == '' &&
         steps.codex.outcome != 'success' &&
         inputs.gemini-api-key != ''
       shell: bash
@@ -758,6 +800,7 @@ runs:
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.codex-auth-json == '' &&
         steps.codex.outcome != 'success' &&
         inputs.gemini-api-key != ''
       continue-on-error: true
@@ -772,6 +815,7 @@ runs:
       if: |
         steps.classify-claude.outputs.code == '1' &&
         inputs.task-prompt != '' &&
+        inputs.codex-auth-json == '' &&
         steps.codex.outcome != 'success' &&
         inputs.gemini-api-key == ''
       shell: bash
@@ -848,6 +892,8 @@ runs:
         CLAUDE_CODE: ${{ steps.classify-claude.outputs.code }}
         CLAUDE_RESULT: ${{ steps.parse-claude.outputs.result-text != '' && steps.parse-claude.outputs.result-text || steps.claude.outputs.structured_output }}
         LLM_VENDOR: ${{ steps.llm.outputs.vendor }}
+        SUBSCRIPTION_OUTCOME: ${{ steps.codex-subscription.outcome }}
+        SUBSCRIPTION_RESULT: ${{ steps.codex-subscription.outputs.result-text }}
         CODEX_OUTCOME: ${{ steps.codex.outcome }}
         CODEX_RESULT: ${{ steps.codex.outputs.final-message }}
         GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
@@ -951,6 +997,20 @@ runs:
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
           exit 0
+        fi
+        if [ "${SUBSCRIPTION_OUTCOME:-}" = "success" ]; then
+          {
+            echo "mode=codex-subscription"
+            echo "vendor=openai-subscription"
+            echo "conclusion=success"
+            echo "result-text<<${DELIM}"
+            echo "${SUBSCRIPTION_RESULT:-}"
+            echo "${DELIM}"
+          } >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [ "${SUBSCRIPTION_OUTCOME:-}" = "failure" ]; then
+          AVAIL=false
         fi
         if [ "${CODEX_OUTCOME:-}" = "success" ]; then
           {
