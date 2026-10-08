@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Org invitations v2 — Accept (resolve)</title>
+<link rel="stylesheet" href="tokens.css" />
+</head>
+<body data-frame="03-accept-resolve">
+<div class="ffi-authwrap">
+  <div class="ffi-card" data-panel="accept-resolve">
+    <div class="ffi-card__seam"></div>
+    <div class="ffi-card__body">
+      <div class="ffi-card__brand">
+        <div class="ffi-card__org" aria-hidden="true">N</div>
+        <div>
+          <p class="ffi-card__lead">You've been invited to join</p>
+          <h1 class="ffi-card__title" data-value="org-name">Northwind</h1>
+        </div>
+      </div>
+
+      <p class="ffi-card__lead">Invited by <b data-value="inviter">Dana Okoro</b> to
+        <b data-value="invite-email">jordan@acme.com</b>. Create your account to accept — it takes a minute.</p>
+
+      <!-- Resolved invitation summary -->
+      <div class="ffi-preview" data-panel="invite-summary">
+        <div class="ffi-preview__row"><span class="ffi-preview__k">Organization</span>
+          <span class="ffi-preview__v" data-value="org">Northwind</span></div>
+        <div class="ffi-preview__row"><span class="ffi-preview__k">Role</span>
+          <span class="ffi-tag ffi-tag--admin" data-value="role"><span class="ffi-tag__dot"></span>Admin</span></div>
+        <div class="ffi-preview__row"><span class="ffi-preview__k">Member type</span>
+          <span class="ffi-tag ffi-tag--employee" data-value="member-type"><span class="ffi-tag__dot"></span>Employee</span></div>
+        <div class="ffi-preview__row"><span class="ffi-preview__k">Expires</span>
+          <span class="ffi-preview__v" data-value="expires">in 5 days</span></div>
+      </div>
+
+      <a class="btn btn-primary" href="04-accept-signup-bind.html" data-action="accept-continue"
+         style="justify-content:center">Create account &amp; accept</a>
+
+      <div class="ffi-divider">or</div>
+      <button class="btn btn-ghost" data-action="accept-signin" style="justify-content:center">
+        I already have an account — sign in to accept</button>
+
+      <p class="ffi-hint" style="text-align:center">By continuing you agree to the Terms and Privacy Policy.
+        This invitation is tied to <b data-value="invite-email">jordan@acme.com</b> — you'll need to confirm that identity.</p>
+    </div>
+  </div>
+</div>
+
+<div class="frame-nav">
+  <span class="caption">Frame (c) · <b>Accept · resolve</b> — GET /invitations/resolve?token= · shows org · role · member type before sign-up</span>
+  <span class="links">
+    <a href="02-pending-invitations.html" class="btn btn-ghost">← Pending</a>
+    <a href="04-accept-signup-bind.html" class="btn btn-ghost">Next: Sign up &amp; bind →</a>
+  </span>
+</div>
+</body>
+</html>
