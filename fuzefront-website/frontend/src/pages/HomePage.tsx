@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, SectionIntro } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -262,14 +262,13 @@ export const HomePage: React.FC = () => {
       <section className="py-24 bg-white">
         <Container size="7xl">
           <SectionWrapper>
-            <motion.div variants={fadeUpVariants} className="text-center mb-16">
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-                Everything your SaaS needs, none of the overhead
-              </h2>
-              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                FuzeOne bundles the primitives that every product team reinvents — so yours doesn't have to.
-              </p>
-            </motion.div>
+            <SectionIntro
+              as={motion.div}
+              variants={fadeUpVariants}
+              spacing={16}
+              title="Everything your SaaS needs, none of the overhead"
+              description="FuzeOne bundles the primitives that every product team reinvents — so yours doesn't have to."
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               {valueProps.map((prop) => {
@@ -293,14 +292,13 @@ export const HomePage: React.FC = () => {
       <section className="py-24 bg-secondary-50">
         <Container size="7xl">
           <SectionWrapper>
-            <motion.div variants={fadeUpVariants} className="text-center mb-16">
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-                10 products. One platform. Zero lock-in.
-              </h2>
-              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                Each Fuze product works standalone and integrates seamlessly with the others.
-              </p>
-            </motion.div>
+            <SectionIntro
+              as={motion.div}
+              variants={fadeUpVariants}
+              spacing={16}
+              title="10 products. One platform. Zero lock-in."
+              description="Each Fuze product works standalone and integrates seamlessly with the others."
+            />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {products.map((product) => {
@@ -344,14 +342,13 @@ export const HomePage: React.FC = () => {
       <section className="py-24 bg-white">
         <Container size="7xl">
           <SectionWrapper>
-            <motion.div variants={fadeUpVariants} className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-                Built for every vertical
-              </h2>
-              <p className="text-lg text-gray-600 max-w-xl mx-auto">
-                From FinTech compliance to HealthTech HIPAA requirements — FuzeOne adapts to your industry's rules.
-              </p>
-            </motion.div>
+            <SectionIntro
+              as={motion.div}
+              variants={fadeUpVariants}
+              title="Built for every vertical"
+              description="From FinTech compliance to HealthTech HIPAA requirements — FuzeOne adapts to your industry's rules."
+              descriptionMaxWidth="xl"
+            />
 
             <motion.div variants={fadeUpVariants} className="flex flex-wrap justify-center gap-3">
               {industries.map((industry) => (

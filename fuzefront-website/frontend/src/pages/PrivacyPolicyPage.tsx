@@ -1,20 +1,23 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, SectionIntro } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
     <div className="pt-24 pb-20 bg-white">
       <Container size="3xl">
         {/* Header */}
-        <div className="text-center mb-12">
-          <IconTile tone="accent" size="lg" className="mb-5">
-            <Shield size={28} />
-          </IconTile>
-          <h1 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-3">
-            Privacy Policy
-          </h1>
+        <SectionIntro
+          heading="h1"
+          titleGap={3}
+          icon={
+            <IconTile tone="accent" size="lg" className="mb-5">
+              <Shield size={28} />
+            </IconTile>
+          }
+          title="Privacy Policy"
+        >
           <p className="text-gray-600">Last updated: September 2026</p>
           <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull;{' '}
@@ -22,7 +25,7 @@ export const PrivacyPolicyPage: React.FC = () => {
               privacy@fuzefront.com
             </a>
           </p>
-        </div>
+        </SectionIntro>
 
         {/* Content */}
         <div className="prose prose-gray max-w-none">
