@@ -50,7 +50,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.2.0'
+export const SCANNER_VERSION = '1.2.1'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -233,7 +233,9 @@ async function scanFrontend(
   storyFiles: Set<string>,
   onProgress: () => Promise<void>
 ) {
-  const packageFiles = await fg('**/package.json', { cwd: root, ignore })
+  const packageFiles = (await fg('**/package.json', {
+    cwd: root, ignore, onlyFiles: true, followSymbolicLinks: false,
+  })).sort()
   const surfaces: FrontendSurface[] = []
   const fingerprints: string[] = []
   const diagnostics: ScanDiagnostic[] = []
@@ -256,10 +258,12 @@ async function scanFrontend(
     }
     const packageRoot = normalize(packageFile.replace(/\/?package\.json$/, ''))
     const packageName = String(packageJson.name ?? repository.name)
-    const sourceFiles = await fg(`${packageRoot ? `${packageRoot}/` : ''}{src,app,pages}/**/*.{ts,tsx,js,jsx}`, {
+    const sourceFiles = (await fg(`${packageRoot ? `${packageRoot}/` : ''}{src,app,pages}/**/*.{ts,tsx,js,jsx}`, {
       cwd: root,
       ignore,
-    })
+      onlyFiles: true,
+      followSymbolicLinks: false,
+    })).sort()
     for (const file of sourceFiles) {
       if (storyFiles.has(normalize(file))) continue
       await onProgress()
