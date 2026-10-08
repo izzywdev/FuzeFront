@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Check, X, ArrowRight, Zap, Rocket, Crown, Sparkles } from 'lucide-react'
-import { Container } from '@fuzefront/design-system'
+import { Container, ResponsiveGrid } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { ListStack } from '@fuzefront/design-system'
 
@@ -181,7 +181,7 @@ export const PricingPage: React.FC = () => {
       {/* Plans */}
       <section className="py-16 bg-secondary-50">
         <Container size="7xl">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <ResponsiveGrid columns={4} gap="lg">
             {plans.map((plan, i) => {
               const Icon = plan.icon
               const price = yearly ? plan.yearlyPrice : plan.monthlyPrice
@@ -276,7 +276,7 @@ export const PricingPage: React.FC = () => {
                 </motion.div>
               )
             })}
-          </div>
+          </ResponsiveGrid>
         </Container>
       </section>
 
