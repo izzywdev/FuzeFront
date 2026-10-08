@@ -137,6 +137,7 @@ const pack = JSON.parse(fs.readFileSync(PACK_FILE, 'utf8')) as {
   packKey: string;
   version: number;
   appliesTo: string[];
+  translationProvenance?: 'human' | 'machine';
   lists: Array<{ key: string; translations?: unknown[]; items: Array<{ translations?: unknown[] }> }>;
 };
 
@@ -170,6 +171,24 @@ describe('platform defaults on identity.org.created', () => {
     const expectedTranslations = pack.lists.reduce((n, l) => n + (l.translations?.length ?? 0) + l.items.reduce((m, i) => m + (i.translations?.length ?? 0), 0), 0);
     expect(expectedTranslations).toBeGreaterThan(0);
     expect(countTopic(events, TOPICS.SELECTION_LISTS_TRANSLATION_UPSERTED)).toBe(expectedTranslations);
+    // Provenance is honest: the pack's translations are machine/AI output with no native review yet, so the
+    // service stores every non-source row is_machine=true (only the English source rows are human) and says so
+    // on the wire (isMachine: true). It must never present them as human-reviewed.
+    expect(pack.translationProvenance).toBe('machine');
+    const listTr = await dbQuery<{ locale: string; is_machine: boolean }>(
+      'SELECT t.locale, t.is_machine FROM selection_list_translations t JOIN selection_lists l ON l.id = t.list_id WHERE l.organization_id = $1',
+      [org.wire],
+    );
+    const itemTr = await dbQuery<{ locale: string; is_machine: boolean }>(
+      'SELECT t.locale, t.is_machine FROM selection_list_item_translations t JOIN selection_list_items i ON i.id = t.item_id JOIN selection_lists l ON l.id = i.list_id WHERE l.organization_id = $1',
+      [org.wire],
+    );
+    for (const rows of [listTr, itemTr]) {
+      expect(rows.filter((r) => r.is_machine).length).toBe(rows.filter((r) => r.locale !== 'en').length);
+      expect(rows.filter((r) => !r.is_machine).every((r) => r.locale === 'en')).toBe(true);
+      expect(rows.some((r) => r.is_machine)).toBe(true);
+    }
+    for (const e of events.filter((x) => x.topic === TOPICS.SELECTION_LISTS_TRANSLATION_UPSERTED)) expect(e.payload['isMachine']).toBe(true);
     // no human owner is invented for a seeded list (§9.2)
     expect(countTopic(events, TOPICS.SELECTION_LISTS_ACCESS_GRANTED)).toBe(0);
     expect(await dbQuery('SELECT 1 FROM selection_list_access a JOIN selection_lists l ON l.id = a.list_id WHERE l.organization_id = $1', [org.wire])).toEqual([]);

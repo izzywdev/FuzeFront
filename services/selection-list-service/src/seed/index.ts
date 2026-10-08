@@ -25,6 +25,8 @@ export {
   loadPlatformPacks,
   SeedPackError,
   type PlatformPack,
+  type PlatformPackContent,
+  type TranslationProvenance,
 } from './packs';
 export {
   DEFAULT_SEED_SOURCES_FILE,
