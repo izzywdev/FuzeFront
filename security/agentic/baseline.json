@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "researched_on": "2026-09-14",
+  "records": [
+    {
+      "id": "owasp-llm01",
+      "title": "Prompt Injection",
+      "publisher": "OWASP GenAI Security Project",
+      "url": "https://genai.owasp.org/llmrisk/llm01-prompt-injection/",
+      "controls": ["AGENT-001", "AGENT-003", "AGENT-008", "AGENT-017"]
+    },
+    {
+      "id": "owasp-agentic-threats",
+      "title": "Agentic AI Threats and Mitigations",
+      "publisher": "OWASP GenAI Security Project",
+      "url": "https://genai.owasp.org/resource/agentic-ai-threats-and-mitigations/",
+      "controls": [
+        "AGENT-004",
+        "AGENT-005",
+        "AGENT-011",
+        "AGENT-015",
+        "AGENT-016"
+      ]
+    },
+    {
+      "id": "nist-ai-100-2e2025",
+      "title": "Adversarial Machine Learning: A Taxonomy and Terminology of Attacks and Mitigations",
+      "publisher": "NIST",
+      "url": "https://csrc.nist.gov/pubs/ai/100/2/e2025/final",
+      "controls": ["AGENT-001", "AGENT-011", "AGENT-017"]
+    },
+    {
+      "id": "mitre-atlas-prompt-injection",
+      "title": "MITRE ATLAS Prompt Injection",
+      "publisher": "MITRE",
+      "url": "https://atlas.mitre.org/techniques/AML.T0051",
+      "controls": ["AGENT-001", "AGENT-003", "AGENT-017"]
+    },
+    {
+      "id": "github-actions-hardening",
+      "title": "Security hardening for GitHub Actions",
+      "publisher": "GitHub",
+      "url": "https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions",
+      "controls": ["AGENT-004", "AGENT-010", "AGENT-012"]
+    },
+    {
+      "id": "cisa-secure-by-design",
+      "title": "Secure by Design",
+      "publisher": "CISA",
+      "url": "https://www.cisa.gov/securebydesign",
+      "controls": ["AGENT-004", "AGENT-016", "AGENT-018"]
+    },
+    {
+      "id": "arxiv-visual-prompt-injection",
+      "title": "Visual Prompt Injection Attacks and Defenses in Multimodal AI",
+      "publisher": "arXiv research index",
+      "url": "https://export.arxiv.org/api/query?search_query=all:%22visual%20prompt%20injection%22",
+      "controls": ["AGENT-001", "AGENT-002", "AGENT-017"]
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "controls": [
+    {
+      "id": "AGENT-001",
+      "name": "untrusted-content-boundary",
+      "status": "required",
+      "evidence": ["tests for indirect prompt injection"]
+    },
+    {
+      "id": "AGENT-002",
+      "name": "multimodal-normalization",
+      "status": "required",
+      "evidence": ["image/OCR/audio adversarial fixtures"]
+    },
+    {
+      "id": "AGENT-003",
+      "name": "instruction-hierarchy",
+      "status": "required",
+      "evidence": ["policy override regression tests"]
+    },
+    {
+      "id": "AGENT-004",
+      "name": "tool-least-privilege",
+      "status": "required",
+      "evidence": ["deny-by-default tool policy"]
+    },
+    {
+      "id": "AGENT-005",
+      "name": "human-authorization",
+      "status": "required",
+      "evidence": ["sensitive-action approval tests"]
+    },
+    {
+      "id": "AGENT-006",
+      "name": "plan-action-binding",
+      "status": "required",
+      "evidence": ["argument mutation and replay tests"]
+    },
+    {
+      "id": "AGENT-007",
+      "name": "tool-input-validation",
+      "status": "required",
+      "evidence": ["schema and destination validation"]
+    },
+    {
+      "id": "AGENT-008",
+      "name": "tool-output-isolation",
+      "status": "required",
+      "evidence": ["malicious tool-output tests"]
+    },
+    {
+      "id": "AGENT-009",
+      "name": "egress-control",
+      "status": "required",
+      "evidence": ["network destination policy"]
+    },
+    {
+      "id": "AGENT-010",
+      "name": "secret-isolation",
+      "status": "required",
+      "evidence": ["secret canary and redaction tests"]
+    },
+    {
+      "id": "AGENT-011",
+      "name": "memory-rag-provenance",
+      "status": "required",
+      "evidence": ["tenant and poisoning tests"]
+    },
+    {
+      "id": "AGENT-012",
+      "name": "supply-chain-trust",
+      "status": "required",
+      "evidence": ["pinned and verified dependencies"]
+    },
+    {
+      "id": "AGENT-013",
+      "name": "sandboxed-execution",
+      "status": "required",
+      "evidence": ["ephemeral constrained runner"]
+    },
+    {
+      "id": "AGENT-014",
+      "name": "output-dlp",
+      "status": "required",
+      "evidence": ["output schema and leakage tests"]
+    },
+    {
+      "id": "AGENT-015",
+      "name": "identity-delegation",
+      "status": "required",
+      "evidence": ["delegation scope tests"]
+    },
+    {
+      "id": "AGENT-016",
+      "name": "observability-kill-switch",
+      "status": "required",
+      "evidence": ["audit and revocation tests"]
+    },
+    {
+      "id": "AGENT-017",
+      "name": "adversarial-regression",
+      "status": "required",
+      "evidence": ["versioned red-team corpus"]
+    },
+    {
+      "id": "AGENT-018",
+      "name": "fail-closed",
+      "status": "required",
+      "evidence": ["dependency failure tests"]
+    }
+  ]
+}
