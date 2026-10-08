@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -187,12 +188,9 @@ export const ProductsPage: React.FC = () => {
               >
                 Start free <ArrowRight size={16} />
               </a>
-              <Link
-                to="/pricing"
-                className="btn-ghost flex items-center justify-center gap-2"
-              >
+              <Button as={Link} to="/pricing" variant="ghost-inverse">
                 View pricing
-              </Link>
+              </Button>
             </div>
           </motion.div>
         </div>

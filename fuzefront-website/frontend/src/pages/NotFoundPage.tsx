@@ -1,7 +1,8 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, Home, Search } from 'lucide-react'
+import { Home, Search } from 'lucide-react'
+import { Button } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const helpfulLinks = [
@@ -48,13 +49,15 @@ export const NotFoundPage: React.FC = () => {
             >
               <Home size={18} /> Back to home
             </Link>
-            <Link
+            <Button
+              as={Link}
               to="/contact"
-              className="btn-ghost flex items-center justify-center gap-2"
+              variant="ghost-inverse"
+              withArrow
               onClick={() => trackEvent('cta_click', { button: '404_contact', location: '404_page' })}
             >
-              Contact us <ArrowRight size={16} />
-            </Link>
+              Contact us
+            </Button>
           </div>
 
           <div className="flex items-center justify-center gap-2 text-secondary-300 text-sm mb-4">

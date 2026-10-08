@@ -36,6 +36,22 @@ const VARIANTS = {
     boxShadow: "none",
     hover: "var(--bg-quaternary)",
   },
+  // Low-emphasis CTA on a dark/brand-colored surface that isn't driven by
+  // `data-theme` — a hero band, a gradient section — where `ghost`'s
+  // `var(--text-secondary)` would resolve to the *current* theme's body
+  // text color and go low-contrast (e.g. medium slate on a dark hero while
+  // `data-theme="light"` is active site-wide). Outline stays legible
+  // regardless of theme by design, the same reasoning `primary` already
+  // hardcodes `#fff` for instead of `var(--text-*)`. Hover inverts to a
+  // filled white pill with accent-colored text.
+  "ghost-inverse": {
+    background: "transparent",
+    color: "#fff",
+    border: "2px solid #fff",
+    boxShadow: "none",
+    hover: "#fff",
+    hoverColor: "var(--accent-color)",
+  },
   danger: {
     background: "var(--error-color)",
     color: "#fff",
@@ -63,6 +79,12 @@ const VARIANTS = {
  * is set on an anchor-rendered Button it drops `href`, sets
  * `aria-disabled="true"` + `tabIndex={-1}`, and swallows clicks — the same
  * "inert, not just unclickable" contract as a disabled `<button>`.
+ *
+ * `variant="ghost-inverse"` is `ghost`'s low-emphasis treatment for use on a
+ * dark/brand-colored surface that isn't itself driven by `data-theme` (a
+ * hero band, a gradient section) — white outline/text, filled-white-on-hover
+ * — so it stays legible regardless of the active theme instead of resolving
+ * through `var(--text-secondary)`.
  */
 export function Button({
   children,
@@ -111,9 +133,14 @@ export function Button({
   };
 
   const sharedHandlers = {
-    onMouseEnter: (e) => { if (!disabled) e.currentTarget.style.background = v.hover; },
+    onMouseEnter: (e) => {
+      if (disabled) return;
+      e.currentTarget.style.background = v.hover;
+      if (v.hoverColor) e.currentTarget.style.color = v.hoverColor;
+    },
     onMouseLeave: (e) => {
       e.currentTarget.style.background = v.background;
+      if (v.hoverColor) e.currentTarget.style.color = v.color;
       e.currentTarget.style.transform = "translateY(0)";
     },
     onMouseDown: (e) => { if (!disabled) e.currentTarget.style.transform = "translateY(1px)"; },

@@ -7,6 +7,9 @@ The host shell's pill-ish action button — accent-glow `primary` is the core CT
 <Button variant="danger" leadingIcon={<TrashIcon />}>Remove remote</Button>
 <Button variant="primary" fullWidth size="lg">Sign in</Button>
 
+{/* On a dark hero/gradient section that isn't itself theme-driven */}
+<Button variant="ghost-inverse" withArrow>Talk to sales</Button>
+
 {/* Polymorphic — pass href to render a real <a>, same visual treatment */}
 <Button variant="primary" href="https://app.fuzefront.com/signup">Sign Up Free</Button>
 <Button variant="ghost" href="https://app.fuzefront.com/login">Sign In</Button>
@@ -18,6 +21,6 @@ The host shell's pill-ish action button — accent-glow `primary` is the core CT
 <Button as={Link} to="/dashboard" variant="secondary">Go to dashboard</Button>
 ```
 
-Variants: `primary` (accent fill + fuse glow), `secondary` (raised + border), `ghost` (transparent), `danger` (error fill). Sizes `sm | md | lg`. `withArrow` adds a trailing arrow; `leadingIcon` prepends an icon node; `fullWidth` stretches; active state nudges down 1px; supports `disabled`.
+Variants: `primary` (accent fill + fuse glow), `secondary` (raised + border), `ghost` (transparent), `ghost-inverse` (white outline/text for a dark surface not driven by `data-theme`, filled-white on hover), `danger` (error fill). Sizes `sm | md | lg`. `withArrow` adds a trailing arrow; `leadingIcon` prepends an icon node; `fullWidth` stretches; active state nudges down 1px; supports `disabled`.
 
 **Polymorphic.** Pass `href` to render a real `<a>` instead of a `<button>` — same variant styling, real anchor semantics (`href`/`target`/`rel`, middle-click/ctrl-click opens a new tab, right-click offers "copy link", correct keyboard/screen-reader link role). `target="_blank"` gets a safe `rel="noopener noreferrer"` default unless you pass your own `rel`. Use this instead of `onClick={() => { window.location.href = url }}` or `window.open(url)` for any CTA that navigates — those are not real links and lose the browser-native affordances above. For in-app routing (react-router-dom), pass `as={Link} to="/path"` instead of `href`. A `disabled` anchor-rendered Button drops `href`, sets `aria-disabled`, and swallows clicks rather than navigating.
