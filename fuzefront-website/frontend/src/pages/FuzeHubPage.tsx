@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, Lede } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -91,9 +91,9 @@ export const FuzeHubPage: React.FC = () => {
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold text-white mb-6 leading-tight">
               One view for your<br />entire operation
             </h1>
-            <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-10">
+            <Lede spacing="lg">
               Real-time monitoring, deployment dashboards, team activity feeds, and integrated alerting — across every Fuze product and your own services. No more tab-switching.
-            </p>
+            </Lede>
             <div className="flex flex-col sm:flex-row justify-center gap-4">
               <a
                 href="https://app.fuzefront.com/signup"
