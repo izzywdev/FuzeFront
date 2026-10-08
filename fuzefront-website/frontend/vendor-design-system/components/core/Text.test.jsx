@@ -120,6 +120,68 @@ describe("<Text>", () => {
     });
   });
 
+  it("defaults `weight` to inherit — no font-weight set (unchanged pre-`weight` behavior)", () => {
+    render(<Text>Default weight</Text>);
+    expect(screen.getByText("Default weight").style.fontWeight).toBe("");
+  });
+
+  it("resolves every `weight` step to its DS font-weight token — never a raw Tailwind weight utility", () => {
+    const cases = [
+      ["regular", "var(--weight-regular)"],
+      ["medium", "var(--weight-medium)"],
+      ["semibold", "var(--weight-semibold)"],
+      ["bold", "var(--weight-bold)"],
+    ];
+    cases.forEach(([weight, expected]) => {
+      const { unmount } = render(<Text weight={weight}>{weight}</Text>);
+      expect(screen.getByText(weight).style.fontWeight).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("falls back to inherit (no font-weight set) for an unknown weight value", () => {
+    render(<Text weight="not-a-real-weight">Fallback weight</Text>);
+    expect(screen.getByText("Fallback weight").style.fontWeight).toBe("");
+  });
+
+  it("defaults `spacingTop` to none — zero margin-block-start (unchanged pre-`spacingTop` behavior)", () => {
+    render(<Text>Default spacing top</Text>);
+    expect(screen.getByText("Default spacing top").style.marginBlockStart).toBe("0");
+  });
+
+  it("resolves every `spacingTop` step to its DS spacing-scale token via the logical marginBlockStart (RTL-safe)", () => {
+    const cases = [
+      ["sm", "var(--space-2)"],
+      ["md", "var(--space-4)"],
+      ["lg", "var(--space-5)"],
+    ];
+    cases.forEach(([spacingTop, expected]) => {
+      const { unmount } = render(<Text spacingTop={spacingTop}>{spacingTop}</Text>);
+      expect(screen.getByText(spacingTop).style.marginBlockStart).toBe(expected);
+      unmount();
+    });
+  });
+
+  it("resolves `spacing` step `lg` (new) to its DS spacing-scale token via marginBlockEnd", () => {
+    render(<Text spacing="lg">lg bottom</Text>);
+    expect(screen.getByText("lg bottom").style.marginBlockEnd).toBe("var(--space-5)");
+  });
+
+  it("covers the recurring `text-base font-semibold text-gray-800 mb-2 mt-{4,5}` prose subsection-heading pattern via as+size+weight+spacing+spacingTop", () => {
+    render(
+      <Text as="h3" size="base" weight="semibold" spacing="sm" spacingTop="md">
+        4.2 Price Changes
+      </Text>
+    );
+    const node = screen.getByText("4.2 Price Changes");
+    expect(node.tagName).toBe("H3");
+    expect(node.style.fontSize).toBe("var(--text-base)");
+    expect(node.style.fontWeight).toBe("var(--weight-semibold)");
+    expect(node.style.color).toBe("var(--text-primary)");
+    expect(node.style.marginBlockEnd).toBe("var(--space-2)");
+    expect(node.style.marginBlockStart).toBe("var(--space-4)");
+  });
+
   it("covers the recurring `text-sm text-gray-{500,600} mb-{2,4}` block-caption pattern via tone+size+spacing", () => {
     render(
       <Text tone="secondary" size="sm" spacing="md">

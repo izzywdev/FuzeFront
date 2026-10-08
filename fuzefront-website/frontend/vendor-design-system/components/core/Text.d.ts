@@ -5,7 +5,7 @@ import * as React from "react";
  */
 export interface TextProps extends React.HTMLAttributes<HTMLElement> {
   /** Rendered element. @default "p" */
-  as?: "p" | "span" | "div" | "label";
+  as?: "p" | "span" | "div" | "label" | "h1" | "h2" | "h3" | "h4";
   /**
    * Semantic tone: `primary` = default reading text, `secondary` =
    * de-emphasized supporting copy, `muted` = lowest-emphasis placeholder /
@@ -20,12 +20,25 @@ export interface TextProps extends React.HTMLAttributes<HTMLElement> {
    */
   size?: "inherit" | "xs" | "sm" | "base" | "md";
   /**
+   * Step of the DS font-weight scale. `inherit` (default) does not set a
+   * font-weight at all, unchanged from before `weight` existed.
+   * @default "inherit"
+   */
+  weight?: "inherit" | "regular" | "medium" | "semibold" | "bold";
+  /**
    * Step of the DS spacing scale applied as `margin-block-end` (a logical
    * property, so it mirrors under RTL). `none` (default) keeps the original
    * zero-margin behavior.
    * @default "none"
    */
-  spacing?: "none" | "sm" | "md";
+  spacing?: "none" | "sm" | "md" | "lg";
+  /**
+   * Step of the DS spacing scale applied as `margin-block-start` (the
+   * logical-property counterpart to `spacing`, so it also mirrors under
+   * RTL). `none` (default) applies no top margin.
+   * @default "none"
+   */
+  spacingTop?: "none" | "sm" | "md" | "lg";
   children?: React.ReactNode;
 }
 

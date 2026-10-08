@@ -21,13 +21,26 @@ const SIZES = {
   md: "var(--text-md)",
 };
 
-// `spacing` maps to the DS spacing scale for the block's bottom margin —
-// replaces the recurring ad-hoc `mb-2`/`mb-4` utility. `none` (default)
-// preserves the original zero-margin behavior.
-const SPACING_BOTTOM = {
+// `spacing` / `spacingTop` both map to the DS spacing scale (the same
+// scale, since a top and bottom margin step mean the same physical gap) —
+// replaces the recurring ad-hoc `mb-2`/`mb-4`/`mt-4`/`mt-5` utilities.
+// `none` (default for both) preserves the original zero-margin behavior.
+const SPACING_SCALE = {
   none: 0,
   sm: "var(--space-2)",
   md: "var(--space-4)",
+  lg: "var(--space-5)",
+};
+
+// `weight` maps to the DS font-weight scale — replaces the recurring ad-hoc
+// `font-semibold` utility. `inherit` (default) preserves the original
+// behavior of not setting a font-weight at all.
+const WEIGHTS = {
+  inherit: undefined,
+  regular: "var(--weight-regular)",
+  medium: "var(--weight-medium)",
+  semibold: "var(--weight-semibold)",
+  bold: "var(--weight-bold)",
 };
 
 /**
@@ -49,12 +62,25 @@ const SPACING_BOTTOM = {
  * step of the DS type scale (default `inherit`, unchanged from before), and
  * `spacing` picks a step of the DS spacing scale for `margin-block-end`
  * (default `none`, unchanged from before).
+ *
+ * `weight` + `size="base"` + `spacing="sm"` + `spacingTop` cover the
+ * recurring `text-base font-semibold text-gray-800 mb-2 mt-{4,5}` prose
+ * subsection-heading pattern (an `<h3>`-level heading inside long-form
+ * copy, e.g. a legal/policy page's numbered subsections) — rendered via
+ * `as="h3"` instead of a raw Tailwind weight/color/margin utility.
+ * `weight` (default `inherit`, unchanged from before `weight` existed)
+ * picks a step of the DS font-weight scale, and `spacingTop` (default
+ * `none`) picks a step of the DS spacing scale for `margin-block-start`
+ * (the logical-property counterpart to `spacing`'s `margin-block-end`, so
+ * both mirror under RTL).
  */
 export function Text({
   as: As = "p",
   tone = "primary",
   size = "inherit",
+  weight = "inherit",
   spacing = "none",
+  spacingTop = "none",
   children,
   style,
   ...rest
@@ -65,9 +91,11 @@ export function Text({
         margin: 0,
         fontFamily: "var(--font-sans)",
         fontSize: SIZES[size] || SIZES.inherit,
+        fontWeight: WEIGHTS[weight],
         lineHeight: "inherit",
         color: TONES[tone] || TONES.primary,
-        marginBlockEnd: SPACING_BOTTOM[spacing] ?? SPACING_BOTTOM.none,
+        marginBlockStart: SPACING_SCALE[spacingTop] ?? SPACING_SCALE.none,
+        marginBlockEnd: SPACING_SCALE[spacing] ?? SPACING_SCALE.none,
         ...style,
       }}
       {...rest}
