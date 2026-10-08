@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Caption, Center, Container, InverseHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -384,9 +384,9 @@ export const HomePage: React.FC = () => {
         <Container size="4xl" className="relative text-center">
           <SectionWrapper>
             <motion.div variants={fadeUpVariants}>
-              <h2 className="text-3xl sm:text-4xl font-heading font-bold text-white mb-4">
+              <InverseHeading>
                 Simple pricing for every stage
-              </h2>
+              </InverseHeading>
               <p className="text-lg text-secondary-300 mb-8 max-w-xl mx-auto">
                 Start free. Scale confidently. Enterprise options for unlimited teams and on-premise deployment.
               </p>

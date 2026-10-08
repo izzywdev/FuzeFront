@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, InverseHeading } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -209,9 +209,9 @@ export const FuzeHubPage: React.FC = () => {
           className="max-w-2xl mx-auto px-4 text-center"
         >
           <CheckCircle2 size={40} className="text-primary-400 mx-auto mb-6" />
-          <h2 className="text-3xl font-heading font-bold text-white mb-4">
+          <InverseHeading>
             Ready for full operational visibility?
-          </h2>
+          </InverseHeading>
           <p className="text-secondary-400 mb-8">
             FuzeHub is included in Growth and Enterprise plans. Start your 14-day trial.
           </p>
