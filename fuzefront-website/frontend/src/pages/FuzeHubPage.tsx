@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, SectionIcon, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -208,7 +208,9 @@ export const FuzeHubPage: React.FC = () => {
           transition={{ duration: 0.6 }}
           className="max-w-2xl mx-auto px-4 text-center"
         >
-          <CheckCircle2 size={40} className="text-primary-400 mx-auto mb-6" />
+          <SectionIcon tone="accent">
+            <CheckCircle2 size={40} />
+          </SectionIcon>
           <h2 className="text-3xl font-heading font-bold text-white mb-4">
             Ready for full operational visibility?
           </h2>
