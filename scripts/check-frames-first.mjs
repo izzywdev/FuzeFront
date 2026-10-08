@@ -71,6 +71,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { hostedCoverage } from './lib/fuzex-review.mjs'
 
 // fileURLToPath, not new URL().pathname — the latter yields "/D:/..." on Windows.
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -326,7 +327,7 @@ function allUiFiles(policy) {
 
 /* ---------------------------------------------------------------------- main */
 
-function main() {
+async function main() {
   const policy = JSON.parse(readFileSync(POLICY_PATH, 'utf8'))
 
   // --uncovered-mode previews the ramp's destination without editing the policy,
@@ -341,7 +342,7 @@ function main() {
     console.log(DIM(`(preview: uncovered.mode overridden to "${modeOverride}")`))
   }
 
-  const coverage = buildCoverage(loadManifests())
+  let coverage = buildCoverage(loadManifests())
 
   const declaring = new Set(coverage.map(c => c.feature))
   console.log(DIM(`policy:   ${path.relative(REPO_ROOT, POLICY_PATH)} (uncovered.mode=${policy.uncovered?.mode})`))
@@ -368,6 +369,18 @@ function main() {
   const base = arg('--base', 'origin/master')
   const changed = explicit ?? changedFilesFromGit(base)
   if (!explicit) console.log(DIM(`diff:     ${base}...HEAD (${changed.length} file(s) changed)`))
+
+  const reviewConfigPath = path.join(REPO_ROOT, '.fuze', 'fuzex-review.json')
+  if (existsSync(reviewConfigPath)) {
+    // Resolve only claims relevant to this diff; infrastructure-only changes and
+    // the coverage audit do not depend on the hosted service being available.
+    const claimed = coverage.filter(entry => changed.some(file => matchesAny(file, entry.paths) && matchesAny(file, policy.uiPaths)))
+    const hosted = await hostedCoverage(claimed, {
+      config: JSON.parse(readFileSync(reviewConfigPath, 'utf8')),
+      framesDir: FRAMES_DIR,
+    })
+    coverage = coverage.map(entry => hosted.find(item => item.feature === entry.feature && item.flow === entry.flow) ?? entry)
+  }
 
   const res = evaluate(changed, coverage, policy)
   const considered = res.ok.length + res.blocked.length + res.uncovered.length + res.exempt.length
@@ -405,6 +418,8 @@ function main() {
     for (const f of flows) console.error(`  - ${f}`)
     console.error(`
 What to do next — do NOT edit the manifest's \`approved\` field by hand:
+  For a feature migrated in .fuze/fuzex-review.json, approve the current imported
+  revision in FuzeX. A stale revision, rejection or service outage fails closed.
   1. Open design/frames/<feature>/index.html (published to GitHub Pages) and use the
      in-frame "Approve" control on the flow. It files a design-approval issue and
      design-approval.yml flips \`approved\` on master after verifying the stamp.
@@ -446,10 +461,8 @@ Claim these paths in the owning feature's manifest to bring them under enforceme
 
 // Only run when executed directly, so the test file can import the pure helpers.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    process.exit(main())
-  } catch (err) {
+  main().then(code => { process.exitCode = code }).catch(err => {
     console.error(RED(err.message ?? err))
-    process.exit(1)
-  }
+    process.exitCode = 1
+  })
 }
