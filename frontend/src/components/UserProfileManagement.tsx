@@ -298,7 +298,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
         <div className="p-6">
           {/* Profile Tab */}
           {activeTab === 'profile' && (
-            <div className="space-y-6">
+            <Stack direction="column" gap="lg" align="stretch">
               <ResponsiveGrid columns={2}>
                 <div>
                   <FieldLabel htmlFor="profile-first-name" style={{ marginBlockEnd: 'var(--space-1)' }}>
@@ -440,12 +440,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                   {new Date(profile.updated_at).toLocaleDateString()}
                 </p>
               </div>
-            </div>
+            </Stack>
           )}
 
           {/* Security Tab */}
           {activeTab === 'security' && (
-            <div className="space-y-6">
+            <Stack direction="column" gap="lg" align="stretch">
               <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
                 <div className="flex">
                   <div className="flex-shrink-0">
@@ -494,12 +494,12 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                   </button>
                 </InfoRow>
               </div>
-            </div>
+            </Stack>
           )}
 
           {/* Notifications Tab */}
           {activeTab === 'notifications' && (
-            <div className="space-y-6">
+            <Stack direction="column" gap="lg" align="stretch">
               <div>
                 <h3 className="text-lg font-medium text-gray-900 mb-4">
                   Notification Preferences
@@ -534,7 +534,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                   </InfoRow>
                 </div>
               </div>
-            </div>
+            </Stack>
           )}
         </div>
       </div>
