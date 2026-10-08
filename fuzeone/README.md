@@ -136,7 +136,7 @@ must commit `android/twa-manifest.json`, its PWA manifest, icons, and
 and a direct `routing.host` such as `fuzeagent.fuzefront.com`. The TWA host, package ID, signing
 fingerprint, and Digital Asset Links declaration must agree.
 
-Pull requests retain an unsigned test APK as a 90-day Actions artifact. Every successful build on
+Pull requests retain a debug-signed test APK as a 90-day Actions artifact. Every successful build on
 the default branch increments the Android version code from the Actions run number, appends it to
 the repository SemVer for `versionName`, signs and verifies the APK, and stores it permanently in
 a GitHub Release. Generated versions are not committed back, avoiding a recursive build loop.
