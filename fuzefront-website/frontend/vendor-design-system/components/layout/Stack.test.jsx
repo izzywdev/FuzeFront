@@ -61,6 +61,22 @@ describe("<Stack>", () => {
     expect(container.firstChild.style.flexWrap).toBe("nowrap");
   });
 
+  it("mb is omitted entirely when not given", () => {
+    const { container } = render(<Stack>content</Stack>);
+    expect(container.firstChild.style.marginBottom).toBe("");
+  });
+
+  it.each([
+    ["xs", "var(--space-1)"],
+    ["sm", "var(--space-2)"],
+    ["md", "var(--space-4)"],
+    ["lg", "var(--space-6)"],
+    ["xl", "var(--space-8)"],
+  ])("mb=%s maps marginBottom to the %s spacing token", (mb, token) => {
+    const { container } = render(<Stack mb={mb}>content</Stack>);
+    expect(container.firstChild.style.marginBottom).toBe(token);
+  });
+
   it("forwards role/aria attributes to the rendered div (a11y passthrough)", () => {
     render(
       <Stack role="group" aria-label="Organization actions">
