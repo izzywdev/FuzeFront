@@ -9,16 +9,22 @@ const portfolio = {
     { id: 'api-gap', subjectId: 'api-1', subjectType: 'api-operation', kind: 'authentication-missing', label: 'Missing authentication is rejected', rule: 'api.security.authentication', priority: 'required', coverage: 'gap' },
     { id: 'ui-gap', subjectId: 'ui-1', subjectType: 'frontend-surface', kind: 'state-default', label: 'Default render is covered', rule: 'ui.default', priority: 'required', coverage: 'gap' },
   ],
-  findings: [{ id: 'finding-1', repositoryId: 'repo-1', subjectId: 'api-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' }],
-  requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do' }],
+  findings: [
+    { id: 'finding-1', repositoryId: 'repo-1', subjectId: 'api-1', title: 'Unauthenticated endpoint', detail: 'Add an authentication test', severity: 'high', status: 'open' },
+    { id: 'flow-finding-1', subjectId: 'req-1', type: 'story-without-flow', title: 'FQ-1 has no confirmed user flow', detail: 'The active story has no accepted flow.', severity: 'high', status: 'open', sourceRevision: 'FQ-1@2026-09-11T00:00:00.000Z', policyVersion: 'flow-orphans-v1', schemaVersion: '1.0', evidenceStrength: 'deterministic', evidence: ['FQ-1'], generatedAt: '2026-09-11T00:01:00.000Z' },
+    { id: 'requirement-finding-1', subjectId: 'req-1', type: 'conflicting-requirement-outcome', title: 'FQ-1 contains conflicting outcomes', detail: 'Criteria 1 and 2 express opposite results.', severity: 'high', status: 'open', sourceRevision: 'FQ-1@2026-09-11T00:00:00.000Z', policyVersion: 'requirement-review-v1', schemaVersion: '1.0', evidenceStrength: 'deterministic', sourcePassages: ['Administrators can suspend an app.', 'Administrators cannot suspend an app.'], affectedFlowIds: ['flow-1'], affectedTargetIds: ['api-1'], remediation: 'Resolve the contradiction in Jira.', remediationOptions: ['Keep criterion 1', 'Keep criterion 2', 'Rewrite both criteria in Jira'], generatedAt: '2026-09-11T00:01:00.000Z' },
+  ],
+  requirements: [{ id: 'req-1', jiraKey: 'FQ-1', issueType: 'Story', summary: 'Protect app access', description: 'A user can suspend an app.', status: 'To Do', updatedAt: '2026-09-14T05:00:00.000Z', acceptanceCriteria: [{ fingerprint: 'admin-suspend', position: 1, text: 'An administrator can suspend an app in the active organization.' }] }],
   flows: [{ id: 'flow-1', requirementId: 'req-1', title: 'Suspend application' }],
   suggestions: [{
     id: 'suggestion-1', requirementId: 'req-1', type: 'flow', title: 'Confirm authorization boundary',
     confidence: 0.91, evidence: ['Only administrators may suspend an app.'], state: 'proposed',
     payload: {
       actors: ['administrator'], trigger: 'Suspend an app',
+      preconditions: ['The application exists'],
       authorizationBoundaries: ['Administrator role is required'],
       tenantBoundaries: ['App belongs to the active organization'],
+      steps: [{ id: 'flow-1:step:1', position: 1, actor: 'administrator', action: 'submits suspension', expectedOutcome: 'the app is suspended', variant: 'main', targetIds: ['api-1', 'criterion:admin-suspend'] }],
       analysis: { promptVersion: 'fuzequality-flow-v1', schemaVersion: '1.0', model: 'quality-analysis' },
     },
   }],
@@ -47,6 +53,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       ...fixture,
       suggestions: suggestionConfirmed ? [] : fixture.suggestions,
     })
+    if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
     if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
@@ -122,10 +129,19 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
   test('shows Jira-backed product intent separately from confirmed flows and AI proposals', async ({ page }) => {
     await page.getByRole('button', { name: 'Requirements & flows' }).click()
-    await expect(page.getByText('FQ-1')).toBeVisible()
+    await expect(page.locator('.requirement-key').getByText('FQ-1', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Protect app access' })).toBeVisible()
     await expect(page.getByText('1 confirmed flows')).toBeVisible()
     await expect(page.getByText('1 proposals')).toBeVisible()
+    await expect(page.getByText('Jira fresh')).toBeVisible()
+    await expect(page.getByText('2 quality findings')).toBeVisible()
+    await page.getByText('FQ-1 has no confirmed user flow').click()
+    await expect(page.getByText(/deterministic evidence · policy flow-orphans-v1 · schema 1.0/)).toBeVisible()
+    await expect(page.locator('.requirement-findings code').getByText('FQ-1', { exact: true })).toBeVisible()
+    await page.getByText('FQ-1 contains conflicting outcomes').click()
+    await expect(page.getByText('Administrators cannot suspend an app.')).toBeVisible()
+    await expect(page.getByLabel('Remediation choices').getByText('Rewrite both criteria in Jira')).toBeVisible()
+    await expect(page.getByText('flow-1', { exact: true })).toBeVisible()
   })
 
   test('onboards a repository only after GitHub App verification and can request a scan', async ({ page }) => {
@@ -151,8 +167,11 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('No Storybook visual reference found')).toBeVisible()
     await page.getByRole('button', { name: 'Close component preview' }).click()
     await page.getByRole('button', { name: 'AI review queue' }).click()
-    await expect(page.getByText('Authorization boundaries')).toBeVisible()
-    await expect(page.getByText('Administrator role is required')).toBeVisible()
+    await expect(page.getByLabel('Jira source')).toContainText('An administrator can suspend an app in the active organization.')
+    await expect(page.getByLabel('Proposed flow graph')).toContainText('submits suspension')
+    await expect(page.getByLabel('Proposed flow graph')).toContainText('POST /apps/{slug}/suspend')
+    await expect(page.getByLabel('Jira source')).toContainText('Source revision: FQ-1@2026-09-14T05:00:00.000Z')
+    await expect(page.getByLabel('Review evidence and provenance')).toContainText('Administrator role is required')
     await expect(page.getByText(/Prompt fuzequality-flow-v1/)).toBeVisible()
     await page.getByRole('button', { name: 'Confirm' }).click()
     await expect(page.getByText('Review queue cleared')).toBeVisible()

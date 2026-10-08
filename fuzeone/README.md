@@ -133,11 +133,18 @@ An Android member declares `mobile.required: true` and includes `android` in `mo
 `fuzeone sync` then installs the always-reporting APK workflow and its contract check. The product
 must commit `android/twa-manifest.json`, its PWA manifest, icons, and
 `frontend/public/.well-known/assetlinks.json`; its runtime registration must include `standalone`
-and a direct `routing.host` such as `fuzeagent.fuzefront.com`. The TWA host, package ID, signing
-fingerprint, and Digital Asset Links declaration must agree.
+and a direct `routing.host` such as `fuzeagent.fuzefront.com`. MendysRobotics is the explicit
+custom-domain exception and uses `live.mendysrobotics.com`. The APK launches that standalone UI
+origin at `/`; the UI reaches its backend through the same origin under relative `/api` paths.
+The TWA host, package ID, signing fingerprint, and Digital Asset Links declaration must agree.
 
-Pull requests retain a debug-signed test APK as a 90-day Actions artifact. Every successful build on
-the default branch increments the Android version code from the Actions run number, appends it to
+The canonical first-wave product and frontend-origin inventory is
+`fuzeone/mobile-products.json`; the complete runtime and production acceptance contract is
+documented in `docs/deployment/MOBILE_APK_TARGETS.md`.
+
+Pull requests and non-default branch builds retain a test APK as a 90-day Actions artifact. Every
+successful build on the repository's actual default branch increments the Android version code from
+the Actions run number, appends it to
 the repository SemVer for `versionName`, signs and verifies the APK, and stores it permanently in
 a GitHub Release. Generated versions are not committed back, avoiding a recursive build loop.
 

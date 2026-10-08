@@ -9,10 +9,14 @@ import json
 import pytest
 
 flask = pytest.importorskip("flask")
-from flask import Flask, g  # noqa: E402
-
-from fuzefront_service_auth import AuthorizationError, MachineTokenVerifier  # noqa: E402
-from fuzefront_service_auth.middleware.flask import require_machine_identity  # noqa: E402
+from flask import Flask, g
+from fuzefront_service_auth import (
+    AuthorizationError,
+    MachineTokenVerifier,
+)
+from fuzefront_service_auth.middleware.flask import (
+    require_machine_identity,
+)
 
 
 def make_http_post(responses):

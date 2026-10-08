@@ -24,11 +24,13 @@ export interface Config {
    */
   stripeSecretKey?: string;
   /**
-   * Bearer token proving the caller is an authorized internal consumer
-   * (billing-service / the host proxy). Guards the neutral API when set;
-   * absent in the scaffold leaves the surface open in local/degraded runs.
+   * Origin of FuzeFront's Security API (e.g. `http://fuzefront-security:3002`).
+   * The internal API verifies incoming managed service tokens against its
+   * `/api/v1/security/tokens/introspect` contract. Required whenever the neutral
+   * API is mounted (i.e. a vendor key is set) — its absence fails the app closed
+   * at startup, never open. Replaces the retired `PAYMENT_INTERNAL_TOKEN`.
    */
-  internalToken?: string;
+  securityServiceUrl?: string;
 }
 
 export function loadConfig(): Config {
@@ -39,6 +41,6 @@ export function loadConfig(): Config {
     // adapter). This is the single knob a future vendor swap flips.
     provider: provider === 'stripe' ? 'stripe' : 'stripe',
     stripeSecretKey: process.env.STRIPE_SECRET_KEY,
-    internalToken: process.env.PAYMENT_INTERNAL_TOKEN,
+    securityServiceUrl: process.env.SECURITY_SERVICE_URL,
   };
 }

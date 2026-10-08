@@ -12,14 +12,15 @@
     "start": "node dist/index.js",
     "dev": "nodemon --exec ts-node src/index.ts",
     "test": "jest",
+    "test:integration": "jest --runInBand tests/integration",
     "setup:stripe-plans": "node scripts/setup-stripe-plans.mjs"
   },
   "dependencies": {
+    "@fuzefront/auth": "file:../../packages/auth",
     "@fuzefront/shared": "file:../../shared",
     "express": "4.19.2",
     "kafkajs": "2.2.4",
     "pg": "^8",
-    "permitio": "^2.7.4",
     "stripe": "^17",
     "zod": "3.22.4",
     "@izzywdev/fuzefront-identity": "file:../../packages/identity"
@@ -42,6 +43,6 @@
   "overrides": {
     "body-parser": ">=1.20.6 <2",
     "brace-expansion": ">=5.0.9",
-    "qs": ">=6.15.3 <7"
+    "qs": ">=6.16.0 <7"
   }
 }

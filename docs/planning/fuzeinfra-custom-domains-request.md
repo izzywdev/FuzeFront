@@ -1,6 +1,6 @@
 # FuzeInfra capability request — multi-tenant portal DNS/TLS + custom-domain provisioning
 
-> **Status:** delegation request to **FuzeInfra** (cross-repo `@claude`). This is the **hard
+> **Status:** delegation request to **FuzeInfra** (cross-repo `@fuze`). This is the **hard
 > dependency** blocking **FF-EPIC-16 (self-service custom domains)**, story S2 (TLS status +
 > FuzeInfra integration). Infra changes are owned by FuzeInfra — FuzeFront only consumes the
 > resulting capability. Paste the prompt below into a FuzeInfra session/thread.
@@ -27,7 +27,7 @@ generation of the domain-verification token, and all UI.
 ## The prompt to paste into FuzeInfra
 
 ```
-@claude — FuzeInfra capability request from FuzeFront: multi-tenant portal DNS/TLS + custom-domain provisioning
+@fuze — FuzeInfra capability request from FuzeFront: multi-tenant portal DNS/TLS + custom-domain provisioning
 
 ## Context
 FuzeFront is becoming a multi-tenant portal platform: one shared deployment serves many

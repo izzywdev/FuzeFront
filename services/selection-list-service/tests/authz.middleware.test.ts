@@ -21,7 +21,9 @@ jest.mock('../src/db', () => {
   mockDb.where = jest.fn(() => mockDb);
   mockDb.whereNull = jest.fn(() => mockDb);
   mockDb.select = jest.fn(() => mockDb);
-  mockDb.first = jest.fn(() => Promise.resolve(null));
+  // Default: the list exists in the caller's org (requireAuthzCheck's pre-check
+  // reads selection_lists via .first()). Individual tests override this.
+  mockDb.first = jest.fn(() => Promise.resolve({ id: 'sl_exists' }));
   mockDb.count = jest.fn(() => mockDb);
   mockDb.insert = jest.fn(() => mockDb);
   mockDb.onConflict = jest.fn(() => mockDb);
@@ -44,12 +46,18 @@ import {
   makeNoOpProxy,
   grantListOwner,
   countActiveOwners,
+  filterReadable,
 } from '../src/middleware/authz';
 import { db } from '../src/db';
+import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const JWT_SECRET = 'test-secret-s7-authz';
+// Test-only signing key. Sourced from the environment so this suite never
+// carries a literal that could be copy-pasted into (or drift from) a real
+// production default; the fallback is deliberately, obviously not a secret.
+const JWT_SECRET =
+  process.env.TEST_JWT_SECRET ?? 'test-only-not-a-real-secret-s7-authz';
 process.env.JWT_SECRET = JWT_SECRET;
 
 function makeToken(overrides: Record<string, unknown> = {}): string {
@@ -181,6 +189,43 @@ describe('requireAuthzCheck — flag ON', () => {
     expect(res.body.code).toBe('FORBIDDEN');
   });
 
+  it('returns 404 (not 403) when a READ is denied on a list instance — the API is not an existence oracle', async () => {
+    const check = jest.fn().mockResolvedValue({ allow: false });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
+    const app = buildApp('SelectionList', 'read');
+
+    const res = await request(app)
+      .get('/lists/sl_abc123')
+      .set('Authorization', `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 404 and never asks the Security API when the list does not exist in the caller\'s org', async () => {
+    const check = jest.fn().mockResolvedValue({ allow: true });
+    _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
+    const mockDb = db as any;
+    const originalFirst = mockDb.first;
+    mockDb.first = jest.fn(() => Promise.resolve(undefined));
+    try {
+      const app = buildApp('SelectionList', 'update');
+      const res = await request(app)
+        .get('/lists/sl_other_org_or_never_minted')
+        .set('Authorization', `Bearer ${makeToken()}`);
+
+      expect(res.status).toBe(404);
+      expect(check).not.toHaveBeenCalled();
+      // The existence lookup is scoped to the CALLER's org.
+      expect(mockDb.where).toHaveBeenCalledWith({
+        id: 'sl_other_org_or_never_minted',
+        organization_id: 'org_acme',
+      });
+    } finally {
+      mockDb.first = originalFirst;
+    }
+  });
+
   it('returns 403 (fail closed) when the Security API check throws a generic error', async () => {
     const check = jest.fn().mockRejectedValue(new Error('Security API network error'));
     _setAuthzClientForTesting({ check, bulkCheck: jest.fn() } as unknown as AuthzClient);
@@ -241,9 +286,17 @@ describe('requireAuthzCheck — flag ON', () => {
 // ─── grantListOwner ───────────────────────────────────────────────────────────
 describe('grantListOwner', () => {
   const mockDb = db as jest.MockedFunction<any>;
+  // Grants are written with the service's MACHINE token, never the caller's
+  // (review C-1 / lib/machineIdentity.ts). A mocked provider stands in for the
+  // client_credentials issuance.
+  const getToken = jest.fn();
+
+  afterAll(() => _setGrantTokenProviderForTesting(null));
 
   beforeEach(() => {
     jest.clearAllMocks();
+    getToken.mockResolvedValue('machine-token');
+    _setGrantTokenProviderForTesting({ getToken });
     // Restore Knex chain mock after clearAllMocks.
     mockDb.mockImplementation(() => mockDb);
     mockDb.insert = jest.fn(() => mockDb);
@@ -267,7 +320,7 @@ describe('grantListOwner', () => {
       listGrants: jest.fn(),
     } as unknown as AuthzClient);
 
-    await grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin', 'caller-token');
+    await grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin');
 
     // The resource MUST reach the wire — omitting it silently widens a
     // list-scoped grant to tenant-wide (the exact bug this test guards).
@@ -278,7 +331,8 @@ describe('grantListOwner', () => {
         role: 'list-owner',
         resource: { type: 'SelectionList', key: 'sl_mylist' },
       },
-      'caller-token',
+      // The MACHINE token — not any end-user token.
+      'machine-token',
     );
     expect(mockDb.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -310,12 +364,31 @@ describe('grantListOwner', () => {
     } as unknown as AuthzClient);
 
     await expect(
-      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin', 'caller-token'),
+      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin'),
     ).rejects.toThrow();
 
     // The mirror upsert must never be reached — a caller retrying/observing
     // this failure must not find a mirror row claiming a grant that never
     // actually happened in the authorization backend.
+    expect(mockDb.insert).not.toHaveBeenCalled();
+  });
+
+  it('fails closed — no grant call, no mirror write — when the machine token cannot be obtained', async () => {
+    getToken.mockRejectedValue(new Error('token issuance failed'));
+    const grantMock = jest.fn();
+    _setAuthzClientForTesting({
+      check: jest.fn(),
+      bulkCheck: jest.fn(),
+      grant: grantMock,
+      revoke: jest.fn(),
+      listGrants: jest.fn(),
+    } as unknown as AuthzClient);
+
+    await expect(
+      grantListOwner('usr_newowner', 'org_acme', 'sl_mylist', 'usr_admin'),
+    ).rejects.toThrow('token issuance failed');
+
+    expect(grantMock).not.toHaveBeenCalled();
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 });
@@ -345,5 +418,64 @@ describe('countActiveOwners', () => {
     mockDb.first = jest.fn(() => Promise.resolve(null));
     const result = await countActiveOwners('sl_empty');
     expect(result).toBe(0);
+  });
+});
+
+// ─── filterReadable ───────────────────────────────────────────────────────────
+describe('filterReadable — instance-level read filter for list pages', () => {
+  const rows = [{ id: 'sl_a' }, { id: 'sl_b' }, { id: 'sl_c' }];
+  const req = (): Request =>
+    ({ userId: 'usr_tester01', orgId: 'org_acme', headers: { authorization: 'Bearer caller-token' } }) as unknown as Request;
+
+  afterEach(() => {
+    delete process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'];
+  });
+
+  it('passes every row through, without a Security API call, when the authz flag is OFF', async () => {
+    const bulkCheck = jest.fn();
+    _setAuthzClientForTesting({ check: jest.fn(), bulkCheck } as unknown as AuthzClient);
+
+    await expect(filterReadable(req(), rows)).resolves.toEqual(rows);
+    expect(bulkCheck).not.toHaveBeenCalled();
+  });
+
+  it('keeps only the rows the caller may read (one index-aligned bulkCheck, caller token)', async () => {
+    process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'true';
+    const bulkCheck = jest
+      .fn()
+      .mockResolvedValue([{ allow: true }, { allow: false }, { allow: true }]);
+    _setAuthzClientForTesting({ check: jest.fn(), bulkCheck } as unknown as AuthzClient);
+
+    const out = await filterReadable(req(), rows);
+
+    expect(out.map((r) => r.id)).toEqual(['sl_a', 'sl_c']);
+    expect(bulkCheck).toHaveBeenCalledTimes(1);
+    expect(bulkCheck).toHaveBeenCalledWith(
+      rows.map((r) => ({
+        subject: 'usr_tester01',
+        tenant: 'org_acme',
+        resource: { type: 'SelectionList', key: r.id },
+        action: 'read',
+      })),
+      'caller-token',
+    );
+  });
+
+  it('fails CLOSED: a thrown Security API error propagates, never degrading to "return everything"', async () => {
+    process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'true';
+    const bulkCheck = jest.fn().mockRejectedValue(new AuthzError('DECISION_UNAVAILABLE', 'timeout; denying.'));
+    _setAuthzClientForTesting({ check: jest.fn(), bulkCheck } as unknown as AuthzClient);
+
+    await expect(filterReadable(req(), rows)).rejects.toThrow();
+  });
+
+  it('returns nothing when the caller has no bearer token (authz ON)', async () => {
+    process.env['FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED'] = 'true';
+    const bulkCheck = jest.fn();
+    _setAuthzClientForTesting({ check: jest.fn(), bulkCheck } as unknown as AuthzClient);
+    const noToken = { userId: 'usr_tester01', orgId: 'org_acme', headers: {} } as unknown as Request;
+
+    await expect(filterReadable(noToken, rows)).resolves.toEqual([]);
+    expect(bulkCheck).not.toHaveBeenCalled();
   });
 });

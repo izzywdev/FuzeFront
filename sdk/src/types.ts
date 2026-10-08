@@ -26,6 +26,7 @@ export interface App {
   scope?: string
   module?: string
   description?: string
+  requiresOrgContext?: boolean
 }
 
 export interface MenuItem {
@@ -75,6 +76,7 @@ export interface PlatformContext {
   apps: App[]
   activeApp: App | null
   menuItems: MenuItem[]
+  activeOrganization?: { id: string; name: string } | null
   isLoading: boolean
   isPlatformMode: boolean
 }

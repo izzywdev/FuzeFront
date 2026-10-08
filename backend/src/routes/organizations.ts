@@ -3,13 +3,10 @@ import rateLimit from 'express-rate-limit'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { mintId, toUuid } from '@izzywdev/fuzefront-identity'
-import { authenticateToken, requireRole } from '../middleware/auth'
-import {
-  PermissionMiddleware,
-  requireOwnership,
-} from '../middleware/permissions'
+import { authenticateToken } from '../middleware/auth'
+import { PermissionMiddleware } from '../middleware/permissions'
 import { db } from '../config/database'
-import { Organization, OrganizationMembership } from '../types/shared'
+import { Organization } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
 import { defaultEventPublisher } from '../services/eventPublisher'
 import { resolvePortalScopeDecision, applyPortalScope, normalizePortalId } from '../utils/scopeToPortal'
@@ -206,7 +203,8 @@ router.post('/', authenticateToken, async (req: any, res) => {
       await reconcileOrganizationProvisioning(organizationId)
     } catch (error) {
       console.error(
-        `Provisioning reconcile failed for org ${organizationId} (will self-heal):`,
+        'Provisioning reconcile failed for org %s (will self-heal):',
+        organizationId,
         error
       )
     }
@@ -343,6 +341,46 @@ router.get('/', authenticateToken, async (req: any, res) => {
   } catch (error: any) {
     console.error('Error fetching organizations:', error)
     res.status(500).json({ error: 'Failed to fetch organizations' })
+  }
+})
+
+// GET /api/organizations/slug-available?slug=<slug> - Real-time slug availability.
+// Powers the create-organization dialog's as-you-type check so the user learns a
+// name is taken BEFORE submitting, instead of only from the 409 the create route
+// (still) returns as the authoritative safe gate. Read-only, authenticated, and
+// returns only a boolean — no org data — so there is no BOLA surface (a slug is
+// already public in tiles/URLs). MUST stay registered before `/:id` or Express
+// would match "slug-available" as an :id.
+//
+// Rate-limited because the handler hits the DB on every keystroke-debounced call
+// (CodeQL js/missing-rate-limiting). Same config as membersRateLimiter below.
+const slugAvailabilityRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again shortly.' },
+})
+router.get('/slug-available', slugAvailabilityRateLimiter, authenticateToken, async (req: any, res) => {
+  try {
+    const raw = typeof req.query.slug === 'string' ? req.query.slug.trim().toLowerCase() : ''
+
+    if (!raw) {
+      return res.status(400).json({ error: 'slug query parameter is required' })
+    }
+    // Mirror the create route's slug rules — an invalid slug is not "available",
+    // it is malformed, so the client can surface the format error without a POST.
+    if (raw.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(raw)) {
+      return res.status(200).json({ slug: raw, available: false, reason: 'invalid' })
+    }
+
+    const existing = await db('organizations').where('slug', raw).first()
+    return res
+      .status(200)
+      .json({ slug: raw, available: !existing, reason: existing ? 'taken' : undefined })
+  } catch (error: any) {
+    console.error('Error checking organization slug availability:', error)
+    res.status(500).json({ error: 'Failed to check slug availability' })
   }
 })
 

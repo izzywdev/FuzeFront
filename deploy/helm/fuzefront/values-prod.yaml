@@ -88,7 +88,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -102,7 +102,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -130,7 +130,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -141,7 +141,7 @@ securityService:
   # Same flaw affects MFA challenges and broker codes (so 2FA breaks identically).
   # Pinning to 1 replica removes the split; it costs HA for the auth path, so this
   # is a stopgap. PROPER FIX: externalize that state to Redis (FuzeInfra provisions
-  # it — delegate the DB/credentials request via @claude), then restore replicas: 2.
+  # it — delegate the DB/credentials request via @fuze), then restore replicas: 2.
   replicas: 1
   # Server-brokered Google sign-in (PR #329). "true" = enabled — owner has
   # registered this callback in the Google console. Instant rollback: set to
@@ -256,7 +256,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -270,6 +270,13 @@ applicationsService:
     appName: "applications-service"
     tokenSecretName: "unleash-secrets"
     tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Build-with-agent. buildApiUrl is deliberately empty: set FuzeAgent's
+  # in-cluster build URL (and seal FUZEAGENT_BUILD_API_TOKEN, then set
+  # tokenSecretName: fuzefront-secrets - see docs/runbooks/app-builder-secrets.md)
+  # once FuzeAgent exposes the build endpoint. Until then the API answers 503
+  # builder_unavailable.
+  appBuilder:
+    publicBaseUrl: "https://app.fuzefront.com"
   <<: *elasticPlacement
 
 # ---- MCP SSE gateway: ON ---------------------------------------------------
@@ -298,8 +305,10 @@ mcp:
   replicas: 1
   image:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
-    tag: "12cb4f787248"
+    tag: "1abe510f5981"
     pullPolicy: IfNotPresent
+  ingress:
+    enabled: true
 
 # FuzeFront's per-product A2A pod (owner decision: one pod per product, not a
 # tenant row on the shared izzywdev/FuzeAgent `a2a-shared` server — see
@@ -351,11 +360,36 @@ a2a:
   # unreachable through its own signed card despite passing every probe.
   inClusterUrl: http://a2a-fuzefront.fuzefront.svc.cluster.local:8080/rpc
   auth:
-    oidcIssuerUrl: https://app.fuzefront.com/application/o/fuzefront/
+    # CORRECTED (FuzeInfra#981): this MUST be the GLOBAL Authentik issuer, not the
+    # per-provider human `.../application/o/fuzefront/` issuer. The A2A caller
+    # providers (authentik/blueprints/provider-oidc-a2a.yaml) use
+    # `issuer_mode: global`, so every A2A token — for any caller repo — carries
+    # `iss = https://app.fuzefront.com/application/o/` (no per-app slug); the
+    # per-caller distinction is the `repo` claim, not the issuer. The callee's
+    # A2A runtime validates `iss == oidcIssuerUrl` with STRICT equality
+    # (izzywdev/FuzeAgent agent-templates/a2a/runtime.py `_build_verifier` →
+    # `verify()`: explicit `claims["iss"] != auth.oidc_issuer_url` reject), so
+    # the previous per-provider value silently rejected every A2A token even once
+    # minting worked — the round-trip would stay 401. The human web-app OIDC
+    # provider (authentik/blueprints/provider-oidc.yaml) is per_provider and is
+    # unaffected: this pod only ever validates A2A (aud=a2a) tokens.
+    #
+    # ⚠ VERIFY BEFORE MERGE (the one value this session could not confirm against
+    # the live instance): mint a token from the a2a-fuzeagent client and read its
+    # `iss`, and confirm the global-issuer string Authentik actually emits —
+    #   TOK=$(curl -s -XPOST https://auth.fuzefront.com/application/o/a2a-fuzeagent/token/ \
+    #        -d grant_type=client_credentials -d scope=a2a \
+    #        -d client_id=a2a-fuzeagent-client -d client_secret=$SECRET | jq -r .access_token)
+    #   python3 -c 'import sys,base64,json;p=sys.argv[1].split(".")[1];print(json.loads(base64.urlsafe_b64decode(p+"=="*(-len(p)%4)))["iss"])' "$TOK"
+    # Set this field to exactly that string (host + trailing slash as emitted).
+    oidcIssuerUrl: https://app.fuzefront.com/application/o/
     # In-cluster discovery avoids the Cloudflare-tunnel hairpin (17-34s
     # timeouts) — see authentik-networkpolicy.yaml, which already allows
     # same-namespace traffic to authentik-server:9000 (this pod lives in the
     # fuzefront namespace, so no NetworkPolicy change was needed for this).
+    # Unchanged: this URL is only the JWKS *locator* (its discovery doc yields
+    # the instance-shared jwks_uri) — `iss` is validated against oidcIssuerUrl
+    # above, never against this path, so any app slug's well-known works here.
     oidcDiscoveryUrl: http://authentik-server.fuzefront.svc.cluster.local:9000/application/o/fuzefront/.well-known/openid-configuration
     audience: a2a
     callerClaim: repo
@@ -380,6 +414,8 @@ a2aDeploy:
   providerBaseUrl: http://litellm.fuzeinfra.svc.cluster.local:4000
   gitImage: alpine/git:latest
   agentProvider: anthropic
+  ingress:
+    enabled: true
   resources:
     requests:
       cpu: 100m
@@ -429,23 +465,48 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
 
 # fuzefront-website — public site at fuzefront.com.
 # Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
 # release.yml and their tags are bumped by the GitOps step on every release.
+#
+# ONE DOMAIN, ONE BRAND. The apex is the canonical host and it serves the
+# FuzeOne family site. `www.fuzefront.com` is an ALIAS that 301s to the apex
+# (the redirect lives in fuzefront-website/frontend/nginx.conf) — it is never
+# a second site and never a single product's home.
+#
+# It was exactly that until this landed: `www` was an unproxied CNAME to the
+# CloudFront distribution d27hi5funhy3o7.cloudfront.net, serving a static
+# FuzeHub landing page (last-modified 2026-07-02) while the apex served
+# FuzeOne. Two brands on one domain, no redirect between them, and the split
+# was invisible to every check in this repo because `www` never reached the
+# cluster at all.
+#
+# Listing it here is the half FuzeFront owns: the cluster now CLAIMS the host,
+# so the moment the DNS record moves it is served and canonicalized. While the
+# record still points at CloudFront this line changes nothing for visitors —
+# claim-then-flip is the safe ordering (see templates/website.yaml).
+#
+# THE OTHER HALF IS FUZEINFRA'S AND IS NOT DONE BY THIS FILE. Cloudflare DNS
+# is FuzeInfra's Terraform plane; this repo holds no credential for it. The
+# `www-canonical-host` job in .github/workflows/prod-post-deploy.yml probes the
+# live edge and stays RED until that record is repointed — deliberately, so the
+# gap is a visible alarm instead of a comment nobody reads.
 websiteFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-frontend
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   host: fuzefront.com
+  aliasHosts:
+    - www.fuzefront.com
 
 websiteBackend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-backend
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -456,7 +517,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -501,7 +562,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -521,7 +582,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   <<: *elasticPlacement
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
@@ -557,7 +618,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -565,6 +626,47 @@ billingService:
     productKeys: "mendys-datasets"
     currencies: "usd,eur"
     maxTotalCents: "5000000"
+  # PLACED HERE, AFTER `payment:`, NOT next to `image:` — deliberately.
+  # This block first sat immediately below `image.tag`, which is the one line
+  # release.yml rewrites on every release. Git saw an edit adjacent to an edit and
+  # this PR went `dirty` on EVERY release while it waited for review: three
+  # conflicts in one afternoon, each costing a full CI cycle to re-resolve, each
+  # resolved identically (take master's tag, keep this block). Moving it away from
+  # that line removes the collision at its cause instead of re-resolving it
+  # forever. CLAUDE.md flags adjacent edits to one values key as the highest-risk
+  # spot for exactly this; the cheap mitigation is simply not to be adjacent.
+  # THE AUTHZ CUTOVER. billing-service's migration off the embedded Permit SDK
+  # (#1053) shipped dark: the code was live but `enabled: false` meant
+  # syncPlanToPermit() logged "flag is OFF — skipping" and returned false. This
+  # turns it on in production, and is the whole point of this block.
+  #
+  # WHAT HAPPENS ON SYNC, in order:
+  #   1. PreSync: billing-s2s-register Job provisions the Authentik
+  #      `s2s-billing-service` client_credentials application with the
+  #      `authz:admin` scope and publishes Secret/billing-s2s-credentials.
+  #   2. The billing Deployment is updated — AUTHENTIK_CLIENT_ID/SECRET are now
+  #      REQUIRED (optional tracks `enabled`), and the Secret exists because
+  #      step 1 ran first and a failed PreSync aborts the sync.
+  #   3. syncPlanToPermit() starts calling PATCH /authz/subjects/.../attributes
+  #      with a machine token on the four Stripe webhook paths.
+  #
+  # BLAST RADIUS IF SOMETHING IS WRONG. Small and reversible, by construction:
+  #   - Job fails      → sync aborts, Deployment untouched, live pod unaffected.
+  #   - Creds bad      → getMachineToken() throws, syncPlanToPermit() catches,
+  #                      logs and returns false. The Stripe webhook still
+  #                      returns 200, so Stripe does not retry, and the DB
+  #                      mirror (billingProjection off Kafka) is independent of
+  #                      this path and keeps updating.
+  #   - Need to revert → set `enabled: false` here. One line, one sync. That
+  #                      also restores `optional: true` automatically.
+  #
+  # REMOVAL CRITERION for the flag itself (from authz.flags.ts): after the
+  # Security-API-backed sync has run clean in prod for >= 2 sprints, delete the
+  # flag and the dead OFF-path rather than leaving a permanent toggle.
+  authz:
+    enabled: true
+    register:
+      enabled: true
   # Was: a soft `preferred` affinity to hostname `fuzefront-node-2`, which does
   # not exist as a node label anywhere in the live Contabo cluster (see the
   # note by chatService below) — so this never actually steered anything; the
@@ -585,13 +687,14 @@ paymentService:
   # gateway adds ZERO freeze surface to the umbrella sync (no InvalidImageName even
   # though its release image build step is still pending — see
   # deploy/PENDING-WORKFLOW-CHANGES-payment-service.md). GO-LIVE for the gateway is
-  # a deliberate later step: add the release.yml build, flip this to true, seal the
-  # real STRIPE_SECRET_KEY / PAYMENT_INTERNAL_TOKEN. It is a SCAFFOLD, not the
-  # money path — billing-service remains the live path until the migration.
+  # a deliberate later step: flip this to true and seal the real STRIPE_SECRET_KEY
+  # (internal-API auth now uses a managed service token via SECURITY_SERVICE_URL,
+  # not a sealed shared bearer). It is a SCAFFOLD, not the money path — billing-
+  # service remains the live path until the migration.
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   # Same dead node-2 hostname affinity as billingService above (fuzefront-node-2
   # is not a real node label) — replaced with the real elastic-pool placement.
   # Currently disabled (enabled: false) so this has zero live effect yet, but
@@ -857,7 +960,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -905,7 +1008,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -916,36 +1019,56 @@ notificationService:
 # PERMIT_API_KEY/permitPdpUrl to seal here (step 2 of the 3-step migration —
 # config-service was step 1; see the configService comment below for that
 # precedent). GO-LIVE steps:
-#   1. Seal DATABASE_URL, JWT_SECRET into selection-list-secrets
-#      (see deploy/contabo/sealed/selection-list-service-secrets.yaml.template).
-#   2. Flip `enabled` to true here via GitOps in a deploy window.
+#   1. Dispatch rotate-sealed-secret.yml to mint+seal DB_PASSWORD into
+#      selection-list-secrets (the service's OWN role password; nobody sees it) and
+#      merge the PR -- see docs/runbooks/per-service-database-and-role.md and
+#      deploy/contabo/sealed/selection-list-service-secrets.yaml.template.
+#   2. In a LATER merge, flip `enabled` to true here via GitOps in a deploy window
+#      (the pre-sync Job then creates role selection_list_svc + its database).
+#      (The service also needs SERVICE_CLIENT_ID / SERVICE_CLIENT_SECRET sealed into the same
+#      Secret: its OAuth client_credentials identity (scope authz:admin) for Security API
+#      grant/revoke. Without them list creation / access grants fail closed.)
 # The tag: line MUST stay immediately after repository: — release.yml's GitOps
 # bump step only rewrites a tag: found on the line directly following a matched
 # repository: anchor.
 selectionListService:
   enabled: false
+  # Authorization is ALWAYS enforced in production (code-level, review H-1); the
+  # explicit true keeps the rendered manifest honest. Do not set false.
+  authzEnabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
-    tag: ce9c6809cc69
+    tag: 9cbc8ad28334
+  # Unleash CLIENT token read from the Unleash chart's own sealed Secret (same
+  # wiring as applicationsService/securityService/chatService above); server-side
+  # only. The service now calls @fuzefront/feature-flags init() at startup.
+  featureFlags:
+    unleashUrl: "http://fuzefront-unleash.fuzefront.svc.cluster.local:4242/api"
+    appName: "selection-list-service"
+    tokenSecretName: "unleash-secrets"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+  # Fleet placement policy (see .elasticPlacement above): every backend service
+  # runs on the elastic pool; this one was missed when it was added dark.
+  <<: *elasticPlacement
 
 # devportal-service / devportal-frontend (docs/planning/developers-portal.md).
-# Dark by default behind fuzefront.devportal.enabled — same two-step go-live
-# as selectionListService above: (1) let release.yml build+push the images
-# and bump these tags, (2) flip `enabled` to true here via GitOps in a
-# dedicated deploy window, internal-staff rollout first. `tag: pending` until
-# release.yml's first devportal build rewrites it — see the tag: placement
-# rule above.
+# Step 2 of the two-step go-live executed here: workloads are now deployed.
+# This does NOT make the feature live on its own — the capability is still
+# gated behind the `fuzefront.devportal.enabled` Unleash flag (default OFF,
+# packages/feature-flags/flag-registry.yaml), which is a live-instance toggle
+# at unleash.prod.fuzefront.com, outside this repo's config-as-code. See
+# docs/runbooks/unleash-launcher-and-developer-flags.md to flip it.
 devportalService:
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
 
 devportalFrontend:
-  enabled: false
+  enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   host: developers.fuzefront.com
 
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
@@ -995,7 +1118,7 @@ configService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
-    tag: 73abbbecb51f
+    tag: 9cbc8ad28334
   <<: *elasticPlacement
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
@@ -1004,6 +1127,30 @@ configService:
 # (external image, own release cadence, family-wide flag server FuzeFront
 # hosts) per the hybrid-Argo rule, so it no longer renders from this umbrella
 # chart at all.
+#
+# CI-runner RBAC: the unleash-runner-rbac.yaml template (umbrella chart) creates
+# a Role + RoleBinding so the ARC runner pod can read unleash-secrets without
+# kubectl. In prod the AutoscalingRunnerSet lives in `arc-runners`, not the
+# release namespace, so the RoleBinding subject namespace must be overridden.
+#
+# serviceAccountName is the ServiceAccount the runner PODS actually run as — NOT
+# the scale-set name (`fuzefront`). FuzeInfra's shared runner-scale-set-values
+# (runners/arc/runner-scale-set-values.yaml) pins every set's pods to
+# `template.spec.serviceAccountName: arc-runner-sa`, and the per-set
+# ApplicationSet (argocd/applications/arc-runners.yaml) overrides only
+# githubConfigUrl/runnerScaleSetName/maxRunners — never the SA. So binding
+# `fuzefront` (the old default) granted the Role to a SA no pod uses, and every
+# token read 403'd (`Could not read INIT_ADMIN_API_TOKENS`, FuzeInfra#1219).
+unleash:
+  ciRunner:
+    serviceAccountNamespace: arc-runners
+    serviceAccountName: arc-runner-sa
+    # prod-synthetic-admin.yml reads INTERNAL_PROVISION_SECRET from
+    # `fuzefront-secrets` via the k8s API (same mechanism prod-unleash-ops.yml
+    # uses for `unleash-secrets`). The runner Role is resourceName-scoped, so
+    # without this the get 403s ("Could not read INTERNAL_PROVISION_SECRET").
+    extraSecretNames:
+      - fuzefront-secrets
 
 # ── Cloudflare cache purge (prod) ────────────────────────────────────────────
 # Sealed for the Contabo k3s cluster; reseal per the template header if the

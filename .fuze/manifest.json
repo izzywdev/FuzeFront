@@ -99,6 +99,7 @@
     },
     "acceptance": [
       "Every default-branch build publishes a signed, verified APK to GitHub Releases.",
+      "The APK launches the standalone UI at https://app.fuzefront.com/ and the UI uses same-origin relative /api routes.",
       "The TWA host, Android package, and Digital Asset Links identity remain consistent."
     ],
     "owner": "mobile-frontend-engineer"

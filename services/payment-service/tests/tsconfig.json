@@ -5,7 +5,15 @@
     "outDir": "../dist-test",
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    // Type-check the file-linked @fuzefront packages against their TS source, so
+    // ts-jest needs no built dist for them (mirrors the jest moduleNameMapper).
+    // baseUrl is this tests/ dir; the paths reach up into the monorepo packages.
+    "baseUrl": ".",
+    "paths": {
+      "@fuzefront/service-auth": ["../../../packages/service-auth/src/index.ts"],
+      "@fuzefront/security-client": ["../../../packages/security/src/index.ts"]
+    }
   },
   "include": ["./**/*.ts", "../src/**/*.ts"]
 }

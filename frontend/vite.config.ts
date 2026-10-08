@@ -102,6 +102,19 @@ const portalAdminUiSrc = fileURLToPath(
 const selectionListsUiSrc = fileURLToPath(
   new URL('../packages/selection-lists-ui/src/index.ts', import.meta.url)
 )
+// @fuzefront/telemetry/browser (packages/telemetry) is a file: workspace package
+// whose `exports` map points at dist/browser.{js,mjs} — building it inside
+// frontend/Dockerfile is unsafe: that Dockerfile's `rm -f package-lock.json &&
+// npm install` re-resolves floating ranges (npm/cli#4828 workaround), and
+// telemetry's tsup dts build broke exactly the way the GHSA-qwcr-r2fm-qrc7 note
+// in security.yml describes for packages/auth — typescript floated ^5.9.3 -> 6.x,
+// which hard-errors on tsconfig's `moduleResolution: "node"` (TS5107). Resolve
+// from SOURCE instead, same as selection-lists-ui: no pre-build step needed for
+// the Dockerfile/vite build. CI still builds dist/browser.d.ts before the
+// frontend type-check step (tsc resolves via node_modules, not this alias).
+const telemetryBrowserSrc = fileURLToPath(
+  new URL('../packages/telemetry/src/browser.ts', import.meta.url)
+)
 // @fuzefront/config-client (top-level config-client/) is the typed
 // config-service client (FFRNT-153) and @fuzefront/config-ui
 // (packages/config-ui) is the Configuration Management Console UI built
@@ -112,6 +125,9 @@ const configClientSrc = fileURLToPath(
 )
 const configUiSrc = fileURLToPath(
   new URL('../packages/config-ui/src/index.ts', import.meta.url)
+)
+const fuzepickerUiSrc = fileURLToPath(
+  new URL('../packages/fuzepicker-ui/src/index.ts', import.meta.url)
 )
 // Workspace packages resolved from SOURCE (via alias) live outside the frontend/
 // directory tree. Rollup walks UP from each file to find node_modules, so it never
@@ -154,8 +170,10 @@ export default defineConfig({
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
       '@fuzeone/selection-lists-ui': selectionListsUiSrc,
+      '@fuzefront/telemetry/browser': telemetryBrowserSrc,
       '@fuzefront/config-client': configClientSrc,
       '@fuzefront/config-ui': configUiSrc,
+      '@fuzefront/fuzepicker-ui': fuzepickerUiSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.
@@ -165,7 +183,17 @@ export default defineConfig({
     // @fuzefront/i18n is bundled from source and pulls react-i18next (which has a
     // nested react copy under packages/i18n/node_modules). Dedupe so the host
     // bundle has a single React instance — otherwise hooks crash at runtime.
-    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next'],
+    // react-router-dom needs the same treatment: @fuzeone/selection-lists-ui
+    // (above) is aliased to SOURCE under packages/selection-lists-ui, which is
+    // an npm-workspace member (root node_modules/react-router-dom, hoisted from
+    // its own peerDependency) — while frontend/ is deliberately NOT a workspace
+    // member and has its own separately-installed copy in frontend/node_modules.
+    // Without dedupe, the host's <BrowserRouter> (frontend's copy) and the
+    // picker's useSearchParams()/useLocation() (root's copy) read from two
+    // distinct React Router contexts, so the hook throws "useLocation() may be
+    // used only in the context of a <Router> component." even though a
+    // <BrowserRouter> is mounted.
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react-i18next', 'i18next', 'react-router-dom'],
   },
   plugins: [
     workspaceDepResolver,

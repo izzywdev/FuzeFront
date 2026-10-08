@@ -76,7 +76,7 @@ POLICY_PATHS = ("governance/required-checks.json", ".fuze/required-checks.json")
 WORKFLOW_DIR = ".github/workflows"
 
 # A GitHub-hosted label. Anything else is a self-hosted scale set (C3).
-HOSTED = re.compile(r"^(ubuntu|windows|macos)-", re.I)
+HOSTED = re.compile(r"^(ubuntu|windows|macos)-", re.IGNORECASE)
 
 # A runs-on that selects a chooser job's output, e.g.
 # `${{ needs.pick-runner.outputs.runner }}`. This is the sanctioned budget-fallback

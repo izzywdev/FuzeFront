@@ -1,16 +1,17 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
+import { IconTile, Container } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
     <div className="pt-24 pb-20 bg-white">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+      <Container size="3xl">
         {/* Header */}
         <div className="text-center mb-12">
-          <div className="w-14 h-14 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
-            <Shield size={28} className="text-primary-700" />
-          </div>
+          <IconTile tone="accent" size="lg" className="mb-5">
+            <Shield size={28} />
+          </IconTile>
           <h1 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-3">
             Privacy Policy
           </h1>
@@ -193,17 +194,17 @@ export const PrivacyPolicyPage: React.FC = () => {
 
         {/* Footer nav */}
         <div className="mt-16 pt-8 border-t border-gray-200 flex flex-wrap gap-4">
-          <Link to="/terms" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
+          <Link to="/terms" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
             Terms of Service
           </Link>
-          <Link to="/contact" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
+          <Link to="/contact" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
             Contact Us
           </Link>
-          <Link to="/" className="text-primary-700 hover:text-primary-800 text-sm font-medium">
+          <Link to="/" className="text-primary-800 hover:text-primary-900 text-sm font-medium">
             Back to Home
           </Link>
         </div>
-      </div>
+      </Container>
     </div>
   )
 }

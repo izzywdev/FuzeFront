@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FuzeFront Design Frame — Application-Specific Left Menu & Org Context Gating</title>
+<style>
+:root {
+  --indigo-500: #6e5cff;
+  --indigo-600: #5a48e6;
+  --cyan-400: #29d3e6;
+  --accent-color: var(--indigo-500);
+  --accent-soft: rgba(110, 92, 255, 0.14);
+  --accent-active: rgba(110, 92, 255, 0.25);
+  --seam: linear-gradient(90deg, var(--accent-color) 0%, var(--cyan-400) 100%);
+
+  --bg-primary: #0a0d14;
+  --bg-secondary: #0f141f;
+  --bg-tertiary: #141b29;
+  --bg-quaternary: #1b2438;
+  --border-color: #20293a;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-strong: #2f3c53;
+
+  --text-primary: #f0f4fc;
+  --text-secondary: #9aa5ba;
+  --text-tertiary: #627088;
+
+  --success-color: #10b981;
+  --success-soft: rgba(16, 185, 129, 0.15);
+  --warning-color: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.15);
+  --error-color: #ef4444;
+  --error-soft: rgba(239, 68, 68, 0.15);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Shell Layout */
+.app-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar (mirrors 3rd user picture + Atlassian/Sentry app injection) */
+.sidebar {
+  width: 260px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.sidebar-header {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+.sidebar-logo-icon {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, #6e5cff, #29d3e6);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #fff;
+  font-size: 16px;
+}
+.sidebar-logo-text {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sidebar-logo-text span {
+  background: var(--seam);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Section Header */
+.menu-group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  padding: 6px 12px 4px;
+  font-weight: 600;
+}
+
+/* Menu Item */
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  text-decoration: none;
+}
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+.menu-item.active {
+  background: var(--accent-soft);
+  color: #fff;
+  font-weight: 500;
+}
+.menu-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  background: var(--indigo-500);
+  border-radius: 0 4px 4px 0;
+}
+.menu-item-icon {
+  font-size: 15px;
+  width: 20px;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.menu-item-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.badge-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge-org-only {
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--warning-color);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Atlassian / Sentry App Sub-Menu Injection */
+.app-nested-container {
+  background: rgba(110, 92, 255, 0.05);
+  border: 1px solid rgba(110, 92, 255, 0.2);
+  border-radius: var(--radius-lg);
+  padding: 6px 4px;
+  margin: 4px 0;
+}
+.app-parent-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid rgba(110, 92, 255, 0.15);
+  margin-bottom: 4px;
+}
+.app-parent-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.app-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.app-sub-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+.app-sub-item.active {
+  background: var(--indigo-500);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(110, 92, 255, 0.4);
+}
+.app-sub-item .sub-icon {
+  font-size: 14px;
+}
+
+/* Disabled State for Org-Context Gated Apps */
+.menu-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.disabled-badge {
+  font-size: 9px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Main Content Surface */
+.main-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.top-context-bar {
+  padding: 12px 24px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.context-switcher {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.org-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-strong);
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.toggle-btn {
+  background: var(--bg-quaternary);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  padding: 5px 10px;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  cursor: pointer;
+}
+.toggle-btn:hover {
+  color: #fff;
+  border-color: var(--indigo-500);
+}
+
+.content-body {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Studio Header & CRUD Controls */
+.studio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.studio-title-box h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+}
+.studio-title-box p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.action-buttons-row {
+  display: flex;
+  gap: 12px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #6e5cff, #5a48e6);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(110, 92, 255, 0.3);
+}
+.btn-primary:hover {
+  filter: brightness(1.1);
+}
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+}
+.btn-outline:hover {
+  border-color: var(--indigo-500);
+  background: rgba(110, 92, 255, 0.08);
+}
+.btn-danger-outline {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+}
+.btn-danger-outline:hover {
+  background: var(--error-soft);
+}
+
+/* Chapter List */
+.chapter-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.chapter-card:hover {
+  border-color: rgba(110, 92, 255, 0.4);
+  transform: translateY(-1px);
+}
+.chapter-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.chapter-icon-box {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+.chapter-info h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+}
+.chapter-info p {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+.chapter-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.status-badge {
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+}
+.status-approved {
+  background: var(--success-soft);
+  color: var(--success-color);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.status-review {
+  background: var(--warning-soft);
+  color: var(--warning-color);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Modal / Drawer preview */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.modal-window {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  width: 600px;
+  max-width: 90vw;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 18px;
+  cursor: pointer;
+}
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.form-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.form-input, .form-textarea, .form-select {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+}
+.form-textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  background: rgba(0,0,0,0.15);
+}
+</style>
+</head>
+<body>
+
+<div class="app-container">
+  <!-- Left Side Navigation Bar (FuzeFront Shell + App Injection) -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo-icon">⚡</div>
+      <div class="sidebar-logo-text">Fuze<span>Front</span></div>
+    </div>
+
+    <div class="sidebar-scroll">
+      <!-- Section 1: APPS LIST -->
+      <div class="menu-group-title">Applications</div>
+
+      <div class="menu-item"><span class="menu-item-icon">💼</span><span class="menu-item-label">Sales</span></div>
+      <div class="menu-item"><span class="menu-item-icon">👥</span><span class="menu-item-label">Contacts</span></div>
+      <div class="menu-item"><span class="menu-item-icon">🎧</span><span class="menu-item-label">Service</span></div>
+      <div class="menu-item"><span class="menu-item-icon">🔑</span><span class="menu-item-label">Keys</span></div>
+      <div class="menu-item"><span class="menu-item-icon">🖩</span><span class="menu-item-label">Social</span></div>
+      <div class="menu-item"><span class="menu-item-icon">🤖</span><span class="menu-item-label">Agents</span></div>
+      <div class="menu-item"><span class="menu-item-icon">⏱️</span><span class="menu-item-label">Clock</span></div>
+      <div class="menu-item"><span class="menu-item-icon">🎯</span><span class="menu-item-label">Picker</span></div>
+
+      <!-- APP-SPECIFIC MENU INJECTION: ACTIVE APP (Executive) -->
+      <!-- Atlassian / Sentry style: Contextual nested tree under active app -->
+      <div class="app-nested-container">
+        <div class="app-parent-header">
+          <span style="font-size: 16px;">🎯</span>
+          <div class="app-parent-title">Executive Studio</div>
+        </div>
+
+        <div class="app-sub-item">
+          <span class="sub-icon">📈</span>
+          <span>Overview</span>
+        </div>
+        <div class="app-sub-item">
+          <span class="sub-icon">🗺️</span>
+          <span>Strategic Decisions</span>
+        </div>
+        <div class="app-sub-item active">
+          <span class="sub-icon">📄</span>
+          <span>Business Plan</span>
+        </div>
+        <div class="app-sub-item">
+          <span class="sub-icon">👥</span>
+          <span>Investor CRM</span>
+        </div>
+        <div class="app-sub-item">
+          <span class="sub-icon">🤖</span>
+          <span>AI Defender</span>
+        </div>
+        <div class="app-sub-item">
+          <span class="sub-icon">🛡️</span>
+          <span>Governance</span>
+        </div>
+      </div>
+
+      <!-- Demonstration: Org-Context Disabled App (when personal account active) -->
+      <div class="menu-item disabled" title="Requires active organization context">
+        <span class="menu-item-icon">🧪</span>
+        <span class="menu-item-label">Quality</span>
+        <span class="disabled-badge">Org only</span>
+      </div>
+
+      <!-- Section 2: PORTAL -->
+      <div class="menu-group-title" style="margin-top: 8px;">Portal</div>
+      <div class="menu-item"><span class="menu-item-icon">▦</span><span class="menu-item-label">Applications</span></div>
+      <div class="menu-item"><span class="menu-item-icon">🏢</span><span class="menu-item-label">Organizations</span></div>
+      <div class="menu-item"><span class="menu-item-icon">👤</span><span class="menu-item-label">Profile</span></div>
+      <div class="menu-item"><span class="menu-item-icon">💳</span><span class="menu-item-label">Billing</span></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="menu-item"><span class="menu-item-icon">❓</span><span class="menu-item-label">Help</span></div>
+      <div class="menu-item"><span class="menu-item-icon">🩺</span><span class="menu-item-label">Status</span></div>
+    </div>
+  </aside>
+
+  <!-- Main Content Stage: FuzeExecutive Business Plan Studio -->
+  <main class="main-stage">
+    <!-- Top Bar with Org Context & Unleash Toggle Simulator -->
+    <div class="top-context-bar">
+      <div class="context-switcher">
+        <span style="font-size: 12px; color: var(--text-tertiary);">Active Context:</span>
+        <div class="org-pill">🏢 Acme Corp (Org Context)</div>
+      </div>
+
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <span style="font-size: 11px; color: var(--text-tertiary);">Unleash Flags:</span>
+        <span class="badge-tag" style="background: rgba(16,185,129,0.2); color: #34d399;">org-context-disabled: ON</span>
+        <span class="badge-tag" style="background: rgba(239,68,68,0.2); color: #f87171;">org-context-hidden: OFF</span>
+      </div>
+    </div>
+
+    <!-- Business Plan Studio Main Panel -->
+    <div class="content-body">
+      <div class="studio-header">
+        <div class="studio-title-box">
+          <h1>Multi-Chapter Strategic Business Plan Studio</h1>
+          <p>Collaborative C-suite authoring, revision tracking, and deck compilation.</p>
+        </div>
+        <div class="action-buttons-row">
+          <!-- Add Chapter Button (New Feature) -->
+          <button type="button" class="btn btn-outline" id="openAddChapterBtn" onclick="openModal('add')">
+            <span>➕</span> Add Chapter
+          </button>
+          <button type="button" class="btn btn-primary">
+            <span>✨</span> Compile Pitch Deck (PDF)
+          </button>
+        </div>
+      </div>
+
+      <!-- Chapter Items List with View, Edit, and Delete Actions -->
+      <div class="chapter-card">
+        <div class="chapter-left">
+          <div class="chapter-icon-box">📄</div>
+          <div class="chapter-info">
+            <h3>1. Executive Summary &amp; Vision</h3>
+            <p>Owner: CEO &bull; 3,450 words &bull; Complete: 100%</p>
+          </div>
+        </div>
+        <div class="chapter-actions">
+          <span class="status-badge status-approved">Approved</span>
+          <button type="button" class="btn btn-outline" onclick="openModal('view', '1. Executive Summary & Vision', 'CEO', 3450, 100, 'Approved')">View</button>
+          <button type="button" class="btn btn-outline" onclick="openModal('edit', '1. Executive Summary & Vision', 'CEO', 3450, 100, 'Approved')">Edit Chapter</button>
+          <button type="button" class="btn btn-danger-outline" onclick="confirmDelete('1. Executive Summary & Vision')">Delete</button>
+        </div>
+      </div>
+
+      <div class="chapter-card">
+        <div class="chapter-left">
+          <div class="chapter-icon-box">📄</div>
+          <div class="chapter-info">
+            <h3>2. Market Analysis &amp; TAM</h3>
+            <p>Owner: Chief Strategy &bull; 5,120 words &bull; Complete: 100%</p>
+          </div>
+        </div>
+        <div class="chapter-actions">
+          <span class="status-badge status-approved">Approved</span>
+          <button type="button" class="btn btn-outline" onclick="openModal('view', '2. Market Analysis & TAM', 'Chief Strategy', 5120, 100, 'Approved')">View</button>
+          <button type="button" class="btn btn-outline" onclick="openModal('edit', '2. Market Analysis & TAM', 'Chief Strategy', 5120, 100, 'Approved')">Edit Chapter</button>
+          <button type="button" class="btn btn-danger-outline" onclick="confirmDelete('2. Market Analysis & TAM')">Delete</button>
+        </div>
+      </div>
+
+      <div class="chapter-card">
+        <div class="chapter-left">
+          <div class="chapter-icon-box">📄</div>
+          <div class="chapter-info">
+            <h3>3. Product Strategy &amp; Moats</h3>
+            <p>Owner: CPO &bull; 4,200 words &bull; Complete: 85%</p>
+          </div>
+        </div>
+        <div class="chapter-actions">
+          <span class="status-badge status-review">In Review</span>
+          <button type="button" class="btn btn-outline" onclick="openModal('view', '3. Product Strategy & Moats', 'CPO', 4200, 85, 'In Review')">View</button>
+          <button type="button" class="btn btn-outline" onclick="openModal('edit', '3. Product Strategy & Moats', 'CPO', 4200, 85, 'In Review')">Edit Chapter</button>
+          <button type="button" class="btn btn-danger-outline" onclick="confirmDelete('3. Product Strategy & Moats')">Delete</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal Dialog (Simulating Add, View, and Edit Chapter) -->
+<div id="chapterModal" class="modal-overlay" style="display: none;">
+  <div class="modal-window">
+    <div class="modal-header">
+      <h2 id="modalTitle">Edit Chapter</h2>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Chapter Title</label>
+        <input type="text" id="modalInputTitle" class="form-input" value="1. Executive Summary & Vision" />
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-group">
+          <label class="form-label">Lead Owner</label>
+          <input type="text" id="modalInputLead" class="form-input" value="CEO" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select id="modalInputStatus" class="form-select">
+            <option value="Approved">Approved</option>
+            <option value="In Review">In Review</option>
+            <option value="Draft">Draft</option>
+          </select>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div class="form-group">
+          <label class="form-label">Word Count</label>
+          <input type="number" id="modalInputWords" class="form-input" value="3450" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Completion %</label>
+          <input type="number" id="modalInputProgress" class="form-input" value="100" min="0" max="100" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Executive Narrative &amp; Content Summary</label>
+        <textarea id="modalInputContent" class="form-textarea" placeholder="Detailed strategic chapter narrative..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" id="modalSaveBtn" onclick="saveChapter()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openModal(mode, title, lead, words, progress, status) {
+  const modal = document.getElementById('chapterModal');
+  const modalTitle = document.getElementById('modalTitle');
+  const saveBtn = document.getElementById('modalSaveBtn');
+
+  if (mode === 'add') {
+    modalTitle.textContent = 'Add New Strategic Chapter';
+    document.getElementById('modalInputTitle').value = '';
+    document.getElementById('modalInputLead').value = 'CEO';
+    document.getElementById('modalInputStatus').value = 'Draft';
+    document.getElementById('modalInputWords').value = '0';
+    document.getElementById('modalInputProgress').value = '0';
+    document.getElementById('modalInputContent').value = '';
+    saveBtn.textContent = 'Add Chapter';
+    saveBtn.style.display = 'inline-flex';
+  } else if (mode === 'edit') {
+    modalTitle.textContent = 'Edit Chapter: ' + title;
+    document.getElementById('modalInputTitle').value = title;
+    document.getElementById('modalInputLead').value = lead;
+    document.getElementById('modalInputStatus').value = status;
+    document.getElementById('modalInputWords').value = words;
+    document.getElementById('modalInputProgress').value = progress;
+    document.getElementById('modalInputContent').value = 'Full synthesized strategic narrative on valuation moats and go-to-market acceleration.';
+    saveBtn.textContent = 'Save Changes';
+    saveBtn.style.display = 'inline-flex';
+  } else if (mode === 'view') {
+    modalTitle.textContent = 'View Chapter: ' + title;
+    document.getElementById('modalInputTitle').value = title;
+    document.getElementById('modalInputLead').value = lead;
+    document.getElementById('modalInputStatus').value = status;
+    document.getElementById('modalInputWords').value = words;
+    document.getElementById('modalInputProgress').value = progress;
+    document.getElementById('modalInputContent').value = 'Full synthesized strategic narrative on valuation moats and go-to-market acceleration.';
+    saveBtn.style.display = 'none';
+  }
+  modal.style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('chapterModal').style.display = 'none';
+}
+
+function confirmDelete(title) {
+  if (confirm('Are you sure you want to delete chapter "' + title + '" from the Strategic Business Plan?')) {
+    alert('Chapter "' + title + '" deleted.');
+  }
+}
+
+function saveChapter() {
+  const title = document.getElementById('modalInputTitle').value;
+  alert('Chapter saved successfully: ' + title);
+  closeModal();
+}
+</script>
+
+</body>
+</html>

@@ -4,6 +4,29 @@ All notable changes to this contract are documented here. This package is
 versioned independently; bump on every interface change (SemVer — the major is
 the contract-stability guarantee consumers may assert on).
 
+## 0.3.0 — Subject ABAC attribute write (`setAttributes`)
+
+### Added
+
+- `AuthzClient.setAttributes(req, token)` — MERGES scalar ABAC attributes
+  (string/number/boolean) onto a subject's record in the authorization
+  provider's own store, via `PATCH /api/v1/security/authz/subjects/{subjectType}/{subjectKey}/attributes`.
+  Distinct from `grant`: a grant assigns a role, this writes plain data the
+  provider's own policies read directly (e.g. a billing plan tier / seat
+  count gating feature access). Only the named keys are written; the
+  subject's other attributes are untouched.
+- New types: `SubjectType`, `SubjectRef`, `AttributeValue`,
+  `SetAttributesRequest`, `SetAttributesResult`.
+- `AUTHZ_CONTRACT_VERSION` 0.1.0 → 0.2.0.
+
+### Security properties made explicit
+
+- **THIS IS A WRITE, NOT A DECISION.** Deliberately the OPPOSITE of
+  `check`/`bulkCheck`'s fail-closed-returns-`false` contract: `setAttributes`
+  NEVER resolves on failure. Every transport error, timeout, and non-200
+  throws `AuthzError` — a provider outage must never look like a successful
+  write to a caller (e.g. billing entitlement sync) deciding whether to retry.
+
 ## 0.2.0 — Runtime implementation + provider-neutral rename
 
 ### Added — the package now WORKS (resolves #117)

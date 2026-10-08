@@ -61,4 +61,16 @@ describe('MemoryCatalogStore tenant isolation', () => {
     const updated = await store.updateRepositoryAdministration('repo-a', 'tenant-a', value)
     expect(updated).toMatchObject(value)
   })
+
+  it('shows reviewed AI expectations and applies tenant-scoped exclusions until expiry', async () => {
+    const store = new MemoryCatalogStore({
+      requirements: [{ id: 'req-a', tenantId: 'tenant-a', jiraKey: 'FQ-52', issueType: 'Story', summary: 'Expiry', description: '', status: 'open', project: 'FQ', updatedAt: new Date().toISOString() }],
+      expectations: [{ id: 'expectation-a', subjectType: 'flow-step', subjectId: 'requirement:req-a', kind: 'ai-approved', label: 'A reviewed test', priority: 'required', rule: 'ai-reviewed', coverage: 'gap', evidenceIds: [] }],
+    })
+
+    expect((await store.portfolio('tenant-a')).expectations).toHaveLength(1)
+    expect(await store.excludeExpectation('expectation-a', 'tenant-a', { owner: 'quality-owner', reason: 'Covered by a regulated external suite', expiresAt: new Date(Date.now() + 60_000).toISOString(), actorId: 'reviewer' })).toBe(true)
+    expect((await store.portfolio('tenant-a')).expectations[0]).toMatchObject({ coverage: 'excluded', exclusion: { owner: 'quality-owner' } })
+    expect(await store.excludeExpectation('expectation-a', 'tenant-b', { owner: 'quality-owner', reason: 'No access', expiresAt: new Date(Date.now() + 60_000).toISOString(), actorId: 'reviewer' })).toBe(false)
+  })
 })

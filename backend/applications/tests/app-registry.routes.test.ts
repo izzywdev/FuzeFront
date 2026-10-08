@@ -220,9 +220,11 @@ jest.mock('../src/middleware/auth', () => ({
   requireRole: () => (_req: any, _res: any, next: any) => next(),
 }))
 
+import { fromUuid } from '@izzywdev/fuzefront-identity'
 import { setPermitClient } from '../src/app-registry/permit'
 import { setAppRegistryEmitter } from '../src/app-registry/events'
 import { setFlagClient, FLAGS } from '../src/app-registry/flags'
+import { setCreatorResolver } from '../src/app-registry/app-dto'
 import appRegistryRouter from '../src/routes/app-registry'
 import { NAV_SECTIONS } from '../src/app-registry/manifest.schema'
 
@@ -245,10 +247,12 @@ setAppRegistryEmitter(stubEmitter)
 // OFF-path test flips it), kafka kill-switch ON.
 let writeFlag = true
 let kafkaFlag = true
+let creatorFlag = false
 setFlagClient({
   getBooleanValue: async (key: string, def: boolean) => {
     if (key === FLAGS.V1_REGISTRY_WRITE) return writeFlag
     if (key === FLAGS.KAFKA_EVENTS_KILL_SWITCH) return kafkaFlag
+    if (key === FLAGS.CREATOR_OWNERSHIP) return creatorFlag
     return def
   },
 })
@@ -263,6 +267,9 @@ function buildApp() {
 
 const orgA = '11111111-1111-1111-1111-111111111111'
 const orgB = '22222222-2222-2222-2222-222222222222'
+// FFRNT-185: clients send TypeIDs on the wire; the store holds bare UUIDs.
+const ORG_A_WIRE = fromUuid('organization', orgA)
+const ORG_B_WIRE = fromUuid('organization', orgB)
 const userA = { id: 'user-a', roles: ['user'] }
 const userB = { id: 'user-b', roles: ['user'] }
 const admin = { id: 'admin', roles: ['admin'] }
@@ -301,6 +308,7 @@ beforeEach(() => {
   permitGrant = true
   writeFlag = true
   kafkaFlag = true
+  creatorFlag = false
 })
 
 describe('registerApp', () => {
@@ -309,7 +317,7 @@ describe('registerApp', () => {
     const res = await request(app)
       .post('/api/v1/app-registry/apps')
       .set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(res.status).toBe(201)
     expect(res.body.slug).toBe('market')
     expect(res.body.status).toBe('registered')
@@ -321,7 +329,7 @@ describe('registerApp', () => {
     // @fuzequality api registerApp
     const res = await request(app)
       .post('/api/v1/app-registry/apps')
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(res.status).toBe(401)
     expect(res.type).toMatch(/json/)
   })
@@ -330,7 +338,7 @@ describe('registerApp', () => {
     const res = await request(app)
       .post('/api/v1/app-registry/apps')
       .set(asUser(userA))
-      .send({ manifest: { manifestVersion: '1', slug: 'x' }, organizationId: orgA })
+      .send({ manifest: { manifestVersion: '1', slug: 'x' }, organizationId: ORG_A_WIRE })
     expect(res.status).toBe(400)
     expect(res.body.error).toBe('validation_error')
     expect(Array.isArray(res.body.fields)).toBe(true)
@@ -338,23 +346,23 @@ describe('registerApp', () => {
 
   it('returns 409 on duplicate slug', async () => {
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     const res = await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(res.status).toBe(409)
     expect(res.body.error).toBe('conflict')
   })
 
   it('forbids registering into an org the caller does not belong to (BOLA)', async () => {
     const res = await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgB })
+      .send({ manifest: manifest('market'), organizationId: ORG_B_WIRE })
     expect(res.status).toBe(403)
   })
 
   it('denies register when Permit denies (authz off-path)', async () => {
     permitGrant = false
     const res = await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(res.status).toBe(403)
   })
 })
@@ -363,7 +371,7 @@ describe('feature flags — both states', () => {
   it('release flag OFF → write surface dark (503), GET still works', async () => {
     writeFlag = false
     const reg = await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(reg.status).toBe(503)
     expect(reg.body.error).toBe('feature_disabled')
 
@@ -376,14 +384,14 @@ describe('feature flags — both states', () => {
   it('release flag ON → register succeeds (on-path)', async () => {
     writeFlag = true
     const reg = await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(reg.status).toBe(201)
   })
 
   it('kafka kill-switch OFF → action succeeds but no event emitted', async () => {
     kafkaFlag = false
     const reg = await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(reg.status).toBe(201)
     expect(emitted.find(e => e.type === 'registered')).toBeFalsy()
   })
@@ -391,20 +399,20 @@ describe('feature flags — both states', () => {
   it('kafka kill-switch ON → event emitted (on-path)', async () => {
     kafkaFlag = true
     const reg = await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     expect(reg.status).toBe(201)
     expect(emitted.find(e => e.type === 'registered')).toBeTruthy()
   })
 })
 
 describe('lifecycle register → activate → suspend', () => {
-  async function seedApp(slug: string, org: string, who: any) {
+  async function seedApp(slug: string, orgWire: string, who: any) {
     await request(app).post('/api/v1/app-registry/apps').set(asUser(who))
-      .send({ manifest: manifest(slug), organizationId: org })
+      .send({ manifest: manifest(slug), organizationId: orgWire })
   }
 
   it('activates then suspends, with idempotent no-ops', async () => {
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
 
     // @fuzequality api activateApp
     const act = await request(app).post('/api/v1/app-registry/apps/market/activate').set(asUser(userA))
@@ -428,7 +436,7 @@ describe('lifecycle register → activate → suspend', () => {
 
   it('returns 200 when activating a registered app', async () => {
     // @fuzequality api activateApp
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app)
       .post('/api/v1/app-registry/apps/market/activate')
       .set(asUser(userA))
@@ -438,7 +446,7 @@ describe('lifecycle register → activate → suspend', () => {
 
   it('returns 200 when suspending an activated app', async () => {
     // @fuzequality api suspendApp
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     await request(app)
       .post('/api/v1/app-registry/apps/market/activate')
       .set(asUser(userA))
@@ -481,7 +489,7 @@ describe('lifecycle register → activate → suspend', () => {
   })
 
   it('forbids activation by a cross-org caller (BOLA mutate)', async () => {
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app).post('/api/v1/app-registry/apps/market/activate').set(asUser(userB))
     // private/organization app in orgA is not visible to userB → 404 (hidden).
     expect([403, 404]).toContain(res.status)
@@ -492,9 +500,9 @@ describe('lifecycle register → activate → suspend', () => {
 // billing key instead of the platform hardcoding them. Both are apps:write on an
 // existing app.
 describe('onboarding: policy + billing profile', () => {
-  async function seedApp(slug: string, org: string, who: any) {
+  async function seedApp(slug: string, orgWire: string, who: any) {
     await request(app).post('/api/v1/app-registry/apps').set(asUser(who))
-      .send({ manifest: manifest(slug), organizationId: org })
+      .send({ manifest: manifest(slug), organizationId: orgWire })
   }
 
   const validPolicy = {
@@ -507,7 +515,7 @@ describe('onboarding: policy + billing profile', () => {
 
   it('returns 200 when storing a valid policy and reports what was synced', async () => {
     // @fuzequality api putAppPolicy
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/policy')
       .set(asUser(userA))
@@ -535,7 +543,7 @@ describe('onboarding: policy + billing profile', () => {
   })
 
   it('rejects a permission referencing an action the policy never declares', async () => {
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/policy')
       .set(asUser(userA))
@@ -549,7 +557,7 @@ describe('onboarding: policy + billing profile', () => {
   })
 
   it('rejects a body whose product disagrees with the path slug', async () => {
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/policy')
       .set(asUser(userA))
@@ -561,7 +569,7 @@ describe('onboarding: policy + billing profile', () => {
   })
 
   it('hides policy writes on a cross-org app as 404 (BOLA)', async () => {
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/policy')
       .set(asUser(userB))
@@ -571,7 +579,7 @@ describe('onboarding: policy + billing profile', () => {
 
   it('returns 200 when storing a valid billing profile', async () => {
     // @fuzequality api putAppBillingProfile
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/billing-profile')
       .set(asUser(userA))
@@ -599,7 +607,7 @@ describe('onboarding: policy + billing profile', () => {
   })
 
   it('rejects a malformed billing productKey', async () => {
-    await seedApp('market', orgA, userA)
+    await seedApp('market', ORG_A_WIRE, userA)
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market/billing-profile')
       .set(asUser(userA))
@@ -620,7 +628,7 @@ describe('deleteApp', () => {
   it('deletes a non-builtin app (204)', async () => {
     // @fuzequality api deleteApp
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     const res = await request(app).delete('/api/v1/app-registry/apps/market').set(asUser(userA))
     expect(res.status).toBe(204)
   })
@@ -658,7 +666,7 @@ describe('heartbeatApp', () => {
     const registered = await request(app)
       .post('/api/v1/app-registry/apps')
       .set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
     return registered.headers['x-app-heartbeat-token']
   }
 
@@ -713,7 +721,7 @@ describe('getApp BOLA', () => {
 
   it('hides a cross-org private app as 404', async () => {
     await request(app).post('/api/v1/app-registry/apps').set(asUser(userA))
-      .send({ manifest: manifest('market', { visibility: 'private' }), organizationId: orgA })
+      .send({ manifest: manifest('market', { visibility: 'private' }), organizationId: ORG_A_WIRE })
     const mine = await request(app).get('/api/v1/app-registry/apps/market').set(asUser(userA))
     expect(mine.status).toBe(200)
     const theirs = await request(app).get('/api/v1/app-registry/apps/market').set(asUser(userB))
@@ -739,7 +747,7 @@ describe('updateApp', () => {
     await request(app)
       .post('/api/v1/app-registry/apps')
       .set(asUser(userA))
-      .send({ manifest: manifest('market'), organizationId: orgA })
+      .send({ manifest: manifest('market'), organizationId: ORG_A_WIRE })
 
     const res = await request(app)
       .put('/api/v1/app-registry/apps/market')
@@ -874,3 +882,133 @@ function mkRow(
     nav_order: nav?.order ?? 999,
   }
 }
+
+
+// ── Creator ownership ("org-held, user-originated") — flag
+// fuzefront.apps.creator-ownership. created_by_user_id is server-set,
+// informational, immutable; authority stays in Permit + org role.
+describe('creator ownership', () => {
+  const creatorUuid = '33333333-3333-4333-8333-333333333333'
+  const human = { id: creatorUuid, roles: ['user'] }
+  const assigned: any[] = []
+  const permitWithApi = {
+    check: async () => true,
+    api: {
+      users: { assignRole: async (d: any) => { assigned.push(d) } },
+      resourceInstances: { create: async () => undefined },
+    },
+  }
+  let creatorInfo = { isCurrentMember: true, displayName: 'Casey Creator' as string | null }
+
+  beforeEach(() => {
+    assigned.length = 0
+    creatorInfo = { isCurrentMember: true, displayName: 'Casey Creator' }
+    ;(store as any).memberships.push({ user_id: creatorUuid, organization_id: orgA, status: 'active', role: 'member' })
+    setPermitClient(permitWithApi as any)
+    setCreatorResolver({ resolve: async () => creatorInfo })
+  })
+  afterEach(() => {
+    setPermitClient({ check: async () => permitGrant })
+    setCreatorResolver(null)
+  })
+
+  const register = (user: any, extra: any = {}) =>
+    request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser(user))
+      .send({ manifest: manifest('mine'), organizationId: ORG_A_WIRE, ...extra })
+
+  it('flag ON: a human registrant becomes created_by, gets the creator role, DTO exposes createdBy/creator', async () => {
+    creatorFlag = true
+    const res = await register(human)
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBe(creatorUuid)
+    expect(assigned).toEqual([
+      { user: creatorUuid, role: 'creator', resource_instance: 'App:mine', tenant: orgA },
+    ])
+    expect(res.body.createdBy).toBe(fromUuid('user', creatorUuid))
+    expect(res.body.creator).toEqual({
+      userId: fromUuid('user', creatorUuid),
+      isCurrentMember: true,
+      displayName: 'Casey Creator',
+    })
+    expect(res.body).not.toHaveProperty('createdByUserId') // internal field never leaks
+  })
+
+  it('flag ON: a former member is reduced to a "former member" signal (no name/contact)', async () => {
+    creatorFlag = true
+    await register(human)
+    creatorInfo = { isCurrentMember: false, displayName: null }
+    const res = await request(app).get('/api/v1/app-registry/apps/mine').set(asUser(userA))
+    expect(res.body.creator).toEqual({ userId: fromUuid('user', creatorUuid), isCurrentMember: false })
+  })
+
+  it('flag OFF: nothing written, no role assigned, DTO byte-identical (no createdBy/creator keys)', async () => {
+    creatorFlag = false
+    const res = await register(human)
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBeUndefined()
+    expect(assigned).toHaveLength(0)
+    expect(res.body).not.toHaveProperty('createdBy')
+    expect(res.body).not.toHaveProperty('creator')
+    expect(res.body).not.toHaveProperty('createdByUserId')
+    const got = await request(app).get('/api/v1/app-registry/apps/mine').set(asUser(userA))
+    expect(got.body).not.toHaveProperty('creator')
+  })
+
+  it('flag ON: the consumer service account is never a creator; a platform-registered app has createdBy null', async () => {
+    creatorFlag = true
+    const res = await request(app)
+      .post('/api/v1/app-registry/apps')
+      .set(asUser({ id: 'consumer-registration', roles: ['admin'] }))
+      .send({ manifest: manifest('first-party') })
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBeUndefined()
+    expect(assigned).toHaveLength(0)
+    expect(res.body.createdBy).toBeNull()
+    expect(res.body.creator).toBeNull()
+  })
+
+  it('never accepts createdBy / created_by_user_id from the body (strict -> 400)', async () => {
+    creatorFlag = true
+    for (const k of ['createdBy', 'created_by_user_id', 'createdByUserId']) {
+      const res = await register(human, { [k]: 'usr_x' })
+      expect(res.status).toBe(400)
+    }
+    const inManifest = await register(human, { manifest: { ...manifest('mine'), createdBy: 'usr_x' } })
+    expect(inManifest.status).toBe(400)
+    expect(store.rows).toHaveLength(0)
+  })
+
+  it('fail-soft: a Permit assignment error never fails registration', async () => {
+    creatorFlag = true
+    setPermitClient({
+      check: async () => true,
+      api: { users: { assignRole: async () => { throw new Error('permit down') } } },
+    } as any)
+    const res = await register(human)
+    expect(res.status).toBe(201)
+    expect(store.rows[0].created_by_user_id).toBe(creatorUuid)
+  })
+
+  it('PUT cannot change created_by_user_id and authority does not depend on it', async () => {
+    creatorFlag = true
+    await register(human)
+    const before = store.rows[0].created_by_user_id
+    // userA is an org admin in orgA but NOT the creator: still mutates (Permit + org role).
+    const put = await request(app)
+      .put('/api/v1/app-registry/apps/mine')
+      .set(asUser(userA))
+      .send(manifest('mine', { description: 'edited' }))
+    expect(put.status).toBe(200)
+    expect(store.rows[0].created_by_user_id).toBe(before)
+    // …and the creator is denied once Permit denies, regardless of the column.
+    permitGrant = false
+    setPermitClient({ check: async () => permitGrant })
+    const denied = await request(app)
+      .put('/api/v1/app-registry/apps/mine')
+      .set(asUser(human))
+      .send(manifest('mine', { description: 'again' }))
+    expect(denied.status).toBe(403)
+  })
+})

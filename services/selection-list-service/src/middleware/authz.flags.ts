@@ -16,10 +16,12 @@
 // Administration:          feature-flags-engineer (Unleash config); this file just reads env.
 
 export const FLAGS = {
-  /** Release flag — gates all authz checks (routed through the Security API)
-   *  on list-access endpoints.
-   *  Default: false (OFF).  Enable by setting env var to 'true'.
-   *  Kill-switch: set to 'false' to revert to pass-through mode with warning logs. */
+  /** Dev/test convenience switch for the authz call site (routed through the
+   *  Security API). Default: false (OFF) OUTSIDE production.  Enable by setting
+   *  the env var to 'true'; 'false' reverts to pass-through mode with warning logs.
+   *
+   *  NOT a production control: in NODE_ENV=production authorization is ALWAYS
+   *  enforced and this value is not consulted (see `isAuthzEnforced` below). */
   AUTHZ_ENABLED: 'fuzefront.selection-list.authz-enabled',
 } as const;
 
@@ -52,4 +54,25 @@ export async function getBooleanFlag(
   if (envValue === 'true') return true;
   if (envValue === 'false') return false;
   return defaultValue;
+}
+
+/**
+ * Is authorization ENFORCED for this request?
+ *
+ *  - NODE_ENV=production: ALWAYS true. The env var / flag is not read at all, so
+ *    an unset, mistyped or `false` value can never silently disable authz on a
+ *    released service (docs/security/selection-lists-authz-review-2026-10.md,
+ *    H-1: the pre-fix default was pass-through, which let any org member purge
+ *    any list and grant themselves list-owner). Production gating of the
+ *    feature itself is the release flag `fuzefront.selection-lists.service`
+ *    (flags.ts), never this.
+ *  - any other NODE_ENV (development, test, CI): honours the env var, default
+ *    OFF. This is the dark-deploy / unit-test convenience the flag was created for.
+ *
+ * Callers must use this — never `getBooleanFlag(FLAGS.AUTHZ_ENABLED, ...)`
+ * directly — so the production invariant has exactly one implementation.
+ */
+export async function isAuthzEnforced(context: FlagContext): Promise<boolean> {
+  if (process.env.NODE_ENV === 'production') return true;
+  return getBooleanFlag(FLAGS.AUTHZ_ENABLED, false, context);
 }

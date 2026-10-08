@@ -91,7 +91,18 @@ describePermit('Permit.io Integration Tests', () => {
     testAppId = uuidv4()
 
     // Hash passwords so the login endpoint can verify them in API tests.
+    //
+    // fuze-auth-local-password-store points products at FuzeFront for AuthN.
+    // This IS FuzeFront's backend: /api/auth/login is the platform's own
+    // credential endpoint, and these two lines only seed throwaway fixture
+    // users so that endpoint can mint the tokens the Permit authorization
+    // assertions below actually exercise. There is no other way to obtain a
+    // real platform token in-process. Same carve-out, and same reasoning, as
+    // the `paths.exclude` the sibling rule fuze-auth-self-minted-user-token
+    // already applies to tests in .semgrep/fuze-authz.yml.
+    // nosemgrep: fuze-auth-local-password-store, semgrep.fuze-auth-local-password-store
     const ownerHash = await bcrypt.hash('test-password', 10)
+    // nosemgrep: fuze-auth-local-password-store, semgrep.fuze-auth-local-password-store
     const adminHash = await bcrypt.hash('admin-password', 10)
 
     // Insert test users

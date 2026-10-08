@@ -1,5 +1,6 @@
 import { SelectionListApiError } from './errors'
 import type {
+  ItemTranslationLocaleStatus,
   ListSelectionListItemsParams,
   ListSelectionListsParams,
   Locale,
@@ -25,6 +26,7 @@ import type {
   SelectionListTranslation,
   SelectionListTranslationUpsert,
   SelectionListUpdate,
+  TranslationLocaleStatus,
   UserId,
 } from './types'
 
@@ -45,9 +47,10 @@ export interface SelectionListClientOptions {
    */
   baseUrl: string
   /**
-   * Bearer token, or a provider for one. Optional: `resolveIds` may be called
-   * unauthenticated by a trusted in-cluster caller that has already authorized
-   * its own end user.
+   * Bearer token, or a provider for one. Every operation — `resolveIds`
+   * included (spec 2.0.0) — requires it; the type stays optional only so a
+   * client can be constructed before a token exists. Without one, calls fail
+   * with a `401` {@link SelectionListApiError}.
    */
   token?: TokenProvider
   /** Injected `fetch`, for tests or a non-global runtime. Defaults to `globalThis.fetch`. */
@@ -72,7 +75,7 @@ interface RequestOptions {
  * Typed client for the FuzeFront selection-list-service.
  *
  * One method per endpoint of `services/selection-list-service/openapi.yaml`
- * v1.0.0, plus {@link SelectionListClient.paginate} for walking a cursor.
+ * v4.0.0, plus {@link SelectionListClient.paginate} for walking a cursor.
  * Zero runtime dependencies — it uses the platform `fetch`.
  */
 export class SelectionListClient {
@@ -151,7 +154,13 @@ export class SelectionListClient {
     })
   }
 
-  /** `PATCH /v1/selection-lists/{listId}` — partial update. */
+  /**
+   * `PATCH /v1/selection-lists/{listId}` — partial update.
+   *
+   * Requires `update` on the list; a body with `status: 'archived'` also
+   * requires `delete` (contract 4.0.0, `x-permit-additional-actions`), so a
+   * `list-editor` gets a `FORBIDDEN` error for it — same as {@link archiveList}.
+   */
   async updateList(
     listId: SelectionListId,
     body: SelectionListUpdate,
@@ -314,6 +323,25 @@ export class SelectionListClient {
   /* Translations                                                            */
   /* ---------------------------------------------------------------------- */
 
+  /**
+   * `GET /v1/selection-lists/{listId}/translations` — one status entry per
+   * locale that has a list-level translation, including completeness,
+   * machine-translation status, and staleness. The source locale is excluded.
+   *
+   * This is the primary read for the translation workbench UI. The result set
+   * is bounded by the supported locale count (max 11) and is not paginated.
+   */
+  async listTranslations(
+    listId: SelectionListId,
+    signal?: AbortSignal
+  ): Promise<TranslationLocaleStatus[]> {
+    return this.request<TranslationLocaleStatus[]>({
+      method: 'GET',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/translations`,
+      signal,
+    })
+  }
+
   /** `PUT /v1/selection-lists/{listId}/translations/{locale}` — human list text. */
   async upsertListTranslation(
     listId: SelectionListId,
@@ -345,6 +373,65 @@ export class SelectionListClient {
       method: 'PUT',
       path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations/${encodeURIComponent(locale)}`,
       body,
+      signal,
+    })
+  }
+
+  /**
+   * `DELETE /v1/selection-lists/{listId}/translations/{locale}` — remove one
+   * locale's list-level translation. Idempotent: deleting a translation that
+   * does not exist returns `204`. The source locale cannot be deleted — a
+   * `400 VALIDATION_ERROR` is returned instead. Item-level translations in
+   * this locale are not touched.
+   */
+  async deleteListTranslation(
+    listId: SelectionListId,
+    locale: Locale,
+    signal?: AbortSignal
+  ): Promise<void> {
+    await this.request<null>({
+      method: 'DELETE',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/translations/${encodeURIComponent(locale)}`,
+      allowEmpty: true,
+      signal,
+    })
+  }
+
+  /**
+   * `GET /v1/selection-lists/{listId}/items/{itemId}/translations` — one
+   * status entry per locale that has an item-level translation, with
+   * machine-translation status and staleness. The source locale is excluded.
+   *
+   * Bounded by the supported locale count (max 11); not paginated.
+   */
+  async listItemTranslations(
+    listId: SelectionListId,
+    itemId: SelectionListItemId,
+    signal?: AbortSignal
+  ): Promise<ItemTranslationLocaleStatus[]> {
+    return this.request<ItemTranslationLocaleStatus[]>({
+      method: 'GET',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations`,
+      signal,
+    })
+  }
+
+  /**
+   * `DELETE /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}`
+   * — remove one locale's item-level translation. Idempotent: deleting a
+   * translation that does not exist returns `204`. The source locale cannot
+   * be deleted.
+   */
+  async deleteItemTranslation(
+    listId: SelectionListId,
+    itemId: SelectionListItemId,
+    locale: Locale,
+    signal?: AbortSignal
+  ): Promise<void> {
+    await this.request<null>({
+      method: 'DELETE',
+      path: `/v1/selection-lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(itemId)}/translations/${encodeURIComponent(locale)}`,
+      allowEmpty: true,
       signal,
     })
   }
@@ -446,6 +533,11 @@ export class SelectionListClient {
    * URL). Archived ids resolve normally with `status: 'archived'`; only purged
    * or never-existent ids come back in `missing`. Bounded at 500 ids per call —
    * chunk larger batches yourself so the cap stays visible at the call site.
+   *
+   * Authenticated like every other operation (spec 2.0.0): the Bearer token
+   * must carry an organization claim, and resolution is scoped to that org —
+   * another org's ids land in `missing`. There is no anonymous mode; a missing
+   * or org-less token throws a `401` {@link SelectionListApiError}.
    */
   async resolveIds(
     ids: SelectionListItemId[],

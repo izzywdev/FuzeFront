@@ -18,6 +18,20 @@ module.exports = {
     '^@fuzefront/shared/kafka$': '<rootDir>/../../shared/src/kafka/index.ts',
     '^@izzywdev/fuzefront-identity$': '<rootDir>/../../packages/identity/src/index.ts',
     '^@fuzefront/shared$': '<rootDir>/../../shared/src/kafka/index.ts',
+    // @fuzefront/auth's dist is gitignored (same reasoning as identity above) —
+    // map straight to TS source so ts-jest can compile it at RUNTIME without
+    // requiring a prior `npm run build` in packages/auth. ts-jest's
+    // TYPE-CHECK still resolves the package's declared `types` (dist/index.d.ts)
+    // regardless of this mapper, so CI additionally builds packages/auth
+    // first (see .github/workflows/billing-service-tests.yml), same as it
+    // already does for @izzywdev/fuzefront-identity.
+    '^@fuzefront/auth$': '<rootDir>/../../packages/auth/src/index.ts',
+    // When shared/src/* files are compiled in-source by ts-jest they resolve
+    // their own deps (zod, kafkajs) from shared/node_modules, which may not
+    // exist in a partial install. Pin to billing-service's copy so tests don't
+    // need a full workspace npm install.
+    '^zod$': '<rootDir>/node_modules/zod',
+    '^kafkajs$': '<rootDir>/node_modules/kafkajs',
   },
   testTimeout: 60000,
 };

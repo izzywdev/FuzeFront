@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 // into the avatar menu (see the note on TopBar below). Portal branding stays.
 import { useT } from '@fuzefront/i18n'
 import { usePortalContext, PortalBrandLockup } from '@fuzefront/portal-branding-ui'
+import TenantSelector from './TenantSelector'
 import AppSelector from './AppSelector'
 import UserMenu from './UserMenu'
 import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
@@ -73,6 +74,8 @@ function TopBar({ onMenuToggle }: TopBarProps) {
           gap: '12px',
         }}
       >
+        <TenantSelector />
+
         <AppSelector />
 
         {/* AI assistant is launched from its own floating fuse-seam launcher

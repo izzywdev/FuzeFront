@@ -89,6 +89,11 @@ chroma:
 # registration/README.md has both commands.
 registration:
   enabled: false
+  # Keep the registration manifest, policy, and onboarding script declarative
+  # even while the Job is disabled. This is the prerequisite that lets a later
+  # GitOps change enable the Job without depending on manually-created maps.
+  assets:
+    enabled: true
   # Any image with a shell; curl + jq are installed at start. Kept as a value so
   # an air-gapped cluster can point at an internal mirror instead.
   image: alpine:3.20

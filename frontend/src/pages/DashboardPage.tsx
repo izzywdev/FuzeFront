@@ -1,4 +1,6 @@
-import { useCurrentUser, useOrganizations } from '../lib/shared'
+import { Button } from '@fuzefront/design-system'
+import { useCurrentUser, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
+import { isEmployeeUser } from '../utils/employee'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { iconGlyph, iconImageUrl, integrationTypeOf, appHref } from '../platform/appManifest'
 import type { App as RegistryApp } from '@fuzefront/app-registry-client'
@@ -9,11 +11,49 @@ import type { App as RegistryApp } from '@fuzefront/app-registry-client'
  * OR it belongs to the currently active organization. Never drop a
  * platform-global app just because org hydration hasn't finished yet /
  * `activeOrganizationId` is momentarily null — that was the crux of BUG 2.
+ *
+ * Apps that declare requiresOrgContext/visibility='organization' or the
+ * internal executive app are excluded in personal context or for non-employees
+ * on the root organization.
  */
 export function isAppVisibleForOrg(
-  app: Pick<RegistryApp, 'organizationId'>,
-  activeOrganizationId: string | null
+  app: Pick<RegistryApp, 'organizationId'> & { slug?: string; manifest?: any },
+  activeOrganizationId: string | null,
+  isEmployee: boolean = false
 ): boolean {
+  if (app.slug === 'executive') {
+    if (activeOrganizationId === null) return false
+    if (activeOrganizationId === ROOT_ORG_ID && !isEmployee) return false
+    return true
+  }
+
+  // Public / marketplace apps are visible to EVERY authenticated caller,
+  // regardless of which org is active. This mirrors the server's own BOLA rule
+  // (backend/applications/src/app-registry/service.ts `canRead`/`list()`, and
+  // backend/src/routes/apps.ts `scopeAppsQuery`): visibility public|marketplace
+  // ⇒ everyone. It became REQUIRED here after the 2026-08-25 owner ruling
+  // backfilled every first-party app's org from null to ROOT_ORG_ID
+  // (backend/applications/src/migrations/011_apps_organization_id_not_null.ts):
+  // Clock ships `visibility: 'public'` but now carries
+  // `organizationId: ROOT_ORG_ID`, so the `organizationId === null` branch
+  // below no longer recognizes it as platform-global. Without this check a
+  // public app was wrongly hidden from every user whose active org isn't ROOT —
+  // e.g. a brand-new account with no org, or any member of their own org — who
+  // then saw an empty dashboard while the registry (and the sidebar, which does
+  // NOT apply this org filter) correctly listed it. The post-prod live smoke
+  // (frontend/e2e/post-prod/live-smoke.spec.ts test 7) hit exactly this: its
+  // org-less synthetic got Clock from /api/apps (same visibility filter) yet no
+  // `.app-card` rendered, because the dashboard dropped it here.
+  const visibility = app.manifest?.visibility
+  if (visibility === 'public' || visibility === 'marketplace') return true
+
+  const orgRequired =
+    app.manifest?.requiresOrgContext === true ||
+    app.manifest?.visibility === 'organization'
+  if (activeOrganizationId === null && orgRequired) {
+    return false
+  }
+
   return (
     app.organizationId === null ||
     app.organizationId === undefined ||
@@ -34,6 +74,7 @@ function integrationIcon(type: string) {
 function DashboardPage() {
   const { user } = useCurrentUser()
   const { activeOrganizationId } = useOrganizations()
+  const isEmployee = isEmployeeUser(user?.roles)
   // BUG 2 root cause: this page previously called the legacy `fetchApps()`
   // (`GET /apps`) instead of the same `@fuzefront/app-registry-client`
   // source (`GET /api/v1/app-registry/apps?status=activated`) the sidebar
@@ -47,7 +88,7 @@ function DashboardPage() {
   // whether org hydration has completed yet.
   const { apps: registeredApps } = useRegisteredApps()
   const allApps = registeredApps.filter(app =>
-    isAppVisibleForOrg(app, activeOrganizationId)
+    isAppVisibleForOrg(app, activeOrganizationId, isEmployee)
   )
 
   const handleAppClick = (app: RegistryApp) => {
@@ -143,12 +184,12 @@ function DashboardPage() {
       <div className="quick-actions">
         <h3>Quick Actions</h3>
         <div className="quick-actions-row">
-          <button
-            className="btn btn-secondary"
+          <Button
+            variant="secondary"
             onClick={() => (window.location.href = '/help')}
           >
             📖 View Documentation
-          </button>
+          </Button>
           {user?.roles.includes('admin') && (
             <button
               className="btn btn-primary"

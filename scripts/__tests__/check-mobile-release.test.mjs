@@ -17,6 +17,9 @@ const baseFiles = {
   'android/twa-manifest.json': {
     packageId: 'com.example.mobile',
     host: 'mobile.fuzefront.com',
+    startUrl: '/',
+    fullScopeUrl: 'https://mobile.fuzefront.com/',
+    webManifestUrl: 'https://mobile.fuzefront.com/manifest.webmanifest',
     name: 'Mobile App',
     signingKey: { alias: 'release' },
     fingerprints: [{ name: 'release', value: fingerprint }],

@@ -19,7 +19,10 @@ export const ENTITY_PREFIXES = {
   organization: 'org',
   user: 'usr',
   app: 'app',
-  // billing
+  // billing — Fuze's OWN SaaS subscription billing (the family's paying
+  // customers). A tenant's sales money (invoices, payments, receivables) is
+  // FuzeFinance's and uses FuzeFinance's product namespace, never these bare
+  // prefixes (izzywdev/FuzeSDLC#454, izzywdev/FuzeFront#1194).
   customer: 'cus',
   subscription: 'sub',
   payment: 'pay',
@@ -34,7 +37,15 @@ export const ENTITY_PREFIXES = {
   membership: 'mbr',
   session: 'ses',
   mfaFactor: 'mfa',
-  // messaging
+  // messaging — PLATFORM messaging hosted by FuzeFront for the family: in-app
+  // chat and notifications between platform users. Customer-facing omnichannel
+  // conversations (voice, WhatsApp, Messenger, email, web chat with a tenant's
+  // customers) are FuzeContact's and use FuzeContact's product namespace, not
+  // these bare prefixes (izzywdev/FuzeFront#1194, option a).
+  //
+  // Not here on purpose: a `party` spine type. The shared Party master proposed
+  // in izzywdev/FuzeSDLC#454 does not exist yet; until it does, party ids stay
+  // product-namespaced. Note `prt` is `portal`, not party.
   conversation: 'cnv',
   message: 'msg',
   notification: 'ntf',
@@ -43,6 +54,10 @@ export const ENTITY_PREFIXES = {
   // shipped: changing one is a wire-breaking change for every stored reference.
   selectionList: 'front_sl',
   selectionListItem: 'front_sli',
+  // applications-service — product-local, namespaced front_ per the namespace
+  // gate. An app-build session is one "build your application" run (a FuzeAgent
+  // session that develops and deploys an app into a personal/org account).
+  appBuildSession: 'front_abs',
   // config-service (FF-EPIC-17) — bare spine prefixes, not front_-namespaced:
   // config-service is FuzeFront-hosted for the whole family (same tier as the
   // billing/messaging sets above), and the frozen contract

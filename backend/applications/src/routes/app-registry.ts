@@ -9,9 +9,9 @@ import { randomBytes } from 'crypto'
 // Every route below uses the unified middleware: pre-shared consumer token first,
 // then JWT session. authenticateToken is no longer referenced directly here — it
 // is reached through authenticateConsumerOrSession's fall-through.
-import { authenticateConsumerOrSession } from '../middleware/consumer-auth'
+import { authenticateConsumerOrSession, SYNTHETIC_CONSUMER_USER_ID } from '../middleware/consumer-auth'
 import { isPrefixedIdsEnabled } from '../identity/flags'
-import { prefixDtoIds } from '../identity/serializer'
+import { toAppDto, toAppDtos } from '../app-registry/app-dto'
 import {
   appManifestSchema,
   registerAppRequestSchema,
@@ -22,11 +22,16 @@ import {
 } from '../app-registry/manifest.schema'
 import { appRegistryService, canRead, canMutate, ROOT_ORG_ID } from '../app-registry/service'
 import { resolveCaller } from '../app-registry/caller'
-import { checkAppRegistryPermission } from '../app-registry/permit'
+import { checkAppRegistryPermission, assignAppCreatorRole } from '../app-registry/permit'
 import { getAppRegistryEmitter } from '../app-registry/events'
-import { isV1WriteEnabled, isKafkaEmitEnabled, isRefEnforceEnabled } from '../app-registry/flags'
+import {
+  isV1WriteEnabled,
+  isKafkaEmitEnabled,
+  isRefEnforceEnabled,
+  isCreatorOwnershipEnabled,
+} from '../app-registry/flags'
 import { resolvePortalCatalogContext } from '../app-registry/portalContext'
-import { assertRefExists } from '@izzywdev/fuzefront-identity'
+import { assertRefExists, parseId, toUuid } from '@izzywdev/fuzefront-identity'
 import { db } from '../config/database'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 
@@ -73,6 +78,22 @@ async function v1WriteGate(
   return true
 }
 
+/**
+ * Wire-shape options for an App DTO: id prefixing + the creator-ownership
+ * surface (flag fuzefront.apps.creator-ownership, default OFF — when OFF the
+ * DTO is byte-identical to the pre-feature shape).
+ */
+async function dtoOptions(req: any, organizationId?: string | null) {
+  const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+  return {
+    prefixed: await isPrefixedIdsEnabled(flagCtx),
+    creatorOwnership: await isCreatorOwnershipEnabled({
+      organizationId: organizationId ?? req.user?.organizationId,
+      userId: req.user?.id,
+    }),
+  }
+}
+
 // ── GET /apps — listApps ──────────────────────────────────────────────────────
 router.get('/apps', authenticateConsumerOrSession, async (req: any, res) => {
   try {
@@ -104,11 +125,9 @@ router.get('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     const portalCtx = await resolvePortalCatalogContext(req)
 
     const result = await appRegistryService.list({ status, mode, limit, cursor }, caller, portalCtx)
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     return res.json({
       ...result,
-      apps: result.apps.map((app: any) => prefixDtoIds(app, prefixed, { organizationId: 'organization' })),
+      apps: await toAppDtos(result.apps, await dtoOptions(req)),
     })
   } catch (err) {
     console.error('[app-registry] listApps error:', err)
@@ -135,14 +154,17 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     // NULL` state the visibility query used to special-case. A non-admin
     // caller omitting it is still rejected below; they must name a real org
     // they belong to.
-    const orgId = organizationId ?? (caller.isPlatformAdmin ? ROOT_ORG_ID : null)
+    let orgId = organizationId ?? (caller.isPlatformAdmin ? ROOT_ORG_ID : null)
     // release flag (default OFF): the new write surface is dark until released.
     if (!(await v1WriteGate(caller, orgId, res))) return
 
     // FFRNT P2 — L1 referential-integrity check (identifier-standard §5).
-    // Assert that the supplied organizationId is known to the local ref_index
-    // projection. OFF (default): warn + continue; ON: hard-fail with 422.
-    if (orgId) {
+    // Assert tenant-supplied organization IDs against the local ref_index
+    // projection. The fixed platform root is an identity invariant owned and
+    // seeded by security-service; it must not depend on eventually-consistent
+    // projection replay (which may apply an old tombstone after our local seed).
+    // OFF (default): warn + continue; ON: hard-fail with 422.
+    if (orgId && orgId !== ROOT_ORG_ID) {
       const refMode = (await isRefEnforceEnabled({ organizationId: orgId, userId: caller.userId }))
         ? 'enforce'
         : 'warn'
@@ -154,6 +176,13 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
           message: 'Organization not found',
           code: 'ORG_REF_MISSING',
         })
+      }
+      // FFRNT-185: normalize TypeID → bare UUID for all DB/comparison operations.
+      // parseId+toUuid handles TypeIDs; bare-UUID fallback covers ROOT_ORG_ID.
+      try {
+        orgId = toUuid(parseId('organization', orgId))
+      } catch {
+        // orgId is already a bare UUID (e.g. ROOT_ORG_ID constant) — keep as-is.
       }
     }
 
@@ -185,7 +214,24 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
     }
 
     const heartbeatToken = randomBytes(32).toString('hex')
-    const app = await appRegistryService.register(manifest, orgId, heartbeatToken)
+
+    // Creator ownership (flag fuzefront.apps.creator-ownership, default OFF).
+    // `created_by_user_id` is SERVER-SET from the authenticated principal and is
+    // never read from the body (the body schema is .strict(), so a client-sent
+    // `createdBy` is a 400). The pre-shared consumer service account is not a
+    // person (no users row) and never becomes a creator. The column is
+    // informational — authority is Permit + org role, not this value.
+    const isHuman = caller.userId !== SYNTHETIC_CONSUMER_USER_ID
+    const creatorOn =
+      isHuman &&
+      (await isCreatorOwnershipEnabled({ organizationId: orgId, userId: caller.userId }))
+    const app = await appRegistryService.register(manifest, orgId, heartbeatToken, {
+      createdByUserId: creatorOn ? caller.userId : null,
+    })
+    if (creatorOn && orgId) {
+      // Best-effort + fail-soft: a Permit problem never fails registration.
+      await assignAppCreatorRole({ userId: caller.userId, organizationId: orgId, slug: app.slug })
+    }
 
     // Kafka system-of-record event (fail-soft + ops-kill-switch, default ON).
     if (await isKafkaEmitEnabled({ organizationId: orgId, userId: caller.userId })) {
@@ -205,9 +251,7 @@ router.post('/apps', authenticateConsumerOrSession, async (req: any, res) => {
 
     // Return the heartbeat token in a header (out-of-band, not on the App shape).
     res.setHeader('X-App-Heartbeat-Token', heartbeatToken)
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    return res.status(201).json(prefixDtoIds(app as any, prefixed, { organizationId: 'organization' }))
+    return res.status(201).json(await toAppDto(app, await dtoOptions(req, orgId)))
   } catch (err: any) {
     // Unique-constraint race → 409.
     if (err?.code === '23505' || /duplicate key|unique/i.test(err?.message || '')) {
@@ -236,9 +280,7 @@ router.get('/apps/:slug', authenticateConsumerOrSession, async (req: any, res) =
     if (!app) return notFound(res)
     // BOLA: do not reveal existence of apps outside the caller's visibility → 404.
     if (!canRead(app, caller)) return notFound(res)
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    return res.json(prefixDtoIds(app as any, prefixed, { organizationId: 'organization' }))
+    return res.json(await toAppDto(app, await dtoOptions(req, app.organizationId)))
   } catch (err) {
     console.error('[app-registry] getApp error:', err)
     return res.status(500).json({ error: 'internal_error', message: 'Failed to get app' })
@@ -297,10 +339,9 @@ router.put('/apps/:slug', authenticateConsumerOrSession, async (req: any, res) =
       return forbidden(res, 'Missing apps:write scope')
     }
 
+    // created_by_user_id is immutable: updateManifest never writes it.
     const updated = await appRegistryService.updateManifest(existing, manifest)
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    return res.json(prefixDtoIds(updated as any, prefixed, { organizationId: 'organization' }))
+    return res.json(await toAppDto(updated, await dtoOptions(req, updated.organizationId)))
   } catch (err) {
     console.error('[app-registry] updateApp error:', err)
     return res.status(500).json({ error: 'internal_error', message: 'Failed to update app' })
@@ -470,8 +511,6 @@ async function transition(
 ): Promise<express.Response> {
   try {
     const caller = await resolveCaller(req.user)
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
     const existing = await appRegistryService.findBySlug(req.params.slug)
     if (!existing) return notFound(res)
     if (!canRead(existing, caller)) return notFound(res)
@@ -494,7 +533,7 @@ async function transition(
     // suspended, but both activate and suspend are idempotent no-ops if already
     // in the target state, and an app may be re-activated from suspended.
     if (existing.status === target) {
-      return res.json(prefixDtoIds(existing as any, prefixed, { organizationId: 'organization' })) // idempotent no-op
+      return res.json(await toAppDto(existing, await dtoOptions(req, existing.organizationId))) // idempotent no-op
     }
 
     const updated = await appRegistryService.setStatus(existing.slug, target)
@@ -526,7 +565,7 @@ async function transition(
       timestamp: new Date().toISOString(),
     })
 
-    return res.json(prefixDtoIds(updated as any, prefixed, { organizationId: 'organization' }))
+    return res.json(await toAppDto(updated, await dtoOptions(req, updated.organizationId)))
   } catch (err) {
     console.error('[app-registry]', target, 'error:', err)
     return res.status(500).json({ error: 'internal_error', message: `Failed to ${target} app` })

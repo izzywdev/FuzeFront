@@ -26,10 +26,13 @@ import type {
   Page,
   PageParams,
   Role,
+  SetAttributesRequest,
+  SetAttributesResult,
   Tenant,
   TenantCreate,
 } from '../AuthorizationProvider'
 import permit from '../../config/permit'
+import { withReqId } from '../../lib/logger'
 import {
   checkPermission,
   bulkCheckPermissions,
@@ -57,6 +60,15 @@ function resourceInstance(
 /** Single, unpaginated page (Permit's list APIs are not cursor-native here). */
 function singlePage<T>(items: T[]): Page<T> {
   return { items, page: { nextCursor: null, hasMore: false, total: items.length } }
+}
+
+/** Best-effort map of a Permit role-assignment row → its `Type:key` resource instance, if scoped. */
+function resourceInstanceOf(a: any): string | undefined {
+  const v = a?.resource_instance
+  if (typeof v === 'string' && v) return v
+  const type = a?.resource
+  const key = a?.resource_instance_key ?? a?.resource_instance?.key
+  return type && key ? `${type}:${key}` : undefined
 }
 
 /** Best-effort map of an unknown Permit role-assignment row → its role key. */
@@ -185,6 +197,54 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
     })
   }
 
+  // ── Subject ABAC attributes (write-side) ──
+
+  /**
+   * Merge ABAC attributes onto a subject's record in Permit.
+   *
+   * `subjectType: 'user'` -> `permit.api.users.update`, `'tenant'` ->
+   * `permit.api.tenants.update` — the ONLY place either vendor call is named.
+   * Permit's own `update()` is itself a merge on `attributes`, so this
+   * naturally satisfies the contract's merge (not replace) semantics without
+   * any local read-modify-write.
+   *
+   * WRITE semantics — deliberately the opposite of `check`/`bulkCheck`'s
+   * fail-closed-returns-false: any provider/transport error here is
+   * rethrown, never swallowed, so the route can surface it as 502
+   * PROVIDER_UNAVAILABLE rather than a silent/false "success".
+   */
+  async setAttributes(req: SetAttributesRequest): Promise<SetAttributesResult> {
+    const log = withReqId()
+    const { subject, attributes } = req
+    const op = `permit.api.${subject.type === 'user' ? 'users' : 'tenants'}.update`
+    const start = Date.now()
+    log.debug({ op, subjectType: subject.type, subjectKey: subject.key }, `${op} start`)
+    try {
+      if (subject.type === 'user') {
+        await permit.api.users.update(subject.key, { attributes })
+      } else {
+        await permit.api.tenants.update(subject.key, { attributes })
+      }
+      log.debug(
+        { op, subjectType: subject.type, subjectKey: subject.key, elapsedMs: Date.now() - start },
+        `${op} end`
+      )
+      return { subject, attributes, updatedAt: Date.now() }
+    } catch (err) {
+      log.error(
+        {
+          op,
+          subjectType: subject.type,
+          subjectKey: subject.key,
+          elapsedMs: Date.now() - start,
+          err: (err as Error).message,
+        },
+        `${op} failed`
+      )
+      throw err // surfaced as 502 PROVIDER_UNAVAILABLE by the route — never fail-open/fail-silent
+    }
+  }
+
   async listGrants(query: GrantQuery): Promise<Page<Grant>> {
     const rows = (await getUserRoleAssignments(query.subject, query.tenant)) as any[]
     const grants: Grant[] = (rows ?? [])
@@ -268,7 +328,19 @@ export class PermitAuthorizationProvider implements AuthorizationProvider {
     const rows = (await getUserRoleAssignments(userId, tenantId)) as any[]
     for (const r of rows ?? []) {
       const role = roleKeyOf(r)
-      if (role) await unassignRoleInPermit({ user: userId, role, tenant: tenantId })
+      if (!role) continue
+      // Permit identifies an assignment by (user, role, tenant, resource_instance).
+      // An instance-scoped grant (e.g. `App#creator` on `App:<slug>`) is a different
+      // record from the tenant-wide one, so leaving resource_instance off would
+      // leave it behind after the member is removed — a departed user keeping
+      // access to an object their org owns. Pass it through when the row has one.
+      const instance = resourceInstanceOf(r)
+      await unassignRoleInPermit({
+        user: userId,
+        role,
+        tenant: tenantId,
+        ...(instance ? { resource_instance: instance } : {}),
+      })
     }
   }
 

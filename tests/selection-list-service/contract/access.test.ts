@@ -9,7 +9,7 @@
  *   - User must be in the org to be granted access (400 if not)
  *   - Grant shape: list_id, user_id, role, granted_by, granted_at, updated_at
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';

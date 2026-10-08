@@ -31,6 +31,7 @@ export interface PlatformSnapshot {
   user: { id: string; email: string; roles: string[] } | null
   apps: Array<{ id: string; name: string }>
   activeApp: { id: string; name: string } | null
+  activeOrganization?: { id: string; name: string } | null
   isPlatformMode: boolean
 }
 
@@ -42,12 +43,26 @@ export interface BridgeMenuItem {
   order?: number
 }
 
+export interface OrgSwitchEventDetail {
+  organizationId: string | null
+  organization: { id: string; name: string } | null
+}
+
+export interface AccountSwitchEventDetail {
+  userId: string | null
+  user: { id: string; email: string; roles: string[] } | null
+}
+
 export interface FuzeFrontBridge {
   /** Contract version — apps can feature-detect. */
   version: number
   getContext(): PlatformSnapshot
   /** Subscribe to live context changes. Returns an unsubscribe fn. */
   subscribe(listener: (ctx: PlatformSnapshot) => void): () => void
+  /** Subscribe specifically to organization changes (or personal context when null). */
+  onOrgSwitch(handler: (org: { id: string; name: string } | null) => void): () => void
+  /** Subscribe specifically to user/account changes. */
+  onAccountSwitch(handler: (user: { id: string; email: string; roles: string[] } | null) => void): () => void
   /** Show a toast. Returns the toast id. */
   notify(toast: ToastInput): string
   dismiss(id: string): void
@@ -67,7 +82,7 @@ export interface BridgeSocket {
   isConnected(): boolean
 }
 
-const CONTRACT_VERSION = 1
+const CONTRACT_VERSION = 2
 
 function newId(prefix: string): string {
   try {
@@ -92,6 +107,8 @@ class PlatformBridge implements FuzeFrontBridge {
     isPlatformMode: true,
   }
   private ctxListeners = new Set<(ctx: PlatformSnapshot) => void>()
+  private orgListeners = new Set<(org: { id: string; name: string } | null) => void>()
+  private accountListeners = new Set<(user: { id: string; email: string; roles: string[] } | null) => void>()
   private toasts: Toast[] = []
   private toastListeners = new Set<(toasts: Toast[]) => void>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -112,8 +129,51 @@ class PlatformBridge implements FuzeFrontBridge {
 
   /** Host pushes context updates here when its state changes. */
   setContext(ctx: PlatformSnapshot) {
+    const prevCtx = this.ctx
     this.ctx = ctx
     this.ctxListeners.forEach(l => l(ctx))
+
+    const prevOrgId = prevCtx.activeOrganization?.id ?? null
+    const newOrgId = ctx.activeOrganization?.id ?? null
+    if (prevOrgId !== newOrgId) {
+      const orgPayload = ctx.activeOrganization ?? null
+      this.orgListeners.forEach(l => l(orgPayload))
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('fuzefront:org-switched', {
+            detail: {
+              organizationId: newOrgId,
+              organization: orgPayload,
+            },
+          })
+        )
+        window.dispatchEvent(
+          new CustomEvent('fuzefront:organization-switched', {
+            detail: {
+              organizationId: newOrgId,
+              organization: orgPayload,
+            },
+          })
+        )
+      }
+    }
+
+    const prevUserId = prevCtx.user?.id ?? null
+    const newUserId = ctx.user?.id ?? null
+    if (prevUserId !== newUserId) {
+      const userPayload = ctx.user ?? null
+      this.accountListeners.forEach(l => l(userPayload))
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('fuzefront:account-switched', {
+            detail: {
+              userId: newUserId,
+              user: userPayload,
+            },
+          })
+        )
+      }
+    }
   }
 
   getContext() {
@@ -124,6 +184,16 @@ class PlatformBridge implements FuzeFrontBridge {
     this.ctxListeners.add(listener)
     listener(this.ctx)
     return () => this.ctxListeners.delete(listener)
+  }
+
+  onOrgSwitch(handler: (org: { id: string; name: string } | null) => void) {
+    this.orgListeners.add(handler)
+    return () => this.orgListeners.delete(handler)
+  }
+
+  onAccountSwitch(handler: (user: { id: string; email: string; roles: string[] } | null) => void) {
+    this.accountListeners.add(handler)
+    return () => this.accountListeners.delete(handler)
   }
 
   notify(input: ToastInput): string {

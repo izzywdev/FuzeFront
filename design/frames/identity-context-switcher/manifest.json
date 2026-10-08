@@ -48,17 +48,17 @@
         "id": "context-switch",
         "orchestrator": "ContextSwitcherFlow",
         "route": "/",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-09-24T09:05:03.758Z"
       },
       {
         "id": "my-orgs",
         "orchestrator": "MyOrganizationsFlow",
         "route": "/organizations",
-        "approved": false,
-        "approvedBy": null,
-        "approvedAt": null
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-09-24T09:04:33.856Z"
       }
     ],
     "components": [

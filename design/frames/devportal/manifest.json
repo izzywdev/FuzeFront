@@ -166,8 +166,8 @@
       "label": "01 · Home (signed out)",
       "route": "/",
       "flow": "home",
-      "summary": "Anonymous landing: hero, quick links with the Playground shown locked, the providesTo product directory, and the sandbox-safety promise stated before sign-in.",
-      "acceptanceNotes": "Renders with data-auth='anonymous'. Catalog is reachable read-only; Playground and My access quick links carry data-locked='true' and are shown DISABLED, never hidden — the developer must learn the capability exists and that it needs sign-in. data-action='sign-in' starts the Authentik OIDC redirect; data-action='browse-catalog' routes to /catalog without auth. The product directory renders one [data-product] card per .fuze/manifest.json providesTo entry that has at least one published spec. [data-safety-notice='sandbox-only'] is present on the signed-out page too — the no-production promise is not gated behind sign-in.",
+      "summary": "Anonymous landing: hero, quick links with the Playground/My access/product directory shown locked, and the sandbox-safety promise stated before sign-in.",
+      "acceptanceNotes": "Renders with data-auth='anonymous'. Catalog is reachable read-only; Playground, My access and the product directory carry data-locked='true' and are shown DISABLED, never hidden — the developer must learn the capability exists and that it needs sign-in. data-action='sign-in' starts the Authentik OIDC redirect; data-action='browse-catalog' routes to /catalog without auth. The product directory (full providesTo family list) is NOT rendered to an anonymous visitor — reversed 2026-09-16 by direct owner direction (it was disclosing the platform's full product family to every visitor); see 02-home-signed-in.html for the real [data-panel='product-directory']. [data-safety-notice='sandbox-only'] is present on the signed-out page too — the no-production promise is not gated behind sign-in.",
       "testHooks": [
         "[data-frame='01-home-signed-out']",
         "[data-auth='anonymous']",
@@ -176,8 +176,7 @@
         "[data-panel='home-hero']",
         "[data-panel='quick-links']",
         "[data-quick-link='playground'][data-locked='true']",
-        "[data-panel='product-directory']",
-        "[data-product='fuzefront']",
+        "[data-panel='product-directory-locked']",
         "[data-safety-notice='sandbox-only']"
       ]
     },
@@ -188,7 +187,7 @@
       "route": "/",
       "flow": "home",
       "summary": "Personalized home: quota strip, 'your recent specs', 'your sandbox activity', and both panels' empty variant for a developer's very first sign-in.",
-      "acceptanceNotes": "data-auth='authenticated' and [data-membership-status='active'] render from GET /me/access. [data-panel='quota-summary'] shows used/limit from GET /sandbox/quota with data-quota-used and data-quota-limit; the meter fill tone escalates to warning >80% and danger at 100%. [data-panel='recent-specs'] and [data-panel='sandbox-activity'] come from GET /me/activity and show ONLY the signed-in developer's own data (DevPortalPlayground:view_history never returns another developer's calls). With zero history each renders its empty variant ([data-empty='no-recent-specs'], [data-empty='no-sandbox-activity']) which must onboard with a CTA, not merely state emptiness. Activity rows render the HTTP method via the method-tone Badge and the target's real status code, including non-2xx.",
+      "acceptanceNotes": "data-auth='authenticated' and [data-membership-status='active'] render from GET /me/access. [data-panel='quota-summary'] shows used/limit from GET /sandbox/quota with data-quota-used and data-quota-limit; the meter fill tone escalates to warning >80% and danger at 100%. [data-panel='recent-specs'] and [data-panel='sandbox-activity'] come from GET /me/activity and show ONLY the signed-in developer's own data (DevPortalPlayground:view_history never returns another developer's calls). With zero history each renders its empty variant ([data-empty='no-recent-specs'], [data-empty='no-sandbox-activity']) which must onboard with a CTA, not merely state emptiness. Activity rows render the HTTP method via the method-tone Badge and the target's real status code, including non-2xx. [data-panel='product-directory'] (moved here from 01-home-signed-out.html, 2026-09-16 direct owner direction) renders one [data-product] card per .fuze/manifest.json providesTo entry that has at least one published spec — sign-in only, never shown to an anonymous visitor.",
       "testHooks": [
         "[data-frame='02-home-signed-in']",
         "[data-auth='authenticated']",
@@ -198,6 +197,8 @@
         "[data-panel='recent-specs']",
         "[data-recent-spec='fuzefront/app-registry-service']",
         "[data-panel='sandbox-activity']",
+        "[data-panel='product-directory']",
+        "[data-product='fuzefront']",
         "[data-panel='recent-specs-empty'][data-state='empty']",
         "[data-empty='no-recent-specs']",
         "[data-empty='no-sandbox-activity']",
@@ -420,5 +421,5 @@
       ]
     }
   ],
-  "stamp": "496e19a1b1842469b79f03efd25c1a066e8512b2884352094693c4d49b4fab90"
+  "stamp": "36eced6c6a10e316ab2ef2d2532f408d09e60831ecc87c7f65d84a50bb85a85c"
 }

@@ -1,0 +1,16 @@
+{
+  "feature": "app-specific-menu",
+  "approved": true,
+  "approvedBy": "izzy",
+  "approvedAt": "2026-09-17T12:58:00Z",
+  "frames": [
+    {
+      "id": "app-specific-left-menu-and-chapter-crud",
+      "file": "01-app-specific-menu.html",
+      "title": "Application-Specific Left Menu (Atlassian/Sentry convention) & Chapter Lifecycle",
+      "route": "/app/executive",
+      "acceptanceNotes": "Shows active app nested menu items injected into the host left-side panel underneath the active app, replaces top navigation tabs with sidebar items, demonstrates Add/Edit/View/Delete chapter lifecycle actions, and demonstrates org-context app gating (disabled state)."
+    }
+  ],
+  "stamp": "d2c0632c9c605162865c9b4133700b3e28709f7ffce1f5faf9ab46c525f538ff"
+}

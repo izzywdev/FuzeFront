@@ -73,18 +73,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
+  requirementFreshness: () => request<{ freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'; lastSuccessAt?: string }>('/api/v1/requirements/freshness'),
   addRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
+  repositoryScanHistory: (id: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history`),
   scanRepository: (id: string, localPath?: string) =>
     request(`/api/v1/repositories/${id}/scans`, {
       method: 'POST',
       body: JSON.stringify({ localPath }),
     }),
-  decideSuggestion: (id: string, decision: 'confirm' | 'reject') =>
+  decideSuggestion: (id: string, value: Record<string, unknown>) =>
     request(`/api/v1/suggestions/${id}/decision`, {
       method: 'POST',
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(value),
     }),
+  suggestionDecisions: (id: string) => request(`/api/v1/suggestions/${id}/decisions`),
   verifyRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories/verify', { method: 'POST', body: JSON.stringify(value) }),
   updateRepositoryAdministration: (id: string, value: Record<string, unknown>) =>

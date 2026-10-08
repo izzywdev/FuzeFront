@@ -610,3 +610,167 @@ describe('createAuthzClient — grant/revoke/listGrants', () => {
     ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
   });
 });
+
+describe('createAuthzClient — setAttributes (subject ABAC attribute write)', () => {
+  const clientWith = (responses: Array<{ status?: number; body?: unknown } | Error>) =>
+    createAuthzClient({ baseUrl: BASE, fetch: mockFetch(responses) });
+
+  it('PATCHes the subject-scoped path and resolves with the merged attributes', async () => {
+    const fetch = mockFetch([
+      {
+        status: 200,
+        body: {
+          subject: { type: 'tenant', key: 'org_acme' },
+          attributes: { plan_tier: 'pro', plan_status: 'active', seat_limit: 25 },
+          updatedAt: 1_700_000_000_000,
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    const result = await client.setAttributes(
+      {
+        subject: { type: 'tenant', key: 'org_acme' },
+        attributes: { plan_tier: 'pro', plan_status: 'active', seat_limit: 25 },
+      },
+      TOKEN,
+    );
+
+    expect(result).toEqual({
+      subject: { type: 'tenant', key: 'org_acme' },
+      attributes: { plan_tier: 'pro', plan_status: 'active', seat_limit: 25 },
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(fetch.calls[0].url).toBe(
+      `${BASE}/api/v1/security/authz/subjects/tenant/org_acme/attributes`,
+    );
+    expect(fetch.calls[0].init.method).toBe('PATCH');
+    expect(fetch.calls[0].init.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.parse(fetch.calls[0].init.body)).toEqual({
+      attributes: { plan_tier: 'pro', plan_status: 'active', seat_limit: 25 },
+    });
+  });
+
+  it('a NUMERIC attribute (seat_limit) round-trips as a number, not a stringified value', async () => {
+    const fetch = mockFetch([
+      {
+        status: 200,
+        body: {
+          subject: { type: 'tenant', key: 'org_acme' },
+          attributes: { seat_limit: 25 },
+          updatedAt: 1_700_000_000_000,
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    const result = await client.setAttributes(
+      { subject: { type: 'tenant', key: 'org_acme' }, attributes: { seat_limit: 25 } },
+      TOKEN,
+    );
+
+    expect(result.attributes.seat_limit).toBe(25);
+    expect(typeof result.attributes.seat_limit).toBe('number');
+  });
+
+  it('a BOOLEAN attribute round-trips unchanged', async () => {
+    const fetch = mockFetch([
+      {
+        status: 200,
+        body: {
+          subject: { type: 'user', key: 'usr_1' },
+          attributes: { beta_enrolled: true },
+          updatedAt: 1_700_000_000_000,
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    const result = await client.setAttributes(
+      { subject: { type: 'user', key: 'usr_1' }, attributes: { beta_enrolled: true } },
+      TOKEN,
+    );
+
+    expect(result.attributes.beta_enrolled).toBe(true);
+  });
+
+  it('URL-encodes the subject key', async () => {
+    const fetch = mockFetch([
+      {
+        status: 200,
+        body: {
+          subject: { type: 'user', key: 'usr/with space' },
+          attributes: { plan_tier: 'pro' },
+          updatedAt: 1_700_000_000_000,
+        },
+      },
+    ]);
+    const client = createAuthzClient({ baseUrl: BASE, fetch });
+
+    await client.setAttributes(
+      { subject: { type: 'user', key: 'usr/with space' }, attributes: { plan_tier: 'pro' } },
+      TOKEN,
+    );
+
+    expect(fetch.calls[0].url).toBe(
+      `${BASE}/api/v1/security/authz/subjects/user/usr%2Fwith%20space/attributes`,
+    );
+  });
+
+  it('THROWS MALFORMED when setAttributes 400s — never resolves on failure', async () => {
+    const client = clientWith([
+      { status: 400, body: { error: 'attributes must have at least one key', code: 'MALFORMED' } },
+    ]);
+
+    await expect(
+      client.setAttributes(
+        { subject: { type: 'tenant', key: 'org_acme' }, attributes: { plan_tier: 'pro' } },
+        TOKEN,
+      ),
+    ).rejects.toMatchObject({
+      code: 'MALFORMED',
+      message: expect.stringMatching(/at least one key/),
+    });
+  });
+
+  it('THROWS PROVIDER_ERROR when setAttributes 502s (PROVIDER_UNAVAILABLE on the wire) — this is a WRITE, deliberately the opposite of check/bulkCheck fail-closed-false', async () => {
+    const client = clientWith([
+      { status: 502, body: { error: 'authorization provider unavailable', code: 'PROVIDER_UNAVAILABLE' } },
+    ]);
+
+    await expect(
+      client.setAttributes(
+        { subject: { type: 'tenant', key: 'org_acme' }, attributes: { plan_tier: 'pro' } },
+        TOKEN,
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+
+  it('THROWS PROVIDER_ERROR on a transport error/timeout — never resolves silently', async () => {
+    const timeout = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+    const client = clientWith([timeout]);
+
+    await expect(
+      client.setAttributes(
+        { subject: { type: 'user', key: 'usr_1' }, attributes: { plan_tier: 'pro' } },
+        TOKEN,
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+
+  it('THROWS PROVIDER_ERROR when the 200 response body is malformed (missing updatedAt)', async () => {
+    const client = clientWith([
+      {
+        status: 200,
+        body: { subject: { type: 'tenant', key: 'org_acme' }, attributes: { plan_tier: 'pro' } },
+      },
+    ]);
+
+    await expect(
+      client.setAttributes(
+        { subject: { type: 'tenant', key: 'org_acme' }, attributes: { plan_tier: 'pro' } },
+        TOKEN,
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+});

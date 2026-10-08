@@ -7,13 +7,13 @@ This repo's `CLAUDE.md` **extends** the FuzeSDLC baseline. It does not duplicate
 - **Expert:** `fuzefront-expert` — consult it first on any task to load architecture/deploy/gotcha context (it advises, it does not gate or own deliverables).
 - **Manifest:** `.fuze/manifest.json` declares the instantiated agent subset, design-system base, and hardening.
 
-Read the baseline for the full governance model (3 layers, repo tiers, single-responsibility agents, contract-first fan-out, signed/merged-PR delivery, async orchestration, cross-repo `@claude` delegation). What follows is only the FuzeFront-specific overlay.
+Read the baseline for the full governance model (3 layers, repo tiers, single-responsibility agents, contract-first fan-out, signed/merged-PR delivery, async orchestration, cross-repo `@fuze` delegation). What follows is only the FuzeFront-specific overlay.
 
 ## What FuzeFront is
 
 - **Module-Federation host shell.** FuzeFront is the host/container application; consuming products and micro-frontends are federated remotes mounted into the shell. Keep the shell's shared-dependency contract (React, the design system) stable — remotes consume it.
 - **Backend:** Express + Postgres, with **Authentik** (identity/SSO) and **Permit** (authorization) for auth. The frontend talks to the API on a **same-origin API base** (no cross-origin base URL) so it works identically under local TLS and prod ingress — never hard-code an absolute API host.
-- **Runs on FuzeInfra.** Deploys to Kubernetes (kind-fuzeinfra locally / Contabo k3s prod) via Helm. Infra changes are **delegated to FuzeInfra via `@claude`** — never edit FuzeInfra or operate the cluster from here.
+- **Runs on FuzeInfra.** Deploys to Kubernetes (kind-fuzeinfra locally / Contabo k3s prod) via Helm. Infra changes are **delegated to FuzeInfra via `@fuze`** — never edit FuzeInfra or operate the cluster from here.
 
 ## Helm values hygiene — don't cast around a missing default, restore it
 
@@ -301,6 +301,15 @@ Two rules, and one is not enough without the other:
 
 Packages: **`@izzywdev/fuzefront-identity`** (Node) and **`fuzefront-identity`** (Python, `packages/identity-py/`). They are pinned to each other — same prefixes, same codec, same error codes — and `gate_identifier.py --registry-parity` fails CI if they drift, because a mismatch means a reference minted by one language is rejected by the other.
 
+## Data ownership & read models — single writer, outbox, projections per BFF
+
+Full standard: FuzeSDLC **`governance/data-consistency-standard.md`** (baseline §4.4), skill `data-consistency`. Applied to FuzeFront, with the current-state inventory and the phased roadmap: `docs/planning/data-consistency-and-read-models.md`.
+
+- **Only the owning service writes an entity.** No central write path, no 2PC; multi-service operations are sagas.
+- **Domain events go through the outbox** (`backend/core/src/events/outbox.ts`), never a direct producer call, and consumers dedupe + version-guard.
+- **Every cross-service id is declared** in the service's `data-contract.json` with its validation level (identifier standard §5) and on-delete policy.
+- **No browser-side cross-service joins for lists.** A list that sorts, filters or paginates across services reads a projection owned by its UI's BFF. For the shell, that BFF is the host `backend/` (`/api/v1/views/*`); each product has its own; a new screen is a new view, not a new service.
+
 ## Branch lifecycle policy
 
 Every agent-created branch must reach one of these terminal states — never left open indefinitely:
@@ -357,7 +366,7 @@ The narrow, honest exceptions, and they must be *stated* rather than assumed:
   did not ask about.** Say so in one sentence and offer it; do not silently
   widen the blast radius of a task.
 - **You are not the owner.** FuzeInfra is never edited from a consuming repo.
-  Delegate via `@claude`, with the concrete change spelled out.
+  Delegate via `@fuze`, with the concrete change spelled out.
 
 Everything else gets fixed. A finding without a fix or one of those three
 statements attached is unfinished work, not a deliverable.

@@ -33,6 +33,8 @@ export type {
 } from './bridge'
 export { useToast } from './hooks/useToast'
 export { usePlatform } from './hooks/usePlatform'
+export { useActiveOrganization } from './hooks/useActiveOrganization'
+export type { ActiveOrganization } from './hooks/useActiveOrganization'
 
 // Module Federation Loader
 export {
@@ -52,6 +54,7 @@ import { loadApp, clearModuleCache } from './loader/moduleFederation'
 import { getBridge } from './bridge'
 import { useToast } from './hooks/useToast'
 import { usePlatform } from './hooks/usePlatform'
+import { useActiveOrganization } from './hooks/useActiveOrganization'
 
 // Default export for convenience
 export default {
@@ -62,6 +65,7 @@ export default {
   useSocketBus,
   useToast,
   usePlatform,
+  useActiveOrganization,
   getBridge,
   loadApp,
   clearModuleCache,

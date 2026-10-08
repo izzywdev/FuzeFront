@@ -54,6 +54,7 @@ describe('authorization provider swap contract', () => {
       removeMember: async () => {},
       listRoles: async () => [{ key: 'admin' }],
       assignRoles: async (_t, userId, roles) => ({ userId, roles }),
+      setAttributes: async req => ({ ...req, updatedAt: 1_700_000_000_000 }),
     }
     setAuthorizationProvider(mock)
 

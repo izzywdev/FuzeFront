@@ -21,9 +21,9 @@ for _p in (TEMPLATES_ROOT, HERE):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import common  # noqa: E402  (state_dir)
-from providers import get_provider              # noqa: E402
-from providers.base import interactive_approver, auto_approver  # noqa: E402
+import common
+from providers import get_provider
+from providers.base import auto_approver, interactive_approver
 
 PROVIDER = get_provider()
 
@@ -39,7 +39,8 @@ HANDOFF_INSTRUCTIONS = ("Shared cross-session handoff workspace. Read relevant /
 def _resolve(target):
     if not os.path.exists(AGENT_STATE):
         raise SystemExit("Run providers/provision.py first (agent-ids.json missing).")
-    state = json.load(open(AGENT_STATE, encoding="utf-8"))
+    with open(AGENT_STATE, encoding="utf-8") as fh:
+        state = json.load(fh)
     if target not in state:
         raise SystemExit(f"Unknown target '{target}'. Known: {', '.join(state)}")
     entry = state[target]
@@ -60,7 +61,8 @@ def memory_resources(disabled):
     the session was created with."""
     if disabled or not os.path.exists(MEMORY_STATE):
         return []
-    ids = json.load(open(MEMORY_STATE, encoding="utf-8"))
+    with open(MEMORY_STATE, encoding="utf-8") as fh:
+        ids = json.load(fh)
     return [PROVIDER.memory_resource(sid, "read_write", HANDOFF_INSTRUCTIONS) for sid in ids.values()]
 
 

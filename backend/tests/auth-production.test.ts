@@ -15,6 +15,12 @@ const ADMIN_PASSWORD = 'admin123'
 // CORS origins mirror the real src/index.ts wiring for the values asserted here.
 const ALLOWED_ORIGIN = 'http://localhost:8085'
 
+// Deliberately NOT the app's JWT_SECRET. The "wrong secret" test below asserts
+// that a token signed with a foreign key is rejected, so this value MUST stay
+// distinct from process.env.JWT_SECRET for the assertion to mean anything.
+const WRONG_JWT_SECRET =
+  process.env.TEST_WRONG_JWT_SECRET ?? 'test-only-deliberately-wrong-not-a-real-secret'
+
 /**
  * Mirror the relevant src/index.ts wiring (cors + json + the real auth router)
  * so CORS/auth behavior is the genuine app behavior. Runs against the real
@@ -327,7 +333,7 @@ describe('Authentication - Real Postgres Integration Tests', () => {
     it('should reject tokens signed with the wrong secret', async () => {
       const wrongToken = jwt.sign(
         { userId: '00000000-0000-0000-0000-000000000000' },
-        'wrong-secret',
+        WRONG_JWT_SECRET,
         { expiresIn: '1h' }
       )
       const response = await request(app)

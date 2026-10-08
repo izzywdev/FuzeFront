@@ -1,4 +1,25 @@
+{{/*
+Guard: billingService.authz.enabled makes AUTHENTIK_CLIENT_ID/SECRET REQUIRED env
+on this Deployment (`optional` tracks the flag below). Something must therefore
+publish Secret/<authz.secretName> -- normally the billing-s2s-register PreSync
+Job (authz.register.enabled). Turning the flag on without it, and without having
+provisioned that Secret out of band, yields a pod stuck in
+CreateContainerConfigError.
+
+Asserted HERE, at render time, rather than in a new CI gate: this is the same
+idiom authentik.yaml's assertOidcSecret uses, it fails before anything is
+applied, and it cannot drift out of sync with the template it protects the way a
+separate workflow can. `authz.externallyProvisioned` is the escape hatch for an
+operator who seals the Secret by some other means.
+*/}}
+{{- define "billing.assertAuthzCredentialSource" -}}
+{{- $a := .Values.billingService.authz }}
+{{- if and $a.enabled (not $a.register.enabled) (not $a.externallyProvisioned) }}
+{{- required (printf "billingService.authz.enabled is true but authz.register.enabled is false, so nothing publishes Secret/%s and the billing Deployment would not start (AUTHENTIK_CLIENT_ID/SECRET become required when the flag is on). Enable authz.register.enabled, or set authz.externallyProvisioned=true if you provision that Secret another way." $a.secretName) "" }}
+{{- end }}
+{{- end -}}
 {{- if .Values.billingService.enabled }}
+{{- include "billing.assertAuthzCredentialSource" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -71,13 +92,82 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.billingService.secretName | default "billing-secrets" }}
                   key: BILLING_INTERNAL_TOKEN
-            - name: PERMIT_API_KEY
+            # billing-service's authorization sync is routed through FuzeFront's
+            # own Security API (backend/security's
+            # /api/v1/security/authz/subjects/{type}/{key}/attributes, via
+            # @fuzefront/auth's createAuthzClient — see src/services/authz.ts)
+            # rather than an embedded Permit.io SDK. Permit is now purely an
+            # implementation detail behind backend/security's
+            # AuthorizationProvider seam; billing-service knows nothing about
+            # it and carries no PERMIT_API_KEY/PDP URL of its own. Step 3 of 3
+            # in this migration — config-service (#679) and
+            # selection-list-service (#699) came first.
+            - name: SECURITY_SERVICE_URL
+              # fuzefront-security is the in-cluster Service name for security-service
+              # (port 3002). See templates/security.yaml and
+              # services/config-service-deployment.yaml /
+              # services/selection-list-service-deployment.yaml, which use the
+              # same convention.
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            # billing's syncPlanToPermit() runs from Stripe WEBHOOK handlers —
+            # unlike config-service/selection-list-service, there is no
+            # end-user request in flight to forward a bearer token from. It
+            # authenticates as a machine (client_credentials) caller instead —
+            # see docs/runbooks/s2s-client-credentials.md and
+            # src/services/machineToken.ts. The Security API's
+            # PATCH .../attributes route requires the machine caller to hold
+            # the `authz:admin` scope (gated identically to grant/revoke),
+            # provisioned via
+            # `register-s2s-cli.js billing-service authz:admin` (in-cluster,
+            # NOT part of this chart).
+            - name: AUTHENTIK_TOKEN_URL
+              value: "https://{{ .Values.authentik.host }}/application/o/s2s-billing-service/token/"
+            # Release flag, read by src/services/authz.flags.ts (which derives
+            # the env-var name from the flag key: fuzefront.billing.authz-enabled
+            # → FUZEFRONT_BILLING_AUTHZ_ENABLED). Default OFF; flipping it is the
+            # production cutover, and flipping it back is the kill-switch. The DB
+            # mirror and the billing.subscription.changed projection are
+            # unaffected either way — this gates ONLY the Permit ABAC attribute
+            # sync.
+            - name: FUZEFRONT_BILLING_AUTHZ_ENABLED
+              value: {{ .Values.billingService.authz.enabled | quote }}
+            # These come from a SEPARATE Secret, not billing-secrets, because
+            # they are MINTED IN-CLUSTER by billing-s2s-register-job.yaml rather
+            # than sealed from an external value. billing-secrets is owned by the
+            # sealed-secrets controller, which REPLACES it on every reconcile
+            # (deploy/contabo/sealed/billing-secrets.yaml carries no
+            # `sealedsecrets.bitnami.com/patch` annotation), so a key written
+            # into it by a Job would silently disappear later.
+            #
+            # `optional` TRACKS THE FLAG rather than being a constant that
+            # someone has to remember to flip:
+            #   flag OFF → optional: true  → a missing Secret cannot break the
+            #              live pod over a code path nothing calls.
+            #   flag ON  → optional: false → a missing Secret is a hard,
+            #              immediate error instead of a silent no-op.
+            # Deriving it removes the ordering footgun the previous hand-written
+            # "remove optional: true in the SAME deploy window" note described:
+            # there is now no window in which the two can disagree. The Secret is
+            # guaranteed present before this Deployment is updated because the
+            # provisioning Job is a PreSync hook whose failure aborts the sync —
+            # see billing-s2s-register-job.yaml.
+            #
+            # Note the service degrades safely even if the credentials are absent
+            # while the flag is ON: getMachineToken() throws, syncPlanToPermit()
+            # catches and returns false, the Stripe webhook still succeeds. The
+            # only hard failure this `optional` governs is pod start.
+            - name: AUTHENTIK_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "fuzefront.secretName" . }}
-                  key: PERMIT_API_KEY
-            - name: PERMIT_PDP_URL
-              value: {{ .Values.billingService.permitPdpUrl | quote }}
+                  name: {{ .Values.billingService.authz.secretName }}
+                  key: AUTHENTIK_CLIENT_ID
+                  optional: {{ not .Values.billingService.authz.enabled }}
+            - name: AUTHENTIK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.billingService.authz.secretName }}
+                  key: AUTHENTIK_CLIENT_SECRET
+                  optional: {{ not .Values.billingService.authz.enabled }}
             # Payment-path enablement — plain config, not secrets. Fail-closed:
             # an empty/unset productKeys allowlist rejects every checkout key.
             {{- with .Values.billingService.payment }}

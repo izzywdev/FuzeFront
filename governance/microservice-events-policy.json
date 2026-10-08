@@ -1,0 +1,78 @@
+{
+  "$comment": [
+    "Policy for scripts/gate_microservice_events.py.",
+    "",
+    "knownUnhandled is a RATCHET, not an allowlist. A service is only ever REMOVED",
+    "from it. A new service missing the required events fails the gate immediately,",
+    "so the debt below can shrink but never grow. The gate also fails if a listed",
+    "service starts handling its events and is not removed here in the same PR \u2014",
+    "without that, the list rots into a permanent exemption nobody revisits.",
+    "",
+    "The seven entries below were measured on 2026-09-14, when the gate was written:",
+    "12 structurally-real microservices, of which 5 consumed identity lifecycle",
+    "events and 7 did not. Run `python3 scripts/gate_microservice_events.py --report`",
+    "before trusting that count \u2014 it drifts as services are fixed.",
+    "",
+    "RESOLVED, config-service (2026-10-04). It subscribes to",
+    "identity.org.deleted and identity.user.deleted and cascades both",
+    "(services/config-service/src/events/): a deleted org or user no longer",
+    "strands config_values overrides, and a hard-deleted user's id is redacted",
+    "from config_history under right-to-erasure (migration 005). The CREATED",
+    "pair is declared not-applicable rather than stubbed: config_values is a",
+    "SPARSE override store, so a brand-new org or user needs no rows at all --",
+    "resolution walks platform -> portal -> org -> user and inherits",
+    "(src/resolver/resolve.ts). An empty created-handler would clear the ratchet",
+    "while seeding nothing, which is precisely the 'looks handled and seeds",
+    "nothing' failure the gate rejects one branch down. The owner decision",
+    "(2026-10-04) was to carve the per-topic notApplicable exemption below",
+    "rather than leave a correct service on the debt ratchet forever.",
+    "",
+    "notApplicable is per-topic, reason-mandatory (>= 40 chars), may never cover",
+    "all four events for one service, and is mutually exclusive with",
+    "knownUnhandled and exempt -- enforced by gate_microservice_events.py. It is",
+    "a signed, greppable statement a reviewer can disagree with, not the silence",
+    "a knownUnhandled entry carries.",
+    "",
+    "Still on the ratchet, and why: email/sms/payment hold NO per-entity rows",
+    "yet (provider proxies) and handle nothing today -- they are candidates for",
+    "the same notApplicable treatment, but only once each actually handles the",
+    "DELETED pair (no sparse store is exempt from delete: a row it can write, it",
+    "can strand). devportal-service (core_tables) and notification-service",
+    "(per-user preferences) are REAL seed debt, not not-applicable.",
+    "",
+    "RESOLVED, selection-list-service (2026-10-04). It handles",
+    "identity.org.created (services/selection-list-service/src/events/",
+    "org-created.handler.ts: projects the org, then seeds the platform default",
+    "packs behind the fuzefront.selection-lists.seed-defaults flag) and",
+    "identity.org.deleted (tombstones the projection, then cascades), and",
+    "identity.user.deleted. identity.user.created is declared not-applicable: the",
+    "service has no user-scoped lists (docs/planning/selection-lists-events.md",
+    "section 2; a user-scoped seed request is answered SCOPE_UNSUPPORTED).",
+    "Run `python3 scripts/gate_microservice_events.py --report` before trusting",
+    "any of this -- it drifts as services are fixed."
+  ],
+  "owner": "@izzywdev",
+  "minServices": 10,
+  "knownUnhandled": [
+    "devportal-service",
+    "email-service",
+    "notification-service",
+    "payment-service",
+    "sms-service"
+  ],
+  "notApplicable": {
+    "selection-list-service": {
+      "identity.user.created": "No user-scoped lists exist (selection_lists is keyed by organization_id; user_lists is a per-creator quota). Seeding for a user scope is answered SCOPE_UNSUPPORTED; see docs/planning/selection-lists-events.md section 2."
+    },
+    "config-service": {
+      "identity.org.created": "config_values is a sparse override store; a new org needs zero rows -- resolution inherits platform->portal->org->user (src/resolver/resolve.ts). An empty seed handler would be the vacuous-pass the gate rejects.",
+      "identity.user.created": "config_values is a sparse override store; a new user needs zero rows -- unset keys resolve to the inherited scope (src/resolver/resolve.ts). An empty seed handler would be the vacuous-pass the gate rejects."
+    }
+  },
+  "exempt": [
+    {
+      "name": "core",
+      "reason": "Shared library, not a deployable service \u2014 it has no Dockerfile, so discovery already rejects it. Listed explicitly so a future Dockerfile does not silently enrol it without a decision."
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { InMemoryProvider } from '@openfeature/server-sdk';
 import { getClient, close, __setProviderForTesting } from '../src/server';
-import { WEB_EXPOSED_FLAGS } from '../src/catalog';
+import { WEB_EXPOSED_FLAGS, FLAG_KEYS } from '../src/catalog';
 
 /**
  * `getClient()` is the export `backend/applications/src/app-registry/flags.ts`
@@ -90,12 +90,36 @@ describe('WEB_EXPOSED_FLAGS catalog', () => {
     expect(keys).toContain('fuzefront.identity.personal-context');
     expect(keys).toContain('fuzefront.identity.member-directory');
     expect(keys).toContain('fuzefront.identity.employee-console');
+    // Selection Lists UI is browser-gated by useFlag(); without this entry the
+    // flag reads permanently OFF in the browser no matter what Unleash says.
+    expect(keys).toContain('fuzefront.selection-lists.service');
+    // Seeding flag is server-only (selection-list-service consumers): it has a
+    // FLAG_KEYS constant but must never be disclosed to the browser.
+    expect(keys).not.toContain('fuzefront.selection-lists.seed-defaults');
     // root-membership is server-only (security-service provisioning) — the
     // browser must never see it.
     expect(keys).not.toContain('fuzefront.identity.root-membership');
     // Server-only app-registry flags must not be disclosed to the browser.
     expect(keys).not.toContain('fuzefront.app-registry.v1-registry-write');
     expect(keys).not.toContain('fuzefront.app-registry.kafka-events-kill-switch');
+  });
+
+  it('names the server-only seeding flag via FLAG_KEYS (not web-exposed)', () => {
+    expect(FLAG_KEYS.SELECTION_LISTS_SEED_DEFAULTS).toBe(
+      'fuzefront.selection-lists.seed-defaults',
+    );
+  });
+
+  it('classifies fuzefront.apps.org-context-disabled as a default-ON kill-switch, not a release flag', () => {
+    // Runtime default is `true` (ON in prod; frontend useFlag fallback is true).
+    // A default-ON flag is only valid as an ops-kill-switch per the taxonomy;
+    // typing it `release` would violate release => default OFF.
+    const f = WEB_EXPOSED_FLAGS.find(x => x.key === FLAG_KEYS.APPS_ORG_CONTEXT_DISABLED);
+    expect(f).toEqual({
+      key: 'fuzefront.apps.org-context-disabled',
+      type: 'ops-kill-switch',
+      default: true,
+    });
   });
 
   it('declares release flags fail-safe OFF', () => {

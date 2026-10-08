@@ -2,7 +2,7 @@
 //
 // All CREATE INDEX calls use IF NOT EXISTS for idempotency.
 
-import { Knex } from 'knex';
+import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
   await knex.raw(

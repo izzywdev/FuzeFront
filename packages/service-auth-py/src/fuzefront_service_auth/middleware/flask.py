@@ -6,7 +6,6 @@ Requires the `flask` extra: `pip install "fuzefront-service-auth[flask]"`.
 from __future__ import annotations
 
 import functools
-from typing import Optional
 
 try:
     from flask import g, jsonify, request
@@ -34,7 +33,7 @@ def _deny_response(error: ServiceAuthError):
 def require_machine_identity(
     verifier: MachineTokenVerifier,
     *,
-    authorize: Optional[AuthorizationHook] = None,
+    authorize: AuthorizationHook | None = None,
 ):
     """Build a Flask route decorator that authenticates the caller as a machine identity.
 

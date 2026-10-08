@@ -7,15 +7,22 @@
 //   1. Per-org override row in `selection_list_org_quota` (NULL = use default).
 //   2. Platform defaults (constants below).
 //
-// Quota is a SOFT LIMIT: checkListQuota / checkItemQuota are called BEFORE the
-// INSERT, but the check and INSERT are NOT wrapped in a transaction. Minor
-// overshoot under concurrent load is acceptable — the ceiling is a business
-// guardrail, not an invariant.
+// Enforcement is EXACT, not best-effort: the create handlers call
+// lockQuotaScope() + checkListQuota()/checkItemQuota() INSIDE the same
+// transaction as the INSERT. The advisory lock serialises concurrent creates
+// for one org (lists) / one list (items), so N parallel creates at the ceiling
+// admit exactly (ceiling - current) of them and refuse the rest
+// (contract/quota.test.ts "advisory lock"). The pre-INSERT check in
+// middleware/quota.ts remains as a cheap fast-path refusal only.
 //
 // All counts are over NON-ARCHIVED rows only (status = 'active'). Archived
 // lists/items do not consume quota so orgs can rotate rather than be locked out.
 
+import type { Knex } from 'knex';
 import { db } from '../db';
+
+/** Either the shared pool or an open transaction. */
+type Executor = Knex | Knex.Transaction;
 
 // ─── Platform defaults ────────────────────────────────────────────────────────
 
@@ -92,9 +99,13 @@ interface OrgQuotaRow {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-async function countRows(table: string, where: Record<string, unknown>): Promise<number> {
+async function countRows(
+  table: string,
+  where: Record<string, unknown>,
+  executor: Executor = db,
+): Promise<number> {
   // Knex's count() returns Dict<string|number>; cast to any to access the alias.
-  const result = await (db(table).where(where).count('id as count').first() as Promise<any>);
+  const result = await (executor(table).where(where).count('id as count').first() as Promise<any>);
   return parseInt(String(result?.count ?? '0'), 10);
 }
 
@@ -106,8 +117,8 @@ async function countRows(table: string, where: Record<string, unknown>): Promise
  * Reads from `selection_list_org_quota` and falls back to the platform defaults
  * for any ceiling that has no per-org override (NULL in the DB row, or no row).
  */
-export async function getQuota(orgId: string): Promise<QuotaLimits> {
-  const row: OrgQuotaRow | undefined = await db('selection_list_org_quota')
+export async function getQuota(orgId: string, executor: Executor = db): Promise<QuotaLimits> {
+  const row: OrgQuotaRow | undefined = await executor('selection_list_org_quota')
     .where({ organization_id: orgId })
     .first();
 
@@ -120,14 +131,29 @@ export async function getQuota(orgId: string): Promise<QuotaLimits> {
 }
 
 /**
+ * Take a transaction-scoped advisory lock for one quota scope (e.g.
+ * `org_lists:<orgId>` or `list_items:<listId>`). Released automatically at
+ * COMMIT/ROLLBACK. Call FIRST inside the create transaction, then
+ * checkListQuota()/checkItemQuota() with the same `trx`, then INSERT.
+ */
+export async function lockQuotaScope(trx: Knex.Transaction, scopeKey: string): Promise<void> {
+  await trx.raw('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [scopeKey]);
+}
+
+/**
  * Guard: throws `QuotaExceededError` when the org has reached its `org_lists`
  * ceiling (count of non-archived selection lists).
  *
- * Call BEFORE inserting a new selection list. Not transactional (soft limit).
+ * Call inside the create transaction after lockQuotaScope() (exact), or bare as
+ * the middleware's fast-path pre-check.
  */
-export async function checkListQuota(orgId: string): Promise<void> {
-  const quota = await getQuota(orgId);
-  const current = await countRows('selection_lists', { organization_id: orgId, status: 'active' });
+export async function checkListQuota(orgId: string, executor: Executor = db): Promise<void> {
+  const quota = await getQuota(orgId, executor);
+  const current = await countRows(
+    'selection_lists',
+    { organization_id: orgId, status: 'active' },
+    executor,
+  );
 
   if (current >= quota.maxLists) {
     throw new QuotaExceededError('org_lists', current, quota.maxLists, 'lists');
@@ -138,11 +164,20 @@ export async function checkListQuota(orgId: string): Promise<void> {
  * Guard: throws `QuotaExceededError` when the list has reached its `list_items`
  * ceiling (count of non-archived items in the list).
  *
- * Call BEFORE inserting a new item. Not transactional (soft limit).
+ * Call inside the create transaction after lockQuotaScope() (exact), or bare as
+ * the middleware's fast-path pre-check.
  */
-export async function checkItemQuota(listId: string, orgId: string): Promise<void> {
-  const quota = await getQuota(orgId);
-  const current = await countRows('selection_list_items', { list_id: listId, status: 'active' });
+export async function checkItemQuota(
+  listId: string,
+  orgId: string,
+  executor: Executor = db,
+): Promise<void> {
+  const quota = await getQuota(orgId, executor);
+  const current = await countRows(
+    'selection_list_items',
+    { list_id: listId, status: 'active' },
+    executor,
+  );
 
   if (current >= quota.maxItemsPerList) {
     throw new QuotaExceededError('list_items', current, quota.maxItemsPerList, 'items');

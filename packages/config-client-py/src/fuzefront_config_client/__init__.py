@@ -27,6 +27,7 @@ Quick start::
             print(entry.key, entry.value, entry.source, entry.locked)
 """
 
+from ._paginator import paginate
 from .client import (
     NOT_MODIFIED,
     ConditionalEffectiveConfig,
@@ -36,7 +37,6 @@ from .client import (
     is_not_modified,
 )
 from .errors import ConfigApiError, is_config_api_error
-from ._paginator import paginate
 from .types import (
     KEY_DEFINITION_ID_PREFIX,
     NAMESPACE_ID_PREFIX,
@@ -67,43 +67,43 @@ from .types import (
 __version__ = "1.0.0"
 
 __all__ = [
-    # Client
-    "ConfigClient",
-    "TokenProvider",
-    "ConditionalEffectiveConfig",
-    "NotModified",
-    "NOT_MODIFIED",
-    "is_not_modified",
-    # Errors
-    "ConfigApiError",
-    "is_config_api_error",
-    # Paginator
-    "paginate",
+    "KEY_DEFINITION_ID_PREFIX",
     # Identifier constants
     "NAMESPACE_ID_PREFIX",
-    "KEY_DEFINITION_ID_PREFIX",
+    "NOT_MODIFIED",
     "SCOPE_CHAIN",
-    # Enums
-    "ScopeType",
-    "ValueType",
-    "Precedence",
-    "ConfigOperationType",
+    "ConditionalEffectiveConfig",
+    # Errors
+    "ConfigApiError",
+    # Client
+    "ConfigClient",
+    "ConfigErrorBody",
     "ConfigErrorCode",
-    # Types
-    "Scope",
-    "Namespace",
-    "NamespaceCreate",
+    "ConfigErrorDetail",
+    "ConfigOperation",
+    "ConfigOperationType",
+    "ConfigWriteRequest",
+    "ConfigWriteResult",
+    "EffectiveConfig",
+    "EffectiveConfigEntry",
     "KeyDefinition",
     "KeyDefinitionInput",
     "KeyDefinitionManifest",
     "KeyDefinitionManifestResult",
-    "EffectiveConfigEntry",
-    "EffectiveConfig",
-    "ConfigOperation",
-    "ConfigWriteRequest",
-    "ConfigWriteResult",
+    "Namespace",
+    "NamespaceCreate",
+    "NotModified",
     "PageInfo",
     "Paged",
-    "ConfigErrorDetail",
-    "ConfigErrorBody",
+    "Precedence",
+    # Types
+    "Scope",
+    # Enums
+    "ScopeType",
+    "TokenProvider",
+    "ValueType",
+    "is_config_api_error",
+    "is_not_modified",
+    # Paginator
+    "paginate",
 ]

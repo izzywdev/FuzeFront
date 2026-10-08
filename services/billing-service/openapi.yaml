@@ -246,6 +246,38 @@ paths:
         '502':
           $ref: '#/components/responses/ProviderError'
 
+  /balance:
+    get:
+      operationId: getBalance
+      tags: [subscriptions]
+      summary: Get the actor's Stripe customer credit balance
+      description: >-
+        Returns the Stripe customer credit balance for the actor entity (resolved
+        from the proxy-injected actor context). Negative balance = available
+        credit (Stripe convention). Returns `customerBalance: null` when no
+        billing customer exists yet or when the provider is unavailable —
+        callers should render the absence gracefully.
+      security:
+        - internalToken: []
+      responses:
+        '200':
+          description: The customer balance (null when no customer or provider unavailable).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [customerBalance]
+                properties:
+                  customerBalance:
+                    nullable: true
+                    type: integer
+                    description: >-
+                      Stripe customer balance in cents. Negative = available
+                      credit; positive = amount owed. Null when no customer.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /subscriptions/{subscriptionId}/revoke-cancellation:
     parameters:
       - $ref: '#/components/parameters/SubscriptionId'

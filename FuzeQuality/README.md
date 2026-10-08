@@ -168,6 +168,40 @@ and recovery steps, authorization and tenant boundaries, candidate targets,
 test scenarios, confidence, evidence, model identity, and prompt/schema
 versions. These remain proposed evidence until a human confirms them.
 
+The projector applies deterministic policy `flow-orphans-v1` after repository,
+requirement, analysis, or review events. It records story-without-flow,
+flow-without-active-story, uncovered criterion/step, implementation-without-story,
+and missing role, failure, cancellation, and retry paths. Proposed AI mappings are
+excluded: only confirmed flows are authoritative. Rebuilds use stable finding IDs,
+replace only the current flow-policy projection, preserve scanner findings and the
+last trustworthy projection on failure, and write an immutable coverage snapshot.
+
+Each projected finding exposes its source revision, policy and schema versions, deterministic
+evidence strength, evidence identifiers, calculation time, and audit entry through
+`GET /api/v1/findings`. `POST /api/v1/internal/coverage/rebuild` returns totals by
+type and severity for worker logs and operational metrics.
+
+Requirement review policy `requirement-review-v1` adds a read-only product-planning
+layer on the same projection. It identifies stories without acceptance criteria,
+conservatively matches opposite criteria for the same behavior, and materializes
+LiteLLM `missingCriteria` output as semantic findings instead of silently discarding
+it. Each finding carries the relevant Jira passages, confidence when semantic,
+affected confirmed flows and implementation targets, and remediation choices. The
+web explorer never writes these choices back to Jira; product owners resolve source
+requirements in Jira and resync. Repeated events replace only FuzeQuality's derived
+policies, retain unrelated scanner findings, and keep the previous committed snapshot
+if calculation or persistence fails. Prometheus exposes flow and requirement-review
+finding gauges separately.
+
+Jira and intelligence delivery uses three bounded attempts with exponential
+backoff. Exhausted messages go to the topic DLQ with a stable failure code and
+attempt count only: provider responses, credentials, source text, and URLs are
+never copied into Kafka diagnostics. A failed sync marks its Jira cursor as
+`failed` while preserving its last successful cursor and catalog state; the next
+successful sync restores `fresh`. Operators can read this state through
+`GET /api/v1/requirements/freshness`, the Requirements workspace badge, and the
+`fuzequality_jira_sync_freshness` metric.
+
 ## Deployment
 
 The Helm chart is in `deploy/helm/fuzequality`; its Argo CD Application is in

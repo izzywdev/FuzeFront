@@ -19,6 +19,8 @@ securityService:
 
 applicationsService:
   enabled: true
+  appBuilder:
+    publicBaseUrl: "https://fuzefront.dev.local"
 
 # Clock-app built-in MF remote, served same-origin at
 # https://fuzefront.dev.local/apps/clock/remoteEntry.js. Build + load the image
@@ -104,6 +106,12 @@ authentik:
 # Flip to enabled once the Dockerfile and selection-list-secrets are ready.
 # selectionListService:
 #   enabled: true
+# Local ingress controller is ingress-nginx (not Traefik in kube-system), so the
+# NetworkPolicy must admit that namespace or the /api/v1/selection-lists route
+# would be blocked at the pod once the service is enabled. Inert while disabled.
+selectionListService:
+  networkPolicy:
+    ingressControllerNamespace: ingress-nginx
 
 # config-service (FF-EPIC-17-S7 / FFRNT-159): disabled locally by default.
 # Flip to enabled once CONFIG_DB_PASSWORD exists in the local platform Secret —

@@ -24,6 +24,13 @@ reverted. The upstream fix belongs in FuzeSDLC. This repo-local gate closes the
 hole today without fighting governance, and stays correct if the upstream fix
 lands too: both would fail on the same input.
 
+DUPLICATE MAPPING KEYS ARE PARSE FAILURES HERE. PyYAML's safe_load keeps the
+last of two identical keys without complaint; GitHub's parser rejects the whole
+file. On 2026-09-24 two PRs each added `timeout-minutes` to ci.yml's
+selection-list-service-e2e job (#1180 and #1105), the merge kept both, and
+ci.yml scheduled NO JOBS on master or any PR for three days while this gate —
+using plain safe_load — reported the file as fine. `_StrictLoader` closes that.
+
 DELIBERATELY NOT A SCHEMA CHECK OR actionlint. The only claim made here is "this
 file parses" -- exactly the property whose absence produces silence instead of a
 red run. A broader linter is a larger change with its own false-positive budget
@@ -43,10 +50,36 @@ import yaml
 WORKFLOW_DIR = ".github/workflows"
 
 
+class _StrictLoader(yaml.SafeLoader):
+    """SafeLoader that rejects duplicate mapping keys, as GitHub does."""
+
+
+def _construct_mapping(loader, node, deep=False):
+    loader.flatten_mapping(node)
+    seen = {}
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a mapping",
+                node.start_mark,
+                f"found duplicate key {key!r} (first defined on line "
+                f"{seen[key] + 1}); GitHub rejects the whole file",
+                key_node.start_mark,
+            )
+        seen[key] = key_node.start_mark.line
+    return loader.construct_mapping(node, deep=deep)
+
+
+_StrictLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping
+)
+
+
 def find_workflow_files(directory: str) -> list[str]:
     """Workflow filenames in `directory`, sorted. Non-YAML files are ignored."""
     return sorted(
-        f for f in os.listdir(directory) if f.endswith(".yml") or f.endswith(".yaml")
+        f for f in os.listdir(directory) if f.endswith((".yml", ".yaml"))
     )
 
 
@@ -57,7 +90,11 @@ def parse_failures(directory: str, files: list[str]) -> list[tuple[str, str]]:
         path = os.path.join(directory, name)
         try:
             with open(path, encoding="utf-8") as fh:
-                yaml.safe_load(fh.read())
+                loader = _StrictLoader(fh.read())
+            try:
+                loader.get_single_data()
+            finally:
+                loader.dispose()
         except yaml.YAMLError as exc:
             reason = " ".join(str(exc).split())
             failures.append((path, reason))

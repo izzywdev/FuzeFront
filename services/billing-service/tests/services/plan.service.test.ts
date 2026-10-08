@@ -1,4 +1,4 @@
-import { PlanService } from '../../src/services/plan.service';
+import { PlanService, STATIC_DEFAULT_PLANS } from '../../src/services/plan.service';
 import { PlanRepository } from '../../src/repositories/plan.repository';
 import { Plan } from '../../src/types';
 
@@ -104,6 +104,18 @@ describe('PlanService.getActivePlans', () => {
     await svc.getActivePlans();
 
     expect(repo.listCalls).toBe(2);
+  });
+
+  it('returns STATIC_DEFAULT_PLANS when the catalogue is empty', async () => {
+    const repo = new FakePlanRepo(); // no plans seeded
+    const svc = new PlanService({} as any, repo, 60_000, () => 0);
+
+    const plans = await svc.getActivePlans();
+
+    expect(plans).toHaveLength(STATIC_DEFAULT_PLANS.length);
+    expect(plans[0].displayName).toBe('Starter');
+    expect(plans[3].displayName).toBe('Enterprise');
+    expect(repo.listCalls).toBe(1);
   });
 
   it('invalidates cache after a sync', async () => {

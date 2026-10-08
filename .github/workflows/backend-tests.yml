@@ -45,10 +45,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -59,6 +59,15 @@ jobs:
         # (pinning @types/express* to v4) apply; a child `cd backend && npm ci`
         # ignores them and pulls @types/express@5, breaking the build.
         run: npm ci
+
+      - name: Build backend workspace SDK dependencies
+        # Workspace links resolve the package exports in dist. Build these
+        # before Jest compiles backend imports; service-auth types depend on
+        # the Security client, so keep that dependency first.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+          npm run -w @fuzefront/custom-hostname-client build
 
       - name: Set up test database
         working-directory: ./backend
@@ -157,7 +166,7 @@ jobs:
         run: npm run test:coverage -- --runInBand --testPathIgnorePatterns="permit-integration|billing-"
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./backend/coverage/lcov.info
           flags: backend
@@ -232,10 +241,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Use Node.js 24.x
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -243,6 +252,15 @@ jobs:
 
       - name: Install dependencies (workspace root)
         run: npm ci
+
+      - name: Build backend workspace SDK dependencies
+        # Workspace links resolve the package exports in dist. Build these
+        # before Jest compiles backend imports; service-auth types depend on
+        # the Security client, so keep that dependency first.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+          npm run -w @fuzefront/custom-hostname-client build
 
       - name: Set up test database
         working-directory: ./backend

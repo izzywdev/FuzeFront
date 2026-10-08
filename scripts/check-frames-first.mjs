@@ -71,6 +71,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { hostedCoverage } from './lib/fuzex-review.mjs'
 
 // fileURLToPath, not new URL().pathname — the latter yields "/D:/..." on Windows.
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -107,6 +108,16 @@ const MAX_GLOB_LENGTH = 200
  * path separator, so backtracking is anchored rather than free. `***` (which
  * would emit adjacent unbounded wildcards) is rejected, and glob length is
  * capped, so a typo in a manifest cannot hang CI.
+ *
+ * ADJACENT unbounded wildcards were still reachable without `***`, though: a
+ * glob repeating the `**` + separator segment N times emits N sequential copies
+ * of the zero-or-more-path-segments group, and N ambiguous quantifiers in a row
+ * backtrack polynomially (O(len^N)) on a near-miss path. Within the 200-char
+ * cap that is ~66 of them, which is enough to hang the gate. Emission below
+ * therefore COLLAPSES a wildcard that would repeat the one already at the tail
+ * of the pattern: two of those groups in a row match exactly the same set as
+ * one (zero or more path segments), and the same holds for a doubled `.` + `*`
+ * atom, so this is a pure de-ambiguation — no glob changes meaning.
  */
 export function globToRegExp(glob) {
   const cached = GLOB_CACHE.get(glob)
@@ -122,15 +133,19 @@ export function globToRegExp(glob) {
 
   let re = ''
   let braceDepth = 0
+  /** Append an unbounded wildcard unless the pattern already ends with it. */
+  const appendWildcard = atom => {
+    if (!re.endsWith(atom)) re += atom
+  }
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]
     if (c === '*') {
       if (glob[i + 1] === '*') {
         if (glob[i + 2] === '/') {
-          re += '(?:[^/]*/)*' // **/ => zero or more path segments
+          appendWildcard('(?:[^/]*/)*') // **/ => zero or more path segments
           i += 2
         } else {
-          re += '.*'
+          appendWildcard('.*')
           i += 1
         }
       } else {
@@ -150,6 +165,11 @@ export function globToRegExp(glob) {
       re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')
     }
   }
+  // `re` is assembled here, char by char, from a length-capped repo-controlled
+  // glob: every literal is escaped, every wildcard comes from the fixed set of
+  // atoms above, and adjacent unbounded atoms are collapsed. There is no
+  // caller-supplied regex syntax and no untrusted input on this path.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
   const compiled = new RegExp('^' + re + '$')
   GLOB_CACHE.set(glob, compiled)
   return compiled
@@ -307,7 +327,7 @@ function allUiFiles(policy) {
 
 /* ---------------------------------------------------------------------- main */
 
-function main() {
+async function main() {
   const policy = JSON.parse(readFileSync(POLICY_PATH, 'utf8'))
 
   // --uncovered-mode previews the ramp's destination without editing the policy,
@@ -322,7 +342,7 @@ function main() {
     console.log(DIM(`(preview: uncovered.mode overridden to "${modeOverride}")`))
   }
 
-  const coverage = buildCoverage(loadManifests())
+  let coverage = buildCoverage(loadManifests())
 
   const declaring = new Set(coverage.map(c => c.feature))
   console.log(DIM(`policy:   ${path.relative(REPO_ROOT, POLICY_PATH)} (uncovered.mode=${policy.uncovered?.mode})`))
@@ -349,6 +369,18 @@ function main() {
   const base = arg('--base', 'origin/master')
   const changed = explicit ?? changedFilesFromGit(base)
   if (!explicit) console.log(DIM(`diff:     ${base}...HEAD (${changed.length} file(s) changed)`))
+
+  const reviewConfigPath = path.join(REPO_ROOT, '.fuze', 'fuzex-review.json')
+  if (existsSync(reviewConfigPath)) {
+    // Resolve only claims relevant to this diff; infrastructure-only changes and
+    // the coverage audit do not depend on the hosted service being available.
+    const claimed = coverage.filter(entry => changed.some(file => matchesAny(file, entry.paths) && matchesAny(file, policy.uiPaths)))
+    const hosted = await hostedCoverage(claimed, {
+      config: JSON.parse(readFileSync(reviewConfigPath, 'utf8')),
+      framesDir: FRAMES_DIR,
+    })
+    coverage = coverage.map(entry => hosted.find(item => item.feature === entry.feature && item.flow === entry.flow) ?? entry)
+  }
 
   const res = evaluate(changed, coverage, policy)
   const considered = res.ok.length + res.blocked.length + res.uncovered.length + res.exempt.length
@@ -386,6 +418,8 @@ function main() {
     for (const f of flows) console.error(`  - ${f}`)
     console.error(`
 What to do next — do NOT edit the manifest's \`approved\` field by hand:
+  For a feature migrated in .fuze/fuzex-review.json, approve the current imported
+  revision in FuzeX. A stale revision, rejection or service outage fails closed.
   1. Open design/frames/<feature>/index.html (published to GitHub Pages) and use the
      in-frame "Approve" control on the flow. It files a design-approval issue and
      design-approval.yml flips \`approved\` on master after verifying the stamp.
@@ -427,10 +461,8 @@ Claim these paths in the owning feature's manifest to bring them under enforceme
 
 // Only run when executed directly, so the test file can import the pure helpers.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    process.exit(main())
-  } catch (err) {
+  main().then(code => { process.exitCode = code }).catch(err => {
     console.error(RED(err.message ?? err))
-    process.exit(1)
-  }
+    process.exitCode = 1
+  })
 }

@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 
 import pytest
-
 from fuzefront_service_auth import MachineTokenVerifier, TokenVerificationError
 
 

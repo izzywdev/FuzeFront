@@ -1,0 +1,21 @@
+tools:
+  # DELETE /v1/selection-lists/{listId} — archives (is_active=false), not a hard
+  # purge. The TypedConsumer classifies DELETE as irreversible by default; override
+  # to reversible because the data is retained and a restore operation exists.
+  archiveList:
+    mutates: true
+    reversibility: reversible
+    reason: "Archives the list (sets is_active=false); data is retained and the list can be restored."
+
+  # DELETE /v1/selection-lists/{listId}/items/{itemCode} — same archive semantics.
+  archiveItem:
+    mutates: true
+    reversibility: reversible
+    reason: "Archives the item; data is retained and the item can be restored."
+
+  # DELETE /v1/selection-lists/{listId}/access/{grantId} — revokes an access
+  # grant. This IS irreversible (a new grant must be created separately).
+  revokeAccess:
+    mutates: true
+    reversibility: irreversible
+    reason: "Permanently revokes the access grant; a new grant must be issued to restore access."

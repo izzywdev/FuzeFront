@@ -273,7 +273,7 @@ mistaken for one.
 4. **Phase 3 — frontend**: home, catalog, spec viewer (Stoplight Elements/Swagger UI embed) against
    the frames from Phase 0, once flow-by-flow approved.
 5. **Phase 4 — sandbox playground**: Prism-mocked "try it", then the opt-in sandbox-URL path.
-6. **Phase 5 — family rollout**: work with each `providesTo` repo (delegated via `@claude`) to add
+6. **Phase 5 — family rollout**: work with each `providesTo` repo (delegated via `@fuze`) to add
    the publish-spec CI step and, optionally, opt in a sandbox URL.
 7. **Phase 6 — deploy & flag flip**: Helm/Argo wiring, internal dogfood behind the flag, then public
    flip.

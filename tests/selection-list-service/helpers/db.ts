@@ -35,6 +35,19 @@ export async function getDbClient(): Promise<PoolClient> {
   return getPool().connect();
 }
 
+/** Run one read/write query on the test DB (the SAME database the service under test uses). */
+export async function dbQuery<T extends Record<string, any> = Record<string, any>>(
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  const client = await getDbClient();
+  try {
+    return (await client.query(sql, params)).rows as T[];
+  } finally {
+    client.release();
+  }
+}
+
 export async function closeDb(): Promise<void> {
   if (_pool) {
     await _pool.end();
@@ -45,7 +58,7 @@ export async function closeDb(): Promise<void> {
 export interface DirectAccessGrant {
   list_id: string;
   user_id: string;
-  organization_id: string;
+  org_id: string;
   role: string;
   granted_by: string;
 }
@@ -59,10 +72,10 @@ export async function insertDirectAccessGrant(grant: DirectAccessGrant): Promise
   try {
     await client.query(
       `INSERT INTO selection_list_access
-         (list_id, user_id, organization_id, role, granted_by, granted_at, updated_at)
+         (list_id, user_id, org_id, role, granted_by, granted_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
        ON CONFLICT (list_id, user_id) DO NOTHING`,
-      [grant.list_id, grant.user_id, grant.organization_id, grant.role, grant.granted_by]
+      [grant.list_id, grant.user_id, grant.org_id, grant.role, grant.granted_by]
     );
   } finally {
     client.release();

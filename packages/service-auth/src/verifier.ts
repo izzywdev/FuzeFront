@@ -22,7 +22,14 @@ const DEFAULT_CACHE_TTL_SECONDS = 5;
 const DEFAULT_CACHE_MAX_ENTRIES = 1000;
 
 export interface MachineTokenVerifierOptions {
-  /** FuzeFront's same-origin API base, e.g. `https://app.fuzefront.com/api`. */
+  /**
+   * ORIGIN ONLY — e.g. `https://app.fuzefront.com` or
+   * `http://fuzefront-security:3002`. This package appends the fixed
+   * `/api/v1/security/tokens/introspect` path itself; a `baseUrl` that already
+   * includes an `/api` suffix produces a double `/api/api/v1/...` path, which
+   * 404s and (correctly, but silently) denies every caller. Do not include
+   * `/api` or any other suffix.
+   */
   baseUrl: string;
   /** Inject an alternative fetch (tests, old Node). Defaults to `globalThis.fetch`. */
   fetch?: FetchLike;
@@ -206,6 +213,9 @@ export function createMachineTokenVerifier(options: MachineTokenVerifierOptions)
         scope: introspection.scope,
         scopes: introspection.scope ? introspection.scope.split(/\s+/).filter(Boolean) : [],
         expiresAt: introspection.expiresAt,
+        audience: (introspection as TokenIntrospection & { audience?: string }).audience,
+        actor: (introspection as TokenIntrospection & { actor?: { sub: string; previous?: unknown } }).actor,
+        tokenKind: (introspection as TokenIntrospection & { tokenKind?: string }).tokenKind,
         raw: introspection,
       };
 

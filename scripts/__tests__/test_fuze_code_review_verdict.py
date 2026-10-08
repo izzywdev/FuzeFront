@@ -12,6 +12,7 @@ matters rather than just asserting it once.
 
 Run: python -m unittest discover -s scripts/__tests__ -p 'test_fuze_code_review_verdict.py'
 """
+import base64
 import json
 import os
 import sys
@@ -20,8 +21,9 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 
-import fuze_code_review_verdict as V  # noqa: E402
+from typing import ClassVar
 
+import fuze_code_review_verdict as V
 
 NONCE = "deadbeefcafef00d0000000000000001"
 
@@ -279,6 +281,326 @@ class MutationProofTests(unittest.TestCase):
             self.assertNotEqual(result["decision"], "approve")
 
 
+class ApproveOrFailContractTests(unittest.TestCase):
+    """The owner's rule 7: "if it ran, the conclusion must be APPROVED or the CI fails
+    and stops." Every decision carries a `check` field, and the mapping is the contract.
+    Flipping any single row here must break a test — these pin the PASS/FAIL boundary that
+    the workflow's decisive step exits on.
+    """
+
+    # --- PASS side ---------------------------------------------------------
+    def test_clean_approve_passes_the_check(self):
+        r = V.decide("success", sentinel(NONCE, CLEAN_APPROVE), NONCE, [])
+        self.assertEqual(r["decision"], "approve")
+        self.assertEqual(r["check"], "pass")
+
+    def test_model_approve_downgraded_on_sensitive_pr_STILL_PASSES(self):
+        # THE deadlock-avoidance property: keying the check failure on the downgraded
+        # decision would block every governance PR. The check keys on the MODEL verdict
+        # being approve, not on whether a GitHub approve vs comment was submitted.
+        r = V.decide("success", sentinel(NONCE, CLEAN_APPROVE), NONCE,
+                     ["governance/required-checks.json"])
+        self.assertEqual(r["decision"], "comment")   # GitHub review downgraded
+        self.assertTrue(r["downgraded"])
+        self.assertEqual(r["check"], "pass")         # ...but the MODEL approved → PASS
+        self.assertEqual(r["verdict"], "approve")
+
+    def test_deferred_self_mod_guard_passes(self):
+        r = V.decide("neutral", "", NONCE, ["workflow-templates/harden-gate.yml"],
+                     mode="declined")
+        self.assertEqual(r["decision"], "comment")
+        self.assertTrue(r["deferred"])
+        self.assertEqual(r["check"], "pass")
+
+    # --- FAIL side ---------------------------------------------------------
+    def test_request_changes_fails_the_check(self):
+        r = V.decide("success", sentinel(NONCE, REQUEST_CHANGES), NONCE, [])
+        self.assertEqual(r["decision"], "request_changes")
+        self.assertEqual(r["check"], "fail")
+
+    def test_comment_with_findings_fails_the_check(self):
+        payload = {
+            "verdict": "comment", "summary": "concerns",
+            "findings": [{"path": "a.py", "line": 4, "description": "suspicious"}],
+        }
+        r = V.decide("success", sentinel(NONCE, payload), NONCE, [])
+        self.assertEqual(r["decision"], "comment")
+        self.assertEqual(r["check"], "fail")
+        self.assertFalse(r["downgraded"])
+        self.assertFalse(r["deferred"])
+
+    def test_bare_comment_without_findings_also_fails(self):
+        # A model `comment` (not confident enough to approve) is not an approval → FAIL,
+        # per the owner's rule, even with no explicit findings.
+        r = V.decide("success", sentinel(NONCE, COMMENT_ONLY), NONCE, [])
+        self.assertEqual(r["decision"], "comment")
+        self.assertEqual(r["check"], "fail")
+
+    def test_genuine_abstain_fails_the_check(self):
+        r = V.decide("success", "no sentinel here at all", NONCE, [])
+        self.assertEqual(r["decision"], "abstain")
+        self.assertEqual(r["check"], "fail")
+
+    def test_non_success_without_outage_or_deferral_fails(self):
+        # conclusion != success, not availability, not the self-mod deferral → fail-closed.
+        r = V.decide("failure", "", NONCE, [], mode="claude", availability=False)
+        self.assertEqual(r["decision"], "abstain")
+        self.assertEqual(r["check"], "fail")
+
+
+class AvailabilityOutageTests(unittest.TestCase):
+    """Rule 8 — the owner's explicit "UNLESS the failure is a credit outage" exception.
+    A non-success conclusion that fuze-code-action classified as availability (its
+    `availability` output true) is an `outage`: PASS, non-blocking, and DISTINCT from a
+    genuine abstain so the auto-fix loop never fires on it.
+    """
+
+    def test_availability_outage_passes_and_is_distinct_from_abstain(self):
+        r = V.decide("failure", "", NONCE, [], mode="failed", availability=True)
+        self.assertEqual(r["decision"], "outage")
+        self.assertEqual(r["check"], "pass")
+        self.assertTrue(r["outage"])
+        self.assertNotEqual(r["decision"], "abstain")
+
+    def test_task_failure_is_NOT_an_outage(self):
+        # Same conclusion=failure, but availability is false → a real failure → FAIL.
+        r = V.decide("failure", "", NONCE, [], mode="failed", availability=False)
+        self.assertEqual(r["decision"], "abstain")
+        self.assertEqual(r["check"], "fail")
+        self.assertFalse(r["outage"])
+
+    def test_outage_defaults_off_when_flag_absent(self):
+        # decide()'s availability param defaults False — an unknown failure is a real one.
+        r = V.decide("failure", sentinel(NONCE, CLEAN_APPROVE), NONCE, [])
+        self.assertEqual(r["decision"], "abstain")
+        self.assertEqual(r["check"], "fail")
+
+    def test_self_mod_deferral_wins_over_availability(self):
+        # A declined+sensitive result is the self-mod deferral even if availability were
+        # somehow set: the deferral branch is evaluated first and is the correct reading.
+        r = V.decide("neutral", "", NONCE, [".github/workflows/x.yml"],
+                     mode="declined", availability=True)
+        self.assertEqual(r["decision"], "comment")
+        self.assertTrue(r["deferred"])
+        self.assertEqual(r["check"], "pass")
+
+    def test_outage_body_reads_as_a_pass_not_a_failure(self):
+        r = V.decide("failure", "", NONCE, [], mode="failed", availability=True)
+        body = V.render_body(r, mode="failed", vendor="none")
+        self.assertIn("outage", body.lower())
+        self.assertIn("not a failure", body.lower())
+        self.assertNotIn("NOT an approval", body)
+
+    def test_availability_flag_cannot_rescue_a_success_task_verdict(self):
+        # A successful run that produced request_changes is a real finding; availability
+        # only matters on a non-success conclusion. It must never turn a real verdict green.
+        r = V.decide("success", sentinel(NONCE, REQUEST_CHANGES), NONCE, [], availability=True)
+        self.assertEqual(r["decision"], "request_changes")
+        self.assertEqual(r["check"], "fail")
+
+
+class ReadyGatingTests(unittest.TestCase):
+    """main()'s environmental-skip vs missing-review distinction (the split-job design
+    passes the review job's `ready` signal to the decisive job). Exercised through main()
+    so the GITHUB_OUTPUT contract (decision + check) is covered end to end.
+    """
+
+    def _run_main(self, env):
+        import tempfile
+        fd, path = tempfile.mkstemp()
+        os.close(fd)
+        old = dict(os.environ)
+        try:
+            os.environ["GITHUB_OUTPUT"] = path
+            for k in ("FUZE_ACTION_CONCLUSION", "FUZE_RESULT_TEXT", "FUZE_RESULT_TEXT_B64",
+                      "FUZE_VERDICT_NONCE",
+                      "FUZE_ACTION_MODE", "FUZE_ACTION_VENDOR", "FUZE_ACTION_AVAILABILITY",
+                      "FUZE_REVIEW_READY", "FUZE_REVIEW_JOB_RESULT", "FUZE_SENSITIVE_FILES"):
+                os.environ.pop(k, None)
+            os.environ.update(env)
+            rc = V.main()
+            with open(path, encoding="utf-8") as fh:
+                out = fh.read()
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+            os.remove(path)
+        outputs = {}
+        for line in out.splitlines():
+            if line.startswith("decision="):
+                outputs["decision"] = line.split("=", 1)[1]
+            elif line.startswith("check="):
+                outputs["check"] = line.split("=", 1)[1]
+        return rc, outputs
+
+    def test_ready_false_is_an_environmental_skip_that_passes(self):
+        rc, out = self._run_main({"FUZE_REVIEW_READY": "false"})
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["decision"], "skip")
+        self.assertEqual(out["check"], "pass")
+
+    def test_empty_ready_means_the_review_job_did_not_complete_and_fails_closed(self):
+        _rc, out = self._run_main({"FUZE_REVIEW_READY": ""})
+        self.assertEqual(out["decision"], "abstain")
+        self.assertEqual(out["check"], "fail")
+
+    def test_ready_true_runs_the_normal_decision(self):
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_READY": "true",
+            "FUZE_ACTION_CONCLUSION": "success",
+            "FUZE_RESULT_TEXT": sentinel(NONCE, CLEAN_APPROVE),
+            "FUZE_VERDICT_NONCE": NONCE,
+        })
+        self.assertEqual(out["decision"], "approve")
+        self.assertEqual(out["check"], "pass")
+
+    def test_base64_result_survives_cross_job_secret_scanning(self):
+        encoded = base64.b64encode(
+            sentinel(NONCE, CLEAN_APPROVE).encode("utf-8")
+        ).decode("ascii")
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_READY": "true",
+            "FUZE_ACTION_CONCLUSION": "success",
+            "FUZE_RESULT_TEXT_B64": encoded,
+            "FUZE_VERDICT_NONCE": NONCE,
+        })
+        self.assertEqual(out["decision"], "approve")
+        self.assertEqual(out["check"], "pass")
+
+    def test_malformed_base64_fails_closed(self):
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_READY": "true",
+            "FUZE_ACTION_CONCLUSION": "success",
+            "FUZE_RESULT_TEXT_B64": "not valid base64!",
+            "FUZE_VERDICT_NONCE": NONCE,
+        })
+        self.assertEqual(out["decision"], "abstain")
+        self.assertEqual(out["check"], "fail")
+
+    def test_ready_true_availability_outage_through_main_passes(self):
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_READY": "true",
+            "FUZE_ACTION_CONCLUSION": "failure",
+            "FUZE_ACTION_AVAILABILITY": "true",
+            "FUZE_VERDICT_NONCE": NONCE,
+        })
+        self.assertEqual(out["decision"], "outage")
+        self.assertEqual(out["check"], "pass")
+
+
+class SupersededRunTests(ReadyGatingTests):
+    """A CANCELLED review job is a supersede, not a verdict.
+
+    The workflow's concurrency group cancels the in-flight run whenever a new commit
+    lands, so every push during a review produces one cancelled run. Before this rule such
+    a run reached the `ready != 'true'` abstain (cancellation kills the job before it can
+    set the `ready` OUTPUT) and posted "No verdict was reached — this run is NOT an
+    approval", failing a REQUIRED check over the author's own next push.
+
+    Inherits ReadyGatingTests for `_run_main`; the inherited cases re-run here, which is
+    the point — they pin that adding this branch did not disturb the ready gating.
+    """
+
+    def test_cancelled_job_is_superseded_and_passes(self):
+        _rc, out = self._run_main({"FUZE_REVIEW_JOB_RESULT": "cancelled"})
+        self.assertEqual(out["decision"], "superseded")
+        self.assertEqual(out["check"], "pass")
+
+    def test_cancelled_wins_even_though_ready_is_empty(self):
+        """The ordering that matters. A cancelled job leaves `ready` EMPTY, which is the
+        exact input the abstain branch keys on — so if this branch were placed after the
+        ready checks it would never be reached and the bug would survive the fix."""
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_JOB_RESULT": "cancelled",
+            "FUZE_REVIEW_READY": "",
+        })
+        self.assertEqual(out["decision"], "superseded")
+        self.assertEqual(out["check"], "pass")
+
+    def test_superseded_posts_nothing(self):
+        """`body` must be empty: a cancelled run has nothing to say about a SHA nobody is
+        merging. The workflow's `superseded)` case posts nothing either — belt and braces,
+        because a body that exists is a body some future caller will send."""
+        result = V._result("superseded", "pass", "irrelevant")
+        self.assertEqual(V.render_body(result, "", ""), "")
+
+    def test_superseded_is_a_declared_decision(self):
+        self.assertIn("superseded", V.DECISIONS)
+
+    # --- the negative half: everything that is NOT a cancellation still fails closed ---
+
+    def test_a_failed_review_job_is_NOT_superseded(self):
+        """Only "cancelled" supersedes. A job that genuinely FAILED must keep abstaining,
+        or this rule becomes a way to launder any broken review into a green check."""
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_JOB_RESULT": "failure",
+            "FUZE_REVIEW_READY": "",
+        })
+        self.assertEqual(out["decision"], "abstain")
+        self.assertEqual(out["check"], "fail")
+
+    def test_a_skipped_review_job_is_NOT_superseded(self):
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_JOB_RESULT": "skipped",
+            "FUZE_REVIEW_READY": "",
+        })
+        self.assertEqual(out["decision"], "abstain")
+        self.assertEqual(out["check"], "fail")
+
+    def test_absent_job_result_changes_nothing(self):
+        """The compatibility guarantee: a caller that does not yet pass
+        FUZE_REVIEW_JOB_RESULT behaves exactly as it did before."""
+        _rc, out = self._run_main({"FUZE_REVIEW_READY": ""})
+        self.assertEqual(out["decision"], "abstain")
+        self.assertEqual(out["check"], "fail")
+
+    def test_cancelled_does_not_override_a_real_completed_review(self):
+        """A completed review whose job reports success is decided on its merits, not
+        short-circuited. Pins that the branch keys on "cancelled" alone."""
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_JOB_RESULT": "success",
+            "FUZE_REVIEW_READY": "true",
+            "FUZE_ACTION_CONCLUSION": "success",
+            "FUZE_RESULT_TEXT": sentinel(NONCE, CLEAN_APPROVE),
+            "FUZE_VERDICT_NONCE": NONCE,
+        })
+        self.assertEqual(out["decision"], "approve")
+        self.assertEqual(out["check"], "pass")
+
+
+class MutationProofCheckFieldTests(unittest.TestCase):
+    """The `check` field is the load-bearing PASS/FAIL. These pin the two halves so a
+    future edit that collapses either (everything passes, or everything fails) breaks."""
+
+    PASS_CASES: ClassVar[list] = [
+        ("success", sentinel(NONCE, CLEAN_APPROVE), [], "", False),          # clean approve
+        ("success", sentinel(NONCE, CLEAN_APPROVE), ["governance/x"], "", False),  # downgraded
+        ("neutral", "", ["workflow-templates/x.yml"], "declined", False),    # deferred
+        ("failure", "", [], "failed", True),                                 # outage
+    ]
+    FAIL_CASES: ClassVar[list] = [
+        ("success", sentinel(NONCE, REQUEST_CHANGES), [], "", False),        # request_changes
+        ("success", sentinel(NONCE, COMMENT_ONLY), [], "", False),           # comment
+        ("success", "garbage no sentinel", [], "", False),                   # abstain (unparseable)
+        ("failure", "", [], "failed", False),                                # abstain (real failure)
+    ]
+
+    def test_every_pass_case_passes(self):
+        for concl, text, sens, mode, avail in self.PASS_CASES:
+            r = V.decide(concl, text, NONCE, sens, mode, avail)
+            self.assertEqual(r["check"], "pass", f"expected PASS for {(concl, mode, avail)}: {r}")
+
+    def test_every_fail_case_fails(self):
+        for concl, text, sens, mode, avail in self.FAIL_CASES:
+            r = V.decide(concl, text, NONCE, sens, mode, avail)
+            self.assertEqual(r["check"], "fail", f"expected FAIL for {(concl, mode, avail)}: {r}")
+
+    def test_approve_check_is_never_pass_for_a_non_success_non_outage(self):
+        for concl in ("failure", "cancelled", "timed_out"):
+            r = V.decide(concl, sentinel(NONCE, CLEAN_APPROVE), NONCE, [], availability=False)
+            self.assertEqual(r["check"], "fail", f"{concl} without outage must fail")
+
+
 class RenderBodyTests(unittest.TestCase):
     """render_body must never crash on any decide() output, and must clearly say
     'not an approval' for abstain so the PR comment itself is honest even before anyone
@@ -297,6 +619,9 @@ class RenderBodyTests(unittest.TestCase):
             V.decide("success", sentinel(NONCE, COMMENT_ONLY), NONCE, []),
             V.decide("success", sentinel(NONCE, CLEAN_APPROVE), NONCE, ["x.yml"]),
             V.decide("failure", "", NONCE, []),
+            V.decide("failure", "", NONCE, [], mode="failed", availability=True),  # outage
+            V.decide("neutral", "", NONCE, ["governance/x"], mode="declined"),     # deferred
+            V._result("skip", "pass", "no credential"),                            # skip
         ]
         for result in cases:
             body = V.render_body(result, "claude", "litellm")

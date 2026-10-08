@@ -29,9 +29,13 @@ const androidTarget = assetlinks.find((entry) =>
 if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/.test(twa.packageId || '')) {
   fail(`invalid Android packageId: ${JSON.stringify(twa.packageId)}`)
 }
-if (!/^[a-z0-9-]+\.fuzefront\.com$/.test(twa.host || '')) {
-  fail(`host must be a direct public *.fuzefront.com hostname: ${JSON.stringify(twa.host)}`)
+const allowedHost = /^[a-z0-9-]+\.fuzefront\.com$/.test(twa.host || '') || twa.host === 'live.mendysrobotics.com'
+if (!allowedHost) {
+  fail(`host must be a direct public *.fuzefront.com hostname or live.mendysrobotics.com: ${JSON.stringify(twa.host)}`)
 }
+if (twa.startUrl !== '/') fail('TWA startUrl must be / so the APK launches the standalone UI')
+if (twa.fullScopeUrl !== `https://${twa.host}/`) fail('TWA fullScopeUrl must match the standalone UI origin')
+if (twa.webManifestUrl !== `https://${twa.host}/manifest.webmanifest`) fail('TWA webManifestUrl must match the standalone UI origin')
 if (androidTarget?.package_name !== twa.packageId) fail('assetlinks package_name does not match TWA packageId')
 const fingerprints = androidTarget?.sha256_cert_fingerprints || []
 const twaFingerprints = twa.fingerprints?.map((item) => item.value) || []

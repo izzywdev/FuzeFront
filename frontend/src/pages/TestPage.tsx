@@ -17,6 +17,7 @@ import {
   canManageRole,
 } from '../components/RoleBadge'
 import { UserProfileManagement } from '../components/UserProfileManagement'
+import { ResponsiveGrid, Stack, Text, Wrap } from '@fuzefront/design-system'
 
 export function TestPage() {
   return (
@@ -40,25 +41,25 @@ export function TestPage() {
         <div className="space-y-4">
           <div>
             <h3 className="text-lg font-medium mb-2">Different Sizes</h3>
-            <div className="flex items-center space-x-4">
+            <Stack gap="md">
               <RoleBadge role="owner" size="sm" />
               <RoleBadge role="admin" size="md" />
               <RoleBadge role="member" size="lg" />
-            </div>
+            </Stack>
           </div>
 
           <div>
             <h3 className="text-lg font-medium mb-2">Different Variants</h3>
-            <div className="flex items-center space-x-4">
+            <Stack gap="md">
               <RoleBadge role="owner" variant="solid" />
               <RoleBadge role="admin" variant="outline" />
               <RoleBadge role="member" variant="subtle" />
-            </div>
+            </Stack>
           </div>
 
           <div>
             <h3 className="text-lg font-medium mb-2">All Roles</h3>
-            <div className="flex flex-wrap gap-2">
+            <Wrap gap={2}>
               <OwnerBadge />
               <AdminBadge />
               <MemberBadge />
@@ -66,12 +67,12 @@ export function TestPage() {
               <RoleBadge role="moderator" />
               <RoleBadge role="guest" />
               <RoleBadge role="custom" />
-            </div>
+            </Wrap>
           </div>
 
           <div>
             <h3 className="text-lg font-medium mb-2">Interactive Badges</h3>
-            <div className="flex items-center space-x-4">
+            <Stack gap="md">
               <RoleBadge
                 role="admin"
                 interactive
@@ -83,13 +84,13 @@ export function TestPage() {
                 onClick={() => alert('Member badge clicked!')}
                 variant="outline"
               />
-            </div>
+            </Stack>
           </div>
 
           <div>
             <h3 className="text-lg font-medium mb-2">Role Management Logic</h3>
             <div className="bg-gray-50 p-4 rounded-md">
-              <p className="text-sm text-gray-600 mb-2">Role Level Examples:</p>
+              <Text tone="secondary" size="sm" spacing="sm">Role Level Examples:</Text>
               <ul className="text-sm space-y-1">
                 <li>Owner level: {getRoleLevel('owner')}</li>
                 <li>Admin level: {getRoleLevel('admin')}</li>
@@ -161,7 +162,7 @@ export function TestPage() {
         <h2 className="text-2xl font-semibold mb-4">Permission Buttons</h2>
 
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-4">
+          <Wrap gap={4}>
             <PermissionButton
               requiredPermission="Organization:create"
               onClick={() => alert('Creating organization...')}
@@ -183,7 +184,7 @@ export function TestPage() {
             <DeleteButton onClick={() => alert('Deleting...')}>
               Delete
             </DeleteButton>
-          </div>
+          </Wrap>
 
           <div className="mt-4">
             <PermissionButton
@@ -232,7 +233,7 @@ export function TestPage() {
       <section className="mb-8">
         <h2 className="text-2xl font-semibold mb-4">Role-based Content</h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ResponsiveGrid columns={2} gap="md">
           <PermissionGate requiredRoles={['admin', 'owner']} requireAll={false}>
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
               <h3 className="font-semibold text-blue-800">Admin/Owner Panel</h3>
@@ -250,7 +251,7 @@ export function TestPage() {
               </p>
             </div>
           </PermissionGate>
-        </div>
+        </ResponsiveGrid>
       </section>
 
       {/* API Integration Status */}

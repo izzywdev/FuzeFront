@@ -12,6 +12,7 @@ import {
   closeDatabase,
   db,
 } from '@fuzefront/core'
+import { initTelemetry, tracingMiddleware, type TelemetryHandle } from '@fuzefront/telemetry'
 import path from 'path'
 
 import authRoutes from './routes/auth'
@@ -22,6 +23,7 @@ import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
 import internalRoutes from './routes/internal'
 import apiTokensRoutes, { orgTokensRouter } from './routes/api-tokens'
+import meRoutes from './routes/me'
 import { tokenAuthRateLimiter } from './middleware/api-token-auth'
 import { initializeAllTenants } from './services/oidc'
 import { tenantContext } from './middleware/tenant-context'
@@ -34,6 +36,19 @@ import { KnexRefIndexRepository } from './repositories/ref-index.repository'
 
 dotenv.config()
 
+// Bootstrap OpenTelemetry BEFORE the express app is constructed below, so
+// HttpInstrumentation/ExpressInstrumentation are enabled before any route
+// handles real traffic (the imports above already ran — that's fine, both
+// instrumentations patch shared module/prototype state that is looked up at
+// CALL time, not at require time — but request handling must not start
+// first). Sends OTLP to FuzeInfra's Collector (never Tempo/Loki directly);
+// endpoint/protocol/sampling default from OTEL_* env vars — see
+// `@fuzefront/telemetry`'s `docs/TRACE_CONTRACT.md`.
+const telemetry: TelemetryHandle = initTelemetry({
+  serviceName: 'security-service',
+  serviceVersion: process.env.npm_package_version,
+})
+
 // Transactional-outbox relay handle (null when KAFKA_BROKERS is unset).
 let outboxRelay: OutboxRelayHandle | null = null
 
@@ -43,6 +58,14 @@ const app = createExpressApp({ serviceName: 'security-service' })
 // trust the first proxy hop so req.ip (rate limiting, auth logs) reflects
 // the real client from X-Forwarded-For.
 app.set('trust proxy', 1)
+// Starts/continues a per-request span, exposing req.traceId/req.spanId for
+// `withReqId(reqId, req)` (see `lib/logger.ts`) to bind onto the request's
+// child logger alongside `reqId`. Deliberately mounted independently of
+// `@fuzefront/core`'s own request-id assignment above (inside
+// `createExpressApp`) — tracingMiddleware() never reads/writes
+// req.requestId/x-request-id, so the two correlation ids coexist rather than
+// compete; see tracingMiddleware's own doc comment.
+app.use(tracingMiddleware())
 const httpServer = createServer(app)
 const startTime = Date.now()
 
@@ -62,6 +85,7 @@ const startTime = Date.now()
 // a no-op for existing deployments.
 app.use('/api/v1/security', tenantContext)
 app.use('/api/auth', tenantContext)
+app.use('/api/me', tenantContext)
 app.use('/api/organizations', tenantContext)
 app.use('/api/invitations', tenantContext)
 app.use('/api/tokens', tenantContext)
@@ -85,6 +109,8 @@ app.use('/api/auth', authRoutes)
 app.use('/api/organizations', tokenAuthRateLimiter, orgTokensRouter)
 app.use('/api/organizations', organizationsRoutes)
 app.use('/api/invitations', invitationsRoutes)
+// Self-service user profile and account management (FFRNT-172).
+app.use('/api/me', meRoutes)
 // API token CRUD — rate limiter applied to all /api/tokens/* routes
 app.use('/api/tokens', tokenAuthRateLimiter, apiTokensRoutes)
 // Cluster-internal only — NEVER exposed through the public ingress.
@@ -114,6 +140,9 @@ function gracefulShutdown(signal: string) {
     outboxRelay?.stop()
     await stopRefIndexProjection().catch(() => undefined)
     await closeDatabase().catch(() => undefined)
+    // Flush any spans still buffered before the process exits — otherwise the
+    // last few requests before shutdown silently never reach Tempo.
+    await telemetry.shutdown().catch(() => undefined)
     process.exit(0)
   })
   setTimeout(() => process.exit(1), 30000)
@@ -125,24 +154,11 @@ async function startServer() {
   try {
     console.log('🔄 Starting FuzeFront security-service...')
 
-    // Step 5 (FFRNT-185): configure the dual-accept window so that
-    // assertRef / parseId accept bare UUIDs for entity types whose stored rows
-    // were written before the TypeID wire form was adopted. The flag
-    // `fuzefront.identity.prefixed-ids` (step 4) controls whether RESPONSES
-    // emit TypeID form; these types stay in legacyUuidTypes until the row
-    // backfill is complete and the window is deliberately closed.
-    configureIdentity({
-      legacyUuidTypes: new Set([
-        'organization',
-        'membership',
-        'invitation',
-        'session',
-        'mfaFactor',
-        'user',
-        'app',
-        'portal',
-      ]),
-    })
+    // Step 5 (FFRNT-185): dual-accept windows closed.
+    // All entity types now use mintId() for creation and store bare UUIDs;
+    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
+    // need to be accepted at the request boundary.
+    configureIdentity({ legacyUuidTypes: new Set() })
     // Original chain keeps the original knex_migrations table; dirs resolve to
     // THIS service's compiled output (dist/migrations) in prod, src in dev.
     await initializeDatabase({

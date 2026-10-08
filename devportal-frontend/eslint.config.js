@@ -31,10 +31,24 @@ export default [
       ...js.configs.recommended.rules,
       ...tsPlugin.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // This plugin version's `recommended` config does not itself turn off
+      // the base `no-undef` rule (some do), so it stays on from
+      // `js.configs.recommended` and false-positives on ambient TS lib types
+      // (RequestInit, HTMLElement, …) that only `tsc`/`@typescript-eslint`
+      // can actually resolve — standard TS-ESLint guidance is to disable it.
+      'no-undef': 'off',
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true }
       ]
     }
+  },
+  {
+    // Playwright configs and the e2e suite run under Node, not the browser —
+    // they need `process`/`Buffer`, not `globals.browser`.
+    files: ['playwright*.config.ts', 'e2e/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
   }
 ]

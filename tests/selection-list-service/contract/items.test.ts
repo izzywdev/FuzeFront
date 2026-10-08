@@ -12,7 +12,7 @@
  *   - Item sort_order: omitting sort_order appends at max + 100
  *   - status filter defaults to active (archived items excluded from picker)
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';
@@ -57,7 +57,9 @@ describe('POST /v1/selection-lists/{listId}/items — identifier contract', () =
     createdListIds.push(list.id as SelectionListId);
 
     const item = await client.createItem(list.id as SelectionListId, { code: 'ITEM1', label: 'Item One' });
-    expect(item.id).toMatch(/^sli_[0-9a-z]+$/);
+    // `front_sli_`, not `sli_`: openapi.yaml's SelectionListItemId pins
+    // `^front_sli_[0-9a-z]+$`. Same contract drift as lists.test.ts.
+    expect(item.id).toMatch(/^front_sli_[0-9a-z]+$/);
     expect(item.list_id).toBe(list.id);
   });
 
@@ -311,7 +313,7 @@ describe('PUT /v1/selection-lists/{listId}/items/reorder', () => {
     createdListIds.push(list.id as SelectionListId);
 
     const ids = items.map((i) => i.id as SelectionListItemId);
-    ids.push('sli_01hnonexistentitemid000000' as SelectionListItemId); // extra
+    ids.push('front_sli_01hnonexistentitemid000000' as SelectionListItemId); // extra
     const { status, body } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(list.id)}/items/reorder`,
       {
@@ -385,18 +387,35 @@ describe('DELETE /v1/selection-lists/{listId}/items/{itemId} — archive vs purg
     expect([404, 410]).toContain(status);
   });
 
-  it('cannot purge a list that still has non-archived items — 409 CONFLICT', async () => {
+  it('purging a list cascades to its remaining items (the contract has no 409 on DELETE /{listId})', async () => {
+    // Test bug fixed: this was "cannot purge a list that still has non-archived
+    // items — 409 CONFLICT". openapi DELETE /v1/selection-lists/{listId} declares
+    // only 200/204/401/403/404 and says purge "cascades to every item, translation
+    // and access grant" — the protection is `delete` (owner only) + the explicit
+    // ?purge=true opt-in, not a 409. The frozen spec is the source of truth.
     const client = makeClient(ownerToken);
-    const list = await createTestList(client, { key: 'purge-guard-' + Math.random().toString(16).slice(2, 8), name: 'Purge Guard' });
-    createdListIds.push(list.id as SelectionListId);
-    await client.createItem(list.id as SelectionListId, { code: 'LIVE', label: 'Live Item' });
+    const list = await createTestList(client, { key: 'purge-casc-' + Math.random().toString(16).slice(2, 8), name: 'Purge Cascade' });
+    const item = await client.createItem(list.id as SelectionListId, { code: 'LIVE', label: 'Live Item' });
 
-    const { status, body } = await rawFetch(
+    const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(list.id)}?purge=true`,
       { method: 'DELETE', token: ownerToken() }
     );
-    expect(status).toBe(409);
-    expect((body as { code?: string }).code).toBe('CONFLICT');
+    expect(status).toBe(204);
+
+    // The list is gone, and its item no longer resolves.
+    const gone = await rawFetch(`/v1/selection-lists/${encodeURIComponent(list.id)}`, {
+      method: 'GET',
+      token: ownerToken(),
+    });
+    expect(gone.status).toBe(404);
+    const resolved = await rawFetch('/v1/resolve', {
+      method: 'POST',
+      token: ownerToken(),
+      body: JSON.stringify({ ids: [item.id] }),
+    });
+    expect(resolved.status).toBe(200);
+    expect((resolved.body as { missing?: string[] }).missing).toContain(item.id);
   });
 });
 
@@ -411,7 +430,7 @@ describe('SelectionListItem response shape', () => {
     createdListIds.push(list.id as SelectionListId);
     const item = await client.createItem(list.id as SelectionListId, { code: 'SHAPE', label: 'Shape Label' });
 
-    expect(item.id).toMatch(/^sli_[0-9a-z]+$/);
+    expect(item.id).toMatch(/^front_sli_[0-9a-z]+$/);
     expect(item.list_id).toBe(list.id);
     expect(typeof item.code).toBe('string');
     expect(item.code.length).toBeGreaterThan(0);

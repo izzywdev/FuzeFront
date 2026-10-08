@@ -48,22 +48,24 @@ spec:
             # The active vendor adapter (the swap knob). Default 'stripe'.
             - name: PAYMENT_PROVIDER
               value: {{ .Values.paymentService.provider | quote }}
-            # Vendor secret + internal token come from the per-service
-            # payment-secrets SealedSecret. In this SCAFFOLD the keys may be
-            # placeholders — without a real STRIPE_SECRET_KEY the gateway boots in
-            # degraded mode (serves /health only, no live vendor calls), so the
-            # pod stays healthy and is safe to run before the money path lands.
+            # Origin of FuzeFront's Security API. The internal API verifies incoming
+            # MANAGED SERVICE TOKENS against its /api/v1/security/tokens/introspect
+            # contract via @fuzefront/service-auth (fail-closed) — this REPLACES the
+            # retired hand-minted static PAYMENT_INTERNAL_TOKEN. Same in-cluster
+            # convention chat/config/devportal/provisioning use to reach
+            # security-service (Service `fuzefront-security`, port securityService.port).
+            - name: SECURITY_SERVICE_URL
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            # Vendor secret comes from the per-service payment-secrets SealedSecret.
+            # In this SCAFFOLD the key may be a placeholder — without a real
+            # STRIPE_SECRET_KEY the gateway boots in degraded mode (serves /health
+            # only, no live vendor calls), so the pod stays healthy and is safe to
+            # run before the money path lands.
             - name: STRIPE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.paymentService.secretName | default "payment-secrets" }}
                   key: STRIPE_SECRET_KEY
-                  optional: true
-            - name: PAYMENT_INTERNAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.paymentService.secretName | default "payment-secrets" }}
-                  key: PAYMENT_INTERNAL_TOKEN
                   optional: true
           readinessProbe:
             httpGet:

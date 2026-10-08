@@ -85,6 +85,19 @@ export function _clearPortalCacheForTests(): void {
   cache.clear()
 }
 
+/**
+ * Collapse CR/LF out of a value before it is logged (CodeQL js/log-injection).
+ *
+ * Written as two SINGLE-CHARACTER global replaces on purpose: the js/log-injection
+ * barrier matches a global `String.prototype.replace` whose pattern has a constant
+ * matched string, so a quantified character class (`/[\r\n]+/g`) strips the same
+ * characters but is NOT recognized as a barrier — which is exactly why this call
+ * site stayed flagged. Same form as routes/billing.ts's upstream-error logger.
+ */
+function oneLineForLog(value: unknown): string {
+  return String(value).replace(/\r/g, ' ').replace(/\n/g, ' ')
+}
+
 async function cached(
   key: string,
   loader: () => Promise<any | undefined>,
@@ -133,7 +146,7 @@ async function cached(
     // (CodeQL js/tainted-format-string — an embedded `%` specifier could
     // forge/break the log) and must have CR/LF stripped before being logged
     // at all (CodeQL js/log-injection — an embedded newline could forge
-    // additional fake log lines). Constant format string + %s + oneLine():
+    // additional fake log lines). Constant format string + %s + oneLineForLog():
     // the same established pattern already used for this exact CodeQL pair
     // in routes/billing.ts's upstream-error logger. The `error` itself is
     // ALSO externally-influenceable (a DB driver error message can embed
@@ -141,8 +154,8 @@ async function cached(
     // `.message` — never the raw Error object — is ever logged.
     console.error(
       'resolvePortalContext lookup error for %s (degrading to miss):',
-      String(key).replace(/[\r\n]+/g, ' '),
-      String((error as any)?.message ?? error).replace(/[\r\n]+/g, ' ')
+      oneLineForLog(key),
+      oneLineForLog((error as any)?.message ?? error)
     )
     if (opts.throwOnError) throw error
     return null

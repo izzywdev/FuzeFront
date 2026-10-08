@@ -18,6 +18,8 @@ import {
   GrantRevokeRequest,
   GrantPage,
   GrantListQuery,
+  SetAttributesRequest,
+  SetAttributesResult,
 } from './authzTypes';
 
 /** Path of the single-decision endpoint, relative to `baseUrl`. */
@@ -26,6 +28,8 @@ const CHECK_PATH = '/api/v1/security/authz/check';
 const BULK_CHECK_PATH = '/api/v1/security/authz/bulk-check';
 /** Path of the grants endpoint, relative to `baseUrl`. */
 const GRANTS_PATH = '/api/v1/security/authz/grants';
+/** Path prefix of the subject ABAC attribute-write endpoint, relative to `baseUrl`. */
+const SUBJECTS_PATH = '/api/v1/security/authz/subjects';
 
 const DEFAULT_TIMEOUT_MS = 3000;
 const DEFAULT_CACHE_MAX_ENTRIES = 1000;
@@ -337,6 +341,47 @@ export function createAuthzClient(options: AuthzClientOptions): AuthzClient {
       throw new AuthzError(
         'PROVIDER_ERROR',
         `Security API returned ${status} for listGrants; treating as transient error`,
+      );
+    },
+
+    async setAttributes(req: SetAttributesRequest, token: string): Promise<SetAttributesResult> {
+      const path =
+        `${SUBJECTS_PATH}/${encodeURIComponent(req.subject.type)}` +
+        `/${encodeURIComponent(req.subject.key)}/attributes`;
+      // NEVER resolves on failure — deliberately the opposite of check/bulkCheck's
+      // fail-closed-returns-false. Every non-200 (and the `request()` helper's own
+      // transport-error path) throws, so a caller cannot mistake an unlanded write
+      // for a successful one.
+      const { status, body } = await request('PATCH', path, { attributes: req.attributes }, token);
+      if (status === 200) {
+        const result = body as SetAttributesResult;
+        if (
+          !result?.subject ||
+          typeof result.subject.type !== 'string' ||
+          typeof result.subject.key !== 'string' ||
+          !result.attributes ||
+          typeof result.updatedAt !== 'number'
+        ) {
+          throw new AuthzError(
+            'PROVIDER_ERROR',
+            'Security API returned 200 but a malformed attribute-write result',
+          );
+        }
+        return result;
+      }
+      if (status === 400) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'setAttributes request malformed';
+        throw new AuthzError('MALFORMED', msg);
+      }
+      if (status === 502) {
+        const msg =
+          (body as { error?: string } | null)?.error || 'authorization provider unavailable';
+        throw new AuthzError('PROVIDER_ERROR', msg);
+      }
+      throw new AuthzError(
+        'PROVIDER_ERROR',
+        `Security API returned ${status} for setAttributes; treating as transient error`,
       );
     },
   };

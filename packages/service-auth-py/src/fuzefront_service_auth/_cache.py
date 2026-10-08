@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import threading
 from collections import OrderedDict
-from typing import Generic, Optional, Tuple, TypeVar
+from typing import Generic, TypeVar
 
 V = TypeVar("V")
 
@@ -30,9 +30,9 @@ class PositiveCache(Generic[V]):
         self._max_size = max_size
         self._max_ttl = max_ttl_seconds
         self._lock = threading.Lock()
-        self._store: "OrderedDict[str, Tuple[V, float]]" = OrderedDict()
+        self._store: OrderedDict[str, tuple[V, float]] = OrderedDict()
 
-    def get(self, key: str, now: float) -> Optional[V]:
+    def get(self, key: str, now: float) -> V | None:
         with self._lock:
             entry = self._store.get(key)
             if entry is None:
@@ -44,7 +44,7 @@ class PositiveCache(Generic[V]):
             self._store.move_to_end(key)
             return value
 
-    def put(self, key: str, value: V, now: float, expires_at: Optional[float] = None) -> None:
+    def put(self, key: str, value: V, now: float, expires_at: float | None = None) -> None:
         cache_until = now + self._max_ttl
         if expires_at is not None:
             cache_until = min(cache_until, expires_at)

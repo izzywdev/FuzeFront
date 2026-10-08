@@ -23,6 +23,7 @@ COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/service-auth/package.json ./packages/service-auth/
 COPY api-client/package.json ./api-client/
 COPY sdk/package.json ./sdk/
@@ -51,7 +52,10 @@ COPY services/notification-service/package.json ./services/notification-service/
 COPY services/selection-list-service/package.json ./services/selection-list-service/
 COPY services/devportal-service/package.json ./services/devportal-service/
 
-RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts
+RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts && \
+    mkdir -p packages/auth/node_modules
+# npm may hoist every auth runtime dependency into /app/node_modules. Keep the
+# optional workspace dependency directory copyable in either locked layout.
 
 # ---------- specs: gather this repo's own openapi.yaml files ----------
 # Only the spec FILES are needed here, not each service's full source — see
@@ -86,6 +90,7 @@ COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/service-auth/package.json ./packages/service-auth/
 COPY billing-client/package.json ./billing-client/
 COPY config-client/package.json ./config-client/

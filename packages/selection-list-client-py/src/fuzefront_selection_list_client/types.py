@@ -1,7 +1,7 @@
 """
 Wire types for the selection-list-service.
 
-Hand-authored from ``services/selection-list-service/openapi.yaml`` v1.0.0.
+Hand-authored from ``services/selection-list-service/openapi.yaml`` v4.0.0.
 The spec is the source of truth: when it changes, the spec is amended first
 and this file updated in the same PR.
 
@@ -17,14 +17,56 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, TypeVar
 
 # ---------------------------------------------------------------------------
 # Identifier prefix constants (opaque past the prefix)
 # ---------------------------------------------------------------------------
 
-SELECTION_LIST_ID_PREFIX = "sl_"
-SELECTION_LIST_ITEM_ID_PREFIX = "sli_"
+SELECTION_LIST_ID_PREFIX = "front_sl_"
+SELECTION_LIST_ITEM_ID_PREFIX = "front_sli_"
+
+# ---------------------------------------------------------------------------
+# Authorship principals (contract ``AuthorPrincipal``, 4.0.0)
+# ---------------------------------------------------------------------------
+
+USER_ID_PREFIX = "usr_"
+"""Wire prefix of a user id."""
+SYSTEM_PRINCIPAL_PREFIX = "system:"
+"""Wire prefix of a system principal (``^system:[a-z0-9-]+$``)."""
+DELETED_USER_SENTINEL = "[deleted-user]"
+"""Exact sentinel that replaces a user id once that user is deleted. Not an id."""
+
+
+class AuthorPrincipalKind(str, enum.Enum):
+    """Which form an ``AuthorPrincipal`` (``created_by`` / ``granted_by``) takes."""
+
+    USER = "user"
+    SYSTEM = "system"
+    DELETED_USER = "deleted-user"
+    UNKNOWN = "unknown"
+
+
+def author_principal_kind(value: str) -> AuthorPrincipalKind:
+    """
+    Classify a ``created_by`` / ``granted_by`` value from the string alone.
+
+    The three contract forms -- a ``usr_`` user id, a ``system:<service>``
+    principal (rows written by seeding), and the ``[deleted-user]`` sentinel --
+    are disjoint by prefix. Only the prefix is inspected; ids are opaque past it.
+    """
+    if value == DELETED_USER_SENTINEL:
+        return AuthorPrincipalKind.DELETED_USER
+    if value.startswith(SYSTEM_PRINCIPAL_PREFIX):
+        return AuthorPrincipalKind.SYSTEM
+    if value.startswith(USER_ID_PREFIX):
+        return AuthorPrincipalKind.USER
+    return AuthorPrincipalKind.UNKNOWN
+
+
+def is_user_author(value: str) -> bool:
+    """True only when ``value`` is a ``usr_`` user id (safe to look up as a user)."""
+    return author_principal_kind(value) is AuthorPrincipalKind.USER
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -96,11 +138,11 @@ class Page:
     (``governance/pagination-standard.md`` S1).
     """
 
-    next_cursor: Optional[str]
+    next_cursor: str | None
     """Opaque cursor for the next page; ``None`` on the last page."""
     has_more: bool
     """Whether a further page exists."""
-    total: Optional[int] = None
+    total: int | None = None
     """Total rows matching the filter, when cheap enough to compute."""
 
 
@@ -111,8 +153,32 @@ T = TypeVar("T")
 class PagedResponse(Generic[T]):
     """A page of ``T`` plus its cursor envelope."""
 
-    items: List[T]
+    items: list[T]
     page: Page
+
+
+# ---------------------------------------------------------------------------
+# Seed provenance
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SeedProvenance:
+    """
+    Read-only provenance of a row created by seeding (contract ``SeedProvenance``).
+
+    ``None`` on a user-authored row. Mirrors the event contract's
+    ``slSeedProvenanceV1`` in snake_case.
+    """
+
+    source: str
+    """Seed source: an app slug, or ``platform``."""
+    pack_key: str
+    """Seed-pack key."""
+    pack_version: int
+    """Version of the pack that last wrote this row (>= 1)."""
+    user_modified: bool
+    """Sticky ``True`` once a human edited the seeded content."""
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +199,13 @@ class SelectionList:
     resolved_locale: str
     is_machine: bool
     created_by: str
+    """``AuthorPrincipal``: ``usr_`` id, ``system:<service>``, or ``[deleted-user]``."""
     created_at: str
     updated_at: str
-    description: Optional[str] = None
-    item_count: Optional[int] = None
+    description: str | None = None
+    item_count: int | None = None
+    seed: SeedProvenance | None = None
+    """Seed provenance; ``None`` for a user-authored list."""
 
 
 @dataclass
@@ -145,19 +214,19 @@ class CreateListRequest:
 
     key: str
     name: str
-    source_locale: Optional[str] = None
-    description: Optional[str] = None
+    source_locale: str | None = None
+    description: str | None = None
 
 
 @dataclass
 class UpdateListRequest:
     """Partial update of a list. Every field is optional; at least one must be set."""
 
-    key: Optional[str] = None
-    source_locale: Optional[str] = None
-    status: Optional[LifecycleStatus] = None
-    name: Optional[str] = None
-    description: Optional[str] = None
+    key: str | None = None
+    source_locale: str | None = None
+    status: LifecycleStatus | None = None
+    name: str | None = None
+    description: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -178,9 +247,12 @@ class SelectionListItem:
     resolved_locale: str
     is_machine: bool
     created_by: str
+    """``AuthorPrincipal``: ``usr_`` id, ``system:<service>``, or ``[deleted-user]``."""
     created_at: str
     updated_at: str
-    description: Optional[str] = None
+    description: str | None = None
+    seed: SeedProvenance | None = None
+    """Seed provenance; ``None`` for a user-authored item."""
 
 
 @dataclass
@@ -189,8 +261,8 @@ class CreateItemRequest:
 
     code: str
     label: str
-    description: Optional[str] = None
-    sort_order: Optional[int] = None
+    description: str | None = None
+    sort_order: int | None = None
 
 
 @dataclass
@@ -200,10 +272,10 @@ class UpdateItemRequest:
     after create.
     """
 
-    label: Optional[str] = None
-    description: Optional[str] = None
-    sort_order: Optional[int] = None
-    status: Optional[LifecycleStatus] = None
+    label: str | None = None
+    description: str | None = None
+    sort_order: int | None = None
+    status: LifecycleStatus | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +292,8 @@ class Translation:
     name: str
     is_machine: bool
     updated_at: str
-    description: Optional[str] = None
-    source_hash: Optional[str] = None
+    description: str | None = None
+    source_hash: str | None = None
 
 
 @dataclass
@@ -233,8 +305,35 @@ class SelectionListItemTranslation:
     label: str
     is_machine: bool
     updated_at: str
-    description: Optional[str] = None
-    source_hash: Optional[str] = None
+    description: str | None = None
+    source_hash: str | None = None
+
+
+@dataclass
+class TranslationLocaleStatus:
+    """
+    Translation workbench summary for one locale of a selection list.
+
+    Returned by ``GET /v1/selection-lists/{listId}/translations``.
+    """
+
+    locale: str
+    completeness_pct: int
+    machine_translated: bool
+    source_changed: bool
+
+
+@dataclass
+class ItemTranslationLocaleStatus:
+    """
+    Translation workbench summary for one locale of a selection-list item.
+
+    Returned by ``GET /v1/selection-lists/{listId}/items/{itemId}/translations``.
+    """
+
+    locale: str
+    machine_translated: bool
+    source_changed: bool
 
 
 @dataclass
@@ -242,7 +341,7 @@ class UpsertListTranslationRequest:
     """Human-authored list text for one locale."""
 
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
@@ -250,7 +349,7 @@ class UpsertItemTranslationRequest:
     """Human-authored item text for one locale."""
 
     label: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
 @dataclass
@@ -258,7 +357,7 @@ class AutofillRequest:
     """Optional scoping for a machine-translation run."""
 
     overwrite_machine: bool = False
-    item_ids: Optional[List[str]] = None
+    item_ids: list[str] | None = None
 
 
 @dataclass
@@ -285,6 +384,7 @@ class AccessEntry:
     user_id: str
     role: SelectionListAccessRole
     granted_by: str
+    """``AuthorPrincipal``: ``usr_`` id, ``system:<service>``, or ``[deleted-user]``."""
     granted_at: str
     updated_at: str
 
@@ -301,7 +401,7 @@ class QuotaInfo:
     scope: QuotaScope
     applies_to: str
     limit: int
-    current: Optional[int]
+    current: int | None
 
 
 @dataclass
@@ -309,7 +409,7 @@ class SelectionListQuotaStatus:
     """Quota ceilings and usage for the caller's organisation."""
 
     organization_id: str
-    quotas: List[QuotaInfo]
+    quotas: list[QuotaInfo]
 
 
 # ---------------------------------------------------------------------------
@@ -335,4 +435,4 @@ class ResolveResponse:
     """
 
     results: dict
-    missing: List[str]
+    missing: list[str]

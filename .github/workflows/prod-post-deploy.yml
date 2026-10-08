@@ -118,6 +118,8 @@ jobs:
       POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
       POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
       INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
+      POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
+      POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
 
   # The public marketing site (fuzefront-website) has its own deploy image and
   # its own release-time contrast/nav regressions (see
@@ -129,6 +131,75 @@ jobs:
     uses: ./.github/workflows/fuzefront-website-post-prod-e2e.yml
     with:
       base_url: 'https://fuzefront.com'
+
+  # Live canonical-host probe: asserts that fuzefront.com presents ONE brand.
+  #
+  # THE DEFECT THIS EXISTS FOR. `www.fuzefront.com` was an unproxied CNAME to
+  # the CloudFront distribution d27hi5funhy3o7.cloudfront.net, serving a static
+  # FuzeHub landing page, while the apex served the FuzeOne family site. One
+  # domain, two brands, no redirect between them. Nothing in this repo could
+  # see it: `www` never reached the cluster, so every rendered-manifest check,
+  # every helm lint and the whole website e2e suite (which targets the apex)
+  # stayed green throughout. Same shape as the Authentik boundary probe below
+  # — only a black-box request to the ACTUAL edge can catch it.
+  #
+  # WHY THIS MAY BE RED, AND WHY THAT IS CORRECT. The fix has two halves.
+  # FuzeFront owns one: the website Ingress now claims www.fuzefront.com
+  # (values-prod.yaml `websiteFrontend.aliasHosts`) and the site's nginx 301s
+  # it to the apex. FuzeInfra owns the other: Cloudflare DNS is its Terraform
+  # plane and this repo holds no credential for it, so the record cannot be
+  # repointed from here. Until FuzeInfra moves `www.fuzefront.com` to the
+  # tunnel (proxied CNAME + tunnel ingress rule -> traefik.kube-system:80,
+  # exactly as app.fuzefront.com is wired), CloudFront keeps answering and this
+  # job FAILS. That is deliberate: a red light on every deploy is the honest
+  # representation of a live brand split, and it goes green by itself the
+  # moment the record moves. Do not soften it to a warning — a check that
+  # cannot fail is the thing governance/vacuous-check-policy.json forbids.
+  #
+  # Not gated on `health`: it probes the website edge, not the app shell, and a
+  # sick app must not hide a brand split.
+  www-canonical-host:
+    name: www redirects to the canonical apex
+    needs: announce
+    runs-on: ubuntu-latest
+    # Four bounded curls; anything slower than this is a hung runner, not a
+    # slow edge (gate-workflow-policy [missing-timeout]).
+    timeout-minutes: 5
+    steps:
+      - name: www.fuzefront.com must 301 to https://fuzefront.com
+        run: |
+          set -euo pipefail
+
+          # --location is deliberately ABSENT. Following the redirect would
+          # make a page that merely *renders* the apex indistinguishable from
+          # a real canonicalization; this asserts the redirect itself.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 https://www.fuzefront.com/)
+          loc=$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 30 https://www.fuzefront.com/)
+
+          echo "status:   ${code}"
+          echo "location: ${loc:-<none>}"
+
+          if [ "$code" != "301" ]; then
+            echo "::error::www.fuzefront.com answered ${code}, expected 301. It is serving content of its own instead of redirecting to the canonical apex — one domain must not present two brands. If this is still CloudFront, the FuzeInfra DNS half of the fix has not landed; see websiteFrontend.aliasHosts in deploy/helm/fuzefront/values-prod.yaml."
+            exit 1
+          fi
+
+          case "$loc" in
+            https://fuzefront.com|https://fuzefront.com/*)
+              echo "www.fuzefront.com -> ${loc} (canonical)" ;;
+            *)
+              echo "::error::www.fuzefront.com redirects to '${loc}', which is not the canonical apex https://fuzefront.com."
+              exit 1 ;;
+          esac
+
+          # The query string and path must survive, or every deep link to www
+          # lands on the homepage instead of the page that was asked for.
+          deep=$(curl -sS -o /dev/null -w '%{redirect_url}' --max-time 30 'https://www.fuzefront.com/pricing?plan=team')
+          if [ "$deep" != "https://fuzefront.com/pricing?plan=team" ]; then
+            echo "::error::Deep-link redirect dropped the path or query: got '${deep}', expected 'https://fuzefront.com/pricing?plan=team'."
+            exit 1
+          fi
+          echo "deep link preserved: ${deep}"
 
   # Live boundary probe: asserts Authentik's admin/API/application-list surface
   # is NOT reachable on the public edge. Deliberately SEPARATE from the static
@@ -147,7 +218,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Self-test the comparator
         run: ./deploy/scripts/check-authentik-live-boundary.sh --self-test
       - name: Probe forbidden Authentik paths on the public edge

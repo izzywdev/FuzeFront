@@ -19,9 +19,11 @@ const config: { [key: string]: Knex.Config } = {
       tableName: 'knex_migrations',
       directory: path.join(__dirname, 'src/migrations'),
       extension: 'ts',
+      loadExtensions: ['.ts'],
     },
     seeds: {
       directory: path.join(__dirname, 'src/seeds'),
+      loadExtensions: ['.ts'],
     },
   },
 
@@ -42,9 +44,15 @@ const config: { [key: string]: Knex.Config } = {
       tableName: 'knex_migrations',
       directory: path.join(__dirname, 'dist/migrations'),
       extension: 'js',
+      // Only load the compiled .js. Without this, knex's default loadExtensions
+      // also matches the emitted .d.ts declaration files beside each compiled
+      // migration and loads them as migrations. Same fix as
+      // backend/src/config/database.ts.
+      loadExtensions: ['.js'],
     },
     seeds: {
       directory: path.join(__dirname, 'dist/seeds'),
+      loadExtensions: ['.js'],
     },
   },
 }
