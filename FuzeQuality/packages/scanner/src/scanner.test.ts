@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Repository } from '@fuzequality/contracts'
-import { isCredentialFreeRepositoryUrl, scanRepository } from './index'
+import { isCredentialFreeRepositoryUrl, SCANNER_VERSION, scanRepository } from './index'
 
 const repository: Repository = {
   id: 'b4908e35-8a57-4c13-9366-489ec59071fe',
@@ -64,7 +64,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.2.0',
+      scannerVersion: SCANNER_VERSION,
       partial: false,
       counts: {
         operations: 1,
