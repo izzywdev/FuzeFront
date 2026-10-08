@@ -186,6 +186,10 @@
       "sourcePath": "components/layout/Container.jsx"
     },
     {
+      "name": "CtaHeading",
+      "sourcePath": "components/layout/CtaHeading.jsx"
+    },
+    {
       "name": "Eyebrow",
       "sourcePath": "components/layout/Eyebrow.jsx"
     },
@@ -1107,6 +1111,30 @@
     {
       "name": "--role-data-weight",
       "value": "var(--weight-medium)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-font",
+      "value": "var(--font-display)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-size",
+      "value": "1.875rem",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-weight",
+      "value": "var(--weight-bold)",
+      "kind": "font",
+      "definedIn": "tokens/typography.css"
+    },
+    {
+      "name": "--role-cta-heading-leading",
+      "value": "var(--leading-tight)",
       "kind": "font",
       "definedIn": "tokens/typography.css"
     },
