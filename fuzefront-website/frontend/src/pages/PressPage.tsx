@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { Mail, Download, Newspaper, Calendar } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, InlineLink } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const pressReleases = [
@@ -134,9 +134,9 @@ export const PressPage: React.FC = () => {
         <div className="max-w-2xl mx-auto px-4 text-center">
           <p className="text-gray-600">
             For all press inquiries, contact{' '}
-            <a href="mailto:press@fuzefront.com" className="text-primary-700 hover:underline font-medium">
+            <InlineLink href="mailto:press@fuzefront.com" emphasis>
               press@fuzefront.com
-            </a>
+            </InlineLink>
           </p>
         </div>
       </section>
