@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Create a report to help us improve FrontFuse
+about: Create a report to help us improve FuzeFront
 title: '[BUG] '
 labels: ['bug', 'needs-triage']
 assignees: ''
@@ -38,7 +38,7 @@ If applicable, add screenshots to help explain your problem.
 - Node.js Version: [e.g. 18.17.0]
 - npm Version: [e.g. 9.6.7]
 
-**FrontFuse:**
+**FuzeFront:**
 
 - Version: [e.g. 1.0.0]
 - Component: [e.g. frontend, backend, sdk]

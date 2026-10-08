@@ -1,6 +1,6 @@
-# Contributing to FrontFuse
+# Contributing to FuzeFront
 
-Thank you for your interest in contributing to FrontFuse! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to FuzeFront! This document provides guidelines and information for contributors.
 
 ## 📋 Table of Contents
 
@@ -33,8 +33,8 @@ This project and everyone participating in it is governed by our [Code of Conduc
 1. **Fork and Clone**
 
    ```bash
-   git clone https://github.com/your-username/FrontFuse.git
-   cd FrontFuse
+   git clone https://github.com/your-username/FuzeFront.git
+   cd FuzeFront
    ```
 
 2. **Install Dependencies**
@@ -108,11 +108,11 @@ This project and everyone participating in it is governed by our [Code of Conduc
 ## 🏗️ Project Structure
 
 ```
-FrontFuse/
+FuzeFront/
 ├── frontend/          # React container shell
 ├── backend/           # Express.js API server
 ├── shared/            # Shared utilities and types
-├── sdk/               # FrontFuse SDK for app developers
+├── sdk/               # FuzeFront SDK for app developers
 ├── clock-app/         # Example federated app
 ├── docs/              # Documentation
 ├── scripts/           # Build and utility scripts
@@ -363,10 +363,10 @@ For security vulnerabilities, please see our [Security Policy](SECURITY.md).
 
 ## 📄 License
 
-By contributing to FrontFuse, you agree that your contributions will be licensed under the same license as the project.
+By contributing to FuzeFront, you agree that your contributions will be licensed under the same license as the project.
 
 ---
 
-**Thank you for contributing to FrontFuse!** 🎉
+**Thank you for contributing to FuzeFront!** 🎉
 
 Your contributions help make microfrontend development more accessible and powerful for everyone.

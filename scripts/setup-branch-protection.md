@@ -6,7 +6,7 @@ Since the GitHub CLI approach for setting up branch protection had issues, here'
 
 1. **Go to Repository Settings**
 
-   - Navigate to: https://github.com/izzywdev/FrontFuse/settings/branches
+   - Navigate to: https://github.com/izzywdev/FuzeFront/settings/branches
 
 2. **Add Branch Protection Rule**
 

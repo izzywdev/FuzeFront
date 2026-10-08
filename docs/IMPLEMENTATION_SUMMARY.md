@@ -1,4 +1,4 @@
-# FrontFuse Module Federation Implementation Summary
+# FuzeFront Module Federation Implementation Summary
 
 ## 🎯 What We've Accomplished
 
