@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { Button, IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -216,13 +216,14 @@ export const FuzeHubPage: React.FC = () => {
             FuzeHub is included in Growth and Enterprise plans. Start your 14-day trial.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a
+            <Button
               href="https://app.fuzefront.com/signup"
-              className="btn-primary flex items-center justify-center gap-2"
+              variant="primary"
+              withArrow
               onClick={() => trackEvent('cta_click', { button: 'fuzehub_final_cta', location: 'fuzehub_bottom' })}
             >
-              Start free trial <ArrowRight size={16} />
-            </a>
+              Start free trial
+            </Button>
             <Link to="/pricing" className="btn-ghost">
               Compare plans
             </Link>
