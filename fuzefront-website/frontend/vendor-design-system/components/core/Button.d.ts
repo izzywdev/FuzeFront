@@ -8,8 +8,13 @@ import * as React from "react";
  * open-in-new-tab, keyboard link semantics) instead of a `<button>`.
  */
 type ButtonSharedProps = {
-  /** Visual style. `primary` = accent fill with the fuse glow; `danger` = error fill. */
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  /**
+   * Visual style. `primary` = accent fill with the fuse glow; `secondary` =
+   * neutral raised + border; `outline` = accent-colored border/text on a
+   * light surface (the "compare plans" / tertiary CTA look); `danger` =
+   * error fill.
+   */
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
   size?: "sm" | "md" | "lg";
   /** Append a trailing arrow glyph (used on "Launch app", "Continue"). */
   withArrow?: boolean;

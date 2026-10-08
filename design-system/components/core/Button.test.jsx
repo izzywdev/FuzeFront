@@ -46,8 +46,8 @@ describe("<Button>", () => {
     expect(button).toHaveAttribute("data-app-id", "app-123");
   });
 
-  it("renders every variant as a real, distinctly-styled button (primary/secondary/ghost/danger)", () => {
-    const variants = ["primary", "secondary", "ghost", "danger"];
+  it("renders every variant as a real, distinctly-styled button (primary/secondary/outline/ghost/danger)", () => {
+    const variants = ["primary", "secondary", "outline", "ghost", "danger"];
     variants.forEach((variant) => {
       const { unmount } = render(<Button variant={variant}>{variant}</Button>);
       const button = screen.getByRole("button", { name: variant });
@@ -61,6 +61,14 @@ describe("<Button>", () => {
     const ghost = screen.getByRole("button", { name: "Ghost" });
     expect(ghost.style.background).toBe("transparent");
     expect(ghost.style.boxShadow).toBe("none");
+  });
+
+  it("the outline variant is an accent-bordered button, distinct from the neutral secondary", () => {
+    render(<Button variant="outline">Compare plans</Button>);
+    const outline = screen.getByRole("button", { name: "Compare plans" });
+    expect(outline.style.border).toBe("var(--border-width-strong) solid var(--accent-color)");
+    expect(outline.style.color).toBe("var(--accent-color)");
+    expect(outline.style.background).toBe("var(--bg-tertiary)");
   });
 
   it("mirrors layout for RTL contexts — no hard-coded left/right, only flow-relative gap/padding", () => {
@@ -127,7 +135,7 @@ describe("<Button>", () => {
     });
 
     it("renders every variant as a real, identically-styled anchor", () => {
-      const variants = ["primary", "secondary", "ghost", "danger"];
+      const variants = ["primary", "secondary", "outline", "ghost", "danger"];
       variants.forEach((variant) => {
         const { unmount } = render(
           <Button href="https://example.com" variant={variant}>
