@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { Text } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -374,9 +375,9 @@ export const ProductDetailPage: React.FC = () => {
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-4">
             Ready to get started with {product.name}?
           </h2>
-          <p className="text-gray-600 mb-8">
+          <Text tone="secondary" spacing="xl">
             Try free for 14 days. No credit card required.
-          </p>
+          </Text>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <a
               href="https://app.fuzefront.com/signup"
