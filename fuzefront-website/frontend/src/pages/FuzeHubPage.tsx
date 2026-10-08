@@ -202,32 +202,33 @@ export const FuzeHubPage: React.FC = () => {
 
       {/* CTA */}
       <section ref={ctaRef} className="py-20 bg-secondary-900 border-t border-secondary-800">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={ctaInView ? { opacity: 1, y: 0 } : {}}
-          transition={{ duration: 0.6 }}
-          className="max-w-2xl mx-auto px-4 text-center"
-        >
-          <CheckCircle2 size={40} className="text-primary-400 mx-auto mb-6" />
-          <h2 className="text-3xl font-heading font-bold text-white mb-4">
-            Ready for full operational visibility?
-          </h2>
-          <p className="text-secondary-400 mb-8">
-            FuzeHub is included in Growth and Enterprise plans. Start your 14-day trial.
-          </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a
-              href="https://app.fuzefront.com/signup"
-              className="btn-primary flex items-center justify-center gap-2"
-              onClick={() => trackEvent('cta_click', { button: 'fuzehub_final_cta', location: 'fuzehub_bottom' })}
-            >
-              Start free trial <ArrowRight size={16} />
-            </a>
-            <Link to="/pricing" className="btn-ghost">
-              Compare plans
-            </Link>
-          </div>
-        </motion.div>
+        <Container size="2xl" className="text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={ctaInView ? { opacity: 1, y: 0 } : {}}
+            transition={{ duration: 0.6 }}
+          >
+            <CheckCircle2 size={40} className="text-primary-400 mx-auto mb-6" />
+            <h2 className="text-3xl font-heading font-bold text-white mb-4">
+              Ready for full operational visibility?
+            </h2>
+            <p className="text-secondary-400 mb-8">
+              FuzeHub is included in Growth and Enterprise plans. Start your 14-day trial.
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <a
+                href="https://app.fuzefront.com/signup"
+                className="btn-primary flex items-center justify-center gap-2"
+                onClick={() => trackEvent('cta_click', { button: 'fuzehub_final_cta', location: 'fuzehub_bottom' })}
+              >
+                Start free trial <ArrowRight size={16} />
+              </a>
+              <Link to="/pricing" className="btn-ghost">
+                Compare plans
+              </Link>
+            </div>
+          </motion.div>
+        </Container>
       </section>
     </div>
   )

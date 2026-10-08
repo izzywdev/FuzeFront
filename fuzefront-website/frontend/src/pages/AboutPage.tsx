@@ -239,7 +239,7 @@ export const AboutPage: React.FC = () => {
 
       {/* CTA */}
       <section className="py-20 bg-white border-t border-secondary-100">
-        <div className="max-w-3xl mx-auto px-4 text-center">
+        <Container size="3xl" className="text-center">
           <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
             Want to build with us?
           </h2>
@@ -262,7 +262,7 @@ export const AboutPage: React.FC = () => {
               View open roles
             </Link>
           </div>
-        </div>
+        </Container>
       </section>
     </div>
   )
