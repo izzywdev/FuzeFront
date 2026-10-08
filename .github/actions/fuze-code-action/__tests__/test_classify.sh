@@ -63,6 +63,16 @@ expect 0 "success wins even with scary log text"               "success" "credit
 # ── availability: safe to fall through ───────────────────────────────────────
 expect 1 "empty conclusion = action-could-not-start"           ""
 expect 1 "credit exhaustion"        "failure" "Error: Your credit balance is too low to access the API"
+# Subscription-plan exhaustion. The first is the VERBATIM string from run 35848544508,
+# where it was classified exit 2 (task) and so stopped the cascade dead: codex and gemini
+# were never tried, and the caller announced "a real finding from the work itself, not a
+# provider problem" about an exhausted quota. Same class as the credit line above; the
+# subscription plans just phrase it as a session/usage limit with a reset time.
+expect 1 "weekly limit (observed)" "failure" "You've hit your weekly limit · resets Oct 10, 11pm (UTC)"
+expect 1 "weekly limit structured provider result" "failure" '{"type":"result","is_error":true,"result":"You have hit your weekly limit · resets Oct 10, 11pm (UTC)"}'
+expect 1 "session limit (observed)" "failure" "You've hit your session limit · resets 11:50am (UTC)"
+expect 1 "session limit reached"    "failure" "Error: session limit reached, try again later"
+expect 1 "usage limit reached"      "failure" "Claude AI usage limit reached"
 expect 1 "insufficient_quota"       "failure" '{"error":{"code":"insufficient_quota"}}'
 expect 1 "rate limit"               "failure" '{"type":"rate_limit_error","message":"..."}'
 expect 1 "overloaded"               "failure" '{"type":"overloaded_error"}'
@@ -73,6 +83,11 @@ expect 1 "HTTP 401"                 "failure" "HTTP 401"
 expect 1 "5xx status field"         "failure" '{"status": 503}'
 expect 1 "gateway timeout"          "failure" "504 Gateway Timeout"
 expect 1 "connection refused"       "failure" "connect ECONNREFUSED 10.0.0.1:4000"
+# Issue #298: the literal string the Claude Code SDK emits when the primed endpoint
+# (e.g. an in-cluster LiteLLM that passed readiness but refuses inference) is
+# unreachable. `ConnectionRefused` is NOT `ECONNREFUSED` and `Unable to connect` is
+# NOT `could not connect`, so before the fix this fell through to `declined`.
+expect 1 "SDK unable-to-connect ConnectionRefused" "failure" "API Error: Unable to connect to API (ConnectionRefused)"
 expect 1 "dns failure"              "failure" "getaddrinfo EAI_AGAIN litellm.fuzeinfra.svc"
 expect 1 "fetch failed"             "failure" "TypeError: fetch failed"
 expect 1 "case-insensitive match"   "failure" "SERVICE UNAVAILABLE"
@@ -96,6 +111,14 @@ expect 2 "test failure"             "failure" "2 failing
   1) auth middleware rejects an expired token"
 expect 2 "lint failure"             "failure" "eslint: 4 problems (4 errors, 0 warnings)"
 expect 2 "unrecognised failure mode is NOT retried" "failure" "something nobody has seen before"
+# The counterweight to the session/usage-limit entries: a genuine review finding ABOUT
+# rate-limiting code must still fail closed. This is the exact risk the pattern list is
+# kept narrow and vendor-literal to avoid — a finding discusses limits in prose, it does
+# not reproduce the vendor's own exhaustion string.
+expect 2 "a finding about limit-handling code is not an outage" "failure" \
+  "src/api.ts:88 — the retry loop ignores the session limit response and spins forever"
+expect 2 "a finding about weekly limit handling is not an outage" "failure" \
+  "src/api.ts:88 — the retry loop ignores the weekly limit response and spins forever"
 expect 2 "nonzero exit with a stack trace"  "failure" "Traceback (most recent call last):
   File \"x.py\", line 1"
 
@@ -136,6 +159,13 @@ expect_outcome 3 "workflow-guard skip message is a real decline"           "" "s
 # 403 "key not allowed to access model" from the re-scoped LiteLLM key produced.
 expect_outcome 1 "empty+success but log shows swallowed credit exhaustion = availability" "" "success" "Error: Your credit balance is too low to access the API"
 expect_outcome 1 "empty+success but log shows the model-access 403 = availability"        "" "success" '{"error":"authentication_failed","api_error_status":403,"result":"Failed to authenticate. API Error: 403 key not allowed to access model. Tried to access claude-opus-4-8"}'
+# Issue #298, the exact observed shape: an in-cluster LiteLLM passed readiness so the
+# rung ran and exited 0 with no conclusion, but its execution log carries the SDK's
+# ConnectionRefused string. It was misclassified as `declined` (exit 3), producing a
+# benign "no work" verdict instead of falling over. It must classify as availability.
+expect_outcome 1 "empty+success but log shows SDK ConnectionRefused = availability"       "" "success" "API Error: Unable to connect to API (ConnectionRefused)"
+
+expect_outcome 1 "swallowed weekly quota exhaustion remains availability" "" "success" "You've hit your weekly limit · resets Oct 10, 11pm (UTC)"
 
 # The new availability signatures are recognised on the ordinary failure path too.
 expect 1 "authentication_failed field"    "failure" '{"error":"authentication_failed"}'

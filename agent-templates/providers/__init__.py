@@ -12,7 +12,7 @@ import os
 
 from providers.base import AgentProvider  # re-export for adapters/type hints
 
-__all__ = ["get_provider", "AgentProvider", "PROVIDERS"]
+__all__ = ["PROVIDERS", "AgentProvider", "get_provider"]
 
 PROVIDERS = ("anthropic", "openai", "hermes")
 

@@ -34,7 +34,8 @@ def main():
     ids = {}
 
     for path in sorted(glob.glob(os.path.join(VAULT_DIR, "*.json"))):
-        tmpl = common.expand_env(json.load(open(path, encoding="utf-8")))
+        with open(path, encoding="utf-8") as fh:
+            tmpl = common.expand_env(json.load(fh))
         name = tmpl["display_name"]
         if name in existing_vaults:
             vid = existing_vaults[name]
