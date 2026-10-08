@@ -72,6 +72,11 @@ export const ENTITY_PREFIXES = {
   // FuzeFront-hosted-for-the-family reasoning as `cns_`/`ckd_` above — already
   // declared in the frozen contract's "Identifiers" section.
   configHistory: 'cvh',
+  // `event` — the envelope-v2 `eventId` (data-consistency standard §3). Bare
+  // spine prefix: the event envelope is a family-wide contract hosted here
+  // (shared/src/kafka/envelope.ts, contracts/events/). Checked unused before
+  // registration: no other prefix in either registry or SPINE_PREFIXES is `evt`.
+  event: 'evt',
 } as const
 
 export type EntityType = keyof typeof ENTITY_PREFIXES
