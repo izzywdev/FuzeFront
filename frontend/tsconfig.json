@@ -35,6 +35,7 @@
       "@fuzeone/selection-lists-ui": ["../packages/selection-lists-ui/dist/index.d.ts"],
       "@fuzefront/config-client": ["../config-client/src/index.ts"],
       "@fuzefront/config-ui": ["../packages/config-ui/src/index.ts"]
+      ,"@fuzefront/fuzepicker-ui": ["../packages/fuzepicker-ui/dist/index.d.ts"]
     }
   },
   "include": ["src"],

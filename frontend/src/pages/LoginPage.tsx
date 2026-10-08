@@ -101,6 +101,18 @@ function LoginPage() {
   )
   const { setUser } = useCurrentUser()
 
+  // A FuzePicker email opens its protected mentions route first. Preserve only
+  // that same-origin path across sign-in/sign-up so a new recipient lands on
+  // the mention they were sent, rather than being dropped on the dashboard.
+  // This is intentionally an allowlist rather than a generic redirect query:
+  // authentication must never become an open-redirect primitive.
+  useEffect(() => {
+    const current = `${window.location.pathname}${window.location.search}`
+    if (current.startsWith('/fuzepicker/mentions')) {
+      window.sessionStorage.setItem('fuzepicker:return-path', current)
+    }
+  }, [])
+
   // Page-load social-callback outcome (the OAuth provider redirecting back
   // with `?code=`/`?error=`) is a SEPARATE concern from AuthPanel's own
   // form-submit error/notice — AuthPanel has no prop to surface an
@@ -126,7 +138,11 @@ function LoginPage() {
     try {
       const user = await authAPI.getCurrentUser()
       setUser(user)
-      window.location.href = '/dashboard'
+      const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
+      window.sessionStorage.removeItem('fuzepicker:return-path')
+      window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
+        ? returnPath
+        : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       setCallbackError('Signed in, but failed to load your profile. Please retry.')

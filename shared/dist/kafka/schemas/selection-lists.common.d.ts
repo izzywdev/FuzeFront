@@ -137,10 +137,10 @@ export declare const slListSnapshotV1: z.ZodObject<{
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
+    key: string;
     name: string;
     status: "active" | "archived";
     listId: string;
-    key: string;
     sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     description: string | null;
     seed: {
@@ -152,10 +152,10 @@ export declare const slListSnapshotV1: z.ZodObject<{
     createdAt: string;
     updatedAt: string;
 }, {
+    key: string;
     name: string;
     status: "active" | "archived";
     listId: string;
-    key: string;
     sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     description: string | null;
     seed: {
@@ -411,8 +411,8 @@ export declare const slSeedListSpecV1: z.ZodObject<{
         }[] | undefined;
     }>, "many">;
 }, "strict", z.ZodTypeAny, {
-    name: string;
     key: string;
+    name: string;
     sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     items: {
         code: string;
@@ -431,8 +431,8 @@ export declare const slSeedListSpecV1: z.ZodObject<{
         description?: string | undefined;
     }[] | undefined;
 }, {
-    name: string;
     key: string;
+    name: string;
     sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     items: {
         code: string;
@@ -527,8 +527,8 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             }[] | undefined;
         }>, "many">;
     }, "strict", z.ZodTypeAny, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -547,8 +547,8 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             description?: string | undefined;
         }[] | undefined;
     }, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -570,8 +570,8 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
 }, "strict", z.ZodTypeAny, {
     packKey: string;
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -595,8 +595,8 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
 }, {
     packKey: string;
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -620,8 +620,8 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
 }>, {
     packKey: string;
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -645,8 +645,8 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
 }, {
     packKey: string;
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;

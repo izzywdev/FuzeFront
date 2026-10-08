@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SUPPORTED_TEMPLATES = ['welcome', 'org-invite', 'membership-change'] as const;
+export const SUPPORTED_TEMPLATES = ['welcome', 'org-invite', 'membership-change', 'fuzepicker-mention', 'fuzepicker-reply'] as const;
 
 export const notifyEmailRequestedSchemaV1 = z.object({
   to: z.string().email(),
