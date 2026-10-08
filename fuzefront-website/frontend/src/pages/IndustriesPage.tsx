@@ -249,7 +249,7 @@ export const IndustriesPage: React.FC = () => {
           <p className="text-gray-600 mb-8">
             Every business has unique requirements. Talk to our team — we'll help you map FuzeOne to your specific needs.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <Wrap gap={4} justify="center">
             <Link
               to="/contact"
               className="btn-primary flex items-center justify-center gap-2"
@@ -260,7 +260,7 @@ export const IndustriesPage: React.FC = () => {
             <Link to="/products" className="btn-secondary">
               Explore products
             </Link>
-          </div>
+          </Wrap>
         </div>
       </section>
     </div>

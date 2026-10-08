@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -377,7 +378,7 @@ export const ProductDetailPage: React.FC = () => {
           <p className="text-gray-600 mb-8">
             Try free for 14 days. No credit card required.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <Wrap gap={4} justify="center">
             <a
               href="https://app.fuzefront.com/signup"
               className="btn-primary flex items-center justify-center gap-2"
@@ -388,7 +389,7 @@ export const ProductDetailPage: React.FC = () => {
             <Link to="/pricing" className="btn-secondary">
               Compare plans
             </Link>
-          </div>
+          </Wrap>
         </div>
       </section>
     </div>
