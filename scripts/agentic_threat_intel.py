@@ -80,14 +80,29 @@ def fetch_github(source: dict, since: dt.datetime) -> list[dict]:
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    data = request_json(source["url"], {"per_page": "100", "sort": "updated", "direction": "desc"}, headers)
     records = []
-    for advisory in data:
-        changed = parse_date(advisory.get("updated_at") or advisory.get("published_at"))
-        haystack = f"{advisory.get('summary', '')} {advisory.get('description', '')}"
-        if changed >= since and RELEVANT.search(haystack):
-            records.append(record(source["id"], advisory.get("ghsa_id"), advisory.get("summary"),
-                                  advisory.get("published_at"), advisory.get("html_url")))
+    page = 1
+    while True:
+        advisories = request_json(
+            source["url"],
+            {"per_page": "100", "page": str(page), "sort": "updated", "direction": "desc"},
+            headers,
+        )
+        if not advisories:
+            break
+        reached_since = False
+        for advisory in advisories:
+            changed = parse_date(advisory.get("updated_at") or advisory.get("published_at"))
+            if changed < since:
+                reached_since = True
+                break
+            haystack = f"{advisory.get('summary', '')} {advisory.get('description', '')}"
+            if RELEVANT.search(haystack):
+                records.append(record(source["id"], advisory.get("ghsa_id"), advisory.get("summary"),
+                                      advisory.get("published_at"), advisory.get("html_url")))
+        if reached_since or len(advisories) < 100:
+            break
+        page += 1
     return records
 
 
@@ -165,6 +180,8 @@ def collect(output: Path, lookback_days: int) -> int:
     for source in sources:
         try:
             fresh.extend(item for item in FETCHERS[source["kind"]](source, since) if item["id"] not in seen)
+        except urllib.error.HTTPError as exc:
+            failures.append(f"{source['id']}: HTTP {exc.code}")
         except (OSError, ValueError, KeyError, ET.ParseError, urllib.error.URLError) as exc:
             failures.append(f"{source['id']}: {type(exc).__name__}")
     unique = {item["id"]: item for item in fresh if item["url"] and item["id"].split(":", 1)[-1]}
@@ -186,8 +203,11 @@ def collect(output: Path, lookback_days: int) -> int:
         discoveries["records"].extend(delta)
         discoveries["records"] = list({x["id"]: x for x in discoveries["records"]}.values())
         write("discoveries.json", discoveries)
+
+    if delta or not failures:
         state["seen_ids"] = sorted(seen | set(unique))
-        state["last_successful_run"] = now
+        if not failures:
+            state["last_successful_run"] = now
         write("state.json", state)
     print(f"Collected {len(delta)} new records; {len(failures)} feed warnings")
     return len(delta)

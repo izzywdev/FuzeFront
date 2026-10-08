@@ -63,7 +63,28 @@ jobs:
           path: ${{ env.REPORT_PATH }}
           retention-days: 90
 
+      - name: Open or update delta pull request
+        if: steps.collect.outputs.delta_count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DELTA_COUNT: ${{ steps.collect.outputs.delta_count }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B "$UPDATE_BRANCH"
+          git add security/agentic/state.json security/agentic/discoveries.json
+          git commit -m "security: ingest $DELTA_COUNT agentic threat-intel records"
+          git push --force-with-lease origin "$UPDATE_BRANCH"
+          if ! gh pr view "$UPDATE_BRANCH" --json number >/dev/null 2>&1; then
+            gh pr create \
+              --base '${{ github.event.repository.default_branch }}' \
+              --head "$UPDATE_BRANCH" \
+              --title 'security: update agentic threat-intelligence delta' \
+              --body 'Nightly metadata-only delta. Review each linked source and map actionable findings to the control register; remote content has not been executed or supplied to an agent.'
+          fi
+
       - name: Email report
+        continue-on-error: true
         env:
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           FROM_EMAIL: ${{ secrets.AGENTIC_REPORT_FROM_EMAIL }}
@@ -86,23 +107,3 @@ jobs:
             --header "Authorization: Bearer $SENDGRID_API_KEY" \
             --header 'Content-Type: application/json' \
             --data-binary @/tmp/mail.json
-
-      - name: Open or update delta pull request
-        if: steps.collect.outputs.delta_count != '0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DELTA_COUNT: ${{ steps.collect.outputs.delta_count }}
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git checkout -B "$UPDATE_BRANCH"
-          git add security/agentic/state.json security/agentic/discoveries.json
-          git commit -m "security: ingest $DELTA_COUNT agentic threat-intel records"
-          git push --force-with-lease origin "$UPDATE_BRANCH"
-          if ! gh pr view "$UPDATE_BRANCH" --json number >/dev/null 2>&1; then
-            gh pr create \
-              --base '${{ github.event.repository.default_branch }}' \
-              --head "$UPDATE_BRANCH" \
-              --title 'security: update agentic threat-intelligence delta' \
-              --body 'Nightly metadata-only delta. Review each linked source and map actionable findings to the control register; remote content has not been executed or supplied to an agent.'
-          fi
