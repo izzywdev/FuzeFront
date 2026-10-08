@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const shared_1 = require("@fuzefront/shared");
+const kafka_1 = require("@fuzefront/shared/kafka");
 const config_1 = require("./config");
 const providers_1 = require("./providers");
 const email_requested_handler_1 = require("./handlers/email-requested.handler");
@@ -10,16 +10,16 @@ async function main() {
     // --- Email provider ---
     const provider = (0, providers_1.createProvider)(config);
     // --- Kafka ---
-    const kafka = (0, shared_1.createKafkaClient)({
+    const kafka = (0, kafka_1.createKafkaClient)({
         clientId: config.kafka.clientId,
         brokers: config.kafka.brokers,
     });
-    const statusProducer = new shared_1.TypedProducer(kafka);
+    const statusProducer = new kafka_1.TypedProducer(kafka);
     await statusProducer.connect();
-    const consumer = new shared_1.TypedConsumer(kafka, config.kafka.groupId);
+    const consumer = new kafka_1.TypedConsumer(kafka, config.kafka.groupId);
     await consumer.connect();
-    await consumer.subscribe(shared_1.TOPICS.NOTIFY_EMAIL_REQUESTED);
-    await consumer.run((event) => (0, email_requested_handler_1.handleEmailRequested)(event, { provider, statusProducer, from: config.email.from }), shared_1.notifyEmailRequestedSchemaV1, statusProducer);
+    await consumer.subscribe(kafka_1.TOPICS.NOTIFY_EMAIL_REQUESTED);
+    await consumer.run((event) => (0, email_requested_handler_1.handleEmailRequested)(event, { provider, statusProducer, from: config.email.from }), kafka_1.notifyEmailRequestedSchemaV1, statusProducer);
     // --- HTTP ---
     const app = (0, app_1.createApp)();
     app.listen(config.port, () => {

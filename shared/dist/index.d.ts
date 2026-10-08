@@ -1,4 +1,4 @@
-export * from './types';
+export * from './types.js';
 export { AppProvider, useAppContext } from './context/AppContext';
 export { useCurrentUser } from './hooks/useCurrentUser';
 export { useSession } from './hooks/useSession';

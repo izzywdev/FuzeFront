@@ -1,5 +1,9 @@
-import { jsx as _jsx } from "react/jsx-runtime";
-import { createContext, useContext, useReducer } from 'react';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.AppProvider = AppProvider;
+exports.useAppContext = useAppContext;
+const jsx_runtime_1 = require("react/jsx-runtime");
+const react_1 = require("react");
 const initialState = {
     user: null,
     session: null,
@@ -59,13 +63,13 @@ function appReducer(state, action) {
             return state;
     }
 }
-const AppContext = createContext(null);
-export function AppProvider({ children }) {
-    const [state, dispatch] = useReducer(appReducer, initialState);
-    return (_jsx(AppContext.Provider, { value: { state, dispatch }, children: children }));
+const AppContext = (0, react_1.createContext)(null);
+function AppProvider({ children }) {
+    const [state, dispatch] = (0, react_1.useReducer)(appReducer, initialState);
+    return ((0, jsx_runtime_1.jsx)(AppContext.Provider, { value: { state, dispatch }, children: children }));
 }
-export function useAppContext() {
-    const context = useContext(AppContext);
+function useAppContext() {
+    const context = (0, react_1.useContext)(AppContext);
     if (!context) {
         throw new Error('useAppContext must be used within an AppProvider');
     }

@@ -126,6 +126,9 @@ const configClientSrc = fileURLToPath(
 const configUiSrc = fileURLToPath(
   new URL('../packages/config-ui/src/index.ts', import.meta.url)
 )
+const fuzepickerUiSrc = fileURLToPath(
+  new URL('../packages/fuzepicker-ui/src/index.ts', import.meta.url)
+)
 // Workspace packages resolved from SOURCE (via alias) live outside the frontend/
 // directory tree. Rollup walks UP from each file to find node_modules, so it never
 // reaches frontend/node_modules for those files. This resolver fills the gap: it
@@ -170,6 +173,7 @@ export default defineConfig({
       '@fuzefront/telemetry/browser': telemetryBrowserSrc,
       '@fuzefront/config-client': configClientSrc,
       '@fuzefront/config-ui': configUiSrc,
+      '@fuzefront/fuzepicker-ui': fuzepickerUiSrc,
       // Subpath imports (e.g. styles.css, tokens/*) must map to the design-system
       // DIRECTORY and precede the exact alias, else `@fuzefront/design-system/styles.css`
       // resolves under the index.js FILE → ENOTDIR. main.tsx imports the stylesheet.

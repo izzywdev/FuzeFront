@@ -25,6 +25,7 @@ import { aiBuilderProviders } from './connector-providers/ai-builders'
 import { deployBuilderProviders } from './connector-providers/deploy-builders'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
+import fuzepickerRoutes from './routes/fuzepicker'
 import usersRoutes from './routes/users'
 import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
@@ -336,6 +337,7 @@ app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
 // FF-EPIC-11-S3 — public token-based invitation resolve/accept (routes/invitations.ts).
 app.use('/api/invitations', invitationsRoutes)
+app.use('/api/fuzepicker', fuzepickerRoutes)
 app.use('/api/users', usersRoutes)
 // Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
 // session so the `developers` segment cannot be self-assigned by a client.

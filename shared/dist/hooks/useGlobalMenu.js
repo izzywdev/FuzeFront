@@ -1,6 +1,9 @@
-import { useAppContext } from '../context/AppContext';
-export function useGlobalMenu() {
-    const { state, dispatch } = useAppContext();
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.useGlobalMenu = useGlobalMenu;
+const AppContext_1 = require("../context/AppContext");
+function useGlobalMenu() {
+    const { state, dispatch } = (0, AppContext_1.useAppContext)();
     const portalMenuItems = state.menuItems
         .filter(item => item.category === 'portal' || !item.category)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
