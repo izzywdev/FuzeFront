@@ -177,6 +177,7 @@ components:
   schemas:
     CreateMention:
       type: object
+      additionalProperties: false
       required: [recipientEmail, message, pageUrl, componentXPath]
       properties:
         recipientEmail: { type: string, format: email, maxLength: 320 }
@@ -185,6 +186,7 @@ components:
         componentXPath: { type: string, minLength: 1, maxLength: 8000 }
     CreateReply:
       type: object
+      additionalProperties: false
       required: [message]
       properties:
         message: { type: string, minLength: 1, maxLength: 4000 }
