@@ -755,6 +755,7 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionStatus, setExecutionStatus] = useState<TestExecution['status'] | ''>('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
+  const invalidExecutionRange = Boolean(executionFrom && executionUntil && Date.parse(executionFrom) > Date.parse(executionUntil))
   const [policyGateKind, setPolicyGateKind] = useState<PolicyGateEvaluation['kind'] | ''>('')
   const [policyGateSeverity, setPolicyGateSeverity] = useState<PolicyGateEvaluation['severity'] | ''>('')
   const [policyGateReviewStatus, setPolicyGateReviewStatus] = useState<PolicyGateEvaluation['reviewStatus'] | ''>('')
@@ -779,12 +780,18 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     return Object.fromEntries(Object.entries({ kind: executionKind, status: executionStatus, from: iso(executionFrom), until: iso(executionUntil) }).filter(([, value]) => Boolean(value))) as Record<string, string>
   }, [executionKind, executionStatus, executionFrom, executionUntil])
   useEffect(() => {
+    if (invalidExecutionRange) {
+      setExecutions([])
+      setExecutionPerformance([])
+      setLoadingArtifacts(false)
+      return
+    }
     let active = true
     void Promise.all(data.repositories.map(async repository => ({ artifacts: await api.qualityArtifacts(repository.id), flows: await api.repositoryFlowCandidates(repository.id), evaluations: await api.policyGateEvaluations(repository.id), executions: executionRepositoryId && executionRepositoryId !== repository.id ? [] : await api.testExecutions(repository.id, executionFilter), performance: executionRepositoryId && executionRepositoryId !== repository.id ? [] : await api.executionPerformance(repository.id, executionFilter) }))).then(groups => {
       if (active) { setArtifacts(groups.flatMap(group => group.artifacts)); setFlowCandidates(groups.flatMap(group => group.flows)); setPolicyGateEvaluations(groups.flatMap(group => group.evaluations)); setExecutions(groups.flatMap(group => group.executions)); setExecutionPerformance(groups.flatMap(group => group.performance)) }
     }).catch(() => { if (active) { setArtifacts([]); setFlowCandidates([]); setPolicyGateEvaluations([]); setExecutions([]); setExecutionPerformance([]) } }).finally(() => { if (active) setLoadingArtifacts(false) })
     return () => { active = false }
-  }, [data.repositories, executionFilter, executionRepositoryId])
+  }, [data.repositories, executionFilter, executionRepositoryId, invalidExecutionRange])
   const outcomeTrend = useMemo(() => executionOutcomeTrend(executions), [executions])
   const filteredPolicyGateEvaluations = useMemo(() => policyGateEvaluations.filter(evaluation =>
     (!policyGateKind || evaluation.kind === policyGateKind) &&
