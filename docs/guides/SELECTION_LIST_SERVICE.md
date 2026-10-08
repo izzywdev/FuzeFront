@@ -6,10 +6,20 @@ How a consuming application stores, renders, and manages reference data
 `@fuzeone/selection-list-client`.
 
 The service contract lives at
-`services/selection-list-service/openapi.yaml` (**v4.0.0**). This guide is a
+`services/selection-list-service/openapi.yaml` (**v4.1.0**). This guide is a
 companion, not a replacement — the spec is the source of truth for any
-discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.0.0** and
-`fuzefront-selection-list-client` (Python) **2.0.0**. Kafka events and app
+discrepancy. Matching clients: `@fuzeone/selection-list-client` **2.1.0** and
+`fuzefront-selection-list-client` (Python) **2.1.0**.
+
+> **4.1.0 is a frozen contract ahead of its implementation.** Shared lists
+> (`visibility`), common (`platform`) lists and copy-on-write forks are specified
+> in the spec, the clients and the event schemas, but **the service does not
+> implement them yet** (the implementation wave follows the contract PR; plan:
+> [`docs/planning/selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md)).
+> Until it lands the service still returns 4.0.0 shapes and the new route
+> answers `404`. Everything in
+> [Shared lists, common lists and forks](#shared-lists-common-lists-and-forks-410)
+> below describes the contract, not running code. Kafka events and app
 seeding are covered in [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md);
 how seeding is enabled safely is in
 [`docs/runbooks/selection-lists-seeding-operations.md`](../runbooks/selection-lists-seeding-operations.md).
@@ -27,6 +37,7 @@ how seeding is enabled safely is in
 7. [Pagination](#pagination)
 8. [Translations](#translations)
 9. [Access control](#access-control)
+   - [Shared lists, common lists and forks (4.1.0)](#shared-lists-common-lists-and-forks-410)
 10. [Authorship and seed provenance](#authorship-and-seed-provenance)
 11. [Events and the outbox](#events-and-the-outbox)
 12. [Quota](#quota)
@@ -139,10 +150,10 @@ cd selection-list-client
 npm install
 npm run build
 npm pack
-# → fuzeone-selection-list-client-2.0.0.tgz
+# → fuzeone-selection-list-client-2.1.0.tgz
 
 # In your consuming package
-npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-2.0.0.tgz
+npm install /path/to/fuzefront/selection-list-client/fuzeone-selection-list-client-2.1.0.tgz
 ```
 
 **Python client** is in `packages/selection-list-client-py/` and follows the
@@ -187,8 +198,8 @@ const client = new SelectionListClient({
 ```
 
 The in-cluster Service port is `selectionListService.port` in the Helm values (**3008**).
-The process default (`PORT` unset) is **3008** too, so a local run, the image and the chart all agree. Only the
-OpenAPI `servers` example still names `3011` (frozen contract; see the SL8 notes in the runbook).
+The process default (`PORT` unset) is **3008** too, so a local run, the image, the chart and (since
+contract 4.1.0) the OpenAPI `servers` example all agree.
 
 ---
 
@@ -435,17 +446,18 @@ answer different questions — they must not be confused (spec 3.0.0+, review H-
 "May this caller work with selection lists in this org at all?" Keyless (the tenant is the
 caller's organization), granted through **tenant roles**:
 
-| tenant role | `list` | `create` | `read_quota` | `resolve` |
-|---|:---:|:---:|:---:|:---:|
-| `admin` | ✓ | ✓ | ✓ | ✓ |
-| `editor` | ✓ | ✓ | | ✓ |
-| `viewer` | ✓ | | | ✓ |
-| `developer` | | | | |
+| tenant role | `list` | `create` | `read_quota` | `resolve` | `read_shared` (4.1.0) | `publish_platform` (4.1.0) |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| `admin` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (effective only in the platform org) |
+| `editor` | ✓ | ✓ | | ✓ | ✓ | |
+| `viewer` | ✓ | | | ✓ | ✓ | |
+| `developer` | | | | | | |
 
 | Operation | Checked against | Action |
 |---|---|---|
 | `GET /v1/selection-lists` | `SelectionListCatalog` | `list` |
-| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` |
+| `POST /v1/selection-lists` | `SelectionListCatalog` | `create` (+ `publish_platform` for `visibility: platform`) |
+| `POST /v1/selection-lists/{listId}/fork` (4.1.0) | `SelectionListCatalog` | `create` (+ read on the source) |
 | `GET /v1/selection-lists/quota` | `SelectionListCatalog` | `read_quota` |
 | `POST /v1/resolve` | `SelectionListCatalog` | `resolve` |
 
@@ -531,9 +543,10 @@ await client.revokeAccess(list.id, userId)
 ### Seeded lists and who can see them
 
 Lists created by **seeding** (platform defaults such as `yes-no`, or an app's
-`seed.requested` pack) are written by the system principal and **no `list-owner` (or any other)
-grant is created for them**. Because every per-list action is instance-only, the consequence on
-today's code is:
+`seed.requested` pack) are written by the system principal. Since SL8 the org's **owner** is
+granted `list-owner` on the **platform**-seeded lists (`src/seed/ownerGrants.ts`); app-seeded lists
+get no grant at all, and **no other member gets one either**. Because every per-list action is
+instance-only, the consequence on today's code for everyone but that owner is:
 
 - members — including tenant admins — **do not see seeded lists** in `GET /v1/selection-lists`
   and get `404` on `GET /v1/selection-lists/{listId}` until a role is granted on that list;
@@ -545,9 +558,69 @@ today's code is:
 - `POST /v1/resolve` still resolves seeded item ids for any caller holding the catalog `resolve`
   action, because it does not check per-list read.
 
-This is a **known gap and an open design question** (grant an owner at seed time? derive admin
-ownership? — owner decision), recorded in the seeding runbook. It is why seeding should not be
-switched on for an org that expects its members to use the seeded lists immediately.
+This is a **known gap** on today's code, recorded in the seeding runbook. It is why seeding should
+not be switched on for an org that expects its members to use the seeded lists immediately. The
+**owner decision** is made and specified in contract 4.1.0 (not implemented yet): seeded lists get
+a `visibility` — `org` makes them readable by every member without any grant, and the platform
+defaults become one `platform` common list for every org — see the next section.
+
+### Shared lists, common lists and forks (4.1.0)
+
+*Contract only — see the status note at the top. Design record:
+[`selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md).*
+
+The requirement: a member who signs up must be able to **pick** from the app's common lists in
+every dropdown without owning them and without being able to change them; an organization that
+wants different values **forks** (copy-on-write).
+
+**`visibility`** (on every list; `SelectionList.visibility`) decides who may *read* a list
+without an instance grant. It never confers a change.
+
+| `visibility` | Readable without a grant by | Who sets it |
+|---|---|---|
+| `private` (default; every list that exists today) | nobody — instance roles only | default |
+| `org` | every member of the owning org (`read_shared`) | the list owner (`manage_access`) |
+| `platform` | every member of **every** org (`read_shared`) — a **common list**, owned by the platform organization | a platform operator (`publish_platform`, acting in the platform org); **one-way** |
+
+```ts
+// The picker's key lookup: own org's readable list (e.g. its fork) first, else the common list.
+const list = await client.getEffectiveList('priority')   // GET ?key=priority&include_shared=true
+if (list && !list.editable) {
+  // read-only for this caller; for list.visibility === 'platform' offer "fork to edit"
+}
+
+// Everything readable — granted lists plus org/common lists (default is the 4.0.0 set).
+const page = await client.getLists({ include_shared: true })
+```
+
+**Forking.** Changing a common list you hold no role on answers `409 CONFLICT` with
+`reason: "fork_required"`, `source_list_id` and a same-origin-relative `fork_url` (or a plain
+`403` if you may not create lists). Fork, then edit the fork:
+
+```ts
+try {
+  await client.updateItem(common.id, itemId, { label: 'Urgent' })
+} catch (e) {
+  if (isSelectionListApiError(e) && e.isForkRequired) {
+    const { list: fork, created } = await client.forkList(e.sourceListId!) // 201 new / 200 existing
+    // fork.key === common.key, fork.forked_from.list_id === common.id, caller is list-owner;
+    // items are copies with NEW ids; item.origin_item_id names the common item each came from.
+  } else throw e
+}
+```
+
+- The fork keeps the **same `key`**, so it shadows the common list for the forking org
+  (`getEffectiveList` returns the fork); **archiving the fork reverts** to the common list.
+- `visibility` of a fork is `org` (default — the org's version for every member) or `private` (a
+  draft only grant-holders see; it shadows nothing for anyone else).
+- At most one fork per (org, source); forking again returns the existing one (`200`), or
+  `409 reason: fork_exists` if you cannot read it. Forking a list of your own org is
+  `409 reason: fork_not_applicable`.
+- **Stored values keep working.** Ids you stored against the common list keep resolving; inside
+  an org with an `org`-visible fork, `POST /v1/resolve` answers from the fork item (matched by
+  `origin_item_id`) and names it in `effective_item_id`, so you can rewrite stored values lazily.
+- Events: `selection-lists.list.forked` (with the full source→fork item id map) and
+  `selection-lists.visibility.changed` — see [`SELECTION_LIST_EVENTS.md`](SELECTION_LIST_EVENTS.md).
 
 ---
 

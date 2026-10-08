@@ -1,6 +1,6 @@
 {
   "name": "@fuzeone/selection-list-client",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Typed HTTP client for the FuzeFront selection-list-service REST API, plus seed-request builders for its Kafka contract",
   "main": "dist/index.cjs",
   "module": "dist/index.js",

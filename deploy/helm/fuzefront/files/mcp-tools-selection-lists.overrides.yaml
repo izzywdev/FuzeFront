@@ -1,21 +1,53 @@
+# =============================================================================
+# FuzeFront — MCP tool mutation overrides for the selection-list-service surface.
+#
+# Consumed by @fuzefront/mcp-gateway. The gateway derives `mutates` from the
+# HTTP method (GET/HEAD/OPTIONS = read, everything else = write; DELETE is
+# assumed irreversible) and only needs this file where the method alone gets it
+# WRONG, or where the reason is worth pinning so a future contract change has to
+# argue with it.
+#
+# Tool names are the operationId from services/selection-list-service/openapi.yaml
+# — use the exact operationId string or the entry is silently ignored.
+#
+# NOTHING HERE CHANGES A DERIVED CLASSIFICATION. Every entry restates the value
+# the gateway would have derived anyway, and adds the contract citation that
+# justifies it. That is the intended use of this file for an API whose methods
+# already tell the truth — it documents the reasoning without moving a tool
+# between the read and write halves of the surface.
+# =============================================================================
+
 tools:
-  # DELETE /v1/selection-lists/{listId} — archives (is_active=false), not a hard
-  # purge. The TypedConsumer classifies DELETE as irreversible by default; override
-  # to reversible because the data is retained and a restore operation exists.
-  archiveList:
+  # --- ARCHIVE VERBS (explicit POST /archive paths) --------------------------
+
+  # POST /v1/selection-lists/{listId}/archive — the explicit "archive without
+  # risk of purge" verb. POST defaults to reversible; restated here because the
+  # sibling DELETE for the same resource CAN purge (irreversible) and the
+  # distinction is load-bearing.
+  archiveSelectionList:
     mutates: true
     reversibility: reversible
-    reason: "Archives the list (sets is_active=false); data is retained and the list can be restored."
+    reason: >-
+      Sets status=archived; PATCH { "status": "active" } restores it. Data is
+      retained. The sibling DELETE supports purge=true which is irreversible —
+      this endpoint does not.
 
-  # DELETE /v1/selection-lists/{listId}/items/{itemCode} — same archive semantics.
-  archiveItem:
+  # POST /v1/selection-lists/{listId}/items/{itemId}/archive — same semantics.
+  archiveSelectionListItem:
     mutates: true
     reversibility: reversible
-    reason: "Archives the item; data is retained and the item can be restored."
+    reason: >-
+      Sets item status=archived; data is retained. The sibling DELETE supports
+      purge=true which is irreversible — this endpoint does not.
 
-  # DELETE /v1/selection-lists/{listId}/access/{grantId} — revokes an access
-  # grant. This IS irreversible (a new grant must be created separately).
-  revokeAccess:
+  # --- IRREVERSIBLE REVOKE ---------------------------------------------------
+
+  # DELETE /v1/selection-lists/{listId}/access/{grantId} — permanently removes
+  # the access grant. A new grant must be created separately to restore access;
+  # there is no unrevoke endpoint.
+  revokeSelectionListAccess:
     mutates: true
     reversibility: irreversible
-    reason: "Permanently revokes the access grant; a new grant must be issued to restore access."
+    reason: >-
+      Permanently revokes the access grant. No unrevoke operation exists; a new
+      grant must be issued to restore access.

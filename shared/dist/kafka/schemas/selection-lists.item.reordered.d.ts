@@ -7,6 +7,7 @@ import { z } from 'zod';
 export declare const selectionListsItemReorderedSchemaV1: z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
+    listRevision: z.ZodNumber;
     eventId: z.ZodString;
     actor: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"user">;
@@ -31,7 +32,6 @@ export declare const selectionListsItemReorderedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     }>]>;
     listKey: z.ZodString;
-    listRevision: z.ZodNumber;
     order: z.ZodArray<z.ZodObject<{
         itemId: z.ZodString;
         code: z.ZodString;
@@ -48,6 +48,7 @@ export declare const selectionListsItemReorderedSchemaV1: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -58,7 +59,6 @@ export declare const selectionListsItemReorderedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     order: {
         code: string;
         itemId: string;
@@ -67,6 +67,7 @@ export declare const selectionListsItemReorderedSchemaV1: z.ZodObject<{
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -77,7 +78,6 @@ export declare const selectionListsItemReorderedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
     order: {
         code: string;
         itemId: string;

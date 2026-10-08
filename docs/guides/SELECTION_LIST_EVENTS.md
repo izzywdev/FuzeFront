@@ -41,6 +41,8 @@ one organization's messages stay on one partition and in order. Dead letters go 
 | `selection-lists.item.created` / `.updated` / `.archived` / `.deleted` / `.reordered` | selection-list-service | keep item labels / order in sync, denormalise labels |
 | `selection-lists.translation.upserted` / `.deleted` | selection-list-service | keep non-source-locale labels in sync |
 | `selection-lists.access.granted` / `.revoked` | selection-list-service | show who can edit a list (never authorize from it) |
+| `selection-lists.list.forked` *(1.3.0)* | selection-list-service | learn that an org copied a common list, and map stored item ids to the fork's |
+| `selection-lists.visibility.changed` *(1.3.0)* | selection-list-service | track who can *pick* from a list (`private` / `org` / `platform`) |
 | `selection-lists.seed.requested` | **you** (allowlisted) | ask for your app's lists to be seeded into an org |
 | `selection-lists.seed.completed` / `.failed` | selection-list-service | learn the outcome of your seed request |
 
@@ -57,6 +59,14 @@ import {
 
 Example payloads for every topic:
 `shared/tests/fixtures/selection-lists/published-examples.json` (validated in CI).
+
+> **`@fuzefront/shared` 1.3.0 (HTTP contract 4.1.0) — contract only, not emitted yet.** The two
+> topics marked *(1.3.0)*, the additive snapshot fields `list.visibility` / `list.forkedFrom` /
+> `item.originItemId`, and the seed-list `visibility` field are frozen in the schemas but **the
+> service does not produce or honour them yet** (implementation wave:
+> [`selection-lists-shared-and-fork.md`](../planning/selection-lists-shared-and-fork.md)). Until
+> then a seed list's `visibility` is accepted by the schema and **ignored** (the list is seeded
+> `private`), so do not rely on it before the service release notes say otherwise.
 
 ---
 
@@ -260,6 +270,10 @@ field, including an `id`, is a validation failure):
   someone with authority grants a role on a seeded list, members cannot see it through the HTTP
   API (see [`SELECTION_LIST_SERVICE.md`](SELECTION_LIST_SERVICE.md#seeded-lists-and-who-can-see-them)).
   Your app can still `resolve` item ids and can read the change events.
+  *(1.3.0, not honoured yet — see the status note above)* a seed list may declare
+  `visibility: "org"`, which makes it pickable by every member of the org with no grant — the
+  intended setting for app reference data. `"platform"` is refused for app requests (only the
+  service's own platform pack may create a common list).
 - **Quotas apply.** Seeded lists count toward the org's list quota (default 100 active lists) and
   the per-list item quota (default 500); a per-org override wins. The per-user list cap does not
   apply to seeding. Archived lists do not count.
@@ -345,7 +359,7 @@ second case it is operational — see the runbook's monitoring section.
   `services/selection-list-service/src`.)
 - **No deactivation tracking.** The service consumes `identity.org.created` and `.deleted` but
   not `identity.org.updated`, so an org deactivated after creation still looks active to it.
-- **Seeded lists have no owner** — see above; visibility through the HTTP API needs a grant.
+- **Seeded lists are invisible to ordinary members** — only the org owner gets `list-owner`, and only on platform-seeded lists (SL8); everyone else needs a grant (fix specified in contract 4.1.0: seed-list `visibility: org`).
 - **User-scoped seeding does not exist.**
 - Other topics' retention/partitions in production depend on how the topics were created (the
   runbook explains why this matters for `seed.requested`).
@@ -402,6 +416,20 @@ Things that catch people out:
   an unreviewed machine translation.
 - `access.*` is informational. Authorization stays with the Security API / Permit.
 - Seeded content produces the same events as human edits, with the system `actor` above.
+- *(1.3.0)* Snapshots carry `visibility` (`private` / `org` / `platform`) and `forkedFrom`
+  (`{ listId, organizationId, listRevision, forkedAt }` or `null`); item snapshots carry
+  `originItemId`. All three are **optional** in the schema: events produced before 1.3.0 lack
+  them, which means `private` / not a fork.
+- *(1.3.0)* A **common (`platform`) list** belongs to the platform organization, so its events
+  are keyed by the platform org's id — subscribe without an org filter if you mirror common lists.
+- *(1.3.0)* A **fork** emits, in one transaction, the ordinary `list.created`, `item.created`
+  (one per copied item) and `translation.upserted` events for the copy, `access.granted` for the
+  owner, and `list.forked`, whose `itemMap[]` (`{ originItemId, itemId }`, ≤ 5000, archived items
+  included) is the mapping for migrating values you stored against the common list. A consumer
+  that ignores forks still builds a correct read model from the ordinary events.
+- *(1.3.0)* `visibility.changed` carries `previousVisibility` and `visibility`; `platform` is
+  one-way, so `previousVisibility` is never `platform`. A PATCH that changes visibility and other
+  fields emits `list.updated` **and** `visibility.changed`.
 
 ### Minimal consumer
 

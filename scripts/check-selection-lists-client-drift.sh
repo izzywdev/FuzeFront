@@ -64,6 +64,7 @@ MAPPING=(
   "updateSelectionList=updateList"
   "deleteSelectionList=deleteList"
   "archiveSelectionList=archiveList"
+  "forkSelectionList=forkList"
 
   # Items
   "listSelectionListItems=getItems"

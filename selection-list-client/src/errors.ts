@@ -3,6 +3,7 @@ import type {
   SelectionListErrorBody,
   SelectionListErrorCode,
   SelectionListErrorDetail,
+  SelectionListId,
 } from './types'
 
 /**
@@ -37,6 +38,12 @@ export class SelectionListApiError extends Error {
   readonly current: number | undefined
   /** Field-level problems. Present only on `VALIDATION_ERROR`. */
   readonly details: SelectionListErrorDetail[] | undefined
+  /** Refinement of a `CONFLICT` (4.1.0), e.g. `fork_required`. */
+  readonly reason: string | undefined
+  /** With `fork_required`: same-origin-relative path of the fork operation. */
+  readonly forkUrl: string | undefined
+  /** With `fork_required`: the common list the caller tried to change. */
+  readonly sourceListId: SelectionListId | undefined
   /** The raw parsed body, for anything this class does not model. */
   readonly body: SelectionListErrorBody | undefined
 
@@ -53,6 +60,9 @@ export class SelectionListApiError extends Error {
     this.limit = body?.limit
     this.current = body?.current
     this.details = body?.details
+    this.reason = body?.reason
+    this.forkUrl = body?.fork_url
+    this.sourceListId = body?.source_list_id
     this.body = body
     // Restores the prototype chain when the package is consumed from a
     // down-levelled (ES5) build, where `instanceof` otherwise silently fails.
@@ -76,6 +86,15 @@ export class SelectionListApiError extends Error {
   /** True for a duplicate `key`/`code`, or a last-owner removal. */
   get isConflict(): boolean {
     return this.code === 'CONFLICT'
+  }
+
+  /**
+   * True when the caller tried to change a common (`platform`) list it holds no
+   * role on and may fork it (4.1.0): call `forkList(e.sourceListId)` and edit
+   * the fork instead.
+   */
+  get isForkRequired(): boolean {
+    return this.code === 'CONFLICT' && this.reason === 'fork_required'
   }
 }
 

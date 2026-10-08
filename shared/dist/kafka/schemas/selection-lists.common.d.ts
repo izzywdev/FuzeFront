@@ -47,6 +47,15 @@ export declare const SELECTION_LIST_LIMITS: {
 export declare const SELECTION_LIST_LOCALES: readonly ["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"];
 /** ReBAC roles on one list instance. Roles do not stack. */
 export declare const SELECTION_LIST_ROLES: readonly ["list-owner", "list-editor", "list-contributor", "list-translator", "list-viewer"];
+/**
+ * List visibility (HTTP contract 4.1.0, `SelectionListVisibility`): who may READ a
+ * list without an instance grant. `private` (default) — instance-role holders only;
+ * `org` — every member of the owning org; `platform` — a common list owned by the
+ * platform organization, readable by every org. Never confers a mutation.
+ */
+export declare const SELECTION_LIST_VISIBILITIES: readonly ["private", "org", "platform"];
+/** Upper bound of one fork's source→fork item map (mirrors the HTTP reorder/autofill item cap). */
+export declare const SELECTION_LIST_MAX_FORK_ITEMS = 5000;
 /** Reserved seed source for the service's own platform default packs. Never allowlistable. */
 export declare const PLATFORM_SEED_SOURCE = "platform";
 /** The system principal that performs seeding and lifecycle cascades. */
@@ -62,6 +71,7 @@ export declare const slSlugV1: z.ZodString;
 export declare const slLocaleV1: z.ZodEnum<["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"]>;
 export declare const slRoleV1: z.ZodEnum<["list-owner", "list-editor", "list-contributor", "list-translator", "list-viewer"]>;
 export declare const slLifecycleStatusV1: z.ZodEnum<["active", "archived"]>;
+export declare const slVisibilityV1: z.ZodEnum<["private", "org", "platform"]>;
 export declare const slNameV1: z.ZodString;
 export declare const slDescriptionV1: z.ZodString;
 /** Monotonic per-list revision; bumps on every change to the list or anything inside it. */
@@ -109,6 +119,28 @@ export declare const slSeedProvenanceV1: z.ZodObject<{
     userModified: boolean;
 }>;
 export type SelectionListSeedProvenanceV1 = z.infer<typeof slSeedProvenanceV1>;
+/**
+ * Where a forked list was copied from (HTTP `SelectionListForkProvenance`, 4.1.0).
+ * Records the moment of copying; never updated. The source may since be purged.
+ */
+export declare const slForkProvenanceV1: z.ZodObject<{
+    listId: z.ZodString;
+    organizationId: z.ZodString;
+    /** The source's `listRevision` when copied. */
+    listRevision: z.ZodNumber;
+    forkedAt: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    organizationId: string;
+    listId: string;
+    listRevision: number;
+    forkedAt: string;
+}, {
+    organizationId: string;
+    listId: string;
+    listRevision: number;
+    forkedAt: string;
+}>;
+export type SelectionListForkProvenanceV1 = z.infer<typeof slForkProvenanceV1>;
 /** A list as of the event. `name`/`description` are in `sourceLocale`. */
 export declare const slListSnapshotV1: z.ZodObject<{
     listId: z.ZodString;
@@ -134,6 +166,29 @@ export declare const slListSnapshotV1: z.ZodObject<{
         packVersion: number;
         userModified: boolean;
     }>>;
+    /**
+     * Additive (shared 1.3.0 / HTTP 4.1.0). Always set by a 4.1.0 producer; absent
+     * from events produced before it, which means `private`.
+     */
+    visibility: z.ZodOptional<z.ZodEnum<["private", "org", "platform"]>>;
+    /** Additive (1.3.0). Fork provenance; null (or absent, pre-1.3.0) when not a fork. */
+    forkedFrom: z.ZodOptional<z.ZodNullable<z.ZodObject<{
+        listId: z.ZodString;
+        organizationId: z.ZodString;
+        /** The source's `listRevision` when copied. */
+        listRevision: z.ZodNumber;
+        forkedAt: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        forkedAt: string;
+    }, {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        forkedAt: string;
+    }>>>;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
@@ -151,6 +206,13 @@ export declare const slListSnapshotV1: z.ZodObject<{
     } | null;
     createdAt: string;
     updatedAt: string;
+    visibility?: "platform" | "private" | "org" | undefined;
+    forkedFrom?: {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        forkedAt: string;
+    } | null | undefined;
 }, {
     key: string;
     name: string;
@@ -166,6 +228,13 @@ export declare const slListSnapshotV1: z.ZodObject<{
     } | null;
     createdAt: string;
     updatedAt: string;
+    visibility?: "platform" | "private" | "org" | undefined;
+    forkedFrom?: {
+        organizationId: string;
+        listId: string;
+        listRevision: number;
+        forkedAt: string;
+    } | null | undefined;
 }>;
 export type SelectionListSnapshotV1 = z.infer<typeof slListSnapshotV1>;
 /** An item as of the event. `label`/`description` are in the list's `sourceLocale`. */
@@ -193,6 +262,8 @@ export declare const slItemSnapshotV1: z.ZodObject<{
         packVersion: number;
         userModified: boolean;
     }>>;
+    /** Additive (1.3.0). On a forked item, the source item it was copied from; null/absent otherwise. */
+    originItemId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
@@ -210,6 +281,7 @@ export declare const slItemSnapshotV1: z.ZodObject<{
     itemId: string;
     label: string;
     sortOrder: number;
+    originItemId?: string | null | undefined;
 }, {
     status: "active" | "archived";
     code: string;
@@ -225,6 +297,7 @@ export declare const slItemSnapshotV1: z.ZodObject<{
     itemId: string;
     label: string;
     sortOrder: number;
+    originItemId?: string | null | undefined;
 }>;
 export type SelectionListItemSnapshotV1 = z.infer<typeof slItemSnapshotV1>;
 /** Fields every published list-scoped event carries. */
@@ -259,6 +332,7 @@ export declare const slListEventBaseV1: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -269,10 +343,10 @@ export declare const slListEventBaseV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -283,7 +357,6 @@ export declare const slListEventBaseV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
 }>;
 export declare const slSeedListTranslationV1: z.ZodObject<{
     locale: z.ZodEnum<["en", "es", "fr", "de", "pt", "ru", "zh", "ja", "hi", "ar", "he"]>;
@@ -410,6 +483,15 @@ export declare const slSeedListSpecV1: z.ZodObject<{
             description?: string | undefined;
         }[] | undefined;
     }>, "many">;
+    /**
+     * Additive (1.3.0, HTTP 4.1.0). Visibility of the seeded list; absent =
+     * `private` (the pre-1.3.0 behaviour). `org` makes the seeded list readable
+     * (pickable) by every member of the target org without a grant — the
+     * recommended value for app reference data. `platform` is only valid in a
+     * platform seed pack (one common instance, seeded into the platform
+     * organization, not per org); `seed.requested` refuses it.
+     */
+    visibility: z.ZodOptional<z.ZodEnum<["private", "org", "platform"]>>;
 }, "strict", z.ZodTypeAny, {
     key: string;
     name: string;
@@ -430,6 +512,7 @@ export declare const slSeedListSpecV1: z.ZodObject<{
         locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description?: string | undefined;
     }[] | undefined;
+    visibility?: "platform" | "private" | "org" | undefined;
 }, {
     key: string;
     name: string;
@@ -450,6 +533,7 @@ export declare const slSeedListSpecV1: z.ZodObject<{
         locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description?: string | undefined;
     }[] | undefined;
+    visibility?: "platform" | "private" | "org" | undefined;
 }>;
 export type SelectionListSeedListSpecV1 = z.infer<typeof slSeedListSpecV1>;
 /**
@@ -526,6 +610,15 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
                 description?: string | undefined;
             }[] | undefined;
         }>, "many">;
+        /**
+         * Additive (1.3.0, HTTP 4.1.0). Visibility of the seeded list; absent =
+         * `private` (the pre-1.3.0 behaviour). `org` makes the seeded list readable
+         * (pickable) by every member of the target org without a grant — the
+         * recommended value for app reference data. `platform` is only valid in a
+         * platform seed pack (one common instance, seeded into the platform
+         * organization, not per org); `seed.requested` refuses it.
+         */
+        visibility: z.ZodOptional<z.ZodEnum<["private", "org", "platform"]>>;
     }, "strict", z.ZodTypeAny, {
         key: string;
         name: string;
@@ -546,6 +639,7 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }, {
         key: string;
         name: string;
@@ -566,6 +660,7 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }>, "many">;
 }, "strict", z.ZodTypeAny, {
     packKey: string;
@@ -589,6 +684,7 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     version: number;
     appliesTo: ("organization" | "platform" | "personal")[];
@@ -614,6 +710,7 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     version: number;
     appliesTo: ("organization" | "platform" | "personal")[];
@@ -639,6 +736,7 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     version: number;
     appliesTo: ("organization" | "platform" | "personal")[];
@@ -664,6 +762,7 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             locale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
             description?: string | undefined;
         }[] | undefined;
+        visibility?: "platform" | "private" | "org" | undefined;
     }[];
     version: number;
     appliesTo: ("organization" | "platform" | "personal")[];

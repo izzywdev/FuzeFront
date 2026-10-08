@@ -51,7 +51,7 @@ _USR_RE = re.compile(r"^usr_[0-9a-z]+$")
 _PLATFORM = "platform"
 
 _LIST_FIELDS = frozenset(
-    {"key", "sourceLocale", "name", "description", "translations", "items"}
+    {"key", "sourceLocale", "name", "description", "translations", "items", "visibility"}
 )
 _ITEM_FIELDS = frozenset({"code", "label", "description", "translations"})
 _LIST_TR_FIELDS = frozenset({"locale", "name", "description"})
@@ -170,6 +170,15 @@ def build_seed_request(
             f"{p}.translations",
             add,
         )
+        # shared 1.3.0 / HTTP 4.1.0: optional visibility; an app can never seed a common list.
+        visibility = raw.get("visibility")
+        if visibility is not None and visibility not in ("private", "org"):
+            add(
+                f"{p}.visibility",
+                'an app seed request cannot create a platform (common) list; use "org" or "private"'
+                if visibility == "platform"
+                else 'must be "private" or "org"',
+            )
 
         raw_items = raw.get("items")
         if not isinstance(raw_items, list):
@@ -226,6 +235,7 @@ def build_seed_request(
                     "description": raw.get("description"),
                     "translations": _copy_list(raw.get("translations")),
                     "items": out_items,
+                    "visibility": visibility,
                 }
             )
         )

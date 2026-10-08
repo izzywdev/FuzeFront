@@ -1,4 +1,4 @@
-# Selection lists — authorization resources, actions and roles (contract 3.0.0)
+# Selection lists — authorization resources, actions and roles (contract 3.0.0, amended 4.0.0 and 4.1.0)
 
 **Status:** contract change (H-3). Frozen in
 `services/selection-list-service/openapi.yaml` `info.version: 3.0.0`; the vendored
@@ -15,6 +15,18 @@ enforces it (#1253: `requireArchiveAuthzOnStatusChange` in `routes/lists.ts`; th
 item-purge `delete` check in `routes/items.ts`; pinned by
 `tests/authz.route-matrix.test.ts`) — 4.0.0 brings the contract up to the code. 4.0.0 also widens `created_by`/`granted_by` and adds `seed`; see the spec
 changelog and `selection-lists-events.md` §13.1.
+
+**4.1.0 amendment (shared lists, common lists, forks):** design record
+[`selection-lists-shared-and-fork.md`](selection-lists-shared-and-fork.md).
+`SelectionListCatalog` gains `read_shared` (every customer tenant role — the
+membership proof behind list `visibility`) and `publish_platform` (`admin`,
+effective only in the platform organization's tenant). New operation
+`forkSelectionList` (catalog `create` + source `read`). Read operations declare
+`x-permit-shared-read`: their `SelectionList:read` may instead be satisfied by
+`read_shared` plus the service-owned visibility predicate. New
+`x-permit-additional-actions` on create/update/delete/item-delete (rows below).
+Tenant roles still confer **zero** `SelectionList:*` actions; there is still no
+admin → owner derivation.
 
 **Who builds what (not this PR):**
 
@@ -58,20 +70,21 @@ the first without silently answering the second.
 
 | operationId | Method + path | `x-permit-resource` | `x-permit-action` | Notes |
 |---|---|---|---|---|
-| `listSelectionLists` | `GET /v1/selection-lists` | `SelectionListCatalog` | `list` | rows still filtered per list by `SelectionList:read`; `403` declared |
-| `createSelectionList` | `POST /v1/selection-lists` | `SelectionListCatalog` | `create` | service then grants the creator `list-owner` with **its machine identity** |
-| `getSelectionList` | `GET /v1/selection-lists/{listId}` | `SelectionList` | `read` | `404`, never `403`, when denied |
-| `updateSelectionList` | `PATCH /v1/selection-lists/{listId}` | `SelectionList` | `update` | **with body `status: archived` ALSO `SelectionList:delete`** (`x-permit-additional-actions`) — L-1, 4.0.0 |
-| `deleteSelectionList` | `DELETE /v1/selection-lists/{listId}` | `SelectionList` | `delete` | archive and purge alike |
+| `listSelectionLists` | `GET /v1/selection-lists` | `SelectionListCatalog` | `list` | rows still filtered per list by `SelectionList:read`; `403` declared; with `include_shared=true` the filter also admits shared reads (4.1.0) |
+| `createSelectionList` | `POST /v1/selection-lists` | `SelectionListCatalog` | `create` | service then grants the creator `list-owner` with **its machine identity**; with body `visibility: platform` ALSO `SelectionListCatalog:publish_platform` (platform org only) — 4.1.0 |
+| `forkSelectionList` | `POST /v1/selection-lists/{listId}/fork` | `SelectionListCatalog` | `create` | ALSO `SelectionList:read` on the source (grant, or shared read via `read_shared`); service grants the forker `list-owner` — 4.1.0 |
+| `getSelectionList` | `GET /v1/selection-lists/{listId}` | `SelectionList` | `read` | `404`, never `403`, when denied; shared read (4.1.0) |
+| `updateSelectionList` | `PATCH /v1/selection-lists/{listId}` | `SelectionList` | `update` | **with body `status: archived` ALSO `SelectionList:delete`** (`x-permit-additional-actions`) — L-1, 4.0.0; with body `visibility` ALSO `SelectionList:manage_access`, and with `visibility: platform` ALSO `SelectionListCatalog:publish_platform` — 4.1.0 |
+| `deleteSelectionList` | `DELETE /v1/selection-lists/{listId}` | `SelectionList` | `delete` | archive and purge alike; purge of a `platform` list ALSO `SelectionListCatalog:publish_platform` — 4.1.0 |
 | `archiveSelectionList` | `POST /v1/selection-lists/{listId}/archive` | `SelectionList` | `delete` | |
-| `listSelectionListItems` | `GET .../{listId}/items` | `SelectionList` | `read` | |
+| `listSelectionListItems` | `GET .../{listId}/items` | `SelectionList` | `read` | shared read (4.1.0) |
 | `createSelectionListItem` | `POST .../{listId}/items` | `SelectionList` | `add_value` | |
 | `reorderSelectionListItems` | `PUT .../{listId}/items/reorder` | `SelectionList` | `update_value` | |
 | `updateSelectionListItem` | `PATCH .../{listId}/items/{itemId}` | `SelectionList` | `update_value` | |
-| `deleteSelectionListItem` | `DELETE .../{listId}/items/{itemId}` | `SelectionList` | `remove_value` | **with `purge=true` ALSO `SelectionList:delete`** (`x-permit-additional-actions`) — M-1 |
+| `deleteSelectionListItem` | `DELETE .../{listId}/items/{itemId}` | `SelectionList` | `remove_value` | **with `purge=true` ALSO `SelectionList:delete`** (`x-permit-additional-actions`) — M-1; purge on a `platform` list ALSO `SelectionListCatalog:publish_platform` — 4.1.0 |
 | `archiveSelectionListItem` | `POST .../{listId}/items/{itemId}/archive` | `SelectionList` | `remove_value` | |
-| `listSelectionListTranslations` | `GET .../{listId}/translations` | `SelectionList` | `read` | |
-| `listSelectionListItemTranslations` | `GET .../items/{itemId}/translations` | `SelectionList` | `read` | |
+| `listSelectionListTranslations` | `GET .../{listId}/translations` | `SelectionList` | `read` | shared read (4.1.0) |
+| `listSelectionListItemTranslations` | `GET .../items/{itemId}/translations` | `SelectionList` | `read` | shared read (4.1.0) |
 | `upsertSelectionListTranslation` | `PUT .../{listId}/translations/{locale}` | `SelectionList` | `translate` | |
 | `deleteSelectionListTranslation` | `DELETE .../{listId}/translations/{locale}` | `SelectionList` | `translate` | |
 | `upsertSelectionListItemTranslation` | `PUT .../items/{itemId}/translations/{locale}` | `SelectionList` | `translate` | |
@@ -83,21 +96,42 @@ the first without silently answering the second.
 | `getSelectionListQuota` | `GET /v1/selection-lists/quota` | `SelectionListCatalog` | `read_quota` | `403` declared |
 | `resolveSelectionListItems` | `POST /v1/resolve` | `SelectionListCatalog` | `resolve` | no per-list `read` check — L-4 |
 
-All 24 operations carry both extensions; there is no operation without an
-`x-permit-resource`.
+All 25 operations carry both extensions; there is no operation without an
+`x-permit-resource`. "Shared read" in the notes means the operation also
+declares `x-permit-shared-read` (4.1.0): for a list whose `visibility` is not
+`private`, its `SelectionList:read` is equally satisfied by
+`SelectionListCatalog:read_shared` in the caller's tenant **plus** the
+service-owned predicate (`org` → same organization, `platform` → always).
+Per-list **mutations** never accept the shared read; on a `platform` list the
+caller holds no role on they answer `409 CONFLICT` / `reason: fork_required`
+(if the caller holds `SelectionListCatalog:create`) or `403`.
 
 ## 4. Who holds which action
 
 ### 4.1 Tenant roles → `SelectionListCatalog` (the only thing tenant roles grant here)
 
-| tenant role | `list` | `create` | `read_quota` | `resolve` |
-|---|---|---|---|---|
-| `admin` | x | x | x | x |
-| `editor` | x | x | | x |
-| `viewer` | x | | | x |
-| `developer` | | | | |
+| tenant role | `list` | `create` | `read_quota` | `resolve` | `read_shared` | `publish_platform` |
+|---|---|---|---|---|---|---|
+| `admin` | x | x | x | x | x | x |
+| `editor` | x | x | | x | x | |
+| `viewer` | x | | | x | x | |
+| `developer` | | | | | | |
 
-These names are exact; the Permit-schema stream implements them verbatim.
+These names are exact; the Permit-schema stream implements them verbatim
+(`backend/src/permit/schema.ts`, `backend/security/src/permit/schema.ts`).
+
+* `read_shared` (4.1.0) is held by **every customer tenant role** — a plain
+  member is `editor` (`role-assignment.ts`: member → editor). It is the
+  membership proof behind `visibility`: Permit decides *who is a member*, the
+  service decides *what the list's visibility is*. `developer` is excluded
+  deliberately: it is the root-org developer-portal role, which must not read
+  tenant data (`docs/planning/developers-portal.md` §5.3) and holds no catalog
+  action at all, so `read_shared` would be inert for it anyway.
+* `publish_platform` (4.1.0) is in `admin` but is only **effective in the
+  platform organization's tenant**: the service evaluates it with the platform
+  organization as the tenant and also requires the caller to be acting in that
+  organization. A customer-org `admin` therefore holds the action in its own
+  tenant and still cannot publish a common list.
 
 ### 4.2 Instance roles → `SelectionList` (per list)
 

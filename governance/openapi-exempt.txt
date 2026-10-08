@@ -268,3 +268,4 @@ POST /auth/logout  # devportal-service: same raw_alias collision as /auth/oidc/l
 POST /api/v1/suggestions/{}/approve-expected-test  # fuzequality: tenant-authorized internal review action; not part of a public OpenAPI contract surface
 POST /api/v1/expectations/{}/exclusion  # Internal reviewed-exclusion action; it is not part of a scanned product API contract.
 GET /api/v1/repositories/{}/scan-history  # Internal catalog administration read model; not a scanned product API contract.
+POST /v1/selection-lists/{}/fork  # selection-list-service: contract 4.1.0 (shared lists + copy-on-write fork) is frozen ahead of its implementation (contract-first); the service wave in docs/planning/selection-lists-shared-and-fork.md section 10 implements it behind fuzefront.selection-lists.shared-lists. REMOVE THIS LINE in the PR that implements forkSelectionList.
