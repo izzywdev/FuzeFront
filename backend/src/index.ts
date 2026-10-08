@@ -10,6 +10,7 @@ import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
 import connectorRoutes from './routes/connectors'
+import fuzexRoutes from './routes/fuzex'
 import { createConnectorPlatformRouter } from './connector-platform'
 import { googleProviders } from './connector-providers/google'
 import { microsoftProviders } from './connector-providers/microsoft'
@@ -124,6 +125,8 @@ app.use(
 // its own express.raw() parser. (See routes/billing.ts.)
 app.use('/api/v1/billing/webhooks/stripe', billingWebhookRouter)
 
+// Frame/import payloads can exceed the host's default 100 KB JSON limit.
+app.use('/api/v1/fuzex', express.json({ limit: '20mb' }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
@@ -362,6 +365,7 @@ app.use('/api/v1/connectors', createConnectorPlatformRouter([
   ...aiModelProviders, ...aiBuilderProviders, ...deployBuilderProviders,
 ]))
 app.use('/api/v1/connectors', connectorRoutes)
+app.use('/api/v1/fuzex', fuzexRoutes)
 
 app.use('/api/v1/app-registry', appRegistryRoutes)
 // App-registry proxy: browser -> backend -> fuzefront-applications:3003. The
