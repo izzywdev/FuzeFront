@@ -20,7 +20,7 @@ design is [`../planning/selection-lists-events.md`](../planning/selection-lists-
 
 | Piece | Where | Notes |
 |---|---|---|
-| Two release flags (both default OFF, fail closed) | Unleash | `fuzefront.selection-lists.service` (master) **and** `fuzefront.selection-lists.seed-defaults`. Seeding needs **both** ON **for the org**; evaluated **per message**. |
+| Two release flags (both default OFF, fail closed) | Unleash | `fuzefront.selection-lists.service` (master) **and** `fuzefront.selection-lists.seed-defaults`. Seeding needs **both** ON **for the org**; evaluated **per message**. Both are created OFF in Unleash by dispatching `prod-unleash-ops` with `flags=selection-lists-create` (create-only; see §3). |
 | Platform seeding | consumer of `identity.org.created` | Always records the org in the projection (`selection_list_ref_index`); seeds `platform-defaults` v1 (`yes-no`, `priority`, `work-status`) only if both flags are ON and the org is active and of type `organization`/`personal`. |
 | App seeding | consumer of `selection-lists.seed.requested` | Attested (token with scope `selection-lists:seed`), allowlisted (`seed-sources.json`), namespaced, capped, quota-checked, atomic. |
 | Outcomes | `selection-lists.seed.completed` / `.failed` | Published through the transactional outbox (`event_outbox`). |
@@ -149,10 +149,14 @@ workflow (`flags=selection-lists`). Record the owner decision (who, target orgs,
 
 **Two facts shape the ramp, both from code:**
 
-1. **`prod-unleash-ops` knows only the `selection-lists` (master) set.** It has **no entry for
-   `fuzefront.selection-lists.seed-defaults`**, and its strategy is a percentage `flexibleRollout`.
-   Enabling `seed-defaults` therefore needs the raw procedure in the `unleash-flag-enable` skill,
-   or a workflow extension (`feature-flags-engineer`).
+1. **`prod-unleash-ops` can now CREATE `fuzefront.selection-lists.seed-defaults`, but not enable it.**
+   Dispatch it with `flags=selection-lists-create`: that set creates **both** selection-list flags
+   as `release` flags, OFF (environment disabled, no strategy), and is idempotent (an existing flag is
+   left untouched). The `selection-lists` set (staged ramp, `rollout` / `action`) still covers only
+   the master flag and is percentage-only, so **enabling `seed-defaults` still needs the raw
+   per-org procedure in the `unleash-flag-enable` skill** (an `orgId IN [org_…]` constraint). Run the
+   create step once, before step 0 of the table below. The live Unleash state of either flag is
+   **not verifiable from this repo**: read the dispatch's *Verify* output.
 2. **Seeding evaluates the flags with only `orgId` — no `userId`.** The context key is
    `orgId` = the org's `org_…` TypeID. A percentage rollout with `stickiness: default` buckets on
    the user, so with no user there is no stable bucket (**inferred** from Unleash semantics —
@@ -292,7 +296,7 @@ against the SL8 branch (`claude/sl8-fixes`) and stay in the table as a record, n
 | ~~**No `identity.org.updated` consumer**~~ **FIXED (SL8)** | `src/events/org-updated.handler.ts`, consumer group `${KAFKA_GROUP_ID}-org-updated`, DLQ `identity.org.updated.dlq`; tests `events.org-updated.db.test.ts` | The projection's `is_active` / `type` / `name` follow the org; flag-independent; never resurrects a tombstone; an older snapshot never overwrites a newer one. A deactivated org is no longer seeded/backfilled | done |
 | ~~**Seeded lists have no list-owner**~~ **FIXED (SL8)** | `src/seed/ownerGrants.ts`, called at the end of `applyPlatformDefaults` (org-created handler **and** reconciler); migration 10 adds `selection_list_ref_index.owner_id` | The org owner (`identity.org.created.ownerId`, stored as `usr_…`) gets `list-owner` on every active platform-seeded list via the service's machine identity (fail closed), after the seed transaction commits; idempotent; a grant failure throws so the message is retried (and the reconciler re-selects the org); audit action `seed.owner-granted`. **Remaining limits:** an org with **no `ownerId`** is skipped (log + `selection_list_seed_owner_grant_skipped_total{reason="no-owner"}`); a human's later demotion/revocation is respected (never re-granted); **app-seeded** lists (`seed.requested`) get **no** grant: the requesting app must grant through the Security API (the frozen `seed.requested` schema carries no owner); other members and tenant admins still see nothing until granted | done (owner-less orgs: support) |
 | **User-scoped lists unsupported** | `scope: 'user'` ⇒ `SCOPE_UNSUPPORTED` | per-user seeding cannot be offered | — |
-| **`seed-defaults` cannot be flipped by `prod-unleash-ops`** | workflow `flags` options list has no such set; strategy is percentage-only | manual Unleash procedure or workflow extension; no per-org targeting in the workflow | `feature-flags-engineer` |
+| ~~**`seed-defaults` does not exist in Unleash**~~ **FIXED (create only)** | `prod-unleash-ops` `flags=selection-lists-create` creates `fuzefront.selection-lists.seed-defaults` and the master flag OFF (create-only; never enables) | Dispatch it once after merge. **Still open:** the workflow cannot ENABLE `seed-defaults` and its ramp strategy is percentage-only; per-org targeting (`orgId IN [org_…]`) is the raw `unleash-flag-enable` procedure | `feature-flags-engineer` |
 | ~~**Org-id format in flag context**~~ **FIXED (SL8)** | `buildFlagContext` in `src/flags.ts` canonicalises `orgId` / `userId` to the wire TypeID (`org_…` / `usr_…`; a bare UUID claim is converted with the identity codec) for EVERY evaluation; test `flags.canonical-context.test.ts` | Write Unleash `orgId` constraints in the **`org_…`** form: it now matches the seeding paths and the HTTP paths alike. A constraint written with a bare UUID will match neither | done |
 | ~~**Request bodies looser than the spec; `limit=0` accepted; resolve accepted non-`front_sli_` ids**~~ **FIXED (SL8)** | `acceptOnlyBodyProps` / `parseLimitParam` in `src/middleware/validateInput.ts`; `POST /v1/resolve` validates `ids`; tests `routes.request-validation.db.test.ts` + the acceptance suite | Undeclared body properties, `limit<1`, cross-type/duplicate/empty resolve ids and an unsupported locale are `400 VALIDATION_ERROR`. **Behaviour change for callers:** `POST /v1/resolve` with `ids: []` is now `400` (spec `minItems: 1`), not an empty `200` | done |
 | ~~**Port mismatch (service default 3011 vs chart 3008)**~~ **FIXED service-side (SL8)** | `src/index.ts` default, `Dockerfile` `ENV PORT`/`EXPOSE` and the docs now say `3008` (the chart already set `PORT` from `selectionListService.port`, so the deployed pod was never affected) | Local runs / the image default agree with the chart. **Still `3011`:** the OpenAPI `servers` example (frozen contract; its Helm copy `deploy/helm/fuzefront/files/selection-list-service-openapi.yaml` must stay byte-identical, so amend both in a contract PR), the `fuzefront-selection-list-client` Python README/docstring base URL, and CI's explicit `PORT: '3011'` (harmless) | `contract-designer` (spec), `docs-maintainer` (py README) |

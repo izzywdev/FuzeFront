@@ -369,20 +369,21 @@ flags:
       - FFRNT-251
     epic: FF-EPIC-17
     story: S15
+    # Unleash creation record. Created OFF by the dispatchable workflow
+    # `prod-unleash-ops` (flags=selection-lists-create), which is CREATE-ONLY:
+    # it never turns the environment on and never adds a strategy. Enablement
+    # (a staged ramp, `flags=selection-lists`) is a separate, deliberate owner
+    # step. Evaluated by selection-list-service with context
+    # { orgId: 'org_...', userId: 'usr_...', app: 'selection-list-service' }
+    # (canonical wire TypeIDs, see services/selection-list-service/src/flags.ts
+    # buildFlagContext) -- write any orgId/userId constraint in that form.
     unleash:
       project: default
+      type: release
       environments:
         production:
-          enabled: true
-          strategies:
-            - type: flexibleRollout
-              rollout: 100
-              stickiness: default
-              segments:
-                - id: 1
-                  name: developers
-          # No org/user targeting at creation — enable per-org via Unleash
-          # targeting rules once the service is ready for a given org.
+          enabled: false
+          strategies: []
 
   - key: fuzefront.selection-lists.seed-defaults
     type: release
@@ -415,6 +416,20 @@ flags:
     web_exposed: false
     jira: ~
     epic: FF-EPIC-17
+    # Unleash creation record. Created OFF by `prod-unleash-ops`
+    # (flags=selection-lists-create, create-only; no environment enabled, no
+    # strategy). Seeding evaluates with { orgId, app } and NO userId, so a
+    # percentage rollout has no stable bucket: when the owner enables it, use a
+    # per-org `orgId IN [org_...]` constraint (canonical TypeID form, never a
+    # bare UUID), not a flexibleRollout percentage. Enablement is not part of
+    # this entry.
+    unleash:
+      project: default
+      type: release
+      environments:
+        production:
+          enabled: false
+          strategies: []
 
   # ---------------------------------------------------------------------------
   # fuzefront.identity.* (FF-EPIC-17 — personal identity / root membership /
