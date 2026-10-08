@@ -387,13 +387,6 @@
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
 }
-.ffb-panel__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-block-start: var(--space-1);
-}
-
 /* ---- Usage metric ------------------------------------------ */
 .ffb-metric {
   display: flex;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { BillingSubscription } from '@fuzefront/billing-client';
-import { Panel } from '@fuzefront/design-system';
+import { Panel, Stack } from '@fuzefront/design-system';
 import { useBillingI18n } from '../i18n';
 import { Button, Notice, StatusPill } from './primitives';
 import { Modal } from './Modal';
@@ -136,14 +136,14 @@ export function SubscriptionManager({
         subtitle={strings.confirmCancelBody}
         dismissable={!busy}
       >
-        <div className="ffb-panel__actions">
+        <Stack gap="sm" wrap style={{ marginBlockStart: 'var(--space-1)' }}>
           <Button variant="secondary" onClick={() => setConfirmOpen(false)} disabled={busy}>
             {strings.keepSubscription}
           </Button>
           <Button variant="danger" onClick={runCancel} loading={busy}>
             {strings.cancelSubscription}
           </Button>
-        </div>
+        </Stack>
       </Modal>
     </>
   );
