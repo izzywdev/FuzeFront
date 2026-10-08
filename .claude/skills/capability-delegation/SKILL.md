@@ -20,6 +20,10 @@ guidance. No invocation ⇒ no failure ⇒ no message. This skill is that missin
 - You need **prod cluster** access (`kubectl`, logs) and your environment has no kubeconfig.
 - You need a **GitOps edit + PR** (Helm/Argo/values) from an environment that can't.
 - You need **GitHub-secret / credential provisioning** you don't hold.
+  For a shared Postgres/Mongo allocation or sealed runtime credential, apply
+  `shared-datastore-provisioning` first: FuzeInfra already publishes provisioning,
+  sealing, and handoff operations. Discover and dispatch the guarded owner path
+  before concluding that a human needs to provision anything.
 - You need work owned by **another slice or zone** (backend↔frontend↔infra↔exec).
 
 If the operation is a **pure prod read**, prefer the repo's existing read-only path (e.g.
