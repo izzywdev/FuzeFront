@@ -11,6 +11,23 @@ name: Fleet PAT Health
 # When a fleet repo's release.yml includes a "Require the release credential" step
 # (see PR description for the snippet), a failure at that step is surfaced as the
 # explicit root cause in the alert issue rather than a generic "release failed".
+#
+# Credential vs. pipeline failures are reported as TWO SEPARATE issues/labels
+# (see the Report step):
+#   - `fleet-pat-health`     — GH_RELEASE_PAT is actually missing/invalid, or a
+#                              fleet repo failed AT the "Require the release
+#                              credential" step. This is the only case that
+#                              fails this workflow's own run.
+#   - `fleet-release-health` — GH_RELEASE_PAT is fine, but a fleet repo's last
+#                              release run failed/was cancelled for an unrelated
+#                              reason (that repo's own pipeline). Filed as an
+#                              informational issue; does NOT fail this run.
+# Conflating the two (issue #849: 38 consecutive daily comments titled
+# "release credential failure detected" where the credential never once
+# failed — the failures were FuzePlan's and FuzeDeploy's own release.yml
+# breaking for unrelated reasons) trains readers to ignore this check's red
+# runs and misdirects whoever picks up the alert toward rotating a token that
+# was never the problem.
 
 on:
   schedule:
@@ -167,10 +184,21 @@ jobs:
           fi
 
       # -----------------------------------------------------------------------
-      # 3. Summarise and file/update a GitHub issue on any failure.
+      # 3. Summarise and file/update a GitHub issue.
       #    Runs even when prior steps failed (if: always()).
-      #    Exits 1 to make the workflow run red — silent green on a broken
-      #    fleet is the bug we're preventing.
+      #
+      #    PAT_CRITICAL (an actual credential problem: GH_RELEASE_PAT missing/
+      #    invalid, or a fleet repo failed AT the credential step) is the only
+      #    case that makes this run red and files/updates the `fleet-pat-health`
+      #    issue — exiting 1 there is deliberate, so silent green on a broken
+      #    credential is never the result.
+      #
+      #    Anything else (a fleet repo's last run failed/was cancelled for an
+      #    unrelated, in-that-repo reason) does NOT mean the credential this
+      #    workflow exists to check is unhealthy, so it does not fail this run
+      #    or touch the `fleet-pat-health` issue — it's filed/updated under the
+      #    separate `fleet-release-health` label instead. See the top-of-file
+      #    comment and issue #849 for why this split exists.
       # -----------------------------------------------------------------------
       - name: Report
         if: always()
@@ -181,28 +209,101 @@ jobs:
         run: |
           set -uo pipefail
 
-          # All good — resolve any existing alert issue
-          if [ "$PAT_OUTCOME" = "success" ] && \
-             { [ "$FLEET_OUTCOME" = "success" ] || [ "$FLEET_OUTCOME" = "skipped" ]; }; then
-            echo "Fleet PAT health: OK"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-            # Close any open alert issue (fleet is healthy again)
-            OPEN_ISSUE=$(gh issue list \
+          PAT_CRITICAL=false
+          if [ "$PAT_OUTCOME" != "success" ] || [ -n "${CRED_FAILURES:-}" ]; then
+            PAT_CRITICAL=true
+          fi
+
+          if [ "$PAT_CRITICAL" = "false" ]; then
+            echo "Fleet PAT health: OK (GH_RELEASE_PAT is valid; no repo failed at '${CRED_STEP_NAME}')"
+
+            # The credential itself is healthy — close any open PAT-health alert,
+            # even if fleet repos still have unrelated failures below.
+            OPEN_PAT_ISSUE=$(gh issue list \
               --repo "${{ github.repository }}" \
               --state open \
               --label fleet-pat-health \
               --json number --jq '.[0].number // empty')
-            if [ -n "$OPEN_ISSUE" ]; then
-              gh issue close "$OPEN_ISSUE" \
+            if [ -n "$OPEN_PAT_ISSUE" ]; then
+              gh issue close "$OPEN_PAT_ISSUE" \
                 --repo "${{ github.repository }}" \
-                --comment "Resolved: fleet PAT health check now passing. Closing."
-              echo "Closed open alert issue #${OPEN_ISSUE}"
+                --comment "Resolved: GH_RELEASE_PAT is valid and no fleet repo failed at \`${CRED_STEP_NAME}\`. Closing — this was never a credential problem. (${RUN_URL})"
+              echo "Closed open PAT-health alert issue #${OPEN_PAT_ISSUE}"
             fi
+
+            if [ -z "${OTHER_FAILURES:-}" ]; then
+              # Nothing else to report — also resolve any stale release-health issue.
+              OPEN_REL_ISSUE=$(gh issue list \
+                --repo "${{ github.repository }}" \
+                --state open \
+                --label fleet-release-health \
+                --json number --jq '.[0].number // empty')
+              if [ -n "$OPEN_REL_ISSUE" ]; then
+                gh issue close "$OPEN_REL_ISSUE" \
+                  --repo "${{ github.repository }}" \
+                  --comment "Resolved: every fleet repo's last release run succeeded. Closing."
+                echo "Closed open release-health issue #${OPEN_REL_ISSUE}"
+              fi
+              exit 0
+            fi
+
+            # PAT is healthy, but one or more fleet repos' own release pipeline
+            # is failing for a reason unrelated to the credential. File this
+            # under its own label/title — never as a credential failure — and
+            # do not fail this workflow's run for it: a problem entirely inside
+            # another repo's pipeline is not evidence this check (which only
+            # verifies GH_RELEASE_PAT) is broken.
+            REL_TITLE="Fleet release health: unrelated build failures in fleet repos"
+            REL_BODY="## Fleet release health alert
+
+          \`GH_RELEASE_PAT\` is valid — this is **not** a credential problem.
+
+          **Repos whose last release run failed/was cancelled for an unrelated reason** (check that repo's own run logs):
+          \`\`\`
+          ${OTHER_FAILURES}
+          \`\`\`
+
+          This needs a fix in **that repo's own** release pipeline, not in FuzeFront. Delegate via \`@fuze\` to the owning repo with the concrete failure from the run logs above.
+
+          **Fleet repos checked:** \`${FLEET_REPOS}\`
+          **Check run:** ${RUN_URL}
+
+          ---
+          *Filed by fleet-pat-health.yml. Will auto-close when every fleet repo's last run succeeds.*"
+
+            OPEN_REL_ISSUE=$(gh issue list \
+              --repo "${{ github.repository }}" \
+              --state open \
+              --label fleet-release-health \
+              --json number --jq '.[0].number // empty')
+
+            if [ -n "$OPEN_REL_ISSUE" ]; then
+              gh issue comment "$OPEN_REL_ISSUE" \
+                --repo "${{ github.repository }}" \
+                --body "**Updated $(date -u +%Y-%m-%dT%H:%MZ):**
+
+          ${REL_BODY}"
+              echo "Updated existing release-health issue #${OPEN_REL_ISSUE}"
+            else
+              gh label create fleet-release-health \
+                --repo "${{ github.repository }}" \
+                --description "Fleet repo release-pipeline failures unrelated to GH_RELEASE_PAT" \
+                --color "FBCA04" 2>/dev/null || true
+
+              gh issue create \
+                --repo "${{ github.repository }}" \
+                --title "$REL_TITLE" \
+                --body "$REL_BODY" \
+                --label fleet-release-health
+              echo "Opened new release-health issue"
+            fi
+
             exit 0
           fi
 
-          # Compose the alert body
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # ---- PAT_CRITICAL: an actual credential problem. ----
 
           if [ "$PAT_OUTCOME" != "success" ]; then
             SECTION_PAT="**GH_RELEASE_PAT in FuzeFront is missing or expired.**
