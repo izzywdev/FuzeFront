@@ -35,6 +35,7 @@ import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermiss
 import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
+import { executionFilterSchema } from './execution-filter'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -79,12 +80,6 @@ const invitationSchema = z.object({
 const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
 const repositoryFlowReviewSchema = z.object({ status: z.enum(['confirmed', 'rejected']) }).strict()
 const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']), reason: z.string().trim().min(3).max(2000).optional() }).strict()
-const executionFilterSchema = z.object({
-  kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']).optional(),
-  status: z.enum(['passed', 'failed', 'cancelled', 'running']).optional(),
-  from: z.string().datetime().optional(),
-  until: z.string().datetime().optional(),
-}).strict()
 const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
