@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fuzefront/service-auth": "file:../../packages/service-auth",
     "express": "^5.1.0",
     "stripe": "^17",
     "zod": "3.22.4"

@@ -14,8 +14,8 @@
 # chart or image" CLAUDE.md forbids. This script is the FuzeFront-side check
 # that belongs here instead: does OUR manifest/role data hold up.
 #
-# Pinned against izzywdev/FuzeAgent @ c2f74c838ca3c8034566b4268d0bfa76434dec7b
-# (contract v1.2.0, VERSION file at agent-templates/contracts/a2a/v1/VERSION).
+# Pinned against izzywdev/FuzeAgent @ 56b5c0ee642b811c87a2c2891d1cceacc51609e6
+# (contract v1.3.0, VERSION file at agent-templates/contracts/a2a/v1/VERSION).
 # Bump FUZEAGENT_REF when that repo's a2a package changes in a way that could
 # affect projection — re-run this script to catch drift immediately.
 #
@@ -28,7 +28,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FUZEAGENT_REF="${FUZEAGENT_REF:-c2f74c838ca3c8034566b4268d0bfa76434dec7b}"
+FUZEAGENT_REF="${FUZEAGENT_REF:-56b5c0ee642b811c87a2c2891d1cceacc51609e6}"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -44,7 +44,7 @@ done
 for f in agent-card.schema.json fuze-profile.schema.json manifest-a2a-extension.schema.json role-a2a-extension.schema.json a2a-wire.schema.json values-interface.schema.json; do
   curl -fsS "$RAW/agent-templates/contracts/a2a/v1/schema/$f" -o "$WORK_DIR/agent-templates/contracts/a2a/v1/schema/$f"
 done
-for f in __init__.py card_models.py client.py errors.py wire_models.py; do
+for f in __init__.py card_models.py client.py errors.py wire_models.py registration_models.py; do
   curl -fsS "$RAW/agent-templates/contracts/a2a/v1/client/fuze_a2a_client/$f" -o "$WORK_DIR/agent-templates/contracts/a2a/v1/client/fuze_a2a_client/$f"
 done
 curl -fsS "$RAW/agent-templates/contracts/a2a/v1/client/pyproject.toml" -o "$WORK_DIR/agent-templates/contracts/a2a/v1/client/pyproject.toml"

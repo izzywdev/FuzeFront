@@ -9,10 +9,24 @@ on:
   release:
     types: [published]
 
+# Supersede a PR's own in-flight pipeline when a new commit lands on it.
+# Without this every push left the previous full run going: three CI/CD Pipeline
+# runs for three superseded heads of ONE pull request were observed running
+# simultaneously on 2026-09-20, each holding a runner for its whole duration.
+# Keyed by ref, so PRs never cancel each other and pushes to master never cancel
+# a release-bearing run (`cancel-in-progress` is false off pull_request).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-and-test:
     name: Lint & Test
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
 
     strategy:
       matrix:
@@ -20,10 +34,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -93,6 +107,25 @@ jobs:
         # statically, so backend's tsc cannot resolve it until this runs.
         run: npm run -w @fuzefront/custom-hostname-client build
 
+      - name: Build @fuzefront/telemetry (browser dist for frontend type-check)
+        # frontend/src/main.tsx imports @fuzefront/telemetry/browser, whose
+        # `exports` map points at dist/browser.{js,mjs,d.ts} — unbuilt, frontend's
+        # tsc fails with TS2307 "Cannot find module". No vite source alias exists
+        # for it (unlike identity-ui/i18n), so this build has to produce the real
+        # dist that both tsc and vite/vitest below resolve.
+        run: npm run -w @fuzefront/telemetry build
+
+      - name: Build @fuzefront/shared + @fuzefront/service-auth (d.ts for backend type-check)
+        # Both resolve through dist/. shared/dist is COMMITTED and goes stale
+        # whenever shared/src changes without a rebuild (#1189 added the
+        # chat.response.chunk schema to src only), and service-auth/dist is not
+        # committed at all — so backend's tsc failed on master with TS2305/TS2307
+        # for both. service-auth's d.ts build imports @fuzefront/security-client,
+        # which is built earlier in this job.
+        run: |
+          npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/service-auth build
+
       - name: Build @fuzeone/selection-lists-ui (d.ts for frontend type-check)
         # frontend/tsconfig.json resolves @fuzeone/selection-lists-ui to its
         # built dist/index.d.ts; without this the type-check and vite build
@@ -123,16 +156,29 @@ jobs:
       - name: Run SDK tests
         run: cd sdk && npm test
 
+      # @fuzefront/feature-flags carries the flag catalog (fail-safe defaults per
+      # type) and the degradation contract every service relies on, but no job
+      # ran its tests, so two suites rotted to non-compiling unnoticed. ts-jest
+      # runs from src, so no build step is needed; no network/infra required.
+      - name: feature-flags — type-check + unit tests
+        run: |
+          npm run -w @fuzefront/feature-flags type-check
+          npm run -w @fuzefront/feature-flags test
+
   identity-ui-and-security:
     name: Identity UI + Security (unit)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -174,9 +220,14 @@ jobs:
         # shared MUST build before core — @fuzefront/core now imports
         # @fuzefront/shared/kafka (the schema registry), and tsc resolves it
         # through shared/dist, so shared has to be current first.
+        # @fuzefront/telemetry is also required here: lib/logger.ts imports it
+        # for trace_id/span_id correlation, and ts-jest type-checks on
+        # transform, so an unbuilt dist fails every suite that loads the
+        # logger with TS2307, not only telemetry's own tests.
         run: |
           npm run -w @fuzefront/shared build
           npm run -w @fuzefront/core build
+          npm run -w @fuzefront/telemetry build
 
       - name: security — API-token jest suite (DB mocked, no Postgres)
         run: |
@@ -191,14 +242,18 @@ jobs:
   build:
     name: Build Applications
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: lint-and-test
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -228,6 +283,15 @@ jobs:
       - name: Build @fuzefront/custom-hostname-client (for backend build)
         run: npm run -w @fuzefront/custom-hostname-client build
 
+      - name: Build @fuzefront/security-client, shared, service-auth (for backend build)
+        # Same reason as the matching step in lint-and-test: backend imports
+        # shared + service-auth through their dist/ types. service-auth's d.ts
+        # needs security-client built first.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/shared build
+          npm run -w @fuzefront/service-auth build
+
       - name: Build backend
         run: cd backend && npm run build
 
@@ -242,6 +306,11 @@ jobs:
       # resolve the package entry until it has been built.
       - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
         run: npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Build @fuzefront/telemetry (for frontend bundle)
+        # frontend imports @fuzefront/telemetry/browser at its bootstrap
+        # (main.tsx); its `exports` map points at dist/, unbuilt by default.
+        run: npm run -w @fuzefront/telemetry build
 
       - name: Build frontend
         run: cd frontend && npm run build
@@ -266,6 +335,10 @@ jobs:
   chat-service-tests:
     name: Chat service (unit)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
@@ -276,10 +349,10 @@ jobs:
       # unchanged. The rest of this file still uses mutable tags — pinning it
       # wholesale is a separate, security-owned change.
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -307,6 +380,15 @@ jobs:
         # @fuzefront/security-client prebuild steps above.
         run: npm run -w @fuzefront/auth build
 
+      - name: Build @fuzefront/security-client + service-auth (d.ts for chat-service type-check)
+        # chat-service imports @fuzefront/service-auth (#1189/#1190), which
+        # resolves through its uncommitted dist/; its d.ts build in turn imports
+        # @fuzefront/security-client. Merged while ci.yml was not running, so
+        # the missing build went unnoticed (TS2307).
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+
       - name: Type-check chat-service
         run: npm run -w @fuzefront/chat-service build
 
@@ -319,14 +401,18 @@ jobs:
   notification-service-tests:
     name: Notification service (unit)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -345,9 +431,379 @@ jobs:
         # handling) and the auth middleware.
         run: npm run -w @fuzefront/notification-service test
 
+  selection-list-service-tests:
+    name: Selection list service (unit)
+    runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
+    needs: build
+
+    # selection-list-service is a root workspace member. Most of its tests mock
+    # the DB (jest.mock('../src/db', ...)); tests/handlers.db.test.ts runs the
+    # Kafka lifecycle handlers against REAL Postgres (a mocked knex cannot catch a
+    # wrong column name -- review M-3), so a postgres service container is
+    # provided and SLS_TEST_DATABASE_URL points the suite at it (CI=true makes a
+    # missing DB a failure, never a skip).
+    # It imports @fuzefront/auth (file: dep) whose types point at dist/index.d.ts,
+    # so @fuzefront/auth must be built before the type-check and jest run.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: selection_list_service_unit
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install workspace
+        run: npm ci
+
+      - name: Build @fuzefront/auth (d.ts for selection-list-service type-check)
+        # selection-list-service imports createAuthzClient from @fuzefront/auth
+        # (src/middleware/authz.ts). The package's `types` field points at
+        # dist/index.d.ts (not committed; built via tsup), so both tsc and
+        # ts-jest fail with TS2307 "Cannot find module '@fuzefront/auth'" unless
+        # this runs first.
+        run: npm run -w @fuzefront/auth build
+
+      - name: Build @fuzefront/shared (d.ts for Kafka consumer type-check)
+        # selection-list-service now imports TypedConsumer/TypedProducer from
+        # @fuzefront/shared/kafka (src/events/consumer.ts). Same dist/index.d.ts
+        # pattern as @fuzefront/auth.
+        run: npm run -w @fuzefront/shared build
+
+      - name: Build @fuzefront/security-client + @fuzefront/service-auth (d.ts for type-check)
+        # src/lib/machineIdentity.ts mints the service's client_credentials token
+        # with @fuzefront/service-auth (grant/revoke no longer use the end user's
+        # token). Its types point at dist/index.d.ts, which in turn re-exports
+        # types from @fuzefront/security-client's dist.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+
+      - name: Type-check selection-list-service
+        run: npm run -w selection-list-service build
+
+      - name: Run selection-list-service unit tests
+        # Route/middleware/quota/handler/flag/probe suites mock the DB and the
+        # flag + token clients (no Unleash / Security API); the lifecycle
+        # handlers additionally run against the postgres service above.
+        env:
+          SLS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/selection_list_service_unit
+        run: npm run -w selection-list-service test
+
+  selection-list-service-e2e:
+    name: Selection list E2E
+    runs-on: ubuntu-latest
+    needs: build
+    # Hard bound. Without it this job inherits GitHub's 6-hour default, and a
+    # job that sits for hours holds `mergeable_state: blocked` on the PR —
+    # observed stalling #1156 and #1180 for 40+ minutes each with every
+    # required context already green. 30 is well above the worst case
+    # (~19 min at 4 workers) and far under 6 hours.
+    timeout-minutes: 30
+    # A REAL gate: the selection-lists UI (@fuzeone/selection-lists-ui, mounted at
+    # /settings/selection-lists; EPIC-17 / FFRNT-188) has landed and all specs pass,
+    # so a regression must fail the build and `notify` below treats this job as a
+    # required result. These specs began as TDD-red; they are green now.
+    # Specs: frontend/tests/selection-lists-{list-management,picker,access-control,
+    #        translation-workbench}.spec.ts
+    # (timeout-minutes is set once, above. A second `timeout-minutes: 90` merged
+    # in here from a concurrent PR made the key duplicate, and GitHub rejected
+    # the whole file — no ci.yml job ran anywhere for three days.)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          cd frontend && npm ci
+
+      # chat-ui is bundled into the host frontend from its dist (no vite source
+      # alias), and depends on chat-client — build both before `vite build`.
+      # (Mirrors the `build` job — esbuild/vite does not type-check, so the full
+      # d.ts-producing steps from lint-and-test are not needed here.)
+      - name: Build @fuzefront/chat-client + chat-ui (for frontend bundle)
+        run: |
+          npm run -w @fuzefront/chat-client build
+          npm run -w @fuzefront/chat-ui build
+
+      # selection-lists-ui's exports field points to dist/ so vite cannot
+      # resolve the package entry until it has been built.
+      - name: Build @fuzeone/selection-lists-ui (for frontend bundle)
+        run: npm run -w @fuzeone/selection-lists-ui build
+
+      - name: Build @fuzefront/telemetry (for frontend bundle)
+        # frontend imports @fuzefront/telemetry/browser at its bootstrap
+        # (main.tsx); its `exports` map points at dist/, unbuilt by default.
+        run: npm run -w @fuzefront/telemetry build
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Serve frontend (vite preview on :4173)
+        # Starts the preview server in the background. The loop polls until the
+        # server answers so subsequent steps don't race the startup.
+        run: |
+          cd frontend
+          npx vite preview --port 4173 --host 0.0.0.0 > /tmp/vite-preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:4173 >/dev/null 2>&1; then
+              echo "frontend up at http://localhost:4173"; break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::frontend preview did not become accessible after 60s"
+              cat /tmp/vite-preview.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install Playwright chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run selection-list e2e specs
+        # Drives a static `vite preview` build with the shell session/flag/org
+        # endpoints mocked in-browser (frontend/tests/support/selection-lists-e2e-session.ts);
+        # no backend is involved. A failure here fails the job and, via
+        # `notify`, the build.
+        working-directory: frontend
+        env:
+          BASE_URL: http://localhost:4173
+          CI: 'true'
+        # --workers=4 OVERRIDES playwright.config.ts for these specs only. The
+        # config sets `workers: 1` when CI is set; nothing in these specs shares
+        # state (static preview build, no backend, no fixtures between them), so
+        # serial execution buys nothing and 4 workers keeps the job well inside
+        # the timeout above. The config's `retries: 2` is left in force (no
+        # --retries override) so genuine flake is absorbed like in every other
+        # Playwright gate.
+        run: |
+          npx playwright test \
+            tests/selection-lists-list-management.spec.ts \
+            tests/selection-lists-picker.spec.ts \
+            tests/selection-lists-access-control.spec.ts \
+            tests/selection-lists-translation-workbench.spec.ts \
+            --project=chromium --reporter=list,html \
+            --workers=4
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: selection-lists-e2e-report
+          path: frontend/playwright-report/
+          retention-days: 14
+
+      - name: Dump vite preview logs on failure
+        if: failure()
+        run: cat /tmp/vite-preview.log || true
+
+  selection-list-service-integration-tests:
+    name: Selection list service (integration/acceptance)
+    runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
+    needs: build
+    # A REAL gate: this suite was TDD-red (continue-on-error) until the service
+    # met the frozen contract; it is green now, so a regression must fail the
+    # build and `notify` below treats it as a required result.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: selection_list_service_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+      - name: Install workspace
+        run: npm ci
+      - name: Build @fuzefront/auth (d.ts for selection-list-service type-check)
+        run: npm run -w @fuzefront/auth build
+      - name: Build @fuzefront/shared (d.ts for Kafka consumer type-check)
+        run: npm run -w @fuzefront/shared build
+      - name: Build @fuzefront/security-client + @fuzefront/service-auth (d.ts for type-check)
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+      - name: Build selection-list-service
+        run: npm run -w selection-list-service build
+      - name: Run DB migrations
+        env:
+          # 'test', not 'production': src/db/index.ts picks the knex env from
+          # NODE_ENV, and the service below must run non-production so the
+          # FLAGS_FORCE_ON escape hatch can enable the release flag. Both steps
+          # must agree or migrations land in a different config than the
+          # service reads. The knexfile's `test` env loads the same compiled
+          # dist migrations as `production`.
+          NODE_ENV: test
+          DB_SSL: 'false'
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: node services/selection-list-service/dist/db/migrate.js
+      - name: Start stand-in Security API
+        # The service authorizes every request through FuzeFront's Security API
+        # and holds no authorization state of its own (selection_list_access is a
+        # read-model mirror, never an authority). With no authz backend the role
+        # matrix and mirror-not-authority tests cannot pass by construction, and
+        # the NODE_ENV=test no-op client is allow-all. This in-memory stand-in
+        # (tests/selection-list-service/helpers/fake-security-api.mjs; test
+        # fixture only, never deployed) answers check / bulk-check / grants from
+        # the role matrix frozen in the OpenAPI spec.
+        env:
+          PORT: '3002'
+        run: |
+          node tests/selection-list-service/helpers/fake-security-api.mjs >/tmp/fake-security.log 2>&1 &
+          echo "FAKE_SEC_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 15); do
+            if curl -fsS http://localhost:3002/health >/dev/null 2>&1; then
+              echo "stand-in Security API is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "ERROR: stand-in Security API did not start" >&2
+          cat /tmp/fake-security.log
+          exit 1
+      - name: Start selection-list-service
+        env:
+          # NOT 'production'. Every route in this service is gated behind the
+          # `fuzefront.selection-lists.service` release flag, whose default is
+          # OFF and whose only source of truth is Unleash. CI has no Unleash,
+          # so the flag client degrades to the default and every route answers
+          # 404 "Service not enabled." — correct behaviour that made this suite
+          # unpassable by construction (134 of 148 tests failed against a
+          # service working exactly as designed). FLAGS_FORCE_ON below is the
+          # repo's existing escape hatch (backend/src/routes/flags.ts), and it
+          # is hard-gated to non-production so it can never light up a dark
+          # feature in prod — hence NODE_ENV=test here.
+          #
+          # Two deliberate side effects, both wanted in CI:
+          #  - src/index.ts:55 only starts the Kafka lifecycle consumers when
+          #    KAFKA_BROKERS is set or NODE_ENV=production, so they no longer
+          #    spin retrying an unreachable broker and filling the log with
+          #    `getaddrinfo EAI_AGAIN kafka.fuzeinfra.svc.cluster.local`.
+          #  - middleware/authz.ts would swap in its allow-all no-op client under
+          #    NODE_ENV=test. SECURITY_SERVICE_URL below (set explicitly) opts out
+          #    of that, and FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED turns the
+          #    release flag ON, so every request gets a REAL decision from the
+          #    stand-in Security API started above — the role-denial and
+          #    mirror-not-authority tests are only meaningful against that.
+          NODE_ENV: test
+          FLAGS_FORCE_ON: fuzefront.selection-lists.service
+          SECURITY_SERVICE_URL: http://localhost:3002
+          FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
+          # CI-only projected token fixture exchanges for owner-bootstrap scope.
+          # Human mutations still require exact-instance manager policy.
+          SELECTION_LIST_SERVICE_TOKEN_FILE: /tmp/selection-list-ci-workload-token
+          DB_SSL: 'false'
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+          JWT_SECRET: test-jwt-secret-for-selection-list-service
+          PORT: '3011'
+          TEST_QUOTA_ORG_LISTS: '3'
+          TEST_QUOTA_LIST_ITEMS: '5'
+        run: |
+          echo "selection-list-service-ci-projected-token" > /tmp/selection-list-ci-workload-token
+          node services/selection-list-service/dist/index.js >/tmp/sls.log 2>&1 &
+          echo "SLS_PID=$!" >> "$GITHUB_ENV"
+      - name: Wait for selection-list-service health
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3011/health >/dev/null 2>&1; then
+              echo "selection-list-service is up"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: selection-list-service did not become healthy after 60s" >&2
+              cat /tmp/sls.log
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Install integration test suite
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cd tests/selection-list-service && npm ci
+      - name: Type-check integration tests
+        run: cd tests/selection-list-service && npm run type-check
+      - name: Run integration/acceptance tests
+        env:
+          SERVICE_BASE_URL: http://localhost:3011
+          JWT_SECRET: test-jwt-secret-for-selection-list-service
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: selection_list_service_test
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: cd tests/selection-list-service && npm test
+      - name: Dump service logs on failure
+        if: failure()
+        run: cat /tmp/sls.log
+      - name: Stop selection-list-service
+        if: always()
+        run: |
+          if [ -n "$SLS_PID" ]; then
+            kill "$SLS_PID" 2>/dev/null || true
+          fi
+          if [ -n "$FAKE_SEC_PID" ]; then
+            kill "$FAKE_SEC_PID" 2>/dev/null || true
+          fi
+
   applications-service-tests:
     name: Applications service (unit + integration)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     # This job did not exist before. The applications-service serves /api/apps in
@@ -371,10 +827,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -404,9 +860,72 @@ jobs:
           JWT_SECRET: test-jwt-secret-key-for-testing-only
         run: npm run -w @fuzefront/applications-service test
 
+  config-service-tests:
+    name: Config service (unit)
+    runs-on: ubuntu-latest
+    needs: build
+
+    # This job did not exist before, and config-service had 21 suites / 297 tests
+    # sitting on disk that NO workflow ran — the same shape as the gap the
+    # applications-service job above was added to close. The service is already
+    # built and pushed by release.yml and deployed by
+    # config-service-deployment.yaml, so a regression here reached an image
+    # without any suite ever reporting on it.
+    #
+    # No Postgres service container: the tests drive an in-memory stand-in
+    # (tests/helpers/fakeDb.ts) that snapshots/restores on BEGIN/COMMIT/ROLLBACK,
+    # so the write-route transaction behaviour is exercised without a real DB.
+    #
+    # config-service is NOT a root workspace member (see release.yml's build
+    # step, which uses a root build context for the same reason), so it needs
+    # its own `npm ci` — `npm run -w config-service` does not resolve.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install root workspace
+        # Needed so @fuzefront/auth has its own dependencies available to build
+        # in the next step.
+        run: npm ci
+
+      - name: Build @fuzefront/auth (d.ts for config-service type-check)
+        # config-service imports Identity/AuthzClient from @fuzefront/auth
+        # (src/middleware/auth.ts, src/middleware/authz.ts). The package's
+        # `types` field points at dist/index.d.ts, which is not committed, so
+        # without this BOTH tsc and ts-jest fail with TS2307 "Cannot find module
+        # '@fuzefront/auth'" — 9 of the 21 suites fail to compile. Verified by
+        # reproducing exactly that failure before adding this step.
+        run: npm run -w @fuzefront/auth build
+
+      - name: Install config-service
+        working-directory: services/config-service
+        run: npm ci
+
+      - name: Type-check config-service
+        working-directory: services/config-service
+        run: npm run type-check
+
+      - name: Run config-service unit tests
+        # 21 suites / 297 tests: the read + write routers, the scope-chain
+        # resolver, both middlewares, the repositories, validation and
+        # pagination.
+        working-directory: services/config-service
+        run: npm test
+
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     services:
@@ -425,10 +944,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -462,14 +981,18 @@ jobs:
   email-integration:
     name: Email Integration (MailHog)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -535,18 +1058,112 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.test.yml down -v
 
+  # Event-propagation integration tests (FFRNT-175): the transactional outbox +
+  # Kafka relay exercised against a REAL Postgres AND a REAL broker — the two
+  # things the sqlite/fake-producer unit tests (backend/core/tests/events/*) can
+  # never cover: the `?::jsonb` cast + `FOR UPDATE SKIP LOCKED` claim, and
+  # actual publish → consume delivery + `<topic>.dlq` dead-lettering. Combines
+  # the Postgres service-container pattern (integration-tests job) with the
+  # docker-compose Kafka broker (email-integration job). Also runs the
+  # provisioning-service handler suite (incl. the redelivery/idempotency cases),
+  # which had no CI home before.
+  event-propagation-integration:
+    name: Event propagation (Postgres + Kafka)
+    runs-on: ubuntu-latest
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: event_propagation_test
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Install dependencies (root workspaces)
+        # Root install links the workspaces, but does NOT build sqlite3's
+        # native addon: npm's install-scripts trust gate skips lifecycle
+        # scripts for packages that aren't on an allowlist (see the next
+        # step), so a plain `npm ci` leaves sqlite3 without its binding.
+        run: npm ci
+
+      - name: Rebuild sqlite3 native module
+        # backend/core/tests/events/outbox.test.ts drives knex against an
+        # in-memory sqlite DB. Two things must hold (ported from #1191):
+        #  1. RESOLUTION. knex is hoisted to the ROOT node_modules, so its
+        #     require('sqlite3') never walks into backend/node_modules. sqlite3
+        #     is declared in the ROOT package.json devDeps so a root-level copy
+        #     exists where knex resolves.
+        #  2. THE NATIVE BINDING. `npm ci` skips sqlite3's install script
+        #     (install-scripts trust gate); `npm rebuild` runs it explicitly.
+        # This previously read `--workspace=@fuzefront/core`, where sqlite3 is
+        # not installed — npm reported success and built nothing.
+        run: npm rebuild sqlite3
+
+      - name: Build @fuzefront/shared kafka barrel
+        # @fuzefront/core resolves @fuzefront/shared/kafka from its built dist/
+        # (no moduleNameMapper), so it must be built before the core jest run.
+        run: npm run -w @fuzefront/shared build:kafka
+
+      - name: Start Kafka (KRaft) test broker
+        run: |
+          docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 300 kafka-test
+          echo "Kafka broker is healthy."
+
+      - name: Run @fuzefront/core event tests (real Postgres + real Kafka)
+        env:
+          # Gates the outbox.integration + relay.integration suites (skipped when
+          # unset). The unit suites (sqlite/fake producer) run regardless.
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/event_propagation_test
+          KAFKA_BROKERS: localhost:9094
+        run: npm run -w @fuzefront/core test
+
+      - name: Install provisioning-service deps (standalone workspace)
+        run: cd services/provisioning-service && npm ci
+
+      - name: Run provisioning-service handler tests (incl. redelivery/idempotency)
+        run: cd services/provisioning-service && npm test
+
+      - name: Dump Kafka logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs kafka-test
+
+      - name: Tear down harness
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v
+
   # ── Tier 4: Contract ─────────────────────────────────────────────────────
   contract-tests:
     name: Contract Tests (OpenAPI)
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
 
@@ -606,6 +1223,10 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
@@ -613,7 +1234,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -707,6 +1328,10 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
     needs: build
     if: github.ref == 'refs/heads/master'
     permissions:
@@ -714,10 +1339,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
 
@@ -735,20 +1360,79 @@ jobs:
 
   # Platform image build/push moved to release.yml (GHCR + GitOps tag bump).
 
+  # ── Tier 4: SDK drift gates ───────────────────────────────────────────────
+  gate-selectionlists-client-drift:
+    name: gate-selectionlists-client-drift
+    runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
+    # No Postgres, no Node install, no npm ci — pure filesystem/text check.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify SDK client covers every spec operation
+        run: |
+          chmod +x scripts/check-selection-lists-client-drift.sh
+          bash scripts/check-selection-lists-client-drift.sh
+
+  # One domain, one brand. Boots the real fuzefront-website nginx config and
+  # proves every host the production Ingress claims as an alias
+  # (websiteFrontend.aliasHosts) 301s to the canonical apex.
+  #
+  # The live edge is probed separately by the `www-canonical-host` job in
+  # prod-post-deploy.yml. Both are needed and neither substitutes for the
+  # other: that one can only run after a deploy and is additionally gated on
+  # FuzeInfra's DNS record, while this one catches a regression in the image's
+  # own config BEFORE it ships. The defect they guard — www.fuzefront.com
+  # serving FuzeHub off CloudFront while the apex served FuzeOne — survived
+  # for months precisely because no pre-merge check looked at a non-apex host.
+  gate-website-canonical-host:
+    name: gate-website-canonical-host
+    runs-on: ubuntu-latest
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 10 min is far above this job's runtime (a few seconds).
+    timeout-minutes: 10
+    # No Postgres, no Node, no npm ci — nginx + curl + python3 only.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install nginx
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq nginx-light
+
+      - name: Verify alias hosts redirect to the canonical apex
+        run: bash scripts/check-website-canonical-host.sh
+
   notify:
     name: Notify Team
     runs-on: ubuntu-latest
-    needs: [lint-and-test, build, integration-tests, email-integration]
+    # Bounded clock (gate-workflow-policy rule 1): a hung job never ends on
+    # its own and its runner pod pins a scale-set slot until a human drains
+    # the pool. 30 min is >10x every observed runtime in this workflow.
+    timeout-minutes: 30
+    # selection-list-service-e2e and selection-list-service-integration-tests are both
+    # REAL gates: each is in needs (so notify waits for it) and in the
+    # success/failure conditions below — both suites are green.
+    needs: [lint-and-test, build, integration-tests, email-integration, event-propagation-integration, selection-list-service-tests, selection-list-service-e2e, selection-list-service-integration-tests, gate-selectionlists-client-drift, gate-website-canonical-host, config-service-tests]
     if: always()
 
     steps:
       - name: Notify on success
-        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' }}
+        if: ${{ needs.lint-and-test.result == 'success' && needs.build.result == 'success' && needs.integration-tests.result == 'success' && needs.email-integration.result == 'success' && needs.event-propagation-integration.result == 'success' && needs.selection-list-service-tests.result == 'success' && needs.selection-list-service-e2e.result == 'success' && needs.selection-list-service-integration-tests.result == 'success' && needs.gate-selectionlists-client-drift.result == 'success' && needs.gate-website-canonical-host.result == 'success' && needs.config-service-tests.result == 'success' }}
         run: |
           echo "✅ All checks passed! Ready for deployment."
 
       - name: Notify on failure
-        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' }}
+        if: ${{ needs.lint-and-test.result == 'failure' || needs.build.result == 'failure' || needs.integration-tests.result == 'failure' || needs.email-integration.result == 'failure' || needs.event-propagation-integration.result == 'failure' || needs.selection-list-service-tests.result == 'failure' || needs.selection-list-service-e2e.result == 'failure' || needs.selection-list-service-integration-tests.result == 'failure' || needs.gate-selectionlists-client-drift.result == 'failure' || needs.gate-website-canonical-host.result == 'failure' || needs.config-service-tests.result == 'failure' }}
+
         run: |
           echo "❌ Some checks failed. Please review the logs."
           exit 1

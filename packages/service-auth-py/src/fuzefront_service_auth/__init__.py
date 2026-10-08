@@ -19,6 +19,7 @@ package disagrees with the spec, the spec wins and this package is the bug.
 
 from .authz import AuthorizationHook
 from .client import CachedToken, ServiceAuthClient
+from .delegation import DelegationClient, DelegationToken
 from .exceptions import (
     AuthorizationError,
     ServiceAuthError,
@@ -28,15 +29,17 @@ from .exceptions import (
 from .verifier import MachineIdentity, MachineTokenVerifier
 
 __all__ = [
-    "CachedToken",
-    "ServiceAuthClient",
     "AuthorizationError",
     "AuthorizationHook",
+    "CachedToken",
+    "DelegationClient",
+    "DelegationToken",
+    "MachineIdentity",
+    "MachineTokenVerifier",
+    "ServiceAuthClient",
     "ServiceAuthError",
     "TokenRequestError",
     "TokenVerificationError",
-    "MachineIdentity",
-    "MachineTokenVerifier",
 ]
 
 __version__ = "1.0.0"

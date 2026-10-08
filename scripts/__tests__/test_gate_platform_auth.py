@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from typing import ClassVar
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 GATE = os.path.join(REPO, "scripts", "gate_platform_auth.py")
@@ -47,7 +48,7 @@ def make_repo(files, manifest=None):
 
 def run(repo, *flags):
     r = subprocess.run([sys.executable, GATE, repo, *flags],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, check=False)
     return r.returncode, r.stdout + r.stderr
 
 
@@ -126,7 +127,7 @@ app.post('/api/v1/invoices', requireAuth(), requireRoles('admin'), handler);
                             "backend/package.json": self.PKG})
 
     def test_gate_flags_it(self):
-        code, out = run(self.d)
+        _code, out = run(self.d)
         self.assertIn("finding", out.lower(), out)
 
     def test_f1_catches_the_permissive_fallback(self):
@@ -162,7 +163,7 @@ app.post('/api/v1/things', (req, res) => res.status(201).json({}));
     def test_service_with_no_auth_at_all_is_flagged(self):
         d = make_repo({"src/server.js": self.NO_AUTH,
                        "package.json": json.dumps({"dependencies": {}})})
-        code, out = run(d, "--adoption")
+        _code, out = run(d, "--adoption")
         self.assertIn("A1", out)
 
     def test_every_other_family_is_silent_on_it(self):
@@ -253,7 +254,7 @@ class RatchetDefault(unittest.TestCase):
     not coldness, so the default inverted and the escape hatch was made legible.
     """
 
-    FAILING = {"src/server.js": AdoptionIsNotVacuous.NO_AUTH,
+    FAILING: ClassVar[dict] = {"src/server.js": AdoptionIsNotVacuous.NO_AUTH,
                "package.json": json.dumps({"dependencies": {}})}
 
     def test_enforcing_by_default(self):
@@ -563,7 +564,7 @@ class PublicRoutesAreDeclaredNotInferred(unittest.TestCase):
     def test_a_stale_exemption_is_reported(self):
         d = make_repo({"src/api.py": GUARDED_PY, "package.json": CLEAN_PKG,
                        "governance/public-routes.txt": PUBLIC_DECL})
-        code, out = run(d, "--routes")
+        _code, out = run(d, "--routes")
         self.assertIn("E3", out, "an exemption for a now-guarded route survived")
 
 
@@ -753,9 +754,9 @@ class GovernanceManagedFilesAreNotScanned(unittest.TestCase):
             if manifest is not None:
                 files[".fuze/installed.json"] = manifest
             repo = make_repo(files)
-            rc, out = run(repo)
+            _rc, out = run(repo)
             self.assertIn("src/svc.py", out,
-                          "manifest=%r must not suppress real findings" % manifest)
+                          f"manifest={manifest!r} must not suppress real findings")
 
 
 # ---------------------------------------------------------------------------
@@ -793,13 +794,13 @@ class NonRouteGetCallsAreNotRoutes(unittest.TestCase):
     def test_searchparams_and_map_gets_are_not_reported_as_routes(self):
         repo = make_repo({"src/handler.js": SEARCH_PARAMS,
                           "package.json": CLEAN_PKG})
-        rc, out = run(repo)
+        _rc, out = run(repo)
         for phantom in ("GET /url", "GET /days", "GET /content-type",
                         "GET /some-key"):
             self.assertNotIn(
                 phantom, out,
-                "%r came from a non-route .get() call and must not be "
-                "reported as an HTTP route" % phantom)
+                f"{phantom!r} came from a non-route .get() call and must not be "
+                "reported as an HTTP route")
 
     def test_a_real_route_is_STILL_detected(self):
         """The paired half: narrowing must not blind the gate to real routes."""

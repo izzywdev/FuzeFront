@@ -1,6 +1,30 @@
 import { Kafka, type EachMessagePayload } from 'kafkajs'
 import { z } from 'zod'
 
+export const MAX_DELIVERY_ATTEMPTS = 3
+
+export function retryDelayMs(attempt: number) {
+  return Math.min(5_000, 250 * 2 ** Math.max(0, attempt - 1))
+}
+
+export function failureCode(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/jira/i.test(message)) return 'JIRA_UNAVAILABLE'
+  if (/chroma|embedding|semantic/i.test(message)) return 'SEMANTIC_INDEX_UNAVAILABLE'
+  return 'INTELLIGENCE_UNAVAILABLE'
+}
+
+export async function retry<T>(operation: () => Promise<T>, wait: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= MAX_DELIVERY_ATTEMPTS; attempt++) {
+    try { return await operation() } catch (error) {
+      lastError = error
+      if (attempt < MAX_DELIVERY_ATTEMPTS) await wait(retryDelayMs(attempt))
+    }
+  }
+  throw lastError
+}
+
 const envelopeSchema = z.object({
   version: z.literal('1.0'),
   topic: z.string(),
@@ -38,7 +62,7 @@ export async function runConsumer(
       if (!raw) return
       try {
         const envelope = envelopeSchema.parse(JSON.parse(raw))
-        await handler(topic, envelope.payload, envelope.correlationId, { heartbeat })
+        await retry(() => handler(topic, envelope.payload, envelope.correlationId, { heartbeat }))
       } catch (error) {
         await producer.send({
           topic: `${topic}.dlq`,
@@ -47,7 +71,8 @@ export async function runConsumer(
               key: message.key,
               value: JSON.stringify({
                 sourceTopic: topic,
-                reason: error instanceof Error ? error.message : String(error),
+                code: failureCode(error),
+                attempts: MAX_DELIVERY_ATTEMPTS,
                 occurredAt: new Date().toISOString(),
               }),
             },

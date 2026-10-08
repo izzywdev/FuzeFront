@@ -15,10 +15,19 @@ fi
 # Default values
 CONTAINER_NAME="fuzefront-authentik-server"
 NEW_PASSWORD=${1:-"admin123"}
+# Track whether the password came from the operator (a value they chose, and
+# possibly a real one) or from the hardcoded local-dev default. Only the
+# default is ever echoed — printing an operator-supplied password puts a
+# credential into shell scrollback for no benefit, since they already know it.
+if [ -n "${1:-}" ]; then
+  PASSWORD_DISPLAY="(the password you supplied — not shown)"
+else
+  PASSWORD_DISPLAY="admin123  (local-dev default)"
+fi
 
 echo "📋 Configuration:"
 echo "   Container: $CONTAINER_NAME"
-echo "   New Password: $NEW_PASSWORD"
+echo "   New Password: $PASSWORD_DISPLAY"
 echo ""
 
 # Check if container is running
@@ -44,7 +53,7 @@ try:
     print('✅ Password updated successfully for akadmin')
     print('   Username: akadmin')
     print('   Email:', user.email)
-    print('   New Password: $NEW_PASSWORD')
+    print('   New Password: $PASSWORD_DISPLAY')
 except User.DoesNotExist:
     print('❌ User akadmin not found')
 except Exception as e:
@@ -67,7 +76,7 @@ try:
     print('✅ Password updated successfully for admin')
     print('   Username: admin')
     print('   Email:', user.email)
-    print('   New Password: $NEW_PASSWORD')
+    print('   New Password: $PASSWORD_DISPLAY')
 except User.DoesNotExist:
     print('ℹ️  User admin not found')
 except Exception as e:
@@ -83,12 +92,12 @@ echo "   URL (direct): http://localhost:9000"
 echo ""
 echo "🔑 Credentials to try:"
 echo "   Username: akadmin"
-echo "   Password: $NEW_PASSWORD"
+echo "   Password: $PASSWORD_DISPLAY"
 echo ""
 echo "   OR"
 echo ""
 echo "   Username: admin"
-echo "   Password: $NEW_PASSWORD"
+echo "   Password: $PASSWORD_DISPLAY"
 echo ""
 echo "💡 Make sure to add this to your hosts file:"
 echo "   127.0.0.1  auth.fuzefront.local"

@@ -23,6 +23,11 @@ Run: python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from typing import Self
+
 import json
 import os
 import subprocess
@@ -43,7 +48,7 @@ def run_gate(root: str, *flags: str) -> subprocess.CompletedProcess:
         # environment (every GitHub Actions runner has one) would otherwise silently
         # decide which fixture is "known failing" and make these tests report on the
         # wrong repo.
-        env={k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"},
+        env={k: v for k, v in os.environ.items() if k != "GITHUB_REPOSITORY"}, check=False,
     )
 
 
@@ -92,7 +97,7 @@ class Repo:
         with open(os.path.join(self.root, rel), encoding="utf-8") as f:
             return f.read()
 
-    def __enter__(self) -> "Repo":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -371,8 +376,8 @@ class TestVendoredCopyOwnershipIsPositional(unittest.TestCase):
             result = run_gate(r.root)
         self.assertIn("https://fuzeagent.prod.fuzefront.com/remoteEntry.js", result.stdout)
         self.assertGreaterEqual(
-            sum(1 for l in result.stdout.splitlines()
-                if "::error" in l and "[L1 manifest]" in l), 2, result.stdout)
+            sum(1 for line in result.stdout.splitlines()
+                if "::error" in line and "[L1 manifest]" in line), 2, result.stdout)
 
     def test_a_matching_vendored_copy_is_still_clean(self):
         with self.fuzeagent_shape(vendored_slug="fuzeagent") as r:
@@ -710,10 +715,10 @@ class TestNodeExpressServingDialect(unittest.TestCase):
         body = manifest_json(slug=slug, entry=serve_root + "remoteEntry.js",
                              scope=slug + "App")
         r.write("registration/manifest.json", body)
-        r.write("deploy/helm/%s/Chart.yaml" % slug,
-                "apiVersion: v2\nname: %s\nversion: 0.1.0\n" % slug)
-        r.write("deploy/helm/%s/files/registration/manifest.json" % slug, body)
-        r.write("deploy/helm/%s/templates/ingress.yaml" % slug, INGRESS.format(path="/"))
+        r.write(f"deploy/helm/{slug}/Chart.yaml",
+                f"apiVersion: v2\nname: {slug}\nversion: 0.1.0\n")
+        r.write(f"deploy/helm/{slug}/files/registration/manifest.json", body)
+        r.write(f"deploy/helm/{slug}/templates/ingress.yaml", INGRESS.format(path="/"))
         r.write("federation/vite.config.ts",
                 VITE.format(base=serve_root, assets_dir="\n    assetsDir: '',")
                     .replace("widgetApp", slug + "App"))
@@ -1114,7 +1119,7 @@ class TestApplicabilityIsDeclaredNeverInferred(unittest.TestCase):
 class TestRatchet(unittest.TestCase):
     """The ramp is a worklist, not an exemption -- and never a `|| true`."""
 
-    POLICY = {
+    POLICY: ClassVar[dict] = {
         "mode": "ratchet",
         "owner": "@izzywdev",
         "ratchet": {"knownFailing": {"widget": {"layers": ["L4b image-layout"],

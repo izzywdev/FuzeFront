@@ -238,6 +238,10 @@
         "In-repo packages resolve from source"
       ],
       "audit": {
+        "gate-lint": {
+          "can_fail": true,
+          "note": "DE-VACUUMED 2026-09-14 (Stage 0, first gate — taken alone so a first-run red is attributable to it). The fleet entry above still reads `can_fail: false` and is correct for every OTHER repo: this is a repo-level override, because the canonical workflow-templates/harden-gate.yml has not been flipped yet. Three separate swallows were removed, not one: the `errexit` disable, the terminal success exit, AND `node --check \"$f\" || echo …` inside a `git ls-files | while read` pipeline — a subshell, so even an exit code set there was discarded. The lints themselves are unchanged (ruff over the .py files; node --check over the .js/.cjs/.mjs files; the npm branch still no-ops because FuzeFront's ROOT package.json has no `lint` script). Landed together with the 32 ruff findings that flipping it surfaced, so the first enforcing run was green rather than a red nobody could act on."
+        },
         "gate-frontend-build": {
           "can_fail": true,
           "note": "Real vite/tsc build, no `|| true`. Genuinely required. AHEAD of the canonical template — the template should adopt it."

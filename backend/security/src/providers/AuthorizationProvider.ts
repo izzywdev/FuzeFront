@@ -110,6 +110,38 @@ export interface GrantQuery {
   cursor?: string;
 }
 
+// ── Subject ABAC attributes (mirrors API `SubjectType`/`SubjectRef`/
+// `AttributeValue`/`SubjectAttributesWriteRequest`/`SubjectAttributesWriteResult`) ──
+
+/** The provider's subject kinds this contract supports for attribute writes. */
+export type SubjectType = 'user' | 'tenant'
+
+/** A typed subject reference (mirrors API `SubjectRef`). The type is structural,
+ *  never inferred — no lookup ever resolves a bare subject id. */
+export interface SubjectRef {
+  type: SubjectType
+  key: string
+}
+
+/** A scalar ABAC attribute value (mirrors API `AttributeValue`). No nested objects/arrays. */
+export type AttributeValue = string | number | boolean
+
+/** Request to merge attributes onto a subject (mirrors API `SubjectAttributesWriteRequest`). */
+export interface SetAttributesRequest {
+  subject: SubjectRef
+  /** Merge patch of attribute name -> scalar value. At least one key. */
+  attributes: Record<string, AttributeValue>
+}
+
+/** Confirms an attribute write (mirrors API `SubjectAttributesWriteResult`). */
+export interface SetAttributesResult {
+  subject: SubjectRef
+  /** Echo of the keys/values THIS call wrote — not the subject's full attribute set. */
+  attributes: Record<string, AttributeValue>
+  /** Epoch milliseconds this write was applied. */
+  updatedAt: number
+}
+
 /** Cursor-paginated page (family standard). */
 export interface Page<T> {
   items: T[];
@@ -155,7 +187,24 @@ export interface AuthorizationProvider {
   revoke(req: GrantRevokeRequest): Promise<void>;
 
   /** List grants for a subject within a tenant (cursor-paginated). */
-  listGrants(query: GrantQuery): Promise<Page<Grant>>;
+  listGrants(query: GrantQuery): Promise<Page<Grant>>
+
+  // ── Subject ABAC attributes (write-side) ──
+  //
+  // Distinct from grant: a grant assigns a role/permission, this merges plain
+  // scalar data the provider's OWN policies read directly (e.g. a billing plan
+  // tier gating feature access by `plan_tier`/`seat_limit` rather than by
+  // role). Merge, not replace — see `SetAttributesRequest`.
+  //
+  // THIS IS A WRITE, NOT A DECISION: unlike `check`/`bulkCheck` (fail-closed —
+  // any error resolves to `false`/deny), a provider outage/timeout/rejection
+  // here MUST be surfaced as a thrown error, never swallowed into a fail-open
+  // or fail-silent success. The caller (e.g. billing entitlement sync) needs
+  // to know the write did not land so it can retry, rather than believe a
+  // stale/absent attribute state actually reached the provider.
+
+  /** Merge ABAC attributes onto a subject's record in the provider's own store. */
+  setAttributes(req: SetAttributesRequest): Promise<SetAttributesResult>;
 
   // ── Tenant / membership / role management (neutralized org primitives) ──
 

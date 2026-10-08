@@ -22,6 +22,7 @@ Exit 0 = pass / no contracts found (report-only-friendly); exit 1 = hard violati
 Requires PyYAML (pip install pyyaml). JSON specs work with no extra deps.
 """
 from __future__ import annotations
+
 import json
 import os
 import re
@@ -29,17 +30,26 @@ import sys
 
 try:
     import yaml  # type: ignore
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     yaml = None
 
-SPEC_NAME_RE = re.compile(r"(openapi|swagger).*\.(ya?ml|json)$", re.I)
+#: What a malformed spec can raise. `yaml` is optional, so the tuple is built from what
+#: is importable. NOTE: yaml.YAMLError does NOT subclass ValueError, so narrowing to
+#: ValueError alone would stop catching YAML syntax errors entirely.
+_SPEC_PARSE_ERRORS: tuple[type[BaseException], ...] = (
+    (OSError, ValueError, yaml.YAMLError) if yaml is not None else (OSError, ValueError)
+)
+
+_FALLBACK_NOTE = "git ls-files unavailable; falling back to a filesystem walk"
+
+SPEC_NAME_RE = re.compile(r"(openapi|swagger).*\.(ya?ml|json)$", re.IGNORECASE)
 ALLOWLIST_PATHS = [
     "governance/pagination-allowlist.txt",
     ".fuze/pagination-allowlist.txt",
 ]
-LIST_HINT_RE = re.compile(r"(list|search|index|all|feed|collection|query)", re.I)
+LIST_HINT_RE = re.compile(r"(list|search|index|all|feed|collection|query)", re.IGNORECASE)
 # plural-ish: path segment ends with 's' and is not a {param}
-PLURAL_SEG_RE = re.compile(r"/[a-z0-9_-]+s(/|$)", re.I)
+PLURAL_SEG_RE = re.compile(r"/[a-z0-9_-]+s(/|$)", re.IGNORECASE)
 PATH_PARAM_TAIL_RE = re.compile(r"\{[^}]+\}/?$")
 
 
@@ -58,7 +68,7 @@ def _candidate_files(root: str) -> list[str]:
         res = subprocess.run(
             ["git", "-C", root, "ls-files", "--",
              "*.yaml", "*.yml", "*.json", "**/*.yaml", "**/*.yml", "**/*.json"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, check=False,
         )
         if res.returncode == 0 and res.stdout.strip():
             files = [os.path.join(root, p) for p in res.stdout.splitlines() if p.strip()]
@@ -67,8 +77,21 @@ def _candidate_files(root: str) -> list[str]:
                 f for f in files
                 if not any(seg in PRUNE_DIRS for seg in f.replace("\\", "/").split("/"))
             ]
-    except Exception:
-        pass
+        if res.returncode != 0:
+            # `check=False` means a nonzero exit does NOT raise, so without this the
+            # fallback is taken in SILENCE -- the diagnostic below only covers the
+            # exception path. That gap is not hypothetical: a `git archive` extract
+            # (not a repo) exits nonzero here, every gate quietly switched to os.walk,
+            # and the different file set produced a phantom regression during this
+            # PR's own verification. Caught in review (Copilot, 2026-09-15).
+            print(f"{_FALLBACK_NOTE} (git exit {res.returncode}: "
+                  f"{res.stderr.strip()[:200]})", file=sys.stderr)
+    except (OSError, subprocess.SubprocessError) as exc:
+        # The git fast path is an optimisation; the slow filesystem walk below is the
+        # real answer. Narrow, because ONLY a missing/failing git binary belongs here —
+        # a bug inside the try block must surface, not silently downgrade the gate to
+        # its fallback forever. Logged for the same reason (S110).
+        print(f"{_FALLBACK_NOTE} ({type(exc).__name__}: {exc})", file=sys.stderr)
     out = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [
@@ -141,7 +164,7 @@ def _resp_2xx_schema(op: dict) -> dict | None:
     for code, body in resps.items():
         if str(code).startswith("2"):
             content = (body or {}).get("content", {}) or {}
-            for _, media in content.items():
+            for media in content.values():
                 if isinstance(media, dict) and "schema" in media:
                     return media["schema"]
     return None
@@ -185,16 +208,14 @@ def is_collection_get(path: str, op: dict, resp_schema: dict | None) -> bool:
         return True
     if LIST_HINT_RE.search(opid) or LIST_HINT_RE.search(summary):
         return True
-    if PLURAL_SEG_RE.search(path):
-        return True
-    return False
+    return bool(PLURAL_SEG_RE.search(path))
 
 
 def check_spec(path: str, allow: set[str]) -> list[str]:
     violations = []
     try:
         spec = load_spec(path)
-    except Exception as e:  # malformed yaml/json — report-only skip, don't crash the gate
+    except _SPEC_PARSE_ERRORS as e:  # malformed yaml/json — report-only skip, don't crash the gate
         print(f"::warning title=gate-pagination::could not parse {path}: {e}")
         return []
     if not isinstance(spec, dict):

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { useForm } from 'react-hook-form'
 import { Mail, Phone, MapPin, Send } from 'lucide-react'
+import { Center, IconTile, Container, FieldLabel } from '@fuzefront/design-system'
 import { useNotifications } from '../contexts/NotificationContext'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
@@ -78,12 +79,12 @@ export const ContactPage: React.FC = () => {
   return (
     <div className="bg-white pt-16">
       <section ref={heroRef} className="py-24 bg-gradient-to-br from-primary-50 to-secondary-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
+        <Container size="7xl">
+          <Center
+            as={motion.div}
             initial={{ opacity: 0, y: 30 }}
             animate={heroInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8 }}
-            className="text-center"
           >
             <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
               Get in <span className="gradient-text">Touch</span>
@@ -91,12 +92,12 @@ export const ContactPage: React.FC = () => {
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
               Ready to build something amazing? Let's discuss how FuzeFront can help.
             </p>
-          </motion.div>
-        </div>
+          </Center>
+        </Container>
       </section>
 
       <section className="py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="7xl">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
             {/* Contact Info */}
             <motion.div
@@ -110,19 +111,19 @@ export const ContactPage: React.FC = () => {
               
               <div className="space-y-6">
                 <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <Mail className="text-primary-600" size={24} />
-                  </div>
+                  <IconTile tone="accent" size="md">
+                    <Mail size={24} />
+                  </IconTile>
                   <div>
                     <h3 className="font-medium text-gray-900">Email</h3>
                     <p className="text-gray-600">contact@fuzefront.com</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <Phone className="text-primary-600" size={24} />
-                  </div>
+                  <IconTile tone="accent" size="md">
+                    <Phone size={24} />
+                  </IconTile>
                   <div>
                     <h3 className="font-medium text-gray-900">Phone</h3>
                     <a href="tel:+16502763313" className="text-gray-600 hover:text-primary-600 transition-colors">
@@ -130,11 +131,11 @@ export const ContactPage: React.FC = () => {
                     </a>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <MapPin className="text-primary-600" size={24} />
-                  </div>
+                  <IconTile tone="accent" size="md">
+                    <MapPin size={24} />
+                  </IconTile>
                   <div>
                     <h3 className="font-medium text-gray-900">Office</h3>
                     <p className="text-gray-600">San Francisco, CA</p>
@@ -152,10 +153,11 @@ export const ContactPage: React.FC = () => {
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Name *
-                    </label>
+                    <FieldLabel htmlFor="contact-name" required>
+                      Name
+                    </FieldLabel>
                     <input
+                      id="contact-name"
                       {...register('name', { required: 'Name is required' })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="Your name"
@@ -164,13 +166,14 @@ export const ContactPage: React.FC = () => {
                       <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
                     )}
                   </div>
-                  
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email *
-                    </label>
+                    <FieldLabel htmlFor="contact-email" required>
+                      Email
+                    </FieldLabel>
                     <input
-                      {...register('email', { 
+                      id="contact-email"
+                      {...register('email', {
                         required: 'Email is required',
                         pattern: {
                           value: /^\S+@\S+$/i,
@@ -189,21 +192,23 @@ export const ContactPage: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <FieldLabel htmlFor="contact-company">
                       Company
-                    </label>
+                    </FieldLabel>
                     <input
+                      id="contact-company"
                       {...register('company')}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="Your company"
                     />
                   </div>
-                  
+
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <FieldLabel htmlFor="contact-phone">
                       Phone
-                    </label>
+                    </FieldLabel>
                     <input
+                      id="contact-phone"
                       {...register('phone')}
                       type="tel"
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -213,10 +218,11 @@ export const ContactPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <FieldLabel htmlFor="contact-interest">
                     Interest
-                  </label>
+                  </FieldLabel>
                   <select
+                    id="contact-interest"
                     {...register('interest')}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   >
@@ -230,10 +236,11 @@ export const ContactPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Subject *
-                  </label>
+                  <FieldLabel htmlFor="contact-subject" required>
+                    Subject
+                  </FieldLabel>
                   <input
+                    id="contact-subject"
                     {...register('subject', { required: 'Subject is required' })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     placeholder="What's this about?"
@@ -244,10 +251,11 @@ export const ContactPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Message *
-                  </label>
+                  <FieldLabel htmlFor="contact-message" required>
+                    Message
+                  </FieldLabel>
                   <textarea
+                    id="contact-message"
                     {...register('message', { required: 'Message is required' })}
                     rows={6}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -278,7 +286,7 @@ export const ContactPage: React.FC = () => {
               </form>
             </motion.div>
           </div>
-        </div>
+        </Container>
       </section>
     </div>
   )

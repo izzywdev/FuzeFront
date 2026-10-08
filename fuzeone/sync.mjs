@@ -52,9 +52,18 @@ const vars = {
 };
 
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
+const hasMobileAndroid = () => {
+  const path = join(target, '.fuze', 'manifest.json');
+  if (!existsSync(path)) return false;
+  try {
+    const mobile = JSON.parse(readFileSync(path, 'utf8')).mobile;
+    return mobile?.required === true && mobile.targets?.includes('android');
+  } catch { return false; }
+};
 const conditions = {
   'has-helm': () => isDir(join(target, 'deploy', 'helm')),
   'has-infra': () => isDir(join(target, 'deploy', 'terraform')) || isDir(join(target, 'deploy', 'argocd')),
+  'has-mobile-android': hasMobileAndroid,
 };
 
 const subst = (s) => s.replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars ? vars[k] : m));
@@ -64,8 +73,17 @@ function regionMerge(existing, block, marker) {
   const end = `<!-- ${marker}:END -->`;
   const wrapped = `${start}\n${block.trim()}\n${end}`;
   if (existing == null) return wrapped + '\n';
-  const re = new RegExp(`${start}[\\s\\S]*?${end}`);
-  if (re.test(existing)) return existing.replace(re, wrapped);
+  // Plain string search, not a dynamically built pattern: the marker comes
+  // from manifest.json, so compiling it as a regex would both mis-parse any
+  // regex metacharacter in a marker name and hand an editor of that file a
+  // ReDoS surface over every managed file's contents. indexOf is exact and
+  // linear, and matches the old lazy match semantics (first END that follows
+  // the START).
+  const startIdx = existing.indexOf(start);
+  const endIdx = startIdx === -1 ? -1 : existing.indexOf(end, startIdx + start.length);
+  if (startIdx !== -1 && endIdx !== -1) {
+    return existing.slice(0, startIdx) + wrapped + existing.slice(endIdx + end.length);
+  }
   return existing.replace(/\s*$/, '') + `\n\n${wrapped}\n`;
 }
 

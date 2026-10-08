@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "target": "ES2020", "lib": ["ES2020", "DOM"], "module": "ESNext", "moduleResolution": "Bundler", "jsx": "react-jsx", "strict": true, "declaration": true, "outDir": "dist", "skipLibCheck": true, "esModuleInterop": true, "noEmit": true, "baseUrl": ".", "paths": { "@fuzefront/design-system": ["../../design-system/index.d.ts"] } },
+  "include": ["src"]
+}

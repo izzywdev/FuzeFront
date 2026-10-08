@@ -17,8 +17,6 @@ returns read as the same product, not two dialects.
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 class ServiceAuthError(Exception):
     """Base class for every error raised by this package.
@@ -31,7 +29,7 @@ class ServiceAuthError(Exception):
     code: str = "UNKNOWN"
     status: int = 401
 
-    def __init__(self, message: str, *, code: Optional[str] = None, status: Optional[int] = None) -> None:
+    def __init__(self, message: str, *, code: str | None = None, status: int | None = None) -> None:
         super().__init__(message)
         if code is not None:
             self.code = code

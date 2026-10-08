@@ -39,3 +39,6 @@ cae9e719d90e7d3c278a89576500e04ac4b25c3d:.gitleaksignore:generic-api-key:27
 # suppressed here instead.
 db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/README.md:generic-api-key:20
 db45b8ea8db4931e4248b57f1df8dcdf13c4cd72:packages/selection-list-client-py/src/fuzefront_selection_list_client/client.py:generic-api-key:13
+
+# Dummy attestation token fixture in the selection-list acceptance tests (not a credential; entropy just over the generic-api-key threshold). Replaced with a low-entropy placeholder in a later commit, but the PR-range scan still sees this commit.
+21641303996c65515669294fa64a61aa066f3042:tests/selection-list-service/contract/seeding.test.ts:generic-api-key:717

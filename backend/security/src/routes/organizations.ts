@@ -10,7 +10,9 @@ import {
   requireOwnership,
 } from '../middleware/permissions'
 import { db } from '../config/database'
+import { logger } from '../lib/logger'
 import { enqueueEvent } from '@fuzefront/core'
+import { emitMembershipRemoved } from '../events/membershipEvents'
 import { TOPICS } from '@fuzefront/shared/kafka'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
@@ -244,9 +246,11 @@ router.post('/', authenticateToken, async (req: any, res) => {
     try {
       await reconcileOrganizationProvisioning(organizationId)
     } catch (error) {
-      console.error(
-        `Provisioning reconcile failed for org ${organizationId} (will self-heal):`,
-        error
+      // Structured, constant message: the org id is a bound field, never
+      // interpolated into the format string (log-injection / unsafe-formatstring).
+      logger.error(
+        { orgId: organizationId, err: error },
+        'organizations: provisioning reconcile failed (will self-heal)'
       )
     }
 
@@ -1568,7 +1572,10 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) =>
         role as 'admin' | 'member' | 'viewer'
       )
     } catch (permitErr) {
-      console.error(`Permit role update failed for membership ${memberId} (non-fatal):`, permitErr)
+      logger.error(
+        { membershipId: memberId, organizationId: id, err: permitErr },
+        'organizations: Permit role update failed (non-fatal)'
+      )
     }
 
     const flagCtxRole = { orgId: id, userId: req.user?.id }
@@ -1591,24 +1598,38 @@ router.delete('/:id/members/:memberId', authenticateToken, async (req: any, res)
       return res.status(403).json({ error: 'Insufficient permissions' })
     }
 
-    // Fetch target membership
-    const membership = await db('organization_memberships')
-      .where('id', memberId)
-      .where('organization_id', id)
-      .first()
+    // Fetch + delete + enqueue in ONE transaction so the removed event commits
+    // atomically with the delete (and is dropped if the delete rolls back).
+    const outcome = await db.transaction(async trx => {
+      // Fetch target membership
+      const membership = await trx('organization_memberships')
+        .where('id', memberId)
+        .where('organization_id', id)
+        .first()
 
-    if (!membership) {
+      if (!membership) return 'not_found' as const
+
+      // Protect owner memberships
+      if (membership.role === 'owner') return 'owner' as const
+
+      await trx('organization_memberships')
+        .where('id', memberId)
+        .delete()
+
+      await emitMembershipRemoved(trx, {
+        organizationId: id,
+        userId: membership.user_id,
+        role: membership.role,
+      })
+      return 'removed' as const
+    })
+
+    if (outcome === 'not_found') {
       return res.status(404).json({ error: 'Member not found' })
     }
-
-    // Protect owner memberships
-    if (membership.role === 'owner') {
+    if (outcome === 'owner') {
       return res.status(403).json({ error: 'Cannot remove the organization owner' })
     }
-
-    await db('organization_memberships')
-      .where('id', memberId)
-      .delete()
 
     res.json({ message: 'Member removed' })
   } catch (error: any) {

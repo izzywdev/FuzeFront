@@ -21,14 +21,18 @@ Coverage:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from typing import Self
+
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-
 from fuzefront_config_client import (
     ConfigApiError,
     ConfigClient,
@@ -43,14 +47,13 @@ from fuzefront_config_client import (
     is_not_modified,
 )
 
-
 # ---------------------------------------------------------------------------
 # Stub HTTP server helpers (same pattern as selection-list-client-py)
 # ---------------------------------------------------------------------------
 
 
 class _Handler(BaseHTTPRequestHandler):
-    routes: Dict[tuple, Any] = {}
+    routes: ClassVar[dict[tuple, Any]] = {}
 
     def log_message(self, *args: Any) -> None:  # silence access log in tests
         pass
@@ -108,16 +111,16 @@ class _Handler(BaseHTTPRequestHandler):
 class StubServer:
     """Context manager that starts a stub HTTP server in a background thread."""
 
-    def __init__(self, routes: Dict[tuple, Any]) -> None:
+    def __init__(self, routes: dict[tuple, Any]) -> None:
         _Handler.routes = routes
         self._server = HTTPServer(("127.0.0.1", 0), _Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
-    def __enter__(self) -> "StubServer":
+    def __enter__(self) -> Self:
         self._thread.start()
         return self
 
-    def __exit__(self, *_: Any) -> None:
+    def __exit__(self, *_: object) -> None:
         self._server.shutdown()
 
     @property
@@ -132,7 +135,7 @@ class StubServer:
 
 _NOW = "2026-08-16T12:00:00Z"
 
-_NAMESPACE_FIXTURE: Dict[str, Any] = {
+_NAMESPACE_FIXTURE: dict[str, Any] = {
     "id": "cns_01h455vb4pex5vsknk084sn02q",
     "namespace": "fuzefront.chat",
     "displayName": "Chat",
@@ -141,7 +144,7 @@ _NAMESPACE_FIXTURE: Dict[str, Any] = {
     "createdAt": _NOW,
 }
 
-_KEY_DEFINITION_FIXTURE: Dict[str, Any] = {
+_KEY_DEFINITION_FIXTURE: dict[str, Any] = {
     "id": "ckd_01h455vb4pex5vsknk084sn02q",
     "key": "ui.theme.density",
     "displayName": "Density",
@@ -166,11 +169,11 @@ _KEY_DEFINITION_FIXTURE: Dict[str, Any] = {
 }
 
 
-def _page(items: List[Any], next_cursor: Optional[str] = None, has_next_page: bool = False) -> dict:
+def _page(items: list[Any], next_cursor: str | None = None, has_next_page: bool = False) -> dict:
     return {"items": items, "pageInfo": {"hasNextPage": has_next_page, "nextCursor": next_cursor}}
 
 
-def _effective_config_entry(**overrides: Any) -> Dict[str, Any]:
+def _effective_config_entry(**overrides: Any) -> dict[str, Any]:
     entry = {
         "key": "ui.theme.density",
         "value": "compact",
@@ -201,7 +204,7 @@ class TestConstructorAndUrl:
             ConfigClient(base_url="file:///etc/passwd")
 
     def test_trailing_slash_stripped(self) -> None:
-        received_paths: List[str] = []
+        received_paths: list[str] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_paths.append(urlparse(handler.path).path)
@@ -223,7 +226,7 @@ class TestConstructorAndUrl:
         '/api/config' entirely. This is exactly the bug CLAUDE.md's
         same-origin-base rule exists to prevent.
         """
-        received_paths: List[str] = []
+        received_paths: list[str] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_paths.append(handler.path)
@@ -260,7 +263,7 @@ class TestConstructorAndUrl:
             client.list_namespaces()
 
     def test_bearer_token_injected(self) -> None:
-        received_headers: List[dict] = []
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
@@ -275,7 +278,7 @@ class TestConstructorAndUrl:
 
     def test_callable_token_called_per_request(self) -> None:
         call_count = 0
-        received_auth: List[str] = []
+        received_auth: list[str] = []
 
         def token_fn() -> str:
             nonlocal call_count
@@ -296,7 +299,7 @@ class TestConstructorAndUrl:
         assert received_auth == ["Bearer token-1", "Bearer token-2"]
 
     def test_no_token_no_auth_header(self) -> None:
-        received_headers: List[dict] = []
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
@@ -310,7 +313,7 @@ class TestConstructorAndUrl:
         assert "Authorization" not in received_headers[0]
 
     def test_extra_headers_merged(self) -> None:
-        received_headers: List[dict] = []
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
@@ -526,7 +529,7 @@ class TestEffectiveConfig:
 
     def test_304_returns_not_modified_not_an_error(self) -> None:
         """The core AC: 304 is a distinct successful result, never raised as an error."""
-        received_headers: List[dict] = []
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
@@ -785,7 +788,7 @@ class TestPagination:
         page1_item = dict(_NAMESPACE_FIXTURE, id="cns_page1", namespace="a")
         page2_item = dict(_NAMESPACE_FIXTURE, id="cns_page2", namespace="b")
         page1_cursor = "cursor-page-2"
-        call_log: List[Optional[str]] = []
+        call_log: list[str | None] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             cursor = qs.get("cursor", [None])[0]

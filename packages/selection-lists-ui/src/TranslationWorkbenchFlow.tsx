@@ -13,6 +13,7 @@ import type {
   LocaleIndexEntry,
   TranslationEntry,
   ApiError,
+  AutofillResult,
 } from './types'
 import {
   getLocaleIndex,
@@ -78,10 +79,14 @@ function AutofillModal({
 }) {
   const [overwriteMachine, setOverwriteMachine] = useState(false)
   const [running, setRunning] = useState(false)
-  const [result, setResult] = useState<{ filled: number; skipped: number } | null>(null)
+  const [result, setResult] = useState<AutofillResult | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [forbidden, setForbidden] = useState(false)
   const [nothingToDo, setNothingToDo] = useState(false)
+
+  // The run finished: keep the dialog open so the summary / "nothing to do"
+  // note is actually seen (frame 09). The user dismisses it with Close.
+  const done = result !== null || nothingToDo
 
   const handleConfirm = async () => {
     setRunning(true)
@@ -90,7 +95,7 @@ function AutofillModal({
     setNothingToDo(false)
     try {
       const res = await autofillTranslations(listId, locale, { overwrite_machine: overwriteMachine })
-      if (res.filled === 0 && res.skipped === 0) {
+      if (res.items_translated === 0 && res.items_skipped === 0 && !res.list_translated) {
         setNothingToDo(true)
       } else {
         setResult(res)
@@ -101,7 +106,8 @@ function AutofillModal({
       if (e.code === 'FORBIDDEN') {
         setForbidden(true)
       } else {
-        setError({ ...e, code: 'autofill-failed' })
+        // NB: spreading an Error drops its non-enumerable `message`, so copy it explicitly
+        setError({ code: 'autofill-failed', message: e.message })
       }
     } finally {
       setRunning(false)
@@ -154,8 +160,8 @@ function AutofillModal({
         {/* Result */}
         {result && (
           <div data-result="autofill" style={{ marginBottom: 'var(--space-3)', padding: 'var(--space-3)', background: 'var(--success-soft)', borderRadius: 'var(--radius-md)' }}>
-            Autofill complete: {result.filled} translated,{' '}
-            <span data-items-skipped={result.skipped}>{result.skipped}</span> skipped.
+            Autofill complete: {result.items_translated} translated,{' '}
+            <span data-items-skipped={result.items_skipped}>{result.items_skipped}</span> skipped.
           </div>
         )}
 
@@ -167,7 +173,7 @@ function AutofillModal({
               type="checkbox"
               checked={overwriteMachine}
               onChange={e => setOverwriteMachine(e.target.checked)}
-              disabled={running}
+              disabled={running || done}
             />
             Overwrite existing machine translations
           </label>
@@ -177,8 +183,8 @@ function AutofillModal({
           <button
             data-action="confirm-autofill"
             onClick={handleConfirm}
-            disabled={running || forbidden}
-            style={{ ...s.btn, opacity: running || forbidden ? 0.6 : 1 }}
+            disabled={running || forbidden || done}
+            style={{ ...s.btn, opacity: running || forbidden || done ? 0.6 : 1 }}
           >
             {running ? 'Running…' : 'Run autofill'}
           </button>
@@ -204,9 +210,11 @@ function TranslationIndex({
   const [autofillTarget, setAutofillTarget] = useState<LocaleIndexEntry | null>(null)
   const [sourceLocale, setSourceLocale] = useState('en')
 
-  const loadLocales = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  const loadLocales = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
     try {
       const resp = await getLocaleIndex(listId)
       setLocales(resp.locales ?? [])
@@ -215,7 +223,9 @@ function TranslationIndex({
       const src = resp.locales?.find(l => l.is_source)
       if (src) setSourceLocale(src.locale)
     } catch (err) {
-      setError((err as ApiError).message ?? 'Failed to load translations')
+      // A silent refresh failing must not replace the panel (and the open
+      // dialog); the stale rows are still correct enough to keep showing.
+      if (!silent) setError((err as ApiError).message ?? 'Failed to load translations')
     } finally {
       setLoading(false)
     }
@@ -235,7 +245,7 @@ function TranslationIndex({
     return (
       <div data-frame="07-locale-index" data-panel="translation-index" style={s.frame}>
         <div data-state="error" style={s.errorBox}>{error}</div>
-        <button style={s.btn} onClick={loadLocales}>Retry</button>
+        <button style={s.btn} onClick={() => loadLocales()}>Retry</button>
       </div>
     )
   }
@@ -339,8 +349,10 @@ function TranslationIndex({
           missingCount={autofillTarget.total - autofillTarget.translated}
           onClose={() => setAutofillTarget(null)}
           onComplete={() => {
-            setAutofillTarget(null)
-            loadLocales()
+            // Refresh the rows behind the dialog WITHOUT swapping the panel to
+            // its loading skeleton, which would unmount the dialog and the
+            // result it is about to show.
+            loadLocales(true)
           }}
         />
       )}
@@ -520,6 +532,7 @@ function LocaleEditor({
             >
               <input
                 type="text"
+                aria-label={`${locale.toUpperCase()} translation for ${t.item_id}`}
                 value={currentLabel}
                 onChange={e => setLocalEdits(prev => ({ ...prev, [t.item_id]: e.target.value }))}
                 disabled={forbiddenAll}

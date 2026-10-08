@@ -15,10 +15,13 @@
  *   ALLOWED → assert 2xx
  *   DENIED  → assert 403 (or 404 for reads, per the "not an existence oracle" rule)
  *
- * Additionally: org admin derives list-owner on ALL lists in the org, even
- * without an explicit Permit grant.
+ * Additionally (contract 3.0.0, docs/planning/selection-lists-permit-actions.md
+ * §4.2/§5): per-list actions are INSTANCE-ONLY. A tenant role (admin included)
+ * confers none of them, and there is NO automatic org-admin -> list-owner
+ * derivation. A tenant admin reaches a list only through an explicit
+ * `list-owner` grant (the support path).
  *
- * Tests are ALL RED until the service is implemented.
+ * GREEN against the service; gated in CI by selection-list-service-integration-tests.
  */
 
 import { makeClient, rawFetch } from '../helpers/client';
@@ -416,11 +419,26 @@ describe('list-owner role', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Org admin derives list-owner on ALL lists (no explicit grant required)
+// Tenant admin does NOT derive list-owner (contract 3.0.0, review H-3)
+//
+// Replaces the 2.0.0 block "org-admin implicit list-owner", which asserted the
+// opposite. 3.0.0 splits authorization into the tenant-level
+// SelectionListCatalog (tenant roles) and the instance-level SelectionList
+// (per-list roles only): a tenant role confers NO per-list action, so an org
+// admin with no instance role on a list is treated like any other non-member of
+// that list — 404 on reads (no existence oracle), 403 on writes — until it is
+// explicitly granted list-owner.
 // ---------------------------------------------------------------------------
 
-describe('org-admin implicit list-owner', () => {
-  const adminToken = () => tokenFor(USER_ORG_ADMIN, ['org-admin']);
+// Run for BOTH spellings: `admin` is the tenant role the 3.0.0 contract names
+// (docs/planning/selection-lists-permit-actions.md §4.1/§5 — customer org administrators hold the
+// TENANT role `admin`; ReBAC `org-admin` is FuzeOne staff), `org-admin` is the legacy claim the
+// stand-in Security API aliases to `admin`. The original block only exercised the alias.
+describe.each([
+  ['admin', 'usr_01test00000000authztenadmin0'],
+  ['org-admin', USER_ORG_ADMIN],
+])('tenant role %s has no implicit list-owner (3.0.0)', (tenantRole, adminUser) => {
+  const adminToken = () => tokenFor(adminUser, [tenantRole]);
 
   let orgAdminListId: SelectionListId;
 
@@ -439,32 +457,32 @@ describe('org-admin implicit list-owner', () => {
     await purgeList(ownerClient, orgAdminListId);
   });
 
-  it('org admin can read lists they have no explicit grant on', async () => {
+  it('org admin can NOT read a list it holds no instance role on (404, not 403)', async () => {
     const { status } = await rawFetch(`/v1/selection-lists/${encodeURIComponent(orgAdminListId)}`, {
       method: 'GET',
       token: adminToken(),
     });
-    expect(status).toBe(200);
+    expect(status).toBe(404);
   });
 
-  it('org admin can update list metadata (list-owner level)', async () => {
+  it('org admin can NOT update list metadata without an instance role', async () => {
     const { status } = await rawFetch(`/v1/selection-lists/${encodeURIComponent(orgAdminListId)}`, {
       method: 'PATCH',
       token: adminToken(),
       body: JSON.stringify({ name: 'Admin-updated Name' }),
     });
-    expect(status).toBe(200);
+    expect(status).toBe(403);
   });
 
-  it('org admin can manage_access on any list in their org', async () => {
+  it('org admin can NOT manage_access on a list it holds no instance role on', async () => {
     const { status } = await rawFetch(
       `/v1/selection-lists/${encodeURIComponent(orgAdminListId)}/access`,
       { method: 'GET', token: adminToken() }
     );
-    expect(status).toBe(200);
+    expect(status).toBe(403);
   });
 
-  it('org admin can delete (archive) any list in their org', async () => {
+  it('org admin can NOT delete (archive) a list it holds no instance role on, and the list survives', async () => {
     const ownerClient = makeClient(() => tokenFor(USER_OWNER));
     const disposable = await createTestList(ownerClient, {
       key: 'admin-del-' + Math.random().toString(16).slice(2, 8),
@@ -475,8 +493,82 @@ describe('org-admin implicit list-owner', () => {
       method: 'DELETE',
       token: adminToken(),
     });
-    expect([200, 204]).toContain(status);
+    expect(status).toBe(403);
+
+    const still = await rawFetch(`/v1/selection-lists/${encodeURIComponent(disposable.id)}`, {
+      method: 'GET',
+      token: tokenFor(USER_OWNER),
+    });
+    expect(still.status).toBe(200);
     await purgeList(ownerClient, disposable.id as SelectionListId);
+  });
+
+  it('...but CAN use the tenant-level catalog (list, create), and sees no list it holds no role on', async () => {
+    const res = await rawFetch('/v1/selection-lists?limit=200', { method: 'GET', token: adminToken() });
+    expect(res.status).toBe(200);
+    const items = ((res.body as { items?: Array<{ id: string }> } | null)?.items ?? []) as Array<{ id: string }>;
+    expect(items.map((i) => i.id)).not.toContain(orgAdminListId);
+
+    // `create` is half of what this test's title claims; it was previously never asserted
+    const created = await rawFetch('/v1/selection-lists', {
+      method: 'POST',
+      token: adminToken(),
+      body: JSON.stringify({ key: 'admin-own-' + Math.random().toString(16).slice(2, 8), name: 'Admin created' }),
+    });
+    expect(created.status).toBe(201);
+    await purgeList(makeClient(adminToken), (created.body as { id: string }).id as SelectionListId);
+  });
+
+  it('can NOT reach ANY other per-list action either: items, translations, reorder, archive, purge, grants (403/404, state unchanged)', async () => {
+    const ownerClient = makeClient(() => tokenFor(USER_OWNER));
+    const { list, items } = await createTestListWithItems(ownerClient, 2, {
+      key: 'admin-deny-' + Math.random().toString(16).slice(2, 8),
+      name: 'Admin Denied Everything',
+    });
+    const L = `/v1/selection-lists/${encodeURIComponent(list.id)}`;
+    const [i1, i2] = items.map((i) => encodeURIComponent(i.id));
+    const attempts: Array<[string, string, unknown]> = [
+      ['GET', `${L}/items`, undefined],
+      ['POST', `${L}/items`, { code: 'ADMINADD', label: 'x' }],
+      ['PATCH', `${L}/items/${i1}`, { label: 'admin edit' }],
+      ['PUT', `${L}/items/reorder`, { item_ids: [i2, i1] }],
+      ['POST', `${L}/items/${i1}/archive`, undefined],
+      ['DELETE', `${L}/items/${i1}`, undefined],
+      ['DELETE', `${L}/items/${i1}?purge=true`, undefined],
+      ['GET', `${L}/translations`, undefined],
+      ['PUT', `${L}/translations/fr`, { name: 'x' }],
+      ['PUT', `${L}/items/${i1}/translations/fr`, { label: 'x' }],
+      ['POST', `${L}/translations/fr/autofill`, {}],
+      ['POST', `${L}/archive`, undefined],
+      ['PATCH', L, { status: 'archived' }],
+      ['DELETE', `${L}?purge=true`, undefined],
+      ['PUT', `${L}/access/${encodeURIComponent(adminUser)}`, { role: 'list-owner' }], // self-escalation
+      ['DELETE', `${L}/access/${encodeURIComponent(USER_OWNER)}`, undefined],
+    ];
+    for (const [method, path, body] of attempts) {
+      const res = await rawFetch(path, { method, token: adminToken(), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      if (![403, 404].includes(res.status)) {
+        throw new Error(`${method} ${path} by tenant ${tenantRole} with no instance role returned ${res.status}, expected 403/404`);
+      }
+    }
+    // nothing changed: still active, 2 active items, owner is the only grant
+    const after = await rawFetch(L, { method: 'GET', token: tokenFor(USER_OWNER) });
+    expect(after.body).toMatchObject({ status: 'active', name: 'Admin Denied Everything' });
+    const itemsNow = await rawFetch(`${L}/items`, { method: 'GET', token: tokenFor(USER_OWNER) });
+    expect(((itemsNow.body as { items: Array<{ status: string }> }).items).map((i) => i.status)).toEqual(['active', 'active']);
+    const access = await rawFetch(`${L}/access`, { method: 'GET', token: tokenFor(USER_OWNER) });
+    expect(((access.body as { items: Array<{ user_id: string }> }).items).map((g) => g.user_id)).toEqual([USER_OWNER]);
+    await purgeList(ownerClient, list.id as SelectionListId);
+  });
+
+  it('once EXPLICITLY granted list-owner, the admin is a list-owner of that list', async () => {
+    const ownerClient = makeClient(() => tokenFor(USER_OWNER));
+    await ownerClient.setAccess(orgAdminListId, adminUser, 'list-owner');
+    const { status } = await rawFetch(`/v1/selection-lists/${encodeURIComponent(orgAdminListId)}`, {
+      method: 'GET',
+      token: adminToken(),
+    });
+    expect(status).toBe(200);
   });
 });
 

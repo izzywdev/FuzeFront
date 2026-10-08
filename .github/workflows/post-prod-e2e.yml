@@ -20,10 +20,19 @@ on:
         type: boolean
         required: false
         default: false
+      connectors_only:
+        description: 'Collect only connector UX evidence (one attempt); full post-deploy suite remains the default'
+        type: boolean
+        required: false
+        default: false
 
   # Called as a reusable workflow by prod-post-deploy.yml after each release
   workflow_call:
     inputs:
+      connectors_only:
+        type: boolean
+        required: false
+        default: false
       base_url:
         description: 'Target base URL'
         type: string
@@ -41,6 +50,14 @@ on:
         required: false
       INTERNAL_PROVISION_SECRET:
         required: false
+      # Dedicated master-admin synthetic for the Portals directory
+      # list-contents assertion (portals-directory-smoke.spec.ts test 2).
+      # Absent → that test self-skips as missing coverage; the nav-render
+      # test still runs on the regular synthetic.
+      POST_PROD_ADMIN_EMAIL:
+        required: false
+      POST_PROD_ADMIN_PASSWORD:
+        required: false
 
 permissions:
   contents: read
@@ -55,9 +72,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -70,6 +87,7 @@ jobs:
 
       - name: Run post-prod smoke
         env:
+          CONNECTORS_ONLY: ${{ inputs.connectors_only || false }}
           POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
           # Synthetic account for the authenticated journey (API login path).
           # Falls back to the seeded admin creds inside the spec when unset.
@@ -83,7 +101,17 @@ jobs:
           # Without this secret the spec fails with a clear diagnostic instead of
           # silently looping on 401.
           INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy" --reporter=list,html
+          # Master-admin synthetic — gates the Portals directory list-contents
+          # assertion; when unset that one test self-skips as missing coverage.
+          POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
+          POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}
+        run: |
+          cd frontend
+          if [[ "$CONNECTORS_ONLY" == 'true' ]]; then
+            npx playwright test --config playwright.post-prod.config.ts connectors-catalog-smoke.spec.ts --retries=0
+          else
+            npx playwright test --config playwright.post-prod.config.ts --grep-invert "@authn-pending-deploy"
+          fi
 
       # AuthN provider-boundary smoke (contract PR #243). Runs only when
       # explicitly requested; until the AuthN deploy lands these tests self-skip
@@ -95,7 +123,33 @@ jobs:
         continue-on-error: true
         env:
           POST_PROD_BASE_URL: ${{ inputs.base_url || 'https://app.fuzefront.com' }}
-        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy" --reporter=list,html
+        run: cd frontend && npx playwright test --config playwright.post-prod.config.ts --grep "@authn-pending-deploy"
+
+      # Preserve evidence before optional export tooling: a slow package mirror
+      # or cancelled transcode must not discard the actual browser result.
+      - name: Upload raw report before video conversion
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: post-prod-playwright-raw
+          path: |
+            frontend/playwright-report-post-prod/
+            frontend/test-results-post-prod/
+          retention-days: 14
+
+      - name: Export connector UX video at 3 fps
+        if: always()
+        timeout-minutes: 3
+        run: |
+          if find frontend/test-results-post-prod -path '*connectors-catalog-smoke*' -name '*.webm' -print -quit | grep -q .; then
+            if ! command -v ffmpeg >/dev/null; then
+              sudo apt-get update
+              sudo apt-get install -y ffmpeg
+            fi
+            while IFS= read -r -d '' video; do
+              ffmpeg -nostdin -y -i "$video" -vf fps=3 -an -c:v libx264 -pix_fmt yuv420p "${video%.webm}-3fps.mp4"
+            done < <(find frontend/test-results-post-prod -path '*connectors-catalog-smoke*' -name '*.webm' -print0)
+          fi
 
       - name: Upload report
         if: always()

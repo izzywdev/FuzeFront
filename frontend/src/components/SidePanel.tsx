@@ -1,7 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { MenuItem as DSMenuItem } from '@fuzefront/design-system'
 import { useT } from '@fuzefront/i18n'
-import { useCurrentUser, useAppContext } from '../lib/shared'
+import { useCurrentUser, useAppContext, useOrganizations, ROOT_ORG_ID } from '../lib/shared'
 import type { MenuItem } from '../lib/shared'
 import { useRegisteredApps } from '../platform/appRegistry'
 import { useActiveApp } from '../platform/useActiveApp'
@@ -36,6 +36,19 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
   const navigate = useNavigate()
   const { apps } = useRegisteredApps()
   const activeApp = useActiveApp()
+
+  const { activeOrganizationId } = useOrganizations()
+  const isPersonalContext = activeOrganizationId === null
+  const orgContextDisabled = useFlag('fuzefront.apps.org-context-disabled', true)
+  const orgContextHidden = useFlag('fuzefront.apps.org-context-hidden', false)
+
+  const isOrgOnlyApp = (app: any) => {
+    return (
+      app.manifest?.requiresOrgContext === true ||
+      app.manifest?.visibility === 'organization' ||
+      app.slug === 'executive'
+    )
+  }
   // Portals Directory (design/frames/portals-directory), default OFF.
   const portalsDirectoryEnabled = useFlag('fuzefront.platform.portals-directory', false)
   // Employee cross-org staff console (design/frames/employee-console,
@@ -106,7 +119,7 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
               color: 'var(--text-primary)',
               cursor: 'pointer',
               fontSize: 'var(--text-sm)',
-              border: '1px solid rgba(110,92,255,0.3)',
+              border: '1px solid var(--border-strong)',
             }}
           >
             <span>←</span>
@@ -152,7 +165,17 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
             icon={item.icon}
             label={item.label}
             onClick={() => {
-              if (item.route) navigate(`/app/${activeApp.slug}${item.route}`)
+              if (item.route) {
+                navigate(`/app/${activeApp.slug}${item.route.startsWith('/') ? item.route : `/${item.route}`}`)
+              }
+              window.dispatchEvent(
+                new CustomEvent('fuzefront:navigate', {
+                  detail: { id: item.id, section: item.id, route: item.route }
+                })
+              )
+              if ('action' in item && typeof (item as { action?: () => void }).action === 'function') {
+                (item as { action?: () => void }).action?.()
+              }
             }}
           />
         ))}
@@ -199,20 +222,145 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           >
             {t('nav.apps', { defaultValue: 'Apps' })}
           </div>
-          {apps.map(app => (
-            <DSMenuItem
-              key={app.slug}
-              icon={iconGlyph(app.manifest.icon) ?? '▦'}
-              label={app.manifest.menuLabel}
-              active={activeApp?.slug === app.slug}
-              onClick={() => {
-                const href = appHref(app)
-                // Standalone apps with a dedicated host navigate out of the SPA.
-                if (href.startsWith('http')) window.location.href = href
-                else navigate(href)
-              }}
-            />
-          ))}
+          {apps.map(app => {
+            const orgRequired = isOrgOnlyApp(app)
+            const isGated = isPersonalContext && orgRequired
+            const isEmployee = isEmployeeUser(user?.roles)
+            const isExecutiveRestricted =
+              app.slug === 'executive' &&
+              (isPersonalContext || (activeOrganizationId === ROOT_ORG_ID && !isEmployee))
+
+            // If in personal context and app requires org context, or executive is restricted, omit from left side menu
+            if (isExecutiveRestricted || (isGated && (orgContextHidden || app.slug === 'executive'))) {
+              return null
+            }
+
+            const isDisabled = isGated && orgContextDisabled
+            const isActive = activeApp?.slug === app.slug
+
+            // Application-Specific Menu Injection (Atlassian / Sentry convention)
+            // When this app is active, get its injected runtime items or manifest chrome items
+            const activeSubItems = isActive
+              ? (appMenuItems.length > 0
+                  ? appMenuItems
+                  : (app.manifest.chrome?.items ?? []))
+              : []
+
+            return (
+              <div key={app.slug} className={`app-nav-wrapper ${isDisabled ? 'disabled-app' : ''}`}>
+                <div style={{ position: 'relative' }}>
+                  <DSMenuItem
+                    icon={iconGlyph(app.manifest.icon) ?? '▦'}
+                    label={
+                      isDisabled ? (
+                        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                          <span>{app.manifest.menuLabel}</span>
+                          <span
+                            style={{
+                              fontSize: '0.65rem',
+                              padding: '1px 5px',
+                              borderRadius: 'var(--radius-full)',
+                              backgroundColor: 'var(--accent-soft)',
+                              color: 'var(--warning-color)',
+                              border: '1px solid var(--border-strong)',
+                              textTransform: 'uppercase',
+                              fontWeight: 600
+                            }}
+                          >
+                            Org only
+                          </span>
+                        </span>
+                      ) : (
+                        app.manifest.menuLabel
+                      )
+                    }
+                    active={isActive}
+                    onClick={() => {
+                      if (isDisabled) return
+                      const href = appHref(app)
+                      if (href.startsWith('http')) window.location.href = href
+                      else navigate(href)
+                    }}
+                  />
+                  {isDisabled && (
+                    <div
+                      title={t('nav.orgContextRequired', { defaultValue: 'Requires active organization context' })}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        cursor: 'not-allowed',
+                        opacity: 0.55
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Atlassian / Sentry nested sub-menu items */}
+                {isActive && activeSubItems.length > 0 && (
+                  <div
+                    className="app-injected-sub-menu"
+                    style={{
+                      paddingLeft: '1.75rem',
+                      paddingRight: '0.5rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.25rem',
+                      margin: '0.25rem 0 0.5rem 0'
+                    }}
+                  >
+                    {activeSubItems.map((subItem: MenuItem) => {
+                      const subItemPath = subItem.route
+                        ? `/app/${app.slug}${subItem.route.startsWith('/') ? subItem.route : `/${subItem.route}`}`
+                        : ''
+                      const isSubActive = subItemPath ? pathname === subItemPath : false
+
+                      return (
+                        <div
+                          key={subItem.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (subItemPath) {
+                              navigate(subItemPath)
+                            }
+                            window.dispatchEvent(
+                              new CustomEvent('fuzefront:navigate', {
+                                detail: { id: subItem.id, section: subItem.id, route: subItem.route }
+                              })
+                            )
+                            if (subItem.action) subItem.action()
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.35rem 0.65rem',
+                            borderRadius: 'var(--radius-md, 6px)',
+                            fontSize: '0.78rem',
+                            color: isSubActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            backgroundColor: isSubActive ? 'var(--hover-bg)' : 'transparent',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'var(--hover-bg)'
+                            e.currentTarget.style.color = 'var(--text-primary)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = isSubActive ? 'var(--hover-bg)' : 'transparent'
+                            e.currentTarget.style.color = isSubActive ? 'var(--text-primary)' : 'var(--text-secondary)'
+                          }}
+                        >
+                          <span style={{ fontSize: '0.85rem' }}>{subItem.icon}</span>
+                          <span style={{ fontWeight: isSubActive ? 600 : 500 }}>{subItem.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -270,6 +418,12 @@ function SidePanel({ isOpen = false, onClose }: SidePanelProps) {
           icon="💳"
           label={t('nav.billing', { defaultValue: 'Billing' })}
           onClick={() => handleNavigate('/billing')}
+        />
+        <DSMenuItem
+          icon="🔌"
+          label={t('nav.connectors', { defaultValue: 'Connectors' })}
+          active={pathname.startsWith('/connectors')}
+          onClick={() => handleNavigate('/connectors')}
         />
         {employeeConsoleEnabled && isEmployeeUser(user?.roles) && (
           <DSMenuItem

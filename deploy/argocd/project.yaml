@@ -8,9 +8,27 @@
 # documented as holding "Argo Application/AppProject manifests" and it runs
 # `kubectl apply -f "$DIR/"`), after which Argo polls and self-syncs from here.
 #
-# FuzeInfra's copy MUST BE DELETED once this lands. Until then both exist and
-# registration is last-write-wins, so whichever ran most recently is what the
-# cluster holds. Tracked in FuzeInfra#625.
+# RESOLVED 2026-10-05 (issue #1137). FuzeInfra's duplicate copy
+# (`argocd/projects/fuzefront.yaml`, Namespace-only) was the structural cause of
+# a race: TWO repos wrote the same `fuzefront` AppProject, last-write-wins, and
+# whichever FuzeInfra `deploy-prod.yml` run applied its narrow copy last froze
+# every FuzeFront rollout — Argo does not skip an unpermitted cluster-scoped
+# resource, it ABORTS THE WHOLE SYNC, and this chart was rendering a
+# ClusterRole/ClusterRoleBinding the narrow copy forbade. That is what actually
+# kept applications-service migrations 013/014 from executing in prod: the pods
+# that would have run them were never created. FuzeInfra#1308 deleted its
+# duplicate file and now gates registration (`validate_consumer_appproject.py`)
+# so a wide copy can never be re-applied — `clusterResourceWhitelist` MUST be
+# `core/Namespace` only, permanently, no exceptions. FuzeInfra#1306 adopted the
+# `fuzefront-workload-authenticator` ClusterRole/ClusterRoleBinding into its own
+# chart (same names, same live objects, narrowed to `tokenreviews: create`
+# only) so retiring them here is a true no-op for the running grant. This
+# file's `clusterResourceWhitelist` is narrowed back to Namespace-only below,
+# paired with `securityService.workloadIdentity.clusterRbac.enabled: false` in
+# `deploy/helm/fuzefront/values.yaml` in the SAME change — see that file and
+# `deploy/scripts/check-cluster-scoped-whitelist.sh`, which enforces the pairing
+# rather than merely documenting it. Full timeline: FuzeInfra#639 (step 4),
+# FuzeInfra#1306, FuzeInfra#1308, docs/planning/workload-identity-layering.md.
 #
 # ── THE ONE RULE THAT IS NOT NEGOTIABLE ─────────────────────────────────────
 # `fuzeinfra` IS DELIBERATELY NOT A DESTINATION, and this is the whole reason
@@ -27,18 +45,32 @@
 # the thing you actually want is a DNS name.
 #
 # ── LEAST PRIVILEGE, DERIVED FROM THIS REPO'S OWN CHARTS ────────────────────
-# FuzeInfra's copy carried `clusterResourceWhitelist: {group: "*", kind: "*"}`,
-# which let an Application in this project create ClusterRoles,
+# FuzeInfra's copy ONCE carried `clusterResourceWhitelist: {group: "*", kind:
+# "*"}`, which let an Application in this project create ClusterRoles,
 # ClusterRoleBindings and CRDs — and, combined with the `argocd` destination
 # below, modify AppProjects, including this one. The object whose sole purpose
 # is to BE the security boundary could be used to rewrite that boundary.
 #
 # Measured instead: every `kind:` rendered by this repo's three charts
 # (deploy/helm/fuzefront, deploy/helm/unleash,
-# FuzeQuality/deploy/helm/fuzequality). The only cluster-scoped one is
-# Namespace. Role and RoleBinding are namespaced, not cluster-scoped.
-# So the whitelist is exactly Namespace. Re-derive it if a chart starts
-# rendering something new — do not widen it back to a wildcard.
+# FuzeQuality/deploy/helm/fuzequality). As of this change, none of them renders
+# a cluster-scoped resource other than the Namespace Argo itself creates
+# (CreateNamespace=true) — the workload-authenticator ClusterRole/
+# ClusterRoleBinding that used to be the other two entries here is now owned by
+# FuzeInfra (FuzeInfra#1306 adoption) and `securityService.workloadIdentity.
+# clusterRbac.enabled` defaults to `false` (`deploy/helm/fuzefront/values.yaml`)
+# so this chart never renders it again. Namespace is the complete cluster-scoped
+# allow-list. Re-derive it if a chart starts rendering something new — do not
+# widen it back to a wildcard, and do not re-add ClusterRole/ClusterRoleBinding
+# without first checking whether FuzeInfra's adoption already covers the need
+# (docs/planning/workload-identity-layering.md).
+#
+# THIS IS NO LONGER A HAND-MAINTAINED CLAIM. `deploy/scripts/
+# check-cluster-scoped-whitelist.sh`, run per values overlay by
+# helm-validate.yml, parses the list BELOW out of this very file and asserts it
+# both ways against the rendered charts: nothing cluster-scoped renders that is
+# not listed here (the 2026-09-28 freeze), and nothing is listed here that no
+# template renders (so a grant cannot outlive the template that justified it).
 # =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
@@ -66,8 +98,9 @@ spec:
       server: https://kubernetes.default.svc
     # NOTE: `fuzeinfra` is deliberately absent. See the rule above.
   clusterResourceWhitelist:
-    # Narrowed from `*/*`. FuzeQuality's chart renders a Namespace; nothing in
-    # this repo renders any other cluster-scoped kind.
+    # Narrowed from `*/*` to the exact cluster-scoped resources this repo's
+    # charts need — which, as of issue #1137 / FuzeInfra#1306+#1308, is just the
+    # Namespace Argo itself creates via CreateNamespace=true. See the header.
     - group: ''
       kind: Namespace
   namespaceResourceWhitelist:

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 # ---------------------------------------------------------------------------
 # Identifier prefixes (opaque past the prefix -- never parse further)
@@ -137,7 +137,7 @@ class Scope:
 
     scope_type: ScopeType
     """Which tier."""
-    scope_id: Optional[str] = None
+    scope_id: str | None = None
     """The portal, organization or user. ``None`` exactly when ``scope_type`` is ``platform``."""
 
 
@@ -149,7 +149,7 @@ def scope_to_wire(scope: Scope) -> dict:
     return {"scopeType": enum_value(scope.scope_type), "scopeId": scope.scope_id}
 
 
-def scope_from_wire(raw: Optional[dict]) -> Optional[Scope]:
+def scope_from_wire(raw: dict | None) -> Scope | None:
     if raw is None:
         return None
     return Scope(scope_type=ScopeType(raw["scopeType"]), scope_id=raw.get("scopeId"))
@@ -172,8 +172,8 @@ class Namespace:
     """Human-facing name shown as the editor's section heading."""
     created_at: str
     """When the namespace was first registered."""
-    description: Optional[str] = None
-    owner_app_id: Optional[str] = None
+    description: str | None = None
+    owner_app_id: str | None = None
 
 
 @dataclass
@@ -182,8 +182,8 @@ class NamespaceCreate:
 
     namespace: str
     display_name: str
-    description: Optional[str] = None
-    owner_app_id: Optional[str] = None
+    description: str | None = None
+    owner_app_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -202,22 +202,22 @@ class KeyDefinition:
     value_type: ValueType
     default_value: Any
     """Bottom of the resolution chain. Always present, so every key resolves to something."""
-    allowed_scopes: List[ScopeType]
+    allowed_scopes: list[ScopeType]
     is_system: bool
     is_hidden: bool
     is_secret: bool
     is_readonly: bool
     precedence: Precedence
     requires_restart: bool
-    description: Optional[str] = None
-    help_url: Optional[str] = None
-    category: Optional[str] = None
-    sort_order: Optional[int] = None
-    tags: Optional[List[str]] = None
-    schema: Optional[Dict[str, Any]] = None
-    enum_values: Optional[List[Any]] = None
-    deprecated_at: Optional[str] = None
-    replaced_by: Optional[str] = None
+    description: str | None = None
+    help_url: str | None = None
+    category: str | None = None
+    sort_order: int | None = None
+    tags: list[str] | None = None
+    schema: dict[str, Any] | None = None
+    enum_values: list[Any] | None = None
+    deprecated_at: str | None = None
+    replaced_by: str | None = None
 
 
 @dataclass
@@ -228,28 +228,28 @@ class KeyDefinitionInput:
     display_name: str
     value_type: ValueType
     default_value: Any
-    allowed_scopes: List[ScopeType]
-    description: Optional[str] = None
-    help_url: Optional[str] = None
-    category: Optional[str] = None
-    sort_order: Optional[int] = None
-    tags: Optional[List[str]] = None
-    schema: Optional[Dict[str, Any]] = None
-    enum_values: Optional[List[Any]] = None
+    allowed_scopes: list[ScopeType]
+    description: str | None = None
+    help_url: str | None = None
+    category: str | None = None
+    sort_order: int | None = None
+    tags: list[str] | None = None
+    schema: dict[str, Any] | None = None
+    enum_values: list[Any] | None = None
     is_system: bool = False
     is_hidden: bool = False
     is_secret: bool = False
     is_readonly: bool = False
-    precedence: Optional[Precedence] = None
+    precedence: Precedence | None = None
     requires_restart: bool = False
-    replaced_by: Optional[str] = None
+    replaced_by: str | None = None
 
 
 @dataclass
 class KeyDefinitionManifest:
     """The set of key definitions an application declares for one namespace."""
 
-    keys: List[KeyDefinitionInput]
+    keys: list[KeyDefinitionInput]
     complete: bool = False
     """
     Whether this manifest is the **whole** catalog for the namespace. Only
@@ -261,10 +261,10 @@ class KeyDefinitionManifest:
 class KeyDefinitionManifestResult:
     """What reconciling a manifest changed."""
 
-    created: List[str] = field(default_factory=list)
-    updated: List[str] = field(default_factory=list)
-    deprecated: List[str] = field(default_factory=list)
-    unchanged: List[str] = field(default_factory=list)
+    created: list[str] = field(default_factory=list)
+    updated: list[str] = field(default_factory=list)
+    deprecated: list[str] = field(default_factory=list)
+    unchanged: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -290,11 +290,11 @@ class EffectiveConfigEntry:
     editable: bool
     """Whether **this caller** may change it. A disabled input is a courtesy; the server refuses regardless."""
     definition: KeyDefinition
-    is_set: Optional[bool] = None
+    is_set: bool | None = None
     """Whether a secret has a stored value. Present only for ``is_secret`` keys."""
-    locked_by: Optional[Scope] = None
-    lock_reason: Optional[str] = None
-    warning: Optional[str] = None
+    locked_by: Scope | None = None
+    lock_reason: str | None = None
+    warning: str | None = None
 
 
 @dataclass
@@ -305,7 +305,7 @@ class EffectiveConfig:
     scope: Scope
     version: str
     """Monotonic version of the resolved view, matching the ``ETag``."""
-    entries: List[EffectiveConfigEntry]
+    entries: list[EffectiveConfigEntry]
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ class ConfigOperation:
     op: ConfigOperationType
     value: Any = None
     """Required for ``set`` and ``lock``; rejected otherwise."""
-    lock_reason: Optional[str] = None
+    lock_reason: str | None = None
 
 
 @dataclass
@@ -330,10 +330,10 @@ class ConfigWriteRequest:
 
     namespace: str
     scope: Scope
-    operations: List[ConfigOperation]
-    expected_version: Optional[str] = None
+    operations: list[ConfigOperation]
+    expected_version: str | None = None
     """The version/ETag last read. Refused with ``VERSION_CONFLICT`` if the resolved view moved."""
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @dataclass
@@ -343,7 +343,7 @@ class ConfigWriteResult:
     namespace: str
     scope: Scope
     version: str
-    applied: List[str] = field(default_factory=list)
+    applied: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -362,7 +362,7 @@ class PageInfo:
     """
 
     has_next_page: bool
-    next_cursor: Optional[str] = None
+    next_cursor: str | None = None
 
 
 T = TypeVar("T")
@@ -372,7 +372,7 @@ T = TypeVar("T")
 class Paged(Generic[T]):
     """A page of ``T`` plus its cursor envelope."""
 
-    items: List[T]
+    items: list[T]
     page_info: PageInfo
 
 
@@ -390,9 +390,9 @@ class ConfigErrorDetail:
     """One field- or key-level problem within a failed request."""
 
     message: str
-    key: Optional[str] = None
-    field: Optional[str] = None
-    allowed_values: Optional[List[Any]] = None
+    key: str | None = None
+    field: str | None = None
+    allowed_values: list[Any] | None = None
 
 
 def error_detail_from_wire(raw: dict) -> ConfigErrorDetail:
@@ -410,38 +410,38 @@ class ConfigErrorBody:
 
     code: str
     message: str
-    locked_by: Optional[Scope] = None
-    current_version: Optional[str] = None
-    details: Optional[List[ConfigErrorDetail]] = None
+    locked_by: Scope | None = None
+    current_version: str | None = None
+    details: list[ConfigErrorDetail] | None = None
 
 
 __all__ = [
-    "NAMESPACE_ID_PREFIX",
     "KEY_DEFINITION_ID_PREFIX",
+    "NAMESPACE_ID_PREFIX",
     "SCOPE_CHAIN",
-    "ScopeType",
-    "ValueType",
-    "Precedence",
-    "ConfigOperationType",
+    "ConfigErrorBody",
     "ConfigErrorCode",
-    "Scope",
-    "scope_to_wire",
-    "scope_from_wire",
-    "Namespace",
-    "NamespaceCreate",
+    "ConfigErrorDetail",
+    "ConfigOperation",
+    "ConfigOperationType",
+    "ConfigWriteRequest",
+    "ConfigWriteResult",
+    "EffectiveConfig",
+    "EffectiveConfigEntry",
     "KeyDefinition",
     "KeyDefinitionInput",
     "KeyDefinitionManifest",
     "KeyDefinitionManifestResult",
-    "EffectiveConfigEntry",
-    "EffectiveConfig",
-    "ConfigOperation",
-    "ConfigWriteRequest",
-    "ConfigWriteResult",
+    "Namespace",
+    "NamespaceCreate",
     "PageInfo",
     "Paged",
-    "page_info_from_wire",
-    "ConfigErrorDetail",
+    "Precedence",
+    "Scope",
+    "ScopeType",
+    "ValueType",
     "error_detail_from_wire",
-    "ConfigErrorBody",
+    "page_info_from_wire",
+    "scope_from_wire",
+    "scope_to_wire",
 ]

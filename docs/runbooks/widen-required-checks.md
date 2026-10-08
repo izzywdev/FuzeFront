@@ -1,6 +1,7 @@
 # Runbook — widen master's required status checks (and the merge-queue prerequisite)
 
-**Status:** ready to apply, needs repo-admin rights.
+**Status:** SUPERSEDED in part — see §3. There is an automated path; it needs no admin and no
+GitHub UI. Applying it is gated on Stage 0, which has not landed.
 **Owner:** `@izzywdev` · **Measured:** 2026-08-27 · **Ruleset:** *Protect Master*, id `17974934`
 
 Desired state lives in [`governance/required-status-checks.json`](../../governance/required-status-checks.json).
@@ -84,49 +85,88 @@ Every candidate, across all 20 open PRs at the time of measurement:
 
 No candidate was red anywhere, so widening the set stalls nothing already in flight.
 
-## 3. Apply it (admin required)
+## 3. Apply it — via the fleet workflow, NOT by hand
 
-CI cannot do this, and neither can an agent session: the rulesets API is write-blocked
-through the agent proxy (`403 Write access to this GitHub API path is not permitted`). Run
-this as a repo admin:
+> **This section originally said "admin required" and gave a hand-run `gh api -X PUT`.**
+> That was wrong in the way that matters: it sent the work to a human with a browser, and so
+> it never got done. There is an automated path, it has existed the whole time, and a stale
+> note in FuzeSDLC is what hid it (corrected in izzywdev/FuzeSDLC#360).
+
+**The mechanism:** `izzywdev/FuzeSDLC` → `.github/workflows/apply-ruleset.yml`,
+`workflow_dispatch` with `repo: izzywdev/FuzeFront`. It runs `scripts/apply_ruleset.sh` →
+`scripts/ruleset_sync.py` under `GOVERNANCE_TOKEN` (a repo-administration token held as a
+FuzeSDLC secret — never in this repo, never in an agent session).
+
+Two properties make it safe here, both verified in the code rather than taken from a doc:
+
+- **It matches by TARGET + CONDITION, never by name.** `find_branch_ruleset()`'s docstring
+  names this repo: *"FuzeFront's own protection ruleset is named `Protect Master`, not
+  `Protect default branch`, and is still the right one."* Verified live: ruleset `17974934`
+  is `target=branch` with `conditions.ref_name.include=["~DEFAULT_BRANCH"]`, so the dispatch
+  **updates** it. It does **not** create a second competing ruleset, and no rename is needed.
+- **It MERGES, never replaces.** The union is taken onto whatever the repo already enforces,
+  so the hand-written PUT's whole-array-replacement hazard — silently dropping the
+  `pull_request` rule and with it the approval requirement — does not exist on this path.
+
+**The operative list is not this repo's file.** `apply_ruleset.sh` reads
+`governance/required-checks.json` in **FuzeSDLC**, per-repo `required_now`, falling back to
+`fleet.required_now`. `governance/required-status-checks.json` here is the *analysis* that
+fed it, not the input. To change what gets applied, change FuzeSDLC's `required_now` — then
+dispatch.
+
+### Which is why dispatching today does nothing
+
+Measured 2026-09-14: FuzeSDLC's `repos.FuzeFront.required_now` is **byte-identical** to the
+live required set (11 contexts, no diff either way). A dispatch right now is a **provable
+no-op**. Nothing is gained by firing it, and nothing is harmed.
+
+### And why widening it now would be wrong
+
+FuzeSDLC's `governance/required-checks.json` defines the staging, and it is the opposite of
+what §1–§2 of this runbook assumed:
+
+| Stage | Precondition | Kind |
+|---|---|---|
+| **Stage 0** | *none — today* | **de-vacuuming, NOT listing.** No ruleset edit, zero lockout risk |
+| **Stage 1** | *Stage 0 landed green* | **listing** |
+
+Widening the required set is Stage 1. Stage 0 has not landed. Run this repo's own auditor:
 
 ```bash
-# Back up first — this PUT replaces the rules array wholesale.
-gh api repos/izzywdev/FuzeFront/rulesets/17974934 > /tmp/ruleset-before.json
-
-python3 - <<'PY'
-import json, subprocess
-BEFORE = json.load(open('/tmp/ruleset-before.json'))
-WANT   = json.load(open('governance/required-status-checks.json'))['contexts']
-for r in BEFORE['rules']:
-    if r['type'] == 'required_status_checks':
-        p = r['parameters']
-        have = {c['context'] for c in p['required_status_checks']}
-        # integration_id 15368 = GitHub Actions; every context here is Actions-produced.
-        p['required_status_checks'] += [
-            {"context": c, "integration_id": 15368} for c in WANT if c not in have
-        ]
-        p['required_status_checks'].sort(key=lambda c: c['context'])
-payload = {k: BEFORE[k] for k in ('name','target','enforcement','conditions','rules') if k in BEFORE}
-payload['bypass_actors'] = BEFORE.get('bypass_actors') or []
-json.dump(payload, open('/tmp/ruleset-after.json','w'), indent=2)
-PY
-
-gh api -X PUT repos/izzywdev/FuzeFront/rulesets/17974934 --input /tmp/ruleset-after.json
+python3 scripts/gate_required_checks.py
 ```
 
-Verify — the count must read 38, `strict` must stay `true`, and all four rule types must
-survive (the PUT replaces the array, so a dropped `pull_request` rule would silently remove
-the approval requirement):
+Measured 2026-09-14 — **6 of the 11 contexts already required cannot fail**:
 
-```bash
-gh api repos/izzywdev/FuzeFront/rulesets/17974934 \
-  --jq '{n:(.rules[]|select(.type=="required_status_checks")|.parameters.required_status_checks|length),
-         strict:(.rules[]|select(.type=="required_status_checks")|.parameters.strict_required_status_checks_policy)}'
-gh api repos/izzywdev/FuzeFront/rulesets/17974934 --jq '[.rules[].type]'
-```
+| Context | Vacuity marker |
+|---|---|
+| `gate-lint`, `gate-test`, `gate-build` | `exit 0`, `set +e` |
+| `gate-sast` | `\|\| true` |
+| `gate-dependency-scan`, `Security Scan` | `exit-code: '0'` |
 
-**Rollback:** `gh api -X PUT repos/izzywdev/FuzeFront/rulesets/17974934 --input /tmp/ruleset-before.json`
+So §1's headline — *"11 of 45 are required"* — **understated the problem**. Only about four
+of those eleven can actually block a merge. Adding 27 more names on top of a set that is
+more than half vacuous buys far less than making the existing eleven enforce, and it inverts
+the staging. The policy's instruction is explicit: **de-vacuum it, do not de-list it.**
+
+**Order of work:** Stage 0 (de-vacuum, no ruleset edit) → confirm green → update FuzeSDLC's
+`required_now` → dispatch `apply-ruleset.yml` with `repo: izzywdev/FuzeFront`.
+
+### Corrections to §2's candidate set
+
+§2 was audited only for path-filtering and self-hosted runners. FuzeSDLC's policy adds two
+categories §2 did not apply, and they disqualify several of its 38:
+
+- **`never_require`** — `gate-code-review` (already excluded here, same reasoning, reached
+  independently), plus every remediation job (`call-autofix`, `fuze-ci-autofix`).
+- **`capability_gated`** — `Snyk Security Scan` *("skips when absent, and a skip SATISFIES a
+  required context")*, `Container Security Scan` and `Generate SBOM` *(condition-gated skip;
+  observed `skipped`)*. Requiring any of these is requiring a check that passes by being
+  absent. `CodeQL Analysis (javascript)` and `Dependency Review` are requirable **on public
+  repos only** — FuzeFront is public, so those two do qualify.
+
+Treat `governance/required-status-checks.json` in this repo as superseded input for exactly
+these entries; FuzeSDLC's policy is canonical.
 
 ### 3a. Extend the regression guard in the same change — it does not extend itself
 

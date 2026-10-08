@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Current identity ("me")
-         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode.
+         * @description Returns the normalized `Identity` and hydrated user for the presented session token. This is the source of any out-of-band role/tenant hydration in legacy token mode. An explicit tenant requires active SQL membership and an active organization and returns its canonical UUID.
          */
         get: operations["getSession"];
         put?: never;
@@ -442,6 +442,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/authz/membership-proof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify current active SQL tenant membership for ownership provisioning
+         * @description Requires an authz:admin machine or a human authorized to manage the target Organization. Reads active SQL membership and active organization; organization ownership alone is insufficient. Returns canonical typed IDs and Cache-Control no-store. Grant creation independently repeats the check.
+         */
+        get: operations["getMembershipProof"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/authz/grants": {
         parameters: {
             query?: never;
@@ -452,22 +472,56 @@ export interface paths {
         /**
          * List grants for a subject within a tenant
          * @description Lists grants for `subject` within `tenant`, optionally filtered by resource instance (`resourceType`/`resourceKey`). Because a subject can hold grants across MANY resource instances under ReBAC, this set is treated as potentially unbounded and is cursor-paginated per the family pagination standard.
+         *
+         *     **Authorization.** A caller may always list their OWN grants. Listing another subject's grants requires administering the tenant (`403 FORBIDDEN` otherwise); a machine caller needs `authz:admin`.
          */
         get: operations["listGrants"];
         put?: never;
         /**
          * Grant a role/permission to a subject (RBAC or resource-instance/ReBAC)
          * @description Grants a role (and/or permission) to a subject within a tenant. Omit `resource` for a tenant-wide (RBAC) grant; include `resource: { type, key }` to scope it to a specific resource instance (ReBAC). Returns the created `Grant`. A grant is a rollout/assignment convenience — the AUTHORITATIVE decision is always `POST /authz/check`. Fail-closed.
+         *
+         *     **Authorization.** A human (session) caller must be authorized to administer the TARGET tenant (tenant administrator), or — for a resource-instance-scoped grant of a non-tenant-level role — hold `manage_access` on that exact instance. A caller can never grant a role broader than the one that authorizes them, and has no standing in a tenant they do not administer: `403 FORBIDDEN`. A provider outage while deciding fails closed (`502 PROVIDER_UNAVAILABLE`), never allow. A machine caller must hold the `authz:admin` scope (unchanged).
          */
         post: operations["createGrant"];
         /**
          * Revoke a grant
          * @description Revokes a grant, identified EITHER by `{ grantId }` OR by its identity tuple `{ subject, tenant, role, resource? }` (supply one form). Idempotent — revoking an absent grant still returns 204. A revoke never changes the authoritative model beyond removing the assignment; `authz/check` remains the source of truth. Fail-closed.
+         *
+         *     **Authorization.** Same rule as `POST /authz/grants`: a human caller must administer the target tenant (or hold `manage_access` on the instance for an instance-scoped, non-tenant-level role), else `403 FORBIDDEN`; a machine caller must hold `authz:admin` (unchanged). A `grantId` is resolved to its `tenant:subject:role` tuple and authorized against THAT tenant.
          */
         delete: operations["revokeGrant"];
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/security/authz/subjects/{subjectType}/{subjectKey}/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Merge ABAC attributes onto a subject
+         * @description Merges scalar attributes (string, number, boolean) onto the named subject's record in the authorization provider's own store, so provider-side policies can gate decisions on them (ABAC) alongside RBAC/ReBAC grants. Distinct from `POST /authz/grants`: a grant assigns a role/permission; this writes plain data the provider's policies read directly (e.g. a billing plan tier gating feature access by `plan_tier`/`seat_limit` rather than by role).
+         *
+         *     **Merge, not replace.** Only the attribute keys present in the request body are written; attributes already on the subject that this request does not name are left untouched. Chosen because the first consumer (billing service `syncPlanToPermit`) only ever sends its own partial subset (`plan_tier`/`plan_status`/`seat_limit`) and never the subject's full attribute set, and the underlying provider write (Permit `users.update` / `tenants.update`) is itself a merge — replace semantics here would silently diverge from what actually happens provider-side and could wipe attributes this caller does not own.
+         *
+         *     **This is a WRITE, not a decision — failure must never look like success.** A provider outage, timeout, or rejection returns `502` (`code: PROVIDER_UNAVAILABLE`), never a fail-open/fail-silent `200`. This is deliberately the OPPOSITE of `authz/check`'s fail-closed-returns-`false` contract: there is no safe "assume it worked" default for a write whose caller (billing entitlement sync) needs to know whether the data actually reached the provider, so it can retry rather than believe a stale or absent attribute state.
+         *
+         *     `subjectType` names which of the provider's two subject kinds this write targets (`user` → `permit.api.users.update`, `tenant` → `permit.api.tenants.update` in the first, Permit-backed implementation — vendor name confined to the adapter, never this contract) — the type is load-bearing, not decoration, so no lookup ever resolves a bare subject id (identifier-standard.md, rule 2).
+         *
+         *     **Authorization — machine callers only.** Entitlement attributes may be written only by an operator machine identity holding the `authz:admin` scope. Human (session) callers are always denied (`403 FORBIDDEN`), including tenant administrators.
+         */
+        patch: operations["setSubjectAttributes"];
         trace?: never;
     };
     "/v1/security/tenants": {
@@ -598,6 +652,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/security/tokens/workload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange a projected Kubernetes ServiceAccount JWT for a Fuze workload token */
+        post: operations["exchangeWorkloadToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security/tokens": {
         parameters: {
             query?: never;
@@ -632,6 +703,26 @@ export interface paths {
          * @description Returns the active state and normalized claims for a presented M2M token. Fail-closed: an unknown/expired token returns `{ active: false }`.
          */
         post: operations["introspectToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/security/tokens/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange user authority for an audience-bound delegation
+         * @description RFC 8693-inspired on-behalf-of exchange. The Authorization bearer authenticates the immediate service. `subjectToken` identifies the external user or an earlier delegation. The issued token is short-lived, audience-bound, carries the signed actor chain, and cannot exceed the immediate service's scopes.
+         */
+        post: operations["exchangeDelegationToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1195,6 +1286,8 @@ export interface components {
             /** @description Optional explicit `resource:action` permission to grant alongside the role. */
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
+            /** @description Required for fuzekeys_Connector owner grants. Canonical provider from the reviewed ownership inventory; the exact resource key must equal connector: plus lowercase SHA256 of UTF-8 JSON [tenant, subject, connectorProvider]. This metadata confers no grant authority. Operator authorization and fresh SQL membership are independently required; no email or directory tenant inference. */
+            connectorProvider?: string;
         };
         /** @description A created, revocable grant wrapping the provider's assignment. */
         Grant: {
@@ -1205,6 +1298,8 @@ export interface components {
             permission?: string;
             resource?: components["schemas"]["ResourceRef"];
             createdAt?: number;
+            /** @description Canonical provider acknowledged by a validated fuzekeys_Connector owner grant. */
+            connectorProvider?: string;
         };
         /** @description Revoke a grant by `grantId` OR by its identity tuple `{ subject, tenant, role, resource? }`. Supply exactly one form. */
         GrantRevokeRequest: {
@@ -1217,6 +1312,35 @@ export interface components {
         GrantPage: {
             items: components["schemas"]["Grant"][];
             page: components["schemas"]["PageInfo"];
+        };
+        /**
+         * @description The authorization provider's subject kinds this contract currently supports for attribute writes. `user` maps to a per-user ABAC record, `tenant` to a per-tenant/org one (first impl: Permit `users.update` / `tenants.update` respectively — vendor name confined to the adapter, never this contract). Closed/enum, unlike `ResourceRef.type` which is open (any resource kind a policy names).
+         * @enum {string}
+         */
+        SubjectType: "user" | "tenant";
+        /** @description A typed subject reference. Mirrors `ResourceRef`'s `type`+`key` shape but is a separate schema because `type` here is closed (`SubjectType`) rather than an open string. */
+        SubjectRef: {
+            type: components["schemas"]["SubjectType"];
+            key: string;
+        };
+        /** @description A scalar ABAC attribute value. No nested objects/arrays. */
+        AttributeValue: string | number | boolean;
+        /** @description Attribute keys to MERGE onto the subject addressed by `{subjectType}/{subjectKey}` in the URL. Only the named keys are written; attributes already on the subject that this request does not name are left untouched (merge, not replace — see the operation description for why). */
+        SubjectAttributesWriteRequest: {
+            /** @description Merge patch of attribute name → scalar value (string, number, or boolean). At least one key required. */
+            attributes: {
+                [key: string]: components["schemas"]["AttributeValue"];
+            };
+        };
+        /** @description Confirms the write succeeded. Echoes the subject and the keys/values THIS call wrote — NOT a read of the subject's full attribute set (this endpoint is a write, not a decision or a query). */
+        SubjectAttributesWriteResult: {
+            subject: components["schemas"]["SubjectRef"];
+            /** @description Echo of the keys/values merged by this call. */
+            attributes: {
+                [key: string]: components["schemas"]["AttributeValue"];
+            };
+            /** @description Epoch milliseconds this write was applied. */
+            updatedAt: number;
         };
         Tenant: {
             id: string;
@@ -1267,6 +1391,23 @@ export interface components {
             tenantId?: string | null;
             scope?: string;
             expiresAt?: number;
+            audience?: string;
+            tokenKind?: string;
+            actor?: components["schemas"]["DelegationActor"];
+        };
+        DelegationActor: {
+            sub: string;
+            previous?: Record<string, never>;
+        };
+        DelegationExchangeRequest: {
+            subjectToken: string;
+            audience: string;
+            scope: string;
+        };
+        DelegationExchangeResponse: components["schemas"]["TokenIssueResponse"] & {
+            subject: string;
+            audience: string;
+            actor: components["schemas"]["DelegationActor"];
         };
         /**
          * @description Neutral factor type. Extensible; `webauthn` reserved for later.
@@ -1682,7 +1823,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getSession: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional organization UUID or typed organization ID. When supplied, requires canonical active membership in an active organization and returns its canonical UUID as identity.tenantId. */
+                tenant?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1698,7 +1842,16 @@ export interface operations {
                     "application/json": components["schemas"]["SessionInfo"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description Active tenant membership is required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createSession: {
@@ -2351,6 +2504,70 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    getMembershipProof: {
+        parameters: {
+            query: {
+                subject: string;
+                tenant: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active membership */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        subject: string;
+                        tenant: string;
+                        /** @enum {boolean} */
+                        active: true;
+                    };
+                };
+            };
+            /** @description Malformed subject or tenant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Caller forbidden or membership inactive */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authorization provider unavailable */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description SQL membership proof unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listGrants: {
         parameters: {
             query: {
@@ -2381,6 +2598,8 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            502: components["responses"]["ProviderError"];
         };
     };
     createGrant: {
@@ -2407,6 +2626,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             502: components["responses"]["ProviderError"];
         };
     };
@@ -2432,6 +2652,41 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            502: components["responses"]["ProviderError"];
+        };
+    };
+    setSubjectAttributes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Which of the provider's subject kinds this attribute write targets. Sibling type discriminator for `subjectKey` — required so the write never resolves a bare id. */
+                subjectType: components["schemas"]["SubjectType"];
+                /** @description The subject's id within its `subjectType`. Opaque past its prefix. */
+                subjectKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubjectAttributesWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Attributes merged. Returns the subject reference and the attribute keys/values THIS call wrote — not necessarily the subject's full attribute set, since this endpoint confirms the write and is not a read. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectAttributesWriteResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            502: components["responses"]["ProviderError"];
         };
     };
     listTenants: {
@@ -2508,7 +2763,9 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     listTenantMembers: {
@@ -2537,7 +2794,9 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     addTenantMember: {
@@ -2566,7 +2825,9 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     removeTenantMember: {
@@ -2589,7 +2850,9 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     listTenantRoles: {
@@ -2615,7 +2878,9 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
         };
     };
     assignMemberRoles: {
@@ -2645,7 +2910,35 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            502: components["responses"]["ProviderError"];
+        };
+    };
+    exchangeWorkloadToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    serviceAccountToken: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Short-lived workload bearer token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenIssueResponse"];
+                };
+            };
         };
     };
     issueToken: {
@@ -2696,6 +2989,33 @@ export interface operations {
                     "application/json": components["schemas"]["TokenIntrospection"];
                 };
             };
+        };
+    };
+    exchangeDelegationToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DelegationExchangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Audience-bound delegation token. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DelegationExchangeResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
     listMfaFactors: {

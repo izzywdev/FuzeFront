@@ -45,6 +45,10 @@ const BUILTIN_MANIFESTS: unknown[] = [
     nav: { section: 'revenue', order: 40 },
     routing: { path: '/app/fuzesocial' },
     visibility: 'organization',
+    scopeLevel: 'organization',
+    requiresOrgContext: true,
+    installMode: 'everyone',
+    orgLevelOnly: true,
     roles: [],
   },
   {

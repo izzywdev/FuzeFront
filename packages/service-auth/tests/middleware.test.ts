@@ -6,7 +6,7 @@
  * failing/throwing `authorize` hook denies rather than passes through.
  */
 import type { Request, Response } from 'express';
-import { requireMachineAuth } from '../src/middleware';
+import { requireDelegatedAuth, requireMachineAuth } from '../src/middleware';
 import { ServiceAuthError, MachineIdentity } from '../src/types';
 import type { MachineTokenVerifier } from '../src/verifier';
 
@@ -146,5 +146,28 @@ describe('requireMachineAuth', () => {
 
   it('throws at wiring time (MISCONFIGURED) when built without a verifier', () => {
     expect(() => requireMachineAuth({} as any)).toThrow(ServiceAuthError);
+  });
+});
+
+describe('requireDelegatedAuth', () => {
+  it('accepts only an audience-bound delegation whose actor is the immediate service', async () => {
+    const machine = { ...identity, subject: 'service:caller', tokenKind: 'fuze-workload' };
+    const delegated = { ...identity, subject: 'user-1', tokenKind: 'fuze-delegation', audience: 'service:fuzekeys', actor: { sub: 'service:caller' }, scopes: ['connectors:credentials:read'] };
+    const verifier = fakeVerifier(async token => token === 'machine' ? machine : delegated);
+    const req = mkReq({ authorization: 'Bearer machine', 'x-fuze-delegation': 'Bearer delegated' });
+    const res = mkRes();
+    const result = await run(requireDelegatedAuth({ verifier, audience: 'service:fuzekeys', requiredScopes: ['connectors:credentials:read'] }), req, res);
+    expect(result.nexted).toBe(true);
+    expect((req as any).delegatedIdentity.subject).toBe('user-1');
+  });
+
+  it('rejects actor substitution', async () => {
+    const verifier = fakeVerifier(async token => token === 'machine'
+      ? { ...identity, subject: 'service:caller', tokenKind: 'fuze-workload' }
+      : { ...identity, tokenKind: 'fuze-delegation', audience: 'service:fuzekeys', actor: { sub: 'service:attacker' } });
+    const res = mkRes();
+    const result = await run(requireDelegatedAuth({ verifier, audience: 'service:fuzekeys' }), mkReq({ authorization: 'Bearer machine', 'x-fuze-delegation': 'Bearer delegated' }), res);
+    expect(result.nexted).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });

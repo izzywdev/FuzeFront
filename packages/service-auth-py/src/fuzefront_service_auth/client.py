@@ -12,7 +12,6 @@ import json
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from ._http import HttpPost, default_http_post
 from .exceptions import ServiceAuthError, TokenRequestError
@@ -32,7 +31,7 @@ class CachedToken:
     access_token: str
     token_type: str
     expires_at: float
-    scope: Optional[str] = None
+    scope: str | None = None
 
     @property
     def authorization_header(self) -> str:
@@ -43,12 +42,12 @@ class CachedToken:
 class _PendingFetch:
     """Single-flight coordination handle for one in-progress token refresh."""
 
-    __slots__ = ("event", "token", "error")
+    __slots__ = ("error", "event", "token")
 
     def __init__(self) -> None:
         self.event = threading.Event()
-        self.token: Optional[CachedToken] = None
-        self.error: Optional[BaseException] = None
+        self.token: CachedToken | None = None
+        self.error: BaseException | None = None
 
 
 class ServiceAuthClient:
@@ -79,10 +78,10 @@ class ServiceAuthClient:
         client_id: str,
         client_secret: str,
         *,
-        scope: Optional[str] = None,
+        scope: str | None = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         refresh_margin_seconds: float = DEFAULT_REFRESH_MARGIN_SECONDS,
-        http_post: Optional[HttpPost] = None,
+        http_post: HttpPost | None = None,
         clock=time.time,
     ) -> None:
         if not base_url or not client_id or not client_secret:
@@ -101,8 +100,8 @@ class ServiceAuthClient:
         self._clock = clock
 
         self._state_lock = threading.Lock()
-        self._cached: Optional[CachedToken] = None
-        self._pending: Optional[_PendingFetch] = None
+        self._cached: CachedToken | None = None
+        self._pending: _PendingFetch | None = None
 
     def get_token(self) -> CachedToken:
         """Return a valid access token, refreshing it first if needed.
@@ -149,7 +148,7 @@ class ServiceAuthClient:
         # register against `self._pending` without blocking on network I/O.
         try:
             token = self._fetch_token()
-        except BaseException as error:  # noqa: BLE001 - deliberately fail-closed & rethrow
+        except BaseException as error:
             with self._state_lock:
                 self._pending = None
             pending.error = error
@@ -183,7 +182,7 @@ class ServiceAuthClient:
             status, body = self._http_post(
                 f"{self._base_url}/api/v1/security/tokens", payload, self._timeout
             )
-        except Exception as error:  # noqa: BLE001 - normalize every transport failure
+        except Exception as error:
             raise TokenRequestError(
                 f"failed to reach the token endpoint: {error}", status=502
             ) from error

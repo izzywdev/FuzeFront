@@ -15,21 +15,23 @@ Tests cover:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, ClassVar
+
+if TYPE_CHECKING:
+    from typing import Self
+
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-
 from fuzefront_selection_list_client import (
     SelectionListApiError,
     SelectionListClient,
-    paginate,
 )
 from fuzefront_selection_list_client.types import LifecycleStatus
-
 
 # ---------------------------------------------------------------------------
 # Stub HTTP server helpers
@@ -40,7 +42,7 @@ class _Handler(BaseHTTPRequestHandler):
     """Minimal stub handler. Routes are registered on the class before use."""
 
     # class-level registry: (method, path_prefix) -> callable(handler) -> None
-    routes: Dict[tuple, Any] = {}
+    routes: ClassVar[dict[tuple, Any]] = {}
 
     def log_message(self, *args: Any) -> None:  # silence access log in tests
         pass
@@ -98,16 +100,16 @@ class _Handler(BaseHTTPRequestHandler):
 class StubServer:
     """Context manager that starts a stub HTTP server in a background thread."""
 
-    def __init__(self, routes: Dict[tuple, Any]) -> None:
+    def __init__(self, routes: dict[tuple, Any]) -> None:
         _Handler.routes = routes
         self._server = HTTPServer(("127.0.0.1", 0), _Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
 
-    def __enter__(self) -> "StubServer":
+    def __enter__(self) -> Self:
         self._thread.start()
         return self
 
-    def __exit__(self, *_: Any) -> None:
+    def __exit__(self, *_: object) -> None:
         self._server.shutdown()
 
     @property
@@ -122,8 +124,8 @@ class StubServer:
 
 _NOW = "2026-08-10T12:00:00Z"
 
-_LIST_FIXTURE: Dict[str, Any] = {
-    "id": "sl_01h455vb4pex5vsknk084sn02q",
+_LIST_FIXTURE: dict[str, Any] = {
+    "id": "front_sl_01h455vb4pex5vsknk084sn02q",
     "organization_id": "org_01h455vb4pex5vsknk084sn02q",
     "key": "countries",
     "source_locale": "en",
@@ -132,27 +134,29 @@ _LIST_FIXTURE: Dict[str, Any] = {
     "resolved_locale": "en",
     "is_machine": False,
     "item_count": 249,
+    "seed": None,
     "created_by": "usr_01h455vb4pex5vsknk084sn02q",
     "created_at": _NOW,
     "updated_at": _NOW,
 }
 
-_ITEM_FIXTURE: Dict[str, Any] = {
-    "id": "sli_01h455vb4pex5vsknk084sn02q",
-    "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+_ITEM_FIXTURE: dict[str, Any] = {
+    "id": "front_sli_01h455vb4pex5vsknk084sn02q",
+    "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
     "code": "US",
     "sort_order": 100,
     "status": "active",
     "label": "United States",
     "resolved_locale": "en",
     "is_machine": False,
+    "seed": None,
     "created_by": "usr_01h455vb4pex5vsknk084sn02q",
     "created_at": _NOW,
     "updated_at": _NOW,
 }
 
 
-def _page(items: List[Any], next_cursor: Optional[str] = None, has_more: bool = False) -> dict:
+def _page(items: list[Any], next_cursor: str | None = None, has_more: bool = False) -> dict:
     return {
         "items": items,
         "page": {
@@ -170,7 +174,7 @@ def _page(items: List[Any], next_cursor: Optional[str] = None, has_more: bool = 
 
 class TestUrlAndToken:
     def test_bearer_token_injected(self) -> None:
-        received_headers: List[dict] = []
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
@@ -186,7 +190,7 @@ class TestUrlAndToken:
 
     def test_callable_token_called_per_request(self) -> None:
         call_count = 0
-        received_auth: List[str] = []
+        received_auth: list[str] = []
 
         def token_fn() -> str:
             nonlocal call_count
@@ -224,6 +228,19 @@ class TestUrlAndToken:
         assert qs.get("status") == ["active"]
         assert qs.get("locale") == ["fr"]
 
+    def test_rejects_non_http_scheme(self) -> None:
+        """The `file://` case semgrep's dynamic-urllib rule warns about.
+
+        The config-client package has had this test since it was written; this
+        client carries the same `_ALLOWED_SCHEMES` guard and had NO test for it,
+        so the guard was an assertion rather than a fact. Added while confirming
+        the equivalent semgrep finding on the sibling package was a false
+        positive — the suppression there cites its test, so this one should have
+        a test to cite too.
+        """
+        with pytest.raises(ValueError, match="http or https"):
+            SelectionListClient(base_url="file:///etc/passwd")
+
     def test_base_url_trailing_slash_stripped(self) -> None:
         """A base_url with trailing slash must not produce double slashes."""
         received_paths: list = []
@@ -243,18 +260,30 @@ class TestUrlAndToken:
         assert received_paths[0] == "/v1/selection-lists"
 
     def test_no_token_no_auth_header(self) -> None:
-        received_headers: List[dict] = []
+        # Spec 2.0.0: /v1/resolve has no anonymous mode. Without a token the
+        # client sends no Authorization header (it never invents one) and the
+        # service's 401 surfaces as a SelectionListApiError -- never a result.
+        received_headers: list[dict] = []
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             received_headers.append(dict(handler.headers))
+            if "Authorization" not in handler.headers:
+                handler.send_json(
+                    {"code": "UNAUTHENTICATED", "message": "Access denied. No token provided."},
+                    status=401,
+                )
+                return
             handler.send_json({"results": {}, "missing": []})
 
         routes = {("POST", "/v1/resolve"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url)
-            client.resolve_ids(["sli_01h455vb4pex5vsknk084sn02q"])
+            with pytest.raises(SelectionListApiError) as exc_info:
+                client.resolve_ids(["front_sli_01h455vb4pex5vsknk084sn02q"])
 
         assert "Authorization" not in received_headers[0]
+        assert exc_info.value.status == 401
+        assert exc_info.value.code == "UNAUTHENTICATED"
 
 
 # ---------------------------------------------------------------------------
@@ -266,11 +295,11 @@ class TestCursorWalk:
     """The paginator must walk exactly two pages and yield no duplicates."""
 
     def test_two_page_cursor_walk(self) -> None:
-        page1_item = dict(_ITEM_FIXTURE, id="sli_page1_item")
-        page2_item = dict(_ITEM_FIXTURE, id="sli_page2_item")
+        page1_item = dict(_ITEM_FIXTURE, id="front_sli_page1_item")
+        page2_item = dict(_ITEM_FIXTURE, id="front_sli_page2_item")
 
         page1_cursor = "cursor-page-2"
-        call_log: List[Optional[str]] = []
+        call_log: list[str | None] = []
 
         def handle_items(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             cursor = qs.get("cursor", [None])[0]
@@ -280,19 +309,19 @@ class TestCursorWalk:
             else:
                 handler.send_json(_page([page2_item], next_cursor=None, has_more=False))
 
-        routes = {("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
+        routes = {("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             results = list(
                 client.paginate(
-                    lambda **kw: client.get_items("sl_01h455vb4pex5vsknk084sn02q", **kw)
+                    lambda **kw: client.get_items("front_sl_01h455vb4pex5vsknk084sn02q", **kw)
                 )
             )
 
         assert len(results) == 2, f"Expected 2 items, got {len(results)}"
         ids = [r.id for r in results]
-        assert "sli_page1_item" in ids
-        assert "sli_page2_item" in ids
+        assert "front_sli_page1_item" in ids
+        assert "front_sli_page2_item" in ids
         # No duplicates
         assert len(ids) == len(set(ids))
         # Called twice: first with no cursor, second with the page1 cursor
@@ -307,12 +336,12 @@ class TestCursorWalk:
             call_count += 1
             handler.send_json(_page([_ITEM_FIXTURE], next_cursor=None, has_more=False))
 
-        routes = {("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
+        routes = {("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             items = list(
                 client.paginate(
-                    lambda **kw: client.get_items("sl_01h455vb4pex5vsknk084sn02q", **kw)
+                    lambda **kw: client.get_items("front_sl_01h455vb4pex5vsknk084sn02q", **kw)
                 )
             )
 
@@ -322,7 +351,7 @@ class TestCursorWalk:
     def test_paginate_three_pages(self) -> None:
         """Paginator must handle N>2 pages correctly."""
         pages = [
-            (f"sli_item_{i}", f"cursor-page-{i + 1}", True)
+            (f"front_sli_item_{i}", f"cursor-page-{i + 1}", True)
             for i in range(3)
         ]
         # Last page: no cursor, no more
@@ -338,17 +367,17 @@ class TestCursorWalk:
                 _page([dict(_ITEM_FIXTURE, id=item_id)], next_cursor=next_c, has_more=has_m)
             )
 
-        routes = {("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
+        routes = {("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items"): handle_items}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             results = list(
                 client.paginate(
-                    lambda **kw: client.get_items("sl_01h455vb4pex5vsknk084sn02q", **kw)
+                    lambda **kw: client.get_items("front_sl_01h455vb4pex5vsknk084sn02q", **kw)
                 )
             )
 
         assert len(results) == 3
-        assert {r.id for r in results} == {f"sli_item_{i}" for i in range(3)}
+        assert {r.id for r in results} == {f"front_sli_item_{i}" for i in range(3)}
 
 
 # ---------------------------------------------------------------------------
@@ -391,11 +420,11 @@ class TestApiError:
                 status=404,
             )
 
-        routes = {("GET", "/v1/selection-lists/sl_nosuchlist"): handle}
+        routes = {("GET", "/v1/selection-lists/front_sl_nosuchlist"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             with pytest.raises(SelectionListApiError) as exc_info:
-                client.get_list("sl_nosuchlist")
+                client.get_list("front_sl_nosuchlist")
 
         err = exc_info.value
         assert err.code == "NOT_FOUND"
@@ -472,10 +501,10 @@ class TestEmptyResponse:
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             handler.send_no_content()
 
-        routes = {("DELETE", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q"): handle}
+        routes = {("DELETE", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.delete_list("sl_01h455vb4pex5vsknk084sn02q", purge=True)
+            result = client.delete_list("front_sl_01h455vb4pex5vsknk084sn02q", purge=True)
 
         assert result is None
 
@@ -486,14 +515,14 @@ class TestEmptyResponse:
         routes = {
             (
                 "DELETE",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items/sli_01h455vb4pex5vsknk084sn02q",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items/front_sli_01h455vb4pex5vsknk084sn02q",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.delete_item(
-                "sl_01h455vb4pex5vsknk084sn02q",
-                "sli_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
+                "front_sli_01h455vb4pex5vsknk084sn02q",
                 purge=True,
             )
 
@@ -506,13 +535,13 @@ class TestEmptyResponse:
         routes = {
             (
                 "DELETE",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.revoke_access(
-                "sl_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
                 "usr_01h455vb4pex5vsknk084sn02q",
             )
 
@@ -526,10 +555,10 @@ class TestEmptyResponse:
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
             handler.send_json(archived)
 
-        routes = {("DELETE", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q"): handle}
+        routes = {("DELETE", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q"): handle}
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.delete_list("sl_01h455vb4pex5vsknk084sn02q")
+            result = client.delete_list("front_sl_01h455vb4pex5vsknk084sn02q")
 
         assert result is not None
         assert result.status == LifecycleStatus.ARCHIVED
@@ -553,7 +582,7 @@ class TestEndpointCoverage:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             sl = client.create_list(key="countries", name="Countries", source_locale="en")
 
-        assert sl.id == "sl_01h455vb4pex5vsknk084sn02q"
+        assert sl.id == "front_sl_01h455vb4pex5vsknk084sn02q"
         assert received_bodies[0] == {"key": "countries", "name": "Countries", "source_locale": "en"}
 
     def test_get_quota(self) -> None:
@@ -581,7 +610,7 @@ class TestEndpointCoverage:
         assert status.quotas[0].current == 12
 
     def test_resolve_ids(self) -> None:
-        item_id = "sli_01h455vb4pex5vsknk084sn02q"
+        item_id = "front_sli_01h455vb4pex5vsknk084sn02q"
         resolve_body = {
             "results": {
                 item_id: {
@@ -594,7 +623,10 @@ class TestEndpointCoverage:
             "missing": [],
         }
 
+        received_auth: list[str] = []
+
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            received_auth.append(handler.headers.get("Authorization", ""))
             handler.send_json(resolve_body)
 
         routes = {("POST", "/v1/resolve"): handle}
@@ -602,12 +634,14 @@ class TestEndpointCoverage:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.resolve_ids([item_id])
 
+        # Spec 2.0.0: resolve is bearer-authenticated like every other operation.
+        assert received_auth == ["Bearer tok"]
         assert item_id in result.results
         assert result.results[item_id].label == "United States"
         assert result.missing == []
 
     def test_reorder_items(self) -> None:
-        item2 = dict(_ITEM_FIXTURE, id="sli_item_2", sort_order=200)
+        item2 = dict(_ITEM_FIXTURE, id="front_sli_item_2", sort_order=200)
         reorder_response = {"items": [_ITEM_FIXTURE, item2]}
 
         def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
@@ -616,16 +650,16 @@ class TestEndpointCoverage:
         routes = {
             (
                 "PUT",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items/reorder",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items/reorder",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             items = client.reorder_items(
-                "sl_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
                 [
-                    "sli_01h455vb4pex5vsknk084sn02q",
-                    "sli_item_2",
+                    "front_sli_01h455vb4pex5vsknk084sn02q",
+                    "front_sli_item_2",
                 ],
             )
 
@@ -633,7 +667,7 @@ class TestEndpointCoverage:
 
     def test_upsert_list_translation(self) -> None:
         translation_body = {
-            "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+            "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
             "locale": "fr",
             "name": "Pays",
             "is_machine": False,
@@ -646,13 +680,13 @@ class TestEndpointCoverage:
         routes = {
             (
                 "PUT",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/translations/fr",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/translations/fr",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             t = client.upsert_list_translation(
-                "sl_01h455vb4pex5vsknk084sn02q", "fr", "Pays"
+                "front_sl_01h455vb4pex5vsknk084sn02q", "fr", "Pays"
             )
 
         assert t.locale == "fr"
@@ -660,7 +694,7 @@ class TestEndpointCoverage:
 
     def test_set_access(self) -> None:
         grant_body = {
-            "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+            "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
             "user_id": "usr_01h455vb4pex5vsknk084sn02q",
             "role": "list-editor",
             "granted_by": "usr_01h455vb4pex5vsknk084sn02q",
@@ -674,13 +708,13 @@ class TestEndpointCoverage:
         routes = {
             (
                 "PUT",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/access/usr_01h455vb4pex5vsknk084sn02q",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             grant = client.set_access(
-                "sl_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
                 "usr_01h455vb4pex5vsknk084sn02q",
                 "list-editor",
             )
@@ -702,13 +736,13 @@ class TestEndpointCoverage:
         routes = {
             (
                 "POST",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/translations/fr/autofill",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/translations/fr/autofill",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.autofill_translations(
-                "sl_01h455vb4pex5vsknk084sn02q", "fr"
+                "front_sl_01h455vb4pex5vsknk084sn02q", "fr"
             )
 
         assert result.items_translated == 248
@@ -716,7 +750,7 @@ class TestEndpointCoverage:
 
     def test_get_access_page(self) -> None:
         grant = {
-            "list_id": "sl_01h455vb4pex5vsknk084sn02q",
+            "list_id": "front_sl_01h455vb4pex5vsknk084sn02q",
             "user_id": "usr_01h455vb4pex5vsknk084sn02q",
             "role": "list-owner",
             "granted_by": "usr_01h455vb4pex5vsknk084sn02q",
@@ -728,11 +762,11 @@ class TestEndpointCoverage:
             handler.send_json(_page([grant]))
 
         routes = {
-            ("GET", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/access"): handle
+            ("GET", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/access"): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.get_access("sl_01h455vb4pex5vsknk084sn02q")
+            result = client.get_access("front_sl_01h455vb4pex5vsknk084sn02q")
 
         assert len(result.items) == 1
         assert result.items[0].role.value == "list-owner"
@@ -745,11 +779,11 @@ class TestEndpointCoverage:
             handler.send_json(archived)
 
         routes = {
-            ("POST", "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/archive"): handle
+            ("POST", "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/archive"): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
-            result = client.archive_list("sl_01h455vb4pex5vsknk084sn02q")
+            result = client.archive_list("front_sl_01h455vb4pex5vsknk084sn02q")
 
         assert result.status == LifecycleStatus.ARCHIVED
 
@@ -762,14 +796,14 @@ class TestEndpointCoverage:
         routes = {
             (
                 "POST",
-                "/v1/selection-lists/sl_01h455vb4pex5vsknk084sn02q/items/sli_01h455vb4pex5vsknk084sn02q/archive",
+                "/v1/selection-lists/front_sl_01h455vb4pex5vsknk084sn02q/items/front_sli_01h455vb4pex5vsknk084sn02q/archive",
             ): handle
         }
         with StubServer(routes) as srv:
             client = SelectionListClient(base_url=srv.base_url, token="tok")
             result = client.archive_item(
-                "sl_01h455vb4pex5vsknk084sn02q",
-                "sli_01h455vb4pex5vsknk084sn02q",
+                "front_sl_01h455vb4pex5vsknk084sn02q",
+                "front_sli_01h455vb4pex5vsknk084sn02q",
             )
 
         assert result.status == LifecycleStatus.ARCHIVED
@@ -780,9 +814,193 @@ class TestEndpointCoverage:
 # ---------------------------------------------------------------------------
 
 
+_LIST_ID = "front_sl_01h455vb4pex5vsknk084sn02q"
+_ITEM_ID = "front_sli_01h455vb4pex5vsknk084sn02q"
+
+
+class TestTranslationStatusAndDelete:
+    """list/delete translation endpoints (list-level and item-level)."""
+
+    def test_list_translations(self) -> None:
+        seen: list[tuple[str, str | None]] = []
+
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            seen.append((parsed.path, handler.headers.get("Authorization")))
+            handler.send_json(
+                [
+                    {
+                        "locale": "fr",
+                        "completeness_pct": 75,
+                        "machine_translated": True,
+                        "source_changed": False,
+                    },
+                    {
+                        "locale": "es",
+                        "completeness_pct": 100,
+                        "machine_translated": False,
+                        "source_changed": True,
+                    },
+                ]
+            )
+
+        routes = {("GET", f"/v1/selection-lists/{_LIST_ID}/translations"): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            result = client.list_translations(_LIST_ID)
+
+        assert seen == [(f"/v1/selection-lists/{_LIST_ID}/translations", "Bearer tok")]
+        assert [t.locale for t in result] == ["fr", "es"]
+        assert result[0].completeness_pct == 75
+        assert result[0].machine_translated is True
+        assert result[1].source_changed is True
+
+    def test_list_translations_empty(self) -> None:
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            handler.send_json([])
+
+        routes = {("GET", f"/v1/selection-lists/{_LIST_ID}/translations"): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            assert client.list_translations(_LIST_ID) == []
+
+    def test_list_translations_non_array_body_raises(self) -> None:
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            handler.send_json({"items": []})
+
+        routes = {("GET", f"/v1/selection-lists/{_LIST_ID}/translations"): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            with pytest.raises(SelectionListApiError) as exc_info:
+                client.list_translations(_LIST_ID)
+
+        assert exc_info.value.code == "UNKNOWN"
+
+    def test_list_translations_404(self) -> None:
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            handler.send_json({"code": "NOT_FOUND", "message": "no such list"}, status=404)
+
+        routes = {("GET", f"/v1/selection-lists/{_LIST_ID}/translations"): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            with pytest.raises(SelectionListApiError) as exc_info:
+                client.list_translations(_LIST_ID)
+
+        assert exc_info.value.code == "NOT_FOUND"
+        assert exc_info.value.status == 404
+
+    def test_delete_list_translation_204_returns_none(self) -> None:
+        seen: list[str] = []
+
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            seen.append(parsed.path)
+            handler.send_no_content()
+
+        routes = {("DELETE", f"/v1/selection-lists/{_LIST_ID}/translations/fr"): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            result = client.delete_list_translation(_LIST_ID, "fr")
+
+        assert result is None
+        assert seen == [f"/v1/selection-lists/{_LIST_ID}/translations/fr"]
+
+    def test_delete_list_translation_source_locale_400(self) -> None:
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            handler.send_json(
+                {"code": "VALIDATION_ERROR", "message": "cannot delete source locale"},
+                status=400,
+            )
+
+        routes = {("DELETE", f"/v1/selection-lists/{_LIST_ID}/translations/en"): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            with pytest.raises(SelectionListApiError) as exc_info:
+                client.delete_list_translation(_LIST_ID, "en")
+
+        assert exc_info.value.code == "VALIDATION_ERROR"
+        assert exc_info.value.status == 400
+
+    def test_list_item_translations(self) -> None:
+        path = f"/v1/selection-lists/{_LIST_ID}/items/{_ITEM_ID}/translations"
+
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            assert parsed.path == path
+            handler.send_json(
+                [
+                    {"locale": "fr", "machine_translated": True, "source_changed": False},
+                    {"locale": "de", "machine_translated": False, "source_changed": True},
+                ]
+            )
+
+        routes = {("GET", path): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            result = client.list_item_translations(_LIST_ID, _ITEM_ID)
+
+        assert [t.locale for t in result] == ["fr", "de"]
+        assert result[0].machine_translated is True
+        assert result[1].source_changed is True
+
+    def test_list_item_translations_empty(self) -> None:
+        path = f"/v1/selection-lists/{_LIST_ID}/items/{_ITEM_ID}/translations"
+
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            handler.send_json([])
+
+        routes = {("GET", path): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            assert client.list_item_translations(_LIST_ID, _ITEM_ID) == []
+
+    def test_delete_item_translation_204_returns_none(self) -> None:
+        path = f"/v1/selection-lists/{_LIST_ID}/items/{_ITEM_ID}/translations/fr"
+        seen: list[str] = []
+
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            seen.append(parsed.path)
+            handler.send_no_content()
+
+        routes = {("DELETE", path): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            result = client.delete_item_translation(_LIST_ID, _ITEM_ID, "fr")
+
+        assert result is None
+        assert seen == [path]
+
+    def test_delete_item_translation_403(self) -> None:
+        path = f"/v1/selection-lists/{_LIST_ID}/items/{_ITEM_ID}/translations/fr"
+
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            handler.send_json({"code": "FORBIDDEN", "message": "no translate"}, status=403)
+
+        routes = {("DELETE", path): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            with pytest.raises(SelectionListApiError) as exc_info:
+                client.delete_item_translation(_LIST_ID, _ITEM_ID, "fr")
+
+        assert exc_info.value.code == "FORBIDDEN"
+        assert exc_info.value.status == 403
+
+    def test_path_segments_are_url_encoded(self) -> None:
+        raw_path = f"/v1/selection-lists/{_LIST_ID}/translations/pt%2FBR"
+        seen: list[str] = []
+
+        def handle(handler: _Handler, parsed: Any, qs: Any, body: Any) -> None:
+            seen.append(parsed.path)
+            handler.send_no_content()
+
+        routes = {("DELETE", raw_path): handle}
+        with StubServer(routes) as srv:
+            client = SelectionListClient(base_url=srv.base_url, token="tok")
+            client.delete_list_translation(_LIST_ID, "pt/BR")
+
+        assert seen == [raw_path]
+
+
 class TestPaginationEnvelope:
     def test_page_next_cursor_and_has_more(self) -> None:
-        item1 = dict(_LIST_FIXTURE, id="sl_page1")
+        item1 = dict(_LIST_FIXTURE, id="front_sl_page1")
         page1_cursor = "eyJsYXN0SWQiOiJzbF8wMSJ9"
 
         call_num = 0

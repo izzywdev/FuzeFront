@@ -120,8 +120,11 @@ services:
       - NODE_ENV=development
       - PORT=3007
       - PAYMENT_PROVIDER=stripe
-      # STRIPE_SECRET_KEY intentionally unset locally → degraded mode (/health).
-      # PAYMENT_INTERNAL_TOKEN optional; unset leaves the neutral API open locally.
+      # STRIPE_SECRET_KEY intentionally unset locally → degraded mode (/health),
+      # so the guarded internal API is not mounted and no token verification runs.
+      # When a vendor key IS set, the internal API verifies managed service tokens
+      # against security-service via @fuzefront/service-auth (fail-closed) — set
+      # SECURITY_SERVICE_URL to its origin, e.g. http://fuzefront-security:3002.
     networks:
       - FuzeInfra
     restart: unless-stopped

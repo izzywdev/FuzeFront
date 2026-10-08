@@ -46,10 +46,23 @@ export interface BillingPlan {
 
 export interface BillingSubscriptionView {
   id?: string
+  /** Stripe subscription ID — required for PATCH/DELETE calls. */
+  subscriptionId?: string
+  /** Current plan's Stripe price ID. */
+  priceId?: string
+  planId?: string
   planName?: string
+  planTier?: string
   status?: string
+  seatQuantity?: number
   currentPeriodEnd?: string
   cancelAtPeriodEnd?: boolean
+  trialEnd?: string
+  trialStart?: string
+  currentPeriodStart?: string
+  canceledAt?: string | null
+  /** Stripe customer balance in cents. Negative = available credit. */
+  customerBalance?: number | null
   [k: string]: unknown
 }
 
@@ -138,6 +151,67 @@ export async function createCheckoutSession(input: {
 }): Promise<CheckoutSessionResponse> {
   const { data } = await api.post<CheckoutSessionResponse>(`${P}/checkout`, input)
   return data
+}
+
+/**
+ * Upgrade or downgrade an existing subscription by changing its price ID
+ * or seat quantity. Upgrades prorate immediately; downgrades take effect at
+ * period end (server-side policy).
+ */
+export async function updateSubscription(
+  subscriptionId: string,
+  data: { priceId?: string; seatQuantity?: number }
+): Promise<BillingSubscriptionView | undefined> {
+  const { data: resp } = await api.patch<{ subscription?: BillingSubscriptionView }>(
+    `${P}/subscriptions/${subscriptionId}`,
+    data
+  )
+  return resp?.subscription
+}
+
+/**
+ * Cancel the subscription at the end of the current period
+ * (`cancelAtPeriodEnd = true`). The subscription stays active until then.
+ */
+export async function cancelSubscription(
+  subscriptionId: string
+): Promise<BillingSubscriptionView | undefined> {
+  const { data: resp } = await api.delete<{ subscription?: BillingSubscriptionView }>(
+    `${P}/subscriptions/${subscriptionId}`
+  )
+  return resp?.subscription
+}
+
+/**
+ * Revoke a pending `cancelAtPeriodEnd` — re-activates the subscription as a
+ * normal (auto-renewing) subscription.
+ */
+export async function revokeCancellation(
+  subscriptionId: string
+): Promise<BillingSubscriptionView | undefined> {
+  const { data: resp } = await api.post<{ subscription?: BillingSubscriptionView }>(
+    `${P}/subscriptions/${subscriptionId}/revoke-cancellation`
+  )
+  return resp?.subscription
+}
+
+/**
+ * Fetch the actor entity's Stripe customer credit balance.
+ * Negative balance = available credit (Stripe convention).
+ * Returns null when no billing customer exists.
+ */
+export async function getBalance(
+  organizationId?: string
+): Promise<{ customerBalance: number | null }> {
+  try {
+    const { data } = await api.get<{ customerBalance: number | null }>(
+      `${P}/balance`,
+      organizationId ? { params: { organizationId } } : undefined
+    )
+    return { customerBalance: data?.customerBalance ?? null }
+  } catch {
+    return { customerBalance: null }
+  }
 }
 
 /** Cents → "$9.00" style, defensive about which field carried the amount. */

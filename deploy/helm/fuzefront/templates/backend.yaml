@@ -19,6 +19,7 @@ spec:
       annotations:
         {{- include "fuzefront.metricsAnnotations" (dict "port" .Values.backend.port "root" .) | nindent 8 }}
     spec:
+      serviceAccountName: fuzefront-backend
       {{- include "fuzefront.scheduling" (dict "svc" .Values.backend "root" .) | nindent 6 }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -32,8 +33,15 @@ spec:
           hostnames:
             - {{ .Values.authentik.host | quote }}
       {{- end }}
-      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
       volumes:
+        - name: fuzefront-workload-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: fuzefront-security
+                  expirationSeconds: 600
+      {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
         - name: fuzefront-ca
           configMap:
             name: {{ .Values.authentik.oidc.caConfigMap | quote }}
@@ -99,10 +107,71 @@ spec:
               {{- end }}
             - name: PERMIT_DEBUG
               value: "false"
+            # Human root administrators (backend/src/services/rootOrgAdmin.ts).
+            # Each email must have a blueprint-pre-created Authentik account —
+            # see the TRUST ANCHOR note there.
+            - name: PLATFORM_ROOT_ADMIN_EMAILS
+              value: {{ join "," .Values.rootAdmins.emails | quote }}
             # Kafka brokers for publishing identity/email events (Plan B/C).
             # Empty => publisher is a logging no-op; provisioning still self-heals.
             - name: KAFKA_BROKERS
               value: {{ .Values.emailService.kafka.brokers | default "" | quote }}
+            - name: FUZEKEYS_URL
+              value: {{ .Values.connectors.fuzekeysUrl | quote }}
+            - name: FUZEFRONT_SECURITY_URL
+              value: "http://fuzefront-security:{{ .Values.securityService.port }}"
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: GOOGLE_CLIENT_ID
+                  optional: true
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: GOOGLE_CLIENT_SECRET
+                  optional: true
+            - name: GOOGLE_OAUTH_REDIRECT_URI
+              value: "{{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}/api/v1/connectors/google-gmail/oauth/callback"
+            - name: CONNECTOR_STATE_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" . }}
+                  key: CONNECTOR_STATE_ENCRYPTION_KEY
+                  optional: true
+            {{- range $entry := list
+              (dict "env" "GOOGLE_DRIVE_OAUTH_REDIRECT_URI" "id" "google-drive")
+              (dict "env" "GOOGLE_CALENDAR_OAUTH_REDIRECT_URI" "id" "google-calendar")
+              (dict "env" "GOOGLE_CONTACTS_OAUTH_REDIRECT_URI" "id" "google-contacts")
+              (dict "env" "MICROSOFT_OUTLOOK_REDIRECT_URI" "id" "microsoft-outlook")
+              (dict "env" "MICROSOFT_ONEDRIVE_REDIRECT_URI" "id" "microsoft-onedrive")
+              (dict "env" "MICROSOFT_TEAMS_REDIRECT_URI" "id" "microsoft-teams")
+              (dict "env" "SLACK_REDIRECT_URI" "id" "slack")
+              (dict "env" "NOTION_REDIRECT_URI" "id" "notion")
+              (dict "env" "GITHUB_CONNECTOR_REDIRECT_URI" "id" "github")
+              (dict "env" "DROPBOX_CONNECTOR_REDIRECT_URI" "id" "dropbox")
+              (dict "env" "GOOGLE_SHEETS_OAUTH_REDIRECT_URI" "id" "google-sheets")
+              (dict "env" "GOOGLE_DOCS_OAUTH_REDIRECT_URI" "id" "google-docs")
+              (dict "env" "GOOGLE_SLIDES_OAUTH_REDIRECT_URI" "id" "google-slides")
+              (dict "env" "GOOGLE_TASKS_OAUTH_REDIRECT_URI" "id" "google-tasks")
+              (dict "env" "MICROSOFT_SHAREPOINT_REDIRECT_URI" "id" "microsoft-sharepoint")
+              (dict "env" "MICROSOFT_TODO_REDIRECT_URI" "id" "microsoft-todo")
+              (dict "env" "JIRA_CONNECTOR_REDIRECT_URI" "id" "jira-cloud")
+              (dict "env" "CONFLUENCE_CONNECTOR_REDIRECT_URI" "id" "confluence-cloud")
+              (dict "env" "LINEAR_CONNECTOR_REDIRECT_URI" "id" "linear")
+              (dict "env" "TRELLO_CONNECTOR_REDIRECT_URI" "id" "trello") }}
+            - name: {{ $entry.env }}
+              value: "{{ ternary "https" "http" $.Values.ingress.tls.enabled }}://{{ $.Values.ingress.host }}/api/v1/connectors/{{ $entry.id }}/oauth/callback"
+            {{- end }}
+            {{- range $name := list "MICROSOFT_OAUTH_CLIENT_ID" "MICROSOFT_OAUTH_CLIENT_SECRET" "SLACK_CLIENT_ID" "SLACK_CLIENT_SECRET" "NOTION_CLIENT_ID" "NOTION_CLIENT_SECRET" "GITHUB_CONNECTOR_CLIENT_ID" "GITHUB_CONNECTOR_CLIENT_SECRET" "DROPBOX_CONNECTOR_CLIENT_ID" "DROPBOX_CONNECTOR_CLIENT_SECRET" "JIRA_CONNECTOR_CLIENT_ID" "JIRA_CONNECTOR_CLIENT_SECRET" "CONFLUENCE_CONNECTOR_CLIENT_ID" "CONFLUENCE_CONNECTOR_CLIENT_SECRET" "LINEAR_CONNECTOR_CLIENT_ID" "LINEAR_CONNECTOR_CLIENT_SECRET" "TRELLO_CONNECTOR_CLIENT_ID" "TRELLO_CONNECTOR_CLIENT_SECRET" }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzefront.secretName" $ }}
+                  key: {{ $name }}
+                  optional: true
+            {{- end }}
             # Shared secret guarding POST /internal/provision (Plan D calls this).
             - name: INTERNAL_PROVISION_SECRET
               valueFrom:
@@ -148,6 +217,13 @@ spec:
                   name: {{ .Values.customHostnameApi.secret.name | default (include "fuzefront.secretName" .) }}
                   key: {{ .Values.customHostnameApi.secret.key }}
                   optional: true
+            {{- end }}
+            {{- if .Values.authentikMendys.enabled }}
+            # Portals Directory — provision the MendysRobotics tenant portal row
+            # (identity_mode 'hard') at boot, ONLY where its Authentik silo is
+            # deployed. Read by backend/src/services/ensureMendysPortal.ts.
+            - name: MENDYS_PORTAL_PROVISION
+              value: "true"
             {{- end }}
             {{- if .Values.authentik.oidc.enabled }}
             # Authentik OIDC (SSO). client_id/secret come from the Secret (set
@@ -234,14 +310,27 @@ spec:
                   optional: true
             {{- end }}
           readinessProbe:
+            # /ready, not /health: backend/src/index.ts implements /ready
+            # specifically so a degraded database removes this pod from the
+            # Service endpoints and Argo's built-in Deployment assessment
+            # reports Degraded (see that route's own doc comment, "THE BUG
+            # THIS FIXES"). This template was pointing readinessProbe at
+            # /health instead — which is always-200 by design (see
+            # applications-service's own /ready fix for the mirrored bug,
+            # issue #1137) — so the code-level fix existed but was never
+            # wired in here; readiness never actually reflected DB health.
             httpGet:
-              path: /health
+              path: /ready
               port: http
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
           livenessProbe:
+            # Deliberately stays on /health, not /ready: liveness must never
+            # depend on a downstream dependency, or a DB blip turns into a
+            # kubelet restart loop that cannot fix anything (same reasoning
+            # backend/src/index.ts documents for its /health route).
             httpGet:
               path: /health
               port: http
@@ -249,8 +338,11 @@ spec:
             periodSeconds: 15
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
           volumeMounts:
+            - name: fuzefront-workload-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
+          {{- if and .Values.authentik.oidc.enabled .Values.authentik.oidc.caConfigMap }}
             - name: fuzefront-ca
               mountPath: /etc/fuzefront-ca
               readOnly: true

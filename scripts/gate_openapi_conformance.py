@@ -63,10 +63,20 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from gate_platform_auth import (  # noqa: E402
-        Finding, JS_PATH, JS_ROUTE, _balanced, _norm_path, _parse_decls,
-        _py_routes, _js_routes, _resolve_import, changed_lines, read,
-        source_files, tracked_files,
+    from gate_platform_auth import (
+        JS_PATH,
+        JS_ROUTE,
+        Finding,
+        _balanced,
+        _js_routes,
+        _norm_path,
+        _parse_decls,
+        _py_routes,
+        _resolve_import,
+        changed_lines,
+        read,
+        source_files,
+        tracked_files,
     )
 except ImportError as exc:  # pragma: no cover - a bare traceback here is unreadable
     # This gate reuses gate_platform_auth's route scanner rather than growing a
@@ -94,7 +104,7 @@ except ImportError:  # pragma: no cover - exercised by the degraded-mode test
 
 EXEMPT_FILES = ("governance/openapi-exempt.txt", ".fuze/openapi-exempt.txt")
 
-SPEC_NAME = re.compile(r"(^|/)(openapi|swagger)\.(ya?ml|json)$", re.I)
+SPEC_NAME = re.compile(r"(^|/)(openapi|swagger)\.(ya?ml|json)$", re.IGNORECASE)
 # The Helm-mounted duplicate is a COPY of a spec, not a second contract.
 # Counting it would double every operation and invent O2s for the copy.
 # check-mcp-spec-drift.sh is what proves the copy matches; this gate reads the
@@ -159,7 +169,7 @@ def spec_operations(repo, rel):
     return ops, None
 
 
-PY_INCLUDE = re.compile(r"include_router\s*\(", re.I)
+PY_INCLUDE = re.compile(r"include_router\s*\(", re.IGNORECASE)
 PY_PREFIX = re.compile(r"""prefix\s*=\s*['"]([^'"]*)['"]""")
 
 

@@ -87,6 +87,23 @@
     "servingRoles": ["app-shell-platform"],
     "entryRole": "app-shell-platform"
   },
+  "mobile": {
+    "product": "FuzeFront",
+    "required": true,
+    "strategy": "pwa",
+    "targets": ["android", "mobile-web"],
+    "responsive": {
+      "min_width": 375,
+      "breakpoints": [375, 768, 1024],
+      "min_tap_target_px": 44
+    },
+    "acceptance": [
+      "Every default-branch build publishes a signed, verified APK to GitHub Releases.",
+      "The APK launches the standalone UI at https://app.fuzefront.com/ and the UI uses same-origin relative /api routes.",
+      "The TWA host, Android package, and Digital Asset Links identity remain consistent."
+    ],
+    "owner": "mobile-frontend-engineer"
+  },
   "mcp": {
     "enabled": true,
     "servers": [

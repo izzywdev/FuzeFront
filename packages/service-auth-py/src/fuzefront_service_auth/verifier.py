@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ._cache import DEFAULT_MAX_SIZE, DEFAULT_MAX_TTL_SECONDS, PositiveCache
 from ._http import HttpPost, default_http_post
@@ -48,11 +48,14 @@ class MachineIdentity:
     """
 
     subject: str
-    tenant_id: Optional[str] = None
-    scope: Optional[str] = None
-    scopes: List[str] = field(default_factory=list)
-    expires_at: Optional[int] = None
-    raw: Dict[str, Any] = field(default_factory=dict)
+    tenant_id: str | None = None
+    scope: str | None = None
+    scopes: list[str] = field(default_factory=list)
+    expires_at: int | None = None
+    audience: str | None = None
+    actor: dict[str, Any] | None = None
+    token_kind: str | None = None
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 class MachineTokenVerifier:
@@ -77,7 +80,7 @@ class MachineTokenVerifier:
         base_url: str,
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
-        http_post: Optional[HttpPost] = None,
+        http_post: HttpPost | None = None,
         cache_max_size: int = DEFAULT_MAX_SIZE,
         cache_max_ttl_seconds: float = DEFAULT_MAX_TTL_SECONDS,
         clock=time.time,
@@ -117,7 +120,7 @@ class MachineTokenVerifier:
                 {"token": token},
                 self._timeout,
             )
-        except Exception as error:  # noqa: BLE001 - fail closed on ANY transport error
+        except Exception as error:
             raise TokenVerificationError(
                 f"introspection request failed (failing closed): {error}"
             ) from error
@@ -171,6 +174,9 @@ class MachineTokenVerifier:
             scope=scope,
             scopes=scope.split() if isinstance(scope, str) and scope else [],
             expires_at=data.get("expiresAt"),
+            audience=data.get("audience"),
+            actor=data.get("actor"),
+            token_kind=data.get("tokenKind"),
             raw=data,
         )
         self._cache.put(token, identity, now, expires_at=data.get("expiresAt"))

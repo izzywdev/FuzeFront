@@ -28,6 +28,7 @@ COPY backend/applications/package.json ./backend/applications/
 COPY shared/package.json ./shared/
 COPY packages/identity/package.json ./packages/identity/
 COPY packages/auth/package.json ./packages/auth/
+COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/service-auth/package.json ./packages/service-auth/
 COPY api-client/package.json ./api-client/
 COPY sdk/package.json ./sdk/

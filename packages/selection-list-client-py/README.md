@@ -1,7 +1,7 @@
 # fuzefront-selection-list-client
 
 Python client for the FuzeFront SelectionList service. Peer of
-`@fuzefront/selection-list-client` (Node). Zero runtime dependencies —
+`@fuzeone/selection-list-client` (Node). Zero runtime dependencies —
 uses `urllib.request` (stdlib only).
 
 ## Install
@@ -38,6 +38,27 @@ result = client.resolve_ids(["front_sli_01h455vb4pex5vsknk084sn02q"])
 for item_id, resolved in result.results.items():
     print(item_id, resolved.label)
 ```
+
+## Authorship and seed provenance (2.0.0, contract 4.0.0)
+
+`created_by` (lists, items) and `granted_by` (access grants) are not always
+users. Each is a `usr_` user id, a `system:<service>` principal (rows written by
+seeding carry `system:selection-list-service`), or the literal
+`DELETED_USER_SENTINEL` (`"[deleted-user]"`, after the author was deleted).
+Branch before treating one as a user:
+
+```python
+from fuzefront_selection_list_client import AuthorPrincipalKind, author_principal_kind, is_user_author
+
+if is_user_author(sl.created_by):
+    show_profile(sl.created_by)
+elif author_principal_kind(sl.created_by) is AuthorPrincipalKind.SYSTEM:
+    render("Seeded")
+```
+
+`SelectionList.seed` / `SelectionListItem.seed` is a `SeedProvenance`
+(`source`, `pack_key`, `pack_version`, `user_modified`) on seeded rows and
+`None` on user-authored ones.
 
 ## Token provider
 

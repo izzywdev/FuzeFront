@@ -1,7 +1,7 @@
 /**
  * Wire types for the selection-list-service.
  *
- * Hand-authored from `services/selection-list-service/openapi.yaml` v1.0.0 and
+ * Hand-authored from `services/selection-list-service/openapi.yaml` v4.0.0 and
  * kept in lockstep with it. The spec is the source of truth: when it changes,
  * `contract-designer` amends the spec, bumps `info.version`, and updates this
  * file in the same PR. Nothing here may describe a shape the spec does not.
@@ -23,17 +23,67 @@
  * alias exists to document intent at call sites.
  */
 export type SelectionListId = string
-/** `sli_`-prefixed item id — the value consumers persist in their own rows. */
+/** `front_sli_`-prefixed item id — the value consumers persist in their own rows. */
 export type SelectionListItemId = string
 /** `org_`-prefixed organization id. */
 export type OrganizationId = string
 /** `usr_`-prefixed user id. */
 export type UserId = string
 
+/**
+ * A non-human principal that wrote a row: `system:` plus a service slug
+ * (contract `SystemPrincipal`, `^system:[a-z0-9-]+$`). Seeded rows carry
+ * `system:selection-list-service`. Names a service, never a user.
+ */
+export type SystemPrincipal = `system:${string}`
+
+/**
+ * The exact sentinel that replaces a user id in authorship fields once that
+ * user is deleted (contract `DeletedUserSentinel`). Not an id; resolves to nobody.
+ */
+export const DELETED_USER_SENTINEL = '[deleted-user]'
+/** Type of {@link DELETED_USER_SENTINEL}. */
+export type DeletedUserSentinel = typeof DELETED_USER_SENTINEL
+
+/** Wire prefix of a user id. */
+export const USER_ID_PREFIX = 'usr_'
+/** Wire prefix of a system principal. */
+export const SYSTEM_PRINCIPAL_PREFIX = 'system:'
+
+/**
+ * Who wrote a row — `created_by` on lists/items, `granted_by` on grants
+ * (contract `AuthorPrincipal`): a user id, a system principal, or the
+ * deleted-user sentinel. The forms are disjoint by prefix, so branch with
+ * {@link authorPrincipalKind} before treating the value as a user id.
+ *
+ * Typed as the union for documentation; `UserId` is a plain `string` alias, so
+ * the union is assignable to `string` and existing `string` readers still compile.
+ */
+export type AuthorPrincipal = UserId | SystemPrincipal | DeletedUserSentinel
+
+/** Which form an {@link AuthorPrincipal} takes. `unknown` = not a contract value. */
+export type AuthorPrincipalKind = 'user' | 'system' | 'deleted-user' | 'unknown'
+
+/**
+ * Classify an {@link AuthorPrincipal} from the string alone (prefix check only —
+ * ids are opaque past their prefix, so nothing further is parsed).
+ */
+export function authorPrincipalKind(value: string): AuthorPrincipalKind {
+  if (value === DELETED_USER_SENTINEL) return 'deleted-user'
+  if (value.startsWith(SYSTEM_PRINCIPAL_PREFIX)) return 'system'
+  if (value.startsWith(USER_ID_PREFIX)) return 'user'
+  return 'unknown'
+}
+
+/** True when `value` names a user (a `usr_` id), i.e. is safe to look up as one. */
+export function isUserAuthor(value: string): value is UserId {
+  return authorPrincipalKind(value) === 'user'
+}
+
 /** Wire prefixes minted by this service. */
-export const SELECTION_LIST_ID_PREFIX = 'sl_'
+export const SELECTION_LIST_ID_PREFIX = 'front_sl_'
 /** Wire prefix for selection-list items. */
-export const SELECTION_LIST_ITEM_ID_PREFIX = 'sli_'
+export const SELECTION_LIST_ITEM_ID_PREFIX = 'front_sli_'
 
 /* -------------------------------------------------------------------------- */
 /* Enums                                                                       */
@@ -108,12 +158,31 @@ export interface PageParams {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Seed provenance                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Read-only provenance of a row created by seeding (contract `SeedProvenance`).
+ * Mirrors the event contract's `slSeedProvenanceV1`, in snake_case.
+ */
+export interface SeedProvenance {
+  /** Seed source: an app slug, or `platform` for the service's own packs. */
+  source: string
+  /** Seed-pack key. */
+  pack_key: string
+  /** Version of the pack that last wrote this row (>= 1). */
+  pack_version: number
+  /** Sticky `true` once a human edited the seeded content; upgrades then leave it alone. */
+  user_modified: boolean
+}
+
+/* -------------------------------------------------------------------------- */
 /* Selection lists                                                             */
 /* -------------------------------------------------------------------------- */
 
 /** A selection list, with its text resolved for one locale. */
 export interface SelectionList {
-  /** The `sl_`-prefixed list id. */
+  /** The `front_sl_`-prefixed list id. */
   id: SelectionListId
   /** Owning organization. */
   organization_id: OrganizationId
@@ -133,8 +202,10 @@ export interface SelectionList {
   is_machine: boolean
   /** Number of non-archived items, when the server includes it. */
   item_count?: number
-  /** The user who created the list. */
-  created_by: UserId
+  /** Seed provenance; `null` for a user-authored list. Always present, read-only. */
+  seed: SeedProvenance | null
+  /** Who created the list: a user, a system principal (seeding), or the deleted-user sentinel. */
+  created_by: AuthorPrincipal
   /** RFC 3339 creation timestamp. */
   created_at: string
   /** RFC 3339 last-modification timestamp. */
@@ -183,7 +254,7 @@ export interface ListSelectionListsParams extends PageParams {
 
 /** One item of a selection list, with its text resolved for one locale. */
 export interface SelectionListItem {
-  /** The `sli_`-prefixed item id — persist this, never `code`. */
+  /** The `front_sli_`-prefixed item id — persist this, never `code`. */
   id: SelectionListItemId
   /** The list this item belongs to. */
   list_id: SelectionListId
@@ -201,8 +272,10 @@ export interface SelectionListItem {
   resolved_locale: Locale
   /** Whether the resolved text was machine-translated. */
   is_machine: boolean
-  /** The user who created the item. */
-  created_by: UserId
+  /** Seed provenance; `null` for a user-authored item. Always present, read-only. */
+  seed: SeedProvenance | null
+  /** Who created the item: a user, a system principal (seeding), or the deleted-user sentinel. */
+  created_by: AuthorPrincipal
   /** RFC 3339 creation timestamp. */
   created_at: string
   /** RFC 3339 last-modification timestamp. */
@@ -334,6 +407,44 @@ export interface SelectionListAutofillResult {
   items_skipped: number
 }
 
+/**
+ * Translation workbench summary for one locale of a selection list.
+ * Returned by `GET /v1/selection-lists/{listId}/translations`.
+ */
+export interface TranslationLocaleStatus {
+  /** The locale this entry describes. */
+  locale: Locale
+  /**
+   * Percentage of translatable entities (list + active items) that have
+   * a translation in this locale. 0–100.
+   */
+  completeness_pct: number
+  /** Whether the list-level translation in this locale was machine-produced. */
+  machine_translated: boolean
+  /**
+   * Whether the source-locale text has changed since this translation was
+   * written (i.e. the stored `source_hash` no longer matches the current
+   * source). `true` means the translation is stale.
+   */
+  source_changed: boolean
+}
+
+/**
+ * Translation workbench summary for one locale of a selection-list item.
+ * Returned by `GET /v1/selection-lists/{listId}/items/{itemId}/translations`.
+ */
+export interface ItemTranslationLocaleStatus {
+  /** The locale this entry describes. */
+  locale: Locale
+  /** Whether this item's translation in this locale was machine-produced. */
+  machine_translated: boolean
+  /**
+   * Whether the source-locale text for this item has changed since the
+   * translation was written.
+   */
+  source_changed: boolean
+}
+
 /* -------------------------------------------------------------------------- */
 /* Access control                                                              */
 /* -------------------------------------------------------------------------- */
@@ -346,8 +457,8 @@ export interface SelectionListAccessGrant {
   user_id: UserId
   /** The single role held. */
   role: SelectionListAccessRole
-  /** Who granted it. */
-  granted_by: UserId
+  /** Who granted it: a user, a system principal, or the deleted-user sentinel. */
+  granted_by: AuthorPrincipal
   /** RFC 3339 timestamp of the original grant. */
   granted_at: string
   /** RFC 3339 timestamp of the last role change. */

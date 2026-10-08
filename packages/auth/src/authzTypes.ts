@@ -22,7 +22,7 @@
  * Semantic version of the authz half of this contract. Bump on interface
  * changes; record in CHANGELOG.md.
  */
-export const AUTHZ_CONTRACT_VERSION = '0.1.0' as const;
+export const AUTHZ_CONTRACT_VERSION = '0.2.0' as const;
 
 /** A resource the decision is about: a type, plus optionally a specific instance. */
 export interface ResourceRef {
@@ -196,6 +196,36 @@ export interface GrantListQuery {
   cursor?: string;
 }
 
+// ── Subject ABAC attributes ──────────────────────────────────────────────
+
+/** The provider's subject kinds this contract supports for attribute writes. */
+export type SubjectType = 'user' | 'tenant';
+
+/** A typed subject reference. The type is structural, never inferred from a bare id. */
+export interface SubjectRef {
+  type: SubjectType;
+  key: string;
+}
+
+/** A scalar ABAC attribute value. No nested objects/arrays. */
+export type AttributeValue = string | number | boolean;
+
+/** Request to MERGE attributes onto a subject's record in the provider's own store. */
+export interface SetAttributesRequest {
+  subject: SubjectRef;
+  /** Merge patch of attribute name -> scalar value. At least one key required. */
+  attributes: Record<string, AttributeValue>;
+}
+
+/** Confirms an attribute write succeeded. */
+export interface SetAttributesResult {
+  subject: SubjectRef;
+  /** Echo of the keys/values THIS call wrote — not the subject's full attribute set. */
+  attributes: Record<string, AttributeValue>;
+  /** Epoch milliseconds this write was applied. */
+  updatedAt: number;
+}
+
 /** The authz client: a thin, fail-closed HTTP binding to the Security API. */
 export interface AuthzClient {
   /**
@@ -232,4 +262,22 @@ export interface AuthzClient {
    * Resolves with a page of grants.
    */
   listGrants(query: GrantListQuery, token: string): Promise<GrantPage>;
+  /**
+   * MERGE ABAC attributes onto a subject's record in the authorization
+   * provider's own store (e.g. a billing plan tier / seat count gating
+   * feature access), distinct from `grant` which assigns a role. Only the
+   * named keys are written; the subject's other attributes are untouched.
+   *
+   * THIS IS A WRITE, NOT A DECISION — deliberately the OPPOSITE of
+   * `check`/`bulkCheck`'s fail-closed-returns-`false` contract. It NEVER
+   * resolves on failure: any transport error, timeout, or non-200 THROWS
+   * `AuthzError`, so a caller (e.g. billing entitlement sync) can tell the
+   * write did not land and retry rather than believe a stale/absent
+   * attribute state.
+   *
+   * Throws `AuthzError('MALFORMED')` for an invalid request (400).
+   * Throws `AuthzError('PROVIDER_ERROR')` if the backend provider is
+   * unavailable/rejects the write (502) or the request otherwise fails.
+   */
+  setAttributes(req: SetAttributesRequest, token: string): Promise<SetAttributesResult>;
 }

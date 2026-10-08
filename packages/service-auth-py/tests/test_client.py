@@ -12,7 +12,6 @@ import threading
 import time
 
 import pytest
-
 from fuzefront_service_auth import ServiceAuthClient, TokenRequestError
 
 

@@ -19,6 +19,8 @@ on:
       - '.github/actions/fuze-code-action/**'
       - '.github/actions/llm-endpoint/**'
       - '.github/workflows/gate-fuze-code-action.yml'
+      # Every caller the read-only test inspects: a caller-only edit must run it.
+      - '.github/workflows/*.yml'
 
 permissions:
   contents: read
@@ -35,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
       # repointed by the action owner (cf. the trivy-action / kics-github-action
@@ -62,6 +64,12 @@ jobs:
 
       - name: extra-env handling
         run: python3 .github/actions/fuze-code-action/__tests__/test_extra_env.py
+
+      # The pure-review caller (fuze-code-review.yml) hands an attacker-controlled
+      # diff to a model: it must be read-only at the TOOL level on every rung, and
+      # its checkout must not persist the job token.
+      - name: Read-only review caller (no write-capable rung, no persisted credential)
+        run: python3 .github/actions/fuze-code-action/__tests__/test_review_caller_readonly.py
 
       - name: Every run block is parseable bash
         run: python3 .github/actions/fuze-code-action/__tests__/test_run_blocks_parse.py

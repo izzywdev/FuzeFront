@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: FuzeFront App Registry API
-  version: 1.0.0
+  version: 1.3.0
   description: >-
     REST API for the FuzeFront **app registry** — the contract by which a
     federated (or standalone) application is registered, activated, and surfaced
@@ -56,6 +56,18 @@ tags:
       billing profile) so registering a product requires no platform-side edit.
   - name: heartbeat
     description: App liveness heartbeat (called by the app, not by users).
+  - name: builds
+    description: >-
+      "Build your application" — start a FuzeAgent session that develops and
+      deploys an app into the caller's personal account or an organization.
+      Gated by the release flag `fuzefront.apps.build-with-agent` (default OFF):
+      while OFF every operation answers `503 feature_disabled`.
+  - name: publishing
+    description: >-
+      Publishing tiers — private -> organization -> marketplace. The marketplace
+      tier goes through a submit / approve|reject review. Gated by the release
+      flag `fuzefront.apps.marketplace-publishing` (default OFF): while OFF every
+      operation answers `503 feature_disabled`.
   - name: health
     description: Service liveness / readiness.
 
@@ -366,6 +378,358 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /build-sessions:
+    post:
+      operationId: createBuildSession
+      tags: [builds]
+      summary: Start a build-with-FuzeAgent session
+      description: >-
+        Starts a FuzeAgent session that develops an app and deploys it into the
+        caller's **personal account** (`context=personal` — the caller's personal
+        organization) or an **organization** (`context=organization` — the caller
+        needs an active membership and the `apps:register` scope on that org).
+        The owner of record of the resulting app is that organization.
+
+
+        The session id is **server-minted** (`front_abs_…`); the body never
+        carries an id. If the builder is not configured on this server the call
+        answers `503 builder_unavailable` and persists nothing. If the agent
+        launch fails the session is recorded as `failed` (`errorCode:
+        launch_failed`) and the call answers `502`.
+
+
+        Feature flag: `fuzefront.apps.build-with-agent` (release, default OFF) —
+        `503 feature_disabled` while OFF. Rate limited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBuildSessionRequest' }
+      responses:
+        '201':
+          description: Session created and launched (status = building).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuildSession' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: The named organization does not exist (platform-admin callers only).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: '`context=personal` but the caller has no personal account (`no_personal_org`).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '502':
+          description: The FuzeAgent launch failed; the session is recorded as `failed` (`launch_failed`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    get:
+      operationId: listBuildSessions
+      tags: [builds]
+      summary: List build sessions
+      description: >-
+        The caller's own build sessions, newest first. When `organizationId` is
+        given **and** the caller manages that organization (owner/admin, or
+        platform admin) every session of that organization is returned.
+
+
+        Cursor-paginated (`limit` default 50, max 200 — larger values are
+        clamped; `cursor` is opaque; a malformed cursor is a 400). Feature flag:
+        `fuzefront.apps.build-with-agent` (release, default OFF).
+      parameters:
+        - name: organizationId
+          in: query
+          required: false
+          description: Restrict to one organization (TypeID `org_…` or uuid).
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from `page.nextCursor`.
+          schema: { type: string }
+      responses:
+        '200':
+          description: A page of build sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/BuildSession' }
+                  page:
+                    type: object
+                    additionalProperties: false
+                    required: [nextCursor, hasMore]
+                    properties:
+                      nextCursor: { type: [string, 'null'] }
+                      hasMore: { type: boolean }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /build-sessions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/BuildSessionId'
+    get:
+      operationId: getBuildSession
+      tags: [builds]
+      summary: Get a build session
+      description: >-
+        Visible to the requester, the owning organization's managers
+        (owner/admin) and platform admins. Anyone else — and any unknown or
+        wrongly-typed id — gets **404, never 403**. Feature flag:
+        `fuzefront.apps.build-with-agent` (release, default OFF).
+      responses:
+        '200':
+          description: The build session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuildSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /build-sessions/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/BuildSessionId'
+    post:
+      operationId: cancelBuildSession
+      tags: [builds]
+      summary: Cancel a build session
+      description: >-
+        Requester or organization manager. Only from `requested`, `launching`,
+        `building` or `deploying` -> `cancelled`; a terminal session answers 409.
+        Cancels the platform-side session only (the agent is not signalled) — a
+        late agent status callback is then rejected 409. Feature flag:
+        `fuzefront.apps.build-with-agent` (release, default OFF).
+      responses:
+        '200':
+          description: The cancelled session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuildSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The session is already in a terminal state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /build-sessions/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/BuildSessionId'
+    post:
+      operationId: reportBuildSessionStatus
+      tags: [builds]
+      summary: FuzeAgent status callback
+      description: >-
+        Called by the FuzeAgent builder (platform service account / platform
+        admin ONLY — the session's own requester is rejected 403, otherwise they
+        could mark an arbitrary app "deployed"). Transitions are **forward-only**
+        (`launching -> building -> deploying -> deployed`; `failed` from any
+        non-terminal state); `deployed`, `failed` and `cancelled` are terminal and
+        immutable (409).
+
+
+        On `deployed`: `appSlug` is required; the app must exist (422) and must
+        belong to the **same organization** as the session (409 `ORG_MISMATCH` — an
+        agent can never deploy into a different tenant). The app is linked to the
+        session and, when `fuzefront.apps.creator-ownership` is ON and the app has
+        no creator yet, the session's requester becomes the creator of record
+        (immutable) and receives the initial `creator` Permit role.
+
+
+        Feature flag: `fuzefront.apps.build-with-agent` (release, default OFF).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BuildSessionStatusReport' }
+      responses:
+        '200':
+          description: The updated session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BuildSession' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Illegal transition (backwards/repeat/terminal) or cross-tenant deploy (`ORG_MISMATCH`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: '`deployed` named an `appSlug` that is not registered (`APP_NOT_FOUND`).'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /apps/{slug}/publication:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    get:
+      operationId: getAppPublication
+      x-pagination: exempt
+      tags: [publishing]
+      summary: Get an app's publication state
+      description: >-
+        Current tier and marketplace review state. Visible to the app's managers
+        and platform admins; anyone who can merely read the app gets 404.
+        Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
+      responses:
+        '200':
+          description: The publication state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppPublication' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /apps/{slug}/publication-requests:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    post:
+      operationId: requestAppPublication
+      tags: [publishing]
+      summary: Submit an app to the marketplace
+      description: >-
+        Requires permission to mutate the app (`apps:write`). Sets
+        `marketplace_submitted_at`, leaves `is_marketplace_approved=false` and
+        records `notes`/`requestedBy` in `marketplace_metadata.publication`. 409 if
+        a request is already pending (`ALREADY_PENDING`) or the app is already
+        published (`ALREADY_PUBLISHED`). Feature flag:
+        `fuzefront.apps.marketplace-publishing` (release, default OFF).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublicationRequest' }
+      responses:
+        '201':
+          description: Request recorded (status = pending).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppPublication' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: A request is already pending, or the app is already published.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /apps/{slug}/publication-requests/approve:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    post:
+      operationId: approveAppPublication
+      tags: [publishing]
+      summary: Approve a marketplace publication request
+      description: >-
+        **Platform admins only** (403 otherwise). Sets `visibility=marketplace`,
+        `is_marketplace_approved=true`, `marketplace_approved_at` and
+        `approved_by`. 409 `NOT_PENDING` when there is no pending request.
+        Feature flag: `fuzefront.apps.marketplace-publishing` (release, default OFF).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublicationApproval' }
+      responses:
+        '200':
+          description: Approved; the app is now in the marketplace tier.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppPublication' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: No pending publication request (`NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /apps/{slug}/publication-requests/reject:
+    parameters:
+      - $ref: '#/components/parameters/Slug'
+    post:
+      operationId: rejectAppPublication
+      tags: [publishing]
+      summary: Reject a marketplace publication request
+      description: >-
+        **Platform admins only** (403 otherwise). Clears `marketplace_submitted_at`
+        and records `{reason, rejectedAt, rejectedBy}` in
+        `marketplace_metadata.publication.rejection`; the app may be resubmitted.
+        409 `NOT_PENDING` when there is no pending request. Feature flag:
+        `fuzefront.apps.marketplace-publishing` (release, default OFF).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublicationRejection' }
+      responses:
+        '200':
+          description: Rejected.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppPublication' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: No pending publication request (`NOT_PENDING`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
   /health:
     get:
       operationId: getHealth
@@ -410,7 +774,26 @@ components:
       description: The app's immutable url-safe slug (e.g. `clock`).
       schema: { $ref: '#/components/schemas/Slug' }
 
+    BuildSessionId:
+      name: id
+      in: path
+      required: true
+      description: Build session TypeID (`front_abs_…`).
+      schema: { type: string, pattern: '^front_abs_[0-9a-z]+$' }
+
   responses:
+    TooManyRequests:
+      description: Rate limit exceeded.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: >-
+        The operation's release flag is OFF (`feature_disabled`), or — for
+        `createBuildSession` — the builder is not configured (`builder_unavailable`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
       description: Missing or invalid session / token.
       content:
@@ -809,6 +1192,20 @@ components:
           $ref: '#/components/schemas/Infra'
         visibility:
           $ref: '#/components/schemas/Visibility'
+        scopeLevel:
+          type: string
+          enum: [personal, organization, both]
+          description: Where the app may be installed (personal, organization, or either).
+        requiresOrgContext:
+          type: boolean
+          description: Whether the app strictly requires an active organization context to run.
+        installMode:
+          type: string
+          enum: [self, everyone, both]
+          description: Allowed installation modes (self, everyone, or both). 'everyone' enforces whole-organization only installs.
+        orgLevelOnly:
+          type: boolean
+          description: Whether installation is restricted to the whole organization only (cannot be installed to a single user in an org).
         roles:
           type: array
           description: Roles permitted to see/activate the app. Empty = all members.
@@ -837,6 +1234,36 @@ components:
           format: date-time
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        createdBy:
+          type: [string, 'null']
+          description: >-
+            Creator/publisher of record (`usr_…`), or null. **Present only when
+            the release flag `fuzefront.apps.creator-ownership` is ON.**
+            Server-set from the authenticated principal, informational and
+            immutable — never accepted in a request body, and never a source of
+            authority (authority is Permit + org role; the owner of record is
+            `organizationId`).
+        creator:
+          description: >-
+            The creator as an in-org contact, or null. **Present only when
+            `fuzefront.apps.creator-ownership` is ON.**
+          oneOf:
+            - { $ref: '#/components/schemas/AppCreator' }
+            - { type: 'null' }
+
+    AppCreator:
+      type: object
+      additionalProperties: false
+      required: [userId, isCurrentMember]
+      description: >-
+        The app's creator. `displayName` is returned ONLY while the creator is
+        still an active member of the owning organization; a former member is
+        reduced to `isCurrentMember: false` (no name/contact) — the app stays
+        with the organization.
+      properties:
+        userId: { type: string, description: 'Creator user TypeID (`usr_…`).' }
+        isCurrentMember: { type: boolean }
+        displayName: { type: string }
 
     RegisterAppRequest:
       type: object
@@ -863,6 +1290,16 @@ components:
             May NOT contain `_` — that is the namespace separator and the key must
             split cleanly at the first one.
         name: { type: string }
+        relations:
+          type: object
+          description: Map of bare relation names to bare resources in this same product.
+          additionalProperties:
+            { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+        roles:
+          type: object
+          description: Instance-scoped roles; these do not create tenant-wide grants.
+          additionalProperties:
+            { $ref: '#/components/schemas/ProductInstanceRoleDecl' }
         actions:
           type: object
           description: 'Map of action key -> { name }, e.g. { create: { name: Create } }.'
@@ -872,6 +1309,34 @@ components:
             required: [name]
             properties:
               name: { type: string }
+
+    ProductInstanceRoleDecl:
+      type: object
+      additionalProperties: false
+      required: [name, permissions]
+      properties:
+        name: { type: string }
+        permissions:
+          type: array
+          description: Bare actions of the containing resource; grants apply to one instance only.
+          items: { type: string }
+        granted_to:
+          type: object
+          additionalProperties: false
+          required: [users_with_role]
+          properties:
+            users_with_role:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [role, on_resource, linked_by_relation]
+                properties:
+                  role: { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+                  on_resource:
+                    { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
+                  linked_by_relation:
+                    { type: string, pattern: '^[A-Za-z][A-Za-z0-9-]*$' }
 
     ProductRoleDecl:
       type: object
@@ -967,6 +1432,9 @@ components:
       properties:
         error: { type: string, description: 'Stable machine-readable error code' }
         message: { type: string, description: 'Human-readable detail' }
+        code:
+          type: string
+          description: Optional finer-grained code (e.g. `ORG_MISMATCH`, `NOT_PENDING`).
 
     ValidationErrorBody:
       type: object
@@ -984,3 +1452,131 @@ components:
             properties:
               path: { type: string }
               message: { type: string }
+
+    BuildContext:
+      type: string
+      enum: [personal, organization]
+
+    BuildStatus:
+      type: string
+      description: >-
+        `requested`, `launching`, `building`, `deploying` are in-flight;
+        `deployed`, `failed`, `cancelled` are terminal and immutable.
+      enum: [requested, launching, building, deploying, deployed, failed, cancelled]
+
+    CreateBuildSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [context, name, brief]
+      description: >-
+        No `id` is accepted — the session id is server-minted.
+        `organizationId` is REQUIRED when `context=organization` and REJECTED when
+        `context=personal` (the personal account is resolved from the caller).
+      properties:
+        context: { $ref: '#/components/schemas/BuildContext' }
+        organizationId:
+          type: string
+          description: Organization TypeID (`org_…`) or uuid.
+        name: { type: string, minLength: 1, maxLength: 120 }
+        brief:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: What the app should do — the brief handed to FuzeAgent.
+
+    BuildSession:
+      type: object
+      additionalProperties: false
+      required: [id, organizationId, context, name, brief, status, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: 'Build session TypeID (`front_abs_…`).' }
+        organizationId:
+          type: string
+          description: Owning organization (`org_…`) — the personal org for personal builds.
+        requestedBy:
+          type: [string, 'null']
+          description: Requesting user (`usr_…`); null if the user was since deleted.
+        context: { $ref: '#/components/schemas/BuildContext' }
+        name: { type: string }
+        brief: { type: string }
+        status: { $ref: '#/components/schemas/BuildStatus' }
+        appId:
+          type: [string, 'null']
+          description: The deployed app (`app_…`) once `status=deployed`.
+        appSlug:
+          type: [string, 'null']
+          description: The deployed app's slug once `status=deployed`.
+        agentSessionUrl:
+          type: [string, 'null']
+          description: Link to follow the FuzeAgent session, when the agent provides one.
+        errorCode: { type: [string, 'null'] }
+        errorMessage: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    BuildSessionStatusReport:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [building, deploying, deployed, failed]
+        appSlug:
+          type: string
+          description: REQUIRED when `status=deployed`; invalid otherwise.
+        errorCode:
+          type: string
+          pattern: '^[A-Za-z0-9_.-]{1,64}$'
+          description: Only valid when `status=failed`.
+        errorMessage:
+          type: string
+          maxLength: 2000
+          description: Only valid when `status=failed`.
+
+    PublicationRequest:
+      type: object
+      additionalProperties: false
+      required: [target]
+      properties:
+        target: { type: string, enum: [marketplace] }
+        notes: { type: string, maxLength: 2000 }
+
+    PublicationApproval:
+      type: object
+      additionalProperties: false
+      properties:
+        notes: { type: string, maxLength: 2000 }
+
+    PublicationRejection:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }
+
+    AppPublication:
+      type: object
+      additionalProperties: false
+      required: [slug, tier, status, target]
+      properties:
+        slug: { $ref: '#/components/schemas/Slug' }
+        tier:
+          $ref: '#/components/schemas/Visibility'
+        status:
+          type: string
+          enum: [none, pending, approved, rejected]
+        target: { type: string, enum: [marketplace] }
+        submittedAt: { type: [string, 'null'], format: date-time }
+        approvedAt: { type: [string, 'null'], format: date-time }
+        approvedBy: { type: [string, 'null'], description: 'Approving platform admin (`usr_…`).' }
+        requestedBy: { type: [string, 'null'], description: 'Requesting user (`usr_…`).' }
+        notes: { type: [string, 'null'] }
+        rejection:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [reason, rejectedAt]
+          properties:
+            reason: { type: string }
+            rejectedAt: { type: string, format: date-time }
+            rejectedBy: { type: [string, 'null'] }

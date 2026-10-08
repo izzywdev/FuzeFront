@@ -50,6 +50,11 @@ export type {
   GrantRevokeRequest,
   GrantPage,
   GrantListQuery,
+  SubjectType,
+  SubjectRef,
+  AttributeValue,
+  SetAttributesRequest,
+  SetAttributesResult,
 } from './authzTypes';
 
 export { createAuthzClient } from './authzClient';

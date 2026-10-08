@@ -2,7 +2,7 @@ name: Release (images + GitOps bump)
 
 # On merge to master that touches the platform: build backend/frontend, push to
 # GHCR tagged with the commit SHA, then bump the tags in values-prod.yaml and
-# commit. Argo CD sees the git change and rolls out the new images.
+# open a checked PR. Argo CD rolls out only after that PR actually merges.
 on:
   # Manual trigger: auto-merged PRs push to master under GITHUB_TOKEN, and GitHub
   # does NOT start push-triggered workflows for GITHUB_TOKEN pushes — so this
@@ -79,22 +79,62 @@ on:
       - 'fuzefront-website/**'
       - 'deploy/helm/fuzefront/**'
       - '.github/workflows/release.yml'
+      - 'scripts/publish-release-gitops.sh'
+      - 'scripts/__tests__/test_release_gitops.py'
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  build-and-bump:
+  release-source:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
-      contents: write # commit the tag bump
+      contents: read
+    outputs:
+      build: ${{ steps.source.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Exclude image-tag-only merges from rebuilds
+        id: source
+        run: |
+          set -euo pipefail
+          # Check the actual checked-out commit, including workflow_dispatch.
+          # auto-merge.yml may dispatch this even for the GitOps PR itself.
+          changed=$(git diff-tree --no-commit-id --name-only -r HEAD)
+          if [[ "$changed" == deploy/helm/fuzefront/values-prod.yaml && "$(git log -1 --format=%s)" =~ ^release:\ fuzefront\ images\ [0-9a-f]{12}($|\ ) ]]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-bump:
+    # Tag-bump merges still run normal PR CI, but must not rebuild indefinitely.
+    needs: release-source
+    if: needs.release-source.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write # push the release branch, never the protected default branch
+      pull-requests: write # open a normally checked GitOps PR
       packages: write # push to GHCR
       actions: write # dispatch prod-post-deploy.yml (see the final step)
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test credential dependency preflight
+        run: python3 -m unittest discover -s scripts/__tests__ -p 'test_connector_dependency.py' -v
+
+      - name: Test checked GitOps publication
+        run: python3 -m unittest discover -s scripts/__tests__ -p 'test_release_gitops.py' -v
+
+      - name: Require deployed FuzeKeys credential protocol
+        # Must precede image publication and the GitOps bump. A merged runtime
+        # cannot consume a credential protocol that has not deployed yet.
+        run: python3 scripts/check-connector-dependency.py
 
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -203,16 +243,18 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push payment-service
-        # Self-contained Dockerfile (no @fuzefront/shared dep) => context is
-        # services/payment-service/, like clock-app — NOT the repo root the
-        # workspace services use. Scaffold gateway, disabled in prod; this build
-        # only makes the image EXIST so paymentService.image.tag can be bumped
-        # off "" and a future go-live is a values flip, not a missing image.
+        # Repo-root context (like billing-service) — the managed-service-token
+        # migration added a `file:../../packages/service-auth` dependency the old
+        # service-scoped context could not see, so the Dockerfile now vendors the
+        # built @fuzefront/service-auth (+ security-client) from the repo. Scaffold
+        # gateway, disabled in prod; this build only makes the image EXIST so
+        # paymentService.image.tag can be bumped off "" and a future go-live is a
+        # values flip, not a missing image.
         id: payment_image
         continue-on-error: true
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: services/payment-service
+          context: .
           file: services/payment-service/Dockerfile
           push: true
           tags: |
@@ -459,22 +501,25 @@ jobs:
           cache-from: type=gha,scope=devportal-frontend
           cache-to: type=gha,mode=max,scope=devportal-frontend
 
-      - name: Bump image tags in values-prod.yaml (GitOps)
-        # The "Protect Master" ruleset has a pull_request rule, so neither a
-        # plain `git push` with GITHUB_TOKEN nor a contents-API commit can land
-        # on master (the API PUT 409s with "Changes must be made through a pull
-        # request" — that killed every release once the rule appeared; GitHub
-        # also refuses to add the github-actions app as a ruleset bypass actor
-        # on a user-owned repo). The write path is therefore a DEPLOY KEY:
-        # "Protect Master" has a DeployKey bypass_actor, and the private half
-        # lives in the RELEASE_BUMP_SSH_KEY secret (public half: deploy key
-        # "release-bump"). If this step starts failing with a rule violation,
-        # the DeployKey bypass entry or the deploy key was removed — restore
-        # them rather than weakening the ruleset's PR rule for humans.
-        # NOTE: deploy-key pushes are unsigned; if required_signatures is ever
-        # (re-)enabled on master this needs a signing setup or a bot identity.
+      # Mint after the long image builds, so the one-hour token is fresh for CI.
+      - name: Create release PR identity
+        id: release_app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+
+      - name: Configure checked PR push identity
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Unlike GITHUB_TOKEN pushes, the App's PR push starts required CI.
+          token: ${{ steps.release_app.outputs.token }}
+
+      - name: Prepare and merge checked GitOps PR
+        id: gitops
+        # No deploy-key bypass, synthetic review, or direct master push.
         env:
-          SSH_KEY: ${{ secrets.RELEASE_BUMP_SSH_KEY }}
+          GH_TOKEN: ${{ steps.release_app.outputs.token }}
           FILE: deploy/helm/fuzefront/values-prod.yaml
         run: |
           set -euo pipefail
@@ -517,21 +562,15 @@ jobs:
           if [ "${APPS_OK}${SECURITY_OK}${EMAIL_OK}${BILLING_OK}" != "1111" ]; then
             echo "::warning::one or more auxiliary images failed to build; their values-prod tags are left pinned to the last good release"
           fi
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/release_bump
-          chmod 600 ~/.ssh/release_bump
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          export GIT_SSH_COMMAND="ssh -i ~/.ssh/release_bump -o IdentitiesOnly=yes"
           git config user.name  "fuzefront-release"
           git config user.email "release-bump@users.noreply.github.com"
-          git remote set-url --push origin "git@github.com:${GITHUB_REPOSITORY}.git"
-          # Read-modify-write against CURRENT master, not this job's (stale)
-          # checkout: the builds above take minutes and other commits land
-          # meanwhile. A non-fast-forward race (someone pushes between our
-          # fetch and push) just retries with a fresh fetch.
-          for attempt in 1 2 3; do
+          # Never publish older images over a newer source release. A fresh
+          # master run must rebuild when source changed during this build.
           git fetch origin master
-          git checkout --detach --force FETCH_HEAD
+          if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then
+            echo "::error::master changed during the build; release the new source head"
+            exit 1
+          fi
           cp "$FILE" /tmp/vp-current.yaml
           # Bump ONLY the core-app image tags built by this workflow. A blanket
           # `tag:` sed would also stomp deliberately-pinned services and the
@@ -619,43 +658,11 @@ jobs:
             exit 0
           fi
           cp /tmp/vp-new.yaml "$FILE"
-          git commit -m "release: fuzefront images ${SHA} [skip ci]" -- "$FILE"
-          if git push origin HEAD:master; then
-            echo "Bumped via commit $(git rev-parse HEAD)"
-            exit 0
-          fi
-          echo "push rejected (attempt ${attempt}) — refetching master and retrying"
-          done
-          echo "::error::could not push the tag bump after 3 attempts (master moving too fast, or the DeployKey bypass/deploy key was removed)"
-          exit 1
+          bash scripts/publish-release-gitops.sh "$FILE" "$SHA" "$GITHUB_SHA"
 
       # -----------------------------------------------------------------------
-      # Kick off post-deploy verification.
-      #
-      # This is a `gh workflow run` dispatch and NOT a `workflow_run` trigger,
-      # because the event-driven alternatives are both proven dead here:
-      #
-      #   * prod-smoke.yml triggered on `push` to values-prod.yaml, gated
-      #     `if: startsWith(head_commit.message, 'release:')`. The tag-bump
-      #     commit above writes "[skip ci]" into that very message (it must —
-      #     otherwise the bump push re-triggers this workflow forever), and
-      #     GitHub suppresses push-triggered workflows for those commits. The
-      #     two conditions are mutually exclusive, so prod-smoke last actually
-      #     executed on 2026-06-30; every run since is `skipped`.
-      #
-      #   * prod-post-deploy.yml triggered on `workflow_run` of this workflow.
-      #     It is registered and `state: active`, its name matcher is exact,
-      #     and this workflow has completed successfully many times since it
-      #     landed — yet it has ZERO runs, ever.
-      #
-      # workflow_dispatch is explicitly EXEMPT from the GITHUB_TOKEN recursion
-      # guard (the same reasoning auto-merge.yml relies on for dispatching this
-      # workflow), and is immune to the CI-suppression token. Dispatching is the
-      # one path that survives both.
-      #
-      # `if: success()` — never claim a deploy is verified when the build or the
-      # GitOps bump failed. Non-blocking: a dispatch failure must not fail the
-      # release that already shipped, but it IS surfaced as a warning.
+      # Dispatch only after the checked PR merged (or tags were already exact).
+      # GitOps merge is not proof of Argo reconciliation or healthy deployment.
       - name: Dispatch post-deploy verification
         if: success()
         env:
@@ -668,5 +675,5 @@ jobs:
                -f reason="auto-dispatch after release of ${SHA}"; then
             echo "Post-deploy verification dispatched for ${SHA}"
           else
-            echo "::warning::could not dispatch prod-post-deploy.yml — the release SHIPPED but is UNVERIFIED. Run it by hand against master."
+            echo "::warning::could not dispatch prod-post-deploy.yml — GitOps is merged but production remains UNVERIFIED. Run it by hand against master."
           fi

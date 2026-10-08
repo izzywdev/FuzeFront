@@ -40,7 +40,50 @@ grant instead of joining the shared-token pool.
    it into logs.** How a consumer's `client_id` + sealed `client_secret` flows
    into its namespace as a SealedSecret is documented in FuzeInfra's
    `credential-handoff.json` — that mechanism lives in FuzeInfra and any change
-   to it must be delegated via `@claude`, never edited from this repo.
+   to it must be delegated via `@fuze`, never edited from this repo.
+
+   **Prefer the automated handoff for a consumer that lives in THIS namespace.**
+   The manual recipe above exists for an out-of-namespace consumer, where the
+   credential genuinely has to cross a boundary. For a FuzeFront service in the
+   `fuzefront` namespace there is no boundary to cross, and no human needs to
+   see the secret at all:
+
+   ```sh
+   node dist/authentik/register-s2s-cli.js <service> <scopes> \
+     --write-env-file /run/s2s/s2s.env
+   ```
+
+   `--write-env-file` writes `AUTHENTIK_CLIENT_ID=…` / `AUTHENTIK_CLIENT_SECRET=…`
+   to that path at mode 0600 and still never prints the secret. A Job then feeds
+   the file straight to `kubectl create secret generic --from-env-file`, so the
+   credential is minted, written to a memory-backed `emptyDir`, and consumed
+   inside ONE pod — never passing through a terminal, a `kubectl logs` capture, a
+   GitHub repo secret, a PR diff, or this repo's history.
+
+   `deploy/helm/fuzefront/templates/billing-s2s-register-job.yaml` is the
+   reference implementation (billing-service). Copy its shape for the next
+   in-namespace consumer. Three things in it are load-bearing rather than
+   decorative:
+
+   - **It is a PreSync (`pre-install,pre-upgrade`) hook, not PostSync.** The
+     consumer's Deployment may require the credential as env; PreSync guarantees
+     the Secret exists before that Deployment is updated, and a failed PreSync
+     aborts the sync *without touching the Deployment*. PostSync deadlocks the
+     other way round — the Deployment applies first and sits in
+     `CreateContainerConfigError` waiting for a Secret nothing has created yet.
+   - **It writes a SEPARATE Secret, never the consumer's sealed one.** A
+     SealedSecret with no `sealedsecrets.bitnami.com/patch` annotation is
+     *replaced* by the controller on every reconcile, so a key a Job patches in
+     survives only until the next reconcile and then silently vanishes.
+   - **It asserts the postcondition.** `kubectl apply` exiting 0 is not evidence
+     the keys landed; the Job reads them back and checks they are non-empty,
+     examining lengths only. A Secret that exists with an empty value otherwise
+     surfaces much later as an opaque 401 from the token endpoint.
+
+   Registration is idempotent (`ensureS2SScopeMapping` / `ensureS2SProvider` /
+   `ensureS2SApplication`, then `readCredentials` reads the existing values back
+   off the provider), so running it on every chart sync neither rotates the
+   secret nor produces Argo churn.
 
 2. **Grant the Permit invoke permission** for the specific endpoint this service
    is allowed to call:
@@ -114,7 +157,11 @@ grant instead of joining the shared-token pool.
    with `403 FORBIDDEN`. In practice this means: provision the small number of
    trusted platform-operator service accounts that are allowed to grant/revoke
    S2S invoke permissions with `authz:admin` in their `scopes` list; every
-   other S2S client only ever needs to `check`.
+   other S2S client only ever needs to `check`. A service that grants on
+   behalf of an end user (e.g. making a resource's creator its owner) must do
+   so with such a machine identity, NOT the end user's token: human callers
+   are now authorized against the target tenant/resource and are denied
+   unless they already administer it.
 
    ```ts
    // grantServiceInvoke / revokeServiceInvoke (machine-roles.ts) remain the
@@ -174,5 +221,5 @@ pattern documented in
   ChromaDB tenant tokens) — #648 explicitly defers these to "a later pass once
   the pattern is proven".
 - **FuzeInfra's `credential-handoff.json`** — owned by FuzeInfra; any change
-  needed there is delegated via `@claude` in the PR that actually onboards a
+  needed there is delegated via `@fuze` in the PR that actually onboards a
   consumer, never edited from this repo.

@@ -74,6 +74,20 @@ database:
       # namespace that holds the superuser password.
       secretName: ""
       secretKey: DB_SUPERUSER_PASSWORD
+    # Services that own a DEDICATED database with their OWN login role and
+    # credentials (true per-service data ownership). Each entry is the NAME OF A
+    # TOP-LEVEL VALUES KEY (e.g. `selectionListService`) that carries:
+    #   enabled           gates the Job (nothing renders while the service is off)
+    #   dbName            the database to create
+    #   db.role           the owner role to create
+    #   db.secretName     Secret holding the role's password
+    #   db.passwordKey    key inside that Secret
+    # One pre-install/pre-upgrade Job per entry
+    # (templates/service-db-bootstrap-job.yaml). To onboard the next service, add
+    # its values key here and give it the `dbName` + `db` block -- no template
+    # change. See docs/runbooks/per-service-database-and-role.md.
+    serviceDatabases:
+      - selectionListService
 
 # Image for the consumer-registration-seed post-upgrade Job
 # (templates/consumer-registration-seed-job.yaml). It needs nothing but a shell and
@@ -170,6 +184,9 @@ secret:
   # Override via --set or a gitignored values file. NEVER commit real creds.
   googleClientId: ""
   googleClientSecret: ""
+  # Supply via a private values file or existingSecret. Never commit OAuth secrets.
+  connectorStateEncryptionKey: ""
+  connectorOAuth: {}
   # SMTP password for Authentik's email backend (leave empty for MailHog / open relay).
   smtpPassword: ""
   # AI provider keys for the chat-service and LiteLLM gateway.
@@ -184,12 +201,27 @@ secret:
   # fuzefront-secrets SealedSecret. NEVER commit a real token here.
   featureFlagsClientToken: ""
   notificationInternalToken: ""
+  # Shared only by FuzeFront backend/chat-service and FuzeKeys connector API.
   mendysDatasetsClientSecret: ""
   mendysPlatformClientSecret: ""
   authentikMendysSecretKey: ""
   authentikMendysBootstrapPassword: ""
   authentikMendysBootstrapToken: ""
   authentikMendysDbPassword: ""
+
+# Human root administrators of the ROOT platform organization. Each listed
+# account, once it has logged in, gets `admin` in users.roles, root `org-admin`
+# in Permit, an `owner` membership on the root org, and root-org ownership if
+# the platform-registrar placeholder still holds it
+# (backend/src/services/rootOrgAdmin.ts).
+#
+# SECURITY: only list an email whose Authentik account is PRE-CREATED by a
+# checked-in blueprint (authentik/blueprints/groups-fuzeinfra-admins.yaml for
+# the entry below). Self-signup does not verify email, so an email without a
+# pre-created account can be registered — and made root — by anyone.
+rootAdmins:
+  emails:
+    - izzy.weinberg@gmail.com
 
 backend:
   image:
@@ -212,11 +244,54 @@ backend:
   affinity: {}
   tolerations: []
 
+connectors:
+  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8000"
+
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in
 # values-local (Phases 1-3) and values-prod (Phase 3) once the images are built.
 securityService:
   enabled: false
+  # Kubernetes workload identity — see templates/workload-identity.yaml for the
+  # full rationale and the 2026-09-28 sync-freeze incident it encodes.
+  workloadIdentity:
+    clusterRbac:
+      # Renders the ClusterRole/ClusterRoleBinding that let fuzefront-security
+      # create TokenReviews. TokenReview is a non-namespaced virtual resource, so
+      # this grant CANNOT be narrowed to a Role in THIS chart — the only way to
+      # remove it from this repo is to stop performing TokenReviews here and
+      # consume FuzeInfra's identity broker instead
+      # (docs/planning/workload-identity-layering.md).
+      #
+      # Declared explicitly, with a value, rather than left to a `| default` at
+      # the render site: per CLAUDE.md "Helm values hygiene", a coercion filter on
+      # a .Values lookup hides a missing default instead of declaring it.
+      #
+      # RETIRED to false (issue #1137 / FuzeInfra#1306, #1308). The broker is now
+      # SERVING for prod: FuzeInfra#1306 adopted the `fuzefront-workload-
+      # authenticator` ClusterRole/ClusterRoleBinding into its own chart (same
+      # names — the live objects and the TokenReview grant are UNCHANGED, only
+      # ownership moved) and narrowed them to `tokenreviews: create` only.
+      # FuzeInfra#1308 then deleted FuzeInfra's stale duplicate `fuzefront`
+      # AppProject and gated registration so a wide copy (ClusterRole-permitting)
+      # can never be re-applied — so this chart must stop rendering these two
+      # objects, paired with narrowing clusterResourceWhitelist in
+      # deploy/argocd/project.yaml back to Namespace-only in the same change (see
+      # that file). That pairing is what unblocks every FuzeFront rollout — Argo
+      # aborts the WHOLE sync over one unpermitted cluster-scoped resource, which
+      # is the actual root cause of applications-service migrations 013/014
+      # never executing: the pods that would have run them were never created.
+      #
+      # LOCAL (kind): this is a plain `helm upgrade --install` (no Argo, no
+      # AppProject), so nothing here is enforced locally — but FuzeInfra's
+      # adoption above is PROD-ONLY (helm/fuzeinfra values-contabo.yaml; the base
+      # values.yaml ships `workloadIdentity.authenticators: []`), so a kind
+      # cluster gets NO TokenReview grant for fuzefront-security from either
+      # side once this default is false. If you need to exercise
+      # `POST /api/v1/security/tokens/workload` / the FuzeKeys workload-identity
+      # flow locally, override explicitly:
+      #   --set securityService.workloadIdentity.clusterRbac.enabled=true
+      enabled: false
   # See templates/security-networkpolicy.yaml. port/*Namespace were dropped by the
   # values.yaml rewrite in 8dedb865 (#523) and are restored here — without them the
   # template renders `port: 0`, which the API server rejects (FuzeInfra#501).
@@ -311,6 +386,17 @@ applicationsService:
     # Key in fuzefront-secrets holding the scoped Unleash client token.
     tokenSecretKey: "FEATURE_FLAGS_CLIENT_TOKEN"
     tokenSecretName: ""
+  # Build-with-agent sessions. Every field is optional: with buildApiUrl or the
+  # token absent, POST builds answers 503 builder_unavailable. The token is a
+  # SECRET (sealed) - tokenSecretName "" means "not wired" and renders no env.
+  appBuilder:
+    buildApiUrl: ""          # absolute URL of FuzeAgent's build endpoint
+    publicBaseUrl: ""        # absolute public base for the status callbackUrl
+    tokenSecretName: ""      # Secret holding the bearer token; "" = unset
+    tokenSecretKey: "FUZEAGENT_BUILD_API_TOKEN"
+    readRateLimit: ""        # APP_BUILD_READ_RATE_LIMIT (code default 60)
+    writeRateLimit: ""       # APP_BUILD_WRITE_RATE_LIMIT (code default 10)
+    callbackRateLimit: ""    # APP_BUILD_CALLBACK_RATE_LIMIT (code default 120)
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: "1",  memory: 512Mi }
@@ -346,7 +432,7 @@ mcp:
     # GHCR (digest sha256:442078552b16112f007323085a28bdc17c1eb67b0c7eec37cd670f094352c3de).
     # `0.1.0` was NEVER published despite several charts referencing it — do not
     # reintroduce it.
-    tag: "12cb4f787248"
+    tag: "1abe510f5981"
     pullPolicy: IfNotPresent
   # Empty = derive from the in-cluster applications-service Service, INCLUDING
   # the /api/v1/app-registry prefix the contract's `servers` entry declares.
@@ -363,6 +449,15 @@ mcp:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Public Ingress for the MCP SSE gateway. Disabled by default; enable in
+  # values-prod.yaml to expose https://<host>/mcp/{sse,messages,tools.json,healthz}.
+  # Auth: the gateway forwards the CALLER'S bearer token to the upstream app-
+  # registry, which validates it via Authentik/Permit. Calls with no Authorization
+  # header fail closed at the first tool call — the tool SHAPE (/tools.json and
+  # listTools) is intentionally public, matching the published OpenAPI spec.
+  # A Traefik StripPrefix middleware strips /mcp before the request reaches the pod.
+  ingress:
+    enabled: false
 
 # FuzeFront's own per-product A2A (agent-to-agent) pod. Runs the EXISTING shared
 # ghcr.io/izzywdev/fuzeagent-a2a image (izzywdev/FuzeAgent CI builds/publishes
@@ -457,6 +552,13 @@ a2aDeploy:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # Public Ingress for the A2A pod. Disabled by default; enable in values-prod.yaml
+  # to expose https://<host>/a2a/rpc (and all sub-paths) publicly. A Traefik
+  # StripPrefix middleware strips /a2a before the request reaches the pod.
+  # Auth: the pod validates OIDC tokens itself (audience: a2a, callerClaim: repo).
+  # No additional auth middleware needed at the Ingress layer.
+  ingress:
+    enabled: false
 
 # Clock-app — the built-in reference Module-Federation REMOTE (clock-app/), a
 # static nginx image serving remoteEntry.js. Deployed as its own Deployment+
@@ -551,7 +653,15 @@ websiteFrontend:
     tag: ""
   port: 3000
   replicas: 1
+  # The site's ONE canonical host (the apex in prod).
   host: ""
+  # Extra EXACT hosts the website Ingress also claims. They resolve to the
+  # same Service; the container's nginx 301s them to `host`, so the site has
+  # a single canonical home. Declared here with an explicit default rather
+  # than left to the template, so a reviewer can see it (CLAUDE.md, "Helm
+  # values hygiene"). Never a wildcard -- Traefik orders routers by rule
+  # length, so a wildcard shadows every single-label host in the cluster.
+  aliasHosts: []
   resources:
     requests: { cpu: 10m,  memory: 32Mi }
     limits:   { cpu: 200m, memory: 128Mi }
@@ -745,6 +855,51 @@ selectionListService:
   enabled: false
   replicas: 1
   port: 3008
+  # Shared FuzeInfra Kafka brokers for the lifecycle event consumer.
+  # Must equal selectionListService.port in the networkPolicy block below.
+  # Same broker Service every other consumer in this chart uses (chatService,
+  # applicationsService, kafkaTopics.bootstrapServer, ...). This default
+  # previously read `kafka.fuzeinfra...`, a name no other block uses.
+  kafkaBrokers: "fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092"
+  # Dedicated database on the shared FuzeInfra Postgres, owned by the service's
+  # OWN role (db.role below) -- NOT the shared `database.user` role, which is
+  # explicitly denied access. Created/reconciled by
+  # templates/service-db-bootstrap-job.yaml (see database.bootstrap.serviceDatabases
+  # and docs/runbooks/per-service-database-and-role.md).
+  dbName: "fuzefront_selection_list"
+  # Per-service database identity: its own LOGIN role and its own credentials.
+  # Consumed by BOTH the Deployment (DB_USER / DB_PASSWORD) and the bootstrap Job
+  # (creates the role with that password), so they cannot drift.
+  db:
+    # Owner of dbName: LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE,
+    # NOREPLICATION. Matches the default in src/db/knexfile.ts.
+    role: "selection_list_svc"
+    # Secret holding the role's password. Minted + sealed by the dispatchable
+    # rotate-sealed-secret workflow (nobody ever sees the value); lives in
+    # deploy/contabo/sealed/selection-list-secrets.yaml.
+    secretName: "selection-list-secrets"
+    passwordKey: "DB_PASSWORD"
+    # DB_SSL for src/db/knexfile.ts (production default there is TLS ON, with
+    # certificate verification). UNVERIFIED: whether the shared FuzeInfra Postgres
+    # serves TLS with a certificate this client trusts. If the pod logs "server does
+    # not support SSL" or a certificate-verification error, set "false" here (a
+    # reviewable one-line change) -- do not edit the service code.
+    ssl: "true"
+  # Authorization enforcement (env FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED, read by
+  # services/selection-list-service/src/middleware/authz.flags.ts). The service
+  # runs NODE_ENV=production in-cluster, where authz is ALWAYS enforced whatever
+  # this says (review H-1: the old default was pass-through, i.e. no authorization
+  # at all). Declared true so the rendered manifest states the real posture; the
+  # key only has an effect outside production (dev/test).
+  authzEnabled: true
+  # @fuzefront/feature-flags client wiring (UNLEASH_URL/APP_NAME/CLIENT_TOKEN).
+  # Empty unleashUrl (base default) renders no UNLEASH_* env -> in-code fail-safe
+  # OFF. The CLIENT token is a SECRET (sealed) -- referenced, never inline.
+  featureFlags:
+    unleashUrl: ""
+    appName: "selection-list-service"
+    tokenSecretKey: "UNLEASH_CLIENT_TOKEN"
+    tokenSecretName: ""
   image:
     repository: fuzefront/selection-list-service
     tag: local
@@ -765,6 +920,42 @@ selectionListService:
     # services calling the selection-list API). The Traefik rule below covers
     # ingress-routed external traffic once the ingress route is wired.
     ingressControllerNamespace: kube-system
+  # Same-origin route under ingress.host (templates/ingress.yaml): publishes
+  # ONLY /api/v1/selection-lists and /api/v1/resolve (the paths
+  # packages/selection-lists-ui calls), stripping /api before the service, which
+  # mounts at /v1. Rendered only when selectionListService.enabled is also true.
+  # No auth is added or removed at the edge -- the service authenticates itself
+  # and the flag fuzefront.selection-lists.service (default OFF => 404) gates it.
+  ingress:
+    enabled: true
+
+# MCP SSE gateway for the selection-list-service. Ships dark by default alongside
+# the service itself. Both selectionListService.enabled AND selectionListsMcp.enabled
+# must be true for the pod to deploy (gated by template condition).
+# Port 8082: 8081=app-registry MCP gateway. 8082 was verified free at the time
+# it was added.
+# NOTE: selectionListsMcp.port MUST be declared explicitly — do not use | int /
+# | default / | toString in the template (FuzeInfra#501 precedent).
+selectionListsMcp:
+  enabled: false
+  replicas: 1
+  port: 8082
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    # Same image as the app-registry MCP gateway. Version must be kept in sync
+    # with mcp.image.tag above whenever the gateway image is bumped.
+    tag: "12cb4f787248"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
 
 # devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
 # "Try it" playground proxy backing developers.fuzefront.com (docs/planning/
@@ -862,6 +1053,14 @@ configService:
   enabled: false
   replicas: 1
   port: 3011
+  # Shared FuzeInfra Kafka cluster, consumed by src/events/consumer.ts for the
+  # identity lifecycle consumers (org/user deleted -> drop that scope's config
+  # overrides). Declared here EXPLICITLY, not defaulted inside the template:
+  # see config-service-networkpolicy.yaml's header for why a missing value
+  # absorbed at the render site is how FuzeInfra#501 broke every Argo sync.
+  # Set to "" to disable the consumers (the service then serves reads/writes
+  # normally and logs that they were not started).
+  kafkaBrokers: "kafka.fuzeinfra.svc.cluster.local:9092"
   # Least-privilege runtime role created by config-service-db-bootstrap-job.yaml
   # in the SHARED database (`database.name`), owning the `config` schema. Mirrors
   # billing-service's billing_svc — no separate database is provisioned.
@@ -948,10 +1147,58 @@ billingService:
   # per-service billing-secrets SealedSecret.
   dbUser: billing_svc
   # Per-service secret (billing-only keys: STRIPE_*, BILLING_INTERNAL_TOKEN,
-  # BILLING_DB_PASSWORD). Shared creds (PERMIT_API_KEY) stay in fuzefront-secrets.
+  # BILLING_DB_PASSWORD, AUTHENTIK_CLIENT_ID/SECRET for the Security API S2S
+  # sync below). billing-service's authorization sync is routed through
+  # FuzeFront's own Security API (SECURITY_SERVICE_URL — plain in-cluster
+  # Service DNS, set in templates/billing-service.yaml) rather than an
+  # embedded Permit.io SDK, so there is no PERMIT_API_KEY/permitPdpUrl to seal
+  # here (step 3 of the 3-step migration — config-service was step 1,
+  # selection-list-service step 2). AUTHENTIK_CLIENT_ID/SECRET authenticate
+  # billing's Stripe-webhook-triggered plan sync as a machine
+  # (client_credentials) caller — see docs/runbooks/s2s-client-credentials.md
+  # — and are `optional: true` in the Deployment template until they are
+  # provisioned + sealed (billing is LIVE; the flag
+  # fuzefront.billing.authz-enabled defaults OFF regardless).
   secretName: billing-secrets
   meterFlushIntervalSec: 60
-  permitPdpUrl: "http://fuzefront-permit-pdp:7000"
+  # Authorization-sync cutover (fuzefront.billing.authz-enabled).
+  #
+  # `enabled` gates billing's Permit ABAC attribute sync through FuzeFront's
+  # Security API. Default OFF: billing is live in production, so the migration
+  # off the embedded Permit SDK shipped dark and turning it on is a deliberate
+  # act. It is also the kill-switch — set back to false to revert to a no-op.
+  # The DB mirror and the billing.subscription.changed projection do not depend
+  # on it either way.
+  #
+  # `register.enabled` gates the PreSync Job that provisions the Authentik S2S
+  # application and publishes its credentials as Secret/<secretName>. OFF by
+  # default so a dev/local install never reaches for an Authentik Admin API it
+  # has no token for; prod turns it on.
+  #
+  # Turning `enabled` on without `register.enabled` (or an equivalently
+  # provisioned Secret) is a misconfiguration: `enabled` makes the credentials
+  # a REQUIRED env for the Deployment (see billing-service.yaml), so the pod
+  # would not start. billing-service.yaml ASSERTS the two agree at render time
+  # (billing.assertAuthzCredentialSource) rather than failing at runtime.
+  #
+  # `externallyProvisioned` is the escape hatch: set it when Secret/<secretName>
+  # is published by something other than the Job (a hand-sealed SealedSecret, an
+  # external-secrets operator) so the assertion does not block a legitimate
+  # configuration.
+  authz:
+    enabled: false
+    register:
+      enabled: false
+    externallyProvisioned: false
+    # Deliberately NOT billing-secrets — that Secret is owned by the
+    # sealed-secrets controller and is replaced on every reconcile, so a
+    # Job-minted key cannot live there. See billing-s2s-register-job.yaml.
+    secretName: billing-s2s-credentials
+    # Passed to register-s2s-cli.js as <service-name> <scopes>. `authz:admin` is
+    # what backend/security's requireAuthzAdmin demands of a machine caller on
+    # the PATCH /authz/subjects/{type}/{key}/attributes route billing calls.
+    serviceName: billing-service
+    scopes: authz:admin
   payment: {}
   # Pre-install Job that creates the billing_svc role + `billing` schema + grants.
   dbBootstrap:
@@ -1043,6 +1290,29 @@ unleash:
   nodeSelector: {}
   affinity: {}
   tolerations: []
+  # RBAC for the in-cluster ops workflows: they read secrets from the
+  # `fuzefront` namespace via the k8s API using the runner pod's mounted
+  # service account token (ARC runners have no kubectl). The Role below grants
+  # `get` on `unleash.secretName` (prod-unleash-ops.yml reads the admin token
+  # from `unleash-secrets`) PLUS every name in `ciRunner.extraSecretNames`; the
+  # RoleBinding attaches it to the ARC runner SA.
+  #
+  # serviceAccountName is the ServiceAccount the runner PODS run as — NOT the
+  # scale-set / runs-on name. It is a common trap: ARC v2 does NOT make the pod
+  # SA equal the runner-set name. FuzeInfra pins every set's pods to
+  # `arc-runner-sa` in its shared runner-scale-set-values.yaml
+  # (template.spec.serviceAccountName), so that is the fleet-wide default here.
+  # Override serviceAccountNamespace if the runner set lives in a different
+  # namespace (prod: "arc-runners", set in values-prod.yaml).
+  ciRunner:
+    enabled: true
+    serviceAccountName: arc-runner-sa
+    serviceAccountNamespace: ""   # defaults to the release namespace
+    # Additional Secret names (beyond unleash.secretName) in THIS namespace the
+    # runner SA may `get`. prod-synthetic-admin.yml needs `fuzefront-secrets`
+    # for INTERNAL_PROVISION_SECRET — declared in values-prod.yaml, not here, so
+    # the dev/local default stays least-privilege (unleash-secrets only).
+    extraSecretNames: []
 
 authentik:
   enabled: true
@@ -1156,7 +1426,9 @@ kafkaTopics:
   tolerations: []
   # retentionMs default applied when a topic omits its own. 7 days.
   defaultRetentionMs: 604800000
-  # Each topic: name (required), partitions, replicationFactor, retentionMs.
+  # Each topic: name (required), partitions, replicationFactor, retentionMs, and an
+  # optional cleanupPolicy (rendered as --config cleanup.policy=<v> only when set;
+  # omitted = broker default, which is `delete`).
   # DLQ companions are created for the consumer topics (dlqTopic() = "<t>.dlq").
   topics:
     # --- identity (security-service → provisioning-service + lifecycle consumers) ---
@@ -1256,6 +1528,103 @@ kafkaTopics:
       partitions: 6
       replicationFactor: 1
       retentionMs: 2592000000
+    # --- selection-lists (selection-list-service producer; docs/planning/selection-lists-events.md §4, §14) ---
+    # Keep in sync with the @fuzefront/shared TOPICS constant (SELECTION_LISTS_*,
+    # shared/src/kafka/types.ts). 3 partitions (matches identity.*), 7d retention,
+    # cleanup.policy=delete stated explicitly per topic (cleanupPolicy).
+    # selection-lists.seed.requested carries bearer attestation tokens (plan §8):
+    # 1d retention shrinks the exposure window, and its DLQ copy holds the same token
+    # (plan §7.2 "same exposure as the source topic"), so the DLQ is also 1d -- a
+    # deliberate departure from the 14d DLQ convention above. Lengthen it only if
+    # triage genuinely needs more than a day.
+    # selection-list-service consumes identity.org.created (new), identity.org.deleted
+    # and identity.user.deleted (existing); all three DLQs are already declared in the
+    # identity block above, so no further identity DLQs are needed for this feature.
+    - name: selection-lists.list.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.archived
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.list.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.created
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.updated
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.archived
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.item.reordered
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.translation.upserted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.translation.deleted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.access.granted
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.access.revoked
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.seed.requested
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 86400000 # 1d -- carries bearer tokens (plan §8)
+      cleanupPolicy: delete
+    - name: selection-lists.seed.requested.dlq
+      partitions: 1
+      replicationFactor: 1
+      retentionMs: 86400000 # 1d -- same token exposure as the source topic (plan §7.2)
+      cleanupPolicy: delete
+    - name: selection-lists.seed.completed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
+    - name: selection-lists.seed.failed
+      partitions: 3
+      replicationFactor: 1
+      retentionMs: 604800000
+      cleanupPolicy: delete
 
 # Cloudflare cache purge — disabled by default; prod enables via values-prod.yaml.
 cloudflare:

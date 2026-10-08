@@ -13,7 +13,8 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Callable, Generator, Optional, TypeVar
+from collections.abc import Callable, Generator
+from typing import TypeVar
 
 from .types import PagedResponse
 
@@ -23,8 +24,8 @@ T = TypeVar("T")
 def paginate(
     fetch_page: Callable[..., PagedResponse[T]],
     *,
-    limit: Optional[int] = None,
-    cursor: Optional[str] = None,
+    limit: int | None = None,
+    cursor: str | None = None,
     **kwargs: object,
 ) -> Generator[T, None, None]:
     """
@@ -42,7 +43,7 @@ def paginate(
         Additional keyword arguments forwarded verbatim to ``fetch_page`` on
         every call (e.g. ``status``, ``locale``).
     """
-    current_cursor: Optional[str] = cursor
+    current_cursor: str | None = cursor
     while True:
         call_kwargs: dict = dict(kwargs)
         if limit is not None:
@@ -52,8 +53,7 @@ def paginate(
 
         page_response: PagedResponse[T] = fetch_page(**call_kwargs)
 
-        for item in page_response.items:
-            yield item
+        yield from page_response.items
 
         if not page_response.page.has_more or page_response.page.next_cursor is None:
             return

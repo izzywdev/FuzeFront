@@ -1,13 +1,21 @@
 import express, { Application, Request, Response } from 'express';
-import { requireInternalToken } from './middleware/auth';
+import type { MachineTokenVerifier } from '@fuzefront/service-auth';
+import { createInternalAuth } from './middleware/auth';
 import { createPaymentsRouter, createWebhookRouter } from './routes/payments';
 import { PaymentProvider } from './providers/payment-provider';
 
 export interface AppDeps {
   /** The active vendor adapter behind the neutral port. */
   provider: PaymentProvider;
-  /** `PAYMENT_INTERNAL_TOKEN` — guards the neutral API when set. */
-  internalToken?: string;
+  /**
+   * Origin of FuzeFront's Security API used to verify incoming managed service
+   * tokens on the internal API (e.g. `http://fuzefront-security:3002`). Required
+   * in a real run — its absence fails the app closed at assembly time. Ignored
+   * when `verifier` is injected.
+   */
+  securityServiceUrl?: string;
+  /** Pre-built machine-token verifier. Test seam; overrides `securityServiceUrl`. */
+  verifier?: MachineTokenVerifier;
 }
 
 const API_BASE = '/api/v1/payments';
@@ -38,10 +46,12 @@ export function createApp(deps?: AppDeps): Application {
   // 2) JSON body parser for the rest of the neutral API.
   app.use(express.json());
 
-  // 3) Internal-token-guarded neutral Payment Provider API.
+  // 3) Managed-service-token-guarded neutral Payment Provider API. Fails closed:
+  //    an unauthenticated/invalid caller gets 401 with no "open when unset"
+  //    fallback (see createInternalAuth).
   app.use(
     API_BASE,
-    requireInternalToken(deps.internalToken),
+    createInternalAuth({ securityServiceUrl: deps.securityServiceUrl, verifier: deps.verifier }),
     createPaymentsRouter({ provider: deps.provider }),
   );
 

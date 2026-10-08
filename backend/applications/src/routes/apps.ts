@@ -8,6 +8,23 @@ import { prefixDtoIds } from '../identity/serializer'
 
 const router = express.Router()
 
+/**
+ * Neutralise a request-derived value before it reaches a log line.
+ *
+ * The self-registration and heartbeat routes log values taken straight from
+ * the request body (`name`, `status`), so unsanitised they could inject CR/LF
+ * and forge whole log entries (log injection). Control characters are escaped
+ * rather than dropped so the information content is preserved, and the result
+ * is length-capped so one request cannot flood the log.
+ */
+function sanitizeForLog(value: unknown): string {
+  return String(value ?? '')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\p{Cc}/gu, ' ')
+    .slice(0, 256)
+}
+
 // Database row interface for apps
 interface AppRow {
   id: string
@@ -24,6 +41,7 @@ interface AppRow {
   // Where the app may be INSTALLED (backend migration 017). Distinct from
   // `scope` above, which is the Module-Federation remote container name.
   scope_level: 'personal' | 'organization' | 'both'
+  manifest?: unknown
   created_at: Date
   updated_at: Date
 }
@@ -54,7 +72,9 @@ async function checkAppHealth(app: AppRow): Promise<boolean> {
     const errorMessage =
       error instanceof Error ? error.message : 'Unknown error'
     console.log(
-      `Health check failed for ${app.name} (${app.url}):`,
+      'Health check failed for %s (%s): %s',
+      app.name,
+      app.url,
       errorMessage
     )
     return false
@@ -144,6 +164,18 @@ router.get('/', authenticateToken, async (req: any, res) => {
     const appsWithHealth = await Promise.all(
       apps.map(async (app: AppRow) => {
         const isHealthy = await checkAppHealth(app)
+        let manifest: Record<string, any> = {}
+        try {
+          manifest =
+            typeof (app as any).manifest === 'string'
+              ? JSON.parse((app as any).manifest)
+              : ((app as any).manifest ?? {})
+        } catch {
+          manifest = {}
+        }
+        const isOrgLevelOnly = Boolean(
+          manifest.orgLevelOnly || manifest.installMode === 'everyone'
+        )
         return {
           id: app.id,
           name: app.name,
@@ -161,6 +193,9 @@ router.get('/', authenticateToken, async (req: any, res) => {
           module: app.module,
           description: app.description,
           scopeLevel: app.scope_level ?? 'both',
+          orgLevelOnly: isOrgLevelOnly,
+          installMode: manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
+          requiresOrgContext: Boolean(manifest.requiresOrgContext || app.scope_level === 'organization'),
         }
       })
     )
@@ -434,7 +469,7 @@ router.post(
         scope_level: scopeLevel,
       })
 
-      const newApp: App = {
+      const newApp: any = {
         id: appId,
         name,
         url,
@@ -547,7 +582,12 @@ router.post('/:id/heartbeat', async (req: any, res) => {
       })
     }
 
-    console.log(`💓 Heartbeat received from ${app.name} (${id}): ${status}`)
+    console.log(
+      '💓 Heartbeat received from %s (%s): %s',
+      sanitizeForLog(app.name),
+      sanitizeForLog(id),
+      sanitizeForLog(status)
+    )
 
     res.json({
       success: true,
@@ -612,7 +652,7 @@ router.post('/register', async (req: any, res) => {
       scope_level: scopeLevel,
     })
 
-    const newApp: App = {
+    const newApp: any = {
       id: appId,
       name,
       url,
@@ -639,7 +679,7 @@ router.post('/register', async (req: any, res) => {
       })
     }
 
-    console.log(`🚀 App "${name}" self-registered successfully`)
+    console.log('🚀 App "%s" self-registered successfully', sanitizeForLog(name))
 
     const flagCtx = {}
     const prefixed = await isPrefixedIdsEnabled(flagCtx)

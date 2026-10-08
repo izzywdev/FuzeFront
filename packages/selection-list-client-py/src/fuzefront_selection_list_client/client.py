@@ -2,7 +2,7 @@
 Typed client for the FuzeFront selection-list-service.
 
 One method per endpoint of ``services/selection-list-service/openapi.yaml``
-v1.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
+v4.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
 
 Usage::
 
@@ -23,37 +23,32 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Callable, Dict, Generator, List, Optional, Union
+from collections.abc import Callable, Generator
 
 from ._paginator import paginate as _paginate
 from .errors import SelectionListApiError, _code_from_status
 from .types import (
     AccessEntry,
-    AutofillRequest,
     AutofillResult,
-    CreateItemRequest,
-    CreateListRequest,
+    ItemTranslationLocaleStatus,
+    LifecycleStatus,
     Page,
     PagedResponse,
     QuotaInfo,
     QuotaScope,
     ResolveResponse,
     ResolveResult,
+    SeedProvenance,
     SelectionList,
     SelectionListAccessRole,
-    SelectionListErrorCode,
     SelectionListItem,
     SelectionListItemTranslation,
     SelectionListQuotaStatus,
     Translation,
-    UpdateItemRequest,
-    UpdateListRequest,
-    UpsertItemTranslationRequest,
-    UpsertListTranslationRequest,
-    LifecycleStatus,
+    TranslationLocaleStatus,
 )
 
-TokenProvider = Union[str, Callable[[], str]]
+TokenProvider = str | Callable[[], str]
 
 _ALLOWED_SCHEMES = frozenset(("http", "https"))
 
@@ -78,6 +73,18 @@ def _parse_page(raw: dict) -> Page:
     )
 
 
+def _parse_seed(raw: object) -> SeedProvenance | None:
+    """``seed`` is required-but-nullable on the wire; tolerate absence as ``None``."""
+    if not isinstance(raw, dict):
+        return None
+    return SeedProvenance(
+        source=raw["source"],
+        pack_key=raw["pack_key"],
+        pack_version=raw["pack_version"],
+        user_modified=raw["user_modified"],
+    )
+
+
 def _parse_selection_list(raw: dict) -> SelectionList:
     return SelectionList(
         id=raw["id"],
@@ -93,6 +100,7 @@ def _parse_selection_list(raw: dict) -> SelectionList:
         updated_at=raw["updated_at"],
         description=raw.get("description"),
         item_count=raw.get("item_count"),
+        seed=_parse_seed(raw.get("seed")),
     )
 
 
@@ -110,6 +118,7 @@ def _parse_item(raw: dict) -> SelectionListItem:
         created_at=raw["created_at"],
         updated_at=raw["updated_at"],
         description=raw.get("description"),
+        seed=_parse_seed(raw.get("seed")),
     )
 
 
@@ -134,6 +143,23 @@ def _parse_item_translation(raw: dict) -> SelectionListItemTranslation:
         updated_at=raw["updated_at"],
         description=raw.get("description"),
         source_hash=raw.get("source_hash"),
+    )
+
+
+def _parse_translation_locale_status(raw: dict) -> TranslationLocaleStatus:
+    return TranslationLocaleStatus(
+        locale=raw["locale"],
+        completeness_pct=raw["completeness_pct"],
+        machine_translated=raw["machine_translated"],
+        source_changed=raw["source_changed"],
+    )
+
+
+def _parse_item_translation_locale_status(raw: dict) -> ItemTranslationLocaleStatus:
+    return ItemTranslationLocaleStatus(
+        locale=raw["locale"],
+        machine_translated=raw["machine_translated"],
+        source_changed=raw["source_changed"],
     )
 
 
@@ -200,8 +226,10 @@ class SelectionListClient:
         schemes are rejected at construction time.
     :param token:
         Bearer token string, or a callable that returns one (so short-lived
-        tokens can refresh between calls). Optional -- ``resolve_ids`` may be
-        called unauthenticated by a trusted in-cluster caller.
+        tokens can refresh between calls). Every operation -- ``resolve_ids``
+        included (spec 2.0.0) -- requires it; it is optional only so a client
+        can be constructed before a token exists. Without one, calls raise a
+        ``401`` :class:`SelectionListApiError`.
     :param default_locale:
         Locale applied to every request that does not pass its own.
     """
@@ -209,9 +237,9 @@ class SelectionListClient:
     def __init__(
         self,
         base_url: str,
-        token: Optional[TokenProvider] = None,
+        token: TokenProvider | None = None,
         *,
-        default_locale: Optional[str] = None,
+        default_locale: str | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("SelectionListClient: base_url is required")
@@ -231,7 +259,7 @@ class SelectionListClient:
     # Token resolution
     # ------------------------------------------------------------------
 
-    def _resolve_token(self) -> Optional[str]:
+    def _resolve_token(self) -> str | None:
         if callable(self._token):
             return self._token()
         return self._token
@@ -240,7 +268,7 @@ class SelectionListClient:
     # HTTP transport (urllib.request -- stdlib only, zero deps)
     # ------------------------------------------------------------------
 
-    def _build_url(self, path: str, query: Optional[Dict[str, str]] = None) -> str:
+    def _build_url(self, path: str, query: dict[str, str] | None = None) -> str:
         url = f"{self._base_url}{path}"
         if query:
             qs = urllib.parse.urlencode({k: v for k, v in query.items() if v is not None})
@@ -253,10 +281,10 @@ class SelectionListClient:
         method: str,
         path: str,
         *,
-        query: Optional[Dict[str, str]] = None,
-        body: Optional[dict] = None,
+        query: dict[str, str] | None = None,
+        body: dict | None = None,
         allow_empty: bool = False,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """
         Make an HTTP request. Returns the parsed JSON body, or ``None`` on
         ``204`` when ``allow_empty=True``. Raises ``SelectionListApiError`` on
@@ -264,12 +292,12 @@ class SelectionListClient:
         """
         url = self._build_url(path, query)
 
-        headers: Dict[str, str] = {"Accept": "application/json"}
+        headers: dict[str, str] = {"Accept": "application/json"}
         tok = self._resolve_token()
         if tok:
             headers["Authorization"] = f"Bearer {tok}"
 
-        data: Optional[bytes] = None
+        data: bytes | None = None
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"
@@ -277,13 +305,14 @@ class SelectionListClient:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the `file://` read this rule names is rejected in __init__: any base_url whose scheme is not in _ALLOWED_SCHEMES raises ValueError before a client exists. `path` cannot re-introduce one either, because _build_url is plain concatenation and never urllib.parse.urljoin (urljoin is what would let an absolute `file://` path override the base).
             with urllib.request.urlopen(req) as resp:
                 status: int = resp.status
                 raw_body: bytes = resp.read()
         except urllib.error.HTTPError as exc:
             status = exc.code
             raw_body = exc.read()
-            parsed_error: Optional[dict] = None
+            parsed_error: dict | None = None
             if raw_body:
                 try:
                     parsed_error = json.loads(raw_body.decode("utf-8", errors="replace"))
@@ -301,7 +330,7 @@ class SelectionListClient:
                 status=status,
             )
 
-        parsed: Optional[dict] = None
+        parsed: dict | None = None
         if raw_body:
             try:
                 parsed = json.loads(raw_body.decode("utf-8", errors="replace"))
@@ -322,6 +351,21 @@ class SelectionListClient:
 
         return parsed
 
+    def _request_array(self, method: str, path: str) -> list[dict]:
+        """
+        Like ``_request`` but for the few bounded endpoints whose 200 body is a
+        bare JSON array (no pagination envelope). Raises ``SelectionListApiError``
+        if the body is not an array.
+        """
+        raw: object = self._request(method, path)
+        if not isinstance(raw, list):
+            raise SelectionListApiError(
+                code="UNKNOWN",
+                message=f"Expected a JSON array in response to {method} {path}",
+                status=200,
+            )
+        return raw
+
     # ------------------------------------------------------------------
     # Lists
     # ------------------------------------------------------------------
@@ -329,11 +373,11 @@ class SelectionListClient:
     def get_lists(
         self,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
-        status: Optional[str] = None,
-        locale: Optional[str] = None,
-        key: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        status: str | None = None,
+        locale: str | None = None,
+        key: str | None = None,
     ) -> PagedResponse[SelectionList]:
         """``GET /v1/selection-lists`` -- a page of lists in the caller's org."""
         query = _build_query(
@@ -355,8 +399,8 @@ class SelectionListClient:
         key: str,
         name: str,
         *,
-        source_locale: Optional[str] = None,
-        description: Optional[str] = None,
+        source_locale: str | None = None,
+        description: str | None = None,
     ) -> SelectionList:
         """``POST /v1/selection-lists`` -- create a list. The service mints the id."""
         body: dict = {"key": key, "name": name}
@@ -372,7 +416,7 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        locale: Optional[str] = None,
+        locale: str | None = None,
     ) -> SelectionList:
         """``GET /v1/selection-lists/{listId}`` -- one list, text resolved for locale."""
         query = _build_query(locale=locale or self._default_locale)
@@ -388,11 +432,11 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        key: Optional[str] = None,
-        source_locale: Optional[str] = None,
-        status: Optional[str] = None,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        key: str | None = None,
+        source_locale: str | None = None,
+        status: str | None = None,
+        name: str | None = None,
+        description: str | None = None,
     ) -> SelectionList:
         """``PATCH /v1/selection-lists/{listId}`` -- partial update."""
         body = _omit_none(
@@ -424,7 +468,7 @@ class SelectionListClient:
         list_id: str,
         *,
         purge: bool = False,
-    ) -> Optional[SelectionList]:
+    ) -> SelectionList | None:
         """
         ``DELETE /v1/selection-lists/{listId}`` -- archives by default.
 
@@ -452,10 +496,10 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
-        status: Optional[str] = None,
-        locale: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        status: str | None = None,
+        locale: str | None = None,
     ) -> PagedResponse[SelectionListItem]:
         """``GET /v1/selection-lists/{listId}/items`` -- a page of items, in sort_order."""
         query = _build_query(
@@ -481,8 +525,8 @@ class SelectionListClient:
         code: str,
         label: str,
         *,
-        description: Optional[str] = None,
-        sort_order: Optional[int] = None,
+        description: str | None = None,
+        sort_order: int | None = None,
     ) -> SelectionListItem:
         """``POST /v1/selection-lists/{listId}/items`` -- add an item."""
         body: dict = {"code": code, "label": label}
@@ -503,10 +547,10 @@ class SelectionListClient:
         list_id: str,
         item_id: str,
         *,
-        label: Optional[str] = None,
-        description: Optional[str] = None,
-        sort_order: Optional[int] = None,
-        status: Optional[str] = None,
+        label: str | None = None,
+        description: str | None = None,
+        sort_order: int | None = None,
+        status: str | None = None,
     ) -> SelectionListItem:
         """``PATCH /v1/selection-lists/{listId}/items/{itemId}`` -- partial update."""
         body = _omit_none(
@@ -544,7 +588,7 @@ class SelectionListClient:
         item_id: str,
         *,
         purge: bool = False,
-    ) -> Optional[SelectionListItem]:
+    ) -> SelectionListItem | None:
         """
         ``DELETE /v1/selection-lists/{listId}/items/{itemId}`` -- archives by default.
 
@@ -564,7 +608,7 @@ class SelectionListClient:
             return None
         return _parse_item(raw)
 
-    def reorder_items(self, list_id: str, item_ids: List[str]) -> List[SelectionListItem]:
+    def reorder_items(self, list_id: str, item_ids: list[str]) -> list[SelectionListItem]:
         """
         ``PUT /v1/selection-lists/{listId}/items/reorder`` -- set the whole order.
 
@@ -582,13 +626,49 @@ class SelectionListClient:
     # Translations
     # ------------------------------------------------------------------
 
+    def list_translations(self, list_id: str) -> list[TranslationLocaleStatus]:
+        """
+        ``GET /v1/selection-lists/{listId}/translations`` -- one status entry per
+        locale that has a list-level translation (completeness, machine status,
+        staleness). The source locale is excluded.
+
+        Bounded by the supported locale count (max 11), so the response is a bare
+        array rather than a paginated envelope.
+        """
+        raw = self._request_array(
+            "GET",
+            f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/translations",
+        )
+        return [_parse_translation_locale_status(t) for t in raw]
+
+    def list_item_translations(
+        self,
+        list_id: str,
+        item_id: str,
+    ) -> list[ItemTranslationLocaleStatus]:
+        """
+        ``GET /v1/selection-lists/{listId}/items/{itemId}/translations`` -- one
+        status entry per locale that has an item-level translation, with machine
+        status and staleness. The source locale is excluded.
+
+        Bounded by the supported locale count (max 11); not paginated.
+        """
+        raw = self._request_array(
+            "GET",
+            (
+                f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/"
+                f"items/{urllib.parse.quote(item_id, safe='')}/translations"
+            ),
+        )
+        return [_parse_item_translation_locale_status(t) for t in raw]
+
     def upsert_list_translation(
         self,
         list_id: str,
         locale: str,
         name: str,
         *,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> Translation:
         """``PUT /v1/selection-lists/{listId}/translations/{locale}`` -- human list text."""
         body: dict = {"name": name}
@@ -612,7 +692,7 @@ class SelectionListClient:
         locale: str,
         label: str,
         *,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> SelectionListItemTranslation:
         """
         ``PUT /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}``
@@ -633,13 +713,49 @@ class SelectionListClient:
         assert raw is not None
         return _parse_item_translation(raw)
 
+    def delete_list_translation(self, list_id: str, locale: str) -> None:
+        """
+        ``DELETE /v1/selection-lists/{listId}/translations/{locale}`` -- remove one
+        locale's list-level translation.
+
+        Idempotent: deleting a translation that does not exist is not an error
+        (``204``). The source locale cannot be deleted (``400 VALIDATION_ERROR``).
+        Item-level translations in this locale are not touched. Returns ``None``.
+        """
+        self._request(
+            "DELETE",
+            (
+                f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/"
+                f"translations/{urllib.parse.quote(locale, safe='')}"
+            ),
+            allow_empty=True,
+        )
+
+    def delete_item_translation(self, list_id: str, item_id: str, locale: str) -> None:
+        """
+        ``DELETE /v1/selection-lists/{listId}/items/{itemId}/translations/{locale}``
+        -- remove one locale's item-level translation.
+
+        Idempotent: deleting a translation that does not exist is not an error
+        (``204``). The source locale cannot be deleted. Returns ``None``.
+        """
+        self._request(
+            "DELETE",
+            (
+                f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/"
+                f"items/{urllib.parse.quote(item_id, safe='')}/"
+                f"translations/{urllib.parse.quote(locale, safe='')}"
+            ),
+            allow_empty=True,
+        )
+
     def autofill_translations(
         self,
         list_id: str,
         locale: str,
         *,
         overwrite_machine: bool = False,
-        item_ids: Optional[List[str]] = None,
+        item_ids: list[str] | None = None,
     ) -> AutofillResult:
         """
         ``POST /v1/selection-lists/{listId}/translations/{locale}/autofill``
@@ -668,8 +784,8 @@ class SelectionListClient:
         self,
         list_id: str,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
     ) -> PagedResponse[AccessEntry]:
         """``GET /v1/selection-lists/{listId}/access`` -- a page of grants."""
         query = _build_query(limit=limit, cursor=cursor)
@@ -741,9 +857,9 @@ class SelectionListClient:
 
     def resolve_ids(
         self,
-        ids: List[str],
+        ids: list[str],
         *,
-        locale: Optional[str] = None,
+        locale: str | None = None,
     ) -> ResolveResponse:
         """
         ``POST /v1/resolve`` -- turn persisted item ids back into labels in one call.
@@ -752,6 +868,12 @@ class SelectionListClient:
         a URL). Archived ids resolve normally with ``status: 'archived'``; only
         purged or never-existent ids come back in ``missing``. Bounded at 500
         ids per call -- chunk larger batches yourself.
+
+        Authenticated like every other operation (spec 2.0.0): the Bearer
+        token must carry an organization claim, and resolution is scoped to
+        that org -- another org's ids land in ``missing``. There is no
+        anonymous mode; a missing or org-less token raises a ``401``
+        :class:`SelectionListApiError`.
         """
         body: dict = {"ids": ids}
         resolved_locale = locale or self._default_locale
@@ -769,8 +891,8 @@ class SelectionListClient:
         self,
         method: Callable,
         *,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
+        limit: int | None = None,
+        cursor: str | None = None,
         **kwargs: object,
     ) -> Generator:
         """
@@ -794,7 +916,7 @@ class SelectionListClient:
 # ---------------------------------------------------------------------------
 
 
-def _build_query(**kwargs: object) -> Dict[str, str]:
+def _build_query(**kwargs: object) -> dict[str, str]:
     """Build a query dict, omitting ``None`` values and converting to strings."""
     return {k: str(v) for k, v in kwargs.items() if v is not None}
 
@@ -804,7 +926,7 @@ def _omit_none(**kwargs: object) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
-def _raise_api_error(status: int, body: Optional[dict]) -> None:
+def _raise_api_error(status: int, body: dict | None) -> None:
     """Parse a contract error body (if present) and raise ``SelectionListApiError``."""
     if body and isinstance(body.get("code"), str) and isinstance(body.get("message"), str):
         raise SelectionListApiError(

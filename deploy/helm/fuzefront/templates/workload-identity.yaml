@@ -1,0 +1,193 @@
+{{/*
+workload-identity.yaml — Kubernetes workload identity for the security service.
+
+`POST /api/v1/security/tokens/workload` (backend/security/src/routes/security.ts)
+exchanges a projected ServiceAccount token for a short-lived Fuze workload token.
+backend/security/src/services/workload-identity.ts does exactly two Kubernetes
+API calls, and they need DIFFERENT scopes — which is the whole point of the split
+below:
+
+  line 54  POST /apis/authentication.k8s.io/v1/tokenreviews
+           TokenReview is a NON-NAMESPACED virtual resource. RBAC for it can only
+           be a ClusterRole; there is no namespaced form. IRREDUCIBLE.
+
+  line 69  GET /api/v1/namespaces/<ns>/configmaps?labelSelector=
+             security.fuze.dev%2Fworkload-identity%3Dtrue
+           ALWAYS a single namespace, and that namespace comes from the
+           TokenReview result (line 65) — i.e. wherever the calling workload's
+           ServiceAccount lives. Granted as a ClusterRole this reads ConfigMaps
+           in EVERY namespace in the cluster to serve a lookup that is always
+           scoped to one. So it is a namespaced Role here instead.
+
+Why this file is shaped this way (FuzeFront live incident, 2026-09-28): it
+previously put BOTH rules in one ClusterRole, and the `fuzefront` Argo AppProject
+permitted only `{group: '', kind: Namespace}` cluster-scoped. Argo does not skip
+an unpermitted resource — it invalidates the sync task and ABORTS THE WHOLE SYNC
+OPERATION, so two RBAC objects froze every deploy of this Application, image-tag
+bumps included, for hours. Analysis, and the target architecture that removes the
+remaining ClusterRole from this repo entirely (a FuzeInfra-owned identity broker
+on workload-identity.fuzeinfra.svc.cluster.local), are in
+docs/planning/workload-identity-layering.md.
+
+`deploy/scripts/check-cluster-scoped-whitelist.sh` (helm-validate.yml) now fails
+a PR whose rendered cluster-scoped kinds are not permitted by
+deploy/argocd/project.yaml, so that specific freeze cannot recur silently.
+
+RETIRED 2026-10-05 (issue #1137): `securityService.workloadIdentity.
+clusterRbac.enabled` now defaults to `false`, so the ClusterRole/
+ClusterRoleBinding below render NOWHERE by default. FuzeInfra#1306 adopted the
+same-named objects into its own chart (prod only, via
+helm/fuzeinfra/values-contabo.yaml) and narrowed them to `tokenreviews: create`
+— the live grant in prod is unchanged, only ownership moved off this chart, so
+turning this off is a true no-op for prod. FuzeInfra#1308 then deleted
+FuzeInfra's stale duplicate `fuzefront` AppProject and gated registration so a
+ClusterRole-permitting copy can never be re-applied — this chart rendering
+either object again would permanently wedge every FuzeFront Argo sync (the
+2026-09-28 / 2026-10-02 incidents, both caused by exactly that). Local kind
+(`helm upgrade --install`, no Argo involved) gets no equivalent grant from
+FuzeInfra, so a developer exercising `POST /api/v1/security/tokens/workload`
+locally overrides explicitly:
+  --set securityService.workloadIdentity.clusterRbac.enabled=true
+See deploy/argocd/project.yaml and docs/planning/workload-identity-layering.md.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-security
+{{- if and .Values.securityService.enabled .Values.securityService.workloadIdentity.clusterRbac.enabled }}
+---
+# ── THE ONLY CLUSTER-SCOPED GRANT THIS CHART CAN HOLD ───────────────────────
+# Gated so re-enabling it (or flipping it off) is a one-line values change
+# rather than a template rewrite under time pressure. DEFAULT OFF as of #1137 —
+# FuzeInfra#1306 now serves this grant for prod (same object names, adopted
+# into its own chart) and FuzeInfra#1308 forbids a ClusterRole-permitting
+# `fuzefront` AppProject from ever being registered again, so rendering this by
+# default would permanently wedge Argo. See the header comment and
+# deploy/argocd/project.yaml. Override `securityService.workloadIdentity.
+# clusterRbac.enabled=true` only for local kind work that needs
+# `POST /tokens/workload` — never for prod/values-prod.yaml (the
+# whitelist-vs-rendered closed-set layer of check-cluster-scoped-whitelist.sh
+# will fail the PR if you do, which is deliberate: it makes the pairing with
+# deploy/argocd/project.yaml an enforced step, not a remembered one).
+#
+# Also gated on securityService.enabled: this used to render unconditionally, so
+# a deployment with the security service switched OFF — which is the base
+# values.yaml default — still granted cluster-wide TokenReview to a
+# ServiceAccount no running pod used.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-workload-authenticator
+rules:
+  # TokenReview only. The `configmaps` rule that used to sit here is now the
+  # namespaced Role below — see the header comment for why it never needed
+  # cluster scope.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-workload-authenticator
+subjects:
+  - kind: ServiceAccount
+    name: fuzefront-security
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-workload-authenticator
+{{- end }}
+{{- if .Values.securityService.enabled }}
+---
+# Namespaced replacement for the former cluster-wide `configmaps: get, list`.
+# Every FuzeWorkloadIdentity registration ConfigMap this chart renders lives in
+# the release namespace, and the service only ever lists ONE namespace per
+# request (the calling workload's own). So a Role here is sufficient and removes
+# "read every ConfigMap in the cluster" — including other products' — from this
+# ServiceAccount.
+#
+# LIMIT, stated rather than hidden: this only covers workloads whose
+# ServiceAccount lives in THIS namespace. A workload authenticating from another
+# product's namespace needs a Role there, which this chart cannot create — that
+# namespace is not a destination in the `fuzefront` AppProject, and it should
+# not be. That ceiling is not a gap to engineer around here; it is the
+# architectural signal that cross-namespace workload identity is a PLATFORM
+# function. See docs/planning/workload-identity-layering.md.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-workload-identity-registry
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-workload-identity-registry
+subjects:
+  - kind: ServiceAccount
+    name: fuzefront-security
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-workload-identity-registry
+{{- end }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-backend
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuzefront-backend
+  labels:
+    security.fuze.dev/workload-identity: "true"
+data:
+  service: service:fuzefront-backend
+  serviceAccountName: fuzefront-backend
+  scopes: connectors:metadata connectors:credentials:read connectors:credentials:write
+  tokenTtlSeconds: "600"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-chat-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuzefront-chat-service
+  labels:
+    security.fuze.dev/workload-identity: "true"
+data:
+  service: service:fuzefront-chat-service
+  serviceAccountName: fuzefront-chat-service
+  scopes: connectors:gmail:read
+  tokenTtlSeconds: "600"
+
+{{- if .Values.selectionListService.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fuzefront-selection-list-service
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fuzefront-selection-list-service
+  labels:
+    security.fuze.dev/workload-identity: "true"
+data:
+  service: service:selection-list-service
+  serviceAccountName: fuzefront-selection-list-service
+  scopes: selection-list:owner-grant
+  tokenTtlSeconds: "600"
+{{- end }}

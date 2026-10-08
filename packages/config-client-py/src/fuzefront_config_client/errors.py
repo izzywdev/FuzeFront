@@ -13,8 +13,6 @@ Mirrors ``config-client/src/errors.ts`` (the Node client) field-for-field.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 from .types import ConfigErrorDetail, Scope, error_detail_from_wire, scope_from_wire
 
 
@@ -28,15 +26,15 @@ class ConfigApiError(Exception):
     wrong recovery path, so it gets its own value rather than a guess.
     """
 
-    def __init__(self, status: int, code: str, message: str, body: Optional[dict] = None) -> None:
+    def __init__(self, status: int, code: str, message: str, body: dict | None = None) -> None:
         super().__init__(message)
         self.status: int = status
         """HTTP status of the response."""
         self.code: str = code
         """Machine-readable code from the contract's error envelope, or ``UNKNOWN``."""
-        self.body: Optional[dict] = body
+        self.body: dict | None = body
         """The raw parsed body, for anything this class does not model."""
-        self.locked_by: Optional[Scope] = scope_from_wire(body.get("lockedBy")) if body else None
+        self.locked_by: Scope | None = scope_from_wire(body.get("lockedBy")) if body else None
         """
         The scope holding the lock. Present only on ``LOCKED_BY_ANCESTOR``.
 
@@ -44,7 +42,7 @@ class ConfigApiError(Exception):
         instead of showing a generic denial -- the reason the contract
         specifies 409 with a body rather than a bare 403.
         """
-        self.current_version: Optional[str] = body.get("currentVersion") if body else None
+        self.current_version: str | None = body.get("currentVersion") if body else None
         """
         The resolved view's actual version. Present only on
         ``VERSION_CONFLICT``. Re-read at this version and merge; do NOT
@@ -52,7 +50,7 @@ class ConfigApiError(Exception):
         concurrent editor just saved.
         """
         raw_details = body.get("details") if body else None
-        self.details: Optional[List[ConfigErrorDetail]] = (
+        self.details: list[ConfigErrorDetail] | None = (
             [error_detail_from_wire(d) for d in raw_details] if raw_details else None
         )
         """Per-key or per-field problems. Present on validation failures."""

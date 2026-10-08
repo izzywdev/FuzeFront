@@ -93,7 +93,7 @@ async function listFiles(dir, base = dir) {
  * A manifest that fails to parse is a hard error — an unparseable manifest must
  * not silently hash as "some bytes" and mask corruption.
  */
-async function computeStamp(featureDir) {
+export async function computeStamp(featureDir) {
   const rels = (await listFiles(featureDir)).sort();
   const h = createHash('sha256');
   for (const rel of rels) {
@@ -184,7 +184,9 @@ async function main() {
   if (write && !drifted.length) console.log(`\nAll ${features.length} feature stamp(s) already up to date.`);
 }
 
-main().catch((err) => {
-  console.error(err.message ?? err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err.message ?? err);
+    process.exit(1);
+  });
+}

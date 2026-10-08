@@ -416,17 +416,24 @@ describe('OIDCService syncUserToDatabase() — existing user (link_by_email sema
   }
 
   let updateMock: jest.Mock
+  let insertMock: jest.Mock
 
   beforeEach(() => {
     jest.clearAllMocks()
 
     updateMock = jest.fn().mockResolvedValue([])
-    ;(dbFn as any).transaction = jest.fn()
+    // event_outbox insert (enqueueEvent writes the identity.user.updated row).
+    insertMock = jest.fn().mockResolvedValue([])
+    // The existing-user sync now runs inside a transaction so the outbox row
+    // commits atomically with the profile update — the mock invokes the callback
+    // with the same builder (dbFn) acting as the trx.
+    ;(dbFn as any).transaction = jest.fn().mockImplementation(async (cb: any) => cb(dbFn))
 
     const qb = {
       where: jest.fn().mockReturnThis(),
       first: jest.fn().mockResolvedValue(existingRow),
       update: updateMock,
+      insert: insertMock,
     }
     dbFn.mockReturnValue(qb)
   })
@@ -441,9 +448,13 @@ describe('OIDCService syncUserToDatabase() — existing user (link_by_email sema
     })
   })
 
-  it('does NOT open a transaction (no new user row inserted)', async () => {
+  it('opens a transaction and emits identity.user.updated when the profile changed', async () => {
     await (oidcService as any).syncUserToDatabase(googleUserInfo)
-    expect((dbFn as any).transaction).not.toHaveBeenCalled()
+    expect((dbFn as any).transaction).toHaveBeenCalledTimes(1)
+    const outboxRows = insertMock.mock.calls
+      .map(c => c[0])
+      .filter(r => r && typeof r.topic === 'string')
+    expect(outboxRows.some(r => r.topic === 'identity.user.updated')).toBe(true)
   })
 
   it('does NOT publish identity.user.created (not a new user)', async () => {

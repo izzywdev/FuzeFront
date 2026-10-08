@@ -17,7 +17,7 @@ GOOD = "name: demo\non: [push]\njobs:\n  j:\n    runs-on: ubuntu-latest\n    ste
 
 def run(directory):
     proc = subprocess.run(
-        [sys.executable, GATE, directory], capture_output=True, text=True
+        [sys.executable, GATE, directory], capture_output=True, text=True, check=False
     )
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -55,6 +55,33 @@ class GateWorkflowYaml(unittest.TestCase):
         self.assertIn(
             "schedules NO JOBS", out, "the message must explain WHY silence is the failure"
         )
+
+    def test_the_regression_duplicate_key_fails(self):
+        """ci.yml, 2026-09-24: two merges each added `timeout-minutes` to one
+        job. PyYAML kept the last; GitHub rejected the file and ran no ci.yml
+        job anywhere for three days. The gate must treat that as unparseable.
+        """
+        self.write(
+            "ci.yml",
+            "name: c\non: [push]\njobs:\n  j:\n    runs-on: ubuntu-latest\n"
+            "    timeout-minutes: 30\n    continue-on-error: true\n"
+            "    timeout-minutes: 90\n    steps:\n      - run: echo hi\n",
+        )
+        code, out = run(self.dir)
+        self.assertEqual(code, 1, out)
+        self.assertIn("ci.yml", out)
+        self.assertIn("duplicate key 'timeout-minutes'", out)
+
+    def test_same_key_in_sibling_mappings_is_fine(self):
+        """Duplicates are per-mapping; `run:` in two steps is normal."""
+        self.write(
+            "ok.yml",
+            "name: o\non: [push]\njobs:\n  a:\n    runs-on: ubuntu-latest\n"
+            "    steps:\n      - run: echo 1\n      - run: echo 2\n"
+            "  b:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo 3\n",
+        )
+        code, out = run(self.dir)
+        self.assertEqual(code, 0, out)
 
     def test_anti_vacuity_healthy_directory_passes(self):
         """Or the gate is just always-red, which is as useless as never-red."""
@@ -99,7 +126,7 @@ class GateWorkflowYaml(unittest.TestCase):
         self.write("a.yml", "a: b: c\n")
         code, out = run(self.dir)
         self.assertEqual(code, 1, out)
-        annotation = [l for l in out.splitlines() if l.startswith("::error")][0]
+        annotation = next(line for line in out.splitlines() if line.startswith("::error"))
         self.assertIn("not parseable YAML", annotation)
 
 

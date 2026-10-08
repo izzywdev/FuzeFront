@@ -36,7 +36,7 @@ import textwrap
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import gate_required_checks as g  # noqa: E402
+import gate_required_checks as g
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 

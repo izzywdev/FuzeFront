@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import { Button } from '@fuzefront/design-system'
 import {
   useCurrentUser,
   useAppContext,
@@ -17,7 +18,7 @@ import { AccountsProvider } from './contexts/AccountsContext'
 import { useT } from '@fuzefront/i18n'
 import { installBridge, bridge } from './platform/bridge'
 import { AppRegistryProvider } from './platform/appRegistry'
-import { FeatureFlagProvider, useFlag } from './platform/featureFlags'
+import { FeatureFlagProvider, useFlag, useFlagState } from './platform/featureFlags'
 import StandaloneAppSurface from './components/StandaloneAppSurface'
 import ApplicationsPage from './pages/ApplicationsPage'
 import AddApplicationPage from './pages/AddApplicationPage'
@@ -53,7 +54,9 @@ import ConfigPage from './pages/ConfigPage'
 import ConfigCatalogPage from './pages/ConfigCatalogPage'
 import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
+import ConnectorsPage from './pages/ConnectorsPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
+import FuzePickerMentionsPage from './pages/FuzePickerMentionsPage'
 import {
   SelectionListManagementFlow,
   TranslationWorkbenchFlow,
@@ -203,6 +206,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   }, [dispatch])
 
   useEffect(() => {
+    const activeOrg = state.organizations.find(o => o.id === state.activeOrganizationId)
     bridge.setContext({
       user: state.user
         ? {
@@ -215,9 +219,12 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       activeApp: state.activeApp
         ? { id: state.activeApp.id, name: state.activeApp.name }
         : null,
+      activeOrganization: activeOrg
+        ? { id: activeOrg.id, name: activeOrg.name }
+        : null,
       isPlatformMode: true,
     })
-  }, [state.user, state.apps, state.activeApp])
+  }, [state.user, state.apps, state.activeApp, state.activeOrganizationId, state.organizations])
 
   if (isLoading) {
     return (
@@ -256,12 +263,9 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         <p style={{ margin: 0, color: 'var(--text-secondary)', maxWidth: '46ch' }}>
           {t('accounts.limitBody', { max: MAX_PARALLEL_ACCOUNTS })}
         </p>
-        <button
-          className="btn btn-primary"
-          onClick={() => (window.location.href = '/')}
-        >
+        <Button variant="primary" onClick={() => (window.location.href = '/')}>
           {t('nav.dashboard')}
-        </button>
+        </Button>
       </div>
     )
   }
@@ -371,6 +375,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/fuzepicker/mentions" element={<FuzePickerMentionsPage />} />
             <Route path="/applications" element={<ApplicationsPage />} />
             <Route path="/applications/new" element={<AddApplicationPage />} />
             <Route path="/organizations" element={<OrganizationsRoute />} />
@@ -380,6 +385,7 @@ function AppContent() {
             <Route path="/profile" element={<UserProfileManagement />} />
             <Route path="/account/security" element={<AccountSecurityPage />} />
             <Route path="/account/security/connections" element={<AccountConnectionsPage />} />
+            <Route path="/connectors" element={<ConnectorsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/billing/invoices" element={<BillingPage />} />
             <Route path="/billing/payments" element={<BillingPage />} />
@@ -400,6 +406,7 @@ function AppContent() {
             <Route path="/settings/selection-lists/:listId/translations/:locale" element={<TranslationWorkbenchRoute />} />
             <Route path="/settings/selection-lists/:listId/access" element={<SelectionListAccessRoute />} />
             <Route path="/app/:appId" element={<AppRoute />} />
+            <Route path="/app/:appId/*" element={<AppRoute />} />
             <Route path="/admin" element={<AdminRoute />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/status" element={<StatusPage />} />
@@ -510,9 +517,36 @@ function ConfigAuditHistoryRoute() {
  * render-time crash from unmounting the whole React tree (which caused the
  * Back button to also show a blank page).
  */
-function SelectionListsRoute() {
-  const enabled = useFlag('fuzefront.selection-lists.service', false)
+const SELECTION_LISTS_FLAG = 'fuzefront.selection-lists.service'
+
+/**
+ * Route guard for the selection-list routes. Unlike `useFlag`, it waits for
+ * `/api/flags` to settle before deciding: deciding on the pre-fetch fallback
+ * (OFF) bounced hard loads / refreshes / bookmarks of these URLs to
+ * /dashboard even when the flag was ON. Loading renders a status placeholder
+ * (no redirect); settled OFF — including a failed fetch — redirects (fail-closed).
+ */
+function useSelectionListsGate(): ReactNode | null {
+  const { enabled, ready } = useFlagState(SELECTION_LISTS_FLAG, false)
+  if (!ready) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="selection-lists-flag-loading"
+        style={{ padding: 'var(--space-6)', color: 'var(--text-secondary)' }}
+      >
+        Loading...
+      </div>
+    )
+  }
   if (!enabled) return <Navigate to="/dashboard" replace />
+  return null
+}
+
+function SelectionListsRoute() {
+  const gate = useSelectionListsGate()
+  if (gate) return gate
   return (
     <FederatedAppErrorBoundary appName="Selection Lists">
       <SelectionListManagementFlow />
@@ -521,8 +555,8 @@ function SelectionListsRoute() {
 }
 
 function TranslationWorkbenchRoute() {
-  const enabled = useFlag('fuzefront.selection-lists.service', false)
-  if (!enabled) return <Navigate to="/dashboard" replace />
+  const gate = useSelectionListsGate()
+  if (gate) return gate
   return (
     <FederatedAppErrorBoundary appName="Translation Workbench">
       <TranslationWorkbenchFlow />
@@ -531,8 +565,8 @@ function TranslationWorkbenchRoute() {
 }
 
 function SelectionListAccessRoute() {
-  const enabled = useFlag('fuzefront.selection-lists.service', false)
-  if (!enabled) return <Navigate to="/dashboard" replace />
+  const gate = useSelectionListsGate()
+  if (gate) return gate
   return (
     <FederatedAppErrorBoundary appName="Selection List Access">
       <SelectionListAccessFlow />
@@ -555,12 +589,9 @@ function AdminRoute() {
       >
         <h3>🔒 Access Denied</h3>
         <p>You need admin privileges to access this page.</p>
-        <button
-          className="btn btn-primary"
-          onClick={() => (window.location.href = '/dashboard')}
-        >
+        <Button variant="primary" onClick={() => (window.location.href = '/dashboard')}>
           Return to Dashboard
-        </button>
+        </Button>
       </div>
     )
   }
@@ -580,15 +611,11 @@ function NotFoundPage() {
     >
       <h1>404 - Page Not Found</h1>
       <p>The page you're looking for doesn't exist.</p>
-      <button
-        className="btn btn-primary"
-        onClick={() => (window.location.href = '/dashboard')}
-      >
+      <Button variant="primary" onClick={() => (window.location.href = '/dashboard')}>
         Go to Dashboard
-      </button>
+      </Button>
     </div>
   )
 }
 
 export default App
-

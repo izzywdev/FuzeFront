@@ -1,0 +1,184 @@
+# Authentik Blueprint — A2A (agent-to-agent) machine-identity providers
+#
+# WHY THIS FILE EXISTS (izzywdev/FuzeInfra#981):
+# A2A callers authenticate to a callee with a stateless JWT: the callee checks
+# `iss`, checks `aud`, then reads a `repo` claim and matches it against its own
+# `providesTo` allowlist (izzywdev/FuzeAgent agent-templates/contracts/a2a/v1/
+# authz.md §2). Until now NOTHING in prod Authentik issued such a token: the
+# only path that created these providers was the IN-CLUSTER imperative CLI
+# `backend/src/authentik/register-a2a-cli.ts` (→ provision-a2a-clients.ts),
+# which CLAUDE.md forbids running from CI and which — being imperative — leaves
+# no GitOps-reconciled source of truth. With no provider, no pod can mint an
+# `aud=a2a` token and every A2A round-trip returns 401 (the "delegation fabric
+# blocked" state of FuzeInfra#981).
+#
+# This blueprint makes the SAME resources declarative, so Argo/Authentik
+# reconcile them on every sync instead of depending on a one-shot Job. It is a
+# faithful transcription of provision-a2a-clients.ts — same audience, same
+# per-repo `repo` claim, same client_credentials/confidential/global-issuer
+# provider shape — not a new design.
+#
+# ── SECRETS ──────────────────────────────────────────────────────────────────
+# `client_secret` is resolved at blueprint-apply time via Authentik's !Env tag,
+# reading AUTHENTIK_A2A_<REPO>_CLIENT_SECRET from the worker pod's environment
+# (wired in templates/authentik.yaml from a SealedSecret). No secret VALUE is
+# stored in this file or the ConfigMap — ciphertext lives only in the sealed
+# manifests. IMPORTANT: Authentik honours attrs.client_secret only at provider
+# CREATION time. The sealed value MUST be present before the FIRST apply (its
+# SealedSecret carries sync-wave "-1" so it lands first); setting it later does
+# not update an already-created provider — that requires deleting the provider
+# entry and re-applying (bump the reapply label below).
+#
+# ── ISSUER / VALIDATION CONTRACT (read before changing anything) ─────────────
+# Every provider here uses `issuer_mode: global`, so ALL A2A tokens across every
+# caller repo share ONE issuer (`<authentik-url>/application/o/`); the per-caller
+# distinction is carried entirely by the `repo` CLAIM, never by the issuer. This
+# matches provision-a2a-clients.ts. The callee's A2A runtime validates
+# `iss == auth.oidcIssuerUrl` with STRICT equality (izzywdev/FuzeAgent
+# agent-templates/a2a/runtime.py `_build_verifier` → `verify()`, explicit
+# belt-and-suspenders `claims["iss"] != auth.oidc_issuer_url` check), so the
+# callee's `a2a.auth.oidcIssuerUrl` (values-prod.yaml) MUST be that same global
+# issuer — NOT the per-provider human `.../application/o/fuzefront/` issuer. See
+# the matching note in values-prod.yaml.
+#
+# ── DESIGN: everything inline, no cross-blueprint !Find ───────────────────────
+# Authentik's Celery runner applies blueprint files CONCURRENTLY; a !Find that
+# resolves an object committed by a DIFFERENT blueprint can silently abort the
+# entry if that object isn't in the DB yet. So the authorization flow and scope
+# mappings are defined inline here and referenced by !Find within THIS file only
+# (entries apply in order). The invalidation flow is the system-provided
+# `default-provider-invalidation-flow`, referenced the same way the human
+# provider-oidc.yaml does.
+version: 1
+metadata:
+  name: FuzeFront A2A Machine-Identity Providers
+  labels:
+    blueprints.goauthentik.io/instantiate: "true"
+    # RE-APPLY MARKER: bump this value to change the blueprint content hash and
+    # force Authentik's runner to re-apply (upsert) the entries below. Needed
+    # because client_secret is honoured only at CREATION — to rotate a secret or
+    # repair a provider created before its sealed secret existed, delete the
+    # provider in the Admin UI and bump this marker to force a clean re-create.
+    fuzefront.io/blueprint-reapply: "2026-09-22-a2a-981-initial"
+entries:
+  # ── Authorization flow (client_credentials has no interactive leg) ───────────
+  # client_credentials never redirects a browser, but Authentik requires every
+  # OAuth2 provider to reference an authorization_flow FK. Defined inline (not a
+  # cross-blueprint !Find) to avoid the concurrent-apply race noted above.
+  # authentication: none — there is no interactive user to authenticate.
+  - model: authentik_flows.flow
+    state: present
+    identifiers:
+      slug: a2a-client-credentials-authorization
+    attrs:
+      name: A2A Client-Credentials Authorization
+      slug: a2a-client-credentials-authorization
+      designation: authorization
+      title: A2A Machine Authorization
+      authentication: none
+      policy_engine_mode: all
+
+  # ── Scope mappings: one per caller repo, emitting {"repo": <Repo>, "aud": a2a} ─
+  # scope_name is "a2a" for every mapping (the caller requests `scope=a2a` in its
+  # client_credentials token request). The `repo` value is the per-caller literal
+  # the callee's providesTo allowlist keys on. Expression is Python; a JSON object
+  # literal is valid Python and keeps the strings correctly quoted — identical to
+  # provision-a2a-clients.ts `ensureA2AScopeMapping`.
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "a2a:fuzeagent"
+    attrs:
+      name: "a2a:fuzeagent"
+      scope_name: a2a
+      expression: |
+        return {"repo": "FuzeAgent", "aud": "a2a"}
+
+  - model: authentik_providers_oauth2.scopemapping
+    state: present
+    identifiers:
+      name: "a2a:fuzefront"
+    attrs:
+      name: "a2a:fuzefront"
+      scope_name: a2a
+      expression: |
+        return {"repo": "FuzeFront", "aud": "a2a"}
+
+  # ── Provider + Application: FuzeAgent caller ─────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: "FuzeAgent (a2a)"
+    attrs:
+      name: "FuzeAgent (a2a)"
+      client_type: confidential
+      # Public/non-sensitive deterministic literal; the secret is the credential.
+      client_id: "a2a-fuzeagent-client"
+      client_secret: !Env [AUTHENTIK_A2A_FUZEAGENT_CLIENT_SECRET, ""]
+      # Machine-to-machine only. No authorization_code / refresh_token.
+      grant_types:
+        - client_credentials
+      # No browser leg → no redirect URIs.
+      redirect_uris: []
+      # One shared issuer across all A2A providers; repo claim distinguishes
+      # callers. The callee's oidcIssuerUrl MUST equal this global issuer.
+      issuer_mode: global
+      # No interactive user; sub derives from the client identity.
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      # Short-lived M2M tokens: revocation lag == validity, kept tight so a
+      # stateless JWKS check needs no per-call introspection (matches the
+      # imperative provisioner's 15-minute token_validity).
+      access_token_validity: "minutes=15"
+      access_code_validity: "minutes=1"
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "a2a:fuzeagent"]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, a2a-client-credentials-authorization]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: a2a-fuzeagent
+    attrs:
+      name: "FuzeAgent (a2a)"
+      slug: a2a-fuzeagent
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, "FuzeAgent (a2a)"]]
+      meta_description: "A2A machine identity for FuzeAgent (client_credentials; emits repo+aud claims)"
+      policy_engine_mode: any
+
+  # ── Provider + Application: FuzeFront caller ─────────────────────────────────
+  # FuzeFront's own pod acting as an A2A CALLER of peer agents (distinct from the
+  # inbound-caller validation its a2a pod performs). Same shape, repo=FuzeFront.
+  - model: authentik_providers_oauth2.oauth2provider
+    state: present
+    identifiers:
+      name: "FuzeFront (a2a)"
+    attrs:
+      name: "FuzeFront (a2a)"
+      client_type: confidential
+      client_id: "a2a-fuzefront-client"
+      client_secret: !Env [AUTHENTIK_A2A_FUZEFRONT_CLIENT_SECRET, ""]
+      grant_types:
+        - client_credentials
+      redirect_uris: []
+      issuer_mode: global
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      access_token_validity: "minutes=15"
+      access_code_validity: "minutes=1"
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [name, "a2a:fuzefront"]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, a2a-client-credentials-authorization]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+
+  - model: authentik_core.application
+    state: present
+    identifiers:
+      slug: a2a-fuzefront
+    attrs:
+      name: "FuzeFront (a2a)"
+      slug: a2a-fuzefront
+      provider: !Find [authentik_providers_oauth2.oauth2provider, [name, "FuzeFront (a2a)"]]
+      meta_description: "A2A machine identity for FuzeFront (client_credentials; emits repo+aud claims)"
+      policy_engine_mode: any

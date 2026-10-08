@@ -43,7 +43,7 @@
  * `credential-handoff.json` documents how a consumer's client_id + sealed
  * client_secret flows into its namespace as a SealedSecret — that mechanism
  * lives in FuzeInfra and is out of scope here; delegate any change to it via
- * `@claude`).
+ * `@fuze`).
  *
  * Rotation: rotating a service's `client_secret` in Authentik does not invalidate
  * tokens already issued under the old secret — they simply expire naturally at

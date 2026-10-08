@@ -3,7 +3,7 @@ import { useLanguage } from '../contexts/LanguageContext'
 import { useCurrentUser } from '../lib/shared'
 import { authAPI } from '../services/api'
 import type { SessionResult } from '../services/api'
-import { Alert } from '@fuzefront/design-system'
+import { Alert, AuthCard } from '@fuzefront/design-system'
 import { AuthPanel } from '@fuzefront/auth-ui'
 import type {
   AuthTransport,
@@ -18,7 +18,7 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  *
  * All email/password/signup/Google/MFA form markup + state now live ONCE in
  * AuthPanel (packages/auth-ui). This page only supplies:
- *   - the page chrome (FuzeFront logo + the `.auth-form` card wrapper),
+ *   - the page chrome (FuzeFront logo + the `AuthCard` card wrapper),
  *   - the `AuthTransport` that wires AuthPanel to the existing `authAPI`,
  *   - i18n labels via `useLanguage()` (AuthPanel never imports useLanguage
  *     itself — it only renders injected strings),
@@ -35,11 +35,11 @@ import FuzeFrontLogo from '../assets/FuzeFrontLogo.svg'
  * logic AuthPanel is meant to own). See the PR description for the follow-up.
  */
 
-// `variant="compact"` — `.auth-form` (frontend/src/index.css) is ALREADY the
-// card chrome (max-width, padding, border, shadow, seam accent). AuthPanel's
-// `variant="full"` would wrap the form in its own CenteredCard, nesting a card
-// inside a card. `compact` renders just the form/social/toggle innards, which
-// is what belongs inside the page's own card.
+// `variant="compact"` — the design-system `AuthCard` (design-system/components/layout)
+// is ALREADY the card chrome (max-width, padding, border, shadow, seam accent).
+// AuthPanel's `variant="full"` would wrap the form in its own CenteredCard,
+// nesting a card inside a card. `compact` renders just the form/social/toggle
+// innards, which is what belongs inside the page's own card.
 const PANEL_VARIANT = 'compact' as const
 
 /**
@@ -101,6 +101,18 @@ function LoginPage() {
   )
   const { setUser } = useCurrentUser()
 
+  // A FuzePicker email opens its protected mentions route first. Preserve only
+  // that same-origin path across sign-in/sign-up so a new recipient lands on
+  // the mention they were sent, rather than being dropped on the dashboard.
+  // This is intentionally an allowlist rather than a generic redirect query:
+  // authentication must never become an open-redirect primitive.
+  useEffect(() => {
+    const current = `${window.location.pathname}${window.location.search}`
+    if (current.startsWith('/fuzepicker/mentions')) {
+      window.sessionStorage.setItem('fuzepicker:return-path', current)
+    }
+  }, [])
+
   // Page-load social-callback outcome (the OAuth provider redirecting back
   // with `?code=`/`?error=`) is a SEPARATE concern from AuthPanel's own
   // form-submit error/notice — AuthPanel has no prop to surface an
@@ -126,7 +138,11 @@ function LoginPage() {
     try {
       const user = await authAPI.getCurrentUser()
       setUser(user)
-      window.location.href = '/dashboard'
+      const returnPath = window.sessionStorage.getItem('fuzepicker:return-path')
+      window.sessionStorage.removeItem('fuzepicker:return-path')
+      window.location.href = returnPath?.startsWith('/fuzepicker/mentions')
+        ? returnPath
+        : '/dashboard'
     } catch (err) {
       console.error('Failed to hydrate user after sign-in:', err)
       setCallbackError('Signed in, but failed to load your profile. Please retry.')
@@ -213,7 +229,7 @@ function LoginPage() {
   )
 
   return (
-    <div className="auth-form">
+    <AuthCard>
       <div
         style={{
           display: 'flex',
@@ -244,7 +260,7 @@ function LoginPage() {
         onMfaRequired={handleMfaRequired}
         labels={labels}
       />
-    </div>
+    </AuthCard>
   )
 }
 

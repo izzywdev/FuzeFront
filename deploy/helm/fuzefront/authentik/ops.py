@@ -8,9 +8,28 @@ file-based discovery — blueprint files carry the
 worker on startup (the deployments roll on blueprint changes via a checksum
 annotation).
 """
-import json, os, sys, time, urllib.request, urllib.error
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+# urllib speaks file:// and ftp:// as well as HTTP. AK_URL is an environment
+# variable (set by prod-authentik-ops.yml from a repo variable), so it is
+# configuration, not a constant -- a typo or a tampered workflow input would
+# otherwise turn every api() call below into an arbitrary-file read. Enforced
+# once, at import, so a bad value fails the job immediately instead of at the
+# first request.
+_ALLOWED_SCHEMES = ('http', 'https')
 
 AK = os.environ['AK_URL'].rstrip('/')
+_AK_SCHEME = urllib.parse.urlsplit(AK).scheme.lower()
+if _AK_SCHEME not in _ALLOWED_SCHEMES:
+    raise SystemExit(
+        f"AK_URL must be an http or https URL, got {_AK_SCHEME or '(no scheme)'}: {AK!r}"
+    )
 TOK = os.environ['AK_TOKEN']
 PHASE = os.environ.get('PHASE', 'diagnose')
 BLUEPRINT_DIR = os.environ.get(
@@ -32,6 +51,7 @@ def api(path, method='GET', body=None):
                  'User-Agent': 'FuzeFront-authentik-ops/1.0 (+github-actions)'},
         data=json.dumps(body).encode() if body is not None else None)
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- the `file://` read this rule names is unreachable: AK is scheme-checked against _ALLOWED_SCHEMES at import (above) and `path` is a code literal concatenated onto f'{AK}/api/v3', never urljoin'd, so no caller can re-introduce a scheme.
         with urllib.request.urlopen(req, timeout=30) as r:
             raw = r.read().decode()
             return r.status, (json.loads(raw) if raw else {})
@@ -60,7 +80,8 @@ else:
         for name in wanted:
             path = f'{BLUEPRINT_DIR}/{name}.yaml'
             try:
-                content = open(path).read()
+                with open(path, encoding="utf-8") as fh:
+                    content = fh.read()
             except FileNotFoundError:
                 failed = True
                 report.append(f'- {name}: MISSING FILE {path}')
@@ -205,7 +226,8 @@ else:
     else:
         report.append(f'- blueprint instances: HTTP {st_m}')
 
-open('report.md', 'w').write('\n'.join(report) + '\n')
+with open('report.md', 'w', encoding='utf-8') as fh:
+    fh.write('\n'.join(report) + '\n')
 print('\n'.join(report))
 # Non-zero exit when anything went wrong so BOTH callers fail loudly (red
 # workflow run / failed in-cluster Job visible in Argo) instead of green-lying.

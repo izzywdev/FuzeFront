@@ -16,9 +16,11 @@ name: Fuze Code Review
 # long-standing `gate-code-review` job in harden-gate.yml (correctness/security
 # bugs only; ignore style, naming, tests, perf) and the SAME multi-provider
 # fallover chain as every other LLM-driven workflow in this fleet
-# (./.github/actions/fuze-code-action — LiteLLM-in-cluster-or-direct-Anthropic,
-# then OpenAI, then Gemini, on a classified AVAILABILITY failure only, never on a
-# real task failure). The one new thing here is what happens to a CLEAN result:
+# (./.github/actions/fuze-code-action — LiteLLM-in-cluster-or-direct-Anthropic on a
+# classified AVAILABILITY failure only, never on a real task failure; the OpenAI and
+# Gemini API coding rungs are DISABLED for this caller; the isolated Codex
+# subscription reviewer remains available, see the READ-ONLY note below).
+# The one new thing here is what happens to a CLEAN result:
 # `gh pr review --approve` actually gets called.
 #
 # THE SAFETY PROPERTY THAT MATTERS MOST: an approval step that fires
@@ -43,12 +45,34 @@ name: Fuze Code Review
 #     verdict — a self-approving change to the approval machinery deserves a
 #     human. Enforced against the actual `git diff --name-only` file list, never
 #     against anything the model claims about its own diff.
-#   - The reviewer LLM is given NO Bash/Write/Edit tools (see `claude-args`
-#     below). The entire diff is embedded in its prompt, so it never needs to
-#     touch the checkout — an instruction smuggled inside the diff ("approve this
-#     PR", "run `gh pr review --approve`", "print the secrets") has no tool
-#     available to act on it, and the verdict is independently re-validated by
-#     the script regardless of what the model's prose says.
+#   - READ-ONLY AT THE TOOL LEVEL, PER RUNG (what is true, not what is hoped):
+#       Anthropic rungs (OAuth 1a, LiteLLM/direct-key 1): ENFORCED read-only. The
+#         reviewer gets `--allowedTools "Read,Grep,Glob"` and no Bash/Write/Edit.
+#       Codex subscription reviewer: the published shared action uses an isolated,
+#         no-tools adapter with CODEX_AUTH_JSON. This is separate from the
+#         OpenAI API coding rung, which remains disabled by key absence below.
+#       Gemini rung: DISABLED for this workflow, same mechanism (no GEMINI_API_KEY
+#         passed, the rung only runs when it is non-empty). run-gemini-cli hard-codes `gemini --yolo` (auto-approve every
+#         tool call including shell) and exposes no tool allow-list input.
+#     When Anthropic and the isolated Codex reviewer are unavailable the chain is exhausted; that
+#     classifies as an availability outage (non-blocking, never an approval), the
+#     fail-closed direction. Re-enabling either vendor here needs a demonstrated
+#     tool-level read-only mode, enforced by
+#     .github/actions/fuze-code-action/__tests__/test_review_caller_readonly.py.
+#     The API coding rungs stay disabled by KEY ABSENCE. The subscription adapter
+#     is provided by the published FuzeSDLC action; this caller does not replace
+#     that managed action or enable its shell-capable API coding rungs.
+#     The entire diff is embedded in the prompt, so the reviewer never needs the
+#     checkout; an instruction smuggled inside the diff ("approve this PR", "run
+#     `gh pr review --approve`", "print the secrets") has no tool available to act
+#     on it, and the verdict is independently re-validated by the script
+#     regardless of what the model's prose says.
+#   - NO PERSISTED CREDENTIAL: the checkout uses `persist-credentials: false`, so
+#     the job's GITHUB_TOKEN is not left in `.git/config` for a tool-using rung to
+#     read. GITHUB_TOKEN reaches only (a) the context step's one authenticated
+#     base-ref fetch, (b) the Anthropic action as its `github_token` input, and
+#     (c) the `Submit GitHub review` step. It is not in any `env:` of the review
+#     step.
 #   - The verdict contract's sentinel markers carry a per-run random NONCE, drawn
 #     AFTER the diff is already fixed on disk — a forged sentinel block planted
 #     inside the diff itself (to smuggle a fake clean verdict past a naive
@@ -66,16 +90,15 @@ name: Fuze Code Review
 # precisely so one exhausted vendor account can no longer silently disable this
 # gate.
 #
-# CREDENTIAL: this workflow is routed through the in-cluster LiteLLM gateway
-# (http://litellm.fuzeinfra.svc.cluster.local:4000), so the ONLY secret needed
-# is LITELLM_FUZE_KEY — a scoped virtual key minted with FuzeInfra's
-# scripts/mint-litellm-fuze-key.sh. With it set the gateway handles provider
-# routing and failover; without it (or if the gateway is unreachable from the
-# runner) the workflow SKIPS (not fails) — a missing credential is environmental,
-# not a defect in the PR under review. Direct provider keys (ANTHROPIC_API_KEY,
-# OPENAI_API_KEY, GEMINI_API_KEY) are fallback rungs via the runner-local LiteLLM
-# in fuze-code-action/llm-endpoint, but are NOT needed when the in-cluster gateway
-# is reachable from the self-hosted fuzefront runner this job runs on.
+# CREDENTIAL: the in-cluster LiteLLM gateway accepts LITELLM_FUZE_KEY, a scoped
+# virtual key minted with FuzeInfra's scripts/mint-litellm-fuze-key.sh. Other
+# available review credentials are CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY,
+# and CODEX_AUTH_JSON for the isolated ChatGPT subscription reviewer. When none
+# is configured the workflow skips; missing credentials are environmental.
+# Direct provider keys (ANTHROPIC_API_KEY,
+# OPENAI_API_KEY, GEMINI_API_KEY): ANTHROPIC_API_KEY is a fallback rung; the
+# OpenAI and Gemini keys are deliberately NOT forwarded by this workflow (see the
+# READ-ONLY note above), so provisioning them does not enable those rungs here.
 #
 # SCOPE: this workflow assumes PRs come from branches in THIS repo, matching the
 # agent-branch model documented across the fleet (agents push claude/**, codex/**
@@ -125,35 +148,113 @@ jobs:
     # the runner name vs governance/ci-runners.md mandated name (`fuze-runner`
     # rename has not happened yet; change this when the set is renamed).
     #
-    # REQUIRED REPO SECRET: LITELLM_FUZE_KEY — a LiteLLM virtual key minted
-    # with FuzeInfra scripts/mint-litellm-fuze-key.sh. Without it the job
-    # skips (not fails) as documented in the header comment above.
+    # Review credentials are checked below; CODEX_AUTH_JSON alone is sufficient
+    # to attempt the isolated subscription reviewer if Anthropic is unavailable.
     runs-on: fuzefront
+    # Flagged by gate-workflow-policy [missing-timeout], for exactly the reason
+    # measured here: with no bound, a job whose runner stops responding is only
+    # reaped when the pod finally dies, and GitHub reports the opaque "the
+    # self-hosted runner lost communication with the server" with every step
+    # left at a null conclusion -- which reads like an infra blip rather than
+    # this job overrunning. Across 27 consecutive runs every completed review
+    # finished between 18s and 6m55s; the only two failures ran 15m02s and
+    # 16m03s. 12 minutes clears the observed ceiling with ~70% headroom and
+    # still cuts in first, so an overrun fails as an attributable timeout.
+    # This bounds the symptom; it does not fix the runner loss, which is
+    # FuzeInfra's `fuzefront` scale set and delegated there.
+    # The JOB limit must sit ABOVE the `Run automated review` step's own 12-minute
+    # limit, not equal to it: checkout + context run first, so with both at 12 the
+    # job limit always fires first, kills the job outright (the step reports
+    # `cancelled`, not a failure `continue-on-error` can absorb), and `Decide
+    # verdict` never classifies the outage -- measured on #1234 (job cancelled at
+    # 12m10s with the step at 7m). 15 leaves room for the steps around the review.
+    timeout-minutes: 15
     steps:
+      # A job can dequeue after its PR merged and the head branch was deleted; checkout then
+      # fails with "A branch or tag with the name '...' could not be found". Ask the API
+      # BEFORE checkout and gate every later step on the answer -- a real conditional, not a
+      # swallowed failure: if the API call itself errors this step fails loudly.
+      - name: Check PR is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$STATE" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=fuze-code-review::skipped because PR #${PR_NUMBER} is no longer open (state=${STATE})"
+          fi
+
       - name: Checkout
+        if: steps.pr.outputs.open == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          # Do not leave GITHUB_TOKEN (pull-requests: write) in .git/config for the
+          # LLM-running step to find. Later steps that need the token take it from
+          # an explicit, step-scoped env instead.
+          persist-credentials: false
 
       - name: Gather PR context — diff, changed files, sensitive-path check, credential check
         id: context
+        if: steps.pr.outputs.open == 'true'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          # Used ONLY for the one authenticated base-ref fetch below (checkout no
+          # longer persists a credential). This step runs no LLM.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
-          HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
-          HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
+          HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
         run: |
           set -uo pipefail
-          git fetch origin "$BASE_REF" --depth=1
+          # NOT --depth=1. `actions/checkout` above already fetched full history
+          # (fetch-depth: 0), but a shallow fetch of the base ref makes the whole
+          # repository shallow, and `origin/$BASE_REF...HEAD` then dies with
+          # "fatal: no merge base" whenever the base has moved past what the
+          # checkout holds. Both diffs below swallowed that with `|| true`, so an
+          # empty DIFF read as "nothing to review" and the job SKIPPED TO A PASS
+          # on a PR with a real diff -- while $SENSITIVE went empty too, silently
+          # disarming the sensitive-path input to the self-approval defense below.
+          # Measured on #1042 (+1376/-115 across 27 files): with --depth=1 the
+          # diff is 0 bytes and exits 128; without it, 81558 bytes and exits 0.
+          #
+          # persist-credentials is false, so authenticate this one fetch explicitly
+          # (the header lives only in this git process's arguments, never in
+          # .git/config). A failed fetch is not fatal by itself because the checkout
+          # already fetched every branch, but the ref MUST resolve or the diff below
+          # would be computed against nothing.
+          AUTH_HEADER="Authorization: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          if ! git -c "http.extraheader=${AUTH_HEADER}" fetch origin "$BASE_REF"; then
+            echo "::warning title=fuze-code-review::could not refresh origin/$BASE_REF; using the ref the checkout already fetched"
+          fi
+          if ! git rev-parse --verify --quiet "origin/$BASE_REF" > /dev/null; then
+            echo "::error title=fuze-code-review::origin/$BASE_REF does not resolve -- refusing to report a verdict on a diff this job cannot see"
+            exit 1
+          fi
 
-          git diff --name-only "origin/$BASE_REF"...HEAD > /tmp/changed_files.txt 2>/dev/null || true
+          # A diff that cannot be COMPUTED is not a diff that is EMPTY. Never
+          # conflate the two: the first is a broken gate and must be loud, the
+          # second is a legitimate skip. This is the `|| true` that made a
+          # required-adjacent review check pass without reviewing anything.
+          if ! git diff --name-only "origin/$BASE_REF"...HEAD > /tmp/changed_files.txt; then
+            echo "::error title=fuze-code-review::cannot compute the changed-file list against origin/$BASE_REF -- refusing to report a verdict, and refusing to pass, on a diff this job cannot see"
+            exit 1
+          fi
 
           # Diff to a temp file first: piping straight into `head` makes git die of
           # SIGPIPE (exit 141) when head closes the stream early — the same fix
           # already applied in the gate-code-review job this wraps.
-          git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' \
-            > /tmp/fulldiff.txt 2>/dev/null || true
+          if ! git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' \
+            > /tmp/fulldiff.txt; then
+            echo "::error title=fuze-code-review::cannot compute the diff against origin/$BASE_REF -- refusing to report a verdict, and refusing to pass, on a diff this job cannot see"
+            exit 1
+          fi
           DIFF=$(head -c 80000 /tmp/fulldiff.txt)
 
           # The approval machinery and the org governance surface. Matched against
@@ -161,16 +262,27 @@ jobs:
           # because this feeds the self-approval defense in the verdict script.
           SENSITIVE_PATTERN='^(\.github/workflows/|\.github/actions/|workflow-templates/|governance/|scripts/apply_ruleset\.sh$|scripts/bootstrap/)'
           SENSITIVE=$(grep -E "$SENSITIVE_PATTERN" /tmp/changed_files.txt || true)
+          # Deploy surface: charts, images, the release workflow and DB migrations. An
+          # outage (no review performed) on a PR touching these BLOCKS rather than passes.
+          DEPLOY_SENSITIVE_PATTERN='^(deploy/|helm/|.*Dockerfile.*|\.github/workflows/release\.yml$|backend/src/db/migrations/|services/[^/]+/src/db/migrations/|backend/.*/migrations/)'
+          DEPLOY_SENSITIVE=$(grep -E "$DEPLOY_SENSITIVE_PATTERN" /tmp/changed_files.txt || true)
 
           READY=true
           REASON=""
           if [ -z "$DIFF" ]; then
             READY=false
             REASON="no reviewable diff (only excluded lockfiles changed, or no changes)"
-          elif [ "${HAS_LITELLM:-false}" != "true" ] && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
-               && [ "${HAS_OPENAI:-false}" != "true" ] && [ "${HAS_GEMINI:-false}" != "true" ]; then
+          # CLAUDE_CODE_OAUTH_TOKEN counts here. It is rung 1a in fuze-code-action --
+          # attempted BEFORE the LiteLLM/API-key path, deliberately, because a
+          # subscription token bills against an existing plan while the metered
+          # rungs bill per token. Omitting it from this gate meant a repo holding
+          # ONLY the subscription token -- the configuration this job is supposed
+          # to prefer -- reported "no LLM credential configured" and skipped the
+          # review outright, with a working credential already wired to line 260.
+          elif [ "${HAS_OAUTH:-false}" != "true" ] && [ "${HAS_LITELLM:-false}" != "true" ] \
+               && [ "${HAS_ANTHROPIC:-false}" != "true" ] && [ "${HAS_CODEX:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of CLAUDE_CODE_OAUTH_TOKEN, LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, CODEX_AUTH_JSON; the OpenAI/Gemini API coding rungs are disabled for this read-only reviewer) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           {
@@ -180,13 +292,16 @@ jobs:
             echo "sensitive_files<<FUZE_SENSITIVE_EOF"
             echo "$SENSITIVE"
             echo "FUZE_SENSITIVE_EOF"
+            echo "deploy_sensitive_files<<FUZE_DEPLOY_SENSITIVE_EOF"
+            echo "$DEPLOY_SENSITIVE"
+            echo "FUZE_DEPLOY_SENSITIVE_EOF"
             echo "diff<<FUZE_DIFF_EOF"
             echo "$DIFF"
             echo "FUZE_DIFF_EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Not reviewing this run
-        if: steps.context.outputs.ready != 'true'
+        if: steps.pr.outputs.open == 'true' && steps.context.outputs.ready != 'true'
         env:
           REASON: ${{ steps.context.outputs.reason }}
         run: echo "::notice title=fuze-code-review::skipping -- ${REASON}"
@@ -242,22 +357,91 @@ jobs:
             echo "FUZE_PROMPT_EOF_${NONCE}"
           } >> "$GITHUB_OUTPUT"
 
-      # NO Bash/Write/Edit tools. The entire diff is already embedded in the
-      # prompt above, so the reviewer never needs to touch the checkout -- and an
-      # instruction smuggled inside the diff has no tool available to act on it.
-      # Read/Grep/Glob are harmless here: they can only look, at a checkout that
-      # is already fully visible in the diff text.
+      # READ-ONLY AT THE TOOL LEVEL. The Anthropic rungs get only Read/Grep/Glob.
+      # The OpenAI and Gemini rungs are disabled below (their keys are NOT
+      # forwarded, and the action only runs a rung whose key is non-empty) because
+      # neither API coding rung can be confined to read-only here. The separate
+      # Codex subscription adapter is isolated and has tools disabled.
+      # The entire diff is already embedded in the prompt above, so the reviewer
+      # never needs to touch the checkout -- and an instruction smuggled inside the
+      # diff has no tool available to act on it. Read/Grep/Glob can only look, at a
+      # checkout that holds no persisted credential. This step has no `env:` block.
       - name: Run automated review
         id: review
         if: steps.context.outputs.ready == 'true'
         continue-on-error: true
+        # BOUND THE HANG. Twice on 2026-09-23 (#1156 heads e757a892 and
+        # 481d498f) this step ran 13-16 minutes against an unavailable provider
+        # and the job then died outright: every step after it reported a null
+        # conclusion, so `Decide verdict` never ran, nothing classified the
+        # outage, and the check went red -- the exact outcome the owner's
+        # credit-outage exception exists to prevent. `continue-on-error` above
+        # cannot help when the job itself is killed.
+        #
+        # An explicit timeout converts that into a step FAILURE, which
+        # continue-on-error absorbs, so `Decide verdict` still runs and
+        # classifies it. The action sets no outputs when it is cut off, and the
+        # verdict script now reads that empty conclusion as "never reported" ->
+        # outage (non-blocking), distinct from a clean credit skip.
+        #
+        # 12 minutes is deliberately longer than a healthy review (well under a
+        # minute) and shorter than the observed hangs, so it only ever fires on
+        # a provider that is not answering.
+        timeout-minutes: 12
         uses: ./.github/actions/fuze-code-action
         with:
+          # RUNG 1a: subscription OAuth, tried BEFORE the metered LiteLLM/API-key
+          # path. Omitting it does not fail loudly -- the rung is skipped by name
+          # and the chain silently falls through to per-token billing, which is
+          # what every run here was doing until 2026-09-16.
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          # fuze:secret-sourcing CODEX_AUTH_JSON=fleet — provision-llm-vendor-keys.yml; optional ChatGPT subscription auth
+          codex-auth-json: ${{ secrets.CODEX_AUTH_JSON }}
+          # OPENAI_API_KEY / GEMINI_API_KEY are intentionally NOT forwarded: with no
+          # key the action skips API coding rungs 2 and 3. API Codex runs danger-full-access
+          # and run-gemini-cli runs --yolo, i.e. a full shell, which a reviewer
+          # reading an attacker-controlled diff must never have. Do not add them back
+          # without a tool-level read-only mode (test_review_caller_readonly.py fails
+          # if you do).
+          # allowed_bots — REQUIRED, for the same reason it is in fuze.yml, and it was
+          # missing here until 2026-09-16. This workflow triggers on `pull_request`, so the
+          # actor is whoever OPENED the PR — and on this repo that is routinely a bot:
+          # agent branches are PR'd under the `fuze-agent` App identity, and workflows that
+          # open PRs with the default token appear as `github-actions`. claude-code-action
+          # aborts a bot-actor run ~1s in, BEFORE any model call, with "Workflow initiated
+          # by non-human actor: <login>. Add bot to allowed_bots list or use '*' to allow
+          # all bots." That killed RUNG 1a (subscription OAuth) AND RUNG 1 (LiteLLM)
+          # identically, which classify.sh reports as `availability: action-could-not-start`
+          # — indistinguishable in a skimmed log from a vendor outage. The visible
+          # consequence is that no review is produced, so `Submit GitHub review` never runs
+          # `gh pr review --approve`, and every agent PR sits unapproved forever.
+          #
+          # Deliberately a NAMED list, never `*`: `*` would let any bot-authored PR start
+          # this run, dependabot included. Fork PRs stay closed off independently — the
+          # trigger is `pull_request`, not `pull_request_target`, so a fork gets no secrets
+          # and the rung chain fails preflight before it starts.
+          #
+          # The four identities, and how much evidence each one has:
+          #   fuze-agent      — MEASURED. The App identity governance-sync pushes under;
+          #                     its push to #1081 is what produced the
+          #                     `non-human actor: fuze-agent` abort quoted above.
+          #   github-actions  — MEASURED as a run actor on this repo (gate-fuze-code-action
+          #                     runs 77 and 79), i.e. a PR opened or pushed by a workflow
+          #                     using the default token.
+          #   claude          — the App that OPENS agent PRs (#1041 and #1045 are both
+          #                     authored by `claude[bot]`). Not yet seen as the ACTOR here,
+          #                     because every push to those branches was made by a human —
+          #                     but it is the actor the moment one of them self-pushes, and
+          #                     mcp-maintain/a2a-maintain already allow it by name.
+          #   fuzeone-bot     — carried over from fuze.yml as the fleet scheduler identity.
+          #                     Included for parity with that list; not independently
+          #                     observed triggering THIS workflow.
+          # claude-code-action compares the login with the `[bot]` suffix stripped, so these
+          # are the bare names, matching fuze.yml.
+          allowed-bots: "claude,fuzeone-bot,github-actions,fuze-agent"
           claude-args: '--allowedTools "Read,Grep,Glob"'
           task-prompt: ${{ steps.prompt.outputs.text }}
 
@@ -269,14 +453,21 @@ jobs:
           FUZE_RESULT_TEXT: ${{ steps.review.outputs.result-text }}
           FUZE_VERDICT_NONCE: ${{ steps.prompt.outputs.nonce }}
           FUZE_ACTION_MODE: ${{ steps.review.outputs.mode }}
+          # classify.sh exit 1 = availability. Without this the verdict script cannot tell a
+          # vendor credit/quota outage from a real task failure, and reds the PR on both.
+          FUZE_ACTION_AVAILABILITY: ${{ steps.review.outputs.availability }}
           FUZE_ACTION_VENDOR: ${{ steps.review.outputs.vendor }}
           FUZE_SENSITIVE_FILES: ${{ steps.context.outputs.sensitive_files }}
+          FUZE_DEPLOY_SENSITIVE_FILES: ${{ steps.context.outputs.deploy_sensitive_files }}
         run: python3 scripts/fuze_code_review_verdict.py
 
       - name: Submit GitHub review
         if: steps.context.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No persisted git credential and no reliance on a git remote for repo
+          # inference: name the repo explicitly.
+          GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           DECISION: ${{ steps.verdict.outputs.decision }}
           BODY: ${{ steps.verdict.outputs.body }}
@@ -295,10 +486,33 @@ jobs:
             comment)
               gh pr review "$PR_NUMBER" --comment --body-file "$BODY_FILE"
               ;;
+            outage|outage_blocking)
+              # Upsert ONE comment, found by its marker, so reruns PATCH instead of stacking.
+              EXISTING=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" --paginate \
+                --jq '[.[] | select(.body | contains("<!-- fuze-code-review-outage -->")) | .id] | first // empty')
+              if [ -n "$EXISTING" ]; then
+                gh api -X PATCH "repos/${GH_REPO}/issues/comments/${EXISTING}" -F body=@"$BODY_FILE" >/dev/null
+              else
+                gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              fi
+              if [ "$DECISION" = "outage_blocking" ]; then
+                echo "::error title=fuze-code-review::NO REVIEW WAS PERFORMED (provider outage) and this PR touches sensitive paths (CI/governance, deploy or DB migrations) -- failing. Re-run once a provider recovers."
+                echo "### fuze-code-review: NO REVIEW WAS PERFORMED (BLOCKING)" >> "$GITHUB_STEP_SUMMARY"
+                echo "Provider outage on a PR touching sensitive paths; the check fails until a real review runs." >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+              echo "::warning title=fuze-code-review::NO REVIEW WAS PERFORMED -- provider availability/credit outage; passing only because no sensitive path is touched. Re-run once a provider recovers."
+              echo "### fuze-code-review: NO REVIEW WAS PERFORMED" >> "$GITHUB_STEP_SUMMARY"
+              echo "Provider outage; check passes only because no sensitive path is touched. This is not a review or an approval." >> "$GITHUB_STEP_SUMMARY"
+              ;;
             abstain)
               gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
-              echo "::error title=fuze-code-review::no verdict was reached -- this run is NOT an approval. See the PR comment just posted for why."
-              exit 1
+              echo "::notice title=fuze-code-review::no verdict was reached (all LLM credential rungs exhausted or keys invalid) — this run is not an approval but does not block the PR. This is environmental: fix LITELLM_FUZE_KEY or a fallback vendor key to re-enable automated review."
+              # Exit 0: an exhausted/invalid credential is environmental, not a defect in the
+              # PR under review. The design intent (header comment) was "missing credential ->
+              # skip (not fail)". A non-empty-but-invalid key is indistinguishable from absent
+              # at the secrets layer; treat it the same way here.
+              exit 0
               ;;
             *)
               echo "::error title=fuze-code-review::internal error -- unrecognized decision '${DECISION}' from fuze_code_review_verdict.py. Treating as abstain rather than guessing."

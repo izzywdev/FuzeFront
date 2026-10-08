@@ -456,6 +456,31 @@ function usePlatform() {
     return snapshot;
 }
 
+/**
+ * Hook to access and listen to active organization changes from FuzeFront host.
+ * Returns null when in personal context or running standalone.
+ */
+function useActiveOrganization() {
+    const [activeOrg, setActiveOrg] = useState(() => {
+        var _a, _b;
+        return (_b = (_a = getBridge()) === null || _a === void 0 ? void 0 : _a.getContext().activeOrganization) !== null && _b !== void 0 ? _b : null;
+    });
+    useEffect(() => {
+        const bridge = getBridge();
+        if (!bridge)
+            return;
+        // If bridge provides onOrgSwitch (v2+), use it; otherwise subscribe to context
+        if (typeof bridge.onOrgSwitch === 'function') {
+            return bridge.onOrgSwitch(setActiveOrg);
+        }
+        return bridge.subscribe(ctx => {
+            var _a;
+            setActiveOrg((_a = ctx.activeOrganization) !== null && _a !== void 0 ? _a : null);
+        });
+    }, []);
+    return activeOrg;
+}
+
 const DEFAULT_RETRY_OPTIONS = {
     maxAttempts: 3,
     baseDelay: 1000,
@@ -602,10 +627,11 @@ var index = {
     useSocketBus,
     useToast,
     usePlatform,
+    useActiveOrganization,
     getBridge,
     loadApp,
     clearModuleCache,
 };
 
-export { AppHeartbeat, PlatformProvider, clearModuleCache, createHeartbeat, index as default, getBridge, getCachedModule, isInPlatform, isModuleCached, loadApp, useCurrentUser, useGlobalMenu, usePlatform, usePlatformContext, useSession, useSocketBus, useToast };
+export { AppHeartbeat, PlatformProvider, clearModuleCache, createHeartbeat, index as default, getBridge, getCachedModule, isInPlatform, isModuleCached, loadApp, useActiveOrganization, useCurrentUser, useGlobalMenu, usePlatform, usePlatformContext, useSession, useSocketBus, useToast };
 //# sourceMappingURL=index.esm.js.map

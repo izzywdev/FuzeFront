@@ -98,11 +98,26 @@ def _read_yaml(path: str) -> Any:
     raise RuntimeError(f"PyYAML not available — cannot parse {path}")
 
 
+#: Everything a malformed-or-unexpected values file can raise. `yaml` is optional here,
+#: so the tuple is built from what is actually importable rather than naming
+#: `yaml.YAMLError` unconditionally. NOTE: YAMLError does not subclass ValueError —
+#: narrowing to ValueError alone would silently stop catching YAML syntax errors.
+#: `_HAVE_YAML`, NOT `yaml is not None`: this module's import guard sets the flag but
+#: never binds the NAME, so `yaml is not None` raises NameError at import time on any
+#: machine without PyYAML -- i.e. exactly the path the guard exists to support. Caught
+#: in review (Copilot, 2026-09-15) and reproduced by blocking the import.
+_PARSE_ERRORS: tuple[type[BaseException], ...] = (
+    (OSError, ValueError, AttributeError, TypeError, RuntimeError, yaml.YAMLError)
+    if _HAVE_YAML
+    else (OSError, ValueError, AttributeError, TypeError, RuntimeError)
+)
+
+
 def _read_values(path: str) -> Any:
     """Parse a YAML values file; return None if it fails."""
     try:
         return _read_yaml(path)
-    except Exception:
+    except _PARSE_ERRORS:
         return None
 
 
@@ -123,7 +138,7 @@ def load_policy(root: str) -> dict[str, Any]:
                 policy[k] = merged
             else:
                 policy[k] = v
-    except Exception as e:
+    except _PARSE_ERRORS as e:
         print(f"[gate-a2a] WARNING: could not load {POLICY_PATH}: {e}", file=sys.stderr)
     return policy
 
@@ -163,8 +178,12 @@ def find_sealed_secrets(root: str, dirs: list[str]) -> dict[str, set[str]]:
                 keys = set((doc.get("spec") or {}).get("encryptedData") or {})
                 if name:
                     result.setdefault(name, set()).update(keys)
-            except Exception:
-                pass
+            except _PARSE_ERRORS as exc:
+                # One unreadable manifest must not hide the other SealedSecrets, but it
+                # must not vanish either: a gate that silently sees fewer secrets than
+                # exist reports a clean repo for the wrong reason.
+                print(f"[gate-a2a] WARNING: skipping unreadable manifest: {exc}",
+                      file=sys.stderr)
     return result
 
 
@@ -183,7 +202,9 @@ def ghcr_token(owner: str, name: str) -> str | None:
         resp = _ghcr_get(path, {"Accept": "application/json"})
         data = json.loads(resp.read())
         return data.get("token")
-    except Exception:
+    except (OSError, http.client.HTTPException, ValueError):
+        # Network failure, a protocol-level error, or a body that is not JSON. None
+        # means "no token", which the caller already handles as unauthenticated.
         return None
 
 
@@ -221,7 +242,7 @@ def ghcr_resolve_tag(repository: str, tag: str) -> tuple[bool, str]:
         if status == 404:
             return False, f"tag {tag!r} not found (404) in {repository}"
         return False, f"HTTP {status} resolving {repository}:{tag}"
-    except Exception as ex:
+    except (OSError, http.client.HTTPException, ValueError) as ex:
         return None, f"registry unreachable: {ex}"  # type: ignore[return-value]
 
 

@@ -446,15 +446,26 @@ async function listAllApps(apiUrl, token) {
  * bug and is not one.
  *
  * Returns null when there is nothing to compare (no --expected-build given, or
- * a service too old to stamp itself), and a message otherwise. An UNSTAMPED
- * service is reported, never treated as matching: "the field is missing" and
- * "the field agrees" must not produce the same verdict, which is how a check
- * ends up passing vacuously.
+ * no build stamp arrived), and a message otherwise. An UNSTAMPED service is
+ * reported, never treated as matching: "the field is missing" and "the field
+ * agrees" must not produce the same verdict, which is how a check ends up
+ * passing vacuously.
+ *
+ * A MISSING stamp has TWO causes and the message must not pick one. The census
+ * never reaches the applications-service directly — /api/v1/app-registry has no
+ * Ingress rule, so it falls through /api to the host backend, which proxies it
+ * (backend/src/routes/app-registry.ts). That proxy relays an allowlist of
+ * response headers, and until 2026-09-09 `x-fuze-build` was not on it: the
+ * header was stamped and then discarded one hop before the census could read
+ * it. This message used to assert the absence was "evidence the rollout is
+ * behind", and that reading — a false negative shaped exactly like a finding —
+ * was acted on as a real diagnosis before the relay was traced. Name both
+ * causes instead of asserting the interesting one.
  */
 function buildDriftMessage(expectedBuild, reportedBuild) {
   if (!expectedBuild) return null
   if (!reportedBuild) {
-    return `applications-service did not send X-Fuze-Build — it predates build stamping, so THIS CHECK IS NOT RUNNING. Expected tag from values-prod.yaml: ${expectedBuild}. (A service this old is itself evidence the rollout is behind.)`
+    return `no X-Fuze-Build reached this census, so THIS CHECK IS NOT RUNNING (expected tag from values-prod.yaml: ${expectedBuild}). Two causes, and this cannot tell them apart: (a) the applications-service image predates build stamping, or (b) the header was dropped in transit — /api/v1/app-registry is proxied by the host backend, which relays only an allowlist of response headers. Check the relay in backend/src/routes/app-registry.ts BEFORE concluding anything about the rollout.`
   }
   if (reportedBuild === 'unknown') {
     return `applications-service reports build 'unknown' — the image was built without --build-arg BUILD_SHA, so it cannot be compared against the requested tag ${expectedBuild}.`

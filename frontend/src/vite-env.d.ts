@@ -10,6 +10,11 @@ interface ImportMetaEnv {
   // Overrides the SW update-check poll interval (ms); see
   // registerServiceWorker.ts. Optional — defaults to 60s.
   readonly VITE_SW_UPDATE_INTERVAL_MS?: string
+  // OTLP/HTTP endpoint for browser tracing (see main.tsx's
+  // initBrowserTelemetry() call). Optional — @fuzefront/telemetry/browser
+  // defaults to the same-origin '/v1/traces' path when unset, assuming the
+  // host's ingress proxies it through to FuzeInfra's OTel Collector.
+  readonly VITE_OTEL_EXPORTER_OTLP_ENDPOINT?: string
   // more env variables...
 }
 

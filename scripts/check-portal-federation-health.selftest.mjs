@@ -318,7 +318,17 @@ test('DRIFT 2/4: a pod sending NO build header is reported, never treated as mat
   const { status, stdout, stderr } = await runDriftCase({ buildSha: undefined, expectedBuild: 'bbbbbbbbbbbb' })
   const out = stdout + stderr
   assert.equal(status, 1, `an unstamped service must not pass vacuously, got exit ${status}.\n${out}`)
-  assert.match(out, /did not send X-Fuze-Build/, `expected the unstamped-service message.\n${out}`)
+  assert.match(out, /no X-Fuze-Build reached this census/, `expected the unstamped-service message.\n${out}`)
+  // The message must offer BOTH causes. Asserting only that it complains would
+  // let it drift back to naming just one, which is the mistake this wording
+  // exists to prevent: a dropped header read as proof of a stalled rollout.
+  assert.match(out, /predates build stamping/, `expected cause (a) to be named.\n${out}`)
+  assert.match(out, /dropped in transit/, `expected cause (b) — the proxy relay — to be named.\n${out}`)
+  assert.match(
+    out,
+    /backend\/src\/routes\/app-registry\.ts/,
+    `expected the message to name the relay to check first.\n${out}`
+  )
 })
 
 test("DRIFT 3/4: a pod reporting build 'unknown' (built with no --build-arg) FAILS, exit 1", async () => {

@@ -14,6 +14,9 @@ const config = {
   migrations: {
     directory: path.join(__dirname, '../dist/migrations'),
     extension: 'js',
+    // Only load the compiled .js — knex's default loadExtensions also matches
+    // the emitted .d.ts files beside them. Same fix as backend/knexfile.ts.
+    loadExtensions: ['.js'],
   },
 }
 

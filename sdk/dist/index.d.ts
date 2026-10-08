@@ -1,3 +1,4 @@
+import * as react_jsx_runtime from 'react/jsx-runtime';
 import React$1, { ReactNode } from 'react';
 
 interface User {
@@ -25,6 +26,7 @@ interface App {
     scope?: string;
     module?: string;
     description?: string;
+    requiresOrgContext?: boolean;
 }
 interface MenuItem {
     id: string;
@@ -67,6 +69,10 @@ interface PlatformContext {
     apps: App[];
     activeApp: App | null;
     menuItems: MenuItem[];
+    activeOrganization?: {
+        id: string;
+        name: string;
+    } | null;
     isLoading: boolean;
     isPlatformMode: boolean;
 }
@@ -150,7 +156,7 @@ interface PlatformProviderProps {
     config: AppConfig;
     fallbackMode?: boolean;
 }
-declare function PlatformProvider({ children, config, fallbackMode, }: PlatformProviderProps): React$1.JSX.Element;
+declare function PlatformProvider({ children, config, fallbackMode, }: PlatformProviderProps): react_jsx_runtime.JSX.Element;
 declare function usePlatformContext(): {
     state: PlatformState;
     dispatch: React$1.Dispatch<PlatformAction>;
@@ -258,6 +264,10 @@ interface PlatformSnapshot {
         id: string;
         name: string;
     } | null;
+    activeOrganization?: {
+        id: string;
+        name: string;
+    } | null;
     isPlatformMode: boolean;
 }
 interface BridgeMenuItem {
@@ -277,6 +287,15 @@ interface FuzeFrontBridge {
     version: number;
     getContext(): PlatformSnapshot;
     subscribe(listener: (ctx: PlatformSnapshot) => void): () => void;
+    onOrgSwitch(handler: (org: {
+        id: string;
+        name: string;
+    } | null) => void): () => void;
+    onAccountSwitch(handler: (user: {
+        id: string;
+        email: string;
+        roles: string[];
+    } | null) => void): () => void;
     notify(toast: ToastInput): string;
     dismiss(id: string): void;
     menu: {
@@ -308,6 +327,16 @@ declare function useToast(): {
  */
 declare function usePlatform(): PlatformSnapshot;
 
+interface ActiveOrganization {
+    id: string;
+    name: string;
+}
+/**
+ * Hook to access and listen to active organization changes from FuzeFront host.
+ * Returns null when in personal context or running standalone.
+ */
+declare function useActiveOrganization(): ActiveOrganization | null;
+
 interface RetryOptions {
     maxAttempts: number;
     baseDelay: number;
@@ -338,10 +367,11 @@ declare const _default: {
     useSocketBus: typeof useSocketBus;
     useToast: typeof useToast;
     usePlatform: typeof usePlatform;
+    useActiveOrganization: typeof useActiveOrganization;
     getBridge: typeof getBridge;
     loadApp: typeof loadApp;
     clearModuleCache: typeof clearModuleCache;
 };
 
-export { AppHeartbeat, PlatformProvider, clearModuleCache, createHeartbeat, _default as default, getBridge, getCachedModule, isInPlatform, isModuleCached, loadApp, useCurrentUser, useGlobalMenu, usePlatform, usePlatformContext, useSession, useSocketBus, useToast };
-export type { App, AppConfig, BridgeMenuItem, BridgeSocket, CommandEvent, FuzeFrontBridge, HeartbeatConfig, HeartbeatResponse, LoadedModule, MenuItem, ModuleFederationConfig, Permission, PlatformContext, PlatformSnapshot, Session, SocketBus, SocketMessage, Toast, ToastInput, ToastLevel, UseCurrentUserResult, UseGlobalMenuResult, UseSessionResult, UseSocketBusResult, User };
+export { AppHeartbeat, PlatformProvider, clearModuleCache, createHeartbeat, _default as default, getBridge, getCachedModule, isInPlatform, isModuleCached, loadApp, useActiveOrganization, useCurrentUser, useGlobalMenu, usePlatform, usePlatformContext, useSession, useSocketBus, useToast };
+export type { ActiveOrganization, App, AppConfig, BridgeMenuItem, BridgeSocket, CommandEvent, FuzeFrontBridge, HeartbeatConfig, HeartbeatResponse, LoadedModule, MenuItem, ModuleFederationConfig, Permission, PlatformContext, PlatformSnapshot, Session, SocketBus, SocketMessage, Toast, ToastInput, ToastLevel, UseCurrentUserResult, UseGlobalMenuResult, UseSessionResult, UseSocketBusResult, User };

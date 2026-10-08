@@ -9,8 +9,24 @@ import dotenv from 'dotenv'
 import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
+import connectorRoutes from './routes/connectors'
+import fuzexRoutes from './routes/fuzex'
+import { createConnectorPlatformRouter } from './connector-platform'
+import { googleProviders } from './connector-providers/google'
+import { microsoftProviders } from './connector-providers/microsoft'
+import { workspaceProviders } from './connector-providers/workspace'
+import { developerProviders } from './connector-providers/developer'
+import { googleProductivityProviders } from './connector-providers/google-productivity'
+import { googleTasksSlidesProviders } from './connector-providers/google-tasks-slides'
+import { microsoftProductivityProviders } from './connector-providers/microsoft-productivity'
+import { atlassianProviders } from './connector-providers/atlassian'
+import { projectToolProviders } from './connector-providers/project-tools'
+import { aiModelProviders } from './connector-providers/ai-models'
+import { aiBuilderProviders } from './connector-providers/ai-builders'
+import { deployBuilderProviders } from './connector-providers/deploy-builders'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
+import fuzepickerRoutes from './routes/fuzepicker'
 import usersRoutes from './routes/users'
 import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
@@ -28,7 +44,11 @@ import {
   getPermitSyncStatus,
 } from './permit/sync-permit-schema'
 import permitClient from './config/permit'
-import { ensureRootOrgAdmins } from './services/rootOrgAdmin'
+import {
+  ensureConfiguredRootAdmins,
+  ensureRootOrgAdmins,
+  parseRootAdminEmails,
+} from './services/rootOrgAdmin'
 import { initFeatureFlags } from './utils/feature-flags'
 import { initializeSocketIO } from './sockets/socketHandler'
 import {
@@ -44,6 +64,7 @@ import { startBillingProjection, stopBillingProjection } from './services/billin
 import { configureIdentity } from '@izzywdev/fuzefront-identity'
 import { startRefIndexProjection, stopRefIndexProjection } from './kafka/ref-index.consumer'
 import { KnexRefIndexRepository } from './repositories/ref-index.repository'
+import { startChatResponseConsumer, stopChatResponseConsumer } from './kafka/chat-response.consumer'
 
 // Load environment variables
 dotenv.config()
@@ -105,6 +126,8 @@ app.use(
 // its own express.raw() parser. (See routes/billing.ts.)
 app.use('/api/v1/billing/webhooks/stripe', billingWebhookRouter)
 
+// Frame/import payloads can exceed the host's default 100 KB JSON limit.
+app.use('/api/v1/fuzex', express.json({ limit: '20mb' }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
@@ -317,6 +340,7 @@ app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
 // FF-EPIC-11-S3 — public token-based invitation resolve/accept (routes/invitations.ts).
 app.use('/api/invitations', invitationsRoutes)
+app.use('/api/fuzepicker', fuzepickerRoutes)
 app.use('/api/users', usersRoutes)
 // Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
 // session so the `developers` segment cannot be self-assigned by a client.
@@ -336,6 +360,14 @@ app.use('/api/v1/billing', billingRoutes)
 // /api/v1/notifications/*; this forwards it in-cluster. The service's
 // /internal/* publish surface is blocked here — see routes/notifications.ts.
 app.use('/api/v1/notifications', notificationProxyRoutes)
+app.use('/api/v1/connectors', createConnectorPlatformRouter([
+  ...googleProviders, ...microsoftProviders, ...workspaceProviders, ...developerProviders,
+  ...googleProductivityProviders, ...googleTasksSlidesProviders, ...microsoftProductivityProviders,
+  ...atlassianProviders, ...projectToolProviders,
+  ...aiModelProviders, ...aiBuilderProviders, ...deployBuilderProviders,
+]))
+app.use('/api/v1/connectors', connectorRoutes)
+app.use('/api/v1/fuzex', fuzexRoutes)
 
 app.use('/api/v1/app-registry', appRegistryRoutes)
 // App-registry proxy: browser -> backend -> fuzefront-applications:3003. The
@@ -520,6 +552,12 @@ function gracefulShutdown(signal: string) {
         console.error('❌ Error stopping ref_index projection consumer:', error)
       }
 
+      try {
+        await stopChatResponseConsumer()
+      } catch (error) {
+        console.error('❌ Error stopping chat response consumer:', error)
+      }
+
       console.log('🎯 Graceful shutdown complete')
       process.exit(0)
     })
@@ -608,23 +646,11 @@ async function findAvailablePort(
 // Start server with port conflict handling
 async function startServer() {
   try {
-    // Step 5 (FFRNT-185): configure the dual-accept window so assertRef /
-    // parseId accept bare UUIDs for entity types whose stored rows predate the
-    // TypeID wire form. Flag `fuzefront.identity.prefixed-ids` (step 4)
-    // controls whether RESPONSES emit TypeID form; these types remain in
-    // legacyUuidTypes until their row backfill is complete.
-    configureIdentity({
-      legacyUuidTypes: new Set([
-        'organization',
-        'membership',
-        'invitation',
-        'session',
-        'mfaFactor',
-        'user',
-        'app',
-        'portal',
-      ]),
-    })
+    // Step 5 (FFRNT-185): dual-accept windows closed.
+    // All entity types now use mintId() for creation and store bare UUIDs;
+    // the prefixed-ids flag is ON in prod. No legacy bare-UUID references
+    // need to be accepted at the request boundary.
+    configureIdentity({ legacyUuidTypes: new Set() })
 
     // Initialize database first
     console.log('🔄 Starting FuzeFront Backend Server...')
@@ -717,6 +743,18 @@ async function startServer() {
       console.error('⚠️  ensureRootOrgAdmins failed (non-fatal):', error)
     }
 
+    // Configured human root admins (PLATFORM_ROOT_ADMIN_EMAILS) usually have no
+    // `users` row at boot — it appears on their first login. Re-check on an
+    // interval so that login takes effect without a restart. Permit treats a
+    // repeat assignment as a benign conflict.
+    if (parseRootAdminEmails().length > 0) {
+      setInterval(() => {
+        ensureConfiguredRootAdmins().catch(error =>
+          console.error('⚠️  ensureConfiguredRootAdmins failed (non-fatal):', error)
+        )
+      }, 5 * 60 * 1000).unref()
+    }
+
     // Start consuming billing.subscription.changed to project plan-tier/status
     // onto users/organizations. Non-fatal + no-op when KAFKA_BROKERS is unset.
     await startBillingProjection()
@@ -725,6 +763,10 @@ async function startServer() {
     // Non-fatal + no-op when KAFKA_BROKERS is unset.
     const refIndexStore = new KnexRefIndexRepository(db)
     await startRefIndexProjection(refIndexStore)
+
+    await startChatResponseConsumer(io).catch(error => {
+      console.error('⚠️  Chat response WebSocket bridge failed to start (non-fatal):', error)
+    })
 
     const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT
     const availablePort = await findAvailablePort(portNumber)

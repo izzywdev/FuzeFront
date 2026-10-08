@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
@@ -52,13 +52,45 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Dependency Review
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, BlueOak-1.0.0
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, BlueOak-1.0.0, MIT-0, CC0-1.0
+          #
+          # CC0-1.0 is a public-domain dedication — no conditions at all, strictly
+          # PERMISSIVE (if anything, less restrictive than MIT's attribution
+          # notice requirement). Surfaced as `lodash.camelcase@4.3.0`'s declared
+          # license ("CC0-1.0 AND MIT", a conjunctive SPDX expression requiring
+          # BOTH terms be satisfiable — MIT was already allowed, CC0-1.0 was not),
+          # pulled in transitively via `@opentelemetry/exporter-trace-otlp-grpc`
+          # -> `@grpc/proto-loader`, added for @fuzefront/telemetry's gRPC OTLP
+          # exporter. Added to allow-licenses rather than exempted by name,
+          # following the BlueOak-1.0.0/MIT-0 precedent above: a permissive
+          # license that will recur (proto-loader/protobuf tooling commonly
+          # dual-licenses this way) belongs on the list.
+          #
+          # MIT-0 ("MIT No Attribution") is a distinct SPDX identifier from MIT,
+          # so allowing MIT does not allow it. It is MIT with the attribution
+          # requirement removed — strictly FEWER obligations than MIT, no
+          # copyleft, and rated permissive by the SPDX/OSI listings. If MIT is
+          # acceptable here then MIT-0 necessarily is; there is no reading under
+          # which it imposes a duty MIT does not.
+          #
+          # Surfaced by nodemailer, which is MIT-0 and has been in this product
+          # all along (6.9.14 was MIT-0 too). It only became visible when this
+          # PR bumped it 6.9.14 -> 9.1.1 for four advisories, because — exactly
+          # as the TruffleHog note below describes — Dependency Review evaluates
+          # CHANGED dependencies, so a package sitting at a steady version is
+          # never assessed. This is therefore a pre-existing gap in the policy
+          # being revealed, not a new obligation being taken on.
+          #
+          # Added to allow-licenses rather than exempted by name, following the
+          # BlueOak-1.0.0 precedent above: a permissive license that will recur
+          # belongs on the list, whereas a name exemption is reserved for the
+          # copyleft case (TruffleHog/AGPL) where the distinction does real work.
           # BlueOak-1.0.0 (Blue Oak Council's Model License) is isaacs' preferred
           # license going forward for the packages he maintains (which, isexe,
           # node-gyp, tar, glob, mkdirp, ...) — a large slice of the npm
@@ -120,10 +152,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -177,7 +209,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -248,9 +280,20 @@ jobs:
           mv retagged.sarif trivy-results.sarif
           echo "tool.driver.name is now: $(jq -r '.runs[0].tool.driver.name' trivy-results.sarif)"
 
+      # `if: always()` here (pre-existing) is meant to upload results even
+      # when an earlier step in this job reports non-zero, e.g. a real Trivy
+      # finding. But `always()` also fires when the IMAGE BUILD steps above
+      # fail (buildx bootstrap 502s, Docker Hub auth/pull resets, etc.) — in
+      # that case the "Run Trivy" step is skipped entirely (no prior `if:`
+      # guard) and no trivy-results.sarif is ever written. The retag step
+      # above already guards on the file existing and no-ops cleanly; this
+      # step didn't, so the action hard-failed with "Path does not exist:
+      # trivy-results.sarif" — a second, misleading error stacked on top of
+      # the real (already-visible) build failure. Guard on the same
+      # `hashFiles` check so a missing SARIF is a clean skip here too.
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
-        if: always()
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
           category: trivy-container
@@ -261,7 +304,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -281,10 +324,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
           cache: 'npm'
@@ -331,11 +374,11 @@ jobs:
 
       - name: Checkout code
         if: steps.snyk-token.outputs.present == 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node.js
         if: steps.snyk-token.outputs.present == 'true'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24.x'
 
@@ -352,7 +395,7 @@ jobs:
           args: --severity-threshold=high
 
       - name: Upload Snyk results to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         if: always() && steps.snyk-token.outputs.present == 'true'
         with:
           sarif_file: snyk.sarif

@@ -90,10 +90,15 @@ function buildBundle() {
     },
   })
   // Static, test-only harness page (constant HTML; the <script src> is a fixed
-  // local path to our own esbuild bundle — no external/dynamic input). Not a web
-  // response and never served to users.
+  // local path to our own esbuild bundle — no external/dynamic input). `HTML` is
+  // the module-level DESTINATION PATH constant (path.join(__dirname, ...)), which
+  // semgrep cannot constant-fold through path.join — it is not page content and
+  // not caller input. Not a web response and never served to users.
   // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
   writeFileSync(
+    // The finding anchors on this argument, so the suppression has to sit here
+    // too — a comment on the `writeFileSync(` line above does not cover it.
+    // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
     HTML,
     `<!doctype html><html><head><meta charset="utf-8"><title>invoice-history harness</title></head><body><div id="root"></div><script src="./bundle.js"></script></body></html>`,
     'utf-8'

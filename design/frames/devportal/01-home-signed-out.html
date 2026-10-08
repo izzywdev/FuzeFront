@@ -69,35 +69,13 @@
       </a>
     </div>
 
-    <!-- ============ product directory ============ -->
-    <h3 class="dp-h2">Participating products</h3>
-    <p class="dp-sub">Sourced from <code>.fuze/manifest.json</code> → <code>providesTo</code>. A product appears here as
-      soon as one of its repos publishes a spec.</p>
-    <div class="dp-grid-3" data-panel="product-directory">
-      <div class="dp-card" data-product="fuzefront">
-        <div class="dp-inline"><h4 class="dp-h3" style="margin:0">FuzeFront</h4><span class="dp-badge info">host</span></div>
-        <p class="dp-sub" style="margin:var(--space-2) 0 0">12 services · 8 specs</p>
-      </div>
-      <div class="dp-card" data-product="fuzeagent">
-        <h4 class="dp-h3">FuzeAgent</h4>
-        <p class="dp-sub" style="margin:0">3 services · 3 specs</p>
-      </div>
-      <div class="dp-card" data-product="fuzebi">
-        <h4 class="dp-h3">FuzeBI</h4>
-        <p class="dp-sub" style="margin:0">2 services · 2 specs</p>
-      </div>
-      <div class="dp-card" data-product="fuzex">
-        <h4 class="dp-h3">FuzeX</h4>
-        <p class="dp-sub" style="margin:0">4 services · 4 specs</p>
-      </div>
-      <div class="dp-card" data-product="fuzequality">
-        <h4 class="dp-h3">Quality</h4>
-        <p class="dp-sub" style="margin:0">1 service · 1 spec</p>
-      </div>
-      <div class="dp-card" data-product="mendysrobotics">
-        <h4 class="dp-h3">MendysRobotics</h4>
-        <p class="dp-sub" style="margin:0">2 services · 2 specs</p>
-      </div>
+    <!-- ============ product directory — sign-in gated (2026-09-16, direct
+         owner direction: the full family product list must not be disclosed
+         to anonymous visitors). NOT rendered at all when signed out — see
+         02-home-signed-in.html for the real panel. ============ -->
+    <div class="dp-card seamed" data-panel="product-directory-locked">
+      <h4 class="dp-h3">🗂 Participating products <span class="dp-badge warn">sign-in required</span></h4>
+      <p class="dp-sub" style="margin:0">See which Fuze products publish an API here — sign in to browse.</p>
     </div>
 
     <!-- ============ the sandbox promise, stated up front ============ -->

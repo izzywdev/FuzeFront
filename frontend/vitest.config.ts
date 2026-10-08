@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import react from '@vitejs/plugin-react'
 
 // Mirror vite.config.ts: resolve the @fuzefront/* workspace UI packages from source.
@@ -43,6 +44,14 @@ const portalBrandingUiSrc = fileURLToPath(
 )
 // @fuzefront/portal-admin-ui (master-admin + portal-admin consoles, FF-EPIC-14)
 // — same unbuilt-dist reasoning; resolve from SOURCE, mirroring vite.config.ts.
+// @fuzeone/selection-lists-ui (packages/selection-lists-ui) is an unpublished
+// file: workspace package whose dist/ is not built in CI — resolve from SOURCE,
+// exactly as vite.config.ts already does. App.tsx imports it at module scope, so
+// without this every src/__tests__/App.*.test.tsx fails to COLLECT with
+// "Failed to resolve entry for package" and its tests never run.
+const selectionListsUiSrc = fileURLToPath(
+  new URL('../packages/selection-lists-ui/src/index.ts', import.meta.url)
+)
 const portalAdminUiSrc = fileURLToPath(
   new URL('../packages/portal-admin-ui/src/index.ts', import.meta.url)
 )
@@ -98,8 +107,22 @@ const stubCss = {
   },
 }
 
+const frontendRequire = createRequire(import.meta.url)
+const workspaceDepResolver = {
+  name: 'resolve-workspace-transitive-deps',
+  resolveId(id: string) {
+    if (id.startsWith('.') || id.startsWith('/') || id.startsWith('\0')) return null
+    try {
+      const resolved = frontendRequire.resolve(id)
+      return { id: resolved, external: false }
+    } catch {
+      return null
+    }
+  },
+}
+
 export default defineConfig({
-  plugins: [stubCss, stubFederation, react()],
+  plugins: [stubCss, stubFederation, workspaceDepResolver, react()],
   resolve: {
     alias: {
       '@fuzefront/identity-ui': identityUiSrc,
@@ -117,6 +140,7 @@ export default defineConfig({
       '@fuzefront/portal-branding-ui': portalBrandingUiSrc,
       '@fuzefront/portal-admin-ui': portalAdminUiSrc,
       '@fuzefront/portal-client': portalClientSrc,
+      '@fuzeone/selection-lists-ui': selectionListsUiSrc,
       // config-client + config-ui: same unbuilt-dist case as billing-* above.
       // package.json main points at a dist/ that CI never builds, so the Config
       // pages fail to resolve them unless aliased to SOURCE here too. vite.config.ts
