@@ -17,8 +17,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@izzywdev/fuzefront-identity": "1.1.0",
-    "@fuzefront/core": "1.0.3",
+    "@izzywdev/fuzefront-identity": "1.2.0",
+    "@fuzefront/core": "1.0.4",
     "@fuzefront/feature-flags": "file:../../packages/feature-flags",
     "@fuzefront/shared": "^1.2.0",
     "@fuzefront/telemetry": "0.1.0",
