@@ -15,6 +15,7 @@ export const qualityResources = {
   evidence: resource('Evidence'),
   suggestion: resource('Suggestion'),
   testImplementation: resource('TestImplementation'),
+  execution: resource('Execution'),
   organizationAccess: resource('OrganizationAccess'),
   repositoryAdministration: resource('RepositoryAdministration'),
   platformAdministration: resource('PlatformAdministration'),

@@ -118,3 +118,14 @@ jobs:
             frontend/playwright-report-post-prod/
             frontend/test-results-post-prod/
           retention-days: 14
+
+      # Keep the successful FuzeQuality browser recording easy to find instead
+      # of burying it in the HTML report. This is evidence for /app/fuzequality.
+      - name: Upload FuzeQuality post-production video
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzequality-post-prod-playwright-video
+          path: frontend/test-results-post-prod/**/video.webm
+          if-no-files-found: warn
+          retention-days: 30

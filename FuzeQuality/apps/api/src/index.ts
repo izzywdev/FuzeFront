@@ -7,6 +7,7 @@ import {
   reviewDecisionSchema,
   expectationExclusionSchema,
   testExecutionInputSchema,
+  performanceTestRequestSchema,
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
@@ -18,6 +19,7 @@ import {
   createEventBus,
   linkExecutionArtifacts,
   executionPerformance,
+  filterTestExecutions,
   repositoryCatalogStatus,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
@@ -27,7 +29,7 @@ import {
   webhookScanCommands,
   webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { githubInstallationToken } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
@@ -63,6 +65,7 @@ const maySyncRequirements: express.RequestHandler = (request, response, next) =>
 }
 const mayCreateTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'create')
 const mayReadTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'read')
+const mayRunExecution = requirePlatformPermission(qualityResources.execution, 'run')
 const mayReadOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'read')
 const mayManageOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'manage')
 const mayManageRepositoryAdministration = requirePlatformPermission(qualityResources.repositoryAdministration, 'manage')
@@ -75,7 +78,13 @@ const invitationSchema = z.object({
 }).strict()
 const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
 const repositoryFlowReviewSchema = z.object({ status: z.enum(['confirmed', 'rejected']) }).strict()
-const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']) }).strict()
+const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']), reason: z.string().trim().min(3).max(2000).optional() }).strict()
+const executionFilterSchema = z.object({
+  kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']).optional(),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']).optional(),
+  from: z.string().datetime().optional(),
+  until: z.string().datetime().optional(),
+}).strict()
 const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
@@ -448,7 +457,7 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, parsed.data.status)
+  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason })
   if (!evaluation || evaluation.repositoryId !== repositoryId) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   response.json(evaluation)
 })
@@ -456,13 +465,34 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.testExecutions(repositoryId, tenantId))
+  const filter = executionFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  response.json(filterTestExecutions(await store.testExecutions(repositoryId, tenantId), filter.data))
 })
 app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(executionPerformance(await store.testExecutions(repositoryId, tenantId)))
+  const filter = executionFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  response.json(executionPerformance(filterTestExecutions(await store.testExecutions(repositoryId, tenantId), filter.data)))
+})
+app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
+  const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifact = (await store.qualityArtifacts(repositoryId, tenantId)).find(item => item.id === parsed.data.artifactId)
+  if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Dispatchable performance test not found' })
+  if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
+  try {
+    await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, defaultBranch: repository.defaultBranch, installationId: repository.installationId, workflowPath: artifact.sourcePath })
+    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath: artifact.sourcePath, ref: repository.defaultBranch })
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'PERFORMANCE_DISPATCH_FAILED' })
+  }
 })
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)

@@ -121,3 +121,21 @@ jobs:
           done
           echo "::error::could not push the FuzeQuality image tag bump after 3 attempts"
           exit 1
+
+  # The tag bump is the production deploy request. Do not call a FuzeQuality
+  # image release complete until Argo has rolled it out and an authenticated
+  # browser has mounted its federated portal route.
+  post-deploy-verification:
+    name: Verify deployed FuzeQuality in the portal
+    needs: build-and-bump
+    uses: ./.github/workflows/prod-post-deploy.yml
+    with:
+      release_sha: ${{ github.sha }}
+      reason: FuzeQuality image release
+      base_url: https://app.fuzefront.com
+    secrets:
+      POST_PROD_EMAIL: ${{ secrets.POST_PROD_EMAIL }}
+      POST_PROD_PASSWORD: ${{ secrets.POST_PROD_PASSWORD }}
+      INTERNAL_PROVISION_SECRET: ${{ secrets.INTERNAL_PROVISION_SECRET }}
+      POST_PROD_ADMIN_EMAIL: ${{ secrets.POST_PROD_ADMIN_EMAIL }}
+      POST_PROD_ADMIN_PASSWORD: ${{ secrets.POST_PROD_ADMIN_PASSWORD }}

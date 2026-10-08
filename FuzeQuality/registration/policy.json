@@ -57,6 +57,11 @@
       }
     },
     {
+      "key": "Execution",
+      "name": "Test execution",
+      "actions": { "run": { "name": "Run" } }
+    },
+    {
       "key": "OrganizationAccess",
       "name": "Organization access",
       "actions": {
@@ -126,6 +131,7 @@
         "Suggestion:suppress",
         "TestImplementation:read",
         "TestImplementation:create",
+        "Execution:run",
         "OrganizationAccess:read",
         "OrganizationAccess:manage",
         "RepositoryAdministration:manage",

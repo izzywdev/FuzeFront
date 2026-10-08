@@ -5,7 +5,7 @@ export const GITHUB_APP_PERMISSIONS = {
   metadata: 'read',
   contents: 'read',
   pull_requests: 'read',
-  actions: 'read',
+  actions: 'write',
 } as const
 
 export const GITHUB_APP_EVENTS = [

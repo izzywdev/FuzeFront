@@ -81,9 +81,10 @@ export const api = {
   repositoryFlowCandidates: (id: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates`),
   reviewRepositoryFlowCandidate: (repositoryId: string, candidateId: string, status: 'confirmed' | 'rejected') => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/review`, { method: 'POST', body: JSON.stringify({ status }) }),
   policyGateEvaluations: (id: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation[]>(`/api/v1/repositories/${id}/policy-gate-evaluations`),
-  reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed') => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status }) }),
-  testExecutions: (id: string) => request<import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions`),
-  executionPerformance: (id: string) => request<import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance`),
+  reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
+  testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
+  executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
+  runPerformanceTest: (repositoryId: string, artifactId: string) => request<{ status: string }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, { method: 'POST' }),
   scanRepository: (id: string, localPath?: string) =>
     request(`/api/v1/repositories/${id}/scans`, {
       method: 'POST',

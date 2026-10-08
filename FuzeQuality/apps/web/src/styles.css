@@ -118,6 +118,12 @@ button:disabled { cursor: wait; opacity: .55; }
 .filter-bar { display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 8px; margin-top: 27px; padding: 10px 13px; border: 1px solid var(--line); background: #091724; color: var(--muted); }.filter-bar input { border: 0; background: transparent; color: var(--text); outline: 0; }.filter-bar span { font: 10px 'IBM Plex Mono'; }
 .compact-stats { margin-bottom: 16px; }
 .catalog-filters { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(190px, 1.2fr); gap: 10px; margin-bottom: 16px; }
+.catalog-filters label { display: grid; gap: 5px; color: var(--muted); font: 10px 'IBM Plex Mono'; text-transform: uppercase; letter-spacing: .06em; }
+.catalog-filters select { min-width: 0; padding: 9px 10px; border: 1px solid #294359; background: #07131e; color: var(--text); }
+.execution-trend { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; padding: 11px; border: 1px solid var(--line); background: #091724; color: var(--muted); font-size: 11px; }
+.execution-trend div { display: grid; grid-template-columns: repeat(4, auto); gap: 7px; padding: 8px; border: 1px solid #20384b; }.execution-trend strong { grid-column: 1 / -1; color: var(--text); font: 500 10px 'IBM Plex Mono'; }.execution-trend span:nth-child(3) { color: var(--cyan); }.execution-trend span:nth-child(4) { color: var(--coral); }
+.flow-wireframe { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; padding: 0; list-style: none; }.flow-wireframe li { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid #315066; background: #0a1b29; color: #c4d8e6; font-size: 11px; }.flow-wireframe li:not(:last-child)::after { content: '→'; margin-left: 3px; color: var(--cyan); }.flow-wireframe span { color: var(--cyan); font: 10px 'IBM Plex Mono'; }
+.execution-source { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; color: var(--cyan); font-size: 11px; }
 .catalog-filters label, .snapshot-stamp { display: grid; gap: 6px; padding: 11px 12px; border: 1px solid var(--line); background: #091724; color: var(--muted); font: 10px 'IBM Plex Mono'; text-transform: uppercase; letter-spacing: .06em; }
 .catalog-filters select { width: 100%; border: 0; background: transparent; color: var(--text); text-transform: none; }
 .catalog-filters option { background: var(--panel); }

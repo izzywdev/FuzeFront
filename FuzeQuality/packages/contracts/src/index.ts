@@ -430,7 +430,8 @@ export type RepositoryFlowCandidate = {
   confidence: number
   evidence: string[]
   steps: Array<{ actor: string; action: string; expectedOutcome: string; targetIds: string[] }>
-  wireframe?: { kind: 'sequence'; nodes: Array<{ label: string; targetIds: string[] }> }
+  /** A source-derived review wireframe is mandatory for every UX-flow candidate. */
+  wireframe: { kind: 'sequence'; nodes: Array<{ label: string; targetIds: string[] }> }
   status: 'proposed' | 'confirmed' | 'rejected'
   source: 'deterministic' | 'litellm'
   createdAt: string
@@ -452,6 +453,8 @@ export type PolicyGateEvaluation = {
   /** Human review is required before a remediation recommendation is acted on. */
   reviewStatus: 'proposed' | 'accepted' | 'dismissed'
   reviewedAt?: string
+  reviewedBy?: string
+  reviewReason?: string
   createdAt: string
 }
 
@@ -478,6 +481,8 @@ export const testExecutionInputSchema = z.object({
   sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
   policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]), summary: z.string().max(5000).optional(),
 }).strict()
+
+export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()
 
 export type Portfolio = {
   repositories: Repository[]

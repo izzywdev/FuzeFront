@@ -233,6 +233,7 @@ GET /api/v1/repositories/{}/policy-gate-evaluations  # fuzequality: tenant-autho
 POST /api/v1/repositories/{}/policy-gate-evaluations/{}/review  # fuzequality: tenant-authorized governance review action; not public contract surface
 GET /api/v1/repositories/{}/test-executions  # fuzequality: tenant-authorized CI evidence; not public contract surface
 GET /api/v1/repositories/{}/execution-performance  # fuzequality: tenant-authorized derived gate performance; not public contract surface
+POST /api/v1/repositories/{}/performance-tests/{}/execute  # fuzequality: admin-authorized GitHub workflow dispatch; not public or MCP contract surface
 #
 # --- O1: applications-service Kubernetes readiness probe (#1137) ---
 # NOT a debt in the sense this file's header warns about (a spec gap to close):

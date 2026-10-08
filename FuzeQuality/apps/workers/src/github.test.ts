@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { scanRequestedSchema } from '@fuzequality/contracts'
-import { checkoutRepository, type CheckoutOptions } from './github'
+import { checkoutRepository, dispatchPerformanceWorkflow, type CheckoutOptions } from './github'
 
 const sha = '0123456789abcdef0123456789abcdef01234567'
 
@@ -99,5 +99,14 @@ describe('secure GitHub checkout', () => {
     await checkoutRepository(options)
     expect(onMetrics).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'success', repository: 'fuze/sample' }))
     expect(JSON.stringify(onMetrics.mock.calls)).not.toContain('super-secret-token')
+  })
+})
+
+describe('controlled performance workflow dispatch', () => {
+  it('dispatches only a scanned workflow against the configured default branch', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    await dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', defaultBranch: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })
+    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining('/actions/workflows/.github%2Fworkflows%2Fload-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'main' }) }))
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', defaultBranch: 'main', installationId: '1234', workflowPath: '../workflow.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
   })
 })

@@ -124,6 +124,33 @@ export async function githubInstallationToken(installationId: string): Promise<s
   return body.token
 }
 
+/** Dispatches only a repository-owned workflow on its configured default branch. */
+export async function dispatchPerformanceWorkflow(input: {
+  owner: string
+  name: string
+  defaultBranch: string
+  installationId: string
+  workflowPath: string
+  tokenProvider?: (installationId: string) => Promise<string>
+  fetcher?: typeof fetch
+}): Promise<void> {
+  assertIdentifier(input.owner, 'owner')
+  assertIdentifier(input.name, 'repository name')
+  if (!input.workflowPath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(input.workflowPath) || input.workflowPath.includes('..')) {
+    throw new Error('Only a scanned .github/workflows YAML performance workflow may be dispatched')
+  }
+  const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
+  const response = await (input.fetcher ?? fetch)(
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(input.workflowPath)}/dispatches`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'content-type': 'application/json' },
+      body: JSON.stringify({ ref: input.defaultBranch }),
+    },
+  )
+  if (!response.ok) throw new Error(`GitHub performance workflow dispatch failed: ${response.status}`)
+}
+
 /**
  * Fetches exactly one immutable commit into isolated storage. Authentication is
  * passed only as an in-memory HTTP header and is never written to .git/config,
