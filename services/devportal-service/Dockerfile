@@ -64,6 +64,7 @@ RUN npm ci --workspace=services/devportal-service --omit=dev --ignore-scripts &&
 FROM node:24-alpine AS specs
 WORKDIR /app
 COPY scripts/collect-devportal-specs.mjs ./scripts/collect-devportal-specs.mjs
+COPY services/fuzepicker/openapi.yaml ./services/fuzepicker/openapi.yaml
 COPY services/app-registry-service/openapi.yaml ./services/app-registry-service/openapi.yaml
 COPY services/billing-service/openapi.yaml ./services/billing-service/openapi.yaml
 COPY services/chat-service/openapi.yaml ./services/chat-service/openapi.yaml
