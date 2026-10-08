@@ -8,6 +8,7 @@ import type {
   StorybookStory,
   Repository,
   RepositoryScanCandidate,
+  QualityArtifact,
   ScanDiagnostic,
   ScanResult,
   TestCase,
@@ -59,6 +60,27 @@ const TEST_GLOBS = [
   '**/tests/**/*.{ts,tsx,js,jsx,mjs,cjs,py}',
   '**/e2e/**/*.{ts,tsx,js,jsx,mjs,cjs,py}',
 ]
+
+const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: string }> = [
+  { kind: 'policy', glob: '**/{policy,governance,compliance,security}*.{md,json,yaml,yml}' },
+  { kind: 'gate', glob: '**/{gate,required-check,branch-protection}*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,soak}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+]
+
+async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<QualityArtifact[]> {
+  const artifacts: QualityArtifact[] = []
+  for (const candidate of QUALITY_ARTIFACT_GLOBS) {
+    const files = await fg(candidate.glob, { cwd: root, ignore, onlyFiles: true })
+    for (const file of files.slice(0, 100)) {
+      const sourcePath = normalize(file)
+      const source = await readText(root, file).catch(() => '')
+      const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required check/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
+      artifacts.push({ id: `artifact:${repository.id}:${digest(candidate.kind, sourcePath)}`, repositoryId: repository.id, kind: candidate.kind, title: sourcePath.split('/').at(-1) ?? sourcePath, sourcePath, summary: `${candidate.kind.replace('-', ' ')} evidence discovered during repository analysis`, evidence })
+    }
+  }
+  return artifacts.sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind))
+}
 
 function safeRoot(root: string) {
   return resolve(root)
@@ -445,6 +467,27 @@ export async function scanRepository(
   }
   const owner = repository.ownership?.team
   const findings = buildFindings(repository.id, operations, surfaces, expectations, owner)
+  const qualityArtifacts = [
+    ...surfaces.filter(surface => surface.routePath).map(surface => ({
+      id: `artifact:${repository.id}:${digest('route', surface.sourcePath)}`,
+      repositoryId: repository.id,
+      kind: 'route' as const,
+      title: surface.name,
+      sourcePath: surface.sourcePath,
+      summary: `Frontend route ${surface.routePath}`,
+      evidence: [surface.routePath!],
+    })),
+    ...operations.map(operation => ({
+      id: `artifact:${repository.id}:${digest('route', operation.documentPath, operation.method, operation.path)}`,
+      repositoryId: repository.id,
+      kind: 'route' as const,
+      title: `${operation.method.toUpperCase()} ${operation.path}`,
+      sourcePath: operation.documentPath,
+      summary: operation.summary,
+      evidence: [operation.operationId ?? operation.path],
+    })),
+    ...await discoverQualityArtifacts(root, repository, ignore),
+  ]
   for (const diagnostic of diagnostics.filter(item => item.category === 'openapi')) {
     findings.push({
       id: `finding:${repository.name}:${digest(diagnostic.sourcePath, diagnostic.code)}`,
@@ -500,6 +543,7 @@ export async function scanRepository(
     expectations,
     findings,
     diagnostics,
+    qualityArtifacts,
     scanDetails: {
       sourceRevision: options.sourceRevision,
       catalogRevision: revision,

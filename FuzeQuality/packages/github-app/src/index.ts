@@ -5,6 +5,7 @@ export const GITHUB_APP_PERMISSIONS = {
   metadata: 'read',
   contents: 'read',
   pull_requests: 'read',
+  actions: 'read',
 } as const
 
 export const GITHUB_APP_EVENTS = [
@@ -12,6 +13,7 @@ export const GITHUB_APP_EVENTS = [
   'repository',
   'installation',
   'installation_repositories',
+  'workflow_run',
 ] as const
 
 export const githubWebhookHeadersSchema = z.object({
@@ -32,6 +34,18 @@ export type ScanCommand = {
   repositoryId: string
   commitSha?: string
   trigger: 'push' | 'reconcile'
+}
+
+export type WorkflowExecutionCommand = {
+  repositoryId: string
+  revision: string
+  kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  name: string
+  sourceUrl?: string
+  startedAt?: string
+  completedAt?: string
+  summary?: string
 }
 
 type GithubRepository = {
@@ -59,6 +73,15 @@ const installationSchema = z.object({
   installation: z.object({ id: z.number().int().positive() }),
   repositories: z.array(z.object({ full_name: z.string() })).optional(),
   repositories_added: z.array(z.object({ full_name: z.string() })).optional(),
+})
+const workflowRunSchema = z.object({
+  action: z.enum(['requested', 'in_progress', 'completed']),
+  repository: z.object({ full_name: z.string(), default_branch: z.string() }),
+  workflow_run: z.object({
+    head_branch: z.string().nullable(), head_sha: z.string().regex(/^[0-9a-f]{40}$/i), name: z.string().min(1),
+    status: z.enum(['queued', 'in_progress', 'completed']), conclusion: z.enum(['success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', 'action_required']).nullable(),
+    html_url: z.string().url().optional(), run_started_at: z.string().datetime().nullable(), updated_at: z.string().datetime(),
+  }),
 })
 
 export function verifyGithubWebhook(payload: Buffer, signature: string, secret: string): boolean {
@@ -106,6 +129,19 @@ export function webhookScanCommands(
   }
 
   return []
+}
+
+/** Maps only default-branch GitHub Actions evidence to immutable execution rows. */
+export function webhookWorkflowExecutions(event: string, payload: unknown, repositories: OnboardedRepository[]): WorkflowExecutionCommand[] {
+  if (event !== 'workflow_run') return []
+  const parsed = workflowRunSchema.safeParse(payload)
+  if (!parsed.success || parsed.data.workflow_run.head_branch !== parsed.data.repository.default_branch) return []
+  const repository = findRepository(repositories, parsed.data.repository)
+  if (!repository) return []
+  const run = parsed.data.workflow_run
+  const kind = /stress/i.test(run.name) ? 'stress' : /load/i.test(run.name) ? 'load' : /post[- ]?prod|production/i.test(run.name) ? 'post-production' : /integration/i.test(run.name) ? 'integration' : 'ci'
+  const status = run.status !== 'completed' ? 'running' : run.conclusion === 'success' ? 'passed' : run.conclusion === 'cancelled' || run.conclusion === 'skipped' ? 'cancelled' : 'failed'
+  return [{ repositoryId: repository.id, revision: run.head_sha, kind, status, name: run.name, sourceUrl: run.html_url, startedAt: run.run_started_at ?? undefined, completedAt: run.status === 'completed' ? run.updated_at : undefined, summary: run.conclusion ?? undefined }]
 }
 
 function findRepository(repositories: OnboardedRepository[], githubRepository: GithubRepository) {

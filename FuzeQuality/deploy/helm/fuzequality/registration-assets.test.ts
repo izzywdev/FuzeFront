@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 
 const read = (relativePath: string) =>
   readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8').trim()
@@ -25,5 +26,17 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(template).toContain('files/registration/manifest.json')
     expect(template).toContain('files/registration/policy.json')
     expect(template).toContain('files/onboarding-kit/register.sh')
+  })
+
+  it('keeps the production portal registration, mount, and Vite federation identity aligned', () => {
+    const manifest = JSON.parse(read('../../../registration/manifest.json')) as { slug: string; integration: { remoteEntry: string; scope: string }; routing: { path: string } }
+    const production = parse(read('values-prod.yaml')) as { registration: { enabled: boolean }; federatedMount: { enabled: boolean; host: string; slug: string } }
+    const vite = read('../../../apps/web/vite.config.ts')
+    expect(production.registration.enabled).toBe(true)
+    expect(production.federatedMount).toMatchObject({ enabled: true, host: 'app.fuzefront.com', slug: manifest.slug })
+    expect(manifest.routing.path).toBe(`/app/${manifest.slug}`)
+    expect(manifest.integration).toMatchObject({ scope: manifest.slug, remoteEntry: `/apps/${manifest.slug}/assets/remoteEntry.js` })
+    expect(vite).toContain(`base: '/apps/${manifest.slug}/'`)
+    expect(vite).toContain(`name: '${manifest.slug}'`)
   })
 })

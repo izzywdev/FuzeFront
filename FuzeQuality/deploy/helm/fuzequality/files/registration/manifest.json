@@ -1,6 +1,6 @@
 {
   "manifestVersion": "1",
-  "slug": "quality",
+  "slug": "fuzequality",
   "name": "Quality",
   "menuLabel": "Quality",
   "description": "Evidence graph across repositories, OpenAPI contracts, frontend surfaces, automated tests and Jira requirements.",
@@ -20,6 +20,8 @@
     "path": "/app/fuzequality",
     "host": "quality.prod.fuzefront.com"
   },
-  "visibility": "organization",
+  "visibility": "public",
+  "scopeLevel": "both",
+  "installMode": "both",
   "roles": []
 }

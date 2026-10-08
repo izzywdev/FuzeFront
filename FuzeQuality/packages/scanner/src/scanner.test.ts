@@ -21,6 +21,24 @@ const repository: Repository = {
 }
 
 describe('repository scanner', () => {
+  it('records deterministic policy, gate, and performance evidence for later reviewed analysis', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-governance-'))
+    await mkdir(join(root, 'governance'), { recursive: true })
+    await mkdir(join(root, 'load'), { recursive: true })
+    await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@fuze/governance' }))
+    await writeFile(join(root, 'governance', 'security-policy.md'), '# Policy\nEvery release must pass the authentication gate.')
+    await writeFile(join(root, 'governance', 'gate_platform_auth.py'), 'REQUIRED_CHECK = "authentication gate"')
+    await writeFile(join(root, 'load', 'k6-test.js'), 'export const options = { thresholds: { http_req_failed: ["rate<0.01"] } }')
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.qualityArtifacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'policy', sourcePath: 'governance/security-policy.md' }),
+      expect.objectContaining({ kind: 'gate', sourcePath: 'governance/gate_platform_auth.py' }),
+      expect.objectContaining({ kind: 'load-test', sourcePath: 'load/k6-test.js' }),
+    ]))
+  })
+
   it('builds API and frontend expectations from repository files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-'))
     await mkdir(join(root, 'src'), { recursive: true })

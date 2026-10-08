@@ -15,6 +15,13 @@ import type {
   TestImplementationRequest,
   ExpectationExclusionInput,
   CoverageProjection,
+  QualityArtifact,
+  RepositoryFlowCandidate,
+  PolicyGateEvaluation,
+  TestExecution,
+  QualityTenant,
+  QualityPrincipal,
+  QualityMembership,
 } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
@@ -25,6 +32,15 @@ export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
   repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]>
+  qualityArtifacts(repositoryId: string, tenantId: string): Promise<QualityArtifact[]>
+  repositoryFlowCandidates(repositoryId: string, tenantId: string): Promise<RepositoryFlowCandidate[]>
+  saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void>
+  reviewRepositoryFlowCandidate(id: string, tenantId: string, status: 'confirmed' | 'rejected'): Promise<RepositoryFlowCandidate | undefined>
+  policyGateEvaluations(repositoryId: string, tenantId: string): Promise<PolicyGateEvaluation[]>
+  savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void>
+  reviewPolicyGateEvaluation(id: string, tenantId: string, status: 'accepted' | 'dismissed'): Promise<PolicyGateEvaluation | undefined>
+  testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]>
+  saveTestExecution(execution: TestExecution): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
     id: string,
@@ -48,6 +64,11 @@ export interface CatalogStore {
   testImplementation(id: string, tenantId: string): Promise<TestImplementationRequest | undefined>
   updateTestImplementation(id: string, value: Partial<Pick<TestImplementationRequest, 'status' | 'workflowUrl' | 'pullRequestUrl' | 'error'>>): Promise<void>
   recordAdminContext(input: Omit<AdminContextAudit, 'id' | 'createdAt'>): Promise<AdminContextAudit>
+  upsertTenant(tenant: QualityTenant): Promise<boolean>
+  deactivateTenant(tenantId: string): Promise<boolean>
+  upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
+  deactivatePrincipal(principalId: string): Promise<boolean>
+  setOrganizationMembership(membership: QualityMembership): Promise<boolean>
 }
 
 const emptyPortfolio = (): Portfolio => ({
@@ -71,6 +92,13 @@ export class MemoryCatalogStore implements CatalogStore {
   private syncCursors: SyncCursor[] = []
   private scanHistory: Array<{ repositoryId: string; item: RepositoryScanHistoryEntry }> = []
   private exclusions = new Map<string, ExpectationExclusionInput>()
+  private artifacts: Array<QualityArtifact & { revision: string }> = []
+  private flowCandidates: RepositoryFlowCandidate[] = []
+  private policyGateResults: PolicyGateEvaluation[] = []
+  private executions: TestExecution[] = []
+  private tenants = new Map<string, QualityTenant>()
+  private principals = new Map<string, QualityPrincipal>()
+  private memberships = new Map<string, QualityMembership>()
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -112,6 +140,60 @@ export class MemoryCatalogStore implements CatalogStore {
   async repositoryScanHistory(id: string, tenantId: string) {
     if (!await this.repository(id, tenantId)) return []
     return this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
+  }
+
+  async qualityArtifacts(repositoryId: string, tenantId: string) {
+    if (!await this.repository(repositoryId, tenantId)) return []
+    return this.artifacts.filter(item => item.repositoryId === repositoryId).map(({ revision: _revision, ...item }) => item)
+  }
+
+  async repositoryFlowCandidates(repositoryId: string, tenantId: string) {
+    return this.flowCandidates.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+  }
+
+  async saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]) {
+    for (const candidate of candidates) {
+      const index = this.flowCandidates.findIndex(item => item.repositoryId === candidate.repositoryId && item.revision === candidate.revision && item.title === candidate.title && item.source === candidate.source)
+      if (index >= 0) this.flowCandidates[index] = candidate
+      else this.flowCandidates.push(candidate)
+    }
+  }
+
+  async reviewRepositoryFlowCandidate(id: string, tenantId: string, status: 'confirmed' | 'rejected') {
+    const item = this.flowCandidates.find(candidate => candidate.id === id && candidate.tenantId === tenantId)
+    if (!item) return undefined
+    item.status = status
+    return item
+  }
+
+  async policyGateEvaluations(repositoryId: string, tenantId: string) {
+    return this.policyGateResults.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+  }
+
+  async savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]) {
+    for (const evaluation of evaluations) {
+      const index = this.policyGateResults.findIndex(item => item.repositoryId === evaluation.repositoryId && item.revision === evaluation.revision && item.kind === evaluation.kind && item.title === evaluation.title)
+      if (index >= 0) this.policyGateResults[index] = { ...evaluation, reviewStatus: this.policyGateResults[index].reviewStatus, reviewedAt: this.policyGateResults[index].reviewedAt }
+      else this.policyGateResults.push(evaluation)
+    }
+  }
+
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, status: 'accepted' | 'dismissed') {
+    const item = this.policyGateResults.find(evaluation => evaluation.id === id && evaluation.tenantId === tenantId)
+    if (!item) return undefined
+    item.reviewStatus = status
+    item.reviewedAt = new Date().toISOString()
+    return item
+  }
+
+  async testExecutions(repositoryId: string, tenantId: string) {
+    return this.executions.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+  }
+
+  async saveTestExecution(execution: TestExecution) {
+    const index = this.executions.findIndex(item => item.repositoryId === execution.repositoryId && item.revision === execution.revision && item.kind === execution.kind && item.name === execution.name && item.sourceUrl === execution.sourceUrl)
+    if (index >= 0) this.executions[index] = execution
+    else this.executions.push(execution)
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -181,6 +263,10 @@ export class MemoryCatalogStore implements CatalogStore {
       ...this.data.diagnostics.filter(item => item.repositoryId !== result.repository.id),
       ...result.diagnostics.map(item => ({ ...item, repositoryId: result.repository.id, revision: result.revision })),
     ]
+    this.artifacts = [
+      ...this.artifacts.filter(item => item.repositoryId !== result.repository.id),
+      ...(result.qualityArtifacts ?? []).map(item => ({ ...item, revision: result.revision })),
+    ]
     this.scanHistory.unshift({ repositoryId: result.repository.id, item: { revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
   }
 
@@ -225,7 +311,7 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async rebuildCoverage() {
-    const projection = buildQualityIntelligenceProjection(this.data)
+    const projection = buildQualityIntelligenceProjection(this.data, { policyGateEvaluations: this.policyGateResults })
     this.data.findings = [
       ...this.data.findings.filter(item => !isQualityIntelligenceFinding(item.type)),
       ...projection.findings,
@@ -297,6 +383,42 @@ export class MemoryCatalogStore implements CatalogStore {
     const audit = { ...input, id: randomUUID(), createdAt: new Date().toISOString() }
     this.adminContextAudits.push(audit)
     return audit
+  }
+
+  async upsertTenant(tenant: QualityTenant) {
+    const previous = this.tenants.get(tenant.id)
+    const changed = JSON.stringify(previous) !== JSON.stringify(tenant)
+    this.tenants.set(tenant.id, structuredClone(tenant))
+    return changed
+  }
+
+  async deactivateTenant(tenantId: string) {
+    const tenant = this.tenants.get(tenantId)
+    if (!tenant || !tenant.active) return false
+    tenant.active = false
+    return true
+  }
+
+  async upsertPrincipal(principal: QualityPrincipal) {
+    const previous = this.principals.get(principal.id)
+    const changed = JSON.stringify(previous) !== JSON.stringify(principal)
+    this.principals.set(principal.id, structuredClone(principal))
+    return changed
+  }
+
+  async deactivatePrincipal(principalId: string) {
+    const principal = this.principals.get(principalId)
+    if (!principal || !principal.active) return false
+    principal.active = false
+    return true
+  }
+
+  async setOrganizationMembership(membership: QualityMembership) {
+    const key = `${membership.tenantId}:${membership.principalId}`
+    const previous = this.memberships.get(key)
+    const changed = JSON.stringify(previous) !== JSON.stringify(membership)
+    this.memberships.set(key, structuredClone(membership))
+    return changed
   }
 }
 
@@ -385,6 +507,137 @@ export class PostgresCatalogStore implements CatalogStore {
     return result.rows.map(row => ({ revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
   }
 
+  async qualityArtifacts(repositoryId: string, tenantId: string): Promise<QualityArtifact[]> {
+    if (!await this.repository(repositoryId, tenantId)) return []
+    const result = await this.pool.query(
+      `SELECT DISTINCT ON (kind, source_path) id, repository_id, kind, title, source_path, summary, evidence
+       FROM fuzequality.repository_quality_artifacts
+       WHERE repository_id=$1 ORDER BY kind, source_path, discovered_at DESC`,
+      [repositoryId],
+    )
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence }))
+  }
+
+  async repositoryFlowCandidates(repositoryId: string, tenantId: string): Promise<RepositoryFlowCandidate[]> {
+    const result = await this.pool.query(
+      `SELECT * FROM fuzequality.repository_flow_candidates
+       WHERE repository_id=$1 AND tenant_id=$2 ORDER BY created_at DESC`,
+      [repositoryId, tenantId],
+    )
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: row.wireframe, status: row.status, source: row.source, createdAt: row.created_at.toISOString() }))
+  }
+
+  async saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void> {
+    for (const item of candidates) await this.pool.query(
+      `INSERT INTO fuzequality.repository_flow_candidates (id,repository_id,tenant_id,revision,title,confidence,evidence,steps,wireframe,status,source,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (repository_id,revision,title,source) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,status='proposed',created_at=EXCLUDED.created_at`,
+      [item.id,item.repositoryId,item.tenantId,item.revision,item.title,item.confidence,JSON.stringify(item.evidence),JSON.stringify(item.steps),JSON.stringify(item.wireframe ?? { kind: 'sequence', nodes: [] }),item.status,item.source,item.createdAt],
+    )
+  }
+
+  async reviewRepositoryFlowCandidate(id: string, tenantId: string, status: 'confirmed' | 'rejected') {
+    const result = await this.pool.query('UPDATE fuzequality.repository_flow_candidates SET status=$3 WHERE id=$1 AND tenant_id=$2 RETURNING *', [id, tenantId, status])
+    const row = result.rows[0]
+    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: row.wireframe, status: row.status, source: row.source, createdAt: row.created_at.toISOString() } : undefined
+  }
+
+  async policyGateEvaluations(repositoryId: string, tenantId: string): Promise<PolicyGateEvaluation[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM fuzequality.policy_gate_evaluations WHERE repository_id=$1 AND tenant_id=$2 ORDER BY created_at DESC',
+      [repositoryId, tenantId],
+    )
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), createdAt: row.created_at.toISOString() }))
+  }
+
+  async savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void> {
+    for (const item of evaluations) await this.pool.query(
+      `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,recommendation,review_status,reviewed_at,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (repository_id,revision,kind,title) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,recommendation=EXCLUDED.recommendation,created_at=EXCLUDED.created_at`,
+      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
+    )
+  }
+
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, status: 'accepted' | 'dismissed') {
+    const result = await this.pool.query('UPDATE fuzequality.policy_gate_evaluations SET review_status=$3, reviewed_at=now() WHERE id=$1 AND tenant_id=$2 RETURNING *', [id, tenantId, status])
+    const row = result.rows[0]
+    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), createdAt: row.created_at.toISOString() } : undefined
+  }
+
+  async testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]> {
+    const result = await this.pool.query('SELECT * FROM fuzequality.test_executions WHERE repository_id=$1 AND tenant_id=$2 ORDER BY completed_at DESC NULLS LAST, created_at DESC', [repositoryId, tenantId])
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, status: row.status, name: row.name, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, summary: row.summary ?? undefined }))
+  }
+
+  async saveTestExecution(item: TestExecution): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,revision,kind,status,name,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,summary)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (repository_id,revision,kind,name,source_url) DO UPDATE SET status=EXCLUDED.status,started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,summary=EXCLUDED.summary`,
+      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.status,item.name,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.summary ?? null],
+    )
+  }
+
+  async upsertTenant(tenant: QualityTenant): Promise<boolean> {
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.tenants (id,slug,name,tenant_type,owner_id,active,deleted_at,updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,CASE WHEN $6 THEN NULL ELSE now() END,now())
+       ON CONFLICT (id) DO UPDATE SET slug=EXCLUDED.slug,name=EXCLUDED.name,tenant_type=EXCLUDED.tenant_type,
+         owner_id=EXCLUDED.owner_id,active=EXCLUDED.active,deleted_at=CASE WHEN EXCLUDED.active THEN NULL ELSE now() END,
+         updated_at=now()
+       WHERE (fuzequality.tenants.slug,fuzequality.tenants.name,fuzequality.tenants.tenant_type,
+         fuzequality.tenants.owner_id,fuzequality.tenants.active)
+         IS DISTINCT FROM (EXCLUDED.slug,EXCLUDED.name,EXCLUDED.tenant_type,EXCLUDED.owner_id,EXCLUDED.active)
+       RETURNING id`,
+      [tenant.id, tenant.slug, tenant.name, tenant.type, tenant.ownerId ?? null, tenant.active],
+    )
+    return Boolean(result.rowCount)
+  }
+
+  async deactivateTenant(tenantId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      'UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+      [tenantId],
+    )
+    return Boolean(result.rowCount)
+  }
+
+  async upsertPrincipal(principal: QualityPrincipal): Promise<boolean> {
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.principals (id,email,first_name,last_name,active,deleted_at,updated_at)
+       VALUES ($1,$2,$3,$4,$5,CASE WHEN $5 THEN NULL ELSE now() END,now())
+       ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,
+         active=EXCLUDED.active,deleted_at=CASE WHEN EXCLUDED.active THEN NULL ELSE now() END,updated_at=now()
+       WHERE (fuzequality.principals.email,fuzequality.principals.first_name,fuzequality.principals.last_name,
+         fuzequality.principals.active) IS DISTINCT FROM (EXCLUDED.email,EXCLUDED.first_name,EXCLUDED.last_name,EXCLUDED.active)
+       RETURNING id`,
+      [principal.id, principal.email, principal.firstName ?? null, principal.lastName ?? null, principal.active],
+    )
+    return Boolean(result.rowCount)
+  }
+
+  async deactivatePrincipal(principalId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      'UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+      [principalId],
+    )
+    return Boolean(result.rowCount)
+  }
+
+  async setOrganizationMembership(membership: QualityMembership): Promise<boolean> {
+    const result = await this.pool.query(
+      `INSERT INTO fuzequality.organization_memberships (tenant_id,principal_id,role,active,updated_at)
+       VALUES ($1,$2,$3,$4,now())
+       ON CONFLICT (tenant_id,principal_id) DO UPDATE SET role=EXCLUDED.role,active=EXCLUDED.active,updated_at=now()
+       WHERE (fuzequality.organization_memberships.role,fuzequality.organization_memberships.active)
+         IS DISTINCT FROM (EXCLUDED.role,EXCLUDED.active)
+       RETURNING tenant_id`,
+      [membership.tenantId, membership.principalId, membership.role, membership.active],
+    )
+    return Boolean(result.rowCount)
+  }
+
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
     const canonicalUrl = `https://github.com/${input.owner}/${input.name}`
     const result = await this.pool.query(
@@ -447,6 +700,13 @@ export class PostgresCatalogStore implements CatalogStore {
       for (const item of result.findings) await client.query(`INSERT INTO fuzequality.findings (id,repository_id,subject_id,type,severity,title,detail,status,owner,remediation,source_revision) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [item.id,item.repositoryId,item.subjectId,item.type,item.severity,item.title,item.detail,item.status,item.owner,item.remediation,result.revision])
       await client.query('DELETE FROM fuzequality.scan_diagnostics WHERE repository_id=$1', [result.repository.id])
       for (const item of result.diagnostics) await client.query(`INSERT INTO fuzequality.scan_diagnostics (repository_id,revision,source_path,category,severity,code,message) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [result.repository.id,result.revision,item.sourcePath,item.category,item.severity,item.code,item.message])
+      await client.query('DELETE FROM fuzequality.repository_quality_artifacts WHERE repository_id=$1 AND revision=$2', [result.repository.id, result.revision])
+      for (const item of result.qualityArtifacts ?? []) await client.query(
+        `INSERT INTO fuzequality.repository_quality_artifacts (id,repository_id,revision,kind,title,source_path,summary,evidence)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (repository_id,revision,kind,source_path) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,discovered_at=now()`,
+        [item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence)],
+      )
       await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails)])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
@@ -520,11 +780,13 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async rebuildCoverage() {
     const portfolio = await this.portfolio()
-    const projection = buildQualityIntelligenceProjection(portfolio)
+    const evaluationRows = await this.pool.query('SELECT * FROM fuzequality.policy_gate_evaluations')
+    const evaluations = evaluationRows.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), createdAt: row.created_at.toISOString() }))
+    const projection = buildQualityIntelligenceProjection(portfolio, { policyGateEvaluations: evaluations })
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      await client.query('DELETE FROM fuzequality.findings WHERE policy_version = ANY($1::text[])', [[FLOW_COVERAGE_POLICY_VERSION, REQUIREMENT_REVIEW_POLICY_VERSION]])
+      await client.query('DELETE FROM fuzequality.findings WHERE policy_version = ANY($1::text[])', [[FLOW_COVERAGE_POLICY_VERSION, REQUIREMENT_REVIEW_POLICY_VERSION, 'quality-intelligence-v1']])
       for (const item of projection.findings) {
         await client.query(
           `INSERT INTO fuzequality.findings

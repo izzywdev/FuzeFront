@@ -3,12 +3,11 @@ FROM node:24-alpine AS dependencies
 RUN apk add --no-cache git
 WORKDIR /workspace/FuzeQuality
 COPY FuzeQuality/package.json FuzeQuality/.npmrc ./
-# @fuzefront/security-client is a private published contract package. BuildKit
-# mounts its read-only registry token only for installation; it is never copied
-# into an image layer.
-RUN --mount=type=secret,id=GITHUB_TOKEN \
-    export GITHUB_TOKEN="$(cat /run/secrets/GITHUB_TOKEN)" && \
-    npm install --ignore-scripts --no-audit --no-fund
+# FuzeQuality lives inside FuzeFront and consumes the same checked-in Security
+# contract. Installing the local package avoids an otherwise unnecessary
+# GitHub Packages credential during test and image builds.
+COPY packages/security /workspace/packages/security
+RUN npm install --ignore-scripts --no-audit --no-fund
 
 FROM dependencies AS source
 # This COPY is what bakes contracts/openapi.yaml INTO the image, alongside the

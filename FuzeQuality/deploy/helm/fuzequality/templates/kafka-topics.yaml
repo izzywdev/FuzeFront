@@ -22,6 +22,11 @@ spec:
             - |
               export PATH="/opt/kafka/bin:/opt/bitnami/kafka/bin:${PATH}"
               topics=(
+                fuzequality.tenant.seeded
+                fuzequality.tenant.deleted
+                fuzequality.principal.seeded
+                fuzequality.principal.deleted
+                fuzequality.organization-membership.changed
                 fuzequality.repository.scan.requested
                 fuzequality.repository.inventory.changed
                 fuzequality.requirement.sync.requested

@@ -77,6 +77,13 @@ export const api = {
   addRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history`),
+  qualityArtifacts: (id: string) => request<import('@fuzequality/contracts').QualityArtifact[]>(`/api/v1/repositories/${id}/quality-artifacts`),
+  repositoryFlowCandidates: (id: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates`),
+  reviewRepositoryFlowCandidate: (repositoryId: string, candidateId: string, status: 'confirmed' | 'rejected') => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/review`, { method: 'POST', body: JSON.stringify({ status }) }),
+  policyGateEvaluations: (id: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation[]>(`/api/v1/repositories/${id}/policy-gate-evaluations`),
+  reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed') => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status }) }),
+  testExecutions: (id: string) => request<import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions`),
+  executionPerformance: (id: string) => request<import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance`),
   scanRepository: (id: string, localPath?: string) =>
     request(`/api/v1/repositories/${id}/scans`, {
       method: 'POST',

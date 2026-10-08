@@ -6,6 +6,7 @@ import {
   redactGithubDiagnostic,
   verifyGithubWebhook,
   webhookScanCommands,
+  webhookWorkflowExecutions,
 } from './index'
 
 const repositories = [{
@@ -18,8 +19,8 @@ const TEST_WEBHOOK_SECRET = process.env.TEST_WEBHOOK_SECRET ?? 'test-only-not-a-
 
 describe('FuzeQuality GitHub App contract', () => {
   it('declares only the approved read permissions and webhook events', () => {
-    expect(GITHUB_APP_PERMISSIONS).toEqual({ metadata: 'read', contents: 'read', pull_requests: 'read' })
-    expect(GITHUB_APP_EVENTS).toEqual(['push', 'repository', 'installation', 'installation_repositories'])
+    expect(GITHUB_APP_PERMISSIONS).toEqual({ metadata: 'read', contents: 'read', pull_requests: 'read', actions: 'read' })
+    expect(GITHUB_APP_EVENTS).toEqual(['push', 'repository', 'installation', 'installation_repositories', 'workflow_run'])
   })
 
   it('requires a correctly signed raw payload', () => {
@@ -52,5 +53,9 @@ describe('FuzeQuality GitHub App contract', () => {
   it('redacts credentials from diagnostics', () => {
     expect(redactGithubDiagnostic('clone https://x-access-token:ghs_secret@github.com/org/repo.git token=abc'))
       .toBe('clone https://github.com/org/repo.git token=[REDACTED]')
+  })
+
+  it('maps completed default-branch workflow runs to execution evidence', () => {
+    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/1', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({ repositoryId: 'repo-1', kind: 'post-production', status: 'passed' })])
   })
 })

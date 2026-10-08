@@ -12,7 +12,7 @@ Both are checked by `@fuzefront/onboarding-kit`:
 
 ```bash
 node packages/onboarding-kit/bin/validate-registration.mjs FuzeQuality/registration
-node packages/onboarding-kit/bin/validate-policy.mjs --slug quality FuzeQuality/registration/policy.json
+node packages/onboarding-kit/bin/validate-policy.mjs --slug fuzequality FuzeQuality/registration/policy.json
 ```
 
 The registered product is a same-origin Module Federation remote. Its registry
@@ -29,19 +29,25 @@ The manifest was valid against every schema and would have registered cleanly.
 It was also, in three separate ways, a product that could never work properly —
 and each failure is invisible by construction: no 4xx, no log line, no red build.
 
-**1. `slug: "fuzequality"`, `name: "FuzeQuality"` → `quality`, `Quality`.**
-A Fuze product registers on FuzeFront *without* the `Fuze` prefix. The prefix is
-implied by registering on FuzeFront at all, and the slug is user-visible in
-`/app/<slug>` URLs, Permit keys and billing product keys. This is worth fixing
-now rather than later because **`slug` is immutable**: there is no rename, so the
-only correction after the fact is register-the-new-one-then-delete-the-old, which
-orphans the product's Permit grants and CASCADE-deletes its installation rows.
-Free to prevent, expensive to undo.
+**1. The public product identity is `fuzequality` / `Quality`.**
+`FuzeQuality` is the product name; portal labels omit the Fuze prefix. This
+established production registry identity must match the
+same-origin federation mount, Vite base, and `/app/fuzequality` route. The
+earlier `quality` manifest was never compatible with the deployed remote and
+caused the product to disappear from the portal when its phantom built-in was
+suspended. Do not rename this slug: it is immutable once registered.
 
-> If a `fuzequality` row somehow already exists in the registry, do **not** just
-> deploy this — run `packages/onboarding-kit/bin/migrate-slug.mjs`. Nothing in
-> this chart has ever registered anything (see below), so it almost certainly
-> does not exist; check before assuming.
+The policy document uses the same `fuzequality` namespace as the registry so
+the registration Job can submit it successfully and API authorization requests
+the resources that FuzeFront actually creates.
+
+**1a. Install scope is personal and organization.** `scopeLevel: "both"` lets
+an individual install FuzeQuality for their personal account or an organization
+administrator install it for an organization. `installMode: "both"` deliberately
+allows the administrator's organization install to use `mode: "everyone"`; that
+creates one organization-level installation visible to every member, rather than
+one installation per member. FuzeQuality always scopes data to the tenant in
+the FuzeFront security session, never to a per-user organization installation.
 
 **2. `mode: "portal"` with no `modes`.**
 Legal — an absent `modes` falls back to `[mode]` — and it silently means
@@ -95,6 +101,6 @@ Then set `registration.enabled: true` in `values-prod.yaml`.
 
 The API asks the platform for the same keys emitted by FuzeFront's ProductPolicy
 registry: `<slug>_<BareKey>`. For this policy, `Repository` is
-`quality_Repository`, `Evidence` is `quality_Evidence`, and so on. The constants
+`fuzequality_Repository`, `Evidence` is `fuzequality_Evidence`, and so on. The constants
 in `apps/api/src/platform-permissions.ts` make this relationship explicit and
 prevent a hand-written key from silently producing a permanent 403.

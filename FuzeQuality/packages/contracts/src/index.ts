@@ -51,6 +51,31 @@ export type Repository = RepositoryInput & {
   lastScanDetails?: RepositoryScanDetails
 }
 
+/** Local, event-carried projection of the FuzeFront identity hierarchy. */
+export type QualityTenant = {
+  id: string
+  slug: string
+  name: string
+  type: 'platform' | 'organization' | 'personal'
+  ownerId?: string
+  active: boolean
+}
+
+export type QualityPrincipal = {
+  id: string
+  email: string
+  firstName?: string
+  lastName?: string
+  active: boolean
+}
+
+export type QualityMembership = {
+  tenantId: string
+  principalId: string
+  role: string
+  active: boolean
+}
+
 export type RepositoryScanHistoryEntry = {
   revision: string
   branch: string
@@ -373,9 +398,86 @@ export type ScanResult = {
   expectations: TestExpectation[]
   findings: CatalogFinding[]
   diagnostics: ScanDiagnostic[]
+  qualityArtifacts?: QualityArtifact[]
   scanDetails: RepositoryScanDetails
   scannedAt: string
 }
+
+/** Deterministic repository evidence used as input to reviewed quality analysis. */
+export type QualityArtifact = {
+  id: string
+  repositoryId: string
+  kind: 'route' | 'policy' | 'gate' | 'test-plan' | 'load-test' | 'stress-test'
+  title: string
+  sourcePath: string
+  summary: string
+  evidence: string[]
+}
+
+export type RepositoryQualitySnapshot = {
+  repositoryId: string
+  revision: string
+  artifacts: QualityArtifact[]
+  generatedAt: string
+}
+
+export type RepositoryFlowCandidate = {
+  id: string
+  repositoryId: string
+  tenantId: string
+  revision: string
+  title: string
+  confidence: number
+  evidence: string[]
+  steps: Array<{ actor: string; action: string; expectedOutcome: string; targetIds: string[] }>
+  wireframe?: { kind: 'sequence'; nodes: Array<{ label: string; targetIds: string[] }> }
+  status: 'proposed' | 'confirmed' | 'rejected'
+  source: 'deterministic' | 'litellm'
+  createdAt: string
+}
+
+/** A reviewable relationship between a detected repository policy and CI gate. */
+export type PolicyGateEvaluation = {
+  id: string
+  repositoryId: string
+  tenantId: string
+  revision: string
+  kind: 'unguarded-policy' | 'guard-without-policy' | 'contradictory-policy' | 'ambiguous-policy'
+  severity: 'high' | 'medium' | 'low'
+  title: string
+  detail: string
+  policyArtifactIds: string[]
+  gateArtifactIds: string[]
+  recommendation: string
+  /** Human review is required before a remediation recommendation is acted on. */
+  reviewStatus: 'proposed' | 'accepted' | 'dismissed'
+  reviewedAt?: string
+  createdAt: string
+}
+
+export type TestExecution = {
+  id: string
+  repositoryId: string
+  tenantId: string
+  revision: string
+  kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  name: string
+  sourceUrl?: string
+  startedAt?: string
+  completedAt?: string
+  policyArtifactIds: string[]
+  gateArtifactIds: string[]
+  summary?: string
+}
+
+export const testExecutionInputSchema = z.object({
+  repositoryId: z.string().uuid(), tenantId: z.string().min(1), revision: z.string().min(1).max(200),
+  kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
+  sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
+  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]), summary: z.string().max(5000).optional(),
+}).strict()
 
 export type Portfolio = {
   repositories: Repository[]
@@ -489,6 +591,11 @@ export const expectationExclusionSchema = z.object({
 })
 
 export const TOPICS = {
+  TENANT_SEEDED: 'fuzequality.tenant.seeded',
+  TENANT_DELETED: 'fuzequality.tenant.deleted',
+  PRINCIPAL_SEEDED: 'fuzequality.principal.seeded',
+  PRINCIPAL_DELETED: 'fuzequality.principal.deleted',
+  ORGANIZATION_MEMBERSHIP_CHANGED: 'fuzequality.organization-membership.changed',
   REPOSITORY_SCAN_REQUESTED: 'fuzequality.repository.scan.requested',
   REPOSITORY_INVENTORY_CHANGED: 'fuzequality.repository.inventory.changed',
   REQUIREMENT_SYNC_REQUESTED: 'fuzequality.requirement.sync.requested',

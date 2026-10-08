@@ -27,12 +27,12 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'onboard')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'onboard')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.tenantId).toBe('tenant-1')
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
-      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'quality_Repository' }, action: 'onboard',
+      subject: 'user-1', tenant: 'tenant-1', resource: { type: 'fuzequality_Repository' }, action: 'onboard',
     })
   })
 
@@ -43,7 +43,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'onboard')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'onboard')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(503)
@@ -56,7 +56,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(401)
@@ -71,7 +71,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -92,7 +92,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ tenant: 'tenant-from-session' })
@@ -107,7 +107,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -124,7 +124,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(403)
@@ -140,7 +140,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('quality_PlatformAdministration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('fuzequality_PlatformAdministration', 'read')(request, response, next)
 
     expect(next).toHaveBeenCalledOnce()
     expect(requestIdentity(request)?.roles).toContain('admin')
@@ -155,7 +155,7 @@ describe('FQ-69 platform authorization', () => {
     const response = responseDouble()
     const next = vi.fn() as NextFunction
 
-    await requirePlatformAdminPermission('quality_PlatformAdministration', 'read')(request, response, next)
+    await requirePlatformAdminPermission('fuzequality_PlatformAdministration', 'read')(request, response, next)
 
     expect(next).not.toHaveBeenCalled()
     expect(response.status).toHaveBeenCalledWith(403)

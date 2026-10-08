@@ -39,17 +39,21 @@ import type {
   FrontendSurface,
   Portfolio,
   OrganizationQualitySummary,
+  QualityArtifact,
+  PolicyGateEvaluation,
+  RepositoryFlowCandidate,
   Repository,
   RepositoryScanHistoryEntry,
   StorybookStory,
   TestExpectation,
+  TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
 import { api, configurePlatformSecurity, type OrganizationMember, type OrganizationRole } from './api'
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 
-type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'review' | 'operations' | 'organization' | 'administration'
+type View = 'overview' | 'repositories' | 'api' | 'frontend' | 'requirements' | 'intelligence' | 'review' | 'operations' | 'organization' | 'administration'
 
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
@@ -57,11 +61,51 @@ const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'api', label: 'API catalog', icon: Braces },
   { id: 'frontend', label: 'Frontend inventory', icon: Layers3 },
   { id: 'requirements', label: 'Requirements & flows', icon: Network },
+  { id: 'intelligence', label: 'Quality intelligence', icon: ShieldCheck },
   { id: 'review', label: 'AI review queue', icon: Sparkles },
   { id: 'operations', label: 'Operations', icon: Activity },
   { id: 'organization', label: 'Organization', icon: Users },
   { id: 'administration', label: 'Organizations', icon: Building2 },
 ]
+
+const portalMenuItems = navigation
+  .filter(item => item.id !== 'administration')
+  .map((item, index) => ({
+    id: item.id,
+    label: item.label,
+    icon: item.id === 'review' ? '✨' : item.id === 'requirements' ? '🗺️' : '◦',
+    route: `/${item.id}`,
+    order: index + 1,
+  }))
+
+function isView(value: unknown): value is View {
+  return typeof value === 'string' && navigation.some(item => item.id === value)
+}
+
+function viewFromPathname(pathname: string): View | undefined {
+  const match = pathname.match(/^\/app\/fuzequality\/([^/?#]+)/)
+  return match && isView(match[1]) ? match[1] : undefined
+}
+
+/** Publish the app's IA to the portal sidebar; the host remains its renderer. */
+function usePortalMenu(setView: (view: View) => void) {
+  useEffect(() => {
+    const bridge = (window as Window & { __FUZEFRONT__?: { menu?: { add: (appId: string, items: typeof portalMenuItems) => void; remove: (appId: string) => void } } }).__FUZEFRONT__
+    bridge?.menu?.add('fuzequality', portalMenuItems)
+    const onNavigate = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>).detail
+      const target = detail?.section ?? detail?.id
+      if (isView(target)) setView(target)
+    }
+    window.addEventListener('fuzefront:navigate', onNavigate)
+    const initial = viewFromPathname(window.location.pathname)
+    if (initial) setView(initial)
+    return () => {
+      window.removeEventListener('fuzefront:navigate', onNavigate)
+      bridge?.menu?.remove('fuzequality')
+    }
+  }, [setView])
+}
 
 const coverageLabel: Record<CoverageState, string> = {
   'covered-explicit': 'Covered',
@@ -687,6 +731,48 @@ function OrganizationAdministration({ organizations }: { organizations: Organiza
   </>
 }
 
+function RepositoryIntelligence({ data }: { data: Portfolio }) {
+  const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
+  const [flowCandidates, setFlowCandidates] = useState<RepositoryFlowCandidate[]>([])
+  const [policyGateEvaluations, setPolicyGateEvaluations] = useState<PolicyGateEvaluation[]>([])
+  const [executions, setExecutions] = useState<TestExecution[]>([])
+  const [executionPerformance, setExecutionPerformance] = useState<Array<{ policyArtifactId: string; gateArtifactId: string; passed: number; failed: number; cancelled: number; running: number; latestCompletedAt?: string }>>([])
+  const [loadingArtifacts, setLoadingArtifacts] = useState(true)
+  const reviewFlow = async (flow: RepositoryFlowCandidate, status: 'confirmed' | 'rejected') => {
+    const reviewed = await api.reviewRepositoryFlowCandidate(flow.repositoryId, flow.id, status)
+    setFlowCandidates(current => current.map(item => item.id === reviewed.id ? reviewed : item))
+  }
+  const reviewPolicyGate = async (evaluation: PolicyGateEvaluation, status: 'accepted' | 'dismissed') => {
+    const reviewed = await api.reviewPolicyGateEvaluation(evaluation.repositoryId, evaluation.id, status)
+    setPolicyGateEvaluations(current => current.map(item => item.id === reviewed.id ? reviewed : item))
+  }
+  useEffect(() => {
+    let active = true
+    void Promise.all(data.repositories.map(async repository => ({ artifacts: await api.qualityArtifacts(repository.id), flows: await api.repositoryFlowCandidates(repository.id), evaluations: await api.policyGateEvaluations(repository.id), executions: await api.testExecutions(repository.id), performance: await api.executionPerformance(repository.id) }))).then(groups => {
+      if (active) { setArtifacts(groups.flatMap(group => group.artifacts)); setFlowCandidates(groups.flatMap(group => group.flows)); setPolicyGateEvaluations(groups.flatMap(group => group.evaluations)); setExecutions(groups.flatMap(group => group.executions)); setExecutionPerformance(groups.flatMap(group => group.performance)) }
+    }).catch(() => { if (active) { setArtifacts([]); setFlowCandidates([]); setPolicyGateEvaluations([]); setExecutions([]); setExecutionPerformance([]) } }).finally(() => { if (active) setLoadingArtifacts(false) })
+    return () => { active = false }
+  }, [data.repositories])
+  const groups: Array<[QualityArtifact['kind'], string, string]> = [
+    ['route', 'UX flows', 'Routes and API transitions discovered from repository analysis'],
+    ['policy', 'Policies', 'Repository policy evidence awaiting governance review'],
+    ['gate', 'Gates', 'CI and repository guard evidence linked to policy candidates'],
+    ['load-test', 'Load tests', 'Load-test definitions and thresholds discovered in source'],
+    ['stress-test', 'Stress tests', 'Stress and soak-test definitions discovered in source'],
+  ]
+  return <>
+    <PageHeading eyebrow="Repository analysis" title="Quality intelligence" detail="Deterministic repository evidence is stored by revision. LiteLLM proposals remain reviewable suggestions before they affect flows or policy governance." />
+    {loadingArtifacts ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading repository evidence…</span></div> : <div className="catalog-grid">{groups.map(([kind, title, detail]) => {
+      const items = artifacts.filter(item => item.kind === kind)
+      return <section className="catalog-panel" key={kind}><header><div><p className="eyebrow">{items.length} discovered</p><h2>{title}</h2><p>{detail}</p></div></header>
+        <div className="catalog-list">{kind === 'route' && flowCandidates.map(flow => <article className="catalog-row" key={flow.id}><div><strong>{flow.title}</strong><code>{flow.source} · {Math.round(flow.confidence * 100)}% confidence · {flow.status}</code><p>{flow.steps[0]?.action}</p><small>Wireframe: {flow.wireframe?.nodes.map(node => node.label).join(' → ') ?? 'not generated'}</small>{flow.status === 'proposed' && <div className="row-actions"><button className="secondary-button" onClick={() => void reviewFlow(flow, 'confirmed')}><Check size={14} /> Confirm</button><button className="secondary-button" onClick={() => void reviewFlow(flow, 'rejected')}><X size={14} /> Reject</button></div>}</div></article>)}{(kind === 'policy' || kind === 'gate') && policyGateEvaluations.filter(evaluation => kind === 'policy' ? evaluation.policyArtifactIds.length : evaluation.gateArtifactIds.length).map(evaluation => <article className="catalog-row" key={evaluation.id}><div><strong>{evaluation.title}</strong><code>{evaluation.severity} · {evaluation.kind} · {evaluation.reviewStatus}</code><p>{evaluation.detail}</p><small>{evaluation.recommendation}{evaluation.reviewedAt ? ` · Reviewed ${new Date(evaluation.reviewedAt).toLocaleString()}` : ''}</small>{evaluation.reviewStatus === 'proposed' && <div className="row-actions"><button className="secondary-button" onClick={() => void reviewPolicyGate(evaluation, 'accepted')}><Check size={14} /> Accept recommendation</button><button className="secondary-button" onClick={() => void reviewPolicyGate(evaluation, 'dismissed')}><X size={14} /> Dismiss</button></div>}</div></article>)}{items.slice(0, 12).map(item => <article className="catalog-row" key={item.id}><div><strong>{item.title}</strong><code>{item.sourcePath}</code><p>{item.summary}</p>{item.evidence.length > 0 && <small>{item.evidence[0]}</small>}</div></article>)}{items.length === 0 && !(kind === 'route' && flowCandidates.length) && <div className="empty-state"><Search /><strong>No evidence indexed yet</strong><span>Run a repository analysis to populate this inventory.</span></div>}</div>
+      </section>
+    })}</div>}
+    {!loadingArtifacts && <section className="catalog-panel"><header><div><p className="eyebrow">Execution evidence</p><h2>CI and post-production results</h2><p>Imported CI, integration, post-production, load, and stress evidence retains the source revision and linked policy/gates.</p></div></header><div className="catalog-list">{executions.slice(0, 25).map(execution => <article className="catalog-row" key={execution.id}><div><strong>{execution.name}</strong><code>{execution.kind} · {execution.status} · {execution.revision.slice(0, 12)}</code><p>{execution.summary ?? 'No execution summary supplied.'}</p><small>{execution.policyArtifactIds.length} policies · {execution.gateArtifactIds.length} gates {execution.sourceUrl ? `· ${execution.sourceUrl}` : ''}</small></div></article>)}{!executions.length && <div className="empty-state"><TestTube2 /><strong>No execution evidence received</strong><span>Connect CI or submit authenticated execution results for an onboarded repository.</span></div>}</div></section>}
+    {!loadingArtifacts && <section className="catalog-panel"><header><div><p className="eyebrow">Policy–gate performance</p><h2>Observed outcomes</h2><p>Only explicitly linked execution evidence is included; an absent pair is never treated as passing.</p></div></header><div className="catalog-list">{executionPerformance.map(pair => <article className="catalog-row" key={`${pair.policyArtifactId}:${pair.gateArtifactId}`}><div><strong>{pair.policyArtifactId} → {pair.gateArtifactId}</strong><code>{pair.passed} passed · {pair.failed} failed · {pair.cancelled} cancelled · {pair.running} running</code><small>{pair.latestCompletedAt ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}` : 'No completed run yet'}</small></div></article>)}{!executionPerformance.length && <div className="empty-state"><ShieldCheck /><strong>No linked performance yet</strong><span>Execution results will appear after a detected workflow matches a policy-backed gate.</span></div>}</div></section>}
+  </>
+}
+
 function PageHeading({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail: string; action?: React.ReactNode }) { return <header className="page-header compact"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="lede">{detail}</p></div>{action}</header> }
 
 export function App({ getToken }: { getToken?: () => string | null } = {}) {
@@ -695,6 +781,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const [error, setError] = useState<string>()
   const [organizations, setOrganizations] = useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
+  usePortalMenu(setView)
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
   useEffect(() => configurePlatformSecurity(getToken), [getToken])
@@ -711,5 +798,5 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   useEffect(() => { void reload() }, [])
   const visibleNavigation = useMemo(() => navigation.filter(item => item.id !== 'administration' || organizations), [organizations])
   const active = useMemo(() => visibleNavigation.find(item => item.id === view), [view, visibleNavigation])
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'operations' && <Operations data={data} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-symbol"><span /><span /><span /></div><div><strong>FuzeQuality</strong><small>Evidence control</small></div></div><nav>{visibleNavigation.map(item => { const Icon = item.icon; const count = item.id === 'review' ? data?.suggestions.filter(s => s.state === 'proposed').length : undefined; return <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}><Icon size={18} /><span>{item.label}</span>{count ? <b>{count}</b> : null}</button> })}</nav><div className="sidebar-footer"><Database size={16} /><div><span>Catalog revision</span><strong>{data ? 'live / v1' : 'connecting'}</strong></div></div></aside><main><div className="topbar"><span>{active?.label}</span><div><span className="live-dot" /> default branches <button className="icon-button" onClick={() => reload()} aria-label="Reload"><RefreshCw size={15} className={loading ? 'spin' : ''} /></button></div></div><div className="content">{error && <div className="error-banner"><AlertTriangle /> <div><strong>Catalog API unavailable</strong><span>{error}</span></div></div>}{!data ? <div className="loading-screen"><RefreshCw className="spin" /><span>Loading evidence graph…</span></div> : <>{view === 'overview' && <Overview data={data} onNavigate={setView} />}{view === 'repositories' && <Repositories data={data} reload={reload} />}{view === 'api' && <ApiCatalogPage data={data} />}{view === 'frontend' && <CatalogPage type="frontend" data={data} />}{view === 'requirements' && <Requirements data={data} />}{view === 'intelligence' && <RepositoryIntelligence data={data} />}{view === 'review' && <ReviewQueue data={data} reload={reload} />}{view === 'operations' && <Operations data={data} />}{view === 'organization' && <OrganizationSettings data={data} reload={reload} />}{view === 'administration' && organizations && <OrganizationAdministration organizations={organizations} />}</>}</div></main></div>
 }

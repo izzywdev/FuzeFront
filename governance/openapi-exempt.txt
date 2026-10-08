@@ -37,6 +37,7 @@ GET /api/v1/test-implementations/{}  # FuzeQuality: test impl detail; service la
 GET /api/v1/repositories  # FuzeQuality: repository list; service lacks openapi.yaml
 GET /api/v1/repositories/{}  # FuzeQuality: repository detail; service lacks openapi.yaml
 GET /api/v1/repositories/{}/catalog-status  # FuzeQuality: catalog status; service lacks openapi.yaml
+GET /api/v1/repositories/{}/quality-artifacts  # FuzeQuality: tenant-authorized repository analysis evidence; service lacks public OpenAPI surface
 POST /api/v1/internal/coverage/rebuild  # FuzeQuality: internal trigger; not consumer-facing
 POST /api/v1/internal/intelligence/results  # FuzeQuality: internal ingest; not consumer-facing
 POST /api/v1/internal/scans/results  # FuzeQuality: internal ingest; not consumer-facing
