@@ -1,0 +1,118 @@
+name: Prod billing Stripe sync (one-time subscription + invoice import)
+
+# One-time import of existing Stripe subscriptions and invoices into the
+# FuzeFront billing DB. Runs on the `fuzefront` in-cluster runner so it can
+# reach the billing DB and Kafka without any external networking.
+#
+# Use case: the platform owner had an active Stripe subscription before
+# FuzeFront's billing portal went live; this script imports those records so
+# the portal reflects the real billing state.
+#
+# Idempotency: all upserts use ON CONFLICT on the Stripe id — safe to re-run.
+# Active/trialing subscriptions emit billing.subscription.changed events so
+# the backend's billingProjection consumer updates the plan-tier cache.
+#
+# All secrets are read at runtime from k8s — no GitHub repo secrets required.
+#
+# mode=dry-run (default): reads Stripe, queries DB, logs what would be written.
+# mode=apply: writes to DB and emits Kafka events.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run (read-only, logs intent) or apply (writes to DB + Kafka)'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - dry-run
+          - apply
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Stripe billing sync (${{ inputs.mode }})
+    runs-on: fuzefront
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+          cache-dependency-path: services/billing-service/package-lock.json
+
+      - name: Install billing-service dependencies
+        working-directory: services/billing-service
+        run: npm ci --ignore-scripts
+
+      - name: Read cluster secrets
+        id: secrets
+        run: |
+          set -euo pipefail
+          _SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          _K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+          # billing-secrets: STRIPE_SECRET_KEY + BILLING_DB_PASSWORD
+          _BILLING=$(curl -sf --cacert "$_K8S_CA" \
+            -H "Authorization: Bearer $_SA_TOKEN" \
+            "https://kubernetes.default.svc/api/v1/namespaces/fuzefront/secrets/billing-secrets")
+
+          STRIPE_KEY=$(echo "$_BILLING" | python3 -c "
+          import sys,json,base64
+          d=json.load(sys.stdin)
+          print(base64.b64decode(d['data']['STRIPE_SECRET_KEY']).decode().strip())
+          ")
+          DB_PASS=$(echo "$_BILLING" | python3 -c "
+          import sys,json,base64
+          d=json.load(sys.stdin)
+          print(base64.b64decode(d['data']['BILLING_DB_PASSWORD']).decode().strip())
+          ")
+
+          if [ -z "$STRIPE_KEY" ] || [ -z "$DB_PASS" ]; then
+            echo "::error::Could not read STRIPE_SECRET_KEY or BILLING_DB_PASSWORD from billing-secrets"
+            exit 1
+          fi
+
+          echo "::add-mask::$STRIPE_KEY"
+          echo "::add-mask::$DB_PASS"
+          echo "stripe_key=$STRIPE_KEY" >> "$GITHUB_OUTPUT"
+          echo "db_pass=$DB_PASS"       >> "$GITHUB_OUTPUT"
+
+          # Read Helm values for DB host/port/name and billing user
+          # Fallback to known defaults if not available
+          echo "db_host=fuzeinfra-postgres.fuzeinfra.svc.cluster.local" >> "$GITHUB_OUTPUT"
+          echo "db_port=5432"                                             >> "$GITHUB_OUTPUT"
+          echo "db_name=fuzefront"                                        >> "$GITHUB_OUTPUT"
+          echo "db_user=billing_svc"                                      >> "$GITHUB_OUTPUT"
+
+          # Kafka: read from billing-service ConfigMap or use known default
+          echo "kafka_brokers=fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092" >> "$GITHUB_OUTPUT"
+
+      - name: Run Stripe subscription sync
+        working-directory: services/billing-service
+        env:
+          STRIPE_SECRET_KEY: ${{ steps.secrets.outputs.stripe_key }}
+          DATABASE_URL: "postgresql://${{ steps.secrets.outputs.db_user }}:${{ steps.secrets.outputs.db_pass }}@${{ steps.secrets.outputs.db_host }}:${{ steps.secrets.outputs.db_port }}/${{ steps.secrets.outputs.db_name }}"
+          KAFKA_BROKERS: ${{ inputs.mode == 'apply' && steps.secrets.outputs.kafka_brokers || '' }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+
+          ARGS=""
+          if [ "$MODE" = "apply" ]; then
+            ARGS="--apply"
+          fi
+          # --live is required whenever the key is sk_live_, regardless of mode
+          if echo "$STRIPE_SECRET_KEY" | grep -q '^sk_live'; then
+            ARGS="$ARGS --live"
+          fi
+
+          echo "Running: node scripts/stripe-subscription-sync.mjs $ARGS"
+          node scripts/stripe-subscription-sync.mjs $ARGS
