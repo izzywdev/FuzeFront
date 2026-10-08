@@ -21,8 +21,8 @@
   "signingKey": {
     "path": "./keystore/fuzefront-release.keystore",
     "alias": "fuzefront",
-    "keyPassword": "fuzefront2024",
-    "storePassword": "fuzefront2024"
+    "keyPassword": "",
+    "storePassword": ""
   },
   "splashScreenFadeOutDuration": 300,
   "enableSiteSettingsShortcut": true,
