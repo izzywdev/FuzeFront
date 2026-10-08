@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Confirm your phone — contact verification (mobile)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { display: grid; place-items: center; background: var(--bg-primary); padding: var(--space-6) 0 96px; }
+  .phone { width: 375px; min-height: 720px; background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); margin-bottom: var(--space-8); }
+  .m-topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary); position: relative; }
+  .m-topbar::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: var(--seam); opacity: .7; }
+  .m-topbar .back { width: 32px; height: 32px; display: grid; place-items: center; color: var(--text-secondary); }
+  .m-topbar .title { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-md); }
+  .m-topbar .skip { margin-left: auto; font-size: 13px; color: var(--text-tertiary); min-height: 44px; display:flex; align-items:center; }
+  .m-body { flex: 1; overflow: auto; padding: 24px 16px calc(20px + env(safe-area-inset-bottom)); text-align: center; }
+  .ico-circle { width: 56px; height: 56px; border-radius: 50%; margin: 4px auto 18px; display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); font-size: 24px; }
+  .m-sub { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 22px; line-height: 1.5; }
+  .m-sub b { color: var(--text-primary); }
+  .field { text-align: left; margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; color: var(--text-tertiary); margin-bottom: 6px; }
+  .field input { width: 100%; min-height: 48px; padding: 0 14px; background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md); color: var(--text-primary); font-size: var(--text-md); }
+  .otp { display: flex; gap: 8px; justify-content: center; }
+  .otp input { width: 42px; height: 52px; min-height: 44px; text-align: center; font-family: var(--font-mono);
+    font-size: var(--text-xl); color: var(--text-primary); background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+  .otp.is-error input { border-color: var(--error-color); }
+  .field-error { color: var(--error-color); font-size: var(--text-sm); margin-top: 14px;
+    display: flex; align-items: center; gap: 6px; justify-content: center; }
+  .actions { margin-top: 22px; display: grid; gap: 10px; }
+  .btn { font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-medium);
+    border-radius: var(--radius-md); padding: 12px 18px; min-height: 44px; cursor: pointer; border: 1px solid transparent; }
+  .btn-primary { background: var(--accent-color); color: #0b0e15; }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
+  .success-ico { width: 56px; height: 56px; border-radius: 50%; margin: 4px auto 18px; display: grid; place-items: center;
+    background: var(--success-soft); color: var(--success-color); font-size: 26px; }
+  .skel-line { height: 14px; border-radius: var(--radius-pill); margin: 0 auto 10px;
+    background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+    background-size: 200% 100%; animation: sksh 1.3s ease-in-out infinite; }
+  @keyframes sksh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @media (prefers-reduced-motion: reduce){ .skel-line{ animation:none; } }
+  .state-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: 28px 0 10px; text-align: center; }
+  .caption { text-align:center; font-size: 11px; color: var(--text-tertiary); margin-top: 6px; }
+  .reconcile { max-width: 375px; margin: 0 auto 8px; font-size: 12px; color: var(--text-tertiary);
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-md); padding: 10px 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<p class="reconcile" data-note="reconciliation">Scope note: this screen covers <b>phone</b> verification by one-time
+  code only. <b>Email</b> verification keeps the already-approved link-click pattern in
+  <code class="mono">auth-experience/04-verify-landing.html</code> (flow <code class="mono">verify-email</code>) — it is
+  linked, not re-implemented here as code-entry. See manifest.json "reconciliation" for the full rationale.</p>
+
+<div class="state-label">Default · enter phone (skippable, re-prompts from profile)</div>
+<div class="phone" data-frame="03-confirm-contact" data-state="enter-phone" data-route="/account/security/verify/phone" data-viewport="375">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Confirm your phone</span>
+    <span class="skip" data-action="skip">Skip for now</span></header>
+  <main class="m-body" data-panel="confirm-contact" data-state="enter-phone" data-channel="phone">
+    <div class="ico-circle" aria-hidden="true">📱</div>
+    <p class="m-sub">Add a phone number so we can reach you and offer text-message codes for sign-in.</p>
+    <div class="field">
+      <label for="phone">Phone number</label>
+      <input id="phone" inputmode="tel" placeholder="+1 (555) 000-0000" />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="send-code">Send code</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Sending · code dispatch in flight</div>
+<div class="phone" data-frame="03-confirm-contact" data-state="sending">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Confirm your phone</span></header>
+  <main class="m-body" data-panel="confirm-contact" data-state="sending">
+    <div class="ico-circle" aria-hidden="true">📱</div>
+    <div class="skel-line" style="width:80%"></div>
+    <div class="skel-line" style="width:55%"></div>
+  </main>
+</div>
+
+<div class="state-label">Enter code · OtpInput (same primitive as step-up)</div>
+<div class="phone" data-frame="03-confirm-contact" data-state="enter-code">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Confirm your phone</span>
+    <span class="skip" data-action="skip">Skip for now</span></header>
+  <main class="m-body" data-panel="confirm-contact" data-state="enter-code" data-channel="phone">
+    <p class="m-sub">Enter the 6-digit code we sent to <b>•••• •• 4471</b>.</p>
+    <div class="otp" data-component="otp-input" role="group" aria-label="One-time code">
+      <input inputmode="numeric" maxlength="1" aria-label="digit 1" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 2" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 3" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 4" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 5" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 6" />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-contact">Confirm</button>
+      <button class="btn btn-ghost" data-action="resend">Resend code</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Error · wrong or expired code (fail-closed, no navigation)</div>
+<div class="phone" data-frame="03-confirm-contact" data-state="error-invalid">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Confirm your phone</span></header>
+  <main class="m-body" data-panel="confirm-contact" data-state="error-invalid" data-channel="phone">
+    <p class="m-sub">Enter the 6-digit code we sent to <b>•••• •• 4471</b>.</p>
+    <div class="otp is-error" role="group" aria-label="One-time code">
+      <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 1" />
+      <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 2" />
+      <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 3" />
+      <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 4" />
+      <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 5" />
+      <input inputmode="numeric" maxlength="1" value="0" aria-label="digit 6" />
+    </div>
+    <div class="field-error" data-error="invalid-code"><span aria-hidden="true">⚠</span>Wrong or expired code.</div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-contact">Try again</button>
+      <button class="btn btn-ghost" data-action="resend">Resend code</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Error · couldn't send the code (generic send failure, fail-closed)</div>
+<div class="phone" data-frame="03-confirm-contact" data-state="error-send">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Confirm your phone</span></header>
+  <main class="m-body" data-panel="confirm-contact" data-state="error-send" data-channel="phone">
+    <div class="ico-circle" aria-hidden="true" style="background:var(--error-soft);color:var(--error-color)">⚠</div>
+    <p class="m-sub">We couldn't send a code to that number. Check it and try again, or skip for now — you can finish
+      this from your security settings later.</p>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="send-code">Try again</button>
+      <button class="btn btn-ghost" data-action="skip">Skip for now</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Verified · success</div>
+<div class="phone" data-frame="03-confirm-contact" data-state="verified">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Confirm your phone</span></header>
+  <main class="m-body" data-panel="confirm-contact" data-state="verified" data-channel="phone">
+    <div class="success-ico" aria-hidden="true">✓</div>
+    <p class="m-sub"><b>Phone verified.</b> •••• •• 4471 can now receive text-message codes.</p>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="continue">Continue</button>
+    </div>
+  </main>
+</div>
+
+<p class="caption">Frame <b>03 / 04</b> · Confirm your contact (phone) · <code class="mono">/account/security/verify/phone</code> — 375px (Android TWA)</p>
+</body>
+</html>

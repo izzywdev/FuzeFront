@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Enter code — MFA step-up (mobile)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { display: grid; place-items: center; background: var(--bg-primary); padding: var(--space-6) 0 96px; }
+  .phone { width: 375px; min-height: 720px; background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); margin-bottom: var(--space-8); }
+  .m-topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary); position: relative; }
+  .m-topbar::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: var(--seam); opacity: .7; }
+  .m-topbar .back { width: 32px; height: 32px; display: grid; place-items: center; color: var(--text-secondary); }
+  .m-topbar .title { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-md); }
+  .m-body { flex: 1; overflow: auto; padding: 24px 16px calc(20px + env(safe-area-inset-bottom)); text-align: center; }
+  .m-sub { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 22px; line-height: 1.5; }
+  .m-sub b { color: var(--text-primary); }
+  .otp { display: flex; gap: 8px; justify-content: center; }
+  .otp input { width: 42px; height: 52px; min-height: 44px; text-align: center; font-family: var(--font-mono);
+    font-size: var(--text-xl); color: var(--text-primary); background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+  .otp input:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .otp.is-error input { border-color: var(--error-color); }
+  .field-error { color: var(--error-color); font-size: var(--text-sm); margin-top: 14px;
+    display: flex; align-items: center; gap: 6px; justify-content: center; }
+  .expiry { margin-top: 16px; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+  .actions { margin-top: 22px; display: grid; gap: 10px; }
+  .btn { font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-medium);
+    border-radius: var(--radius-md); padding: 12px 18px; min-height: 44px; cursor: pointer; border: 1px solid transparent; }
+  .btn-primary { background: var(--accent-color); color: #0b0e15; }
+  .btn-primary[disabled] { opacity: .6; }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
+  .resend { margin-top: 16px; font-size: 13px; color: var(--text-tertiary); }
+  .resend a { color: var(--accent-color); }
+  .resend.cooldown a { color: var(--text-tertiary); pointer-events: none; }
+  .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35);
+    border-top-color: #0b0e15; display: inline-block; vertical-align: -3px; margin-right: 8px;
+    animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce){ .spinner{ animation: none; } }
+  .state-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: 28px 0 10px; text-align: center; }
+  .caption { text-align:center; font-size: 11px; color: var(--text-tertiary); margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="state-label">Default · code entry (auto-advance, paste-aware)</div>
+<div class="phone" data-frame="02-enter-code" data-state="default" data-route="/login/mfa" data-viewport="375">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Enter your code</span></header>
+  <main class="m-body" data-panel="enter-code" data-state="idle" data-factor="totp">
+    <p class="m-sub">Enter the 6-digit code from your authenticator app.</p>
+    <div class="otp" data-component="otp-input" role="group" aria-label="One-time code">
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="digit 1" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="digit 2" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="digit 3" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="digit 4" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="digit 5" />
+      <input inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="digit 6" />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-mfa">Verify &amp; continue</button>
+      <button class="btn btn-ghost" data-action="choose-factor">Use a different method</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Verifying · in-flight (button disabled, no double-submit)</div>
+<div class="phone" data-frame="02-enter-code" data-state="verifying">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Enter your code</span></header>
+  <main class="m-body" data-panel="enter-code" data-state="verifying" data-factor="totp">
+    <p class="m-sub">Enter the 6-digit code from your authenticator app.</p>
+    <div class="otp" role="group" aria-label="One-time code">
+      <input inputmode="numeric" maxlength="1" value="4" disabled aria-label="digit 1" />
+      <input inputmode="numeric" maxlength="1" value="2" disabled aria-label="digit 2" />
+      <input inputmode="numeric" maxlength="1" value="8" disabled aria-label="digit 3" />
+      <input inputmode="numeric" maxlength="1" value="1" disabled aria-label="digit 4" />
+      <input inputmode="numeric" maxlength="1" value="5" disabled aria-label="digit 5" />
+      <input inputmode="numeric" maxlength="1" value="9" disabled aria-label="digit 6" />
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-mfa" disabled aria-busy="true"><span class="spinner" aria-hidden="true"></span>Verifying…</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Error · wrong or expired code (fail-closed — stays on screen, no navigation)</div>
+<div class="phone" data-frame="02-enter-code" data-state="error-invalid">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Enter your code</span></header>
+  <main class="m-body" data-panel="enter-code" data-state="error-invalid" data-factor="totp">
+    <p class="m-sub">That didn't work. Enter the current 6-digit code.</p>
+    <div class="otp is-error" role="group" aria-label="One-time code">
+      <input inputmode="numeric" maxlength="1" value="1" aria-label="digit 1" />
+      <input inputmode="numeric" maxlength="1" value="2" aria-label="digit 2" />
+      <input inputmode="numeric" maxlength="1" value="3" aria-label="digit 3" />
+      <input inputmode="numeric" maxlength="1" value="4" aria-label="digit 4" />
+      <input inputmode="numeric" maxlength="1" value="5" aria-label="digit 5" />
+      <input inputmode="numeric" maxlength="1" value="6" aria-label="digit 6" />
+    </div>
+    <div class="field-error" data-error="invalid-code"><span aria-hidden="true">⚠</span>Wrong or expired code.</div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-mfa">Try again</button>
+      <button class="btn btn-ghost" data-action="choose-factor">Use a different method</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Code sent (email/SMS) · expiry countdown + resend cooldown</div>
+<div class="phone" data-frame="02-enter-code" data-state="sent-cooldown">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Enter your code</span></header>
+  <main class="m-body" data-panel="enter-code" data-state="idle" data-factor="sms">
+    <p class="m-sub">We sent a code to <b>•••• •• 4471</b>.</p>
+    <div class="otp" role="group" aria-label="One-time code">
+      <input inputmode="numeric" maxlength="1" aria-label="digit 1" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 2" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 3" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 4" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 5" />
+      <input inputmode="numeric" maxlength="1" aria-label="digit 6" />
+    </div>
+    <div class="expiry" data-value="expires-in">Expires in 04:52</div>
+    <div class="resend cooldown" data-state="cooldown"><a href="#" data-action="resend" aria-disabled="true">Resend code</a> in 0:28</div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="verify-mfa">Verify &amp; continue</button>
+      <button class="btn btn-ghost" data-action="choose-factor">Use a different method</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Error · couldn't deliver the code (fail-closed, offer other factors)</div>
+<div class="phone" data-frame="02-enter-code" data-state="error-delivery">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Enter your code</span></header>
+  <main class="m-body" data-panel="enter-code" data-state="error-delivery" data-factor="sms">
+    <div style="text-align:left">
+      <h3 style="margin:0 0 8px;font-family:var(--font-display);font-size:var(--text-lg)">We couldn't send your code</h3>
+      <p class="m-sub" style="text-align:left;margin-bottom:18px">The text didn't go through. Try again, or use your authenticator app, email, or a recovery code instead.</p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" data-action="challenge">Resend text</button>
+      <button class="btn btn-ghost" data-action="choose-factor">Use another method</button>
+    </div>
+  </main>
+</div>
+
+<p class="caption">Frame <b>02 / 04</b> · Enter code · <code class="mono">/login/mfa</code> — 375px (Android TWA)</p>
+</body>
+</html>
