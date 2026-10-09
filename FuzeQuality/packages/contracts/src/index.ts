@@ -433,7 +433,19 @@ export type RepositoryFlowCandidate = {
   /** A source-derived review wireframe is mandatory for every UX-flow candidate. */
   wireframe: { kind: 'sequence'; nodes: Array<{ label: string; targetIds: string[] }> }
   status: 'proposed' | 'confirmed' | 'rejected'
+  reviewedAt?: string
+  reviewedBy?: string
+  reviewReason?: string
   source: 'deterministic' | 'litellm'
+  createdAt: string
+}
+
+export type RepositoryFlowReviewHistoryEntry = {
+  candidateId: string
+  tenantId: string
+  status: 'confirmed' | 'rejected'
+  reviewedBy: string
+  reason?: string
   createdAt: string
 }
 

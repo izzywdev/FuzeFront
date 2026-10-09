@@ -205,6 +205,7 @@ paths:
               required: [status]
               properties:
                 status: { type: string, enum: [confirmed, rejected] }
+                reason: { type: string, minLength: 3, maxLength: 2000 }
       responses:
         '200':
           description: The reviewed candidate.
@@ -212,6 +213,30 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
         '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - name: candidateId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+    get:
+      operationId: listRepositoryFlowReviewHistory
+      summary: List immutable human review decisions for a UX-flow candidate
+      tags: [flow-candidates]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: Newest-first review history for the tenant-owned candidate.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RepositoryFlowReviewHistoryEntry' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -545,7 +570,21 @@ components:
           items: { $ref: '#/components/schemas/FlowStep' }
         wireframe: { $ref: '#/components/schemas/FlowWireframe' }
         status: { type: string, enum: [proposed, confirmed, rejected] }
+        reviewedAt: { type: string, format: date-time }
+        reviewedBy: { type: string }
+        reviewReason: { type: string }
         source: { type: string, enum: [deterministic, litellm] }
+        createdAt: { type: string, format: date-time }
+    RepositoryFlowReviewHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [candidateId, tenantId, status, reviewedBy, createdAt]
+      properties:
+        candidateId: { type: string }
+        tenantId: { type: string }
+        status: { type: string, enum: [confirmed, rejected] }
+        reviewedBy: { type: string }
+        reason: { type: string }
         createdAt: { type: string, format: date-time }
     PolicyGateEvaluation:
       type: object

@@ -80,7 +80,10 @@ const invitationSchema = z.object({
   role: organizationRoleSchema,
 }).strict()
 const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
-const repositoryFlowReviewSchema = z.object({ status: z.enum(['confirmed', 'rejected']) }).strict()
+const repositoryFlowReviewSchema = z.object({
+  status: z.enum(['confirmed', 'rejected']),
+  reason: z.string().trim().min(3).max(2000).optional(),
+}).strict()
 const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']), reason: z.string().trim().min(3).max(2000).optional() }).strict()
 const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
@@ -439,6 +442,15 @@ app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (reque
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   response.json(await store.repositoryFlowCandidates(repositoryId, tenantId))
 })
+app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const candidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
+  response.json(await store.repositoryFlowReviewHistory(candidateId, tenantId))
+})
 app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayReviewSuggestions, async (request, response) => {
   const parsed = repositoryFlowReviewSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
@@ -448,7 +460,11 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   const existingCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
   if (!existingCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
-  const candidate = await store.reviewRepositoryFlowCandidate(candidateId, tenantId, parsed.data.status)
+  const candidate = await store.reviewRepositoryFlowCandidate(candidateId, tenantId, {
+    status: parsed.data.status,
+    reviewedBy: requestIdentity(request)!.userId,
+    reason: parsed.data.reason,
+  })
   if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
   response.json(candidate)
 })
