@@ -37,7 +37,6 @@ interface InstallAppDialogProps {
   appName: string
   scopeLevel: AppScopeLevel
   installMode?: 'self' | 'everyone' | 'both'
-  organizationInstallMode?: 'self' | 'everyone' | 'both'
   orgLevelOnly?: boolean
   /** Called after a successful install or uninstall. */
   onChanged?: () => void
@@ -135,7 +134,6 @@ export function InstallAppDialog({
   appName,
   scopeLevel,
   installMode,
-  organizationInstallMode,
   orgLevelOnly,
   onChanged,
 }: InstallAppDialogProps) {
@@ -155,8 +153,7 @@ export function InstallAppDialog({
     installationsRes?.installMode === 'everyone'
   )
   const effectiveOrganizationInstallMode = resolveOrganizationInstallMode({
-    organizationInstallMode:
-      installationsRes?.organizationInstallMode ?? organizationInstallMode,
+    organizationInstallMode: installationsRes?.organizationInstallMode,
     installMode,
     orgLevelOnly: isOrgLevelOnly,
   })
@@ -167,9 +164,7 @@ export function InstallAppDialog({
     scopeLevel === 'personal' && !isOrgLevelOnly ? 'personal' : 'organization'
   )
   const [mode, setMode] = useState<InstallMode>(
-    isOrgLevelOnly || organizationInstallMode === 'everyone'
-      ? 'everyone'
-      : 'self'
+    isOrgLevelOnly ? 'everyone' : 'self'
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -193,8 +188,7 @@ export function InstallAppDialog({
           res.installMode === 'everyone'
         )
         const orgInstallMode = resolveOrganizationInstallMode({
-          organizationInstallMode:
-            res.organizationInstallMode ?? organizationInstallMode,
+          organizationInstallMode: res.organizationInstallMode,
           installMode,
           orgLevelOnly: lockedOrgLevel,
         })
@@ -213,7 +207,7 @@ export function InstallAppDialog({
           setMode('everyone')
         } else {
           setScope(scopeLevel === 'personal' ? 'personal' : 'organization')
-          setMode(organizationInstallMode === 'everyone' ? 'everyone' : 'self')
+          setMode('self')
         }
       })
   }, [
@@ -221,7 +215,6 @@ export function InstallAppDialog({
     appId,
     scopeLevel,
     installMode,
-    organizationInstallMode,
     orgLevelOnly,
     isOrgLevelOnly,
   ])
