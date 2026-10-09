@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AppCard, Badge, Button } from '@fuzefront/design-system'
 import { useRegisteredApps } from '../platform/appRegistry'
-import { useCurrentUser, useOrganizations, ROOT_ORG_ID, type App as BackendApp } from '../lib/shared'
+import {
+  useCurrentUser,
+  useOrganizations,
+  ROOT_ORG_ID,
+  type App as BackendApp,
+} from '../lib/shared'
 import { isEmployeeUser } from '../utils/employee'
 import {
   appsAPI,
@@ -82,6 +87,7 @@ function InstalledAppsSection() {
     name: string
     scopeLevel: AppScopeLevel
     installMode?: 'self' | 'everyone' | 'both'
+    organizationInstallMode?: 'self' | 'everyone' | 'both'
     orgLevelOnly?: boolean
   } | null>(null)
   const [installationByApp, setInstallationByApp] = useState<
@@ -154,7 +160,9 @@ function InstalledAppsSection() {
       >
         Install applications
       </h2>
-      <p style={{ color: 'var(--text-secondary)', margin: '0 0 var(--space-5)' }}>
+      <p
+        style={{ color: 'var(--text-secondary)', margin: '0 0 var(--space-5)' }}
+      >
         Each app declares whether it can live in your personal space, in an
         organization, or either. Installing asks only what the app leaves open.
       </p>
@@ -169,7 +177,13 @@ function InstalledAppsSection() {
         </p>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-2)',
+        }}
+      >
         {visibleAvailable.map(app => {
           const isExecutive =
             app.id === 'executive' ||
@@ -252,6 +266,7 @@ function InstalledAppsSection() {
                       name: app.name,
                       scopeLevel,
                       installMode: (app as any).installMode,
+                      organizationInstallMode: app.organizationInstallMode,
                       orgLevelOnly: isOrgLevelOnly,
                     })
                   }}
@@ -271,6 +286,7 @@ function InstalledAppsSection() {
           appName={dialogApp.name}
           scopeLevel={dialogApp.scopeLevel}
           installMode={dialogApp.installMode}
+          organizationInstallMode={dialogApp.organizationInstallMode}
           orgLevelOnly={dialogApp.orgLevelOnly}
           onClose={() => setDialogApp(null)}
           onChanged={() => void load()}
@@ -303,7 +319,9 @@ function ApplicationsLauncher({
       >
         Applications
       </h1>
-      <p style={{ color: 'var(--text-secondary)', margin: '0 0 var(--space-6)' }}>
+      <p
+        style={{ color: 'var(--text-secondary)', margin: '0 0 var(--space-6)' }}
+      >
         Federated apps registered to your workspace. The <b>menu label</b> and{' '}
         <b>icon</b> come from each app&apos;s manifest.
       </p>
@@ -366,7 +384,8 @@ function ApplicationsLauncher({
           tabIndex={0}
           onClick={() => navigate('/applications/new')}
           onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') navigate('/applications/new')
+            if (e.key === 'Enter' || e.key === ' ')
+              navigate('/applications/new')
           }}
           style={{
             display: 'grid',
@@ -395,7 +414,12 @@ function ApplicationsLauncher({
             >
               ＋
             </div>
-            <h3 style={{ margin: '0 0 var(--space-1)', fontSize: 'var(--text-lg)' }}>
+            <h3
+              style={{
+                margin: '0 0 var(--space-1)',
+                fontSize: 'var(--text-lg)',
+              }}
+            >
               Add application
             </h3>
             <p
@@ -412,7 +436,9 @@ function ApplicationsLauncher({
       </div>
 
       {loading && apps.length === 0 && (
-        <p style={{ color: 'var(--text-tertiary)', marginTop: 'var(--space-4)' }}>
+        <p
+          style={{ color: 'var(--text-tertiary)', marginTop: 'var(--space-4)' }}
+        >
           Loading applications…
         </p>
       )}

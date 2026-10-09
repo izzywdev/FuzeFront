@@ -23,5 +23,6 @@
   "visibility": "public",
   "scopeLevel": "both",
   "installMode": "both",
+  "organizationInstallMode": "everyone",
   "roles": []
 }

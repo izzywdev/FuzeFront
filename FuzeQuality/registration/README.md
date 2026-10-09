@@ -43,8 +43,9 @@ the resources that FuzeFront actually creates.
 
 **1a. Install scope is personal and organization.** `scopeLevel: "both"` lets
 an individual install FuzeQuality for their personal account or an organization
-administrator install it for an organization. `installMode: "both"` deliberately
-allows the administrator's organization install to use `mode: "everyone"`; that
+administrator install it for an organization. `organizationInstallMode:
+"everyone"` requires the organization install to cover every member while
+`installMode: "both"` preserves personal self-installation. The org-wide install
 creates one organization-level installation visible to every member, rather than
 one installation per member. FuzeQuality always scopes data to the tenant in
 the FuzeFront security session, never to a per-user organization installation.
