@@ -171,3 +171,15 @@ jobs:
           path: frontend/test-results-post-prod/**/video.webm
           if-no-files-found: warn
           retention-days: 30
+
+      # FuzeX is a tenant-scoped design workspace.  Publish its recording
+      # separately so the release evidence can be reviewed without searching
+      # through the combined post-prod report.
+      - name: Upload FuzeX post-production video
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzex-post-prod-playwright-video
+          path: frontend/test-results-post-prod/**/fuzex-workspace-smoke-*/video.webm
+          if-no-files-found: warn
+          retention-days: 30
