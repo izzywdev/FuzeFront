@@ -53,7 +53,14 @@ const repositoryFlowCandidates = [{
   evidence: ['src/routes/apps.ts:42', 'frontend/src/pages/AppSettings.tsx:88'],
   steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['POST /apps/{slug}/suspend'] }],
   wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['AppSettings'] }, { label: 'Confirm suspension', targetIds: ['SuspendDialog'] }, { label: 'Suspended state', targetIds: ['AppStatus'] }] },
+  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'repository-flow-v1', schemaVersion: '1.0' },
   status: 'proposed', source: 'litellm', createdAt: '2026-10-08T09:00:00.000Z',
+}, {
+  id: 'candidate-deterministic', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Indexed suspension route', confidence: 1,
+  evidence: ['route-artifact', 'POST /apps/{slug}/suspend'],
+  steps: [{ actor: 'User or service', action: 'reaches the indexed suspension route', expectedOutcome: 'the route is available for testing', targetIds: ['route-artifact'] }],
+  wireframe: { kind: 'sequence', nodes: [{ label: 'Indexed route', targetIds: ['route-artifact'] }] },
+  status: 'proposed', source: 'deterministic', createdAt: '2026-10-08T08:55:00.000Z',
 }]
 
 const policyGateEvaluations = [{
@@ -158,13 +165,24 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
     await expect(page.getByRole('heading', { name: 'Quality intelligence' })).toBeVisible()
 
+    const originSummary = page.getByLabel('UX flow origin summary')
+    await expect(originSummary).toContainText('1 deterministic flow')
+    await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await expect(page.getByText('Suspend an application', { exact: true })).toBeVisible()
-    await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
-    await page.getByText('Source evidence', { exact: true }).click()
-    await expect(page.getByText('Revision abcdef123456')).toBeVisible()
-    await expect(page.getByText('src/routes/apps.ts:42')).toBeVisible()
-
     const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await expect(page.getByText('FuzeInfra LiteLLM proposal', { exact: true })).toBeVisible()
+    const analysisProvenance = page.getByLabel('Suspend an application analysis provenance')
+    await expect(analysisProvenance).toContainText('fuzeinfra-litellm')
+    await expect(analysisProvenance).toContainText('quality-analysis')
+    await expect(analysisProvenance).toContainText('repository-flow-v1')
+    await expect(analysisProvenance).toContainText('1.0')
+    await expect(page.getByText('Deterministic repository evidence', { exact: true })).toBeVisible()
+    await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
+    await flowCard.getByText('Source evidence', { exact: true }).click()
+    await expect(flowCard.getByText('Revision abcdef123456')).toBeVisible()
+    await expect(flowCard.getByText('src/routes/apps.ts:42')).toBeVisible()
+
     await flowCard.getByLabel('Optional review rationale').fill('Matches the protected suspension journey.')
     const flowReviewRequest = page.waitForRequest(request => request.url().endsWith('/flow-candidates/candidate-1/review'))
     await flowCard.getByRole('button', { name: 'Confirm' }).click()
@@ -196,6 +214,21 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
     await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()
     await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
+  })
+
+  test('keeps deterministic UX-flow evidence useful without AI proposals', async ({ page }) => {
+    await page.route('**/api/v1/repositories/repo-1/flow-candidates', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([repositoryFlowCandidates[1]]),
+    }))
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const originSummary = page.getByLabel('UX flow origin summary')
+    await expect(originSummary).toContainText('1 deterministic flow')
+    await expect(originSummary).toContainText('0 FuzeInfra LiteLLM proposals')
+    await expect(originSummary).toContainText('No AI proposals are available for this revision.')
+    await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
+    await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
   })
 
   test('keeps a failed UX flow review actionable', async ({ page }) => {

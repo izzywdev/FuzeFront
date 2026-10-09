@@ -3144,26 +3144,94 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <div className="catalog-grid">
             {groups.map(([kind, title, detail]) => {
               const items = artifacts.filter(item => item.kind === kind)
+              const deterministicFlowCount = flowCandidates.filter(
+                flow => flow.source === 'deterministic'
+              ).length
+              const liteLlmFlowCount = flowCandidates.filter(
+                flow => flow.source === 'litellm'
+              ).length
               return (
                 <section className="catalog-panel" key={kind}>
                   <header>
                     <div>
-                      <p className="eyebrow">{items.length} discovered</p>
+                      <p className="eyebrow">
+                        {kind === 'route'
+                          ? `${flowCandidates.length} flows · ${items.length} routes indexed`
+                          : `${items.length} discovered`}
+                      </p>
                       <h2>{title}</h2>
                       <p>{detail}</p>
                     </div>
                   </header>
                   <div className="catalog-list">
+                    {kind === 'route' && (
+                      <div
+                        className="flow-origin-summary"
+                        aria-label="UX flow origin summary"
+                      >
+                        <strong>
+                          {deterministicFlowCount} deterministic{' '}
+                          {deterministicFlowCount === 1 ? 'flow' : 'flows'}
+                        </strong>
+                        <strong>
+                          {liteLlmFlowCount} FuzeInfra LiteLLM{' '}
+                          {liteLlmFlowCount === 1 ? 'proposal' : 'proposals'}
+                        </strong>
+                        {liteLlmFlowCount === 0 && (
+                          <p>
+                            No AI proposals are available for this revision.
+                            Deterministic repository evidence remains available
+                            below.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {kind === 'route' &&
                       flowCandidates.map(flow => (
                         <article className="catalog-row" key={flow.id}>
                           <div>
                             <strong>{flow.title}</strong>
-                            <code>
-                              {flow.source} ·{' '}
-                              {Math.round(flow.confidence * 100)}% confidence ·{' '}
-                              {flow.status}
-                            </code>
+                            <div className="flow-origin-line">
+                              <span
+                                className={`flow-origin-badge flow-origin-${flow.source}`}
+                              >
+                                {flow.source === 'deterministic'
+                                  ? 'Deterministic repository evidence'
+                                  : 'FuzeInfra LiteLLM proposal'}
+                              </span>
+                              <code>
+                                {Math.round(flow.confidence * 100)}% confidence ·{' '}
+                                {flow.status}
+                              </code>
+                            </div>
+                            {flow.analysis ? (
+                              <dl
+                                className="flow-analysis-provenance"
+                                aria-label={`${flow.title} analysis provenance`}
+                              >
+                                <div>
+                                  <dt>Provider</dt>
+                                  <dd>{flow.analysis.provider}</dd>
+                                </div>
+                                <div>
+                                  <dt>Model</dt>
+                                  <dd>{flow.analysis.model}</dd>
+                                </div>
+                                <div>
+                                  <dt>Prompt</dt>
+                                  <dd>{flow.analysis.promptVersion}</dd>
+                                </div>
+                                <div>
+                                  <dt>Schema</dt>
+                                  <dd>{flow.analysis.schemaVersion}</dd>
+                                </div>
+                              </dl>
+                            ) : flow.source === 'litellm' ? (
+                              <small className="flow-provenance-missing">
+                                Model provenance was not stored for this legacy
+                                proposal.
+                              </small>
+                            ) : null}
                             <p>{flow.steps[0]?.action}</p>
                             <ol
                               className="flow-wireframe"
