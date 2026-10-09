@@ -28,8 +28,9 @@ test('proves explicit organization membership before signing', async () => {
  expect(jwt.verify(r.body.accessToken,key)).toMatchObject({tenantId:tenant,sub:subject})
  expect(info).toHaveBeenCalledWith('session')
 })
-test('missing tenant is denied before any grant lookup', async () => {
- expect((await exchange({})).status).toBe(400);expect(proof).not.toHaveBeenCalled()
+test('missing tenant creates a user-only personal delegation without membership lookup', async () => {
+ const r = await exchange({}); expect(r.status).toBe(200); expect(proof).not.toHaveBeenCalled()
+ expect(jwt.verify(r.body.accessToken,key)).toMatchObject({tenantId:null,sub:subject})
 })
 test('inactive membership denies; SQL failure is unavailable', async () => {
  proof.mockResolvedValue(null);expect((await exchange({tenant})).status).toBe(403)

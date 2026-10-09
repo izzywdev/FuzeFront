@@ -688,14 +688,19 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
     // A requested tenant is a selector, never proof of membership.
     const previous = (subject as any).actor
     const isDelegated = (subject as any).tokenKind === 'fuze-delegation'
-    let tenant: string
+    // A connector credential can be personal (user + provider) or shared in
+    // the user's selected organization (organization + user + provider).
+    // The optional organization is a selector only; membership is proven
+    // below before it is embedded in a delegation token.
+    let tenant: string | null = null
     try {
-      tenant = canonicalSessionTenant(isDelegated ? subject.tenantId : req.body?.tenant)
+      const sourceTenant = isDelegated ? subject.tenantId : req.body?.tenant
+      tenant = sourceTenant == null ? null : canonicalSessionTenant(sourceTenant)
       if (req.body?.tenant !== undefined && canonicalSessionTenant(req.body.tenant) !== tenant) {
         return void res.status(403).json({ error: 'Delegation tenant cannot change' })
       }
     } catch {
-      return void res.status(400).json({ error: 'Canonical organization tenant is required' })
+      return void res.status(400).json({ error: 'Canonical organization tenant is required when supplied' })
     }
     if (isDelegated) {
       if ((subject as any).audience !== actor.subject || !isSubset(scopes, subject.scope)) {
@@ -706,10 +711,12 @@ router.post('/tokens/exchange', async (req: Request, res: Response) => {
       const session = await getIdentityProvider().getUserInfo(subjectToken)
       if (session.identity.userId !== subject.subject) throw new UnauthorizedError('Subject session mismatch')
     }
-    let verifiedTenant: string | null
-    try { verifiedTenant = await proveSessionTenant(subject.subject, tenant) }
-    catch { return void res.status(503).json({ error: 'Tenant verification unavailable' }) }
-    if (!verifiedTenant) return void res.status(403).json({ error: 'Active tenant membership required' })
+    let verifiedTenant: string | null = null
+    if (tenant) {
+      try { verifiedTenant = await proveSessionTenant(subject.subject, tenant) }
+      catch { return void res.status(503).json({ error: 'Tenant verification unavailable' }) }
+      if (!verifiedTenant) return void res.status(403).json({ error: 'Active tenant membership required' })
+    }
     const claims: DelegationClaims = {
       kind: 'fuze-delegation',
       sub: subject.subject,

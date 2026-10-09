@@ -64,6 +64,7 @@ export const authenticateToken = async (
     console.log('🔍 [%s] Verifying JWT token...', oneLine(requestId))
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
       userId: string
+      sessionId?: string
       // FF-EPIC-10-S3 — the portal this token was minted for (routes/auth.ts
       // jwt.sign call sites). Absent on tokens issued before this epic, or
       // whenever the multi-tenant-portals flag was OFF at mint time.
@@ -119,6 +120,21 @@ export const authenticateToken = async (
         ? userRow.roles
         : JSON.parse(userRow.roles || '["user"]'),
       homePortalId: userRow.home_portal_id ?? null,
+    }
+
+    // Connector custody must follow the server-side session context, never a
+    // browser-supplied organization header. A missing/expired session is a
+    // personal context; the downstream delegation service will sign that
+    // distinction and FuzeKeys keys credentials by (org?, user, provider).
+    if (decoded.sessionId) {
+      const session = await db('sessions')
+        .select('active_organization_id')
+        .where({ id: decoded.sessionId, user_id: decoded.userId })
+        .where('expires_at', '>', new Date())
+        .first()
+      user.activeOrganizationId = session?.active_organization_id ?? null
+    } else {
+      user.activeOrganizationId = null
     }
 
     // FF-EPIC-10-S3 — token-derived portal binding, NEVER a client-supplied

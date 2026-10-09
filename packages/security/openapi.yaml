@@ -2966,6 +2966,12 @@ components:
           type: string
         scope:
           type: string
+        tenant:
+          type: string
+          description: >-
+            Optional selected organization for organization-scoped credentials.
+            Omit for a personal user credential scope. The server verifies
+            active membership before signing an organization value.
       required: [clientId, clientSecret]
     TokenIssueResponse:
       type: object
