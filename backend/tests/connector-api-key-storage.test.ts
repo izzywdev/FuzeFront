@@ -6,7 +6,7 @@ import { createConnectorPlatformRouter } from '../src/connector-platform'
 jest.mock('axios')
 jest.mock('../src/config/database', () => ({ db: undefined }))
 jest.mock('../src/middleware/auth', () => ({ authenticateToken: (req: any, _res: unknown, next: () => void) => {
-  req.user = { activeOrganizationId: req.header('x-selected-organization') || null }
+  req.user = { activeOrganizationId: req.header('x-active-organization') || null }
   next()
 } }))
 const mockExchange = jest.fn(async () => ({ accessToken: 'verified-delegation' }))
@@ -27,7 +27,7 @@ test('delegates using the selected organization and the authenticated bearer', a
   ;(axios.put as jest.Mock).mockResolvedValue({ status: 200, data: { status: 'updated' } })
   await request(app).post('/connectors/anthropic/credential')
     .set('Authorization', 'Bearer authenticated-user')
-    .set('x-selected-organization', '22222222-2222-4222-8222-222222222222')
+    .set('x-active-organization', '22222222-2222-4222-8222-222222222222')
     .send({ api_key: 'fixture-key' }).expect(201)
   expect(mockExchange).toHaveBeenCalledWith(expect.objectContaining({
     subjectToken: 'authenticated-user', tenant: '22222222-2222-4222-8222-222222222222',

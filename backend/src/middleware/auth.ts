@@ -122,19 +122,21 @@ export const authenticateToken = async (
       homePortalId: userRow.home_portal_id ?? null,
     }
 
-    // Connector custody must follow the server-side session context, never a
-    // browser-supplied organization header. A missing/expired session is a
-    // personal context; the downstream delegation service will sign that
-    // distinction and FuzeKeys keys credentials by (org?, user, provider).
+    // The selected organization header is only a context selector; downstream
+    // delegation independently verifies active membership before signing it.
+    // Without a selector, use the session's server-side organization context.
     if (decoded.sessionId) {
       const session = await db('sessions')
         .select('active_organization_id')
         .where({ id: decoded.sessionId, user_id: decoded.userId })
         .where('expires_at', '>', new Date())
         .first()
-      user.activeOrganizationId = session?.active_organization_id ?? null
+      const selectedOrganization = req.get('X-Active-Organization')
+      user.activeOrganizationId = selectedOrganization !== undefined
+        ? selectedOrganization || null
+        : session?.active_organization_id ?? null
     } else {
-      user.activeOrganizationId = null
+      user.activeOrganizationId = req.get('X-Active-Organization') || null
     }
 
     // FF-EPIC-10-S3 — token-derived portal binding, NEVER a client-supplied

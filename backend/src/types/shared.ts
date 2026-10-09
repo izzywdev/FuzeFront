@@ -20,9 +20,9 @@ export interface User {
   // (undefined — e.g. authenticateToken didn't run) is distinguishable from
   // "looked up, root/platform user" (null).
   homePortalId?: string | null
-  // The organization selected by this authenticated session. Connector
-  // credentials are isolated by this value together with the user id; absent
-  // means the caller is operating in their personal context.
+  // The organization selected for this request. It is only a selector;
+  // connector delegation verifies membership before signing it. Null means
+  // the caller is operating in their personal context.
   activeOrganizationId?: string | null
 }
 
