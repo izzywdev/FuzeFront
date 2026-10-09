@@ -1203,6 +1203,10 @@ components:
           type: string
           enum: [self, everyone, both]
           description: Allowed installation modes (self, everyone, or both). 'everyone' enforces whole-organization only installs.
+        organizationInstallMode:
+          type: string
+          enum: [self, everyone, both]
+          description: Optional organization-specific installation mode. Use 'everyone' with scopeLevel 'both' to allow personal installs while requiring organization installs to cover the whole organization.
         orgLevelOnly:
           type: boolean
           description: Whether installation is restricted to the whole organization only (cannot be installed to a single user in an org).
