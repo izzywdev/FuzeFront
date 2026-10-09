@@ -67,7 +67,7 @@ import {
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 
-type View =
+export type View =
   | 'overview'
   | 'repositories'
   | 'api'
@@ -92,7 +92,7 @@ const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'administration', label: 'Organizations', icon: Building2 },
 ]
 
-const portalMenuItems = navigation
+export const portalMenuItems = navigation
   .filter(item => item.id !== 'administration')
   .map((item, index) => ({
     id: item.id,
@@ -107,7 +107,7 @@ type PortalContextSnapshot = {
   activeOrganization?: { id: string } | null
 }
 
-type FuzeFrontRuntimeBridge = {
+export type FuzeFrontRuntimeBridge = {
   getContext?: () => PortalContextSnapshot
   subscribe?: (listener: (context: PortalContextSnapshot) => void) => () => void
   onOrgSwitch?: (listener: (organization: { id: string } | null) => void) => () => void
@@ -189,29 +189,43 @@ function isView(value: unknown): value is View {
   return typeof value === 'string' && navigation.some(item => item.id === value)
 }
 
-function viewFromPathname(pathname: string): View | undefined {
+export function viewFromPathname(pathname: string): View | undefined {
   const match = pathname.match(/^\/app\/fuzequality\/([^/?#]+)/)
   return match && isView(match[1]) ? match[1] : undefined
+}
+
+/** Connect host menu events and browser history to the app's active view. */
+export function connectPortalNavigation(
+  bridge: FuzeFrontRuntimeBridge | undefined,
+  setView: (view: View) => void,
+  target: Pick<Window, 'addEventListener' | 'removeEventListener'> = window,
+  pathname: () => string = () => window.location.pathname
+) {
+  bridge?.menu?.add('fuzequality', portalMenuItems)
+  const syncPath = () => {
+    const view = viewFromPathname(pathname())
+    if (view) setView(view)
+  }
+  const onNavigate = (event: Event) => {
+    const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>)
+      .detail
+    const view = detail?.section ?? detail?.id
+    if (isView(view)) setView(view)
+  }
+  target.addEventListener('fuzefront:navigate', onNavigate)
+  target.addEventListener('popstate', syncPath)
+  syncPath()
+  return () => {
+    target.removeEventListener('fuzefront:navigate', onNavigate)
+    target.removeEventListener('popstate', syncPath)
+    bridge?.menu?.remove('fuzequality')
+  }
 }
 
 /** Publish the app's IA to the portal sidebar; the host remains its renderer. */
 function usePortalMenu(setView: (view: View) => void) {
   useEffect(() => {
-    const bridge = runtimeBridge()
-    bridge?.menu?.add('fuzequality', portalMenuItems)
-    const onNavigate = (event: Event) => {
-      const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>)
-        .detail
-      const target = detail?.section ?? detail?.id
-      if (isView(target)) setView(target)
-    }
-    window.addEventListener('fuzefront:navigate', onNavigate)
-    const initial = viewFromPathname(window.location.pathname)
-    if (initial) setView(initial)
-    return () => {
-      window.removeEventListener('fuzefront:navigate', onNavigate)
-      bridge?.menu?.remove('fuzequality')
-    }
+    return connectPortalNavigation(runtimeBridge(), setView)
   }, [setView])
 }
 
