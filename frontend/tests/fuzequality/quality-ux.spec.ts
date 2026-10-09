@@ -41,6 +41,33 @@ const documentedStoryPortfolio = {
   }],
 }
 
+const qualityArtifacts = [
+  { id: 'route-artifact', repositoryId: 'repo-1', kind: 'route', title: 'Suspend app route', sourcePath: 'src/routes/apps.ts', summary: 'Authenticated suspension route', evidence: ['POST /apps/{slug}/suspend'] },
+  { id: 'policy-artifact', repositoryId: 'repo-1', kind: 'policy', title: 'Administrative suspension policy', sourcePath: 'docs/policies/apps.md', summary: 'Only administrators may suspend apps', evidence: ['role=administrator'] },
+  { id: 'gate-artifact', repositoryId: 'repo-1', kind: 'gate', title: 'Suspension authorization gate', sourcePath: '.github/workflows/quality.yml', summary: 'Checks the administrator boundary', evidence: ['npm run test:authorization'] },
+  { id: 'load-artifact', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'] },
+]
+
+const repositoryFlowCandidates = [{
+  id: 'candidate-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Suspend an application', confidence: 0.94,
+  evidence: ['src/routes/apps.ts:42', 'frontend/src/pages/AppSettings.tsx:88'],
+  steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['POST /apps/{slug}/suspend'] }],
+  wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['AppSettings'] }, { label: 'Confirm suspension', targetIds: ['SuspendDialog'] }, { label: 'Suspended state', targetIds: ['AppStatus'] }] },
+  status: 'proposed', source: 'litellm', createdAt: '2026-10-08T09:00:00.000Z',
+}]
+
+const policyGateEvaluations = [{
+  id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'unguarded-policy', severity: 'high',
+  title: 'Suspension policy requires a protected gate', detail: 'The policy is not enforced on every production path.', policyArtifactIds: ['policy-artifact'], gateArtifactIds: [],
+  recommendation: 'Require the authorization suite before production deployment.', reviewStatus: 'accepted', reviewedAt: '2026-10-08T10:00:00.000Z', reviewedBy: 'quality-owner', reviewReason: 'Required for every production release.', createdAt: '2026-10-08T09:30:00.000Z',
+}]
+
+const testExecutions = [{
+  id: 'execution-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'post-production', status: 'failed', name: 'Production suspension journey',
+  sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/123', startedAt: '2026-10-08T11:00:00.000Z', completedAt: '2026-10-08T11:02:00.000Z',
+  policyArtifactIds: ['policy-artifact'], gateArtifactIds: ['gate-artifact'], summary: 'Authorization assertion failed.',
+}]
+
 async function mockQualityApi(page: Page, fixture = portfolio) {
   let suggestionConfirmed = false
   let members = [{ id: 'member-1', email: 'owner@example.com', role: 'owner' }]
@@ -54,6 +81,15 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       suggestions: suggestionConfirmed ? [] : fixture.suggestions,
     })
     if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
+    if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
+    if (url.pathname.endsWith('/flow-candidates')) return respond(repositoryFlowCandidates)
+    if (url.pathname.endsWith('/policy-gate-evaluations')) return respond(policyGateEvaluations)
+    if (url.pathname.endsWith('/policy-gate-evaluations/evaluation-1/history')) return respond([
+      { status: 'accepted', reviewedBy: 'quality-owner', reason: 'Required for every production release.', createdAt: '2026-10-08T10:00:00.000Z' },
+      { status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
+    ])
+    if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
+    if (url.pathname.endsWith('/execution-performance')) return respond([{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
     if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
@@ -94,6 +130,28 @@ test.describe('FuzeQuality implemented UX flows', () => {
       await navigationButton.click()
       await expect(page.getByRole('heading', { name: heading })).toBeVisible()
     }
+  })
+
+  test('reviews repository flows, governance history, and execution evidence together', async ({ page }) => {
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await expect(page.getByRole('heading', { name: 'Quality intelligence' })).toBeVisible()
+
+    await expect(page.getByText('Suspend an application', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
+    await page.getByText('Source evidence', { exact: true }).click()
+    await expect(page.getByText('Revision abcdef123456')).toBeVisible()
+    await expect(page.getByText('src/routes/apps.ts:42')).toBeVisible()
+
+    await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
+    await page.getByText('Review history', { exact: true }).click()
+    await expect(page.getByText('quality-owner', { exact: true })).toBeVisible()
+    await expect(page.getByText('Initial evidence was incomplete.')).toBeVisible()
+
+    await expect(page.getByText('Production suspension journey', { exact: true })).toBeVisible()
+    await expect(page.getByText('Authorization assertion failed.')).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
+    await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()
+    await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
   })
 
   test('opens an API gap plan and queues selected test implementation', async ({ page }) => {
