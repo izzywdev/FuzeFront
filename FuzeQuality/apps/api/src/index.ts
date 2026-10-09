@@ -39,6 +39,7 @@ import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
 import { executionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
+import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -371,7 +372,11 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
   response.json(await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy'))
 })
 app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) => {
-  await store.savePolicyGateEvaluations(request.body.evaluations ?? [])
+  const parsed = policyGateEvaluationIngestionSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const ownershipError = await policyGateOwnershipError(parsed.data.evaluations, id => store.repository(id))
+  if (ownershipError) return response.status(400).json({ error: 'Evaluation repository/tenant ownership mismatch', ...ownershipError })
+  await store.savePolicyGateEvaluations(parsed.data.evaluations)
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/test-executions', async (request, response) => {

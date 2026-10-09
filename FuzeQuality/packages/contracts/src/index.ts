@@ -467,6 +467,10 @@ export type PolicyGateEvaluation = {
   detail: string
   policyArtifactIds: string[]
   gateArtifactIds: string[]
+  /** Detector confidence, not a claim that the policy itself is correct. */
+  confidence: number
+  /** Repository locations and matched subjects that bounded this finding. */
+  scope: { sourcePaths: string[]; subjects: string[] }
   recommendation: string
   /** Human review is required before a remediation recommendation is acted on. */
   reviewStatus: 'proposed' | 'accepted' | 'dismissed'
