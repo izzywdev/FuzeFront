@@ -641,6 +641,27 @@ components:
     ExecutionStatus:
       type: string
       enum: [passed, failed, cancelled, running]
+    TestExecutionThresholdInput:
+      type: object
+      additionalProperties: false
+      required: [metric, observed, operator, target]
+      properties:
+        metric: { type: string, minLength: 1, maxLength: 200 }
+        observed: { type: number }
+        unit: { type: string, minLength: 1, maxLength: 50 }
+        operator: { type: string, enum: [lt, lte, gt, gte, eq] }
+        target: { type: number }
+    TestExecutionThreshold:
+      type: object
+      additionalProperties: false
+      required: [metric, observed, operator, target, passed]
+      properties:
+        metric: { type: string, minLength: 1, maxLength: 200 }
+        observed: { type: number }
+        unit: { type: string, minLength: 1, maxLength: 50 }
+        operator: { type: string, enum: [lt, lte, gt, gte, eq] }
+        target: { type: number }
+        passed: { type: boolean }
     TestExecutionInput:
       type: object
       additionalProperties: false
@@ -668,10 +689,15 @@ components:
           maxItems: 100
           default: []
           items: { type: string }
+        thresholds:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/TestExecutionThresholdInput' }
         summary: { type: string, maxLength: 5000 }
     TestExecution:
       type: object
-      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds]
+      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, thresholds]
       properties:
         id: { type: string }
         repositoryId: { type: string, format: uuid }
@@ -692,6 +718,9 @@ components:
         gateArtifactIds:
           type: array
           items: { type: string }
+        thresholds:
+          type: array
+          items: { $ref: '#/components/schemas/TestExecutionThreshold' }
         summary: { type: string }
     PolicyGatePerformance:
       type: object

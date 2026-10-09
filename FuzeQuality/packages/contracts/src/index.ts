@@ -495,8 +495,28 @@ export type TestExecution = {
   completedAt?: string
   policyArtifactIds: string[]
   gateArtifactIds: string[]
+  /** Measured pass/fail evidence retained exactly with this run attempt. */
+  thresholds: TestExecutionThreshold[]
   summary?: string
 }
+
+export type TestExecutionThreshold = {
+  metric: string
+  observed: number
+  unit?: string
+  operator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq'
+  target: number
+  /** Derived by FuzeQuality from observed/operator/target, never trusted from a producer. */
+  passed: boolean
+}
+
+export const testExecutionThresholdInputSchema = z.object({
+  metric: z.string().trim().min(1).max(200),
+  observed: z.number().finite(),
+  unit: z.string().trim().min(1).max(50).optional(),
+  operator: z.enum(['lt', 'lte', 'gt', 'gte', 'eq']),
+  target: z.number().finite(),
+}).strict()
 
 export const testExecutionInputSchema = z.object({
   repositoryId: z.string().uuid(), tenantId: z.string().min(1), revision: z.string().min(1).max(200),
@@ -506,7 +526,9 @@ export const testExecutionInputSchema = z.object({
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
   sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
-  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]), summary: z.string().max(5000).optional(),
+  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
+  thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),
+  summary: z.string().max(5000).optional(),
 }).strict()
 
 export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()

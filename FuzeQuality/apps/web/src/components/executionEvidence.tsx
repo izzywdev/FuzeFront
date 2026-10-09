@@ -1,5 +1,13 @@
 import type { TestExecution } from '@fuzequality/contracts'
 
+const THRESHOLD_OPERATOR_LABELS = {
+  lt: '<',
+  lte: '≤',
+  gt: '>',
+  gte: '≥',
+  eq: '=',
+} as const
+
 export function executionDurationLabel(
   startedAt?: string,
   completedAt?: string
@@ -63,5 +71,41 @@ export function ExecutionEvidenceMetadata({
         </div>
       )}
     </dl>
+  )
+}
+
+/** Reviewed performance assertions, with the API-derived outcome kept visible. */
+export function ExecutionThresholdEvidence({
+  execution,
+}: {
+  execution: TestExecution
+}) {
+  if (!execution.thresholds.length) return null
+
+  return (
+    <section
+      className="execution-thresholds"
+      aria-label="Execution threshold evidence"
+    >
+      <strong>Threshold evidence</strong>
+      <ul>
+        {execution.thresholds.map((threshold, index) => (
+          <li key={`${threshold.metric}-${index}`}>
+            <span className="execution-threshold-metric">{threshold.metric}</span>
+            <code>
+              {threshold.observed}
+              {threshold.unit ? ` ${threshold.unit}` : ''}{' '}
+              {THRESHOLD_OPERATOR_LABELS[threshold.operator]} {threshold.target}
+              {threshold.unit ? ` ${threshold.unit}` : ''}
+            </code>
+            <span
+              className={`status-pill ${threshold.passed ? 'status-passed' : 'status-failed'}`}
+            >
+              {threshold.passed ? 'Passed' : 'Failed'}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }

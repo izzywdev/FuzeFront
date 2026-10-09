@@ -82,6 +82,20 @@ describe('contract discovery', () => {
     })
   })
 
+  it('publishes structured execution threshold input and evaluated evidence', async () => {
+    await withSurface({ OPENAPI_SPEC_PATH: REPO_SPEC }, async base => {
+      const response = await fetch(`${base}/openapi.json`)
+      expect(response.status).toBe(200)
+      const document = await response.json()
+      const schemas = document.components.schemas
+      expect(schemas.TestExecutionInput.properties.thresholds.items.$ref).toBe(
+        '#/components/schemas/TestExecutionThresholdInput'
+      )
+      expect(schemas.TestExecutionThreshold.required).toContain('passed')
+      expect(schemas.TestExecution.required).toContain('thresholds')
+    })
+  })
+
   it('answers 503 — not 404 — when the document is missing', async () => {
     // 404 would read as "this service publishes no spec". It does; the document
     // is what is missing, and the two need different fixes.
