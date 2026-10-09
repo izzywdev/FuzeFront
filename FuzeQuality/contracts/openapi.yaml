@@ -647,6 +647,17 @@ components:
         reviewedBy: { type: string }
         reason: { type: string }
         createdAt: { type: string, format: date-time }
+    PolicyGateEvidencePassage:
+      type: object
+      additionalProperties: false
+      required: [artifactId, sourcePath, text, signal]
+      properties:
+        artifactId: { type: string, minLength: 1, maxLength: 500 }
+        sourcePath: { type: string, minLength: 1, maxLength: 1000 }
+        text: { type: string, minLength: 1, maxLength: 2000 }
+        signal:
+          type: string
+          enum: [policy, gate, obligation, prohibition, ambiguous]
     PolicyGateEvaluationInput:
       type: object
       additionalProperties: false
@@ -685,6 +696,11 @@ components:
               type: array
               maxItems: 100
               items: { type: string, minLength: 1, maxLength: 200 }
+        evidencePassages:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/PolicyGateEvidencePassage' }
         recommendation: { type: string, minLength: 1, maxLength: 5000 }
         reviewStatus: { type: string, enum: [proposed] }
         createdAt: { type: string, format: date-time }
@@ -721,6 +737,9 @@ components:
             subjects:
               type: array
               items: { type: string }
+        evidencePassages:
+          type: array
+          items: { $ref: '#/components/schemas/PolicyGateEvidencePassage' }
         recommendation: { type: string }
         reviewStatus: { type: string, enum: [proposed, accepted, dismissed] }
         reviewedAt: { type: string, format: date-time }

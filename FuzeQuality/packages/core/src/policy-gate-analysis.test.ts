@@ -33,4 +33,30 @@ describe('policy gate evaluation', () => {
     ])
     expect(results).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'ambiguous-policy', severity: 'medium', policyArtifactIds: ['policy-quality'] })]))
   })
+
+  it('requires opposing policy polarity and retains the decisive passages', () => {
+    const results = evaluatePolicyGates(repository, 'abc', [
+      { id: 'policy-require', repositoryId: 'repo-1', kind: 'policy', title: 'Production approval policy', sourcePath: 'governance/approval.md', summary: 'Production changes must require approval.', evidence: ['Every production change must require approval.'] },
+      { id: 'policy-forbid', repositoryId: 'repo-1', kind: 'policy', title: 'Production approval exception', sourcePath: 'governance/exception.md', summary: 'Production changes must not require approval.', evidence: ['Emergency production changes must not require approval.'] },
+    ])
+
+    expect(results).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'contradictory-policy',
+        evidencePassages: [
+          expect.objectContaining({ artifactId: 'policy-require', signal: 'obligation', text: 'Every production change must require approval.' }),
+          expect.objectContaining({ artifactId: 'policy-forbid', signal: 'prohibition', text: 'Emergency production changes must not require approval.' }),
+        ],
+      }),
+    ]))
+  })
+
+  it('does not call two prohibitions contradictory merely because must not contains must', () => {
+    const results = evaluatePolicyGates(repository, 'abc', [
+      { id: 'policy-one', repositoryId: 'repo-1', kind: 'policy', title: 'Production secret policy', sourcePath: 'governance/secrets.md', summary: 'Production secrets must not be logged.', evidence: [] },
+      { id: 'policy-two', repositoryId: 'repo-1', kind: 'policy', title: 'Production secret handling', sourcePath: 'governance/secret-handling.md', summary: 'Production secrets must not be exported.', evidence: [] },
+    ])
+
+    expect(results.some(item => item.kind === 'contradictory-policy')).toBe(false)
+  })
 })

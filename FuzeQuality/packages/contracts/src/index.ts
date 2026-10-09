@@ -471,6 +471,13 @@ export type PolicyGateEvaluation = {
   confidence: number
   /** Repository locations and matched subjects that bounded this finding. */
   scope: { sourcePaths: string[]; subjects: string[] }
+  /** Exact repository passages that caused the deterministic finding. */
+  evidencePassages?: Array<{
+    artifactId: string
+    sourcePath: string
+    text: string
+    signal: 'policy' | 'gate' | 'obligation' | 'prohibition' | 'ambiguous'
+  }>
   recommendation: string
   /** Human review is required before a remediation recommendation is acted on. */
   reviewStatus: 'proposed' | 'accepted' | 'dismissed'

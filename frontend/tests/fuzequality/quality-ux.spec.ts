@@ -66,6 +66,7 @@ const repositoryFlowCandidates = [{
 const policyGateEvaluations = [{
   id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'unguarded-policy', severity: 'high',
   title: 'Suspension policy requires a protected gate', detail: 'The policy is not enforced on every production path.', policyArtifactIds: ['policy-artifact'], gateArtifactIds: [],
+  confidence: 0.75, scope: { sourcePaths: ['docs/policies/apps.md'], subjects: ['suspension'] }, evidencePassages: [{ artifactId: 'policy-artifact', sourcePath: 'docs/policies/apps.md', text: 'Only administrators may suspend apps.', signal: 'obligation' }],
   recommendation: 'Require the authorization suite before production deployment.', reviewStatus: 'accepted', reviewedAt: '2026-10-08T10:00:00.000Z', reviewedBy: 'quality-owner', reviewReason: 'Required for every production release.', createdAt: '2026-10-08T09:30:00.000Z',
 }]
 
@@ -237,6 +238,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(flowHistory.getByText('The first analysis missed the administrator boundary.')).toBeVisible()
 
     await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Decisive policy passages')).toContainText('Only administrators may suspend apps.')
     await page.getByText('Review history', { exact: true }).click()
     await expect(page.getByText('quality-owner', { exact: true })).toBeVisible()
     await expect(page.getByText('Initial evidence was incomplete.')).toBeVisible()

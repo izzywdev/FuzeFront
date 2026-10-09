@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { MemoryCatalogStore } from './store'
+import { describe, expect, it, vi } from 'vitest'
+import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 
 describe('policy-gate review lifecycle', () => {
   it('keeps an explicit review decision when the same revision is re-analysed', async () => {
@@ -16,5 +16,19 @@ describe('policy-gate review lifecycle', () => {
     ])
     await expect(store.policyGateReviewHistory(evaluation.id, 'tenant-2')).resolves.toEqual([])
     await expect(store.reviewPolicyGateEvaluation(evaluation.id, 'tenant-2', { status: 'dismissed', reviewedBy: 'user-2' })).resolves.toBeUndefined()
+  })
+
+  it('persists exact evidence passages with the deterministic evaluation', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+    const evidencePassages = [{ artifactId: 'policy-1', sourcePath: 'governance/deployment.md', text: 'Every deployment must be approved.', signal: 'obligation' as const }]
+
+    await store.savePolicyGateEvaluations([{
+      id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abc', kind: 'unguarded-policy', severity: 'high', title: 'Missing deployment guard', detail: 'No matching gate', policyArtifactIds: ['policy-1'], gateArtifactIds: [], confidence: 0.75, scope: { sourcePaths: ['governance/deployment.md'], subjects: ['deployment'] }, evidencePassages, recommendation: 'Add a deployment gate', reviewStatus: 'proposed', createdAt: '2026-10-08T00:00:00.000Z',
+    }])
+
+    expect(String(query.mock.calls[0][0])).toContain('evidence_passages')
+    expect(query.mock.calls[0][1][12]).toBe(JSON.stringify(evidencePassages))
   })
 })

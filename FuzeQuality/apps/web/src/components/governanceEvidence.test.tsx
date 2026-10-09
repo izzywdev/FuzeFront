@@ -22,6 +22,12 @@ const evaluation: PolicyGateEvaluation = {
     sourcePaths: ['governance/auth.md'],
     subjects: ['authentication'],
   },
+  evidencePassages: [{
+    artifactId: 'policy-auth',
+    sourcePath: 'governance/auth.md',
+    text: 'Authentication is required.',
+    signal: 'obligation',
+  }],
   recommendation: 'Add a gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T08:00:00.000Z',
@@ -46,6 +52,8 @@ describe('PolicyGateEvidence', () => {
     expect(screen.getByText('Matched subjects: authentication')).toBeInTheDocument()
     expect(screen.getByText('Authentication policy')).toBeInTheDocument()
     expect(screen.getByText('policy · governance/auth.md')).toBeInTheDocument()
+    expect(screen.getByRole('generic', { name: 'Decisive policy passages' })).toHaveTextContent('Authentication is required.')
+    expect(screen.getByText('obligation')).toBeInTheDocument()
   })
 
   it('keeps legacy evaluations without confidence or scope reviewable', () => {

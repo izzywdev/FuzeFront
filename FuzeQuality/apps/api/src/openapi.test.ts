@@ -107,6 +107,12 @@ describe('contract discovery', () => {
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )
+      expect(schemas.PolicyGateEvaluationInput.properties.evidencePassages.items.$ref).toBe(
+        '#/components/schemas/PolicyGateEvidencePassage'
+      )
+      expect(schemas.PolicyGateEvidencePassage.required).toEqual(
+        ['artifactId', 'sourcePath', 'text', 'signal']
+      )
       const ingestionSchema = schemas.PolicyGateEvaluationInput
       expect(
         document.paths['/api/v1/internal/policy-gate-evaluations'].post.requestBody.content[
