@@ -467,6 +467,10 @@ export type PolicyGateEvaluation = {
   detail: string
   policyArtifactIds: string[]
   gateArtifactIds: string[]
+  /** Detector confidence, not a claim that the policy itself is correct. */
+  confidence: number
+  /** Repository locations and matched subjects that bounded this finding. */
+  scope: { sourcePaths: string[]; subjects: string[] }
   recommendation: string
   /** Human review is required before a remediation recommendation is acted on. */
   reviewStatus: 'proposed' | 'accepted' | 'dismissed'
@@ -495,8 +499,61 @@ export type TestExecution = {
   completedAt?: string
   policyArtifactIds: string[]
   gateArtifactIds: string[]
+  /** Explicit per-pair outcomes; never inferred from unrelated policy/gate lists. */
+  gateEvaluations: TestExecutionGateEvaluation[]
+  /** Measured pass/fail evidence retained exactly with this run attempt. */
+  thresholds: TestExecutionThreshold[]
+  /** Durable or provider-hosted evidence produced by this exact run attempt. */
+  evidenceLinks: TestExecutionEvidenceLink[]
   summary?: string
 }
+
+export type TestExecutionEvidenceLink = {
+  kind: 'video' | 'report' | 'trace' | 'screenshot' | 'log' | 'other'
+  name: string
+  url: string
+}
+
+export const testExecutionEvidenceLinkSchema = z.object({
+  kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
+  name: z.string().trim().min(1).max(200),
+  url: z.string().url().max(2000).refine(
+    value => value.startsWith('https://'),
+    'Evidence URL must use HTTPS',
+  ),
+}).strict()
+
+export type TestExecutionGateEvaluation = {
+  policyArtifactId: string
+  gateArtifactId: string
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  detail?: string
+}
+
+export const testExecutionGateEvaluationSchema = z.object({
+  policyArtifactId: z.string().trim().min(1).max(500),
+  gateArtifactId: z.string().trim().min(1).max(500),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']),
+  detail: z.string().trim().min(1).max(1000).optional(),
+}).strict()
+
+export type TestExecutionThreshold = {
+  metric: string
+  observed: number
+  unit?: string
+  operator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq'
+  target: number
+  /** Derived by FuzeQuality from observed/operator/target, never trusted from a producer. */
+  passed: boolean
+}
+
+export const testExecutionThresholdInputSchema = z.object({
+  metric: z.string().trim().min(1).max(200),
+  observed: z.number().finite(),
+  unit: z.string().trim().min(1).max(50).optional(),
+  operator: z.enum(['lt', 'lte', 'gt', 'gte', 'eq']),
+  target: z.number().finite(),
+}).strict()
 
 export const testExecutionInputSchema = z.object({
   repositoryId: z.string().uuid(), tenantId: z.string().min(1), revision: z.string().min(1).max(200),
@@ -506,8 +563,23 @@ export const testExecutionInputSchema = z.object({
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
   sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
-  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]), summary: z.string().max(5000).optional(),
-}).strict()
+  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
+  gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
+  thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),
+  evidenceLinks: z.array(testExecutionEvidenceLinkSchema).max(100).default([]),
+  summary: z.string().max(5000).optional(),
+}).strict().superRefine((execution, context) => {
+  const pairs = new Set<string>()
+  for (const [index, evaluation] of execution.gateEvaluations.entries()) {
+    const pair = `${evaluation.policyArtifactId}\u0000${evaluation.gateArtifactId}`
+    if (pairs.has(pair)) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Duplicate policy/gate evaluation pair',
+      path: ['gateEvaluations', index],
+    })
+    pairs.add(pair)
+  }
+})
 
 export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()
 

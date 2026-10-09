@@ -46,6 +46,18 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(template).toContain('files/onboarding-kit/register.sh')
   })
 
+  it('runs portal registration as an explicit Argo PostSync hook', () => {
+    const registration = read('templates/registration.yaml')
+
+    expect(registration).toContain('argocd.argoproj.io/hook: PostSync')
+    expect(registration).toContain(
+      'argocd.argoproj.io/hook-delete-policy: BeforeHookCreation'
+    )
+    expect(registration).toContain(
+      'helm.sh/hook: post-install,post-upgrade'
+    )
+  })
+
   it('keeps the production portal registration, mount, and Vite federation identity aligned', () => {
     const manifest = JSON.parse(
       read('../../../registration/manifest.json')

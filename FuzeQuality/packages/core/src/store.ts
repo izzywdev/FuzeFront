@@ -258,6 +258,9 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async saveTestExecution(execution: TestExecution) {
     const index = this.executions.findIndex(item => item.repositoryId === execution.repositoryId && item.provider === execution.provider && item.externalRunId === execution.externalRunId && item.attempt === execution.attempt)
+    // GitHub webhook delivery is not ordered. A delayed requested or
+    // in-progress event must not erase a terminal result for this attempt.
+    if (index >= 0 && this.executions[index].status !== 'running' && execution.status === 'running') return
     if (index >= 0) this.executions[index] = execution
     else this.executions.push(execution)
   }
@@ -497,9 +500,27 @@ export class MemoryCatalogStore implements CatalogStore {
     let changed = false
     switch (projection.type) {
       case 'organization.upsert': changed = await this.upsertTenant(projection.tenant); break
-      case 'organization.deleted': changed = await this.deactivateTenant(projection.tenantId); break
+      case 'organization.deleted': {
+        changed = await this.deactivateTenant(projection.tenantId)
+        for (const membership of this.memberships.values()) {
+          if (membership.tenantId === projection.tenantId && membership.active) {
+            membership.active = false
+            changed = true
+          }
+        }
+        break
+      }
       case 'user.upsert': changed = await this.upsertPrincipal(projection.principal); break
-      case 'user.deleted': changed = await this.deactivatePrincipal(projection.principalId); break
+      case 'user.deleted': {
+        changed = await this.deactivatePrincipal(projection.principalId)
+        for (const membership of this.memberships.values()) {
+          if (membership.principalId === projection.principalId && membership.active) {
+            membership.active = false
+            changed = true
+          }
+        }
+        break
+      }
       case 'membership.changed': changed = await this.setOrganizationMembership(projection.membership); break
     }
     if (changed) this.outboxEvents.push({ ...structuredClone(outbound), id: randomUUID(), attempts: 0, createdAt: new Date().toISOString() })
@@ -692,15 +713,15 @@ export class PostgresCatalogStore implements CatalogStore {
       'SELECT * FROM fuzequality.policy_gate_evaluations WHERE repository_id=$1 AND tenant_id=$2 ORDER BY created_at DESC',
       [repositoryId, tenantId],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
 
   async savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void> {
     for (const item of evaluations) await this.pool.query(
-      `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,recommendation,review_status,reviewed_at,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-       ON CONFLICT (repository_id,revision,kind,title) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,recommendation=EXCLUDED.recommendation,created_at=EXCLUDED.created_at`,
-      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
+      `INSERT INTO fuzequality.policy_gate_evaluations (id,repository_id,tenant_id,revision,kind,severity,title,detail,policy_artifact_ids,gate_artifact_ids,confidence,scope,recommendation,review_status,reviewed_at,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       ON CONFLICT (repository_id,revision,kind,title) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,confidence=EXCLUDED.confidence,scope=EXCLUDED.scope,recommendation=EXCLUDED.recommendation,created_at=EXCLUDED.created_at`,
+      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.severity,item.title,item.detail,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.confidence,JSON.stringify(item.scope),item.recommendation,item.reviewStatus,item.reviewedAt ?? null,item.createdAt],
     )
   }
 
@@ -714,7 +735,7 @@ export class PostgresCatalogStore implements CatalogStore {
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
     const row = result.rows[0]
-    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() } : undefined
+    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() } : undefined
   }
 
   async policyGateReviewHistory(evaluationId: string, tenantId: string): Promise<PolicyGateReviewHistoryEntry[]> {
@@ -724,15 +745,16 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]> {
     const result = await this.pool.query('SELECT * FROM fuzequality.test_executions WHERE repository_id=$1 AND tenant_id=$2 ORDER BY completed_at DESC NULLS LAST, created_at DESC', [repositoryId, tenantId])
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, summary: row.summary ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 
   async saveTestExecution(item: TestExecution): Promise<void> {
     await this.pool.query(
-      `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,summary)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,source_url=EXCLUDED.source_url,started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,summary=EXCLUDED.summary`,
-      [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.kind,item.status,item.name,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.summary ?? null],
+      `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,source_url=EXCLUDED.source_url,started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,gate_evaluations=EXCLUDED.gate_evaluations,thresholds=EXCLUDED.thresholds,evidence_links=EXCLUDED.evidence_links,summary=EXCLUDED.summary
+       WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'`,
+      [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.kind,item.status,item.name,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.summary ?? null],
     )
   }
 
@@ -817,11 +839,15 @@ export class PostgresCatalogStore implements CatalogStore {
         }
         case 'organization.deleted':
           result = await client.query(
-            `WITH deactivated AS (
-               UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id
-             ), memberships AS (
-               UPDATE fuzequality.organization_memberships SET active=false,updated_at=now() WHERE tenant_id=$1 AND active=true
-             ) SELECT id FROM deactivated`,
+            `WITH deactivated_tenant AS (
+               UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now()
+               WHERE id=$1 AND active=true RETURNING id
+             ), deactivated_memberships AS (
+               UPDATE fuzequality.organization_memberships SET active=false, updated_at=now()
+               WHERE tenant_id=$1 AND active=true RETURNING tenant_id
+             )
+             SELECT EXISTS (SELECT 1 FROM deactivated_tenant)
+                 OR EXISTS (SELECT 1 FROM deactivated_memberships) AS changed`,
             [projection.tenantId],
           )
           break
@@ -841,11 +867,15 @@ export class PostgresCatalogStore implements CatalogStore {
         }
         case 'user.deleted':
           result = await client.query(
-            `WITH deactivated AS (
-               UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id
-             ), memberships AS (
-               UPDATE fuzequality.organization_memberships SET active=false,updated_at=now() WHERE principal_id=$1 AND active=true
-             ) SELECT id FROM deactivated`,
+            `WITH deactivated_principal AS (
+               UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now()
+               WHERE id=$1 AND active=true RETURNING id
+             ), deactivated_memberships AS (
+               UPDATE fuzequality.organization_memberships SET active=false, updated_at=now()
+               WHERE principal_id=$1 AND active=true RETURNING principal_id
+             )
+             SELECT EXISTS (SELECT 1 FROM deactivated_principal)
+                 OR EXISTS (SELECT 1 FROM deactivated_memberships) AS changed`,
             [projection.principalId],
           )
           break
@@ -863,7 +893,9 @@ export class PostgresCatalogStore implements CatalogStore {
           break
         }
       }
-      const changed = Boolean(result.rowCount)
+      const changed = projection.type === 'organization.deleted' || projection.type === 'user.deleted'
+        ? result.rows[0]?.changed === true
+        : Boolean(result.rowCount)
       if (changed) {
         await client.query(
           'INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
@@ -1114,7 +1146,7 @@ export class PostgresCatalogStore implements CatalogStore {
   async rebuildCoverage() {
     const portfolio = await this.portfolio()
     const evaluationRows = await this.pool.query('SELECT * FROM fuzequality.policy_gate_evaluations')
-    const evaluations = evaluationRows.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
+    const evaluations = evaluationRows.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, confidence: Number(row.confidence), scope: row.scope, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() }))
     const projection = buildQualityIntelligenceProjection(portfolio, { policyGateEvaluations: evaluations })
     const client = await this.pool.connect()
     try {

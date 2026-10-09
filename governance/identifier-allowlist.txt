@@ -62,3 +62,16 @@ src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1011  
 # In-memory only: a Map key for a pending tool confirmation, never persisted and
 # never leaving the process.
 src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
+
+# FuzeQuality is a separate PRODUCT vendored into this tree. Its entities are its
+# own and namespace under its own repo (identifier-standard.md §2), so they are
+# not this registry's to mint. Tracked against FuzeQuality's own adoption.
+src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
+src FuzeQuality/apps/api/src/index.ts:392                   # FuzeQuality-owned test-execution entity
+src FuzeQuality/packages/core/src/store.ts:278              # FuzeQuality-owned repository entity
+src FuzeQuality/packages/core/src/store.ts:355              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:366              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:452              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:526              # FuzeQuality-owned identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:537              # FuzeQuality-owned design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1286             # FuzeQuality-owned admin-context audit entity

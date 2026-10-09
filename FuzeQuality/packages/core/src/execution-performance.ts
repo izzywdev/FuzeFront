@@ -45,12 +45,21 @@ export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOut
 /** Aggregates immutable execution evidence; no missing link is inferred as a passing gate. */
 export function executionPerformance(executions: TestExecution[]): PolicyGatePerformance[] {
   const results = new Map<string, PolicyGatePerformance>()
-  for (const execution of executions) for (const policyArtifactId of execution.policyArtifactIds) for (const gateArtifactId of execution.gateArtifactIds) {
-    const key = `${policyArtifactId}:${gateArtifactId}`
-    const current = results.get(key) ?? { policyArtifactId, gateArtifactId, passed: 0, failed: 0, cancelled: 0, running: 0 }
-    current[execution.status]++
-    if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
-    results.set(key, current)
+  for (const execution of executions) {
+    // Rows created before explicit pair evidence existed are only safe to use
+    // when there is exactly one possible pair. Never create a Cartesian product.
+    const gateEvaluations = execution.gateEvaluations.length
+      ? execution.gateEvaluations
+      : execution.policyArtifactIds.length === 1 && execution.gateArtifactIds.length === 1
+        ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0], status: execution.status }]
+        : []
+    for (const evaluation of gateEvaluations) {
+      const key = `${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
+      const current = results.get(key) ?? { policyArtifactId: evaluation.policyArtifactId, gateArtifactId: evaluation.gateArtifactId, passed: 0, failed: 0, cancelled: 0, running: 0 }
+      current[evaluation.status]++
+      if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
+      results.set(key, current)
+    }
   }
   return [...results.values()].sort((left, right) => right.failed - left.failed || right.passed - left.passed || left.gateArtifactId.localeCompare(right.gateArtifactId))
 }

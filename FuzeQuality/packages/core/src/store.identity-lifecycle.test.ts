@@ -41,6 +41,53 @@ describe('identity lifecycle projection', () => {
     await expect(store.setOrganizationMembership({ tenantId: 'org_1', principalId: 'user_1', role: 'member', active: false })).resolves.toBe(false)
   })
 
+  it('deactivates org-user projections when either side is deleted', async () => {
+    const store = new MemoryCatalogStore()
+    const tenant = { id: 'org_1', slug: 'acme', name: 'Acme', type: 'organization' as const, active: true }
+    const secondTenant = { id: 'org_2', slug: 'other', name: 'Other', type: 'organization' as const, active: true }
+    const principal = { id: 'user_1', email: 'a@acme.test', active: true }
+    await store.upsertTenant(tenant)
+    await store.upsertTenant(secondTenant)
+    await store.upsertPrincipal(principal)
+    await store.setOrganizationMembership({ tenantId: tenant.id, principalId: principal.id, role: 'member', active: true })
+    await store.setOrganizationMembership({ tenantId: secondTenant.id, principalId: principal.id, role: 'admin', active: true })
+
+    await expect(store.projectIdentityLifecycle(
+      { type: 'organization.deleted', tenantId: tenant.id },
+      { topic: 'fuzequality.tenant.deleted', key: tenant.id, payload: { tenantId: tenant.id } },
+    )).resolves.toBe(true)
+    await expect(store.setOrganizationMembership({ tenantId: tenant.id, principalId: principal.id, role: 'member', active: false })).resolves.toBe(false)
+
+    await expect(store.projectIdentityLifecycle(
+      { type: 'user.deleted', principalId: principal.id },
+      { topic: 'fuzequality.principal.deleted', key: principal.id, payload: { userId: principal.id } },
+    )).resolves.toBe(true)
+    await expect(store.setOrganizationMembership({ tenantId: secondTenant.id, principalId: principal.id, role: 'admin', active: false })).resolves.toBe(false)
+  })
+
+  it.each([
+    ['organization.deleted', { type: 'organization.deleted' as const, tenantId: 'org_1' }, 'tenant_id'],
+    ['user.deleted', { type: 'user.deleted' as const, principalId: 'user_1' }, 'principal_id'],
+  ])('atomically deactivates memberships for Postgres %s projections', async (_name, projection, membershipColumn) => {
+    const query = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.includes('deactivated_memberships')) return { rowCount: 1, rows: [{ changed: true }] }
+      return { rowCount: 0, rows: [] }
+    })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { connect: vi.fn().mockResolvedValue({ query, release }) }
+
+    await expect(store.projectIdentityLifecycle(
+      projection,
+      { topic: `fuzequality.${_name}`, payload: {} },
+    )).resolves.toBe(true)
+
+    const lifecycleSql = query.mock.calls.map(([sql]) => sql).find(sql => sql.includes('deactivated_memberships'))
+    expect(lifecycleSql).toContain(`WHERE ${membershipColumn}=$1 AND active=true`)
+    expect(query.mock.calls.map(([sql]) => sql.trim().split(/\s/)[0])).toEqual(['BEGIN', 'WITH', 'INSERT', 'COMMIT'])
+    expect(release).toHaveBeenCalledOnce()
+  })
+
   it('recovers publication after a broker failure without duplicating the projection event', async () => {
     const store = new MemoryCatalogStore()
     const outbound = { topic: 'fuzequality.tenant.seeded', key: 'org_1', payload: { tenantId: 'org_1' } }

@@ -48,6 +48,7 @@ export type WorkflowExecutionCommand = {
   sourceUrl?: string
   startedAt?: string
   completedAt?: string
+  evidenceLinks: Array<{ kind: 'report'; name: string; url: string }>
   summary?: string
 }
 
@@ -156,6 +157,7 @@ export function webhookWorkflowExecutions(event: string, payload: unknown, repos
     sourceUrl: run.html_url,
     startedAt: run.run_started_at ?? undefined,
     completedAt: run.status === 'completed' ? run.updated_at : undefined,
+    evidenceLinks: run.html_url ? [{ kind: 'report' as const, name: 'GitHub Actions artifacts', url: `${run.html_url}#artifacts` }] : [],
     summary: run.conclusion ?? undefined,
   }))
 }

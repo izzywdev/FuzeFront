@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.2.0
+  version: 0.3.0
   license:
     name: UNLICENSED
 servers:
@@ -207,6 +207,16 @@ paths:
       summary: List tenant-scoped, reviewable UX-flow candidates
       tags: [flow-candidates]
       security: [{ platformBearer: [] }]
+      parameters:
+        - name: source
+          in: query
+          schema: { type: string, enum: [deterministic, litellm] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [proposed, confirmed, rejected] }
+        - name: revision
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 500 }
       responses:
         '200':
           description: UX-flow candidates discovered for the repository.
@@ -215,6 +225,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -308,12 +319,16 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
+              required: [evaluations]
               properties:
                 evaluations:
                   type: array
-                  items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+                  maxItems: 200
+                  items: { $ref: '#/components/schemas/PolicyGateEvaluationInput' }
       responses:
         '202': { $ref: '#/components/responses/Accepted' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /api/v1/repositories/{repositoryId}/policy-gate-evaluations:
@@ -632,9 +647,50 @@ components:
         reviewedBy: { type: string }
         reason: { type: string }
         createdAt: { type: string, format: date-time }
+    PolicyGateEvaluationInput:
+      type: object
+      additionalProperties: false
+      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, confidence, scope, recommendation, reviewStatus, createdAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200 }
+        repositoryId: { type: string, format: uuid }
+        tenantId: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: string, minLength: 1, maxLength: 500 }
+        kind:
+          type: string
+          enum: [unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+        severity: { type: string, enum: [high, medium, low] }
+        title: { type: string, minLength: 1, maxLength: 500 }
+        detail: { type: string, minLength: 1, maxLength: 5000 }
+        policyArtifactIds:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 500 }
+        gateArtifactIds:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 500 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        scope:
+          type: object
+          additionalProperties: false
+          required: [sourcePaths, subjects]
+          properties:
+            sourcePaths:
+              type: array
+              minItems: 1
+              maxItems: 100
+              items: { type: string, minLength: 1, maxLength: 1000 }
+            subjects:
+              type: array
+              maxItems: 100
+              items: { type: string, minLength: 1, maxLength: 200 }
+        recommendation: { type: string, minLength: 1, maxLength: 5000 }
+        reviewStatus: { type: string, enum: [proposed] }
+        createdAt: { type: string, format: date-time }
     PolicyGateEvaluation:
       type: object
-      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, recommendation, reviewStatus, createdAt]
+      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, confidence, scope, recommendation, reviewStatus, createdAt]
       properties:
         id: { type: string }
         repositoryId: { type: string, format: uuid }
@@ -652,6 +708,19 @@ components:
         gateArtifactIds:
           type: array
           items: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        scope:
+          type: object
+          additionalProperties: false
+          required: [sourcePaths, subjects]
+          properties:
+            sourcePaths:
+              type: array
+              minItems: 1
+              items: { type: string }
+            subjects:
+              type: array
+              items: { type: string }
         recommendation: { type: string }
         reviewStatus: { type: string, enum: [proposed, accepted, dismissed] }
         reviewedAt: { type: string, format: date-time }
@@ -674,6 +743,44 @@ components:
     ExecutionStatus:
       type: string
       enum: [passed, failed, cancelled, running]
+    TestExecutionThresholdInput:
+      type: object
+      additionalProperties: false
+      required: [metric, observed, operator, target]
+      properties:
+        metric: { type: string, minLength: 1, maxLength: 200 }
+        observed: { type: number }
+        unit: { type: string, minLength: 1, maxLength: 50 }
+        operator: { type: string, enum: [lt, lte, gt, gte, eq] }
+        target: { type: number }
+    TestExecutionThreshold:
+      type: object
+      additionalProperties: false
+      required: [metric, observed, operator, target, passed]
+      properties:
+        metric: { type: string, minLength: 1, maxLength: 200 }
+        observed: { type: number }
+        unit: { type: string, minLength: 1, maxLength: 50 }
+        operator: { type: string, enum: [lt, lte, gt, gte, eq] }
+        target: { type: number }
+        passed: { type: boolean }
+    TestExecutionGateEvaluation:
+      type: object
+      additionalProperties: false
+      required: [policyArtifactId, gateArtifactId, status]
+      properties:
+        policyArtifactId: { type: string, minLength: 1, maxLength: 500 }
+        gateArtifactId: { type: string, minLength: 1, maxLength: 500 }
+        status: { $ref: '#/components/schemas/ExecutionStatus' }
+        detail: { type: string, minLength: 1, maxLength: 1000 }
+    TestExecutionEvidenceLink:
+      type: object
+      additionalProperties: false
+      required: [kind, name, url]
+      properties:
+        kind: { type: string, enum: [video, report, trace, screenshot, log, other] }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        url: { type: string, format: uri, pattern: '^https://', maxLength: 2000 }
     TestExecutionInput:
       type: object
       additionalProperties: false
@@ -701,10 +808,25 @@ components:
           maxItems: 100
           default: []
           items: { type: string }
+        gateEvaluations:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/TestExecutionGateEvaluation' }
+        thresholds:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/TestExecutionThresholdInput' }
+        evidenceLinks:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         summary: { type: string, maxLength: 5000 }
     TestExecution:
       type: object
-      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds]
+      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, gateEvaluations, thresholds, evidenceLinks]
       properties:
         id: { type: string }
         repositoryId: { type: string, format: uuid }
@@ -725,6 +847,15 @@ components:
         gateArtifactIds:
           type: array
           items: { type: string }
+        gateEvaluations:
+          type: array
+          items: { $ref: '#/components/schemas/TestExecutionGateEvaluation' }
+        thresholds:
+          type: array
+          items: { $ref: '#/components/schemas/TestExecutionThreshold' }
+        evidenceLinks:
+          type: array
+          items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         summary: { type: string }
     DesignTestLinkTargetKind:
       type: string
