@@ -166,6 +166,39 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/v1/internal/design-test-links:
+    post:
+      operationId: projectDesignTestLinkLifecycle
+      summary: Project a FuzeX design-to-test link into FuzeQuality
+      description: >-
+        Cluster-internal lifecycle projection for the relationship between a
+        FuzeX UX design target and a FuzeQuality test case. This endpoint is
+        intentionally relationship-only: it never accepts prototype HTML,
+        design-policy text, test output, credentials, or a URL for the service
+        to fetch. FuzeX is the source of the trace link; FuzeQuality records
+        whether that link is active and emits its own verified or revoked
+        lifecycle event for downstream consumers.
+
+
+        Callers authenticate with the FuzeQuality service token. The tenant ID
+        is part of the event key and must be a UUID, so an event cannot be
+        accidentally projected into an unscoped legacy tenant.
+      tags: [worker-design-traceability]
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DesignTestLinkLifecycleEvent' }
+      responses:
+        '202':
+          description: The design-test relationship was accepted; `changed` is false for an idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InternalAcceptedChange' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
   /api/v1/repositories/{repositoryId}/flow-candidates:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -693,6 +726,52 @@ components:
           type: array
           items: { type: string }
         summary: { type: string }
+    DesignTestLinkTargetKind:
+      type: string
+      enum: [flow-step, frame, component]
+      description: The kind of FuzeX design target identified by `targetRef`.
+    DesignTestLinkLifecycleEvent:
+      oneOf:
+        - $ref: '#/components/schemas/DesignTestLinkUpsertEvent'
+        - $ref: '#/components/schemas/DesignTestLinkRemovedEvent'
+      discriminator:
+        propertyName: type
+        mapping:
+          design-test-link.upsert: '#/components/schemas/DesignTestLinkUpsertEvent'
+          design-test-link.removed: '#/components/schemas/DesignTestLinkRemovedEvent'
+    DesignTestLinkUpsertEvent:
+      type: object
+      additionalProperties: false
+      required: [type, tenantId, traceLinkId, fuzexProjectId, targetKind, targetRef, testCaseId]
+      properties:
+        type: { type: string, enum: [design-test-link.upsert] }
+        tenantId: { type: string, format: uuid }
+        traceLinkId: { type: string, minLength: 1, maxLength: 200 }
+        fuzexProjectId: { type: string, minLength: 1, maxLength: 200 }
+        targetKind: { $ref: '#/components/schemas/DesignTestLinkTargetKind' }
+        targetRef: { type: string, minLength: 1, maxLength: 1000 }
+        testCaseId: { type: string, minLength: 1, maxLength: 500 }
+    DesignTestLinkRemovedEvent:
+      type: object
+      additionalProperties: false
+      required: [type, tenantId, traceLinkId, fuzexProjectId, targetKind, targetRef, testCaseId]
+      properties:
+        type: { type: string, enum: [design-test-link.removed] }
+        tenantId: { type: string, format: uuid }
+        traceLinkId: { type: string, minLength: 1, maxLength: 200 }
+        fuzexProjectId: { type: string, minLength: 1, maxLength: 200 }
+        targetKind: { $ref: '#/components/schemas/DesignTestLinkTargetKind' }
+        targetRef: { type: string, minLength: 1, maxLength: 1000 }
+        testCaseId: { type: string, minLength: 1, maxLength: 500 }
+    InternalAcceptedChange:
+      type: object
+      additionalProperties: false
+      required: [accepted, changed]
+      properties:
+        accepted: { type: boolean, enum: [true] }
+        changed:
+          type: boolean
+          description: False when the received lifecycle event was an idempotent replay.
     PolicyGatePerformance:
       type: object
       required: [policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
@@ -767,5 +846,7 @@ tags:
     description: Tenant-authorized test evidence, performance aggregation, and controlled dispatch.
   - name: worker-intelligence
     description: Cluster-internal repository analysis worker operations.
+  - name: worker-design-traceability
+    description: Cluster-internal FuzeX design-to-test traceability projections.
   - name: worker-executions
     description: Cluster-internal execution-evidence ingestion.
