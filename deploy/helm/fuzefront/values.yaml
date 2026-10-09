@@ -982,6 +982,11 @@ devportalService:
   # role — same EXTRA_DATABASES pattern as notificationService.dbName) so
   # devportal's knex_migrations ledger never collides with the backend's.
   dbName: "fuzefront_devportal"
+  # The in-cluster FuzeInfra PostgreSQL Service does not terminate TLS.
+  # Keep this explicit: devportal-service otherwise defaults DB_SSL to true in
+  # production, which makes migration fail at startup and leaves the public
+  # catalog behind a 503 with every pod CrashLoopBackOff.
+  dbSsl: "false"
   image:
     repository: fuzefront/devportal-service
     tag: local

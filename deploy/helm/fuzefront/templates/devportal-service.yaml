@@ -51,6 +51,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "fuzefront.secretName" . }}
                   key: DB_PASSWORD
+            - name: DB_SSL
+              value: {{ .Values.devportalService.dbSsl | quote }}
             - name: JWT_SECRET
               # governance/architecture-guidelines.md §1 — devportal-service
               # VERIFIES the same platform-issued session token every other
