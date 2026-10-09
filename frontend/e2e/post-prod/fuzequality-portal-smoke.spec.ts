@@ -57,6 +57,36 @@ test.describe('FuzeQuality portal — live post-production', () => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
     await expect(page.getByText('Repository analysis', { exact: true })).toBeVisible({ timeout: 45_000 })
     await expect(page.getByRole('heading', { name: 'Quality intelligence' })).toBeVisible({ timeout: 45_000 })
+
+    // A mounted shell is not feature evidence. Require live, repository-derived
+    // records for every FuzeQuality backlog slice before a release can pass.
+    const flowWireframes = page.locator('.flow-wireframe')
+    expect(await flowWireframes.count(), 'Production must contain at least one detected UX-flow wireframe').toBeGreaterThan(0)
+    await page.locator('.flow-provenance').first().getByText('Source evidence').click()
+    await expect(page.locator('.flow-provenance').first()).toContainText('Revision')
+
+    const governanceHistory = page.locator('.policy-review-history')
+    expect(await governanceHistory.count(), 'Production must contain policy/gate evaluation evidence').toBeGreaterThan(0)
+    await governanceHistory.first().getByText('Review history').click()
+    await expect(governanceHistory.first().locator('li').first()).toBeVisible()
+
+    for (const inventory of ['Load tests', 'Stress tests']) {
+      const panel = page.locator('section.catalog-panel').filter({ has: page.getByRole('heading', { name: inventory, exact: true }) })
+      await expect(panel).toBeVisible()
+      await expect(panel.locator('.eyebrow')).not.toHaveText('0 discovered')
+      await expect(panel.locator('.catalog-row').first()).toBeVisible()
+    }
+
+    const executionPanel = page.locator('section.catalog-panel').filter({ has: page.getByRole('heading', { name: 'CI and post-production results', exact: true }) })
+    const suiteFilter = executionPanel.getByLabel('Suite')
+    for (const suite of ['integration', 'post-production']) {
+      await suiteFilter.selectOption(suite)
+      await expect(executionPanel.locator('.catalog-row').first(), `Production must contain ${suite} execution evidence`).toBeVisible()
+    }
+    await suiteFilter.selectOption('')
+
+    const performancePanel = page.locator('section.catalog-panel').filter({ has: page.getByRole('heading', { name: 'Observed outcomes', exact: true }) })
+    await expect(performancePanel.locator('.catalog-row').first(), 'Production must contain an observed policy–gate outcome').toBeVisible()
     await page.screenshot({ path: 'test-results-post-prod/fuzequality-portal-live.png', fullPage: true })
 
     expect(pageErrors, `uncaught errors mounting FuzeQuality: ${pageErrors.join(' | ')}`).toEqual([])
