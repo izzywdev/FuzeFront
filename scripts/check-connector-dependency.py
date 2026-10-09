@@ -11,7 +11,11 @@ REQUIRED_PROTOCOL = "google-shared-v1"
 def check_dependency() -> None:
     request = urllib.request.Request(
         HEALTH_URL,
-        headers={"Accept": "application/json", "Cache-Control": "no-cache"},
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "User-Agent": "FuzeFront-release-preflight/1.0",
+        },
     )
     with urllib.request.urlopen(request, timeout=10) as response:
         if response.status != 200:
