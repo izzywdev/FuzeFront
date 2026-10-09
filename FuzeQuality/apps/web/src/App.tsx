@@ -2954,6 +2954,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     PolicyGateEvaluation['reviewStatus'] | ''
   >('')
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
+  const [performanceDispatch, setPerformanceDispatch] = useState<{
+    artifactId: string
+    state: 'success' | 'error'
+    message: string
+  }>()
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
   const [loadingFlows, setLoadingFlows] = useState(true)
   const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
@@ -3025,8 +3030,26 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
       return
     setDispatchingArtifact(artifact.id)
+    setPerformanceDispatch(undefined)
     try {
-      await api.runPerformanceTest(artifact.repositoryId, artifact.id)
+      const receipt = await api.runPerformanceTest(
+        artifact.repositoryId,
+        artifact.id
+      )
+      setPerformanceDispatch({
+        artifactId: artifact.id,
+        state: 'success',
+        message: `Dispatched ${receipt.workflowPath} on ${receipt.ref}. GitHub Actions will report the run as execution evidence.`,
+      })
+    } catch (error) {
+      setPerformanceDispatch({
+        artifactId: artifact.id,
+        state: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to dispatch the performance workflow.',
+      })
     } finally {
       setDispatchingArtifact(undefined)
     }
@@ -3424,7 +3447,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                           ? `${artifact.kind} · ${artifact.sourcePath}`
                                           : evidence}
                                       </code>
-                                      {artifact && <span>{artifact.title}</span>}
+                                      {artifact && (
+                                        <span>Artifact: {artifact.title}</span>
+                                      )}
                                     </li>
                                   )
                                 })}
@@ -3538,6 +3563,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 </button>
                               </div>
                             )}
+                          {performanceDispatch?.artifactId === item.id && (
+                            <p
+                              className={
+                                performanceDispatch.state === 'error'
+                                  ? 'form-error'
+                                  : 'performance-dispatch-success'
+                              }
+                              role={
+                                performanceDispatch.state === 'error'
+                                  ? 'alert'
+                                  : 'status'
+                              }
+                            >
+                              {performanceDispatch.message}
+                            </p>
+                          )}
                         </div>
                       </article>
                     ))}

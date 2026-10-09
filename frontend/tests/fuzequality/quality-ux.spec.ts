@@ -119,6 +119,12 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     ])
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
     if (url.pathname.endsWith('/execution-performance')) return respond([{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
+    if (url.pathname.endsWith('/performance-tests/load-artifact/execute') && method === 'POST') return respond({
+      status: 'dispatched',
+      artifactId: 'load-artifact',
+      workflowPath: '.github/workflows/load.yml',
+      ref: 'main',
+    }, 202)
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
     if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
@@ -229,6 +235,24 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(originSummary).toContainText('No AI proposals are available for this revision.')
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
+  })
+
+  test('dispatches a reviewed load workflow with visible execution handoff', async ({ page }) => {
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    page.once('dialog', dialog => dialog.accept())
+    const dispatchRequest = page.waitForRequest(request =>
+      request.url().endsWith('/performance-tests/load-artifact/execute')
+    )
+
+    await page.getByRole('button', { name: 'Run on default branch' }).click()
+
+    expect((await dispatchRequest).method()).toBe('POST')
+    await expect(page.getByRole('status')).toContainText(
+      'Dispatched .github/workflows/load.yml on main'
+    )
+    await expect(page.getByRole('status')).toContainText(
+      'GitHub Actions will report the run as execution evidence.'
+    )
   })
 
   test('keeps a failed UX flow review actionable', async ({ page }) => {

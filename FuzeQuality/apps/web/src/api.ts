@@ -86,7 +86,12 @@ export const api = {
   reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
   testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
   executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
-  runPerformanceTest: (repositoryId: string, artifactId: string) => request<{ status: string }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, { method: 'POST' }),
+  runPerformanceTest: (repositoryId: string, artifactId: string) => request<{
+    status: 'dispatched'
+    artifactId: string
+    workflowPath: string
+    ref: string
+  }>(`/api/v1/repositories/${repositoryId}/performance-tests/${artifactId}/execute`, { method: 'POST' }),
   scanRepository: (id: string, localPath?: string) =>
     request(`/api/v1/repositories/${id}/scans`, {
       method: 'POST',

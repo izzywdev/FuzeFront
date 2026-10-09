@@ -79,6 +79,16 @@ const storyArtifact: QualityArtifact = {
   evidence: ['checkout--complete'],
 }
 
+const loadArtifact: QualityArtifact = {
+  id: 'artifact-load-1',
+  repositoryId: repository.id,
+  kind: 'load-test',
+  title: 'Load test',
+  sourcePath: '.github/workflows/load-test.yml',
+  summary: 'Load workflow',
+  evidence: ['workflow_dispatch'],
+}
+
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
@@ -205,6 +215,53 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(
       screen.getByText('story · src/Checkout.stories.tsx')
     ).toBeVisible()
-    expect(screen.getByText('Checkout / Complete')).toBeVisible()
+    expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
+  })
+
+  it('shows a durable handoff message after dispatching a performance workflow', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'runPerformanceTest').mockResolvedValue({
+      status: 'dispatched',
+      artifactId: loadArtifact.id,
+      workflowPath: loadArtifact.sourcePath,
+      ref: 'main',
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Run on default branch' })
+    )
+
+    await waitFor(() =>
+      expect(api.runPerformanceTest).toHaveBeenCalledWith(
+        repository.id,
+        loadArtifact.id
+      )
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Dispatched .github/workflows/load-test.yml on main'
+    )
+  })
+
+  it('keeps dispatch failures actionable beside the selected workflow', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'runPerformanceTest').mockRejectedValue(
+      new Error('GitHub App installation is required')
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Run on default branch' })
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'GitHub App installation is required'
+    )
   })
 })
