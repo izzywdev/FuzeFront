@@ -2,17 +2,10 @@
 # FuzeQuality — API contract
 # =============================================================================
 # This document describes the operations that are CONTRACT-GOVERNED today, and
-# deliberately no more than that.
-#
-# FuzeQuality serves roughly thirty further routes under /api/v1/* (portfolio,
-# repositories, catalog, coverage, suggestions, test-implementations, admin,
-# webhooks). They are NOT described here yet, and writing them from the outside
-# would be guessing: each carries a Permit resource/action pair, tenant scoping
-# and a fail-closed 401/403 path, and a spec that gets any of those subtly wrong
-# is worse than no spec at all — the MCP gateway turns every path in a contract
-# into a callable tool, and the generated client publishes a method for it. They
-# are added by `contract-designer`, operation by operation, alongside the
-# authorization they actually enforce.
+# deliberately no more than that. Alongside platform probes, it publishes the
+# reviewed repository-intelligence surface whose authorization and tenant
+# boundaries are implemented and verified. Remaining routes are added one
+# operation at a time alongside their actual authorization behavior.
 #
 # The irony is noted: FuzeQuality's own purpose is measuring whether other
 # repositories' OpenAPI contracts are covered. This file is the start of it
@@ -24,9 +17,9 @@ info:
   description: >-
     Evidence graph across repositories, OpenAPI contracts, frontend surfaces,
     automated tests and Jira requirements. This document currently covers the
-    platform operational surface only — liveness and contract discovery. The
-    product's /api/v1/* routes are implemented but not yet contract-governed.
-  version: 0.1.0
+    platform operational surface and the reviewed repository-intelligence API:
+    UX-flow candidates, policy/gate governance, and execution evidence.
+  version: 0.2.0
   license:
     name: UNLICENSED
 servers:
@@ -150,8 +143,527 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
 
+  /api/v1/internal/repository-flow-candidates:
+    post:
+      operationId: ingestRepositoryFlowCandidates
+      summary: Persist repository UX-flow candidates produced by an analysis worker
+      tags: [worker-intelligence]
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                candidates:
+                  type: array
+                  items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+      responses:
+        '202': { $ref: '#/components/responses/Accepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/repositories/{repositoryId}/flow-candidates:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listRepositoryFlowCandidates
+      summary: List tenant-scoped, reviewable UX-flow candidates
+      tags: [flow-candidates]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: UX-flow candidates discovered for the repository.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - name: candidateId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+    post:
+      operationId: reviewRepositoryFlowCandidate
+      summary: Confirm or reject a detected UX-flow candidate
+      tags: [flow-candidates]
+      security: [{ platformBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [confirmed, rejected] }
+      responses:
+        '200':
+          description: The reviewed candidate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listInternalPolicyGateEvaluations
+      summary: Read policy/gate findings for a repository analysis worker
+      tags: [worker-intelligence]
+      security: [{ serviceToken: [] }]
+      responses:
+        '200':
+          description: Policy/gate evaluations for the repository.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/internal/policy-gate-evaluations:
+    post:
+      operationId: ingestPolicyGateEvaluations
+      summary: Persist policy/gate evaluations produced by an analysis worker
+      tags: [worker-intelligence]
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                evaluations:
+                  type: array
+                  items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+      responses:
+        '202': { $ref: '#/components/responses/Accepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/repositories/{repositoryId}/policy-gate-evaluations:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listPolicyGateEvaluations
+      summary: List tenant-scoped policy/gate findings and their current review state
+      tags: [policy-gates]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: Policy/gate evaluations for the repository.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - $ref: '#/components/parameters/EvaluationId'
+    post:
+      operationId: reviewPolicyGateEvaluation
+      summary: Accept or dismiss a policy/gate recommendation
+      tags: [policy-gates]
+      security: [{ platformBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status: { type: string, enum: [accepted, dismissed] }
+                reason: { type: string, minLength: 3, maxLength: 2000 }
+      responses:
+        '200':
+          description: The evaluation with its updated review state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - $ref: '#/components/parameters/EvaluationId'
+    get:
+      operationId: listPolicyGateReviewHistory
+      summary: List the immutable review history for a policy/gate evaluation
+      tags: [policy-gates]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: Review events in reverse chronological order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PolicyGateReviewHistoryEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/internal/test-executions:
+    post:
+      operationId: ingestTestExecution
+      summary: Ingest CI, integration, post-production, load, or stress evidence
+      tags: [worker-executions]
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestExecutionInput' }
+      responses:
+        '202': { $ref: '#/components/responses/Accepted' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/test-executions:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listTestExecutions
+      summary: List filtered test-execution evidence for a repository
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExecutionKind'
+        - $ref: '#/components/parameters/ExecutionStatus'
+        - $ref: '#/components/parameters/ExecutionFrom'
+        - $ref: '#/components/parameters/ExecutionUntil'
+      responses:
+        '200':
+          description: Matching execution evidence.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TestExecution' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/execution-performance:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listExecutionPerformance
+      summary: Aggregate execution outcomes by explicit policy/gate pair
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExecutionKind'
+        - $ref: '#/components/parameters/ExecutionStatus'
+        - $ref: '#/components/parameters/ExecutionFrom'
+        - $ref: '#/components/parameters/ExecutionUntil'
+      responses:
+        '200':
+          description: Policy/gate outcome aggregates for the filtered evidence.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PolicyGatePerformance' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - name: artifactId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1, maxLength: 500 }
+    post:
+      operationId: executePerformanceTest
+      summary: Dispatch a reviewed load or stress test through the repository GitHub App
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      responses:
+        '202':
+          description: The performance workflow was dispatched.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PerformanceDispatch' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: The GitHub App installation is unavailable or dispatch failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
 components:
+  securitySchemes:
+    platformBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: FuzeFront access token; tenant identity and endpoint permission are verified by FuzeFront Security.
+    serviceToken:
+      type: http
+      scheme: bearer
+      description: Cluster-internal FuzeQuality worker token.
+  parameters:
+    RepositoryId:
+      name: repositoryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EvaluationId:
+      name: evaluationId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1 }
+    ExecutionKind:
+      name: kind
+      in: query
+      schema: { $ref: '#/components/schemas/ExecutionKind' }
+    ExecutionStatus:
+      name: status
+      in: query
+      schema: { $ref: '#/components/schemas/ExecutionStatus' }
+    ExecutionFrom:
+      name: from
+      in: query
+      description: Inclusive lower timestamp bound. Must not be later than `until`.
+      schema: { type: string, format: date-time }
+    ExecutionUntil:
+      name: until
+      in: query
+      description: Inclusive upper timestamp bound. Must not be earlier than `from`.
+      schema: { type: string, format: date-time }
+  responses:
+    Accepted:
+      description: Accepted for persistence or asynchronous processing.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [accepted]
+            properties:
+              accepted: { type: boolean, enum: [true] }
+    Unauthorized:
+      description: Authentication is missing or invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Forbidden:
+      description: The caller lacks the required FuzeFront permission.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    NotFound:
+      description: The tenant-scoped repository or requested evidence does not exist.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    ValidationError:
+      description: The request body, path, or query parameters are invalid.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                description: Zod validation error details.
+                type: object
+                additionalProperties: true
   schemas:
+    FlowStep:
+      type: object
+      required: [actor, action, expectedOutcome, targetIds]
+      properties:
+        actor: { type: string }
+        action: { type: string }
+        expectedOutcome: { type: string }
+        targetIds:
+          type: array
+          items: { type: string }
+    FlowWireframe:
+      type: object
+      required: [kind, nodes]
+      properties:
+        kind: { type: string, enum: [sequence] }
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [label, targetIds]
+            properties:
+              label: { type: string }
+              targetIds:
+                type: array
+                items: { type: string }
+    RepositoryFlowCandidate:
+      type: object
+      required: [id, repositoryId, tenantId, revision, title, confidence, evidence, steps, wireframe, status, source, createdAt]
+      properties:
+        id: { type: string }
+        repositoryId: { type: string, format: uuid }
+        tenantId: { type: string }
+        revision: { type: string }
+        title: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        evidence:
+          type: array
+          items: { type: string }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/FlowStep' }
+        wireframe: { $ref: '#/components/schemas/FlowWireframe' }
+        status: { type: string, enum: [proposed, confirmed, rejected] }
+        source: { type: string, enum: [deterministic, litellm] }
+        createdAt: { type: string, format: date-time }
+    PolicyGateEvaluation:
+      type: object
+      required: [id, repositoryId, tenantId, revision, kind, severity, title, detail, policyArtifactIds, gateArtifactIds, recommendation, reviewStatus, createdAt]
+      properties:
+        id: { type: string }
+        repositoryId: { type: string, format: uuid }
+        tenantId: { type: string }
+        revision: { type: string }
+        kind:
+          type: string
+          enum: [unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+        severity: { type: string, enum: [high, medium, low] }
+        title: { type: string }
+        detail: { type: string }
+        policyArtifactIds:
+          type: array
+          items: { type: string }
+        gateArtifactIds:
+          type: array
+          items: { type: string }
+        recommendation: { type: string }
+        reviewStatus: { type: string, enum: [proposed, accepted, dismissed] }
+        reviewedAt: { type: string, format: date-time }
+        reviewedBy: { type: string }
+        reviewReason: { type: string }
+        createdAt: { type: string, format: date-time }
+    PolicyGateReviewHistoryEntry:
+      type: object
+      required: [evaluationId, tenantId, status, reviewedBy, createdAt]
+      properties:
+        evaluationId: { type: string }
+        tenantId: { type: string }
+        status: { type: string, enum: [accepted, dismissed] }
+        reviewedBy: { type: string }
+        reason: { type: string }
+        createdAt: { type: string, format: date-time }
+    ExecutionKind:
+      type: string
+      enum: [ci, integration, post-production, load, stress]
+    ExecutionStatus:
+      type: string
+      enum: [passed, failed, cancelled, running]
+    TestExecutionInput:
+      type: object
+      additionalProperties: false
+      required: [repositoryId, tenantId, revision, kind, status, name]
+      properties:
+        repositoryId: { type: string, format: uuid }
+        tenantId: { type: string, minLength: 1 }
+        revision: { type: string, minLength: 1, maxLength: 200 }
+        kind: { $ref: '#/components/schemas/ExecutionKind' }
+        status: { $ref: '#/components/schemas/ExecutionStatus' }
+        name: { type: string, minLength: 1, maxLength: 500 }
+        sourceUrl: { type: string, format: uri }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        policyArtifactIds:
+          type: array
+          maxItems: 100
+          default: []
+          items: { type: string }
+        gateArtifactIds:
+          type: array
+          maxItems: 100
+          default: []
+          items: { type: string }
+        summary: { type: string, maxLength: 5000 }
+    TestExecution:
+      type: object
+      required: [id, repositoryId, tenantId, revision, kind, status, name, policyArtifactIds, gateArtifactIds]
+      properties:
+        id: { type: string }
+        repositoryId: { type: string, format: uuid }
+        tenantId: { type: string }
+        revision: { type: string }
+        kind: { $ref: '#/components/schemas/ExecutionKind' }
+        status: { $ref: '#/components/schemas/ExecutionStatus' }
+        name: { type: string }
+        sourceUrl: { type: string, format: uri }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
+        policyArtifactIds:
+          type: array
+          items: { type: string }
+        gateArtifactIds:
+          type: array
+          items: { type: string }
+        summary: { type: string }
+    PolicyGatePerformance:
+      type: object
+      required: [policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
+      properties:
+        policyArtifactId: { type: string }
+        gateArtifactId: { type: string }
+        passed: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        cancelled: { type: integer, minimum: 0 }
+        running: { type: integer, minimum: 0 }
+        latestCompletedAt: { type: string, format: date-time }
+    PerformanceDispatch:
+      type: object
+      required: [status, artifactId, workflowPath, ref]
+      properties:
+        status: { type: string, enum: [dispatched] }
+        artifactId: { type: string }
+        workflowPath: { type: string }
+        ref: { type: string }
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+        code: { type: string }
     Health:
       type: object
       required: [status, service, version, openapi]
@@ -189,3 +701,13 @@ components:
 tags:
   - name: operations
     description: Platform operational surface — probes and contract discovery.
+  - name: flow-candidates
+    description: Tenant-authorized review of detected UX-flow candidates.
+  - name: policy-gates
+    description: Tenant-authorized policy/gate governance and review history.
+  - name: executions
+    description: Tenant-authorized test evidence, performance aggregation, and controlled dispatch.
+  - name: worker-intelligence
+    description: Cluster-internal repository analysis worker operations.
+  - name: worker-executions
+    description: Cluster-internal execution-evidence ingestion.
