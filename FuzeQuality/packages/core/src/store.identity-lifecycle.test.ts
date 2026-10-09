@@ -29,6 +29,18 @@ describe('identity lifecycle projection', () => {
     await expect(store.deactivatePrincipal('user_1')).resolves.toBe(false)
   })
 
+  it('revokes local membership projections when an organization or user is deleted', async () => {
+    const store = new MemoryCatalogStore()
+    await store.upsertTenant({ id: 'org_1', slug: 'acme', name: 'Acme', type: 'organization', active: true })
+    await store.upsertPrincipal({ id: 'user_1', email: 'a@acme.test', active: true })
+    await store.setOrganizationMembership({ tenantId: 'org_1', principalId: 'user_1', role: 'member', active: true })
+
+    await store.deactivateTenant('org_1')
+    await expect(store.setOrganizationMembership({ tenantId: 'org_1', principalId: 'user_1', role: 'member', active: false })).resolves.toBe(false)
+    await store.deactivatePrincipal('user_1')
+    await expect(store.setOrganizationMembership({ tenantId: 'org_1', principalId: 'user_1', role: 'member', active: false })).resolves.toBe(false)
+  })
+
   it('recovers publication after a broker failure without duplicating the projection event', async () => {
     const store = new MemoryCatalogStore()
     const outbound = { topic: 'fuzequality.tenant.seeded', key: 'org_1', payload: { tenantId: 'org_1' } }

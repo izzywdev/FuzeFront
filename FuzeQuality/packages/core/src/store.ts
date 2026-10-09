@@ -37,6 +37,15 @@ export type IdentityLifecycleProjection =
   | { type: 'membership.changed'; membership: QualityMembership }
 export type OutboxEventInput = { topic: string; key?: string; payload: unknown }
 export type OutboxEvent = OutboxEventInput & { id: string; attempts: number; createdAt: string }
+export type DesignTestLinkProjection = {
+  type: 'design-test-link.upsert' | 'design-test-link.removed'
+  tenantId: string
+  traceLinkId: string
+  fuzexProjectId: string
+  targetKind: 'flow-step' | 'frame' | 'component'
+  targetRef: string
+  testCaseId: string
+}
 
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
@@ -81,6 +90,7 @@ export interface CatalogStore {
   upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
   deactivatePrincipal(principalId: string): Promise<boolean>
   setOrganizationMembership(membership: QualityMembership): Promise<boolean>
+  projectDesignTestLink(projection: DesignTestLinkProjection, outbound: OutboxEventInput): Promise<boolean>
   projectIdentityLifecycle(projection: IdentityLifecycleProjection, outbound: OutboxEventInput): Promise<boolean>
   claimOutboxEvents(limit?: number, leaseMs?: number): Promise<OutboxEvent[]>
   markOutboxPublished(id: string): Promise<void>
@@ -134,6 +144,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private principals = new Map<string, QualityPrincipal>()
   private memberships = new Map<string, QualityMembership>()
   private outboxEvents: Array<OutboxEvent & { publishedAt?: string; lockedUntil?: number; lastError?: string }> = []
+  private designTestLinks = new Map<string, DesignTestLinkProjection & { active: boolean }>()
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -451,6 +462,9 @@ export class MemoryCatalogStore implements CatalogStore {
     const tenant = this.tenants.get(tenantId)
     if (!tenant || !tenant.active) return false
     tenant.active = false
+    for (const membership of this.memberships.values()) {
+      if (membership.tenantId === tenantId) membership.active = false
+    }
     return true
   }
 
@@ -465,6 +479,9 @@ export class MemoryCatalogStore implements CatalogStore {
     const principal = this.principals.get(principalId)
     if (!principal || !principal.active) return false
     principal.active = false
+    for (const membership of this.memberships.values()) {
+      if (membership.principalId === principalId) membership.active = false
+    }
     return true
   }
 
@@ -486,6 +503,18 @@ export class MemoryCatalogStore implements CatalogStore {
       case 'membership.changed': changed = await this.setOrganizationMembership(projection.membership); break
     }
     if (changed) this.outboxEvents.push({ ...structuredClone(outbound), id: randomUUID(), attempts: 0, createdAt: new Date().toISOString() })
+    return changed
+  }
+
+  async projectDesignTestLink(projection: DesignTestLinkProjection, outbound: OutboxEventInput) {
+    const key = `${projection.tenantId}:${projection.traceLinkId}`
+    const next = { ...structuredClone(projection), active: projection.type === 'design-test-link.upsert' }
+    const previous = this.designTestLinks.get(key)
+    const changed = JSON.stringify(previous) !== JSON.stringify(next)
+    if (changed) {
+      this.designTestLinks.set(key, next)
+      this.outboxEvents.push({ ...structuredClone(outbound), id: randomUUID(), attempts: 0, createdAt: new Date().toISOString() })
+    }
     return changed
   }
 
@@ -788,7 +817,11 @@ export class PostgresCatalogStore implements CatalogStore {
         }
         case 'organization.deleted':
           result = await client.query(
-            'UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+            `WITH deactivated AS (
+               UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id
+             ), memberships AS (
+               UPDATE fuzequality.organization_memberships SET active=false,updated_at=now() WHERE tenant_id=$1 AND active=true
+             ) SELECT id FROM deactivated`,
             [projection.tenantId],
           )
           break
@@ -808,7 +841,11 @@ export class PostgresCatalogStore implements CatalogStore {
         }
         case 'user.deleted':
           result = await client.query(
-            'UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+            `WITH deactivated AS (
+               UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id
+             ), memberships AS (
+               UPDATE fuzequality.organization_memberships SET active=false,updated_at=now() WHERE principal_id=$1 AND active=true
+             ) SELECT id FROM deactivated`,
             [projection.principalId],
           )
           break
@@ -833,6 +870,58 @@ export class PostgresCatalogStore implements CatalogStore {
           [outbound.topic, outbound.key ?? null, JSON.stringify(outbound.payload)],
         )
       }
+      await client.query('COMMIT')
+      return changed
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async projectDesignTestLink(projection: DesignTestLinkProjection, outbound: OutboxEventInput): Promise<boolean> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const active = projection.type === 'design-test-link.upsert'
+      // The test case is joined through its repository so a FuzeX event can
+      // never attach a different organization's QA artifact. Removal is
+      // deliberately allowed after a test is retired, but only for the exact
+      // tenant/link/test relationship already projected.
+      const ownership = active
+        ? await client.query(
+          `SELECT tc.id FROM fuzequality.test_cases tc
+           JOIN fuzequality.repositories r ON r.id=tc.repository_id
+           JOIN fuzequality.tenants t ON t.id=r.tenant_id
+           WHERE tc.id=$1 AND tc.active=true AND r.tenant_id=$2 AND t.active=true`,
+          [projection.testCaseId, projection.tenantId],
+        )
+        : await client.query(
+          `SELECT trace_link_id AS id FROM fuzequality.design_test_links
+           WHERE tenant_id=$1 AND trace_link_id=$2 AND test_case_id=$3`,
+          [projection.tenantId, projection.traceLinkId, projection.testCaseId],
+        )
+      if (!ownership.rowCount) throw new Error('Design test link references an unavailable tenant-scoped test case')
+      const result = await client.query(
+        `INSERT INTO fuzequality.design_test_links
+           (tenant_id,trace_link_id,fuzex_project_id,target_kind,target_ref,test_case_id,active,updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,now())
+         ON CONFLICT (tenant_id,trace_link_id) DO UPDATE SET
+           fuzex_project_id=EXCLUDED.fuzex_project_id,target_kind=EXCLUDED.target_kind,target_ref=EXCLUDED.target_ref,
+           test_case_id=EXCLUDED.test_case_id,active=EXCLUDED.active,updated_at=now()
+         WHERE (fuzequality.design_test_links.fuzex_project_id,fuzequality.design_test_links.target_kind,
+           fuzequality.design_test_links.target_ref,fuzequality.design_test_links.test_case_id,
+           fuzequality.design_test_links.active) IS DISTINCT FROM
+           (EXCLUDED.fuzex_project_id,EXCLUDED.target_kind,EXCLUDED.target_ref,EXCLUDED.test_case_id,EXCLUDED.active)
+         RETURNING trace_link_id`,
+        [projection.tenantId, projection.traceLinkId, projection.fuzexProjectId, projection.targetKind, projection.targetRef, projection.testCaseId, active],
+      )
+      const changed = Boolean(result.rowCount)
+      if (changed) await client.query(
+        'INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+        [outbound.topic, outbound.key ?? null, JSON.stringify(outbound.payload)],
+      )
       await client.query('COMMIT')
       return changed
     } catch (error) {

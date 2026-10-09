@@ -622,12 +622,25 @@ export const expectationExclusionSchema = z.object({
   expiresAt: z.string().datetime().refine(value => new Date(value).getTime() > Date.now(), 'Expiry must be in the future'),
 })
 
+/** Relationship-only contract emitted by FuzeX for QA traceability. */
+export const designTestLinkEventSchema = z.object({
+  tenantId: z.string().uuid(),
+  traceLinkId: z.string().trim().min(1).max(200),
+  fuzexProjectId: z.string().trim().min(1).max(200),
+  targetKind: z.enum(['flow-step', 'frame', 'component']),
+  targetRef: z.string().trim().min(1).max(1_000),
+  testCaseId: z.string().trim().min(1).max(500),
+}).strict()
+export type DesignTestLinkEvent = z.infer<typeof designTestLinkEventSchema>
+
 export const TOPICS = {
   TENANT_SEEDED: 'fuzequality.tenant.seeded',
   TENANT_DELETED: 'fuzequality.tenant.deleted',
   PRINCIPAL_SEEDED: 'fuzequality.principal.seeded',
   PRINCIPAL_DELETED: 'fuzequality.principal.deleted',
   ORGANIZATION_MEMBERSHIP_CHANGED: 'fuzequality.organization-membership.changed',
+  DESIGN_TEST_LINK_VERIFIED: 'fuzequality.design.test-link.verified',
+  DESIGN_TEST_LINK_REVOKED: 'fuzequality.design.test-link.revoked',
   REPOSITORY_SCAN_REQUESTED: 'fuzequality.repository.scan.requested',
   REPOSITORY_INVENTORY_CHANGED: 'fuzequality.repository.inventory.changed',
   REQUIREMENT_SYNC_REQUESTED: 'fuzequality.requirement.sync.requested',
