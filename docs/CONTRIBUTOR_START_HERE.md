@@ -13,7 +13,9 @@ Good first contributions usually fall into one of these categories:
 - example-app improvements;
 - missing tests for documented behavior;
 - accessibility fixes;
-- Hebrew/RTL or internationalization fixes;
+- Hebrew/RTL or internationalization fixes (see `docs/guides/BUILDING_ON_FUZEFRONT.md`
+  § "Internationalization & RTL" and `packages/i18n/README.md` for the current
+  runtime and conventions before proposing a fix);
 - small SDK examples;
 - developer-experience improvements with clear before/after behavior.
 

@@ -372,6 +372,73 @@ rather than one-off styling.
 
 ---
 
+## 7. Internationalization & RTL (bi-directional layout)
+
+FuzeFront ships with Hebrew and Arabic as first-class languages alongside
+English — not a translation extra, so a remote mounted into the shell must
+render correctly when the user switches to one of them.
+
+**The shell owns direction; your remote does not set `dir` itself.** When the
+active language's direction is RTL (Hebrew, Arabic), the shell applies
+`dir="rtl"` on `<html>` via `@fuzefront/i18n`'s centralized direction manager.
+Your remote inherits that `dir` from the document — it should never read the
+current language and branch on it to flip its own layout.
+
+What that means for your component code:
+
+```css
+/* Wrong — physical properties don't mirror under RTL */
+.card {
+  margin-left: 1rem;
+  padding-right: 1.5rem;
+  text-align: left;
+}
+
+/* Right — logical properties flip automatically with <html dir> */
+.card {
+  margin-inline-start: 1rem;
+  padding-inline-end: 1.5rem;
+  text-align: start;
+}
+```
+
+If your remote renders strings of its own (rather than only composing
+platform UI), consume the shared runtime instead of rolling your own i18next
+setup:
+
+```tsx
+import { useT, useDir } from '@fuzefront/i18n'
+
+function AppCard() {
+  const { t } = useT()
+  const dir = useDir(i18nInstance) // only needed for direction-aware logic
+  // beyond what logical properties cover, e.g. choosing a directional icon
+  return <span>{t('card.title')}</span>
+}
+```
+
+A component only needs `useDir` when it has to branch on direction itself —
+e.g. swapping a chevron icon's orientation. Plain layout/spacing should never
+need it; logical properties handle that for free.
+
+Verify the behavior, don't just assume it: switch the shell's language
+selector to עברית (Hebrew) and confirm your remote's layout mirrors — no
+clipped text, no icons pointing the wrong way, no fixed-width elements that
+only worked left-to-right.
+
+See `packages/i18n/README.md` for the full API (`I18nProvider`,
+`LanguageSelector`, `attachDirectionManager`, the language registry) and
+`docs/CONTRIBUTOR_START_HERE.md` for RTL-focused first contributions.
+
+> **Known gap, not yet fixed here:** `design-system/readme.md` (the base
+> design system's own developer-facing doc) does not mention RTL or logical
+> properties at all, even though the primitives it ships are expected to
+> follow this convention. That is a real gap worth its own follow-up issue —
+> it is out of scope for this guide, which covers consuming apps, not the
+> base design system itself.
+
+---
+
 ## See also
 
 - Operational deployment runbook: `docs/deployment/CONTABO_DEPLOYMENT.md`
@@ -379,3 +446,4 @@ rather than one-off styling.
 - Developer guide: `docs/guides/DEVELOPER_GUIDE.md`
 - Consuming durable, typed settings from config-service (not the feature-flag
   system): `docs/guides/CONFIG_SERVICE_INTEGRATION_GUIDE.md`
+- Shared i18n runtime + RTL/LTR direction management: `packages/i18n/README.md`
