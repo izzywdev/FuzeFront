@@ -142,9 +142,9 @@ The canonical first-wave product and frontend-origin inventory is
 `fuzeone/mobile-products.json`; the complete runtime and production acceptance contract is
 documented in `docs/deployment/MOBILE_APK_TARGETS.md`.
 
-Pull requests and non-default branch builds retain an unsigned test APK as a 90-day Actions
-artifact. Every successful build on the repository's actual default branch increments the Android
-version code from the Actions run number, appends it to
+Pull requests and non-default branch builds retain a test APK as a 90-day Actions artifact. Every
+successful build on the repository's actual default branch increments the Android version code from
+the Actions run number, appends it to
 the repository SemVer for `versionName`, signs and verifies the APK, and stores it permanently in
 a GitHub Release. Generated versions are not committed back, avoiding a recursive build loop.
 

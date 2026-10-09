@@ -53,6 +53,12 @@ content. Your repo's `design/frames/<feature>/` is always the one to edit.
    one-time migration. `<your-repo-name>` becomes the manifest's `sourceRepo`, so one
    deployment of design-frames-service can serve multiple consuming products without
    their slugs colliding in the UI.
+   To onboard an existing repository catalogue in one run, use:
+   ```bash
+   node scripts/design-frames-client.mjs sync-all design/frames FuzeFront
+   ```
+   FuzeX groups all imported features under the source repository's app workspace,
+   so they appear together in the FuzeX remote inside the FuzeFront portal.
 5. **Share the navigable review site** for approval: `node scripts/design-frames-client.mjs get <slug>`
    prints the manifest; the site itself is at the URL `siteUrl(slug)` returns (also
    printed by `sync`).

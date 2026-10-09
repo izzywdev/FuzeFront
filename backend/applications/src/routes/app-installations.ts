@@ -42,6 +42,10 @@ import { isRefEnforceEnabled } from '../app-registry/flags'
 import { KnexRefIndexRepository } from '../repositories/ref-index.repository'
 import { isPrefixedIdsEnabled } from '../identity/flags'
 import { prefixDtoIds } from '../identity/serializer'
+import {
+  organizationInstallModeAllows,
+  resolveOrganizationInstallMode,
+} from '../app-registry/installation-policy'
 
 // Module-level singleton — KnexRefIndexRepository is stateless (wraps db).
 let _refStore: KnexRefIndexRepository | null = null
@@ -65,7 +69,10 @@ const router = express.Router()
 // instead, and the limiter itself is exercised by its own case in
 // tests/app-installations.test.ts.
 const READ_LIMIT = parseInt(process.env.APP_INSTALL_READ_RATE_LIMIT || '60', 10)
-const WRITE_LIMIT = parseInt(process.env.APP_INSTALL_WRITE_RATE_LIMIT || '30', 10)
+const WRITE_LIMIT = parseInt(
+  process.env.APP_INSTALL_WRITE_RATE_LIMIT || '30',
+  10
+)
 
 // Reads are the generous ceiling: the applications surface fetches them on load.
 export const installReadRateLimiter = rateLimit({
@@ -170,8 +177,7 @@ async function loadVisibleApp(
   memberOrgIds: string[]
 ): Promise<AppRow | undefined> {
   const app = (await db('apps').where('id', appId).first()) as
-    | AppRow
-    | undefined
+    AppRow | undefined
   if (!app) return undefined
 
   if (app.visibility === 'public' || app.visibility === 'marketplace') {
@@ -215,155 +221,176 @@ async function syncInstallCount(appId: string): Promise<void> {
 // and every `everyone` install on that org. Without `organizationId` only the
 // personal installs are returned.
 // ---------------------------------------------------------------------------
-router.get('/installed', installReadRateLimiter, authenticateToken, async (req: any, res) => {
-  try {
-    const userId = req.user.id
-    const organizationId =
-      typeof req.query.organizationId === 'string'
-        ? req.query.organizationId
-        : undefined
+router.get(
+  '/installed',
+  installReadRateLimiter,
+  authenticateToken,
+  async (req: any, res) => {
+    try {
+      const userId = req.user.id
+      const organizationId =
+        typeof req.query.organizationId === 'string'
+          ? req.query.organizationId
+          : undefined
 
-    // An org filter the caller is not a member of yields nothing rather than
-    // leaking whether that org has installs.
-    let orgIsVisible = false
-    if (organizationId) {
-      orgIsVisible = (await getMembershipRole(userId, organizationId)) !== null
-    }
+      // An org filter the caller is not a member of yields nothing rather than
+      // leaking whether that org has installs.
+      let orgIsVisible = false
+      if (organizationId) {
+        orgIsVisible =
+          (await getMembershipRole(userId, organizationId)) !== null
+      }
 
-    const rows = (await db('app_installations')
-      .join('apps', 'apps.id', 'app_installations.app_id')
-      .where('app_installations.status', 'active')
-      .where(function (this: any) {
-        this.where(function (this: any) {
-          this.where('app_installations.scope', 'personal').where(
-            'app_installations.user_id',
-            userId
-          )
-        })
-        if (organizationId && orgIsVisible) {
-          this.orWhere(function (this: any) {
-            this.where('app_installations.scope', 'organization')
-              .where('app_installations.organization_id', organizationId)
-              .where(function (this: any) {
-                this.where('app_installations.install_mode', 'everyone').orWhere(
-                  function (this: any) {
-                    this.where(
-                      'app_installations.install_mode',
-                      'self'
-                    ).where('app_installations.user_id', userId)
-                  }
-                )
-              })
+      const rows = (await db('app_installations')
+        .join('apps', 'apps.id', 'app_installations.app_id')
+        .where('app_installations.status', 'active')
+        .where(function (this: any) {
+          this.where(function (this: any) {
+            this.where('app_installations.scope', 'personal').where(
+              'app_installations.user_id',
+              userId
+            )
           })
-        }
-      })
-      .select(
-        'app_installations.*',
-        'apps.name as app_name',
-        'apps.url as app_url',
-        'apps.icon_url as app_icon_url',
-        'apps.is_active as app_is_active',
-        'apps.scope_level as app_scope_level'
-      )
-      .orderBy('apps.name')) as any[]
-
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    res.json(
-      rows.map(row => {
-        const installation = prefixDtoIds(toInstallation(row as InstallationRow), prefixed, {
-          appId: 'app',
-          userId: 'user',
-          organizationId: 'organization',
-          installedBy: 'user',
+          if (organizationId && orgIsVisible) {
+            this.orWhere(function (this: any) {
+              this.where('app_installations.scope', 'organization')
+                .where('app_installations.organization_id', organizationId)
+                .where(function (this: any) {
+                  this.where(
+                    'app_installations.install_mode',
+                    'everyone'
+                  ).orWhere(function (this: any) {
+                    this.where('app_installations.install_mode', 'self').where(
+                      'app_installations.user_id',
+                      userId
+                    )
+                  })
+                })
+            })
+          }
         })
-        const app = prefixDtoIds(
-          {
-            id: row.app_id,
-            name: row.app_name,
-            url: row.app_url,
-            iconUrl: row.app_icon_url,
-            isActive: row.app_is_active,
-            scopeLevel: row.app_scope_level ?? 'both',
-          },
-          prefixed,
-          { id: 'app' }
+        .select(
+          'app_installations.*',
+          'apps.name as app_name',
+          'apps.url as app_url',
+          'apps.icon_url as app_icon_url',
+          'apps.is_active as app_is_active',
+          'apps.scope_level as app_scope_level'
         )
-        return { ...installation, app }
-      })
-    )
-  } catch (error) {
-    console.error('Error listing installed apps:', error)
-    res.status(500).json({ error: 'Failed to list installed apps' })
+        .orderBy('apps.name')) as any[]
+
+      const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      res.json(
+        rows.map(row => {
+          const installation = prefixDtoIds(
+            toInstallation(row as InstallationRow),
+            prefixed,
+            {
+              appId: 'app',
+              userId: 'user',
+              organizationId: 'organization',
+              installedBy: 'user',
+            }
+          )
+          const app = prefixDtoIds(
+            {
+              id: row.app_id,
+              name: row.app_name,
+              url: row.app_url,
+              iconUrl: row.app_icon_url,
+              isActive: row.app_is_active,
+              scopeLevel: row.app_scope_level ?? 'both',
+            },
+            prefixed,
+            { id: 'app' }
+          )
+          return { ...installation, app }
+        })
+      )
+    } catch (error) {
+      console.error('Error listing installed apps:', error)
+      res.status(500).json({ error: 'Failed to list installed apps' })
+    }
   }
-})
+)
 
 // ---------------------------------------------------------------------------
 // GET /api/apps/:id/installations — installations of ONE app visible to the
 // caller: their own (personal + org-self) plus every `everyone` install on an
 // org they belong to.
 // ---------------------------------------------------------------------------
-router.get('/:id/installations', installReadRateLimiter, authenticateToken, async (req: any, res) => {
-  try {
-    const userId = req.user.id
-    const memberOrgIds = await getMemberOrgIds(userId)
-    const app = await loadVisibleApp(req.params.id, memberOrgIds)
-    if (!app) {
-      return res
-        .status(404)
-        .json({ error: 'App not found', code: 'APP_NOT_FOUND' })
-    }
-
-    const rows = (await db('app_installations')
-      .where('app_id', app.id)
-      .where('status', 'active')
-      .where(function (this: any) {
-        this.where('user_id', userId)
-        if (memberOrgIds.length > 0) {
-          this.orWhere(function (this: any) {
-            this.where('install_mode', 'everyone').whereIn(
-              'organization_id',
-              memberOrgIds
-            )
-          })
-        }
-      })
-      .orderBy('created_at')) as InstallationRow[]
-
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    const outerDto = prefixDtoIds({ appId: app.id }, prefixed, { appId: 'app' })
-    let manifest: Record<string, any> = {}
+router.get(
+  '/:id/installations',
+  installReadRateLimiter,
+  authenticateToken,
+  async (req: any, res) => {
     try {
-      manifest =
-        typeof app.manifest === 'string'
-          ? JSON.parse(app.manifest)
-          : (app.manifest as Record<string, any>) ?? {}
-    } catch {
-      manifest = {}
-    }
-    const isOrgLevelOnly = Boolean(
-      manifest.orgLevelOnly || manifest.installMode === 'everyone'
-    )
-    res.json({
-      appId: outerDto.appId,
-      scopeLevel: app.scope_level ?? 'both',
-      orgLevelOnly: isOrgLevelOnly,
-      installMode: manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
-      installations: rows.map(row =>
-        prefixDtoIds(toInstallation(row), prefixed, {
-          appId: 'app',
-          userId: 'user',
-          organizationId: 'organization',
-          installedBy: 'user',
+      const userId = req.user.id
+      const memberOrgIds = await getMemberOrgIds(userId)
+      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      if (!app) {
+        return res
+          .status(404)
+          .json({ error: 'App not found', code: 'APP_NOT_FOUND' })
+      }
+
+      const rows = (await db('app_installations')
+        .where('app_id', app.id)
+        .where('status', 'active')
+        .where(function (this: any) {
+          this.where('user_id', userId)
+          if (memberOrgIds.length > 0) {
+            this.orWhere(function (this: any) {
+              this.where('install_mode', 'everyone').whereIn(
+                'organization_id',
+                memberOrgIds
+              )
+            })
+          }
         })
-      ),
-    })
-  } catch (error) {
-    console.error('Error listing app installations:', error)
-    res.status(500).json({ error: 'Failed to list app installations' })
+        .orderBy('created_at')) as InstallationRow[]
+
+      const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      const outerDto = prefixDtoIds({ appId: app.id }, prefixed, {
+        appId: 'app',
+      })
+      let manifest: Record<string, any> = {}
+      try {
+        manifest =
+          typeof app.manifest === 'string'
+            ? JSON.parse(app.manifest)
+            : ((app.manifest as Record<string, any>) ?? {})
+      } catch {
+        manifest = {}
+      }
+      const isOrgLevelOnly = Boolean(
+        manifest.orgLevelOnly || manifest.installMode === 'everyone'
+      )
+      const organizationInstallMode = resolveOrganizationInstallMode(manifest)
+      res.json({
+        appId: outerDto.appId,
+        scopeLevel: app.scope_level ?? 'both',
+        orgLevelOnly: isOrgLevelOnly,
+        installMode:
+          manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
+        organizationInstallMode,
+        installations: rows.map(row =>
+          prefixDtoIds(toInstallation(row), prefixed, {
+            appId: 'app',
+            userId: 'user',
+            organizationId: 'organization',
+            installedBy: 'user',
+          })
+        ),
+      })
+    } catch (error) {
+      console.error('Error listing app installations:', error)
+      res.status(500).json({ error: 'Failed to list app installations' })
+    }
   }
-})
+)
 
 // ---------------------------------------------------------------------------
 // POST /api/apps/:id/install — install for the caller, or for an organization.
@@ -378,217 +405,242 @@ router.get('/:id/installations', installReadRateLimiter, authenticateToken, asyn
 // rather than duplicated (the partial unique indexes in migration 017 are the
 // backstop if two requests race).
 // ---------------------------------------------------------------------------
-router.post('/:id/install', installWriteRateLimiter, authenticateToken, async (req: any, res) => {
-  try {
-    const userId = req.user.id
-    const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
-    const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    const memberOrgIds = await getMemberOrgIds(userId)
-    const app = await loadVisibleApp(req.params.id, memberOrgIds)
-    if (!app) {
-      return res
-        .status(404)
-        .json({ error: 'App not found', code: 'APP_NOT_FOUND' })
-    }
-
-    const scopeLevel: AppScopeLevel = app.scope_level ?? 'both'
-    let manifest: Record<string, any> = {}
+router.post(
+  '/:id/install',
+  installWriteRateLimiter,
+  authenticateToken,
+  async (req: any, res) => {
     try {
-      manifest =
-        typeof app.manifest === 'string'
-          ? JSON.parse(app.manifest)
-          : (app.manifest as Record<string, any>) ?? {}
-    } catch {
-      manifest = {}
-    }
-    const isOrgLevelOnly = Boolean(
-      manifest.orgLevelOnly || manifest.installMode === 'everyone'
-    )
-    const body = req.body ?? {}
-
-    // --- resolve scope ----------------------------------------------------
-    let scope: InstallScope
-    if (body.scope === undefined || body.scope === null) {
-      if (scopeLevel === 'both') {
-        return res.status(400).json({
-          error:
-            "scope is required for an app whose scopeLevel is 'both'. Pass 'personal' or 'organization'.",
-          code: 'SCOPE_REQUIRED',
-        })
+      const userId = req.user.id
+      const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
+      const prefixed = await isPrefixedIdsEnabled(flagCtx)
+      const memberOrgIds = await getMemberOrgIds(userId)
+      const app = await loadVisibleApp(req.params.id, memberOrgIds)
+      if (!app) {
+        return res
+          .status(404)
+          .json({ error: 'App not found', code: 'APP_NOT_FOUND' })
       }
-      scope = scopeLevel
-    } else {
-      if (!VALID_SCOPES.includes(body.scope)) {
-        return res.status(400).json({
-          error: `Invalid scope. Must be one of: ${VALID_SCOPES.join(', ')}`,
-          code: 'INVALID_SCOPE',
-        })
-      }
-      scope = body.scope
-    }
 
-    if (isOrgLevelOnly && scope === 'personal') {
-      return res.status(422).json({
-        error: 'This app can only be installed in an organization context.',
-        code: 'ORG_LEVEL_ONLY',
-      })
-    }
-
-    if (!scopeIsAllowed(scopeLevel, scope)) {
-      return res.status(422).json({
-        error: `This app cannot be installed at '${scope}' scope. Its scopeLevel is '${scopeLevel}'.`,
-        code: 'SCOPE_NOT_PERMITTED',
-      })
-    }
-
-    // --- resolve mode -----------------------------------------------------
-    // A personal install is always just you; an explicit mode='everyone' there
-    // is a contradiction and is rejected rather than silently downgraded.
-    let mode: InstallMode = isOrgLevelOnly ? 'everyone' : 'self'
-    if (body.mode !== undefined && body.mode !== null) {
-      if (!VALID_MODES.includes(body.mode)) {
-        return res.status(400).json({
-          error: `Invalid mode. Must be one of: ${VALID_MODES.join(', ')}`,
-          code: 'INVALID_MODE',
-        })
-      }
-      mode = body.mode
-    }
-    if (isOrgLevelOnly && mode === 'self') {
-      return res.status(422).json({
-        error:
-          'This app can only be installed for the entire organization, not for individual users.',
-        code: 'ORG_LEVEL_ONLY',
-      })
-    }
-    if (scope === 'personal' && mode === 'everyone') {
-      return res.status(422).json({
-        error: "mode 'everyone' is only valid for an organization install.",
-        code: 'MODE_NOT_PERMITTED',
-      })
-    }
-
-    // --- resolve target ---------------------------------------------------
-    let organizationId: string | null = null
-    if (scope === 'organization') {
-      if (typeof body.organizationId !== 'string' || !body.organizationId) {
-        return res.status(400).json({
-          error: 'organizationId is required for an organization install',
-          code: 'ORGANIZATION_REQUIRED',
-        })
-      }
-      organizationId = body.organizationId
-
-      // FFRNT P2 — L1 referential-integrity check (identifier-standard §5).
-      // Assert the organizationId is known to the local ref_index projection
-      // before paying the cost of a membership lookup.
-      // OFF (default): warn + continue; ON: hard-fail with 422.
-      const refMode = (await isRefEnforceEnabled({ organizationId, userId }))
-        ? 'enforce'
-        : 'warn'
+      const scopeLevel: AppScopeLevel = app.scope_level ?? 'both'
+      let manifest: Record<string, any> = {}
       try {
-        await assertRefExists(getRefStore(), 'organization', organizationId, { mode: refMode })
+        manifest =
+          typeof app.manifest === 'string'
+            ? JSON.parse(app.manifest)
+            : ((app.manifest as Record<string, any>) ?? {})
       } catch {
+        manifest = {}
+      }
+      const isOrgLevelOnly = Boolean(
+        manifest.orgLevelOnly || manifest.installMode === 'everyone'
+      )
+      const organizationInstallMode = resolveOrganizationInstallMode(manifest)
+      const body = req.body ?? {}
+
+      // --- resolve scope ----------------------------------------------------
+      let scope: InstallScope
+      if (body.scope === undefined || body.scope === null) {
+        if (scopeLevel === 'both') {
+          return res.status(400).json({
+            error:
+              "scope is required for an app whose scopeLevel is 'both'. Pass 'personal' or 'organization'.",
+            code: 'SCOPE_REQUIRED',
+          })
+        }
+        scope = scopeLevel
+      } else {
+        if (!VALID_SCOPES.includes(body.scope)) {
+          return res.status(400).json({
+            error: `Invalid scope. Must be one of: ${VALID_SCOPES.join(', ')}`,
+            code: 'INVALID_SCOPE',
+          })
+        }
+        scope = body.scope
+      }
+
+      if (isOrgLevelOnly && scope === 'personal') {
         return res.status(422).json({
-          error: 'unprocessable_entity',
-          message: 'Organization not found',
-          code: 'ORG_REF_MISSING',
+          error: 'This app can only be installed in an organization context.',
+          code: 'ORG_LEVEL_ONLY',
         })
       }
-      // Normalize TypeID → bare UUID for all DB operations below.
-      organizationId = toUuid(parseId('organization', organizationId))
 
-      const role = await getMembershipRole(userId, organizationId)
-      if (role === null) {
-        // Not a member: 404 on the ORG, same non-disclosure rule as the app.
-        return res.status(404).json({
-          error: 'Organization not found',
-          code: 'ORGANIZATION_NOT_FOUND',
+      if (!scopeIsAllowed(scopeLevel, scope)) {
+        return res.status(422).json({
+          error: `This app cannot be installed at '${scope}' scope. Its scopeLevel is '${scopeLevel}'.`,
+          code: 'SCOPE_NOT_PERMITTED',
         })
       }
-      if (mode === 'everyone' && !ORG_ADMIN_ROLES.has(role)) {
-        return res.status(403).json({
+
+      // --- resolve mode -----------------------------------------------------
+      // A personal install is always just you; an explicit mode='everyone' there
+      // is a contradiction and is rejected rather than silently downgraded.
+      let mode: InstallMode =
+        scope === 'organization' && organizationInstallMode === 'everyone'
+          ? 'everyone'
+          : 'self'
+      if (body.mode !== undefined && body.mode !== null) {
+        if (!VALID_MODES.includes(body.mode)) {
+          return res.status(400).json({
+            error: `Invalid mode. Must be one of: ${VALID_MODES.join(', ')}`,
+            code: 'INVALID_MODE',
+          })
+        }
+        mode = body.mode
+      }
+      if (isOrgLevelOnly && mode === 'self') {
+        return res.status(422).json({
           error:
-            'Installing for everyone requires an organization owner or admin',
-          code: 'REQUIRES_ORG_ADMIN',
+            'This app can only be installed for the entire organization, not for individual users.',
+          code: 'ORG_LEVEL_ONLY',
         })
       }
-    }
+      if (
+        scope === 'organization' &&
+        !organizationInstallModeAllows(organizationInstallMode, mode)
+      ) {
+        return res.status(422).json({
+          error:
+            organizationInstallMode === 'everyone'
+              ? 'This app must be installed for the entire organization, not for an individual member.'
+              : 'This app can only be installed for the requesting organization member.',
+          code: 'ORGANIZATION_INSTALL_MODE_NOT_PERMITTED',
+        })
+      }
+      if (scope === 'personal' && mode === 'everyone') {
+        return res.status(422).json({
+          error: "mode 'everyone' is only valid for an organization install.",
+          code: 'MODE_NOT_PERMITTED',
+        })
+      }
 
-    // The anchor columns each shape carries. Mirrors the CHECK constraint in
-    // migration 017 — keep the two in step.
-    const anchorUserId =
-      scope === 'personal' || mode === 'self' ? userId : null
+      // --- resolve target ---------------------------------------------------
+      let organizationId: string | null = null
+      if (scope === 'organization') {
+        if (typeof body.organizationId !== 'string' || !body.organizationId) {
+          return res.status(400).json({
+            error: 'organizationId is required for an organization install',
+            code: 'ORGANIZATION_REQUIRED',
+          })
+        }
+        organizationId = body.organizationId
 
-    // --- idempotency ------------------------------------------------------
-    const existing = (await db('app_installations')
-      .where('app_id', app.id)
-      .where('status', 'active')
-      .where('scope', scope)
-      .where('install_mode', mode)
-      .where(builder => {
-        if (organizationId) builder.where('organization_id', organizationId)
-        else builder.whereNull('organization_id')
-      })
-      .where(builder => {
-        if (anchorUserId) builder.where('user_id', anchorUserId)
-        else builder.whereNull('user_id')
-      })
-      .first()) as InstallationRow | undefined
+        // FFRNT P2 — L1 referential-integrity check (identifier-standard §5).
+        // Assert the organizationId is known to the local ref_index projection
+        // before paying the cost of a membership lookup.
+        // OFF (default): warn + continue; ON: hard-fail with 422.
+        const refMode = (await isRefEnforceEnabled({ organizationId, userId }))
+          ? 'enforce'
+          : 'warn'
+        try {
+          await assertRefExists(getRefStore(), 'organization', organizationId, {
+            mode: refMode,
+          })
+        } catch {
+          return res.status(422).json({
+            error: 'unprocessable_entity',
+            message: 'Organization not found',
+            code: 'ORG_REF_MISSING',
+          })
+        }
+        // Normalize TypeID → bare UUID for all DB operations below.
+        organizationId = toUuid(parseId('organization', organizationId))
 
-    if (existing) {
-      return res.status(200).json({
-        installation: prefixDtoIds(toInstallation(existing), prefixed, {
+        const role = await getMembershipRole(userId, organizationId)
+        if (role === null) {
+          // Not a member: 404 on the ORG, same non-disclosure rule as the app.
+          return res.status(404).json({
+            error: 'Organization not found',
+            code: 'ORGANIZATION_NOT_FOUND',
+          })
+        }
+        if (mode === 'everyone' && !ORG_ADMIN_ROLES.has(role)) {
+          return res.status(403).json({
+            error:
+              'Installing for everyone requires an organization owner or admin',
+            code: 'REQUIRES_ORG_ADMIN',
+          })
+        }
+      }
+
+      // The anchor columns each shape carries. Mirrors the CHECK constraint in
+      // migration 017 — keep the two in step.
+      const anchorUserId =
+        scope === 'personal' || mode === 'self' ? userId : null
+
+      // --- idempotency ------------------------------------------------------
+      const existing = (await db('app_installations')
+        .where('app_id', app.id)
+        .where('status', 'active')
+        .where('scope', scope)
+        .where('install_mode', mode)
+        .where(builder => {
+          if (organizationId) builder.where('organization_id', organizationId)
+          else builder.whereNull('organization_id')
+        })
+        .where(builder => {
+          if (anchorUserId) builder.where('user_id', anchorUserId)
+          else builder.whereNull('user_id')
+        })
+        .first()) as InstallationRow | undefined
+
+      if (existing) {
+        return res.status(200).json({
+          installation: prefixDtoIds(toInstallation(existing), prefixed, {
+            appId: 'app',
+            userId: 'user',
+            organizationId: 'organization',
+            installedBy: 'user',
+          }),
+          alreadyInstalled: true,
+        })
+      }
+
+      const settings =
+        body.settings &&
+        typeof body.settings === 'object' &&
+        !Array.isArray(body.settings)
+          ? body.settings
+          : {}
+
+      const [inserted] = (await db('app_installations')
+        .insert({
+          app_id: app.id,
+          scope,
+          install_mode: mode,
+          user_id: anchorUserId,
+          organization_id: organizationId,
+          installed_by: userId,
+          status: 'active',
+          settings: JSON.stringify(settings),
+        })
+        .returning('*')) as InstallationRow[]
+
+      await syncInstallCount(app.id)
+
+      res.status(201).json({
+        installation: prefixDtoIds(toInstallation(inserted), prefixed, {
           appId: 'app',
           userId: 'user',
           organizationId: 'organization',
           installedBy: 'user',
         }),
-        alreadyInstalled: true,
+        alreadyInstalled: false,
       })
+    } catch (error: any) {
+      // A unique-violation here means two concurrent installs raced. The target
+      // is installed either way, so report the winner rather than a 500.
+      if (error?.code === '23505') {
+        return res
+          .status(409)
+          .json({ error: 'Already installed', code: 'ALREADY_INSTALLED' })
+      }
+      console.error('Error installing app:', error)
+      res.status(500).json({ error: 'Failed to install app' })
     }
-
-    const settings =
-      body.settings && typeof body.settings === 'object' && !Array.isArray(body.settings)
-        ? body.settings
-        : {}
-
-    const [inserted] = (await db('app_installations')
-      .insert({
-        app_id: app.id,
-        scope,
-        install_mode: mode,
-        user_id: anchorUserId,
-        organization_id: organizationId,
-        installed_by: userId,
-        status: 'active',
-        settings: JSON.stringify(settings),
-      })
-      .returning('*')) as InstallationRow[]
-
-    await syncInstallCount(app.id)
-
-    res.status(201).json({
-      installation: prefixDtoIds(toInstallation(inserted), prefixed, {
-        appId: 'app',
-        userId: 'user',
-        organizationId: 'organization',
-        installedBy: 'user',
-      }),
-      alreadyInstalled: false,
-    })
-  } catch (error: any) {
-    // A unique-violation here means two concurrent installs raced. The target
-    // is installed either way, so report the winner rather than a 500.
-    if (error?.code === '23505') {
-      return res
-        .status(409)
-        .json({ error: 'Already installed', code: 'ALREADY_INSTALLED' })
-    }
-    console.error('Error installing app:', error)
-    res.status(500).json({ error: 'Failed to install app' })
   }
-})
+)
 
 // ---------------------------------------------------------------------------
 // DELETE /api/apps/:id/install/:installationId — soft-revoke an installation.

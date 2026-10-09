@@ -1,11 +1,10 @@
 /**
  * Permit resource keys are produced by FuzeFront's ProductPolicy registry as
  * `<product>_<resource>`.  Keep the consumer's requests aligned with the
- * `product: "quality"` declaration in registration/policy.json; hand-written
- * `fuzequality.Resource` values are neither valid Permit keys nor registered
- * resources.
+ * `product: "fuzequality"` declaration in registration/policy.json. Registry
+ * slugs and Permit namespaces must agree or the platform rejects the policy.
  */
-const PRODUCT_NAMESPACE = 'quality'
+const PRODUCT_NAMESPACE = 'fuzequality'
 
 function resource(name: string) {
   return `${PRODUCT_NAMESPACE}_${name}`
@@ -16,6 +15,7 @@ export const qualityResources = {
   evidence: resource('Evidence'),
   suggestion: resource('Suggestion'),
   testImplementation: resource('TestImplementation'),
+  execution: resource('Execution'),
   organizationAccess: resource('OrganizationAccess'),
   repositoryAdministration: resource('RepositoryAdministration'),
   platformAdministration: resource('PlatformAdministration'),

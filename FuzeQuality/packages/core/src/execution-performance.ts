@@ -1,0 +1,56 @@
+import type { TestExecution } from '@fuzequality/contracts'
+
+export type PolicyGatePerformance = {
+  policyArtifactId: string
+  gateArtifactId: string
+  passed: number
+  failed: number
+  cancelled: number
+  running: number
+  latestCompletedAt?: string
+}
+
+export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status'>> & { from?: string; until?: string }
+
+/** Filters only the caller's already tenant-scoped execution evidence. */
+export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}) {
+  const from = filter.from ? Date.parse(filter.from) : undefined
+  const until = filter.until ? Date.parse(filter.until) : undefined
+  return executions.filter(execution => {
+    if (filter.kind && execution.kind !== filter.kind) return false
+    if (filter.status && execution.status !== filter.status) return false
+    const occurredAt = Date.parse(execution.completedAt ?? execution.startedAt ?? '')
+    if (from !== undefined && (!Number.isFinite(occurredAt) || occurredAt < from)) return false
+    if (until !== undefined && (!Number.isFinite(occurredAt) || occurredAt > until)) return false
+    return true
+  })
+}
+
+export type ExecutionOutcomeTrend = { date: string; passed: number; failed: number; cancelled: number; running: number }
+
+/** Produces an evidence-only daily outcome series; missing days are not invented. */
+export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOutcomeTrend[] {
+  const results = new Map<string, ExecutionOutcomeTrend>()
+  for (const execution of executions) {
+    const timestamp = execution.completedAt ?? execution.startedAt
+    if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
+    const date = timestamp.slice(0, 10)
+    const current = results.get(date) ?? { date, passed: 0, failed: 0, cancelled: 0, running: 0 }
+    current[execution.status]++
+    results.set(date, current)
+  }
+  return [...results.values()].sort((left, right) => left.date.localeCompare(right.date))
+}
+
+/** Aggregates immutable execution evidence; no missing link is inferred as a passing gate. */
+export function executionPerformance(executions: TestExecution[]): PolicyGatePerformance[] {
+  const results = new Map<string, PolicyGatePerformance>()
+  for (const execution of executions) for (const policyArtifactId of execution.policyArtifactIds) for (const gateArtifactId of execution.gateArtifactIds) {
+    const key = `${policyArtifactId}:${gateArtifactId}`
+    const current = results.get(key) ?? { policyArtifactId, gateArtifactId, passed: 0, failed: 0, cancelled: 0, running: 0 }
+    current[execution.status]++
+    if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
+    results.set(key, current)
+  }
+  return [...results.values()].sort((left, right) => right.failed - left.failed || right.passed - left.passed || left.gateArtifactId.localeCompare(right.gateArtifactId))
+}

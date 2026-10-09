@@ -17,5 +17,13 @@ export default defineConfig({
     video: { mode: 'on', size: { width: 960, height: 540 } },
   },
   webServer: { command: 'npm --prefix ../FuzeQuality run dev:web -- --host 127.0.0.1', url: 'http://127.0.0.1:4181', reuseExistingServer: !process.env.CI },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{
+    name: 'chromium',
+    use: {
+      ...devices['Desktop Chrome'],
+      launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+        ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+        : undefined,
+    },
+  }],
 })

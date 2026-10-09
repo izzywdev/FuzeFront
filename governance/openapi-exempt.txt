@@ -37,6 +37,7 @@ GET /api/v1/test-implementations/{}  # FuzeQuality: test impl detail; service la
 GET /api/v1/repositories  # FuzeQuality: repository list; service lacks openapi.yaml
 GET /api/v1/repositories/{}  # FuzeQuality: repository detail; service lacks openapi.yaml
 GET /api/v1/repositories/{}/catalog-status  # FuzeQuality: catalog status; service lacks openapi.yaml
+GET /api/v1/repositories/{}/quality-artifacts  # FuzeQuality: tenant-authorized repository analysis evidence; service lacks public OpenAPI surface
 POST /api/v1/internal/coverage/rebuild  # FuzeQuality: internal trigger; not consumer-facing
 POST /api/v1/internal/intelligence/results  # FuzeQuality: internal ingest; not consumer-facing
 POST /api/v1/internal/scans/results  # FuzeQuality: internal ingest; not consumer-facing
@@ -220,6 +221,8 @@ POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint;
 GET /api/v1/requirements/freshness  # fuzequality: tenant-authorized Jira freshness evidence; not public contract surface
 POST /api/v1/internal/intelligence/failure  # fuzequality: S2S worker failure signal; bounded/redacted and not consumer-facing
 GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review audit history; not public contract surface
+GET /api/v1/internal/repositories/{}/quality-artifacts  # fuzequality: S2S worker evidence retrieval; not consumer-facing
+POST /api/v1/internal/identity-lifecycle  # fuzequality: S2S FuzeFront identity projection; not consumer-facing
 #
 # --- O1: applications-service Kubernetes readiness probe (#1137) ---
 # NOT a debt in the sense this file's header warns about (a spec gap to close):

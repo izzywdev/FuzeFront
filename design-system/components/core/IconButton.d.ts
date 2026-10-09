@@ -14,6 +14,8 @@ export interface IconButtonProps
   /** Toggled/selected state — holds the quaternary fill and accent color. */
   active?: boolean;
   disabled?: boolean;
+  /** Native button ref, used by dialogs and drawers to restore focus. */
+  ref?: React.Ref<HTMLButtonElement>;
 }
 
 export function IconButton(props: IconButtonProps): React.JSX.Element;
