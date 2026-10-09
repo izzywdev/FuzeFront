@@ -111,6 +111,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private artifacts: Array<QualityArtifact & { revision: string }> = []
   private flowCandidates: RepositoryFlowCandidate[] = []
   private policyGateResults: PolicyGateEvaluation[] = []
+  private policyGateReviewHistory: Array<{ evaluationId: string; tenantId: string; status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string; createdAt: string }> = []
   private executions: TestExecution[] = []
   private tenants = new Map<string, QualityTenant>()
   private principals = new Map<string, QualityPrincipal>()
@@ -201,6 +202,7 @@ export class MemoryCatalogStore implements CatalogStore {
     item.reviewedAt = new Date().toISOString()
     item.reviewedBy = review.reviewedBy
     item.reviewReason = review.reason
+    this.policyGateReviewHistory.unshift({ evaluationId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
     return item
   }
 
@@ -578,7 +580,14 @@ export class PostgresCatalogStore implements CatalogStore {
   }
 
   async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }) {
-    const result = await this.pool.query('UPDATE fuzequality.policy_gate_evaluations SET review_status=$3, reviewed_at=now(), reviewed_by=$4, review_reason=$5 WHERE id=$1 AND tenant_id=$2 RETURNING *', [id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
+    const client = await this.pool.connect()
+    let result: pg.QueryResult
+    try {
+      await client.query('BEGIN')
+      result = await client.query('UPDATE fuzequality.policy_gate_evaluations SET review_status=$3, reviewed_at=now(), reviewed_by=$4, review_reason=$5 WHERE id=$1 AND tenant_id=$2 RETURNING *', [id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
+      if (result.rows[0]) await client.query('INSERT INTO fuzequality.policy_gate_review_history (id,evaluation_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
+      await client.query('COMMIT')
+    } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
     const row = result.rows[0]
     return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() } : undefined
   }
