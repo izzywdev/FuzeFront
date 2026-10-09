@@ -402,9 +402,13 @@ start if two files claim the same (packKey, version) or a file fails validation.
 | `priority` | `LOW` Low, `MEDIUM` Medium, `HIGH` High, `URGENT` Urgent | Tickets, tasks, CRM, alerts — the canonical shared vocabulary across Fuze products. |
 | `work-status` | `NOT_STARTED` Not started, `IN_PROGRESS` In progress, `BLOCKED` Blocked, `DONE` Done | Generic workflow state; demonstrates seeded lists that orgs are expected to customise (and upgrades then respecting that). |
 
-All 11 locales ship in the pack file (human-reviewed; produced through the
-`packages/i18n-translate` pipeline in the implementation PR, `is_machine = false` once
-reviewed).
+All 11 locales ship in the pack file. They are **machine-translated and LLM-reviewed (2026-10-05,
+two-pass with back-translation, owner-approved in place of native review); no human has reviewed
+them**, and the pack says so (`"translationProvenance": "machine"`, a service-local key of the
+pack format, see `src/seed/packs.ts`): seeding writes the non-source rows with `is_machine = true`
+and flips to `is_machine = false` only when a human-reviewed `platform-defaults.v2.json` (no
+provenance key) replaces them. See the seeding operations runbook §2.5 for the LLM review record
+(per-language decisions) and the reviewer checklist.
 
 **Deliberately excluded:** countries, currencies, languages, time zones. They are
 *reference data* — large (≈250 × 11 locales), externally governed (ISO 3166 / 4217,
