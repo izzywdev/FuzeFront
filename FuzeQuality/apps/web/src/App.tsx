@@ -64,6 +64,7 @@ import {
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
 } from './components/executionEvidence'
+import { PolicyGateEvidence } from './components/governanceEvidence'
 
 type View =
   | 'overview'
@@ -3307,6 +3308,10 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   ? ` · ${evaluation.reviewReason}`
                                   : ''}
                               </small>
+                              <PolicyGateEvidence
+                                evaluation={evaluation}
+                                artifacts={artifacts}
+                              />
                               {evaluation.reviewStatus === 'proposed' && (
                                 <div className="row-actions">
                                   <button
