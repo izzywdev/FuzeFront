@@ -21,10 +21,20 @@ export function executionRecord(
   execution: ReturnType<typeof testExecutionInputSchema.parse>,
   id: string,
 ): TestExecution {
+  const policyArtifactIds = [...new Set([
+    ...execution.policyArtifactIds,
+    ...execution.gateEvaluations.map(item => item.policyArtifactId),
+  ])]
+  const gateArtifactIds = [...new Set([
+    ...execution.gateArtifactIds,
+    ...execution.gateEvaluations.map(item => item.gateArtifactId),
+  ])]
   return {
     id,
     ...execution,
     externalRunId: execution.externalRunId ?? id,
+    policyArtifactIds,
+    gateArtifactIds,
     thresholds: execution.thresholds.map(threshold => ({
       ...threshold,
       passed: thresholdPassed(threshold),
