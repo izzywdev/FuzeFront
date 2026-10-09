@@ -20,6 +20,12 @@ import {
  * Clicking an app navigates to its surface (portal mount or standalone
  * surface), per the manifest.
  */
+// Stable id pair linking the trigger button to the panel it discloses
+// (`aria-controls` / `aria-labelledby`) — module-scope so it stays stable
+// across renders without needing React 18's useId in this file.
+const PANEL_ID = 'app-selector-panel'
+const PANEL_LABEL_ID = 'app-selector-panel-label'
+
 function AppSelector() {
   const { t } = useLanguage()
   const navigate = useNavigate()
@@ -93,6 +99,26 @@ function AppSelector() {
     else navigate(href)
   }
 
+  // Keyboard a11y: Escape dismisses the panel and returns focus to the
+  // trigger button, same as clicking the backdrop would — but reachable
+  // without a pointer.
+  const closeAndRefocus = () => {
+    setIsOpen(false)
+    buttonRef.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeAndRefocus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen])
+
   return (
     <div className="app-selector">
       <button
@@ -100,6 +126,10 @@ function AppSelector() {
         className="app-grid-button"
         onClick={() => setIsOpen(!isOpen)}
         title={t('applications')}
+        aria-label={t('applications')}
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? PANEL_ID : undefined}
         style={{
           background: 'none',
           border: 'none',
@@ -119,8 +149,16 @@ function AppSelector() {
           e.currentTarget.style.backgroundColor = 'transparent'
         }}
       >
-        {/* 9-dots grid icon */}
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+        {/* 9-dots grid icon — purely decorative, the button already carries
+            its own accessible name via aria-label, so hide this from AT. */}
+        <svg
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+          focusable="false"
+        >
           <circle cx="5" cy="5" r="2" />
           <circle cx="12" cy="5" r="2" />
           <circle cx="19" cy="5" r="2" />
@@ -135,19 +173,25 @@ function AppSelector() {
 
       {isOpen && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop — a dismiss target only, never announced or focusable */}
           <div
+            data-testid="app-selector-backdrop"
+            aria-hidden="true"
             style={{
               position: 'fixed',
               inset: 0,
               background: 'transparent',
               zIndex: 999,
             }}
-            onClick={() => setIsOpen(false)}
+            onClick={closeAndRefocus}
           />
 
           {/* App Grid Panel */}
           <div
+            id={PANEL_ID}
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby={PANEL_LABEL_ID}
             style={{
               position: 'fixed',
               top: `${dropdownPosition.top}px`,
@@ -164,6 +208,7 @@ function AppSelector() {
             }}
           >
             <div
+              id={PANEL_LABEL_ID}
               style={{
                 marginBottom: 'var(--space-3)',
                 padding: '0 var(--space-1)',
