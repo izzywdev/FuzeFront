@@ -28,11 +28,11 @@
     "test:e2e:report": "playwright show-report"
   },
   "dependencies": {
-    "@fuzeone/selection-lists-ui": "file:../packages/selection-lists-ui",
     "@fuzefront/chat-client": "file:../packages/chat-client",
     "@fuzefront/chat-ui": "file:../packages/chat-ui",
     "@fuzefront/fuzepicker-ui": "file:../packages/fuzepicker-ui",
     "@fuzefront/telemetry": "file:../packages/telemetry",
+    "@fuzeone/selection-lists-ui": "file:../packages/selection-lists-ui",
     "@originjs/vite-plugin-federation": "^1.4.1",
     "axios": "^1.20.0",
     "class-variance-authority": "^0.7.1",
@@ -44,6 +44,7 @@
     "react-i18next": "^14.1.2",
     "react-router": "^7.6.2",
     "react-router-dom": "^7.6.2",
+    "simple-icons": "16.34.0",
     "socket.io-client": "^4.7.2",
     "tailwind-merge": "^3.3.1"
   },
