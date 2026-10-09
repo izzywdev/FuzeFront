@@ -11,6 +11,8 @@ import express from 'express'
 
 const mockAssign = jest.fn()
 const mockUnassign = jest.fn()
+const mockEnsureDeveloperMembership = jest.fn()
+const mockIsDevportalEnabled = jest.fn()
 
 jest.mock('../src/utils/permit/role-assignment', () => ({
   assignOrganizationRole: (...a: any[]) => mockAssign(...a),
@@ -21,14 +23,16 @@ jest.mock('../src/config/database', () => ({ db: jest.fn() }))
 jest.mock('../src/services/organizationProvisioning', () => ({
   runInternalProvision: jest.fn(),
   deprovisionOrganization: jest.fn(),
-  ensureDeveloperMembership: jest.fn(),
+  ensureDeveloperMembership: (...args: unknown[]) => mockEnsureDeveloperMembership(...args),
 }))
 jest.mock('../src/services/userLifecycle', () => ({
   syncUserProfile: jest.fn(),
   deprovisionUser: jest.fn(),
 }))
 jest.mock('../src/services/oidc', () => ({ syncUserToDatabase: jest.fn() }))
-jest.mock('../src/utils/devportalFlag', () => ({ isDevportalEnabled: jest.fn() }))
+jest.mock('../src/utils/devportalFlag', () => ({
+  isDevportalEnabled: (...args: unknown[]) => mockIsDevportalEnabled(...args),
+}))
 
 import internalRoutes from '../src/routes/internal'
 
@@ -122,5 +126,46 @@ describe.each([
     const res = await post({ organizationId: ORG, userId: USER, role: 'member' })
     expect(res.status).toBe(500)
     expect(res.body.error).toBe('Membership sync failed')
+  })
+})
+
+describe('POST /internal/devportal-provision', () => {
+  const url = '/internal/devportal-provision'
+  const post = (body: unknown, secret: string | null = SECRET) => {
+    const r = request(makeApp()).post(url)
+    if (secret !== null) r.set('x-internal-secret', secret)
+    return r.send(body as object)
+  }
+
+  beforeEach(() => {
+    process.env.INTERNAL_PROVISION_SECRET = SECRET
+    mockEnsureDeveloperMembership.mockReset().mockResolvedValue(undefined)
+    mockIsDevportalEnabled.mockReset().mockResolvedValue(true)
+  })
+
+  it('grants the separate developer-portal membership only when the portal flag is enabled', async () => {
+    const res = await post({ userId: USER })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true })
+    expect(mockIsDevportalEnabled).toHaveBeenCalledWith({ userId: USER })
+    expect(mockEnsureDeveloperMembership).toHaveBeenCalledWith(USER)
+  })
+
+  it('fails closed without granting any membership while the portal flag is disabled', async () => {
+    mockIsDevportalEnabled.mockResolvedValue(false)
+
+    const res = await post({ userId: USER })
+
+    expect(res.status).toBe(404)
+    expect(mockEnsureDeveloperMembership).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unauthenticated caller without evaluating the feature flag', async () => {
+    const res = await post({ userId: USER }, 'wrong')
+
+    expect(res.status).toBe(401)
+    expect(mockIsDevportalEnabled).not.toHaveBeenCalled()
+    expect(mockEnsureDeveloperMembership).not.toHaveBeenCalled()
   })
 })

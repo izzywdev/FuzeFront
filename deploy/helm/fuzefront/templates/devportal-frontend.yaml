@@ -97,6 +97,16 @@ spec:
       http:
         paths:
           {{- if .Values.devportalService.enabled }}
+          # DevPortal's own public OpenAPI/Swagger UI. This must reach the
+          # service directly: the SPA fallback on / otherwise returns the
+          # frontend index rather than the API documentation.
+          - path: /docs
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-devportal-service
+                port:
+                  number: {{ .Values.devportalService.port }}
           - path: /api
             pathType: Prefix
             backend:
