@@ -1,7 +1,6 @@
 /** Shared connector transport. Provider implementations never receive user login tokens. */
 import axios from 'axios'
 import { credentialStoreOutcome } from './credential-outcome'
-import { connectorResourceTenant } from './tenant'
 import crypto from 'crypto'
 import express, { Request, Response } from 'express'
 import rateLimit from 'express-rate-limit'
@@ -51,8 +50,6 @@ export interface ConnectorActionContext {
 export interface ConnectorPlatformOptions {
   fuzekeysUrl?: string
   securityUrl?: string
-  /** Explicit resource organization, matched to FuzeKeys authorization configuration. */
-  resourceTenant?: string
   frontendUrl?: string
   /** Required in multi-replica deployments: atomically consume a nonce across all replicas. */
   consumeNonce?: (nonce: string, expiresAt: number) => Promise<boolean>
@@ -135,10 +132,14 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
   const callbackLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false })
   const authenticatedLimit = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false })
 
-  async function headers(subject: string, scopes: string[]) {
-    const tenant = connectorResourceTenant(options.resourceTenant)
+  function selectedOrganization(req: Request): string | undefined {
+    const organization = req.user?.activeOrganizationId
+    return typeof organization === 'string' && organization ? organization : undefined
+  }
+
+  async function headers(req: Request, scopes: string[]) {
     const [serviceToken, delegated] = await Promise.all([
-      workload.getToken(), delegation.exchange({ subjectToken: subject, audience: 'service:fuzekeys', scopes, tenant }),
+      workload.getToken(), delegation.exchange({ subjectToken: bearer(req), audience: 'service:fuzekeys', scopes, tenant: selectedOrganization(req) }),
     ])
     return { Authorization: `Bearer ${serviceToken}`, 'X-Fuze-Delegation': `Bearer ${delegated.accessToken}` }
   }
@@ -161,7 +162,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       const upstream = await axios.request({
         method, url: upstreamUrl,
         data: method === 'PATCH' ? req.body : undefined,
-        headers: await headers(bearer(req), ['connectors:metadata']),
+        headers: await headers(req, ['connectors:metadata']),
         timeout: 10000, validateStatus: () => true,
       })
       res.status(upstream.status).json(upstream.data)
@@ -231,7 +232,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
       return res.status(400).json({ error: 'A valid API key is required' })
     }
     try {
-      const delegatedHeaders = await headers(bearer(req), ['connectors:credentials:write'])
+      const delegatedHeaders = await headers(req, ['connectors:credentials:write'])
       const identityEmail = provider.identity ? await provider.identity(secret) : undefined
       if (identityEmail !== undefined && (typeof identityEmail !== 'string' || identityEmail.length > 320)) {
         throw new Error('Invalid connector identity')
@@ -253,7 +254,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     if (!provider) return res.status(404).json({ error: 'Unknown connector' })
     if (provider.authentication === 'api-key') return res.status(404).json({ error: 'OAuth is unavailable for this connector' })
     try {
-      const continuation = await delegation.exchange({ subjectToken: bearer(req), audience: 'service:fuzekeys', scopes: ['connectors:credentials:write'], tenant: connectorResourceTenant(options.resourceTenant) })
+      const continuation = await delegation.exchange({ subjectToken: bearer(req), audience: 'service:fuzekeys', scopes: ['connectors:credentials:write'], tenant: selectedOrganization(req) })
       const verifier = crypto.randomBytes(32).toString('base64url')
       const challenge = crypto.createHash('sha256').update(verifier).digest('base64url')
       const state = seal({ provider: provider.id, delegation: continuation.accessToken, verifier,
@@ -277,7 +278,7 @@ export function createConnectorPlatformRouter(definitions: ConnectorDefinition[]
     const action = provider?.actions?.[req.params.action]
     if (!action) return res.status(404).json({ error: 'Unknown connector action' })
     try {
-      const delegated = await headers(bearer(req), ['connectors:credentials:read', 'connectors:credentials:write'])
+      const delegated = await headers(req, ['connectors:credentials:read', 'connectors:credentials:write'])
       const lease = await axios.get(`${keysUrl}/api/v1/connectors/${encodeURIComponent(provider!.id)}/credential`, { headers: delegated, timeout: 10000 })
       let credential = lease.data.credential as Record<string, any>
       const googleProvider = provider!.authentication !== 'api-key' && GOOGLE_CONNECTORS.has(provider!.id) ? provider! : undefined

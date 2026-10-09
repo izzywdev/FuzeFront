@@ -7,7 +7,7 @@ import React, {
   ReactNode,
 } from 'react'
 import type { Organization } from '../services/api'
-import { getActiveValue, setActiveValue } from './accounts'
+import { getActiveAuthToken, getActiveValue, setActiveValue } from './accounts'
 
 // Re-export so consumers can import Organization from shared
 export type { Organization }
@@ -40,6 +40,16 @@ export const ROOT_ORG_ID = '00000000-0000-0000-0000-000000000010'
 
 function persistActiveOrganizationId(id: string | null): void {
   setActiveValue('activeOrganizationId', id)
+}
+
+/** Keep the selected context in the server session before scoped API work. */
+export async function synchronizeActiveOrganization(id: string | null): Promise<void> {
+  const response = await fetch('/api/auth/session/active-organization', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getActiveAuthToken() || ''}` },
+    body: JSON.stringify({ organizationId: id }),
+  })
+  if (!response.ok) throw new Error('Unable to synchronize the selected organization')
 }
 
 // The session-scoped "workspace provisioned" flag WorkspaceProvisioningGate
@@ -275,8 +285,10 @@ export function useOrganizations() {
     organizations: state.organizations,
     activeOrganizationId: state.activeOrganizationId,
     activeOrganization,
-    setActiveOrganization: (id: string | null) =>
-      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: id }),
+    setActiveOrganization: (id: string | null) => {
+      dispatch({ type: 'SET_ACTIVE_ORGANIZATION', payload: id })
+      void synchronizeActiveOrganization(id)
+    },
   }
 }
 

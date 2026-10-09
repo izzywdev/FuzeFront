@@ -1403,6 +1403,8 @@ export interface components {
             subjectToken: string;
             audience: string;
             scope: string;
+            /** @description Optional selected organization for organization-scoped credentials. Omit for a personal user credential scope. The server verifies active membership before signing an organization value. */
+            tenant?: string;
         };
         DelegationExchangeResponse: components["schemas"]["TokenIssueResponse"] & {
             subject: string;
