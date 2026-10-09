@@ -2602,6 +2602,77 @@ function OrganizationAdministration({
   )
 }
 
+function PolicyGateReviewHistory({
+  evaluation,
+}: {
+  evaluation: PolicyGateEvaluation
+}) {
+  const [history, setHistory] = useState<
+    Array<{
+      status: 'accepted' | 'dismissed'
+      reviewedBy: string
+      reason?: string
+      createdAt: string
+    }>
+  >([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+
+  const loadHistory = async () => {
+    setLoading(true)
+    setError(undefined)
+    try {
+      setHistory(
+        await api.policyGateReviewHistory(
+          evaluation.repositoryId,
+          evaluation.id
+        )
+      )
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'Unable to load review history'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <details
+      className="policy-review-history"
+      onToggle={event => {
+        if (event.currentTarget.open) void loadHistory()
+      }}
+    >
+      <summary>Review history</summary>
+      {loading ? (
+        <small>Loading decisions…</small>
+      ) : error ? (
+        <small className="policy-review-error">{error}</small>
+      ) : history.length ? (
+        <ol>
+          {history.map((entry, index) => (
+            <li key={`${entry.createdAt}:${entry.reviewedBy}:${index}`}>
+              <span
+                className={`status-pill severity-${entry.status === 'accepted' ? 'low' : 'medium'}`}
+              >
+                {entry.status}
+              </span>
+              <strong>{entry.reviewedBy}</strong>
+              <time dateTime={entry.createdAt}>
+                {new Date(entry.createdAt).toLocaleString()}
+              </time>
+              {entry.reason && <p>{entry.reason}</p>}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <small>No review decisions recorded.</small>
+      )}
+    </details>
+  )
+}
+
 function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
   const [flowCandidates, setFlowCandidates] = useState<
@@ -2924,10 +2995,25 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               <summary>Source evidence</summary>
                               <small>Revision {flow.revision}</small>
                               <ul>
-                                {flow.evidence.map(evidence => <li key={evidence}><code>{evidence}</code></li>)}
+                                {flow.evidence.map(evidence => (
+                                  <li key={evidence}>
+                                    <code>{evidence}</code>
+                                  </li>
+                                ))}
                               </ul>
                               <ol>
-                                {flow.steps.map((step, index) => <li key={`${step.action}:${index}`}><strong>{step.actor}</strong> — {step.action} → {step.expectedOutcome}{step.targetIds.length ? <small> ({step.targetIds.join(', ')})</small> : null}</li>)}
+                                {flow.steps.map((step, index) => (
+                                  <li key={`${step.action}:${index}`}>
+                                    <strong>{step.actor}</strong> —{' '}
+                                    {step.action} → {step.expectedOutcome}
+                                    {step.targetIds.length ? (
+                                      <small>
+                                        {' '}
+                                        ({step.targetIds.join(', ')})
+                                      </small>
+                                    ) : null}
+                                  </li>
+                                ))}
                               </ol>
                             </details>
                             {flow.status === 'proposed' && (
@@ -3004,6 +3090,9 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   </button>
                                 </div>
                               )}
+                              <PolicyGateReviewHistory
+                                evaluation={evaluation}
+                              />
                             </div>
                           </article>
                         ))}

@@ -43,7 +43,7 @@ USER node
 CMD ["npm", "run", "start:api"]
 
 FROM nginx:1.27-alpine AS web
-COPY --from=verify /workspace/FuzeQuality/dist/web /usr/share/nginx/html
+COPY --from=verify /workspace/FuzeQuality/dist /usr/share/nginx/html
 COPY FuzeQuality/docker/nginx.conf /etc/nginx/conf.d/default.conf
 RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/run
 USER nginx

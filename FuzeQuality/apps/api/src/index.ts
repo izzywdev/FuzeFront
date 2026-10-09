@@ -445,6 +445,15 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, asyn
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   response.json(await store.policyGateEvaluations(repositoryId, tenantId))
 })
+app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const evaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  response.json(await store.policyGateReviewHistory(evaluationId, tenantId))
+})
 app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review', mayReviewSuggestions, async (request, response) => {
   const parsed = policyGateReviewSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })

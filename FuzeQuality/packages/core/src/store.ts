@@ -27,6 +27,7 @@ import { buildApiExpectations, buildFindings, buildFrontendExpectations } from '
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
+export type PolicyGateReviewHistoryEntry = { evaluationId: string; tenantId: string; status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string; createdAt: string }
 
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
@@ -39,6 +40,7 @@ export interface CatalogStore {
   policyGateEvaluations(repositoryId: string, tenantId: string): Promise<PolicyGateEvaluation[]>
   savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void>
   reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }): Promise<PolicyGateEvaluation | undefined>
+  policyGateReviewHistory(evaluationId: string, tenantId: string): Promise<PolicyGateReviewHistoryEntry[]>
   testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]>
   saveTestExecution(execution: TestExecution): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
@@ -111,7 +113,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private artifacts: Array<QualityArtifact & { revision: string }> = []
   private flowCandidates: RepositoryFlowCandidate[] = []
   private policyGateResults: PolicyGateEvaluation[] = []
-  private policyGateReviewHistory: Array<{ evaluationId: string; tenantId: string; status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string; createdAt: string }> = []
+  private policyGateReviewAudits: PolicyGateReviewHistoryEntry[] = []
   private executions: TestExecution[] = []
   private tenants = new Map<string, QualityTenant>()
   private principals = new Map<string, QualityPrincipal>()
@@ -202,9 +204,11 @@ export class MemoryCatalogStore implements CatalogStore {
     item.reviewedAt = new Date().toISOString()
     item.reviewedBy = review.reviewedBy
     item.reviewReason = review.reason
-    this.policyGateReviewHistory.unshift({ evaluationId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
+    this.policyGateReviewAudits.unshift({ evaluationId: id, tenantId, status: review.status, reviewedBy: review.reviewedBy, reason: review.reason, createdAt: item.reviewedAt })
     return item
   }
+
+  async policyGateReviewHistory(evaluationId: string, tenantId: string) { return this.policyGateReviewAudits.filter(item => item.evaluationId === evaluationId && item.tenantId === tenantId) }
 
   async testExecutions(repositoryId: string, tenantId: string) {
     return this.executions.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
@@ -590,6 +594,11 @@ export class PostgresCatalogStore implements CatalogStore {
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
     const row = result.rows[0]
     return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, severity: row.severity, title: row.title, detail: row.detail, policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, recommendation: row.recommendation, reviewStatus: row.review_status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, createdAt: row.created_at.toISOString() } : undefined
+  }
+
+  async policyGateReviewHistory(evaluationId: string, tenantId: string): Promise<PolicyGateReviewHistoryEntry[]> {
+    const result = await this.pool.query('SELECT evaluation_id,tenant_id,status,reviewed_by,reason,created_at FROM fuzequality.policy_gate_review_history WHERE evaluation_id=$1 AND tenant_id=$2 ORDER BY created_at DESC', [evaluationId, tenantId])
+    return result.rows.map(row => ({ evaluationId: row.evaluation_id, tenantId: row.tenant_id, status: row.status, reviewedBy: row.reviewed_by, reason: row.reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
 
   async testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]> {
