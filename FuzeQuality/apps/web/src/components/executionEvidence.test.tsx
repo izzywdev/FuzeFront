@@ -96,4 +96,23 @@ describe('ExecutionThresholdEvidence', () => {
       'https://evidence.example/run-42/report/'
     )
   })
+
+  it('renders legacy executions without optional evidence collections safely', () => {
+    const legacyExecution = {
+      ...execution,
+      thresholds: undefined,
+      gateEvaluations: undefined,
+      evidenceLinks: undefined,
+    } as unknown as TestExecution
+
+    const { container } = render(
+      <>
+        <ExecutionThresholdEvidence execution={legacyExecution} />
+        <ExecutionGateEvidence execution={legacyExecution} />
+        <ExecutionEvidenceLinks execution={legacyExecution} />
+      </>
+    )
+
+    expect(container).toBeEmptyDOMElement()
+  })
 })

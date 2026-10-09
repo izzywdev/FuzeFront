@@ -10,9 +10,16 @@ export function PolicyGateEvidence({
 }) {
   const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
   const evidenceIds = [
-    ...evaluation.policyArtifactIds,
-    ...evaluation.gateArtifactIds,
+    ...(evaluation.policyArtifactIds ?? []),
+    ...(evaluation.gateArtifactIds ?? []),
   ]
+  // Evaluations created before the evidence-context migration do not have
+  // confidence or scope. Keep those records reviewable instead of allowing a
+  // single legacy row to crash the entire intelligence workspace.
+  const confidence = Number.isFinite(evaluation.confidence)
+    ? `${Math.round(evaluation.confidence * 100)}%`
+    : 'Unknown'
+  const scope = evaluation.scope ?? { sourcePaths: [], subjects: [] }
 
   return (
     <section
@@ -22,7 +29,7 @@ export function PolicyGateEvidence({
       <dl>
         <div>
           <dt>Detector confidence</dt>
-          <dd>{Math.round(evaluation.confidence * 100)}%</dd>
+          <dd>{confidence}</dd>
         </div>
         <div>
           <dt>Revision</dt>
@@ -31,13 +38,17 @@ export function PolicyGateEvidence({
       </dl>
       <div className="governance-scope">
         <strong>Repository scope</strong>
-        <ul>
-          {evaluation.scope.sourcePaths.map(path => (
-            <li key={path}><code>{path}</code></li>
-          ))}
-        </ul>
-        {evaluation.scope.subjects.length > 0 && (
-          <small>Matched subjects: {evaluation.scope.subjects.join(', ')}</small>
+        {scope.sourcePaths.length > 0 ? (
+          <ul>
+            {scope.sourcePaths.map(path => (
+              <li key={path}><code>{path}</code></li>
+            ))}
+          </ul>
+        ) : (
+          <small>Repository scope was not recorded for this legacy evaluation.</small>
+        )}
+        {scope.subjects.length > 0 && (
+          <small>Matched subjects: {scope.subjects.join(', ')}</small>
         )}
       </div>
       <div className="governance-artifacts">

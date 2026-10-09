@@ -47,4 +47,17 @@ describe('PolicyGateEvidence', () => {
     expect(screen.getByText('Authentication policy')).toBeInTheDocument()
     expect(screen.getByText('policy · governance/auth.md')).toBeInTheDocument()
   })
+
+  it('keeps legacy evaluations without confidence or scope reviewable', () => {
+    const legacyEvaluation = {
+      ...evaluation,
+      confidence: undefined,
+      scope: undefined,
+    } as unknown as PolicyGateEvaluation
+
+    render(<PolicyGateEvidence evaluation={legacyEvaluation} artifacts={artifacts} />)
+
+    expect(screen.getByText('Unknown')).toBeInTheDocument()
+    expect(screen.getByText('Repository scope was not recorded for this legacy evaluation.')).toBeInTheDocument()
+  })
 })

@@ -80,7 +80,8 @@ export function ExecutionThresholdEvidence({
 }: {
   execution: TestExecution
 }) {
-  if (!execution.thresholds.length) return null
+  const thresholds = execution.thresholds ?? []
+  if (!thresholds.length) return null
 
   return (
     <section
@@ -89,7 +90,7 @@ export function ExecutionThresholdEvidence({
     >
       <strong>Threshold evidence</strong>
       <ul>
-        {execution.thresholds.map((threshold, index) => (
+        {thresholds.map((threshold, index) => (
           <li key={`${threshold.metric}-${index}`}>
             <span className="execution-threshold-metric">{threshold.metric}</span>
             <code>
@@ -116,13 +117,14 @@ export function ExecutionGateEvidence({
 }: {
   execution: TestExecution
 }) {
-  if (!execution.gateEvaluations.length) return null
+  const gateEvaluations = execution.gateEvaluations ?? []
+  if (!gateEvaluations.length) return null
 
   return (
     <section className="execution-gates" aria-label="Policy gate evidence">
       <strong>Policy–gate evidence</strong>
       <ul>
-        {execution.gateEvaluations.map(evaluation => (
+        {gateEvaluations.map(evaluation => (
           <li key={`${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`}>
             <code>
               {evaluation.policyArtifactId} → {evaluation.gateArtifactId}
@@ -146,13 +148,14 @@ export function ExecutionEvidenceLinks({
 }: {
   execution: TestExecution
 }) {
-  if (!execution.evidenceLinks.length) return null
+  const evidenceLinks = execution.evidenceLinks ?? []
+  if (!evidenceLinks.length) return null
 
   return (
     <section className="execution-evidence-links" aria-label="Run evidence">
       <strong>Run evidence</strong>
       <ul>
-        {execution.evidenceLinks.map(link => (
+        {evidenceLinks.map(link => (
           <li key={`${link.kind}:${link.url}`}>
             <span className="status-pill">{link.kind}</span>
             <a href={link.url} target="_blank" rel="noreferrer">
