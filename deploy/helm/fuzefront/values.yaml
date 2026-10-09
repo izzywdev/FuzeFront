@@ -245,7 +245,10 @@ backend:
   tolerations: []
 
 connectors:
-  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8000"
+  # FuzeKeys' backend Service exposes its HTTP API on 8002.  Using the old
+  # 8000 development port makes every connector status request fail at the
+  # FuzeFront proxy with a 502, even when the FuzeKeys pods are healthy.
+  fuzekeysUrl: "http://fuzekeys-backend.fuzekeys.svc.cluster.local:8002"
 
 # Backend 3-way split (dual-serving). Both default to disabled; the old backend
 # still serves every route until the Phase 3 cutover flips routing. Enable in
