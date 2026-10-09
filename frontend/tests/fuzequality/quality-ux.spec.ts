@@ -154,6 +154,51 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
   })
 
+  test('refetches tenant-scoped evidence when the portal switches organization or personal context', async ({ page }) => {
+    let workspaceName = 'OrganizationOne'
+    await page.route('**/api/v1/portfolio', route => {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ...portfolio, repositories: [{ ...portfolio.repositories[0], name: workspaceName }] }),
+      })
+    })
+    await page.addInitScript(() => {
+      type Context = { user: { id: string } | null; activeOrganization: { id: string } | null }
+      let context: Context = { user: { id: 'user-1' }, activeOrganization: { id: 'org-1' } }
+      const listeners = new Set<(value: typeof context) => void>()
+      ;(window as any).__FUZEFRONT__ = {
+        version: 2,
+        getContext: () => context,
+        subscribe: (listener: (value: typeof context) => void) => {
+          listeners.add(listener)
+          listener(context)
+          return () => listeners.delete(listener)
+        },
+        menu: { add: () => {}, remove: () => {} },
+        __switchContext: (value: typeof context) => {
+          context = value
+          listeners.forEach(listener => listener(context))
+        },
+      }
+    })
+    await page.reload()
+    await page.getByRole('button', { name: 'Repositories' }).click()
+    await expect(page.getByRole('heading', { name: 'OrganizationOne' })).toBeVisible()
+
+    const personalReload = page.waitForRequest(request => request.url().endsWith('/api/v1/portfolio'))
+    workspaceName = 'PersonalWorkspace'
+    await page.evaluate(() => (window as any).__FUZEFRONT__.__switchContext({ user: { id: 'user-1' }, activeOrganization: null }))
+    await personalReload
+    await expect(page.getByRole('heading', { name: 'PersonalWorkspace' })).toBeVisible()
+
+    const organizationReload = page.waitForRequest(request => request.url().endsWith('/api/v1/portfolio'))
+    workspaceName = 'OrganizationTwo'
+    await page.evaluate(() => (window as any).__FUZEFRONT__.__switchContext({ user: { id: 'user-1' }, activeOrganization: { id: 'org-2' } }))
+    await organizationReload
+    await expect(page.getByRole('heading', { name: 'OrganizationTwo' })).toBeVisible()
+  })
+
   test('opens an API gap plan and queues selected test implementation', async ({ page }) => {
     await page.getByRole('button', { name: 'API catalog' }).click()
     await page.getByRole('button', { name: /Gap: Missing authentication/i }).click()

@@ -57,6 +57,7 @@ import {
 } from './api'
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
+import { QualityAction, QualityIconAction } from './components/primitives'
 
 type View =
   | 'overview'
@@ -92,6 +93,59 @@ const portalMenuItems = navigation
     route: `/${item.id}`,
     order: index + 1,
   }))
+
+type PortalContextSnapshot = {
+  user: { id: string } | null
+  activeOrganization?: { id: string } | null
+}
+
+type FuzeFrontRuntimeBridge = {
+  getContext?: () => PortalContextSnapshot
+  subscribe?: (listener: (context: PortalContextSnapshot) => void) => () => void
+  onOrgSwitch?: (listener: (organization: { id: string } | null) => void) => () => void
+  onAccountSwitch?: (listener: (user: { id: string } | null) => void) => () => void
+  menu?: {
+    add: (appId: string, items: typeof portalMenuItems) => void
+    remove: (appId: string) => void
+  }
+}
+
+function runtimeBridge() {
+  return (window as Window & { __FUZEFRONT__?: FuzeFrontRuntimeBridge })
+    .__FUZEFRONT__
+}
+
+function portalContextKey(context?: PortalContextSnapshot) {
+  return `${context?.user?.id ?? 'anonymous'}:${context?.activeOrganization?.id ?? 'personal'}`
+}
+
+/** Refetch tenant-scoped data whenever the host changes account or organization. */
+function usePortalContextKey() {
+  const [contextKey, setContextKey] = useState(() =>
+    portalContextKey(runtimeBridge()?.getContext?.())
+  )
+
+  useEffect(() => {
+    const bridge = runtimeBridge()
+    if (!bridge) return
+    if (bridge.subscribe) {
+      return bridge.subscribe(context => setContextKey(portalContextKey(context)))
+    }
+
+    // Compatibility for older versioned hosts that expose the focused switch
+    // callbacks but not the aggregate context subscription.
+    let revision = 0
+    const changed = () => setContextKey(`legacy:${++revision}`)
+    const unsubscribeOrganization = bridge.onOrgSwitch?.(changed)
+    const unsubscribeAccount = bridge.onAccountSwitch?.(changed)
+    return () => {
+      unsubscribeOrganization?.()
+      unsubscribeAccount?.()
+    }
+  }, [])
+
+  return contextKey
+}
 
 function executionOutcomeTrend(executions: TestExecution[]) {
   const results = new Map<
@@ -135,16 +189,7 @@ function viewFromPathname(pathname: string): View | undefined {
 /** Publish the app's IA to the portal sidebar; the host remains its renderer. */
 function usePortalMenu(setView: (view: View) => void) {
   useEffect(() => {
-    const bridge = (
-      window as Window & {
-        __FUZEFRONT__?: {
-          menu?: {
-            add: (appId: string, items: typeof portalMenuItems) => void
-            remove: (appId: string) => void
-          }
-        }
-      }
-    ).__FUZEFRONT__
+    const bridge = runtimeBridge()
     bridge?.menu?.add('fuzequality', portalMenuItems)
     const onNavigate = (event: Event) => {
       const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>)
@@ -300,14 +345,13 @@ function GapPlanDrawer({
             <h2 id="gap-plan-title">{gaps.length} tests to close this gap</h2>
             <code>{subjectLabel}</code>
           </div>
-          <button
+          <QualityIconAction
             ref={closeButton}
-            className="icon-button"
             onClick={onClose}
-            aria-label="Close test plan"
+            label="Close test plan"
           >
             <X />
-          </button>
+          </QualityIconAction>
         </header>
         <p className="drawer-intro">
           Generated from catalog policy and source metadata. These are
@@ -328,8 +372,7 @@ function GapPlanDrawer({
             />{' '}
             Select all
           </label>
-          <button
-            className="primary-button"
+          <QualityAction
             disabled={
               submitting || selected.size === 0 || !repository?.lastScanRevision
             }
@@ -337,7 +380,7 @@ function GapPlanDrawer({
           >
             <Sparkles size={15} />{' '}
             {submitting ? 'Launching…' : `Implement ${selected.size} selected`}
-          </button>
+          </QualityAction>
         </div>
         {implementation && (
           <div
@@ -824,9 +867,9 @@ function Repositories({
         title="Repository inventory"
         detail="Onboard read-only sources and inspect their latest deterministic scan."
         action={
-          <button className="primary-button" onClick={() => setOpen(true)}>
+          <QualityAction onClick={() => setOpen(true)}>
             <Plus size={16} /> Add repository
-          </button>
+          </QualityAction>
         }
       />
       <section className="repo-cards">
@@ -935,13 +978,13 @@ function Repositories({
                   )}
                 </div>
               </details>
-              <button
-                className="secondary-button"
+              <QualityAction
+                intent="secondary"
                 disabled={busy}
                 onClick={() => scan(repository.id, repository.localPath)}
               >
                 <RefreshCw size={15} /> Scan now
-              </button>
+              </QualityAction>
             </article>
           )
         })}
@@ -954,13 +997,13 @@ function Repositories({
                 <p className="eyebrow">GitHub App source</p>
                 <h2>Add repository</h2>
               </div>
-              <button
+              <QualityIconAction
                 type="button"
-                className="icon-button"
                 onClick={() => setOpen(false)}
+                label="Close repository form"
               >
                 <X />
-              </button>
+              </QualityIconAction>
             </div>
             <label>
               Owner
@@ -1052,16 +1095,16 @@ function Repositories({
               </p>
             )}
             <div className="modal-actions">
-              <button
+              <QualityAction
                 type="button"
-                className="secondary-button"
+                intent="secondary"
                 onClick={() => setOpen(false)}
               >
                 Cancel
-              </button>
-              <button className="primary-button" disabled={busy}>
+              </QualityAction>
+              <QualityAction disabled={busy}>
                 {busy ? 'Verifying…' : 'Verify and add'}
-              </button>
+              </QualityAction>
             </div>
           </form>
         </div>
@@ -3379,12 +3422,16 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const [organizations, setOrganizations] =
     useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
+  const portalContext = usePortalContextKey()
   usePortalMenu(setView)
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
   useEffect(() => configurePlatformSecurity(getToken), [getToken])
   async function reload() {
     setLoading(true)
+    setData(null)
+    setOrganizations(undefined)
+    setError(undefined)
     try {
       setData(await api.portfolio())
       setError(undefined)
@@ -3401,7 +3448,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   }
   useEffect(() => {
     void reload()
-  }, [])
+  }, [portalContext])
   const visibleNavigation = useMemo(
     () =>
       navigation.filter(item => item.id !== 'administration' || organizations),
