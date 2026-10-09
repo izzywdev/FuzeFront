@@ -100,6 +100,11 @@ describe('contract discovery', () => {
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
+          (parameter: { name: string }) => parameter.name
+        )
+      ).toEqual(['source', 'status', 'revision'])
     })
   })
 

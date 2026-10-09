@@ -40,6 +40,7 @@ import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
 import { executionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
+import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import {
   buildImplementationManifest,
@@ -476,7 +477,9 @@ app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (reque
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.repositoryFlowCandidates(repositoryId, tenantId))
+  const filter = repositoryFlowFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  response.json(filterRepositoryFlowCandidates(await store.repositoryFlowCandidates(repositoryId, tenantId), filter.data))
 })
 app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

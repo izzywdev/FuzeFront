@@ -65,6 +65,7 @@ import {
   ExecutionThresholdEvidence,
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
+import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 
 type View =
   | 'overview'
@@ -2868,6 +2869,10 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
   >([])
+  const [flowRepositoryId, setFlowRepositoryId] = useState('')
+  const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
+  const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
+  const [flowRevisionScope, setFlowRevisionScope] = useState<FlowRevisionScope>('all')
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
@@ -2978,7 +2983,18 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     void Promise.all(
       data.repositories.map(async repository => ({
         artifacts: await api.qualityArtifacts(repository.id),
-        flows: await api.repositoryFlowCandidates(repository.id),
+        flows:
+          flowRepositoryId && flowRepositoryId !== repository.id
+            ? []
+            : flowRevisionScope === 'current' && !repository.lastScanRevision
+              ? []
+              : await api.repositoryFlowCandidates(repository.id, Object.fromEntries(
+                Object.entries({
+                  source: flowSource,
+                  status: flowStatus,
+                  revision: flowRevisionScope === 'current' ? repository.lastScanRevision ?? '' : '',
+                }).filter(([, value]) => Boolean(value))
+              )),
         evaluations: await api.policyGateEvaluations(repository.id),
         executions:
           executionRepositoryId && executionRepositoryId !== repository.id
@@ -3018,6 +3034,10 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     data.repositories,
     executionFilter,
     executionRepositoryId,
+    flowRepositoryId,
+    flowRevisionScope,
+    flowSource,
+    flowStatus,
     invalidExecutionRange,
   ])
   const outcomeTrend = useMemo(
@@ -3081,6 +3101,17 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
         </div>
       ) : (
         <>
+          <FlowInventoryFilters
+            repositories={data.repositories}
+            repositoryId={flowRepositoryId}
+            source={flowSource}
+            status={flowStatus}
+            revisionScope={flowRevisionScope}
+            onRepositoryIdChange={setFlowRepositoryId}
+            onSourceChange={setFlowSource}
+            onStatusChange={setFlowStatus}
+            onRevisionScopeChange={setFlowRevisionScope}
+          />
           <div
             className="catalog-filters"
             aria-label="Policy and gate finding filters"

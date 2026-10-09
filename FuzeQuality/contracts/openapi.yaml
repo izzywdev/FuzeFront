@@ -207,6 +207,16 @@ paths:
       summary: List tenant-scoped, reviewable UX-flow candidates
       tags: [flow-candidates]
       security: [{ platformBearer: [] }]
+      parameters:
+        - name: source
+          in: query
+          schema: { type: string, enum: [deterministic, litellm] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [proposed, confirmed, rejected] }
+        - name: revision
+          in: query
+          schema: { type: string, minLength: 1, maxLength: 500 }
       responses:
         '200':
           description: UX-flow candidates discovered for the repository.
@@ -215,6 +225,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
