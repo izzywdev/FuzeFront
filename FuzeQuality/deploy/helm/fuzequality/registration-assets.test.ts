@@ -25,6 +25,17 @@ describe('FuzeQuality Helm registration assets', () => {
     )
   })
 
+  it('makes monorepo registration and design-system dependencies available in the release image', () => {
+    const dockerfile = read('../../../docker/Dockerfile')
+
+    expect(dockerfile).toContain(
+      'COPY packages/onboarding-kit /workspace/packages/onboarding-kit'
+    )
+    expect(dockerfile).toContain(
+      'ln -s /workspace/FuzeQuality/node_modules /workspace/node_modules'
+    )
+  })
+
   it('renders the prerequisite ConfigMaps even while the registration Job is disabled', () => {
     const template = read('templates/registration-assets.yaml')
     expect(template).toContain('.Values.registration.assets.enabled')

@@ -8,7 +8,15 @@ COPY FuzeQuality/package.json FuzeQuality/.npmrc ./
 # builds while keeping the production bundle on the published package APIs.
 COPY design-system /workspace/design-system
 COPY packages/security /workspace/packages/security
+COPY packages/onboarding-kit /workspace/packages/onboarding-kit
 RUN npm install --ignore-scripts --no-audit --no-fund
+# The checked-in design system is intentionally consumed from its repository
+# path so the image verifies the exact source being shipped. Its React peer
+# dependencies resolve by walking up from /workspace/design-system, while this
+# package's dependencies live under /workspace/FuzeQuality. Expose that one
+# dependency tree at the monorepo root so root-local packages use the same
+# React singleton as FuzeQuality during Vitest and Vite builds.
+RUN ln -s /workspace/FuzeQuality/node_modules /workspace/node_modules
 
 FROM dependencies AS source
 # This COPY is what bakes contracts/openapi.yaml INTO the image, alongside the
