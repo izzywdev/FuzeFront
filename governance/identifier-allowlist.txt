@@ -67,8 +67,8 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 # own and namespace under its own repo (identifier-standard.md §2), so they are
 # not this registry's to mint. Tracked against FuzeQuality's own adoption.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
-src FuzeQuality/packages/core/src/store.ts:227              # FuzeQuality-owned repository entity
-src FuzeQuality/packages/core/src/store.ts:304              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:315              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:401              # FuzeQuality-owned admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:939              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:233              # FuzeQuality-owned repository entity
+src FuzeQuality/packages/core/src/store.ts:310              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:321              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:407              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:957              # FuzeQuality-owned admin-context audit entity
