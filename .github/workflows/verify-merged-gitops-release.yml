@@ -1,0 +1,44 @@
+name: Verify merged FuzeFront GitOps release
+
+# A release build publishes images and opens a checked GitOps PR.  The build is
+# not the deployment: Argo can only start after that PR merges.  Trigger the
+# existing rollout-aware verification then, so its health wait observes the
+# image tags that actually became production desired state.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'deploy/helm/fuzefront/values-prod.yaml'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: verify-merged-fuzefront-gitops-release
+  cancel-in-progress: false
+
+jobs:
+  dispatch-post-deploy-verification:
+    # Only the bounded release commit shape can launch verification. A normal
+    # Helm values edit must not be treated as an application release.
+    if: "${{ startsWith(github.event.head_commit.message, 'release: fuzefront images ') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate release provenance and dispatch verification
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          if [[ "$MESSAGE" =~ ^release:\ fuzefront\ images\ ([0-9a-f]{12})$ ]]; then
+            release_sha="${BASH_REMATCH[1]}"
+          else
+            echo "::error title=merged-gitops-release::release commit message did not contain the expected 12-character image SHA"
+            exit 1
+          fi
+
+          gh workflow run prod-post-deploy.yml --ref master \
+            -f release_sha="$release_sha" \
+            -f reason="GitOps image-tag merge ${GITHUB_SHA} for ${release_sha}"
+          echo "Dispatched post-deploy verification for image tag ${release_sha}."
