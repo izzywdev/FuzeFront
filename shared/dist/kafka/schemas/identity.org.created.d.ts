@@ -15,8 +15,6 @@ export declare const organizationSnapshotV1: z.ZodObject<{
     parentId: z.ZodNullable<z.ZodString>;
     ownerId: z.ZodNullable<z.ZodString>;
     isActive: z.ZodBoolean;
-    settings: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
-    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
 }, "strip", z.ZodTypeAny, {
     slug: string;
     name: string;
@@ -25,8 +23,6 @@ export declare const organizationSnapshotV1: z.ZodObject<{
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
-    settings?: Record<string, any> | undefined;
-    metadata?: Record<string, any> | undefined;
 }, {
     slug: string;
     name: string;
@@ -35,8 +31,6 @@ export declare const organizationSnapshotV1: z.ZodObject<{
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
-    settings?: Record<string, any> | undefined;
-    metadata?: Record<string, any> | undefined;
 }>;
 export declare const identityOrgCreatedSchemaV1: z.ZodObject<{
     organizationId: z.ZodString;
@@ -46,8 +40,6 @@ export declare const identityOrgCreatedSchemaV1: z.ZodObject<{
     parentId: z.ZodNullable<z.ZodString>;
     ownerId: z.ZodNullable<z.ZodString>;
     isActive: z.ZodBoolean;
-    settings: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
-    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
 }, "strip", z.ZodTypeAny, {
     slug: string;
     name: string;
@@ -56,8 +48,6 @@ export declare const identityOrgCreatedSchemaV1: z.ZodObject<{
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
-    settings?: Record<string, any> | undefined;
-    metadata?: Record<string, any> | undefined;
 }, {
     slug: string;
     name: string;
@@ -66,7 +56,5 @@ export declare const identityOrgCreatedSchemaV1: z.ZodObject<{
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
-    settings?: Record<string, any> | undefined;
-    metadata?: Record<string, any> | undefined;
 }>;
 export type IdentityOrgCreatedPayloadV1 = z.infer<typeof identityOrgCreatedSchemaV1>;

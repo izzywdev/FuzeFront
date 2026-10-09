@@ -42,6 +42,7 @@ import { authenticateToken } from '../middleware/auth'
 import { db } from '../config/database'
 import { enqueueEvent } from '@fuzefront/core'
 import { TOPICS } from '@fuzefront/shared/kafka'
+import { emitMembershipAdded } from '../events/membershipEvents'
 import { resolveEmployeeStatus } from '../services/employeeRole'
 import { isMultiTenantPortalsEnabled } from '../utils/multiTenantPortalsFlag'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
@@ -363,11 +364,14 @@ router.post('/portals', authenticateToken, async (req: any, res) => {
             parentId: ROOT_ORG_ID,
             ownerId: req.user.id,
             isActive: true,
-            settings: {},
-            metadata: { isPortalRoot: true },
           },
           `identity-org-created-${organizationId}`
         )
+        await emitMembershipAdded(trx, {
+          organizationId,
+          userId: req.user.id,
+          role: 'owner',
+        })
       })
     } catch (error: any) {
       if (error.code === '23505' || error.message?.includes('duplicate key')) {

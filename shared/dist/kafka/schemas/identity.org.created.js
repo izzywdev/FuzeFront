@@ -18,7 +18,5 @@ exports.organizationSnapshotV1 = zod_1.z.object({
     parentId: zod_1.z.string().uuid().nullable(),
     ownerId: zod_1.z.string().uuid().nullable(),
     isActive: zod_1.z.boolean(),
-    settings: zod_1.z.record(zod_1.z.any()).optional(),
-    metadata: zod_1.z.record(zod_1.z.any()).optional(),
 });
 exports.identityOrgCreatedSchemaV1 = exports.organizationSnapshotV1;

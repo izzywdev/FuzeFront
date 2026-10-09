@@ -9,6 +9,34 @@ export interface MembershipChange {
   role: string
 }
 
+export type MembershipAuthorizationChange =
+  | 'membership_added'
+  | 'membership_removed'
+  | 'membership_role_changed'
+
+/**
+ * Emit a cache-invalidation signal alongside a membership mutation.  This is
+ * not a policy export: policy/grant data stays behind FuzeFront's authz API.
+ */
+export async function emitAuthorizationChanged(
+  trx: Knex.Transaction,
+  c: MembershipChange,
+  change: MembershipAuthorizationChange,
+  includeRole = true
+): Promise<void> {
+  await enqueueEvent(
+    trx,
+    TOPICS.IDENTITY_AUTHORIZATION_CHANGED,
+    {
+      organizationId: c.organizationId,
+      subjectId: c.userId,
+      change,
+      ...(includeRole ? { role: c.role } : {}),
+    },
+    `identity-authorization-changed-${uuidv4()}`
+  )
+}
+
 /**
  * Enqueue an `identity.membership.added` event on the transactional outbox.
  * MUST be called with the same transaction that performs the membership
@@ -24,6 +52,7 @@ export async function emitMembershipAdded(
     { organizationId: c.organizationId, userId: c.userId, role: c.role },
     `identity-membership-added-${uuidv4()}`
   )
+  await emitAuthorizationChanged(trx, c, 'membership_added')
 }
 
 /**
@@ -40,4 +69,5 @@ export async function emitMembershipRemoved(
     { organizationId: c.organizationId, userId: c.userId, role: c.role },
     `identity-membership-removed-${uuidv4()}`
   )
+  await emitAuthorizationChanged(trx, c, 'membership_removed', false)
 }

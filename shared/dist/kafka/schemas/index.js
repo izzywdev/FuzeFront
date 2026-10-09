@@ -34,6 +34,7 @@ __exportStar(require("./identity.org.updated"), exports);
 __exportStar(require("./identity.org.deleted"), exports);
 __exportStar(require("./identity.membership.added"), exports);
 __exportStar(require("./identity.membership.removed"), exports);
+__exportStar(require("./identity.authorization.changed"), exports);
 __exportStar(require("./identity.session.issued"), exports);
 __exportStar(require("./identity.session.revoked"), exports);
 __exportStar(require("./notify.email.requested"), exports);

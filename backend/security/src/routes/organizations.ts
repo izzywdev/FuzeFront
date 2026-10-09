@@ -12,7 +12,7 @@ import {
 import { db } from '../config/database'
 import { logger } from '../lib/logger'
 import { enqueueEvent } from '@fuzefront/core'
-import { emitMembershipRemoved } from '../events/membershipEvents'
+import { emitAuthorizationChanged, emitMembershipAdded, emitMembershipRemoved } from '../events/membershipEvents'
 import { TOPICS } from '@fuzefront/shared/kafka'
 import { Organization, OrganizationMembership } from '../types/shared'
 import { reconcileOrganizationProvisioning } from '../services/organizationProvisioning'
@@ -206,17 +206,14 @@ router.post('/', authenticateToken, async (req: any, res) => {
           parentId: input.parent_id ?? null,
           ownerId: req.user.id,
           isActive: true,
-          settings: input.settings,
-          metadata: input.metadata,
         },
         `identity-org-created-${organizationId}`
       )
-      await enqueueEvent(
-        trx,
-        TOPICS.IDENTITY_MEMBERSHIP_ADDED,
-        { organizationId, userId: req.user.id, role: 'owner' },
-        `identity-membership-added-${uuidv4()}`
-      )
+      await emitMembershipAdded(trx, {
+        organizationId,
+        userId: req.user.id,
+        role: 'owner',
+      })
     })
 
     // Fetch the created organization
@@ -565,8 +562,6 @@ router.put(
             parentId: updatedOrganization.parent_id ?? null,
             ownerId: updatedOrganization.owner_id ?? null,
             isActive: !!updatedOrganization.is_active,
-            settings: parseJsonb(updatedOrganization.settings),
-            metadata: parseJsonb(updatedOrganization.metadata),
           },
           `identity-org-updated-${uuidv4()}`
         )
@@ -1556,13 +1551,25 @@ router.put('/:id/members/:memberId', authenticateToken, async (req: any, res) =>
       return res.status(403).json({ error: 'Cannot change the role of an owner' })
     }
 
-    await db('organization_memberships')
-      .where('id', memberId)
-      .update({ role })
+    // Role changes alter authorization.  Keep the membership mutation and the
+    // tenant-scoped invalidation event in one transaction so consumers never
+    // observe a committed role without a durable invalidation signal.
+    const updated = await db.transaction(async trx => {
+      await trx('organization_memberships')
+        .where('id', memberId)
+        .update({ role })
 
-    const updated = await db('organization_memberships')
-      .where('id', memberId)
-      .first()
+      const changed = await trx('organization_memberships')
+        .where('id', memberId)
+        .first()
+
+      await emitAuthorizationChanged(trx, {
+        organizationId: id,
+        userId: membership.user_id,
+        role,
+      }, 'membership_role_changed')
+      return changed
+    })
 
     // Assign Permit role — non-blocking
     try {
