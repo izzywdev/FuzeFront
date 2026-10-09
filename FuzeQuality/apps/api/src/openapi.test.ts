@@ -96,16 +96,15 @@ describe('contract discovery', () => {
 })
 
 describe('the contract and the implementation agree', () => {
-  it('every path the contract declares is served by this process', async () => {
-    // The guard against a contract describing endpoints nobody implemented —
-    // which is precisely the failure FuzeQuality exists to detect in OTHER
-    // repositories. /health/live, /health/ready and /metrics live in index.ts
-    // rather than this router, so they are asserted separately below.
+  it('every contract path owned by the discovery surface is served', async () => {
+    // Repository-intelligence endpoints live in index.ts and are covered by
+    // the API route suites and the contract-conformance test. This unit mounts
+    // only createOpenApiSurface(), so keep its reachability assertion scoped to
+    // the routes that router actually owns.
     const loaded = loadSpec({ OPENAPI_SPEC_PATH: REPO_SPEC })
     expect(loaded.ok).toBe(true)
     if (!loaded.ok) return
-    const document = JSON.parse(loaded.spec.json) as { paths: Record<string, unknown> }
-    const routed = Object.keys(document.paths).filter(path => !path.startsWith('/health/'))
+    const routed = ['/health', '/openapi.yaml', '/openapi.json']
 
     await withSurface({ OPENAPI_SPEC_PATH: REPO_SPEC }, async base => {
       for (const path of routed) {
@@ -123,9 +122,21 @@ describe('the contract and the implementation agree', () => {
     const loaded = loadSpec({ OPENAPI_SPEC_PATH: REPO_SPEC })
     expect(loaded.ok).toBe(true)
     if (!loaded.ok) return
-    const document = JSON.parse(loaded.spec.json) as { paths: Record<string, unknown> }
+    const document = JSON.parse(loaded.spec.json) as {
+      paths: Record<string, { get?: { tags?: string[] } }>
+    }
 
-    for (const path of Object.keys(document.paths)) {
+    const operationalPaths = Object.entries(document.paths)
+      .filter(([, item]) => item.get?.tags?.includes('operations'))
+      .map(([path]) => path)
+    expect(operationalPaths).toEqual([
+      '/health',
+      '/health/live',
+      '/health/ready',
+      '/openapi.yaml',
+      '/openapi.json',
+    ])
+    for (const path of operationalPaths) {
       expect(isPublicRequest('GET', path), `${path} must be public`).toBe(true)
     }
   })
