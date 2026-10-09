@@ -88,6 +88,40 @@ describe('internal execution ingestion compatibility', () => {
     })
   })
 
+  it('retains links to video and report evidence for the exact run attempt', () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'post-production',
+      status: 'passed',
+      name: 'Production smoke tests',
+      evidenceLinks: [
+        { kind: 'video', name: 'FuzeQuality journey', url: 'https://evidence.example/runs/42/video.webm' },
+        { kind: 'report', name: 'Playwright report', url: 'https://evidence.example/runs/42/report/' },
+      ],
+    })
+
+    expect(executionRecord(input, 'generated-id').evidenceLinks).toEqual([
+      expect.objectContaining({ kind: 'video', name: 'FuzeQuality journey' }),
+      expect.objectContaining({ kind: 'report', name: 'Playwright report' }),
+    ])
+  })
+
+  it('rejects executable and insecure evidence URLs before they reach the UI', () => {
+    for (const url of ['javascript:alert(1)', 'http://evidence.example/video.webm']) {
+      expect(testExecutionInputSchema.safeParse({
+        repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+        tenantId: 'org-1',
+        revision: 'abc123',
+        kind: 'post-production',
+        status: 'passed',
+        name: 'Production smoke tests',
+        evidenceLinks: [{ kind: 'video', name: 'Unsafe video', url }],
+      }).success).toBe(false)
+    }
+  })
+
   it('rejects duplicate outcomes for the same policy and gate pair', () => {
     const parsed = testExecutionInputSchema.safeParse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

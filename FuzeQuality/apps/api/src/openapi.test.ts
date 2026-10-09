@@ -97,6 +97,11 @@ describe('contract discovery', () => {
         '#/components/schemas/TestExecutionGateEvaluation'
       )
       expect(schemas.TestExecution.required).toContain('gateEvaluations')
+      expect(schemas.TestExecutionInput.properties.evidenceLinks.items.$ref).toBe(
+        '#/components/schemas/TestExecutionEvidenceLink'
+      )
+      expect(schemas.TestExecution.required).toContain('evidenceLinks')
+      expect(schemas.TestExecutionEvidenceLink.properties.url.pattern).toBe('^https://')
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

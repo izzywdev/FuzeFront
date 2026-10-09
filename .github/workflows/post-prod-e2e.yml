@@ -161,6 +161,22 @@ jobs:
             frontend/test-results-post-prod/
           retention-days: 14
 
+      # Give the FuzeQuality journey one deterministic filename. Playwright's
+      # generated directory includes project/retry suffixes and the broader
+      # suite records other videos, so uploading **/video.webm would make this
+      # artifact ambiguous to an operator.
+      - name: Stage FuzeQuality production video
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p frontend/post-prod-evidence
+          mapfile -d '' videos < <(find frontend/test-results-post-prod -type f -path '*fuzequality-portal-smoke*' -name 'video.webm' -print0 | sort -z)
+          if (( ${#videos[@]} == 0 )); then
+            echo '::error::FuzeQuality production journey did not produce a Playwright video'
+            exit 1
+          fi
+          cp "${videos[-1]}" frontend/post-prod-evidence/fuzequality-portal-smoke.webm
+
       # Keep the successful FuzeQuality browser recording easy to find instead
       # of burying it in the HTML report. This is evidence for /app/fuzequality.
       - name: Upload FuzeQuality post-production video
@@ -168,8 +184,8 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fuzequality-post-prod-playwright-video
-          path: frontend/test-results-post-prod/**/video.webm
-          if-no-files-found: warn
+          path: frontend/post-prod-evidence/fuzequality-portal-smoke.webm
+          if-no-files-found: error
           retention-days: 30
 
       # FuzeX is a tenant-scoped design workspace.  Publish its recording

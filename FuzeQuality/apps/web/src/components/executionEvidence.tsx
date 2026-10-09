@@ -139,3 +139,28 @@ export function ExecutionGateEvidence({
     </section>
   )
 }
+
+/** Watchable/downloadable run artifacts, tied to the provider attempt above. */
+export function ExecutionEvidenceLinks({
+  execution,
+}: {
+  execution: TestExecution
+}) {
+  if (!execution.evidenceLinks.length) return null
+
+  return (
+    <section className="execution-evidence-links" aria-label="Run evidence">
+      <strong>Run evidence</strong>
+      <ul>
+        {execution.evidenceLinks.map(link => (
+          <li key={`${link.kind}:${link.url}`}>
+            <span className="status-pill">{link.kind}</span>
+            <a href={link.url} target="_blank" rel="noreferrer">
+              {link.kind === 'video' ? 'Watch ' : 'Open '}{link.name}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}

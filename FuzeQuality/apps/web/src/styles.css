@@ -160,6 +160,11 @@ button:disabled { cursor: wait; opacity: .55; }
 .execution-gates .status-passed { color: var(--cyan); background: #123336; }
 .execution-gates .status-failed { color: var(--coral); background: var(--coral-soft); }
 .execution-gates .status-cancelled, .execution-gates .status-running { color: var(--amber); background: #352b16; }
+.execution-evidence-links { margin-top: 10px; padding: 9px; border: 1px solid var(--line); background: var(--panel-raised); }
+.execution-evidence-links > strong { color: var(--muted); font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+.execution-evidence-links ul { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }
+.execution-evidence-links li { display: inline-flex; align-items: center; gap: 6px; }
+.execution-evidence-links a { color: var(--cyan); font-size: 11px; }
 .catalog-filters label, .snapshot-stamp { display: grid; gap: 6px; padding: 11px 12px; border: 1px solid var(--line); background: #091724; color: var(--muted); font: 10px 'IBM Plex Mono'; text-transform: uppercase; letter-spacing: .06em; }
 .catalog-filters select, .catalog-filters input { width: 100%; border: 0; background: transparent; color: var(--text); text-transform: none; }
 .catalog-filters option { background: var(--panel); }

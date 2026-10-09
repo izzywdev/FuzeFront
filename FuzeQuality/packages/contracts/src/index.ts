@@ -503,8 +503,25 @@ export type TestExecution = {
   gateEvaluations: TestExecutionGateEvaluation[]
   /** Measured pass/fail evidence retained exactly with this run attempt. */
   thresholds: TestExecutionThreshold[]
+  /** Durable or provider-hosted evidence produced by this exact run attempt. */
+  evidenceLinks: TestExecutionEvidenceLink[]
   summary?: string
 }
+
+export type TestExecutionEvidenceLink = {
+  kind: 'video' | 'report' | 'trace' | 'screenshot' | 'log' | 'other'
+  name: string
+  url: string
+}
+
+export const testExecutionEvidenceLinkSchema = z.object({
+  kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
+  name: z.string().trim().min(1).max(200),
+  url: z.string().url().max(2000).refine(
+    value => value.startsWith('https://'),
+    'Evidence URL must use HTTPS',
+  ),
+}).strict()
 
 export type TestExecutionGateEvaluation = {
   policyArtifactId: string
@@ -549,6 +566,7 @@ export const testExecutionInputSchema = z.object({
   policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
   gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
   thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),
+  evidenceLinks: z.array(testExecutionEvidenceLinkSchema).max(100).default([]),
   summary: z.string().max(5000).optional(),
 }).strict().superRefine((execution, context) => {
   const pairs = new Set<string>()

@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { TestExecution } from '@fuzequality/contracts'
-import { ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
+import { ExecutionEvidenceLinks, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -43,6 +43,10 @@ const execution: TestExecution = {
       passed: true,
     },
   ],
+  evidenceLinks: [
+    { kind: 'video', name: 'FuzeQuality production journey', url: 'https://evidence.example/run-42/video.webm' },
+    { kind: 'report', name: 'Playwright HTML report', url: 'https://evidence.example/run-42/report/' },
+  ],
 }
 
 describe('ExecutionThresholdEvidence', () => {
@@ -77,5 +81,19 @@ describe('ExecutionThresholdEvidence', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Latency budget exceeded.')).toBeInTheDocument()
     expect(screen.getByText('failed')).toBeInTheDocument()
+  })
+
+  it('renders watchable video and report links for the run', () => {
+    render(<ExecutionEvidenceLinks execution={execution} />)
+
+    expect(screen.getByRole('region', { name: 'Run evidence' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Watch FuzeQuality production journey' })).toHaveAttribute(
+      'href',
+      'https://evidence.example/run-42/video.webm'
+    )
+    expect(screen.getByRole('link', { name: 'Open Playwright HTML report' })).toHaveAttribute(
+      'href',
+      'https://evidence.example/run-42/report/'
+    )
   })
 })

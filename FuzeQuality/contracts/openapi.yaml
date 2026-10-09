@@ -732,6 +732,14 @@ components:
         gateArtifactId: { type: string, minLength: 1, maxLength: 500 }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         detail: { type: string, minLength: 1, maxLength: 1000 }
+    TestExecutionEvidenceLink:
+      type: object
+      additionalProperties: false
+      required: [kind, name, url]
+      properties:
+        kind: { type: string, enum: [video, report, trace, screenshot, log, other] }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        url: { type: string, format: uri, pattern: '^https://', maxLength: 2000 }
     TestExecutionInput:
       type: object
       additionalProperties: false
@@ -769,10 +777,15 @@ components:
           maxItems: 100
           default: []
           items: { $ref: '#/components/schemas/TestExecutionThresholdInput' }
+        evidenceLinks:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         summary: { type: string, maxLength: 5000 }
     TestExecution:
       type: object
-      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, gateEvaluations, thresholds]
+      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, gateEvaluations, thresholds, evidenceLinks]
       properties:
         id: { type: string }
         repositoryId: { type: string, format: uuid }
@@ -799,6 +812,9 @@ components:
         thresholds:
           type: array
           items: { $ref: '#/components/schemas/TestExecutionThreshold' }
+        evidenceLinks:
+          type: array
+          items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         summary: { type: string }
     DesignTestLinkTargetKind:
       type: string

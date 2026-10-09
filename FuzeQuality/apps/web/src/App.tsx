@@ -61,6 +61,7 @@ import { storybookPreviewUrl } from './storybook'
 import { QualityAction, QualityIconAction } from './components/primitives'
 import {
   ExecutionEvidenceMetadata,
+  ExecutionEvidenceLinks,
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
 } from './components/executionEvidence'
@@ -3566,6 +3567,7 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         : ''}
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
+                  <ExecutionEvidenceLinks execution={execution} />
                   <ExecutionGateEvidence execution={execution} />
                   <ExecutionThresholdEvidence execution={execution} />
                   {execution.sourceUrl && (
