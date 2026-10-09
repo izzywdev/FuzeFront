@@ -164,4 +164,52 @@ describe('FQ-69 platform authorization', () => {
       code: 'PLATFORM_ADMIN_REQUIRED',
     })
   })
+  it.each(['admin', 'not-admin', { admin: true }, [42], ['admin', null]])(
+    'denies malformed platform roles %j before calling authorization',
+    async roles => {
+      process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        identity: { userId: 'user-1', tenantId: 'tenant-1', roles },
+      }), { status: 200 }))
+      vi.stubGlobal('fetch', fetchMock)
+      const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+      const response = responseDouble()
+      const next = vi.fn() as NextFunction
+
+      await requirePlatformAdminPermission('quality_PlatformAdministration', 'read')(request, response, next)
+
+      expect(next).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(requestIdentity(request)).toBeUndefined()
+      expect(response.status).toHaveBeenCalledWith(403)
+      expect(response.json).toHaveBeenCalledWith({
+        error: 'A valid platform identity is required', code: 'IDENTITY_MALFORMED',
+      })
+    },
+  )
+
+  it.each([
+    { userId: 42, tenantId: 'tenant-1' },
+    { userId: 'user-1', tenantId: { id: 'tenant-1' } },
+    { userId: ' ', tenantId: 'tenant-1' },
+    { userId: 'user-1', tenantId: ' ' },
+  ])('denies malformed principal identifiers %j before calling authorization', async identity => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ identity }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('quality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(requestIdentity(request)).toBeUndefined()
+    expect(response.status).toHaveBeenCalledWith(403)
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED',
+    })
+  })
+
 })

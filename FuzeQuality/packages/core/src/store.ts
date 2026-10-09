@@ -339,7 +339,7 @@ export class MemoryCatalogStore implements CatalogStore {
   async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
     const suggestion = this.data.suggestions.find(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === input.tenantId))
     if (!suggestion || suggestion.state !== 'proposed') return undefined
-    const payload = input.editedPayload ?? suggestion.payload
+    const payload = structuredClone(input.editedPayload ?? suggestion.payload)
     const action = input.action
     suggestion.state = action === 'confirm' || action === 'merge' ? 'confirmed' : action === 'suppress' ? 'suppressed' : action === 'reject' ? 'rejected' : 'proposed'
     if ((action === 'confirm' || action === 'merge') && suggestion.type === 'flow') {
@@ -349,7 +349,7 @@ export class MemoryCatalogStore implements CatalogStore {
       if (existing >= 0) this.data.flows[existing] = confirmed
       else this.data.flows.push(confirmed)
     }
-    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input })
+    this.decisions.unshift(structuredClone({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input }))
     if (action === 'edit') suggestion.payload = payload
     return suggestion
   }
@@ -360,7 +360,7 @@ export class MemoryCatalogStore implements CatalogStore {
     const priority = suggestion.payload.priority === 'required' ? 'required' : 'recommended'
     this.data.expectations.push({ id: `expectation:ai:${id}`, subjectType: 'flow-step', subjectId: `requirement:${suggestion.requirementId}`, kind: 'ai-approved', label: suggestion.title, priority, rule: `ai-reviewed:${id}`, coverage: 'gap', evidenceIds: [] })
     suggestion.state = 'confirmed'
-    this.decisions.unshift({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' })
+    this.decisions.unshift(structuredClone({ id: randomUUID(), suggestionId: id, originalPayload: suggestion.payload, decidedAt: new Date().toISOString(), ...input, action: 'confirm' as const }))
     return suggestion
   }
 
@@ -373,7 +373,7 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async suggestionDecisions(id: string, tenantId: string) {
     const visible = this.data.suggestions.some(item => item.id === id && this.data.requirements.some(requirement => requirement.id === item.requirementId && requirement.tenantId === tenantId))
-    return visible ? this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId) : []
+    return visible ? structuredClone(this.decisions.filter(item => item.suggestionId === id && item.tenantId === tenantId)) : []
   }
 
   async rebuildCoverage() {
