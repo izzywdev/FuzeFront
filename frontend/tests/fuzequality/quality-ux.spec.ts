@@ -71,6 +71,13 @@ const testExecutions = [{
 
 async function mockQualityApi(page: Page, fixture = portfolio) {
   let suggestionConfirmed = false
+  let flowCandidates = repositoryFlowCandidates
+  let flowReviewHistory = [{
+    status: 'rejected' as const,
+    reviewedBy: 'platform-owner',
+    reason: 'The first analysis missed the administrator boundary.',
+    createdAt: '2026-10-08T08:45:00.000Z',
+  }]
   let members = [{ id: 'member-1', email: 'owner@example.com', role: 'owner' }]
   await page.addInitScript(() => { (window as any).__FRONTFUSE_CONTEXT__ = { getAccessToken: () => 'e2e-token' } })
   await page.route('**/api/v1/**', async route => {
@@ -83,7 +90,21 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     })
     if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
     if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
-    if (url.pathname.endsWith('/flow-candidates')) return respond(repositoryFlowCandidates)
+    if (url.pathname.endsWith('/flow-candidates')) return respond(flowCandidates)
+    if (url.pathname.endsWith('/flow-candidates/candidate-1/history')) return respond(flowReviewHistory)
+    if (url.pathname.endsWith('/flow-candidates/candidate-1/review') && method === 'POST') {
+      const payload = route.request().postDataJSON() as { status: 'confirmed' | 'rejected', reason?: string }
+      const reviewedAt = '2026-10-08T12:00:00.000Z'
+      flowCandidates = flowCandidates.map(flow => flow.id === 'candidate-1' ? {
+        ...flow,
+        status: payload.status,
+        reviewedAt,
+        reviewedBy: 'quality-reviewer',
+        reviewReason: payload.reason,
+      } : flow)
+      flowReviewHistory = [{ status: payload.status, reviewedBy: 'quality-reviewer', reason: payload.reason, createdAt: reviewedAt }, ...flowReviewHistory]
+      return respond(flowCandidates[0])
+    }
     if (url.pathname.endsWith('/policy-gate-evaluations')) return respond(policyGateEvaluations)
     if (url.pathname.endsWith('/policy-gate-evaluations/evaluation-1/history')) return respond([
       { status: 'accepted', reviewedBy: 'quality-owner', reason: 'Required for every production release.', createdAt: '2026-10-08T10:00:00.000Z' },
@@ -143,6 +164,24 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Revision abcdef123456')).toBeVisible()
     await expect(page.getByText('src/routes/apps.ts:42')).toBeVisible()
 
+    const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await flowCard.getByLabel('Optional review rationale').fill('Matches the protected suspension journey.')
+    const flowReviewRequest = page.waitForRequest(request => request.url().endsWith('/flow-candidates/candidate-1/review'))
+    await flowCard.getByRole('button', { name: 'Confirm' }).click()
+    expect((await flowReviewRequest).postDataJSON()).toEqual({
+      status: 'confirmed',
+      reason: 'Matches the protected suspension journey.',
+    })
+    await expect(flowCard.getByLabel('Current UX flow review')).toContainText('quality-reviewer')
+    await expect(flowCard.getByLabel('Current UX flow review')).toContainText('Matches the protected suspension journey.')
+    await expect(flowCard.getByLabel('Current UX flow review')).toContainText('Reviewed')
+    const flowHistory = flowCard.getByText('UX flow review history', { exact: true }).locator('..')
+    await flowHistory.getByText('UX flow review history', { exact: true }).click()
+    await expect(flowHistory.getByText('Recorded decisions are immutable.')).toBeVisible()
+    await expect(flowHistory.getByText('quality-reviewer', { exact: true })).toBeVisible()
+    await expect(flowHistory.getByText('Matches the protected suspension journey.')).toBeVisible()
+    await expect(flowHistory.getByText('The first analysis missed the administrator boundary.')).toBeVisible()
+
     await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
     await page.getByText('Review history', { exact: true }).click()
     await expect(page.getByText('quality-owner', { exact: true })).toBeVisible()
@@ -157,6 +196,20 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
     await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()
     await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
+  })
+
+  test('keeps a failed UX flow review actionable', async ({ page }) => {
+    await page.route('**/api/v1/repositories/repo-1/flow-candidates/candidate-1/review', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Review service unavailable' }),
+    }))
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await flowCard.getByLabel('Optional review rationale').fill('Evidence is incomplete.')
+    await flowCard.getByRole('button', { name: 'Reject' }).click()
+    await expect(flowCard.getByRole('alert')).toHaveText('Review service unavailable')
+    await expect(flowCard.getByRole('button', { name: 'Reject' })).toBeEnabled()
   })
 
   test('refetches tenant-scoped evidence when the portal switches organization or personal context', async ({ page }) => {

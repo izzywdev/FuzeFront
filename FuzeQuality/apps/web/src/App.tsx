@@ -42,6 +42,7 @@ import type {
   QualityArtifact,
   PolicyGateEvaluation,
   RepositoryFlowCandidate,
+  RepositoryFlowReviewHistoryEntry,
   Repository,
   RepositoryScanHistoryEntry,
   StorybookStory,
@@ -2646,6 +2647,146 @@ function OrganizationAdministration({
   )
 }
 
+function FlowReviewHistory({
+  flow,
+}: {
+  flow: RepositoryFlowCandidate
+}) {
+  const [history, setHistory] = useState<RepositoryFlowReviewHistoryEntry[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string>()
+
+  const loadHistory = async () => {
+    setLoading(true)
+    setError(undefined)
+    try {
+      setHistory(
+        await api.repositoryFlowReviewHistory(flow.repositoryId, flow.id)
+      )
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'Unable to load review history'
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <details
+      className="policy-review-history"
+      onToggle={event => {
+        if (event.currentTarget.open) void loadHistory()
+      }}
+    >
+      <summary>UX flow review history</summary>
+      <small>Recorded decisions are immutable.</small>
+      {loading ? (
+        <small>Loading decisions…</small>
+      ) : error ? (
+        <small className="policy-review-error">{error}</small>
+      ) : history.length ? (
+        <ol>
+          {history.map((entry, index) => (
+            <li key={`${entry.createdAt}:${entry.reviewedBy}:${index}`}>
+              <span
+                className={`status-pill severity-${entry.status === 'confirmed' ? 'low' : 'medium'}`}
+              >
+                {entry.status}
+              </span>
+              <strong>{entry.reviewedBy}</strong>
+              <time dateTime={entry.createdAt}>
+                {new Date(entry.createdAt).toLocaleString()}
+              </time>
+              {entry.reason && <p>{entry.reason}</p>}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <small>No review decisions recorded.</small>
+      )}
+    </details>
+  )
+}
+
+function FlowReviewControls({
+  flow,
+  onReview,
+}: {
+  flow: RepositoryFlowCandidate
+  onReview: (
+    flow: RepositoryFlowCandidate,
+    status: 'confirmed' | 'rejected',
+    reason?: string
+  ) => Promise<void>
+}) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+
+  const submit = async (status: 'confirmed' | 'rejected') => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await onReview(flow, status, reason.trim() || undefined)
+      setReason('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save review')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {flow.reviewedAt && (
+        <div className="flow-current-review" aria-label="Current UX flow review">
+          <strong>{flow.status}</strong>
+          <span>
+            Reviewed {new Date(flow.reviewedAt).toLocaleString()}
+            {flow.reviewedBy ? ` by ${flow.reviewedBy}` : ''}
+          </span>
+          {flow.reviewReason && <p>{flow.reviewReason}</p>}
+        </div>
+      )}
+      {flow.status === 'proposed' && (
+        <div className="flow-review-controls">
+          <label>
+            Optional review rationale
+            <input
+              value={reason}
+              onChange={event => setReason(event.target.value)}
+              placeholder="Why is this flow accurate or unsuitable?"
+            />
+          </label>
+          <div className="row-actions">
+            <QualityAction
+              intent="secondary"
+              disabled={busy}
+              onClick={() => void submit('confirmed')}
+            >
+              <Check size={14} /> Confirm
+            </QualityAction>
+            <QualityAction
+              intent="danger"
+              disabled={busy}
+              onClick={() => void submit('rejected')}
+            >
+              <X size={14} /> Reject
+            </QualityAction>
+          </div>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+      <FlowReviewHistory flow={flow} />
+    </>
+  )
+}
+
 function PolicyGateReviewHistory({
   evaluation,
 }: {
@@ -2764,12 +2905,14 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
   const reviewFlow = async (
     flow: RepositoryFlowCandidate,
-    status: 'confirmed' | 'rejected'
+    status: 'confirmed' | 'rejected',
+    reason?: string
   ) => {
     const reviewed = await api.reviewRepositoryFlowCandidate(
       flow.repositoryId,
       flow.id,
-      status
+      status,
+      reason
     )
     setFlowCandidates(current =>
       current.map(item => (item.id === reviewed.id ? reviewed : item))
@@ -3060,26 +3203,10 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 ))}
                               </ol>
                             </details>
-                            {flow.status === 'proposed' && (
-                              <div className="row-actions">
-                                <button
-                                  className="secondary-button"
-                                  onClick={() =>
-                                    void reviewFlow(flow, 'confirmed')
-                                  }
-                                >
-                                  <Check size={14} /> Confirm
-                                </button>
-                                <button
-                                  className="secondary-button"
-                                  onClick={() =>
-                                    void reviewFlow(flow, 'rejected')
-                                  }
-                                >
-                                  <X size={14} /> Reject
-                                </button>
-                              </div>
-                            )}
+                            <FlowReviewControls
+                              flow={flow}
+                              onReview={reviewFlow}
+                            />
                           </div>
                         </article>
                       ))}
