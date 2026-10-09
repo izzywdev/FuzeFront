@@ -97,6 +97,9 @@ describe('contract discovery', () => {
         '#/components/schemas/TestExecutionGateEvaluation'
       )
       expect(schemas.TestExecution.required).toContain('gateEvaluations')
+      expect(schemas.PolicyGateEvaluation.required).toEqual(
+        expect.arrayContaining(['confidence', 'scope'])
+      )
     })
   })
 
