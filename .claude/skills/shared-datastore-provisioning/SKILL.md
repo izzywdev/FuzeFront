@@ -88,6 +88,17 @@ can prepare the reviewed owner PR.
 
 Known operations to inspect and reuse:
 
+- Named `repository_dispatch` operations: FuzeInfra may expose a generic,
+  schema-validated operation such as `provision-service-postgres`. The consumer
+  supplies a bounded runtime declaration; FuzeInfra verifies it against the
+  already-declared disabled allocation and credential-handoff registry, then
+  opens a reviewed GitOps PR. FuzeInfra workflow code must not name or branch
+  on a particular consuming product. A consumer may invoke the named event with
+  its already-scoped `FUZEINFRA_DISPATCH_TOKEN`. Do not create a generic
+  "dispatch any workflow" relay: it turns a Contents-scoped repository-dispatch
+  credential into unconstrained Actions execution. `infra-dispatch.yml` remains
+  the family-wide Terraform `infra-request` transport, not a general workflow
+  dispatcher.
 - `secret-provision.yml`: generates or verifies Actions secrets in allowlisted
   targets. It does not provision a database or deliver a cluster Secret. Cross-repo
   `copy` is deliberately forbidden.
