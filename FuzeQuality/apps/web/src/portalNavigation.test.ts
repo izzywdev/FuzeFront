@@ -23,6 +23,8 @@ describe('FuzeFront portal navigation bridge', () => {
   })
 
   it('recognizes only valid FuzeQuality deep links', () => {
+    expect(viewFromPathname('/app/fuzequality')).toBe('overview')
+    expect(viewFromPathname('/app/fuzequality/')).toBe('overview')
     expect(viewFromPathname('/app/fuzequality/intelligence')).toBe('intelligence')
     expect(viewFromPathname('/app/fuzequality/not-a-view')).toBeUndefined()
     expect(viewFromPathname('/app/another/overview')).toBeUndefined()
@@ -48,9 +50,13 @@ describe('FuzeFront portal navigation bridge', () => {
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(setView).toHaveBeenLastCalledWith('operations')
 
+    window.history.pushState({}, '', '/app/fuzequality/')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+    expect(setView).toHaveBeenLastCalledWith('overview')
+
     disconnect()
     expect(remove).toHaveBeenCalledWith('fuzequality')
     window.dispatchEvent(new CustomEvent('fuzefront:navigate', { detail: { id: 'overview' } }))
-    expect(setView).toHaveBeenCalledTimes(3)
+    expect(setView).toHaveBeenCalledTimes(4)
   })
 })

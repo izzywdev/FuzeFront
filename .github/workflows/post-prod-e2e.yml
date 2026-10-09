@@ -166,7 +166,10 @@ jobs:
       # suite records other videos, so uploading **/video.webm would make this
       # artifact ambiguous to an operator.
       - name: Stage FuzeQuality production video
-        if: always()
+        # Connector-only dispatches intentionally do not run the FuzeQuality
+        # journey, so they must not require its evidence. Full runs still fail
+        # closed below when the journey did not produce a recording.
+        if: ${{ always() && !inputs.connectors_only }}
         shell: bash
         run: |
           mkdir -p frontend/post-prod-evidence
@@ -180,7 +183,7 @@ jobs:
       # Keep the successful FuzeQuality browser recording easy to find instead
       # of burying it in the HTML report. This is evidence for /app/fuzequality.
       - name: Upload FuzeQuality post-production video
-        if: always()
+        if: ${{ always() && !inputs.connectors_only }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: fuzequality-post-prod-playwright-video

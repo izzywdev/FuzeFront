@@ -191,6 +191,7 @@ function isView(value: unknown): value is View {
 }
 
 export function viewFromPathname(pathname: string): View | undefined {
+  if (/^\/app\/fuzequality\/?$/.test(pathname)) return 'overview'
   const match = pathname.match(/^\/app\/fuzequality\/([^/?#]+)/)
   return match && isView(match[1]) ? match[1] : undefined
 }
@@ -2879,7 +2880,33 @@ function PolicyGateReviewHistory({
   )
 }
 
-function RepositoryIntelligence({ data }: { data: Portfolio }) {
+type FlowInventorySelection = {
+  repositoryId: string
+  source: RepositoryFlowCandidate['source'] | ''
+  status: RepositoryFlowCandidate['status'] | ''
+  revisionScope: FlowRevisionScope
+}
+
+export function flowCandidateMatchesInventory(
+  flow: RepositoryFlowCandidate,
+  repositories: Repository[],
+  selection: FlowInventorySelection
+) {
+  if (selection.repositoryId && flow.repositoryId !== selection.repositoryId)
+    return false
+  if (selection.source && flow.source !== selection.source) return false
+  if (selection.status && flow.status !== selection.status) return false
+  if (selection.revisionScope === 'current') {
+    const repository = repositories.find(item => item.id === flow.repositoryId)
+    return Boolean(
+      repository?.lastScanRevision &&
+        flow.revision === repository.lastScanRevision
+    )
+  }
+  return true
+}
+
+export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
@@ -2928,6 +2955,28 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >('')
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
+  const [loadingFlows, setLoadingFlows] = useState(true)
+  const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
+  const flowSelection: FlowInventorySelection = {
+    repositoryId: flowRepositoryId,
+    source: flowSource,
+    status: flowStatus,
+    revisionScope: flowRevisionScope,
+  }
+  const flowSelectionRef = useRef(flowSelection)
+  flowSelectionRef.current = flowSelection
+  const flowQuery = JSON.stringify([
+    data.repositories.map(repository => [
+      repository.id,
+      repository.lastScanRevision ?? '',
+    ]),
+    flowRepositoryId,
+    flowSource,
+    flowStatus,
+    flowRevisionScope,
+  ])
+  const flowResultsAreCurrent =
+    !loadingFlows && loadedFlowQuery === flowQuery
   const reviewFlow = async (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -2940,7 +2989,13 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
       reason
     )
     setFlowCandidates(current =>
-      current.map(item => (item.id === reviewed.id ? reviewed : item))
+      flowCandidateMatchesInventory(
+        reviewed,
+        data.repositories,
+        flowSelectionRef.current
+      )
+        ? current.map(item => (item.id === reviewed.id ? reviewed : item))
+        : current.filter(item => item.id !== reviewed.id)
     )
   }
   const reviewPolicyGate = async (
@@ -2988,29 +3043,90 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     ) as Record<string, string>
   }, [executionKind, executionStatus, executionFrom, executionUntil])
   useEffect(() => {
-    if (invalidExecutionRange) {
-      setExecutions([])
-      setExecutionPerformance([])
-      setLoadingArtifacts(false)
-      return
-    }
     let active = true
     void Promise.all(
       data.repositories.map(async repository => ({
         artifacts: await api.qualityArtifacts(repository.id),
-        flows:
-          flowRepositoryId && flowRepositoryId !== repository.id
-            ? []
-            : flowRevisionScope === 'current' && !repository.lastScanRevision
-              ? []
-              : await api.repositoryFlowCandidates(repository.id, Object.fromEntries(
-                Object.entries({
-                  source: flowSource,
-                  status: flowStatus,
-                  revision: flowRevisionScope === 'current' ? repository.lastScanRevision ?? '' : '',
-                }).filter(([, value]) => Boolean(value))
-              )),
         evaluations: await api.policyGateEvaluations(repository.id),
+      }))
+    )
+      .then(groups => {
+        if (active) {
+          setArtifacts(groups.flatMap(group => group.artifacts))
+          setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setArtifacts([])
+          setPolicyGateEvaluations([])
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingArtifacts(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [data.repositories])
+  useEffect(() => {
+    let active = true
+    setLoadingFlows(true)
+    void Promise.all(
+      data.repositories.map(repository =>
+        flowRepositoryId && flowRepositoryId !== repository.id
+          ? Promise.resolve([])
+          : flowRevisionScope === 'current' && !repository.lastScanRevision
+            ? Promise.resolve([])
+            : api.repositoryFlowCandidates(
+                repository.id,
+                Object.fromEntries(
+                  Object.entries({
+                    source: flowSource,
+                    status: flowStatus,
+                    revision:
+                      flowRevisionScope === 'current'
+                        ? repository.lastScanRevision ?? ''
+                        : '',
+                  }).filter(([, value]) => Boolean(value))
+                )
+              )
+      )
+    )
+      .then(groups => {
+        if (active) setFlowCandidates(groups.flat())
+      })
+      .catch(() => {
+        if (active) setFlowCandidates([])
+      })
+      .finally(() => {
+        if (active) {
+          setLoadedFlowQuery(flowQuery)
+          setLoadingFlows(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [
+    data.repositories,
+    flowQuery,
+    flowRepositoryId,
+    flowRevisionScope,
+    flowSource,
+    flowStatus,
+  ])
+  useEffect(() => {
+    let active = true
+    if (invalidExecutionRange) {
+      setExecutions([])
+      setExecutionPerformance([])
+      return () => {
+        active = false
+      }
+    }
+    void Promise.all(
+      data.repositories.map(async repository => ({
         executions:
           executionRepositoryId && executionRepositoryId !== repository.id
             ? []
@@ -3023,24 +3139,15 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
       .then(groups => {
         if (active) {
-          setArtifacts(groups.flatMap(group => group.artifacts))
-          setFlowCandidates(groups.flatMap(group => group.flows))
-          setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
           setExecutions(groups.flatMap(group => group.executions))
           setExecutionPerformance(groups.flatMap(group => group.performance))
         }
       })
       .catch(() => {
         if (active) {
-          setArtifacts([])
-          setFlowCandidates([])
-          setPolicyGateEvaluations([])
           setExecutions([])
           setExecutionPerformance([])
         }
-      })
-      .finally(() => {
-        if (active) setLoadingArtifacts(false)
       })
     return () => {
       active = false
@@ -3049,10 +3156,6 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     data.repositories,
     executionFilter,
     executionRepositoryId,
-    flowRepositoryId,
-    flowRevisionScope,
-    flowSource,
-    flowStatus,
     invalidExecutionRange,
   ])
   const outcomeTrend = useMemo(
@@ -3195,10 +3298,13 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <div className="catalog-grid">
             {groups.map(([kind, title, detail]) => {
               const items = artifacts.filter(item => item.kind === kind)
-              const deterministicFlowCount = flowCandidates.filter(
+              const visibleFlowCandidates = flowResultsAreCurrent
+                ? flowCandidates
+                : []
+              const deterministicFlowCount = visibleFlowCandidates.filter(
                 flow => flow.source === 'deterministic'
               ).length
-              const liteLlmFlowCount = flowCandidates.filter(
+              const liteLlmFlowCount = visibleFlowCandidates.filter(
                 flow => flow.source === 'litellm'
               ).length
               return (
@@ -3207,7 +3313,7 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     <div>
                       <p className="eyebrow">
                         {kind === 'route'
-                          ? `${flowCandidates.length} flows · ${items.length} routes indexed`
+                          ? `${visibleFlowCandidates.length} flows · ${items.length} routes indexed`
                           : `${items.length} discovered`}
                       </p>
                       <h2>{title}</h2>
@@ -3237,8 +3343,14 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         )}
                       </div>
                     )}
+                    {kind === 'route' && !flowResultsAreCurrent && (
+                      <div className="loading-screen" role="status">
+                        <RefreshCw className="spin" />
+                        <span>Loading UX flows…</span>
+                      </div>
+                    )}
                     {kind === 'route' &&
-                      flowCandidates.map(flow => (
+                      visibleFlowCandidates.map(flow => (
                         <article className="catalog-row" key={flow.id}>
                           <div>
                             <strong>{flow.title}</strong>
@@ -3420,7 +3532,9 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       </article>
                     ))}
                     {items.length === 0 &&
-                      !(kind === 'route' && flowCandidates.length) && (
+                      !(kind === 'route' &&
+                        (!flowResultsAreCurrent ||
+                          visibleFlowCandidates.length)) && (
                         <div className="empty-state">
                           <Search />
                           <strong>No evidence indexed yet</strong>

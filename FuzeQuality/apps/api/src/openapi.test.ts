@@ -105,6 +105,17 @@ describe('contract discovery', () => {
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )
+      const ingestionSchema = schemas.PolicyGateEvaluationInput
+      expect(
+        document.paths['/api/v1/internal/policy-gate-evaluations'].post.requestBody.content[
+          'application/json'
+        ].schema.properties.evaluations.items.$ref
+      ).toBe('#/components/schemas/PolicyGateEvaluationInput')
+      expect(ingestionSchema.additionalProperties).toBe(false)
+      expect(ingestionSchema.properties.reviewStatus.enum).toEqual(['proposed'])
+      expect(ingestionSchema.properties).not.toHaveProperty('reviewedAt')
+      expect(ingestionSchema.properties).not.toHaveProperty('reviewedBy')
+      expect(ingestionSchema.properties).not.toHaveProperty('reviewReason')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
