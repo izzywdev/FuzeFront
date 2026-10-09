@@ -82,6 +82,22 @@ export const FLAG_KEYS = {
    */
   SELECTION_LISTS_SEED_DEFAULTS: 'fuzefront.selection-lists.seed-defaults',
   /**
+   * SL9 — shared/common selection lists + copy-on-write forks (selection-lists
+   * 4.1.0; docs/planning/selection-lists-shared-and-fork.md section 7). Gates
+   * list `visibility`/shared read, `include_shared`, the fork operation,
+   * `fork_required`, resolve of common lists + the fork redirect, the
+   * `list.forked`/`visibility.changed` events and seed-list `visibility`.
+   * Default OFF. Release flag. Owner: izzywdev.
+   * Removal criterion: ON for all orgs for 30 days with no fork / shared-read
+   * incident (then delete the flag, this key, the WEB_EXPOSED_FLAGS entry and
+   * every off-path branch in selection-list-service).
+   * Web-exposed (WEB_EXPOSED_FLAGS): the selection-lists UI gates the common
+   * badge / fork flow on it. Real authorization stays in Permit — this flag is
+   * never a boundary. Independent of, and additionally requires,
+   * SELECTION_LISTS_SERVICE.
+   */
+  SELECTION_LISTS_SHARED_LISTS: 'fuzefront.selection-lists.shared-lists',
+  /**
    * Portals Directory (backend S1 #640 / frontend S3 #642).
    * Gates the /portals page + SidePanel "Portals" nav entry (UI-side) and
    * the identityMode/launchUrl fields on GET /api/v1/admin/portals
@@ -293,6 +309,7 @@ export const WEB_EXPOSED_FLAGS: readonly FlagDescriptor[] = [
     type: 'release',
     default: false,
   },
+  { key: FLAG_KEYS.SELECTION_LISTS_SHARED_LISTS, type: 'release', default: false },
   { key: FLAG_KEYS.PORTALS_DIRECTORY, type: 'release', default: false },
   // FF-EPIC-17 identity UI flags — read in the browser via `useFlag()`. Without
   // these entries the backend `GET /api/flags` never discloses them, so flipping

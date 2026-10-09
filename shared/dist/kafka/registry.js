@@ -39,6 +39,8 @@ exports.SCHEMA_BY_TOPIC = {
     [types_1.TOPICS.SELECTION_LISTS_LIST_UPDATED]: schemas_1.selectionListsListUpdatedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_LIST_ARCHIVED]: schemas_1.selectionListsListArchivedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_LIST_DELETED]: schemas_1.selectionListsListDeletedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_LIST_FORKED]: schemas_1.selectionListsListForkedSchemaV1,
+    [types_1.TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED]: schemas_1.selectionListsVisibilityChangedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_ITEM_CREATED]: schemas_1.selectionListsItemCreatedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_ITEM_UPDATED]: schemas_1.selectionListsItemUpdatedSchemaV1,
     [types_1.TOPICS.SELECTION_LISTS_ITEM_ARCHIVED]: schemas_1.selectionListsItemArchivedSchemaV1,

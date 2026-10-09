@@ -14,6 +14,9 @@ import {
   selectionListsItemArchivedSchemaV1,
   selectionListsTranslationUpsertedSchemaV1,
   selectionListSeedPackSchemaV1,
+  selectionListsListForkedSchemaV1,
+  selectionListsVisibilityChangedSchemaV1,
+  slListSnapshotV1,
   slActorV1,
   SELECTION_LIST_LIMITS,
 } from '../../src/kafka';
@@ -28,7 +31,7 @@ const SEED_REQUEST: any = load('seed-request.expected.json');
 const SL_TOPICS = Object.values(TOPICS).filter((t) => t.startsWith('selection-lists.'));
 
 describe('selection-lists topics', () => {
-  it('declares exactly the 16 contract topics, named domain.entity.verb', () => {
+  it('declares exactly the 18 contract topics, named domain.entity.verb', () => {
     expect(SL_TOPICS.sort()).toEqual(
       [
         'selection-lists.access.granted',
@@ -41,12 +44,14 @@ describe('selection-lists topics', () => {
         'selection-lists.list.archived',
         'selection-lists.list.created',
         'selection-lists.list.deleted',
+        'selection-lists.list.forked',
         'selection-lists.list.updated',
         'selection-lists.seed.completed',
         'selection-lists.seed.failed',
         'selection-lists.seed.requested',
         'selection-lists.translation.deleted',
         'selection-lists.translation.upserted',
+        'selection-lists.visibility.changed',
       ].sort(),
     );
     for (const t of SL_TOPICS) expect(t.split('.')).toHaveLength(3);
@@ -95,6 +100,66 @@ describe('published examples (fixtures/selection-lists/published-examples.json)'
   it('tolerates an additive unknown field on a published event (forward compatible)', () => {
     const extra = { ...clone(EXAMPLES[TOPICS.SELECTION_LISTS_LIST_CREATED]), futureField: 1 };
     expect(schemaForTopic(TOPICS.SELECTION_LISTS_LIST_CREATED)!.safeParse(extra).success).toBe(true);
+  });
+});
+
+describe('shared lists and forks (shared 1.3.0 / HTTP 4.1.0)', () => {
+  it('list snapshots without visibility/forkedFrom still validate (additive, pre-1.3.0 producers)', () => {
+    const snap = clone(EXAMPLES[TOPICS.SELECTION_LISTS_LIST_CREATED].list);
+    delete snap.visibility;
+    delete snap.forkedFrom;
+    expect(slListSnapshotV1.safeParse(snap).success).toBe(true);
+    expect(slListSnapshotV1.safeParse({ ...snap, visibility: 'public' }).success).toBe(false);
+  });
+
+  it('list.forked: source org differs, key is kept, fork is never platform, item map is 1:1', () => {
+    const ex = clone(EXAMPLES[TOPICS.SELECTION_LISTS_LIST_FORKED]);
+    expect(selectionListsListForkedSchemaV1.safeParse(ex).success).toBe(true);
+    expect(selectionListsListForkedSchemaV1.safeParse({ ...ex, source: { ...ex.source, organizationId: ex.organizationId } }).success).toBe(false);
+    expect(selectionListsListForkedSchemaV1.safeParse({ ...ex, source: { ...ex.source, listKey: 'other' } }).success).toBe(false);
+    expect(selectionListsListForkedSchemaV1.safeParse({ ...ex, list: { ...ex.list, visibility: 'platform' } }).success).toBe(false);
+    const dup = clone(ex);
+    dup.itemMap[1].originItemId = dup.itemMap[0].originItemId;
+    expect(selectionListsListForkedSchemaV1.safeParse(dup).success).toBe(false);
+  });
+
+  it('visibility.changed: must change, platform is one-way, snapshot agrees', () => {
+    const ex = clone(EXAMPLES[TOPICS.SELECTION_LISTS_VISIBILITY_CHANGED]);
+    expect(selectionListsVisibilityChangedSchemaV1.safeParse(ex).success).toBe(true);
+    expect(selectionListsVisibilityChangedSchemaV1.safeParse({ ...ex, previousVisibility: 'org' }).success).toBe(false);
+    expect(
+      selectionListsVisibilityChangedSchemaV1.safeParse({ ...ex, previousVisibility: 'platform', visibility: 'org' }).success,
+    ).toBe(false);
+    expect(
+      selectionListsVisibilityChangedSchemaV1.safeParse({ ...ex, list: { ...ex.list, visibility: 'private' } }).success,
+    ).toBe(false);
+    expect(
+      selectionListsVisibilityChangedSchemaV1.safeParse({
+        ...ex,
+        previousVisibility: 'org',
+        visibility: 'platform',
+        list: { ...ex.list, visibility: 'platform' },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('seed.requested: an app may seed org/private lists but never a platform (common) list', () => {
+    const org = clone(SEED_REQUEST);
+    org.lists[0].visibility = 'org';
+    expect(selectionListsSeedRequestedSchemaV1.safeParse(org).success).toBe(true);
+    const platform = clone(SEED_REQUEST);
+    platform.lists[0].visibility = 'platform';
+    expect(selectionListsSeedRequestedSchemaV1.safeParse(platform).success).toBe(false);
+  });
+
+  it('platform seed pack: a list may declare platform visibility (one common instance)', () => {
+    const pack = {
+      packKey: 'platform-defaults',
+      version: 2,
+      appliesTo: ['organization', 'personal'],
+      lists: [{ key: 'priority', sourceLocale: 'en', name: 'Priority', visibility: 'platform', items: [{ code: 'LOW', label: 'Low' }] }],
+    };
+    expect(selectionListSeedPackSchemaV1.safeParse(pack).success).toBe(true);
   });
 });
 

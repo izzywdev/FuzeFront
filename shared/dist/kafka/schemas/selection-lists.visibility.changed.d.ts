@@ -1,11 +1,22 @@
 import { z } from 'zod';
 /**
- * `selection-lists.list.created` — a list now exists in an organization, either
- * created by a user over HTTP or by seeding (`list.seed` is then non-null and
- * `actor` is the system principal). Carries the full snapshot so a consumer
- * can build its read model without calling back.
+ * `selection-lists.visibility.changed` (shared 1.3.0, HTTP contract 4.1.0) — a
+ * list's `visibility` changed through `PATCH /v1/selection-lists/{listId}`:
+ * `private` ↔ `org` by the list owner, or `private`/`org` → `platform` by a
+ * platform operator. Design: docs/planning/selection-lists-shared-and-fork.md.
+ *
+ * Its own topic rather than a `list.updated` `changedFields` value, so a
+ * consumer that strictly enumerates `changedFields` is not broken by a value it
+ * has never seen, and so the access-relevant change is easy to subscribe to
+ * alone (a read model of "who can pick from this list" needs only this topic,
+ * `list.created` and `list.deleted`).
+ *
+ * `platform` is one-way: `previousVisibility` is never `platform`. When a
+ * single PATCH changes visibility AND other fields, the service emits
+ * `list.updated` for the other fields and this event for the visibility, both
+ * in the same transaction, each with its own `listRevision`.
  */
-export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
+export declare const selectionListsVisibilityChangedSchemaV1: z.ZodEffects<z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
     listRevision: z.ZodNumber;
@@ -76,10 +87,10 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
+        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -98,10 +109,10 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
             forkedAt: string;
         } | null | undefined;
     }, {
-        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
+        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -120,10 +131,13 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
             forkedAt: string;
         } | null | undefined;
     }>;
+    previousVisibility: z.ZodEnum<["private", "org", "platform"]>;
+    visibility: z.ZodEnum<["private", "org", "platform"]>;
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
     listRevision: number;
+    visibility: "platform" | "private" | "org";
     eventId: string;
     actor: {
         type: "user";
@@ -135,10 +149,10 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
     };
     listKey: string;
     list: {
-        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
+        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -157,10 +171,12 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
             forkedAt: string;
         } | null | undefined;
     };
+    previousVisibility: "platform" | "private" | "org";
 }, {
     organizationId: string;
     listId: string;
     listRevision: number;
+    visibility: "platform" | "private" | "org";
     eventId: string;
     actor: {
         type: "user";
@@ -172,10 +188,10 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
     };
     listKey: string;
     list: {
-        key: string;
         name: string;
         status: "active" | "archived";
         listId: string;
+        key: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
         seed: {
@@ -194,5 +210,84 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
             forkedAt: string;
         } | null | undefined;
     };
+    previousVisibility: "platform" | "private" | "org";
+}>, {
+    organizationId: string;
+    listId: string;
+    listRevision: number;
+    visibility: "platform" | "private" | "org";
+    eventId: string;
+    actor: {
+        type: "user";
+        userId: string;
+    } | {
+        type: "system";
+        principal: "selection-list-service";
+        seedSource: string | null;
+    };
+    listKey: string;
+    list: {
+        name: string;
+        status: "active" | "archived";
+        listId: string;
+        key: string;
+        sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
+        description: string | null;
+        seed: {
+            source: string;
+            packKey: string;
+            packVersion: number;
+            userModified: boolean;
+        } | null;
+        createdAt: string;
+        updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
+    };
+    previousVisibility: "platform" | "private" | "org";
+}, {
+    organizationId: string;
+    listId: string;
+    listRevision: number;
+    visibility: "platform" | "private" | "org";
+    eventId: string;
+    actor: {
+        type: "user";
+        userId: string;
+    } | {
+        type: "system";
+        principal: "selection-list-service";
+        seedSource: string | null;
+    };
+    listKey: string;
+    list: {
+        name: string;
+        status: "active" | "archived";
+        listId: string;
+        key: string;
+        sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
+        description: string | null;
+        seed: {
+            source: string;
+            packKey: string;
+            packVersion: number;
+            userModified: boolean;
+        } | null;
+        createdAt: string;
+        updatedAt: string;
+        visibility?: "platform" | "private" | "org" | undefined;
+        forkedFrom?: {
+            organizationId: string;
+            listId: string;
+            listRevision: number;
+            forkedAt: string;
+        } | null | undefined;
+    };
+    previousVisibility: "platform" | "private" | "org";
 }>;
-export type SelectionListsListCreatedPayloadV1 = z.infer<typeof selectionListsListCreatedSchemaV1>;
+export type SelectionListsVisibilityChangedPayloadV1 = z.infer<typeof selectionListsVisibilityChangedSchemaV1>;

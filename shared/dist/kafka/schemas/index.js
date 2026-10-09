@@ -46,6 +46,8 @@ __exportStar(require("./selection-lists.list.created"), exports);
 __exportStar(require("./selection-lists.list.updated"), exports);
 __exportStar(require("./selection-lists.list.archived"), exports);
 __exportStar(require("./selection-lists.list.deleted"), exports);
+__exportStar(require("./selection-lists.list.forked"), exports);
+__exportStar(require("./selection-lists.visibility.changed"), exports);
 __exportStar(require("./selection-lists.item.created"), exports);
 __exportStar(require("./selection-lists.item.updated"), exports);
 __exportStar(require("./selection-lists.item.archived"), exports);

@@ -28,6 +28,8 @@ export declare const TOPICS: {
     readonly SELECTION_LISTS_LIST_UPDATED: "selection-lists.list.updated";
     readonly SELECTION_LISTS_LIST_ARCHIVED: "selection-lists.list.archived";
     readonly SELECTION_LISTS_LIST_DELETED: "selection-lists.list.deleted";
+    readonly SELECTION_LISTS_LIST_FORKED: "selection-lists.list.forked";
+    readonly SELECTION_LISTS_VISIBILITY_CHANGED: "selection-lists.visibility.changed";
     readonly SELECTION_LISTS_ITEM_CREATED: "selection-lists.item.created";
     readonly SELECTION_LISTS_ITEM_UPDATED: "selection-lists.item.updated";
     readonly SELECTION_LISTS_ITEM_ARCHIVED: "selection-lists.item.archived";

@@ -6,6 +6,7 @@ import { z } from 'zod';
 export declare const selectionListsItemDeletedSchemaV1: z.ZodObject<{
     organizationId: z.ZodString;
     listId: z.ZodString;
+    listRevision: z.ZodNumber;
     eventId: z.ZodString;
     actor: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
         type: z.ZodLiteral<"user">;
@@ -30,13 +31,13 @@ export declare const selectionListsItemDeletedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     }>]>;
     listKey: z.ZodString;
-    listRevision: z.ZodNumber;
     itemId: z.ZodString;
     code: z.ZodString;
 }, "strip", z.ZodTypeAny, {
     code: string;
     organizationId: string;
     listId: string;
+    listRevision: number;
     itemId: string;
     eventId: string;
     actor: {
@@ -48,11 +49,11 @@ export declare const selectionListsItemDeletedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
 }, {
     code: string;
     organizationId: string;
     listId: string;
+    listRevision: number;
     itemId: string;
     eventId: string;
     actor: {
@@ -64,6 +65,5 @@ export declare const selectionListsItemDeletedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
 }>;
 export type SelectionListsItemDeletedPayloadV1 = z.infer<typeof selectionListsItemDeletedSchemaV1>;

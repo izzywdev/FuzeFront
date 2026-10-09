@@ -2,14 +2,14 @@
 Typed client for the FuzeFront selection-list-service.
 
 One method per endpoint of ``services/selection-list-service/openapi.yaml``
-v4.0.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
+v4.1.0. Zero runtime dependencies -- uses ``urllib.request`` from the stdlib.
 
 Usage::
 
     from fuzefront_selection_list_client import SelectionListClient
 
     client = SelectionListClient(
-        base_url="http://fuzefront-selection-list-service:3011",
+        base_url="http://fuzefront-selection-list-service:3008",
         token="<your-bearer-token>",
     )
     page = client.get_lists()
@@ -30,6 +30,7 @@ from .errors import SelectionListApiError, _code_from_status
 from .types import (
     AccessEntry,
     AutofillResult,
+    ForkProvenance,
     ItemTranslationLocaleStatus,
     LifecycleStatus,
     Page,
@@ -44,6 +45,7 @@ from .types import (
     SelectionListItem,
     SelectionListItemTranslation,
     SelectionListQuotaStatus,
+    SelectionListVisibility,
     Translation,
     TranslationLocaleStatus,
 )
@@ -85,6 +87,18 @@ def _parse_seed(raw: object) -> SeedProvenance | None:
     )
 
 
+def _parse_fork(raw: object) -> ForkProvenance | None:
+    """``forked_from`` is required-but-nullable on the wire (4.1.0); absence is ``None``."""
+    if not isinstance(raw, dict):
+        return None
+    return ForkProvenance(
+        list_id=raw["list_id"],
+        organization_id=raw["organization_id"],
+        revision=raw["revision"],
+        forked_at=raw["forked_at"],
+    )
+
+
 def _parse_selection_list(raw: dict) -> SelectionList:
     return SelectionList(
         id=raw["id"],
@@ -101,6 +115,9 @@ def _parse_selection_list(raw: dict) -> SelectionList:
         description=raw.get("description"),
         item_count=raw.get("item_count"),
         seed=_parse_seed(raw.get("seed")),
+        visibility=SelectionListVisibility(raw.get("visibility", "private")),
+        forked_from=_parse_fork(raw.get("forked_from")),
+        editable=bool(raw.get("editable", False)),
     )
 
 
@@ -119,6 +136,7 @@ def _parse_item(raw: dict) -> SelectionListItem:
         updated_at=raw["updated_at"],
         description=raw.get("description"),
         seed=_parse_seed(raw.get("seed")),
+        origin_item_id=raw.get("origin_item_id"),
     )
 
 
@@ -207,6 +225,7 @@ def _parse_resolve_response(raw: dict) -> ResolveResponse:
             locale=v["locale"],
             is_machine=v["is_machine"],
             status=LifecycleStatus(v["status"]),
+            effective_item_id=v.get("effective_item_id"),
         )
         for k, v in raw.get("results", {}).items()
     }
@@ -284,6 +303,7 @@ class SelectionListClient:
         query: dict[str, str] | None = None,
         body: dict | None = None,
         allow_empty: bool = False,
+        on_status: Callable[[int], None] | None = None,
     ) -> dict | None:
         """
         Make an HTTP request. Returns the parsed JSON body, or ``None`` on
@@ -319,6 +339,9 @@ class SelectionListClient:
                 except (json.JSONDecodeError, ValueError):
                     parsed_error = None
             _raise_api_error(status, parsed_error)
+
+        if on_status is not None and 200 <= status < 300:
+            on_status(status)
 
         # 204 / 205 -- empty body
         if status in (204, 205):
@@ -378,14 +401,25 @@ class SelectionListClient:
         status: str | None = None,
         locale: str | None = None,
         key: str | None = None,
+        include_shared: bool | None = None,
+        visibility: str | None = None,
     ) -> PagedResponse[SelectionList]:
-        """``GET /v1/selection-lists`` -- a page of lists in the caller's org."""
+        """
+        ``GET /v1/selection-lists`` -- a page of lists in the caller's org.
+
+        ``include_shared=True`` (4.1.0) also returns lists readable through
+        visibility (``org`` lists of the caller's org, ``platform`` common lists);
+        the default is the 4.0.0 result set. ``visibility`` filters to one value
+        and disables platform-list shadowing.
+        """
         query = _build_query(
             limit=limit,
             cursor=cursor,
             status=status,
             locale=locale or self._default_locale,
             key=key,
+            include_shared=None if include_shared is None else ("true" if include_shared else "false"),
+            visibility=visibility,
         )
         raw = self._request("GET", "/v1/selection-lists", query=query)
         assert raw is not None
@@ -394,6 +428,50 @@ class SelectionListClient:
             page=_parse_page(raw),
         )
 
+    def get_effective_list(
+        self,
+        key: str,
+        *,
+        locale: str | None = None,
+    ) -> SelectionList | None:
+        """
+        The **effective** list for ``key`` (4.1.0): the caller org's own readable
+        active list with that key (e.g. its fork) if any, else the active
+        ``platform`` common list with that key; ``None`` when neither exists.
+        One ``GET /v1/selection-lists?key=...&include_shared=true`` call.
+        """
+        page = self.get_lists(key=key, include_shared=True, locale=locale, limit=1)
+        return page.items[0] if page.items else None
+
+    def fork_list(
+        self,
+        list_id: str,
+        *,
+        visibility: str | None = None,
+    ) -> tuple[SelectionList, bool]:
+        """
+        ``POST /v1/selection-lists/{listId}/fork`` -- copy a common (``platform``)
+        list into the caller's org as a list the caller owns (copy-on-write, 4.1.0).
+
+        Returns ``(fork, created)``: ``created`` is ``True`` for a new fork
+        (``201``) and ``False`` when the org already held one and it was
+        returned unchanged (``200``). No id or key is sent -- the service mints
+        ids and the fork keeps the source key. ``visibility`` is ``org``
+        (default) or ``private``.
+        """
+        body: dict = {}
+        if visibility is not None:
+            body["visibility"] = visibility
+        seen: list[int] = []
+        raw = self._request(
+            "POST",
+            f"/v1/selection-lists/{urllib.parse.quote(list_id, safe='')}/fork",
+            body=body,
+            on_status=seen.append,
+        )
+        assert raw is not None
+        return _parse_selection_list(raw), bool(seen) and seen[0] == 201
+
     def create_list(
         self,
         key: str,
@@ -401,13 +479,21 @@ class SelectionListClient:
         *,
         source_locale: str | None = None,
         description: str | None = None,
+        visibility: str | None = None,
     ) -> SelectionList:
-        """``POST /v1/selection-lists`` -- create a list. The service mints the id."""
+        """
+        ``POST /v1/selection-lists`` -- create a list. The service mints the id.
+
+        ``visibility`` defaults to ``private`` server-side; ``platform`` needs
+        ``publish_platform`` and a caller acting in the platform org (4.1.0).
+        """
         body: dict = {"key": key, "name": name}
         if source_locale is not None:
             body["source_locale"] = source_locale
         if description is not None:
             body["description"] = description
+        if visibility is not None:
+            body["visibility"] = visibility
         raw = self._request("POST", "/v1/selection-lists", body=body)
         assert raw is not None
         return _parse_selection_list(raw)
@@ -437,14 +523,23 @@ class SelectionListClient:
         status: str | None = None,
         name: str | None = None,
         description: str | None = None,
+        visibility: str | None = None,
     ) -> SelectionList:
-        """``PATCH /v1/selection-lists/{listId}`` -- partial update."""
+        """
+        ``PATCH /v1/selection-lists/{listId}`` -- partial update.
+
+        ``visibility`` (4.1.0) needs ``manage_access``; ``platform`` is
+        operator-only and one-way (``CONFLICT`` / ``visibility_locked`` on a
+        demotion). On a common list the caller holds no role on, expect a
+        ``CONFLICT`` whose ``is_fork_required`` is true.
+        """
         body = _omit_none(
             key=key,
             source_locale=source_locale,
             status=status,
             name=name,
             description=description,
+            visibility=visibility,
         )
         raw = self._request(
             "PATCH",
@@ -874,6 +969,10 @@ class SelectionListClient:
         that org -- another org's ids land in ``missing``. There is no
         anonymous mode; a missing or org-less token raises a ``401``
         :class:`SelectionListApiError`.
+
+        4.1.0: items of ``platform`` (common) lists resolve for every org; when
+        the caller's org holds an ``org``-visible fork of that common list the
+        result comes from the fork item, named in ``effective_item_id``.
         """
         body: dict = {"ids": ids}
         resolved_locale = locale or self._default_locale
@@ -937,6 +1036,9 @@ def _raise_api_error(status: int, body: dict | None) -> None:
             limit=body.get("limit"),
             current=body.get("current"),
             details=body.get("details"),
+            reason=body.get("reason"),
+            fork_url=body.get("fork_url"),
+            source_list_id=body.get("source_list_id"),
         )
     raise SelectionListApiError(
         code=_code_from_status(status),

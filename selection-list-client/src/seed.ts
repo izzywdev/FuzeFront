@@ -75,6 +75,13 @@ export interface SeedListSpec {
   description?: string
   translations?: SeedListTranslation[]
   items: SeedItemSpec[]
+  /**
+   * Visibility of the seeded list (shared 1.3.0 / HTTP 4.1.0). Absent = `private`
+   * (only grant-holders can read it). `org` lets every member of the org pick
+   * from it without a grant — recommended for app reference data. App seed
+   * requests can never create a `platform` (common) list.
+   */
+  visibility?: 'private' | 'org'
 }
 
 /** Wire payload of `selection-lists.seed.requested` (v1). */
@@ -145,7 +152,7 @@ export class SeedRequestValidationError extends Error {
 }
 
 const LOCALE_SET: ReadonlySet<string> = new Set(LOCALES)
-const LIST_FIELDS = new Set(['key', 'sourceLocale', 'name', 'description', 'translations', 'items'])
+const LIST_FIELDS = new Set(['key', 'sourceLocale', 'name', 'description', 'translations', 'items', 'visibility'])
 const ITEM_FIELDS = new Set(['code', 'label', 'description', 'translations'])
 const LIST_TR_FIELDS = new Set(['locale', 'name', 'description'])
 const ITEM_TR_FIELDS = new Set(['locale', 'label', 'description'])
@@ -214,6 +221,15 @@ export function buildSeedRequest(input: BuildSeedRequestInput): SeedRequestedPay
     checkText(raw.name, `${p}.name`, add)
     checkDescription(raw.description, `${p}.description`, add)
     checkTranslations(raw.translations, 'name', LIST_TR_FIELDS, sourceLocale, `${p}.translations`, add)
+    const visibility = (raw as { visibility?: unknown }).visibility
+    if (visibility !== undefined && visibility !== 'private' && visibility !== 'org') {
+      add(
+        `${p}.visibility`,
+        visibility === 'platform'
+          ? 'an app seed request cannot create a platform (common) list; use "org" or "private"'
+          : 'must be "private" or "org"'
+      )
+    }
 
     const rawItems = Array.isArray(raw.items) ? raw.items : []
     if (!Array.isArray(raw.items)) add(`${p}.items`, 'must be an array')
@@ -246,6 +262,7 @@ export function buildSeedRequest(input: BuildSeedRequestInput): SeedRequestedPay
       description: raw.description,
       translations: raw.translations?.map((t) => compact({ ...t })),
       items,
+      visibility: raw.visibility,
     }) as SeedListSpec
   })
 

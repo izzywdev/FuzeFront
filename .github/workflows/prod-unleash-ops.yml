@@ -28,6 +28,7 @@ on:
             org-context-gating  — fuzefront.apps.org-context-disabled (100%), fuzefront.apps.org-context-hidden (OFF)
             selection-lists     — fuzefront.selection-lists.service (staged ramp via `rollout`; rollback via `action: disable`)
             app-builder         — CREATE ONLY (never enables): fuzefront.apps.build-with-agent + creator-ownership + marketplace-publishing, left OFF
+            selection-lists-shared — CREATE ONLY (never enables): fuzefront.selection-lists.shared-lists, left OFF
         required: true
         default: billing-portal
         type: choice
@@ -38,6 +39,7 @@ on:
           - org-context-gating
           - selection-lists
           - app-builder
+          - selection-lists-shared
       rollout:
         description: 'selection-lists ONLY — flexibleRollout percentage 1-100 (staged ramp 10 -> 25 -> 50 -> 100). Ignored by other sets.'
         required: false
@@ -269,6 +271,15 @@ jobs:
               "Release flag, default OFF. Gates the marketplace publication-request endpoints (submit/approve/reject/get) and the Publish to marketplace UI. Owner: backend-engineer. Removal: once the marketplace flow is rolled out and stable."
           }
 
+          # ── Selection lists: shared/common lists + forks (CREATE ONLY) ─────
+          # Release flag, default OFF (SL9; packages/feature-flags/flag-registry.yaml).
+          # Same create-only contract as app-builder above: it never enables the
+          # environment, never adds a strategy and never calls `off`.
+          apply_selection_lists_shared() {
+            create_only "fuzefront.selection-lists.shared-lists" \
+              "Release flag, default OFF. Gates shared/common selection lists (visibility, shared read, include_shared, fork, resolve redirect, list.forked/visibility.changed events, seed-list visibility) in selection-list-service. Real authorization stays in Permit. Owner: izzywdev. Removal: ON for all orgs for 30 days with no fork/shared-read incident; delete the flag, FLAG_KEYS entry, isSharedListsEnabled() and the off-path branches."
+          }
+
           # ── Dispatch ──────────────────────────────────────────────────────
           case "$FLAGS_SET" in
             billing-portal)      apply_billing ;;
@@ -277,6 +288,7 @@ jobs:
             org-context-gating)  apply_org_context_gating ;;
             selection-lists)     apply_selection_lists ;;
             app-builder)         apply_app_builder ;;
+            selection-lists-shared) apply_selection_lists_shared ;;
             *)                   echo "::error::Unknown flags set: $FLAGS_SET"; exit 1 ;;
           esac
 
@@ -342,4 +354,6 @@ jobs:
               check_flag "fuzefront.apps.build-with-agent"
               check_flag "fuzefront.apps.creator-ownership"
               check_flag "fuzefront.apps.marketplace-publishing" ;;
+            selection-lists-shared)
+              check_flag "fuzefront.selection-lists.shared-lists" ;;
           esac

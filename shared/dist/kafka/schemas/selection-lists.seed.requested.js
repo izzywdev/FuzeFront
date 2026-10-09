@@ -66,6 +66,15 @@ exports.selectionListsSeedRequestedSchemaV1 = zod_1.z
 })
     .strict()
     .superRefine((p, ctx) => {
+    p.lists.forEach((list, li) => {
+        if (list.visibility === 'platform') {
+            ctx.addIssue({
+                code: zod_1.z.ZodIssueCode.custom,
+                path: ['lists', li, 'visibility'],
+                message: 'an app seed request cannot create a platform (common) list; use "org" or "private"',
+            });
+        }
+    });
     if (p.scope === 'user' && p.userId === undefined) {
         ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, path: ['userId'], message: 'userId is required when scope is "user"' });
     }

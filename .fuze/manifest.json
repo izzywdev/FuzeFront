@@ -122,13 +122,37 @@
           "health": "/healthz",
           "tools": "/tools.json"
         }
+      },
+      {
+        "name": "selection-list-mcp",
+        "transport": "sse",
+        "kind": "openapi-gateway",
+        "image": "ghcr.io/izzywdev/fuze-mcp-gateway",
+        "implementation": "packages/mcp-gateway",
+        "spec": "services/selection-list-service/openapi.yaml",
+        "overrides": "deploy/helm/fuzefront/files/mcp-tools-selection-lists.overrides.yaml",
+        "deployment": "deploy/helm/fuzefront/templates/selection-list-service-mcp-gateway.yaml",
+        "enabledWhen": "selectionListService.enabled && selectionListsMcp.enabled",
+        "endpoints": {
+          "sse": "/sse",
+          "messages": "/messages",
+          "health": "/healthz",
+          "tools": "/tools.json"
+        }
       }
     ],
     "entryServer": "fuzefront-mcp",
     "protocolVersion": "2025-06-18",
-    "toolCount": 11,
-    "irreversibleTools": ["deleteApp"],
-    "note": "GATEWAY dialect — the shared @fuzefront/mcp-gateway image (packages/mcp-gateway, published by this repo), not per-repo server code. Deployed in-cluster by deploy/helm/fuzefront/templates/mcp-gateway.yaml (mcp.enabled=true in every values overlay, pinned image tag), fronting the app-registry contract at services/app-registry-service/openapi.yaml with mutation overrides in deploy/helm/fuzefront/files/mcp-tools.overrides.yaml. ClusterIP only, not exposed through ingress — the gateway forwards the caller's bearer token upstream and holds no credential of its own. This block previously declared a stdio scaffold (mcp/server.ts, enabled:false) that had already been superseded by the gateway in production; the scaffold is deleted (see mcp/ removal) rather than kept as a second, dead implementation. Owned by mcp-maintainer for upkeep of this block/deployment wiring; tool behaviour is the app-registry-service contract, owned by backend-engineer."
+    "toolCount": 45,
+    "irreversibleTools": [
+      "deleteApp",
+      "deleteSelectionList",
+      "deleteSelectionListItem",
+      "deleteSelectionListTranslation",
+      "deleteSelectionListItemTranslation",
+      "revokeSelectionListAccess"
+    ],
+    "note": "GATEWAY dialect — the shared @fuzefront/mcp-gateway image (packages/mcp-gateway, published by this repo), not per-repo server code. TWO gateways: (1) fuzefront-mcp fronts the app-registry contract (20 tools, always-on); (2) selection-list-mcp fronts the selection-list-service contract (25 tools, ships dark — both selectionListService.enabled AND selectionListsMcp.enabled must be true). Both use the same image; what distinguishes each pod is its mounted OpenAPI spec + overrides pair. The app-registry gateway is exposed publicly via Ingress (values-prod.yaml mcp.ingress.enabled=true); the selection-list gateway is ClusterIP-only. Both forward the caller's bearer token and hold no credential of their own. Spec copies in deploy/helm/fuzefront/files/ must stay in sync with their sources — run scripts/check-mcp-spec-drift.sh. toolCount = 20 (app-registry) + 25 (selection-list). Owned by mcp-maintainer for upkeep of this block/deployment wiring; tool behaviour is owned by backend-engineer."
   },
   "providesTo": [
     "FuzeAgent",

@@ -1,7 +1,7 @@
 """
 Wire types for the selection-list-service.
 
-Hand-authored from ``services/selection-list-service/openapi.yaml`` v4.0.0.
+Hand-authored from ``services/selection-list-service/openapi.yaml`` v4.1.0.
 The spec is the source of truth: when it changes, the spec is amended first
 and this file updated in the same PR.
 
@@ -109,6 +109,29 @@ class QuotaScope(str, enum.Enum):
     LIST_LOCALES = "list_locales"
 
 
+class SelectionListVisibility(str, enum.Enum):
+    """
+    Who may **read** a list without an instance grant (contract 4.1.0).
+
+    ``private`` (default) -- only instance-role holders; ``org`` -- every member
+    of the owning org; ``platform`` -- a common list readable by every org.
+    Visibility never confers a mutation.
+    """
+
+    PRIVATE = "private"
+    ORG = "org"
+    PLATFORM = "platform"
+
+
+class SelectionListErrorReason(str, enum.Enum):
+    """Refines a ``CONFLICT`` (4.1.0). Treat an unknown value as a plain ``CONFLICT``."""
+
+    FORK_REQUIRED = "fork_required"
+    FORK_EXISTS = "fork_exists"
+    FORK_NOT_APPLICABLE = "fork_not_applicable"
+    VISIBILITY_LOCKED = "visibility_locked"
+
+
 class SelectionListErrorCode(str, enum.Enum):
     """
     Stable machine-readable error code. Branch on this, never on ``message``.
@@ -181,6 +204,23 @@ class SeedProvenance:
     """Sticky ``True`` once a human edited the seeded content."""
 
 
+@dataclass
+class ForkProvenance:
+    """
+    Read-only provenance of a forked list (contract ``SelectionListForkProvenance``,
+    4.1.0). Records the moment of copying; never updated.
+    """
+
+    list_id: str
+    """The source (common) list; may since have been purged."""
+    organization_id: str
+    """The source's owning org (the platform org for a common list)."""
+    revision: int
+    """The source's revision (``listRevision``) when copied."""
+    forked_at: str
+    """RFC 3339 time of the fork."""
+
+
 # ---------------------------------------------------------------------------
 # Selection lists
 # ---------------------------------------------------------------------------
@@ -206,6 +246,16 @@ class SelectionList:
     item_count: int | None = None
     seed: SeedProvenance | None = None
     """Seed provenance; ``None`` for a user-authored list."""
+    visibility: SelectionListVisibility = SelectionListVisibility.PRIVATE
+    """Who may read it without a grant (4.1.0). ``private`` when talking to a pre-4.1 service."""
+    forked_from: ForkProvenance | None = None
+    """Fork provenance; ``None`` unless made by ``fork_list`` (4.1.0)."""
+    editable: bool = False
+    """
+    Caller-relative hint (4.1.0): ``True`` when the caller holds a write role on
+    the list. ``False`` for a list read only through visibility. Not an
+    authorization -- every mutation is still checked.
+    """
 
 
 @dataclass
@@ -253,6 +303,8 @@ class SelectionListItem:
     description: str | None = None
     seed: SeedProvenance | None = None
     """Seed provenance; ``None`` for a user-authored item."""
+    origin_item_id: str | None = None
+    """On a forked item, the source item it was copied from; ``None`` otherwise (4.1.0)."""
 
 
 @dataclass
@@ -425,6 +477,11 @@ class ResolveResult:
     locale: str
     is_machine: bool
     status: LifecycleStatus
+    effective_item_id: str | None = None
+    """
+    Set only when the id belongs to a common list and the result came from the
+    caller org's ``org``-visible fork: the fork item's id (4.1.0).
+    """
 
 
 @dataclass
