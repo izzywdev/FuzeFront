@@ -17,6 +17,7 @@
 # Optional env:
 #   REGISTRATION_DIR   directory holding manifest.json (default: /registration)
 #   SKIP_ACTIVATE      "true" to register but not activate (staged rollout)
+#   FUZEFRONT_REMOTE_HEALTH_URL  deployed federation asset to verify before registry writes
 #
 # Exit codes: 0 = registered/activated (or already was). 1 = anything else.
 
@@ -46,6 +47,28 @@ jq empty "$MANIFEST" 2>/dev/null || die "$MANIFEST is not valid JSON"
 
 SLUG="$(jq -r '.slug // empty' "$MANIFEST")"
 [ -n "$SLUG" ] || die "manifest has no .slug"
+
+# An activated registry row is harmful when its remoteEntry is a 404 or an HTML
+# ingress fallback. Product charts can provide their in-cluster asset URL so a
+# rollout fails before publishing a broken application to the portal menu.
+if [ -n "${FUZEFRONT_REMOTE_HEALTH_URL:-}" ]; then
+  REMOTE_BODY="$(mktemp)"
+  if ! curl -fsS --retry 4 --retry-all-errors --retry-delay 2 \
+    -o "$REMOTE_BODY" "$FUZEFRONT_REMOTE_HEALTH_URL"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset is unreachable at ${FUZEFRONT_REMOTE_HEALTH_URL}"
+  fi
+  if [ ! -s "$REMOTE_BODY" ] || grep -Eiq '<(html|head|body)([[:space:]>])' "$REMOTE_BODY"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset is empty or HTML at ${FUZEFRONT_REMOTE_HEALTH_URL}"
+  fi
+  if ! grep -Eq '(__federation|(^|[;[:space:]])(const|let|var|function|import|export)[[:space:]])' "$REMOTE_BODY"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset does not look like JavaScript at ${FUZEFRONT_REMOTE_HEALTH_URL}"
+  fi
+  rm -f "$REMOTE_BODY"
+  log "federation asset healthy at ${FUZEFRONT_REMOTE_HEALTH_URL}"
+fi
 
 # ---- suite surfaces ----------------------------------------------------------
 # A repo may ship SEVERAL independently-mountable surfaces of one product — e.g.

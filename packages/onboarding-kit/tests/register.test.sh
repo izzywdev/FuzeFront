@@ -76,6 +76,7 @@ run_register() {
   REGISTRATION_DIR="$REG" \
   FUZEFRONT_API_URL="$FUZEFRONT_API_URL" \
   FUZEFRONT_REGISTRATION_TOKEN="${1:-test-token}" \
+  FUZEFRONT_REMOTE_HEALTH_URL="${2:-}" \
     sh "$SCRIPT" > "${WORK}/run.out" 2>&1
 }
 
@@ -114,6 +115,23 @@ cleanup; SERVER_PID=""
 start_server 2
 set +e; run_register; RC=$?; set -e
 check "survives 2 transient 500s" "$RC" "0"
+cleanup; SERVER_PID=""
+
+# ---- 6. federation health is checked before any registry mutation ------------
+printf 'const remote = "__federation_method_ensure";\n' > "${WORK}/remoteEntry.js"
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
+check "healthy federation asset permits registration" "$RC" "0"
+
+printf '<!doctype html><html><body>ingress fallback</body></html>\n' > "${WORK}/remoteEntry.js"
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
+if [ "$RC" -ne 0 ]; then ok "HTML federation fallback exits NON-ZERO"; else notok "HTML federation fallback exits NON-ZERO (got 0)"; fi
+grep -q 'federation asset is empty or HTML' "${WORK}/run.out" \
+  && ok "reports the broken federation asset clearly" || notok "reports the broken federation asset clearly"
+WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
+check "broken federation asset causes no registry writes" "$WRITES" "0"
 cleanup; SERVER_PID=""
 
 # ---- 7. suite: apps/*.json siblings each register and activate ----------------
@@ -173,7 +191,7 @@ rm -f "${REG}/apps/broken.json"
 cleanup; SERVER_PID=""
 rm -rf "${REG}/apps"
 
-# ---- 6. missing required env is fatal ----------------------------------------
+# ---- 9. missing required env is fatal ----------------------------------------
 set +e
 REGISTRATION_DIR="$REG" FUZEFRONT_API_URL="" FUZEFRONT_REGISTRATION_TOKEN="x" sh "$SCRIPT" >/dev/null 2>&1
 RC=$?

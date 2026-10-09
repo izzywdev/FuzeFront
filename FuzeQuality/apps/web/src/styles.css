@@ -32,6 +32,7 @@ button { color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 244px 1fr; background: radial-gradient(circle at 78% -20%, #143549 0, transparent 34%), var(--ink); }
+.app-shell.portal-embedded { display: block; }
 .sidebar { position: sticky; top: 0; height: 100vh; padding: 25px 16px; border-right: 1px solid var(--line); background: rgba(7, 17, 28, .94); display: flex; flex-direction: column; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 9px 26px; border-bottom: 1px solid var(--line); }
 .brand strong { display: block; font: 600 17px 'Space Grotesk', sans-serif; letter-spacing: -.02em; }

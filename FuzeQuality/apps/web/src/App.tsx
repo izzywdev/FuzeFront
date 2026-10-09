@@ -193,7 +193,17 @@ function isView(value: unknown): value is View {
 export function viewFromPathname(pathname: string): View | undefined {
   if (/^\/app\/fuzequality\/?$/.test(pathname)) return 'overview'
   const match = pathname.match(/^\/app\/fuzequality\/([^/?#]+)/)
-  return match && isView(match[1]) ? match[1] : undefined
+  if (match && isView(match[1])) return match[1]
+  if (/^\/?$/.test(pathname)) return 'overview'
+  const standaloneMatch = pathname.match(/^\/([^/?#]+)/)
+  return standaloneMatch && isView(standaloneMatch[1])
+    ? standaloneMatch[1]
+    : undefined
+}
+
+export function pathForView(view: View, embedded: boolean) {
+  const suffix = view === 'overview' ? '' : `/${view}`
+  return embedded ? `/app/fuzequality${suffix}` : suffix || '/'
 }
 
 /** Connect host menu events and browser history to the app's active view. */
@@ -3886,6 +3896,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
     useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
   const portalContext = usePortalContextKey()
+  const embedded = Boolean(runtimeBridge()?.menu)
   usePortalMenu(setView)
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
@@ -3922,8 +3933,8 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
     [view, visibleNavigation]
   )
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${embedded ? ' portal-embedded' : ''}`}>
+      {!embedded && <aside className="sidebar">
         <div className="brand">
           <div className="brand-symbol">
             <span />
@@ -3946,7 +3957,10 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
               <button
                 key={item.id}
                 className={view === item.id ? 'active' : ''}
-                onClick={() => setView(item.id)}
+                onClick={() => {
+                  window.history.pushState({}, '', pathForView(item.id, false))
+                  setView(item.id)
+                }}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
@@ -3962,9 +3976,9 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
             <strong>{data ? 'live / v1' : 'connecting'}</strong>
           </div>
         </div>
-      </aside>
+      </aside>}
       <main>
-        <div className="topbar">
+        {!embedded && <div className="topbar">
           <span>{active?.label}</span>
           <div>
             <span className="live-dot" /> default branches{' '}
@@ -3976,7 +3990,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
               <RefreshCw size={15} className={loading ? 'spin' : ''} />
             </button>
           </div>
-        </div>
+        </div>}
         <div className="content">
           {error && (
             <div className="error-banner">

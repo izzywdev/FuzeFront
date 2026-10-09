@@ -56,6 +56,8 @@ describe('FuzeQuality Helm registration assets', () => {
     expect(registration).toContain(
       'helm.sh/hook: post-install,post-upgrade'
     )
+    expect(registration).toContain('FUZEFRONT_REMOTE_HEALTH_URL')
+    expect(registration).toContain('.Values.registration.remoteHealthUrl')
   })
 
   it('keeps the production portal registration, mount, and Vite federation identity aligned', () => {

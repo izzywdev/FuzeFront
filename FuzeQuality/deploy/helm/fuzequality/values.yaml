@@ -111,6 +111,9 @@ registration:
   image: alpine:3.20
   # Cluster-internal DNS for the applications-service that owns /api/v1/app-registry.
   apiUrl: http://fuzefront-applications.fuzefront.svc.cluster.local:3003
+  # Registration must not activate a portal tile until the exact in-cluster
+  # federation artifact is JavaScript rather than an HTML ingress fallback.
+  remoteHealthUrl: http://fuzequality-frontend/assets/remoteEntry.js
   # Sealed Secret holding the apps:register bearer token under key `token`.
   secretName: fuzefront-registration
   # ConfigMap built from ../../registration/ (manifest.json, policy.json).

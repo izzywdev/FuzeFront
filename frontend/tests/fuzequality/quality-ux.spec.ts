@@ -168,6 +168,35 @@ test.describe('FuzeQuality implemented UX flows', () => {
     }
   })
 
+  test('uses host-owned chrome when mounted as a federated portal remote', async ({ page }) => {
+    await page.addInitScript(() => {
+      const menuItems: unknown[] = []
+      ;(window as any).__QUALITY_PORTAL_MENU__ = menuItems
+      ;(window as any).__FUZEFRONT__ = {
+        menu: {
+          add: (_appId: string, items: unknown[]) => menuItems.push(...items),
+          remove: () => undefined,
+        },
+      }
+    })
+    await page.goto('/')
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/app/fuzequality/operations')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+
+    await expect(page.locator('aside.sidebar')).toHaveCount(0)
+    await expect(page.locator('.topbar')).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as any).__QUALITY_PORTAL_MENU__.map((item: any) => item.id))).toContain('operations')
+  })
+
+  test('keeps standalone navigation deep-linkable', async ({ page }) => {
+    await page.getByRole('button', { name: 'Operations' }).click()
+    await expect(page).toHaveURL(/\/operations$/)
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toBeVisible()
+  })
+
   test('reviews repository flows, governance history, and execution evidence together', async ({ page }) => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
     await expect(page.getByRole('heading', { name: 'Quality intelligence' })).toBeVisible()
@@ -334,7 +363,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
       }
     })
     await page.reload()
-    await page.getByRole('button', { name: 'Repositories' }).click()
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('fuzefront:navigate', {
+      detail: { id: 'repositories', section: 'repositories', route: '/repositories' },
+    })))
     await expect(page.getByRole('heading', { name: 'OrganizationOne' })).toBeVisible()
 
     const personalReload = page.waitForRequest(request => request.url().endsWith('/api/v1/portfolio'))
