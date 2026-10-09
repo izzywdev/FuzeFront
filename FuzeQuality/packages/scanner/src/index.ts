@@ -64,22 +64,27 @@ const TEST_GLOBS = [
 const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: string }> = [
   { kind: 'policy', glob: '**/{policy,governance,compliance,security}*.{md,json,yaml,yml}' },
   { kind: 'gate', glob: '**/{gate,required-check,branch-protection}*.{ts,js,mjs,py,json,yaml,yml}' },
+  // Workflow names are unconstrained (ci.yml, verify.yml, post-prod.yml, ...).
+  // Treat every checked-in workflow as gate evidence and let the reviewed
+  // policy/gate analysis decide whether it actually guards a policy.
+  { kind: 'gate', glob: '**/.github/workflows/*.{yaml,yml}' },
   { kind: 'load-test', glob: '**/{load,performance,k6,artillery}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'stress-test', glob: '**/{stress,soak}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
 ]
 
 async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<QualityArtifact[]> {
-  const artifacts: QualityArtifact[] = []
+  const artifacts = new Map<string, QualityArtifact>()
   for (const candidate of QUALITY_ARTIFACT_GLOBS) {
-    const files = await fg(candidate.glob, { cwd: root, ignore, onlyFiles: true })
+    const files = await fg(candidate.glob, { cwd: root, ignore, onlyFiles: true, dot: true })
     for (const file of files.slice(0, 100)) {
       const sourcePath = normalize(file)
       const source = await readText(root, file).catch(() => '')
-      const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required check/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
-      artifacts.push({ id: `artifact:${repository.id}:${digest(candidate.kind, sourcePath)}`, repositoryId: repository.id, kind: candidate.kind, title: sourcePath.split('/').at(-1) ?? sourcePath, sourcePath, summary: `${candidate.kind.replace('-', ' ')} evidence discovered during repository analysis`, evidence })
+      const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required|needs:|playwright|production|deploy|test/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
+      const key = `${candidate.kind}:${sourcePath}`
+      artifacts.set(key, { id: `artifact:${repository.id}:${digest(candidate.kind, sourcePath)}`, repositoryId: repository.id, kind: candidate.kind, title: sourcePath.split('/').at(-1) ?? sourcePath, sourcePath, summary: `${candidate.kind.replace('-', ' ')} evidence discovered during repository analysis`, evidence })
     }
   }
-  return artifacts.sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind))
+  return [...artifacts.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind))
 }
 
 function safeRoot(root: string) {
