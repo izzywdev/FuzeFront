@@ -88,6 +88,11 @@ const loadArtifact: QualityArtifact = {
   sourcePath: '.github/workflows/load-test.yml',
   summary: 'Load workflow',
   evidence: ['workflow_dispatch'],
+  execution: {
+    provider: 'github-actions',
+    workflowPath: '.github/workflows/load-test.yml',
+    trigger: 'workflow_dispatch',
+  },
 }
 
 const governanceEvaluation: PolicyGateEvaluation = {
@@ -282,6 +287,23 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'GitHub App installation is required'
     )
+  })
+
+  it('keeps a discovered performance definition inventory-only without workflow_dispatch evidence', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([
+      { ...loadArtifact, sourcePath: 'load/k6-test.js', execution: undefined },
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/Inventory only/)).toHaveTextContent(
+      'add a repository-owned GitHub Actions workflow_dispatch workflow'
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Run on default branch' })
+    ).not.toBeInTheDocument()
   })
 
   it('submits governance rationale through inline Design System controls', async () => {

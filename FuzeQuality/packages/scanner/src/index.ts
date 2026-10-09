@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 import fg from 'fast-glob'
+import { parse as parseYaml } from 'yaml'
 import type {
   ApiOperation,
   FrontendSurface,
@@ -51,7 +52,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.2.0'
+export const SCANNER_VERSION = '1.3.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -74,6 +75,30 @@ const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: strin
   { kind: 'stress-test', glob: '**/{stress,soak}*.{ts,js,mjs,py,json,yaml,yml}' },
 ]
 
+function performanceExecutionTarget(
+  kind: QualityArtifact['kind'],
+  sourcePath: string,
+  source: string,
+): QualityArtifact['execution'] {
+  if (
+    !['load-test', 'stress-test'].includes(kind) ||
+    !sourcePath.startsWith('.github/workflows/') ||
+    !/\.ya?ml$/i.test(sourcePath)
+  ) return undefined
+  try {
+    const document = parseYaml(source) as { on?: unknown } | undefined
+    const triggers = document?.on
+    const dispatchable = triggers === 'workflow_dispatch' ||
+      (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
+      (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
+    return dispatchable
+      ? { provider: 'github-actions', workflowPath: sourcePath, trigger: 'workflow_dispatch' }
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<{ artifacts: QualityArtifact[]; fingerprints: string[] }> {
   const artifacts = new Map<string, QualityArtifact>()
   const fingerprints = new Map<string, string>()
@@ -85,7 +110,16 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
       fingerprints.set(sourcePath, `${sourcePath}:${fingerprint(source)}`)
       const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required|needs:|playwright|production|deploy|test/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
       const key = `${candidate.kind}:${sourcePath}`
-      artifacts.set(key, { id: `artifact:${repository.id}:${digest(candidate.kind, sourcePath)}`, repositoryId: repository.id, kind: candidate.kind, title: sourcePath.split('/').at(-1) ?? sourcePath, sourcePath, summary: `${candidate.kind.replace('-', ' ')} evidence discovered during repository analysis`, evidence })
+      artifacts.set(key, {
+        id: `artifact:${repository.id}:${digest(candidate.kind, sourcePath)}`,
+        repositoryId: repository.id,
+        kind: candidate.kind,
+        title: sourcePath.split('/').at(-1) ?? sourcePath,
+        sourcePath,
+        summary: `${candidate.kind.replace('-', ' ')} evidence discovered during repository analysis`,
+        evidence,
+        execution: performanceExecutionTarget(candidate.kind, sourcePath, source),
+      })
     }
   }
   const documentationFiles = await fg('**/*.{md,mdx}', { cwd: root, ignore, onlyFiles: true, dot: true, followSymbolicLinks: false })

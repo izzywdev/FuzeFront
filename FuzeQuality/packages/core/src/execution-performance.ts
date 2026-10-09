@@ -1,4 +1,13 @@
-import type { TestExecution } from '@fuzequality/contracts'
+import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+
+/** Returns only scanner-verified, manually dispatchable performance workflows. */
+export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {
+  if (!['load-test', 'stress-test'].includes(artifact.kind)) return undefined
+  if (artifact.execution?.provider !== 'github-actions' || artifact.execution.trigger !== 'workflow_dispatch') return undefined
+  if (artifact.execution.workflowPath !== artifact.sourcePath) return undefined
+  if (!artifact.sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(artifact.sourcePath)) return undefined
+  return artifact.sourcePath
+}
 
 export type PolicyGatePerformance = {
   policyArtifactId: string

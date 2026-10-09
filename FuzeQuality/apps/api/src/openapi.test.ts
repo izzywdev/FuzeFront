@@ -129,6 +129,9 @@ describe('contract discovery', () => {
           (parameter: { name: string }) => parameter.name
         )
       ).toEqual(['source', 'status', 'revision'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
+      ).toContain('scanner-verified workflow_dispatch')
     })
   })
 

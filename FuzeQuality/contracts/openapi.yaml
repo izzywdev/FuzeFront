@@ -481,7 +481,7 @@ paths:
         schema: { type: string, minLength: 1, maxLength: 500 }
     post:
       operationId: executePerformanceTest
-      summary: Dispatch a reviewed load or stress test through the repository GitHub App
+      summary: Dispatch a scanner-verified workflow_dispatch load or stress test through the repository GitHub App
       tags: [executions]
       security: [{ platformBearer: [] }]
       responses:
@@ -495,7 +495,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422':
-          description: The GitHub App installation is unavailable or dispatch failed.
+          description: The definition is inventory-only, the GitHub App installation is unavailable, or dispatch failed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

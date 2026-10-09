@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { executionOutcomeTrend, executionPerformance, filterTestExecutions } from './execution-performance'
+import { executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceWorkflowTarget } from './execution-performance'
 
 describe('execution performance', () => {
+  it('dispatches only an exact scanner-verified workflow_dispatch target', () => {
+    const artifact = {
+      id: 'load', repositoryId: 'repo', kind: 'load-test' as const, title: 'Load',
+      sourcePath: '.github/workflows/load.yml', summary: 'Load workflow', evidence: [],
+      execution: { provider: 'github-actions' as const, workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' as const },
+    }
+    expect(performanceWorkflowTarget(artifact)).toBe('.github/workflows/load.yml')
+    expect(performanceWorkflowTarget({ ...artifact, execution: undefined })).toBeUndefined()
+    expect(performanceWorkflowTarget({ ...artifact, execution: { ...artifact.execution, workflowPath: '.github/workflows/other.yml' } })).toBeUndefined()
+  })
+
   it('aggregates only explicit policy-gate execution pairs', () => {
     const rows = executionPerformance([
       { id: '1', repositoryId: 'repo', tenantId: 'org', provider: 'external', externalRunId: '1', attempt: 1, revision: 'a', kind: 'ci', status: 'passed', name: 'auth', policyArtifactIds: ['policy'], gateArtifactIds: ['gate'], gateEvaluations: [], thresholds: [], evidenceLinks: [] },

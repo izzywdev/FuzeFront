@@ -3600,9 +3600,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             <small>{item.evidence[0]}</small>
                           )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
-                            item.sourcePath.startsWith(
-                              '.github/workflows/'
-                            ) && (
+                            item.execution?.trigger === 'workflow_dispatch' && (
                               <div className="row-actions">
                                 <button
                                   className="secondary-button"
@@ -3615,6 +3613,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                     : 'Run on default branch'}
                                 </button>
                               </div>
+                            )}
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            !item.execution && (
+                              <small className="performance-inventory-only">
+                                Inventory only · add a repository-owned GitHub
+                                Actions workflow_dispatch workflow to enable a
+                                controlled run.
+                              </small>
                             )}
                           {performanceDispatch?.artifactId === item.id && (
                             <p

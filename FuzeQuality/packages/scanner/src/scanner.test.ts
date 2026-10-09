@@ -38,6 +38,8 @@ describe('repository scanner', () => {
     await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
     await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
+    await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
+    await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\non: push\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
 
     const result = await scanRepository(repository, root)
 
@@ -48,6 +50,16 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/post-prod.yml' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'load/k6-test.js' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'performance.yml' }),
+      expect.objectContaining({
+        kind: 'load-test',
+        sourcePath: '.github/workflows/load.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/load.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
+      expect.objectContaining({ kind: 'stress-test', sourcePath: '.github/workflows/stress.yml', execution: undefined }),
       expect.objectContaining({ kind: 'documentation', sourcePath: 'journey.md' }),
       expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
       expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
@@ -97,7 +109,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.2.0',
+      scannerVersion: '1.3.0',
       partial: false,
       counts: {
         operations: 1,

@@ -412,6 +412,12 @@ export type QualityArtifact = {
   sourcePath: string
   summary: string
   evidence: string[]
+  /** Scanner-verified execution entry point. Its absence means inventory-only evidence. */
+  execution?: {
+    provider: 'github-actions'
+    workflowPath: string
+    trigger: 'workflow_dispatch'
+  }
 }
 
 export type RepositoryQualitySnapshot = {
