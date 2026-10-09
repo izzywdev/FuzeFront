@@ -435,8 +435,10 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const existingCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  if (!existingCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
   const candidate = await store.reviewRepositoryFlowCandidate(candidateId, tenantId, parsed.data.status)
-  if (!candidate || candidate.repositoryId !== repositoryId) return response.status(404).json({ error: 'Flow candidate not found' })
+  if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
   response.json(candidate)
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, async (request, response) => {
@@ -461,8 +463,10 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const existingEvaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason })
-  if (!evaluation || evaluation.repositoryId !== repositoryId) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   response.json(evaluation)
 })
 app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (request, response) => {
