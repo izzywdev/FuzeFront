@@ -15,6 +15,7 @@ describe('SCHEMA_BY_TOPIC / schemaForTopic', () => {
       TOPICS.IDENTITY_USER_DELETED,
       TOPICS.IDENTITY_MEMBERSHIP_ADDED,
       TOPICS.IDENTITY_MEMBERSHIP_REMOVED,
+      TOPICS.IDENTITY_AUTHORIZATION_CHANGED,
     ];
     for (const topic of lifecycle) {
       const schema = schemaForTopic(topic);

@@ -6,6 +6,7 @@ import {
   identityUserDeletedSchemaV1,
   identityMembershipAddedSchemaV1,
   identityMembershipRemovedSchemaV1,
+  identityAuthorizationChangedSchemaV1,
   TOPICS,
 } from '../../src/kafka';
 
@@ -37,10 +38,14 @@ describe('organization snapshot schema (created/updated)', () => {
     ).not.toThrow();
   });
 
-  it('accepts optional settings/metadata objects', () => {
-    expect(() =>
-      identityOrgCreatedSchemaV1.parse({ ...valid, settings: { a: 1 }, metadata: { b: 'x' } }),
-    ).not.toThrow();
+  it('strips arbitrary settings/metadata instead of treating them as event data', () => {
+    const parsed = identityOrgCreatedSchemaV1.parse({
+      ...valid,
+      settings: { apiToken: 'never-publish' },
+      metadata: { private: true },
+    });
+    expect(parsed).not.toHaveProperty('settings');
+    expect(parsed).not.toHaveProperty('metadata');
   });
 
   it('rejects a non-UUID organizationId', () => {
@@ -123,6 +128,27 @@ describe('membership added/removed schemas', () => {
   });
 });
 
+describe('identityAuthorizationChangedSchemaV1', () => {
+  it('accepts only minimal, tenant-scoped grant invalidation data', () => {
+    expect(() => identityAuthorizationChangedSchemaV1.parse({
+      organizationId: ORG_ID,
+      subjectId: USER_ID,
+      change: 'membership_role_changed',
+      role: 'admin',
+    })).not.toThrow();
+  });
+
+  it('does not require or retain policy/grant internals', () => {
+    const parsed = identityAuthorizationChangedSchemaV1.parse({
+      organizationId: ORG_ID,
+      subjectId: USER_ID,
+      change: 'membership_removed',
+      permitPolicy: { secret: 'must-not-leak' },
+    });
+    expect(parsed).not.toHaveProperty('permitPolicy');
+  });
+});
+
 // ── TOPICS constants ─────────────────────────────────────────────────────────
 
 describe('TOPICS identity lifecycle constants', () => {
@@ -134,5 +160,6 @@ describe('TOPICS identity lifecycle constants', () => {
     expect(TOPICS.IDENTITY_USER_DELETED).toBe('identity.user.deleted');
     expect(TOPICS.IDENTITY_MEMBERSHIP_ADDED).toBe('identity.membership.added');
     expect(TOPICS.IDENTITY_MEMBERSHIP_REMOVED).toBe('identity.membership.removed');
+    expect(TOPICS.IDENTITY_AUTHORIZATION_CHANGED).toBe('identity.authorization.changed');
   });
 });
