@@ -495,10 +495,26 @@ export type TestExecution = {
   completedAt?: string
   policyArtifactIds: string[]
   gateArtifactIds: string[]
+  /** Explicit per-pair outcomes; never inferred from unrelated policy/gate lists. */
+  gateEvaluations: TestExecutionGateEvaluation[]
   /** Measured pass/fail evidence retained exactly with this run attempt. */
   thresholds: TestExecutionThreshold[]
   summary?: string
 }
+
+export type TestExecutionGateEvaluation = {
+  policyArtifactId: string
+  gateArtifactId: string
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  detail?: string
+}
+
+export const testExecutionGateEvaluationSchema = z.object({
+  policyArtifactId: z.string().trim().min(1).max(500),
+  gateArtifactId: z.string().trim().min(1).max(500),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']),
+  detail: z.string().trim().min(1).max(1000).optional(),
+}).strict()
 
 export type TestExecutionThreshold = {
   metric: string
@@ -527,9 +543,21 @@ export const testExecutionInputSchema = z.object({
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
   sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
   policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
+  gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
   thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),
   summary: z.string().max(5000).optional(),
-}).strict()
+}).strict().superRefine((execution, context) => {
+  const pairs = new Set<string>()
+  for (const [index, evaluation] of execution.gateEvaluations.entries()) {
+    const pair = `${evaluation.policyArtifactId}\u0000${evaluation.gateArtifactId}`
+    if (pairs.has(pair)) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Duplicate policy/gate evaluation pair',
+      path: ['gateEvaluations', index],
+    })
+    pairs.add(pair)
+  }
+})
 
 export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()
 

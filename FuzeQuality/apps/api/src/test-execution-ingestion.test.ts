@@ -60,4 +60,48 @@ describe('internal execution ingestion compatibility', () => {
       expect.objectContaining({ metric: 'error rate', passed: true }),
     ])
   })
+
+  it('retains explicit gate outcomes and adds their artifacts to discovery links', () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'post-production',
+      status: 'failed',
+      name: 'Production smoke tests',
+      gateEvaluations: [{
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth-smoke',
+        status: 'failed',
+        detail: 'Unauthenticated redirect did not preserve the requested route.',
+      }],
+    })
+
+    expect(executionRecord(input, 'generated-id')).toMatchObject({
+      policyArtifactIds: ['policy-auth'],
+      gateArtifactIds: ['gate-auth-smoke'],
+      gateEvaluations: [expect.objectContaining({
+        policyArtifactId: 'policy-auth',
+        gateArtifactId: 'gate-auth-smoke',
+        status: 'failed',
+      })],
+    })
+  })
+
+  it('rejects duplicate outcomes for the same policy and gate pair', () => {
+    const parsed = testExecutionInputSchema.safeParse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'ci',
+      status: 'failed',
+      name: 'CI',
+      gateEvaluations: [
+        { policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'passed' },
+        { policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'failed' },
+      ],
+    })
+
+    expect(parsed.success).toBe(false)
+  })
 })

@@ -922,7 +922,10 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     const repository = repositories.find(item => item.id === execution.repositoryId)
     if (!repository?.tenantId) continue
     const links = linkExecutionArtifacts(execution.name, await store.qualityArtifacts(repository.id, repository.tenantId))
-    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, thresholds: [], ...links, ...execution })
+    const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
+      ? [{ policyArtifactId: links.policyArtifactIds[0], gateArtifactId: links.gateArtifactIds[0], status: execution.status }]
+      : []
+    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, thresholds: [], gateEvaluations, ...links, ...execution })
   }
   for (const command of commands) {
     let commitSha = command.commitSha

@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { TestExecution } from '@fuzequality/contracts'
-import { ExecutionThresholdEvidence } from './executionEvidence'
+import { ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -19,6 +19,12 @@ const execution: TestExecution = {
   name: 'Checkout load test',
   policyArtifactIds: [],
   gateArtifactIds: [],
+  gateEvaluations: [{
+    policyArtifactId: 'policy-performance',
+    gateArtifactId: 'gate-load-budget',
+    status: 'failed',
+    detail: 'Latency budget exceeded.',
+  }],
   thresholds: [
     {
       metric: 'p95 latency',
@@ -58,5 +64,18 @@ describe('ExecutionThresholdEvidence', () => {
       <ExecutionThresholdEvidence execution={{ ...execution, thresholds: [] }} />
     )
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('renders explicit policy-gate outcomes without inferring pairs', () => {
+    render(<ExecutionGateEvidence execution={execution} />)
+
+    expect(
+      screen.getByRole('region', { name: 'Policy gate evidence' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('policy-performance → gate-load-budget')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Latency budget exceeded.')).toBeInTheDocument()
+    expect(screen.getByText('failed')).toBeInTheDocument()
   })
 })

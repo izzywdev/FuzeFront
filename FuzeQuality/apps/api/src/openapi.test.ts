@@ -93,6 +93,10 @@ describe('contract discovery', () => {
       )
       expect(schemas.TestExecutionThreshold.required).toContain('passed')
       expect(schemas.TestExecution.required).toContain('thresholds')
+      expect(schemas.TestExecutionInput.properties.gateEvaluations.items.$ref).toBe(
+        '#/components/schemas/TestExecutionGateEvaluation'
+      )
+      expect(schemas.TestExecution.required).toContain('gateEvaluations')
     })
   })
 
