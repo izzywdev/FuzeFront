@@ -7,6 +7,7 @@ import type {
   QualityArtifact,
   Repository,
   RepositoryFlowCandidate,
+  PolicyGateEvaluation,
 } from '@fuzequality/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -87,6 +88,24 @@ const loadArtifact: QualityArtifact = {
   sourcePath: '.github/workflows/load-test.yml',
   summary: 'Load workflow',
   evidence: ['workflow_dispatch'],
+}
+
+const governanceEvaluation: PolicyGateEvaluation = {
+  id: 'evaluation-1',
+  repositoryId: repository.id,
+  tenantId: 'tenant-1',
+  revision: 'revision-1',
+  kind: 'unguarded-policy',
+  severity: 'high',
+  title: 'Authentication policy has no gate',
+  detail: 'No required check was linked to the authentication policy.',
+  policyArtifactIds: ['policy-auth'],
+  gateArtifactIds: [],
+  confidence: 0.9,
+  scope: { sourcePaths: ['governance/auth.md'], subjects: ['authentication'] },
+  recommendation: 'Add an authentication gate.',
+  reviewStatus: 'proposed',
+  createdAt: '2026-10-09T00:00:00.000Z',
 }
 
 function mockEvidenceApis() {
@@ -263,5 +282,64 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'GitHub App installation is required'
     )
+  })
+
+  it('submits governance rationale through inline Design System controls', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([
+      governanceEvaluation,
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockResolvedValue({
+      ...governanceEvaluation,
+      reviewStatus: 'accepted',
+      reviewedAt: '2026-10-09T01:00:00.000Z',
+      reviewedBy: 'quality-owner',
+      reviewReason: 'Required before release.',
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+    fireEvent.change(screen.getByLabelText('Optional governance rationale'), {
+      target: { value: 'Required before release.' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Accept recommendation' })
+    )
+
+    await waitFor(() =>
+      expect(api.reviewPolicyGateEvaluation).toHaveBeenCalledWith(
+        repository.id,
+        governanceEvaluation.id,
+        'accepted',
+        'Required before release.'
+      )
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Accept recommendation' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps a failed governance decision actionable without losing rationale', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([
+      governanceEvaluation,
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockRejectedValue(
+      new Error('Governance review service unavailable')
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+    const rationale = screen.getByLabelText('Optional governance rationale')
+    fireEvent.change(rationale, { target: { value: 'Needs a named owner.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Governance review service unavailable'
+    )
+    expect(rationale).toHaveValue('Needs a named owner.')
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
   })
 })

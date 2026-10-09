@@ -2880,6 +2880,78 @@ function PolicyGateReviewHistory({
   )
 }
 
+function PolicyGateReviewControls({
+  evaluation,
+  onReview,
+}: {
+  evaluation: PolicyGateEvaluation
+  onReview: (
+    evaluation: PolicyGateEvaluation,
+    status: 'accepted' | 'dismissed',
+    reason?: string
+  ) => Promise<void>
+}) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+
+  const submit = async (status: 'accepted' | 'dismissed') => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await onReview(evaluation, status, reason.trim() || undefined)
+      setReason('')
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Unable to save the governance review'
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {evaluation.reviewStatus === 'proposed' && (
+        <div className="flow-review-controls">
+          <label>
+            Optional governance rationale
+            <input
+              value={reason}
+              onChange={event => setReason(event.target.value)}
+              placeholder="Why should this recommendation be accepted or dismissed?"
+            />
+          </label>
+          <div className="row-actions">
+            <QualityAction
+              intent="secondary"
+              disabled={busy}
+              onClick={() => void submit('accepted')}
+            >
+              <Check size={14} /> Accept recommendation
+            </QualityAction>
+            <QualityAction
+              intent="danger"
+              disabled={busy}
+              onClick={() => void submit('dismissed')}
+            >
+              <X size={14} /> Dismiss
+            </QualityAction>
+          </div>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+      <PolicyGateReviewHistory evaluation={evaluation} />
+    </>
+  )
+}
+
 type FlowInventorySelection = {
   repositoryId: string
   source: RepositoryFlowCandidate['source'] | ''
@@ -3005,18 +3077,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }
   const reviewPolicyGate = async (
     evaluation: PolicyGateEvaluation,
-    status: 'accepted' | 'dismissed'
+    status: 'accepted' | 'dismissed',
+    reason?: string
   ) => {
-    const reason = window
-      .prompt(
-        `Optional rationale for ${status === 'accepted' ? 'accepting' : 'dismissing'} this recommendation:`
-      )
-      ?.trim()
     const reviewed = await api.reviewPolicyGateEvaluation(
       evaluation.repositoryId,
       evaluation.id,
       status,
-      reason || undefined
+      reason
     )
     setPolicyGateEvaluations(current =>
       current.map(item => (item.id === reviewed.id ? reviewed : item))
@@ -3505,34 +3573,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 evaluation={evaluation}
                                 artifacts={artifacts}
                               />
-                              {evaluation.reviewStatus === 'proposed' && (
-                                <div className="row-actions">
-                                  <button
-                                    className="secondary-button"
-                                    onClick={() =>
-                                      void reviewPolicyGate(
-                                        evaluation,
-                                        'accepted'
-                                      )
-                                    }
-                                  >
-                                    <Check size={14} /> Accept recommendation
-                                  </button>
-                                  <button
-                                    className="secondary-button"
-                                    onClick={() =>
-                                      void reviewPolicyGate(
-                                        evaluation,
-                                        'dismissed'
-                                      )
-                                    }
-                                  >
-                                    <X size={14} /> Dismiss
-                                  </button>
-                                </div>
-                              )}
-                              <PolicyGateReviewHistory
+                              <PolicyGateReviewControls
                                 evaluation={evaluation}
+                                onReview={reviewPolicyGate}
                               />
                             </div>
                           </article>

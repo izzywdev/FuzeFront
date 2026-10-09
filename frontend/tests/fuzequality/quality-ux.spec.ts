@@ -255,6 +255,40 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
   })
 
+  test('keeps failed policy-gate review rationale available for retry', async ({ page }) => {
+    const proposedEvaluation = {
+      ...policyGateEvaluations[0],
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([proposedEvaluation]),
+      })
+    )
+    await page.route('**/api/v1/repositories/repo-1/policy-gate-evaluations/evaluation-1/review', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Governance review service unavailable' }),
+    }))
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const rationale = page.getByLabel('Optional governance rationale')
+    await rationale.fill('The gate owner is not identified.')
+
+    await page.getByRole('button', { name: 'Dismiss' }).click()
+
+    await expect(page.getByRole('alert')).toHaveText(
+      'Governance review service unavailable'
+    )
+    await expect(rationale).toHaveValue('The gate owner is not identified.')
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+  })
+
   test('keeps a failed UX flow review actionable', async ({ page }) => {
     await page.route('**/api/v1/repositories/repo-1/flow-candidates/candidate-1/review', route => route.fulfill({
       status: 503,
