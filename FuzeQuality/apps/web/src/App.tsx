@@ -59,7 +59,10 @@ import {
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 import { QualityAction, QualityIconAction } from './components/primitives'
-import { ExecutionEvidenceMetadata } from './components/executionEvidence'
+import {
+  ExecutionEvidenceMetadata,
+  ExecutionThresholdEvidence,
+} from './components/executionEvidence'
 
 type View =
   | 'overview'
@@ -3512,6 +3515,7 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         : ''}
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
+                  <ExecutionThresholdEvidence execution={execution} />
                   {execution.sourceUrl && (
                     <a
                       className="execution-source"

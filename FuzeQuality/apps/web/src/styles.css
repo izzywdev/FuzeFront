@@ -134,6 +134,14 @@ button:disabled { cursor: wait; opacity: .55; }
 .execution-metadata div { display: flex; align-items: baseline; gap: 5px; padding: 5px 7px; border: 1px solid var(--line); background: var(--panel-raised); }
 .execution-metadata dt { color: var(--muted); font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
 .execution-metadata dd { margin: 0; color: var(--text); font: 10px var(--font-mono); }
+.execution-thresholds { margin-top: 10px; padding: 9px; border: 1px solid var(--line); background: var(--panel-raised); }
+.execution-thresholds > strong { color: var(--muted); font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+.execution-thresholds ul { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.execution-thresholds li { display: grid; grid-template-columns: minmax(120px, 1fr) auto auto; align-items: center; gap: 9px; padding-top: 6px; border-top: 1px solid var(--line); }
+.execution-threshold-metric { color: var(--text); font-size: 11px; }
+.execution-thresholds code { color: #b9cdda; font: 10px var(--font-mono); }
+.execution-thresholds .status-passed { color: var(--cyan); background: #123336; }
+.execution-thresholds .status-failed { color: var(--coral); background: var(--coral-soft); }
 .catalog-filters label, .snapshot-stamp { display: grid; gap: 6px; padding: 11px 12px; border: 1px solid var(--line); background: #091724; color: var(--muted); font: 10px 'IBM Plex Mono'; text-transform: uppercase; letter-spacing: .06em; }
 .catalog-filters select, .catalog-filters input { width: 100%; border: 0; background: transparent; color: var(--text); text-transform: none; }
 .catalog-filters option { background: var(--panel); }

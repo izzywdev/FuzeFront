@@ -40,4 +40,24 @@ describe('internal execution ingestion compatibility', () => {
       attempt: 3,
     })
   })
+
+  it('derives threshold outcomes instead of trusting producer verdicts', () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'load',
+      status: 'failed',
+      name: 'Checkout load test',
+      thresholds: [
+        { metric: 'p95 latency', observed: 212, unit: 'ms', operator: 'lte', target: 200 },
+        { metric: 'error rate', observed: 0.3, unit: '%', operator: 'lt', target: 1 },
+      ],
+    })
+
+    expect(executionRecord(input, 'generated-id').thresholds).toEqual([
+      expect.objectContaining({ metric: 'p95 latency', passed: false }),
+      expect.objectContaining({ metric: 'error rate', passed: true }),
+    ])
+  })
 })
