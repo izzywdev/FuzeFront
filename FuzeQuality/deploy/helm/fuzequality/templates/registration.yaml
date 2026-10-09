@@ -48,6 +48,15 @@ metadata:
     {{- include "fuzequality.labels" . | nindent 4 }}
     app.kubernetes.io/component: registration
   annotations:
+    # This chart also contains an explicit Argo PreSync migration hook. Argo
+    # does not translate Helm hooks when an application defines native Argo
+    # hooks, so the Helm annotations alone left this as a one-shot ordinary Job
+    # and later image/tag syncs never re-ran registration. Declare both forms:
+    # Helm CLI installs retain their lifecycle, while Argo runs registration
+    # after every successful sync.
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/sync-wave: "5"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "5"
     helm.sh/hook-delete-policy: before-hook-creation
