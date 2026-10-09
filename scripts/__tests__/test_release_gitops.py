@@ -50,7 +50,7 @@ elif args[0] == "api":
         counter = pathlib.Path(os.environ["MASTER_COUNT"])
         n = int(counter.read_text()) if counter.exists() else 0
         counter.write_text(str(n + 1))
-        print(("c" if scenario == "advanced" and n else "a") * 40)
+        print(("c" if scenario == "advanced_before_arm" or (scenario == "advanced" and n) else "a") * 40)
 elif args[:2] != ["pr", "merge"]:
     sys.exit("unexpected gh invocation")
 '''
@@ -74,10 +74,10 @@ class ReleaseGitOpsTest(unittest.TestCase):
             calls = [json.loads(line) for line in (temp / "calls").read_text().splitlines()] if (temp / "calls").exists() else []
             return result, calls
 
-    def test_existing_exact_pr_requires_real_merge_and_checked_auto_merge(self):
+    def test_existing_exact_pr_arms_persistent_checked_auto_merge(self):
         result, calls = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("production verification is still required", result.stdout)
+        self.assertIn("queued for normal checks and independent approval", result.stdout)
         merge = next(call for call in calls if "--auto" in call)
         self.assertIn("--match-head-commit", merge)
         self.assertFalse(any(call[0] == "git" and "push" in call for call in calls))
@@ -96,23 +96,16 @@ class ReleaseGitOpsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(any("--auto" in call for call in calls))
 
-    def test_closed_is_not_a_successful_release(self):
-        result, _ = self.invoke("closed")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("not merged", result.stdout)
-
-    def test_pending_approval_timeout_disables_late_auto_merge(self):
+    def test_pending_approval_hands_off_to_persistent_auto_merge(self):
         result, calls = self.invoke("pending")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("no deployment claimed", result.stdout)
-        self.assertTrue(any("--disable-auto" in call for call in calls))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(any("--auto" in call for call in calls))
+        self.assertFalse(any("--disable-auto" in call for call in calls))
 
-    def test_changed_source_or_pr_head_disables_auto_merge(self):
-        for scenario in ("advanced", "changed_head"):
-            with self.subTest(scenario=scenario):
-                result, calls = self.invoke(scenario)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertTrue(any("--disable-auto" in call for call in calls))
+    def test_source_advanced_before_the_release_pr_is_armed(self):
+        result, calls = self.invoke("advanced_before_arm")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any("--auto" in call for call in calls))
 
     def test_transport_or_push_failure_never_opens_or_merges_pr(self):
         for scenario in ("transport", "push_failed"):
@@ -143,6 +136,7 @@ class ReleaseGitOpsTest(unittest.TestCase):
         self.assertIn('git log -1 --format=%s', workflow)
         self.assertIn("master changed during the build", workflow)
         self.assertLess(workflow.index('bash scripts/publish-release-gitops.sh'), workflow.index('- name: Dispatch post-deploy verification'))
+        self.assertIn("dispatch-post-deploy-verification:", (ROOT / ".github/workflows/auto-merge.yml").read_text())
 
     def test_tag_merge_recursion_guard_also_covers_manual_dispatch(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()

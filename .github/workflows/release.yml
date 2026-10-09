@@ -664,7 +664,10 @@ jobs:
       # Dispatch only after the checked PR merged (or tags were already exact).
       # GitOps merge is not proof of Argo reconciliation or healthy deployment.
       - name: Dispatch post-deploy verification
-        if: success()
+        # The GitOps helper returns after persistent auto-merge is armed; an
+        # independent review can outlive the image build. auto-merge.yml
+        # dispatches verification on the actual closed/merged event.
+        if: success() && steps.gitops.outputs.merged == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ github.sha }}
