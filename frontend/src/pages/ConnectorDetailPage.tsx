@@ -38,13 +38,19 @@ export default function ConnectorDetailPage() {
         const result = await connectorRequest<{ authorization_url: string }>(`/${connector.id}/connect`, { method: 'POST', body: '{}' })
         window.location.assign(result.authorization_url)
       }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); setBusy(false) }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
   }
   const disconnect = async () => {
     if (!connector || !window.confirm(`Disconnect ${connector.name} and remove its credential from FuzeKeys?`)) return
     setBusy(true); setError('')
     try { await connectorRequest(`/${connector.id}`, { method: 'DELETE' }); await load() }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBusy(false) }
+  }
+  const retryStatus = async () => {
+    setBusy(true)
+    try { await load() }
     finally { setBusy(false) }
   }
 
@@ -59,6 +65,7 @@ export default function ConnectorDetailPage() {
       <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}><ConnectorIcon id={connector.id} name={connector.name} size={64} /><div><h1 style={{ margin: '2px 0 6px' }}>{connector.name}</h1><p style={{ margin: 0, color: 'var(--text-secondary)' }}>{connector.description || 'Connect this tool to let FuzeFront use the access you authorize.'}</p></div></div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 0', marginTop: 22, borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
         <CheckCircle2 size={19} color={connected ? 'var(--success-color)' : 'var(--text-secondary)'} /><span style={{ flex: 1 }}><strong>{connectionLabel(connector)}</strong>{connected && <span style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '.9rem', marginTop: 2 }}>Available to this FuzeFront account.</span>}</span>
+        {connector.status === 'error' && <button type="button" disabled={busy} onClick={() => void retryStatus()}>Retry status</button>}
         {connected ? <Button variant="secondary" disabled={busy} onClick={() => void disconnect()}>Disconnect</Button> : <Button variant="primary" disabled={busy || !connector.configured || connector.status === 'error'} onClick={() => void connect()}>{connector.authentication === 'api-key' ? 'Save key' : 'Connect'}</Button>}
       </div>
       {connector.authentication === 'api-key' && !connected && <label style={{ display: 'block', marginTop: 20 }}>API key<input aria-label={`${connector.name} API key`} type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 7, padding: 11, borderRadius: 10, border: '1px solid var(--border-color)' }} /></label>}
