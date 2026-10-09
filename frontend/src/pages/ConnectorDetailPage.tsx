@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { ArrowLeft, CheckCircle2, KeyRound, LockKeyhole, Wrench } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ExternalLink, KeyRound, LockKeyhole, Wrench } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button } from '@fuzefront/design-system'
 import ConnectorIcon from '../components/ConnectorIcon'
 import { ConnectorEntry, connectionLabel, connectorRequest } from '../lib/connectors'
+import { connectorProviderLink } from '../assets/connectorAssets'
 
 export default function ConnectorDetailPage() {
   const { connectorId = '' } = useParams()
@@ -50,6 +51,7 @@ export default function ConnectorDetailPage() {
   if (!connector && !error) return <main style={{ padding: 'var(--space-8)', maxWidth: 760, margin: '0 auto' }}><p role="status">Loading connector…</p></main>
   if (!connector) return <main style={{ padding: 'var(--space-8)', maxWidth: 760, margin: '0 auto' }}><Link to="/connectors">Back to connectors</Link><p role="alert">{error}</p></main>
   const connected = connector.status === 'connected'
+  const providerLink = connectorProviderLink(connector.id)
 
   return <main style={{ padding: 'var(--space-8)', maxWidth: 760, margin: '0 auto' }}>
     <Link to="/connectors" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: 'var(--text-secondary)', textDecoration: 'none', marginBottom: 'var(--space-6)' }}><ArrowLeft size={17} /> All connectors</Link>
@@ -62,6 +64,7 @@ export default function ConnectorDetailPage() {
       {connector.authentication === 'api-key' && !connected && <label style={{ display: 'block', marginTop: 20 }}>API key<input aria-label={`${connector.name} API key`} type="password" autoComplete="off" value={apiKey} onChange={event => setApiKey(event.target.value)} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 7, padding: 11, borderRadius: 10, border: '1px solid var(--border-color)' }} /></label>}
       {!connector.configured && <p style={{ marginBottom: 0, color: 'var(--text-secondary)' }}>This provider still needs administrator setup before it can be connected.</p>}
       {error && <p role="alert" style={{ color: 'var(--error-color)', marginBottom: 0 }}>{error}</p>}
+      {providerLink && <a href={providerLink.href} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 20, color: 'var(--primary-color)' }}>{providerLink.label}<ExternalLink size={15} /></a>}
     </section>
     <section style={{ marginTop: 22, border: '1px solid var(--border-color)', borderRadius: 18, overflow: 'hidden' }}>
       <InfoRow icon={<Wrench size={19} />} title="What FuzeFront can do" detail={connector.authentication === 'api-key' ? 'Use the API access that you explicitly provide.' : 'Use only the OAuth permissions that you approve during connection.'} />
