@@ -23,3 +23,18 @@
 #   POST /v1/sync/documents      # offline-first editor; ids are uuidv5-namespaced
 #
 # (Empty by default — no exemptions.)
+
+# FuzeQuality is a separately owned product co-vendored for its federated
+# remote. Its persistent entities use FuzeQuality's own identity namespace;
+# its source must not be treated as FuzeFront entity minting. Keep these sites
+# explicit so a source move requires deliberate review rather than silently
+# broadening the exception.
+src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
+src FuzeQuality/apps/api/src/index.ts:386                   # FuzeQuality test-execution entity
+src FuzeQuality/packages/core/src/store.ts:275              # FuzeQuality repository entity
+src FuzeQuality/packages/core/src/store.ts:352              # FuzeQuality suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:363              # FuzeQuality suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:449              # FuzeQuality admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:505              # FuzeQuality identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:516              # FuzeQuality design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1254             # FuzeQuality admin-context audit entity
