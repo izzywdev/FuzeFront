@@ -45,7 +45,10 @@
             "frontend/src/components/InstallAppDialog.tsx",
             "frontend/src/components/installPolicy.ts"
           ]
-        }
+        },
+        "approved": true,
+        "approvedBy": "izzywdev",
+        "approvedAt": "2026-10-09T08:54:52.133Z"
       },
       {
         "id": "notifications",
