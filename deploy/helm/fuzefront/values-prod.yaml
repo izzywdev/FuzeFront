@@ -88,7 +88,7 @@ observability:
 backend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-backend
-    tag: adc8854d6242
+    tag: 516bd1c74826
   replicas: 2
   # Serves GET /api/flags for the host shell. Same CLIENT token as the
   # applications-service, read from the Unleash chart's own sealed Secret.
@@ -102,7 +102,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/izzywdev/fuzefront-frontend
-    tag: adc8854d6242
+    tag: 516bd1c74826
   replicas: 2
 
 # Backend 3-way split. Images built by release.yml; `enabled` flips to true in
@@ -130,7 +130,7 @@ securityService:
   requireEmailVerification: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-security-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   # TEMPORARY MITIGATION: 1 replica.
   # The OIDC social-login state (PKCE verifier) lives in a PROCESS-LOCAL Map —
   # AuthentikIdentityProvider.socialStates / mfaChallenges. With 2 replicas and no
@@ -256,7 +256,7 @@ applicationsService:
   enabled: true   # serves /api/apps (MF app registry) — needed for MF apps to load
   image:
     repository: ghcr.io/izzywdev/fuzefront-applications-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   replicas: 2
   # app.* registry events → FuzeInfra Kafka (cross-namespace DNS).
   kafka:
@@ -465,7 +465,7 @@ clockApp:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-clock-app
-    tag: adc8854d6242
+    tag: 516bd1c74826
 
 # fuzefront-website — public site at fuzefront.com.
 # Frontend image (nginx/React SPA) and backend image (Node.js API) are built by
@@ -497,7 +497,7 @@ websiteFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-frontend
-    tag: adc8854d6242
+    tag: 516bd1c74826
   host: fuzefront.com
   aliasHosts:
     - www.fuzefront.com
@@ -506,7 +506,7 @@ websiteBackend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-website-backend
-    tag: adc8854d6242
+    tag: 516bd1c74826
 
 # email-service — transactional sender behind the signup email-verification flow
 # (PR #275). Its image IS built by release.yml on every release, but until this PR
@@ -517,7 +517,7 @@ emailService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-email-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   email:
     provider: "smtp"
     from: "noreply@fuzefront.com"
@@ -562,7 +562,7 @@ smsService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-sms-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
 
 # IMPORTANT: Before setting provisioningService.enabled: true in production, ensure
 # the SealedSecret `fuzefront-secrets` contains the key INTERNAL_PROVISION_SECRET.
@@ -582,7 +582,7 @@ provisioningService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-provisioning-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   <<: *elasticPlacement
 
 # Billing-service (Stripe). Synced by the UMBRELLA `fuzefront` Argo Application
@@ -618,7 +618,7 @@ billingService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-billing-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   # Enable the checkout payment path for the Mendys datasets marketplace:
   # product-key allowlist + currency/amount bounds (BILLING_PRODUCT_KEYS,
   # BILLING_PAYMENT_CURRENCIES, BILLING_PAYMENT_MAX_TOTAL_CENTS).
@@ -694,7 +694,7 @@ paymentService:
   enabled: false
   image:
     repository: ghcr.io/izzywdev/fuzefront-payment-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   # Same dead node-2 hostname affinity as billingService above (fuzefront-node-2
   # is not a real node label) — replaced with the real elastic-pool placement.
   # Currently disabled (enabled: false) so this has zero live effect yet, but
@@ -960,7 +960,7 @@ chatService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-chat-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   # #499: dedicated database so chat's knex migration ledger never collides
   # with the backend's `fuzefront_platform` knex_migrations rows (this is the
   # fix for the fuzefront-chat-db-migrate crash-loop that stuck the umbrella
@@ -1008,7 +1008,7 @@ notificationService:
   # repository: anchor.
   image:
     repository: ghcr.io/izzywdev/fuzefront-notification-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
 
 # Selection-list-service (S14 / FFRNT-200). Ships dark (enabled: false) until
 # the SealedSecret `selection-list-secrets` is provisioned in a deploy window.
@@ -1038,7 +1038,7 @@ selectionListService:
   authzEnabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-selection-list-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   # Unleash CLIENT token read from the Unleash chart's own sealed Secret (same
   # wiring as applicationsService/securityService/chatService above); server-side
   # only. The service now calls @fuzefront/feature-flags init() at startup.
@@ -1062,13 +1062,13 @@ devportalService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
 
 devportalFrontend:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-devportal-frontend
-    tag: adc8854d6242
+    tag: 516bd1c74826
   host: developers.fuzefront.com
 
 # Config service (FF-EPIC-17-S7 / FFRNT-159). Authorization is routed through
@@ -1118,7 +1118,7 @@ configService:
   enabled: true
   image:
     repository: ghcr.io/izzywdev/fuzefront-config-service
-    tag: adc8854d6242
+    tag: 516bd1c74826
   <<: *elasticPlacement
 
 # Unleash (self-hosted OSS feature flags) — MOVED to its own chart + Argo
