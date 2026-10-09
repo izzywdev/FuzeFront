@@ -58,6 +58,7 @@ import {
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 import { QualityAction, QualityIconAction } from './components/primitives'
+import { ExecutionEvidenceMetadata } from './components/executionEvidence'
 
 type View =
   | 'overview'
@@ -3315,6 +3316,7 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         ? ` · Started ${new Date(execution.startedAt).toLocaleString()}`
                         : ''}
                   </small>
+                  <ExecutionEvidenceMetadata execution={execution} />
                   {execution.sourceUrl && (
                     <a
                       className="execution-source"
