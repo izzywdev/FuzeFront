@@ -37,6 +37,7 @@ import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
+import { executionRecord } from './test-execution-ingestion'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -370,7 +371,7 @@ app.post('/api/v1/internal/test-executions', async (request, response) => {
   const repository = await store.repository(execution.repositoryId, execution.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const id = randomUUID()
-  await store.saveTestExecution({ id, ...execution, externalRunId: execution.externalRunId ?? id })
+  await store.saveTestExecution(executionRecord(execution, id))
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {

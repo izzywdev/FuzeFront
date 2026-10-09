@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const migration = readFileSync(new URL('../migrations/025_test_execution_provider_identity.sql', import.meta.url), 'utf8')
+const migration = readFileSync(new URL('../migrations/026_test_execution_provider_identity.sql', import.meta.url), 'utf8')
 
 test('execution identity retains provider run attempts independently of source URLs', () => {
   assert.match(migration, /external_run_id text/i)
