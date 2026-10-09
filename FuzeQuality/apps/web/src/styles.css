@@ -1,22 +1,25 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import '@fuzefront/design-system/styles.css';
 
 :root {
-  color: #dce8f4;
-  background: #07111c;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font-family: var(--font-sans);
   font-synthesis: none;
-  --ink: #07111c;
-  --panel: #0b1825;
-  --panel-raised: #102131;
-  --line: #20364a;
-  --muted: #7890a5;
-  --text: #dce8f4;
-  --cyan: #54d9e9;
-  --cyan-soft: #193f48;
-  --coral: #ff6f61;
-  --coral-soft: #4a2528;
-  --violet: #a998ff;
-  --amber: #f7bc61;
+  /* FuzeQuality-specific semantic aliases. Their source of truth is the
+     exported FuzeFront token package, not a parallel application palette. */
+  --ink: var(--bg-secondary);
+  --panel: var(--bg-tertiary);
+  --panel-raised: var(--bg-quaternary);
+  --line: var(--border-color);
+  --muted: var(--text-tertiary);
+  --text: var(--text-primary);
+  --cyan: var(--accent-2);
+  --cyan-soft: var(--accent-soft);
+  --coral: var(--error-color);
+  --coral-soft: var(--error-soft);
+  --violet: var(--accent-color);
+  --amber: var(--warning-color);
+  --green: var(--success-color);
 }
 .freshness-fresh { color: var(--green); }
 .freshness-stale, .freshness-unknown { color: var(--amber); }

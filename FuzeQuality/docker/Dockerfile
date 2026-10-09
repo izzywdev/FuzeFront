@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1.7
 FROM node:24-alpine AS dependencies
-RUN apk add --no-cache git
 WORKDIR /workspace/FuzeQuality
 COPY FuzeQuality/package.json FuzeQuality/.npmrc ./
-# FuzeQuality lives inside FuzeFront and consumes the same checked-in Security
-# contract. Installing the local package avoids an otherwise unnecessary
-# GitHub Packages credential during test and image builds.
+# FuzeQuality lives inside FuzeFront and consumes the same checked-in Design
+# System and Security contracts. Installing the local packages avoids an
+# otherwise unnecessary GitHub Packages credential during test and image
+# builds while keeping the production bundle on the published package APIs.
+COPY design-system /workspace/design-system
 COPY packages/security /workspace/packages/security
 RUN npm install --ignore-scripts --no-audit --no-fund
 

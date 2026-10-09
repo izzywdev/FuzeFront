@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^10.1.1",
+    "@fuzefront/design-system": "file:../design-system",
     "@fuzefront/security-client": "file:../packages/security",
     "express": "^5.1.0",
     "fast-glob": "^3.3.3",
