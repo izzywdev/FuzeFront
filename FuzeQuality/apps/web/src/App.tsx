@@ -3413,11 +3413,21 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               <summary>Source evidence</summary>
                               <small>Revision {flow.revision}</small>
                               <ul>
-                                {flow.evidence.map(evidence => (
-                                  <li key={evidence}>
-                                    <code>{evidence}</code>
-                                  </li>
-                                ))}
+                                {flow.evidence.map(evidence => {
+                                  const artifact = artifacts.find(
+                                    item => item.id === evidence
+                                  )
+                                  return (
+                                    <li key={evidence}>
+                                      <code>
+                                        {artifact
+                                          ? `${artifact.kind} · ${artifact.sourcePath}`
+                                          : evidence}
+                                      </code>
+                                      {artifact && <span>{artifact.title}</span>}
+                                    </li>
+                                  )
+                                })}
                               </ul>
                               <ol>
                                 {flow.steps.map((step, index) => (

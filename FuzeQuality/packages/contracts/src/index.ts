@@ -407,7 +407,7 @@ export type ScanResult = {
 export type QualityArtifact = {
   id: string
   repositoryId: string
-  kind: 'route' | 'policy' | 'gate' | 'test-plan' | 'load-test' | 'stress-test'
+  kind: 'route' | 'story' | 'documentation' | 'policy' | 'gate' | 'test-plan' | 'load-test' | 'stress-test'
   title: string
   sourcePath: string
   summary: string

@@ -25,11 +25,17 @@ describe('repository scanner', () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-governance-'))
     await mkdir(join(root, 'governance'), { recursive: true })
     await mkdir(join(root, 'load'), { recursive: true })
+    await mkdir(join(root, 'stories'), { recursive: true })
+    await mkdir(join(root, 'tests'), { recursive: true })
     await mkdir(join(root, '.github', 'workflows'), { recursive: true })
     await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@fuze/governance' }))
     await writeFile(join(root, 'governance', 'security-policy.md'), '# Policy\nEvery release must pass the authentication gate.')
     await writeFile(join(root, 'governance', 'gate_platform_auth.py'), 'REQUIRED_CHECK = "authentication gate"')
     await writeFile(join(root, 'load', 'k6-test.js'), 'export const options = { thresholds: { http_req_failed: ["rate<0.01"] } }')
+    await writeFile(join(root, 'performance.yml'), 'name: Load performance\non: workflow_dispatch')
+    await writeFile(join(root, 'journey.md'), '# Checkout journey\nThe user follows the checkout flow to the confirmation screen.')
+    await writeFile(join(root, 'stories', 'Checkout.stories.tsx'), `export default { title: 'Checkout' }; export const Complete = { play: async () => {} }`)
+    await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
     await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
 
@@ -41,6 +47,10 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/ci.yml' }),
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/post-prod.yml' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'load/k6-test.js' }),
+      expect.objectContaining({ kind: 'load-test', sourcePath: 'performance.yml' }),
+      expect.objectContaining({ kind: 'documentation', sourcePath: 'journey.md' }),
+      expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
+      expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
     ]))
   })
 

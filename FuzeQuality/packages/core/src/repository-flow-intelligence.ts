@@ -17,6 +17,33 @@ export const REPOSITORY_FLOW_SCHEMA_VERSION = '1.0'
 const candidateId = (repositoryId: string, revision: string, source: string, title: string) =>
   `repo-flow:${createHash('sha256').update(`${repositoryId}\u0000${revision}\u0000${source}\u0000${title}`).digest('hex').slice(0, 24)}`
 
+/**
+ * Keep the bounded prompt representative when a large application has more
+ * than 100 routes or tests. A simple slice would silently discard later
+ * evidence classes such as documentation, policies, and performance suites.
+ */
+function balancedAnalysisArtifacts(artifacts: QualityArtifact[], limit = 100): QualityArtifact[] {
+  const groups = new Map<QualityArtifact['kind'], QualityArtifact[]>()
+  for (const artifact of artifacts) {
+    const group = groups.get(artifact.kind) ?? []
+    group.push(artifact)
+    groups.set(artifact.kind, group)
+  }
+  const selected: QualityArtifact[] = []
+  for (let index = 0; selected.length < limit; index++) {
+    let added = false
+    for (const group of groups.values()) {
+      const artifact = group[index]
+      if (!artifact) continue
+      selected.push(artifact)
+      added = true
+      if (selected.length === limit) break
+    }
+    if (!added) break
+  }
+  return selected
+}
+
 export function deterministicRepositoryFlows(repository: Repository, revision: string, artifacts: QualityArtifact[]): RepositoryFlowCandidate[] {
   return artifacts.filter(item => item.kind === 'route').slice(0, 30).map(item => ({
     id: candidateId(repository.id, revision, 'deterministic', item.title), repositoryId: repository.id, tenantId: repository.tenantId ?? 'legacy', revision,
@@ -30,7 +57,7 @@ export class LiteLlmRepositoryFlowAnalyzer {
   constructor(private readonly baseUrl: string, private readonly model: string, private readonly apiKey?: string, private readonly fetchImpl: typeof fetch = fetch) {}
 
   async analyze(repository: Repository, revision: string, artifacts: QualityArtifact[]): Promise<RepositoryFlowCandidate[]> {
-    const safeArtifacts = artifacts.slice(0, 100).map(item => ({ id: item.id, kind: item.kind, title: item.title, sourcePath: item.sourcePath, summary: item.summary, evidence: item.evidence.slice(0, 8) }))
+    const safeArtifacts = balancedAnalysisArtifacts(artifacts).map(item => ({ id: item.id, kind: item.kind, title: item.title, sourcePath: item.sourcePath, summary: item.summary, evidence: item.evidence.slice(0, 8) }))
     const response = await this.fetchImpl(`${this.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST', headers: { 'content-type': 'application/json', ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}) },
       body: JSON.stringify({ model: this.model, temperature: 0, response_format: { type: 'json_object' }, messages: [

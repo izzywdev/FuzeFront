@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type {
   Portfolio,
+  QualityArtifact,
   Repository,
   RepositoryFlowCandidate,
 } from '@fuzequality/contracts'
@@ -67,6 +68,16 @@ const portfolio = {
   flows: [],
   suggestions: [],
 } satisfies Portfolio
+
+const storyArtifact: QualityArtifact = {
+  id: 'artifact-story-1',
+  repositoryId: repository.id,
+  kind: 'story',
+  title: 'Checkout / Complete',
+  sourcePath: 'src/Checkout.stories.tsx',
+  summary: 'Storybook interaction surface',
+  evidence: ['checkout--complete'],
+}
 
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
@@ -178,5 +189,22 @@ describe('RepositoryIntelligence flow inventory', () => {
         }
       )
     ).toBe(false)
+  })
+
+  it('resolves flow evidence identifiers to repository source paths', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([storyArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([
+      { ...candidate, evidence: [storyArtifact.id] },
+    ])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    fireEvent.click(screen.getByText('Source evidence'))
+
+    expect(
+      screen.getByText('story · src/Checkout.stories.tsx')
+    ).toBeVisible()
+    expect(screen.getByText('Checkout / Complete')).toBeVisible()
   })
 })

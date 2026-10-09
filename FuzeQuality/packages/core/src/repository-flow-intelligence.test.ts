@@ -36,4 +36,30 @@ describe('repository flow wireframes', () => {
 
     await expect(analyzer.analyze(repository, 'abc', artifacts)).resolves.toEqual([])
   })
+
+  it('keeps every repository evidence class represented in bounded LiteLLM input', async () => {
+    const manyRoutes = Array.from({ length: 110 }, (_, index) => ({
+      ...artifacts[0],
+      id: `route-${index}`,
+      title: `Route ${index}`,
+    }))
+    const additional = [
+      { ...artifacts[0], id: 'story-1', kind: 'story' as const, title: 'Checkout story' },
+      { ...artifacts[0], id: 'test-1', kind: 'test-plan' as const, title: 'Checkout test' },
+      { ...artifacts[0], id: 'docs-1', kind: 'documentation' as const, title: 'Checkout docs' },
+    ]
+    let requestKinds: string[] = []
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      const prompt = JSON.parse(body.messages[1].content)
+      requestKinds = prompt.artifacts.map((artifact: { kind: string }) => artifact.kind)
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"flows":[]}' } }] }))
+    }) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    await analyzer.analyze(repository, 'abc', [...manyRoutes, ...additional])
+
+    expect(requestKinds).toHaveLength(100)
+    expect(new Set(requestKinds)).toEqual(new Set(['route', 'story', 'test-plan', 'documentation']))
+  })
 })
