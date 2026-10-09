@@ -330,7 +330,7 @@
         },
         "scope": {
           "type": "string",
-          "description": "MF remote scope/name. Required for module-federation."
+          "description": "MF remote scope/name (required for module-federation), OR, for `web-component`, the custom-element tag name the shell instantiates (e.g. `my-widget`). See docs/guides/WEB_COMPONENT_INTEGRATION.md for the latter."
         },
         "module": {
           "type": "string",
@@ -340,7 +340,7 @@
           "type": "string",
           "format": "uri-reference",
           "pattern": "^(https?://[^\\s]+|/(?![/\\\\])[^\\s?#\\\\]*)$",
-          "description": "Navigable URL for `iframe` and `standalone`/`spa` integrations. Accepts the same two shapes as `remoteEntry`: a same-origin absolute path such as `/apps/fuzesocial/` (preferred for in-cluster apps — the host ingress proxies it, so the iframe does not re-enter the public edge) or an absolute `http(s)` URL for externally hosted apps."
+          "description": "Navigable URL for `iframe` and `standalone`/`spa` integrations, OR, for `web-component`, the script URL the shell injects to define the custom element named by `scope` (see docs/guides/WEB_COMPONENT_INTEGRATION.md). Accepts the same two shapes as `remoteEntry`: a same-origin absolute path such as `/apps/fuzesocial/` (preferred for in-cluster apps — the host ingress proxies it, so the iframe/script does not re-enter the public edge) or an absolute `http(s)` URL for externally hosted apps."
         }
       }
     },

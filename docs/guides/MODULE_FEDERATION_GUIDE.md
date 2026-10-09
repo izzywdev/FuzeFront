@@ -279,12 +279,23 @@ FrontFuse supports three integration types:
 - **Good Isolation** - Shadow DOM encapsulation
 
 ```typescript
+// Legacy POST /api/apps/register body (backend/src/routes/apps.ts) — the
+// field here is `remoteUrl` for every integrationType, including this one.
 {
   integrationType: 'web-component',
   remoteUrl: 'http://localhost:3003/my-component.js',
   scope: 'my-component'
 }
 ```
+
+The manifest-based registration path (`registration/manifest.json` +
+`@fuzefront/onboarding-kit` — see
+[`docs/mfe-self-registration.md`](../mfe-self-registration.md), the current
+production path) uses `url` instead of `remoteUrl` for this integration
+type. For the full custom-element/bundle contract the shell expects, a
+runnable example, and how this trades off against `iframe` and Module
+Federation, see
+[`WEB_COMPONENT_INTEGRATION.md`](WEB_COMPONENT_INTEGRATION.md).
 
 ## SDK Features
 
