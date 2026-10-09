@@ -109,3 +109,33 @@ export function ExecutionThresholdEvidence({
     </section>
   )
 }
+
+/** Per-pair gate results captured by the producer or an unambiguous workflow link. */
+export function ExecutionGateEvidence({
+  execution,
+}: {
+  execution: TestExecution
+}) {
+  if (!execution.gateEvaluations.length) return null
+
+  return (
+    <section className="execution-gates" aria-label="Policy gate evidence">
+      <strong>Policy–gate evidence</strong>
+      <ul>
+        {execution.gateEvaluations.map(evaluation => (
+          <li key={`${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`}>
+            <code>
+              {evaluation.policyArtifactId} → {evaluation.gateArtifactId}
+            </code>
+            {evaluation.detail && <span>{evaluation.detail}</span>}
+            <span
+              className={`status-pill status-${evaluation.status}`}
+            >
+              {evaluation.status}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}

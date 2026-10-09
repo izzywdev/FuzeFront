@@ -662,6 +662,15 @@ components:
         operator: { type: string, enum: [lt, lte, gt, gte, eq] }
         target: { type: number }
         passed: { type: boolean }
+    TestExecutionGateEvaluation:
+      type: object
+      additionalProperties: false
+      required: [policyArtifactId, gateArtifactId, status]
+      properties:
+        policyArtifactId: { type: string, minLength: 1, maxLength: 500 }
+        gateArtifactId: { type: string, minLength: 1, maxLength: 500 }
+        status: { $ref: '#/components/schemas/ExecutionStatus' }
+        detail: { type: string, minLength: 1, maxLength: 1000 }
     TestExecutionInput:
       type: object
       additionalProperties: false
@@ -689,6 +698,11 @@ components:
           maxItems: 100
           default: []
           items: { type: string }
+        gateEvaluations:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/TestExecutionGateEvaluation' }
         thresholds:
           type: array
           maxItems: 100
@@ -697,7 +711,7 @@ components:
         summary: { type: string, maxLength: 5000 }
     TestExecution:
       type: object
-      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, thresholds]
+      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, gateEvaluations, thresholds]
       properties:
         id: { type: string }
         repositoryId: { type: string, format: uuid }
@@ -718,6 +732,9 @@ components:
         gateArtifactIds:
           type: array
           items: { type: string }
+        gateEvaluations:
+          type: array
+          items: { $ref: '#/components/schemas/TestExecutionGateEvaluation' }
         thresholds:
           type: array
           items: { $ref: '#/components/schemas/TestExecutionThreshold' }
