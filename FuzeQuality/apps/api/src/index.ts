@@ -20,6 +20,7 @@ import {
   linkExecutionArtifacts,
   executionPerformance,
   filterTestExecutions,
+  relayOutboxBatch,
   repositoryCatalogStatus,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
@@ -376,29 +377,37 @@ app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
   let changed = false
   switch (event.type) {
     case 'organization.upsert':
-      changed = await store.upsertTenant({
+      changed = await store.projectIdentityLifecycle({ type: event.type, tenant: {
         id: event.organizationId, slug: event.slug, name: event.name, type: event.organizationType,
         ownerId: event.ownerId ?? undefined, active: event.isActive,
-      })
-      if (changed) await events.publish(TOPICS.TENANT_SEEDED, { tenantId: event.organizationId, tenantType: event.organizationType, active: event.isActive }, event.organizationId)
+      } }, { topic: TOPICS.TENANT_SEEDED, payload: { tenantId: event.organizationId, tenantType: event.organizationType, active: event.isActive }, key: event.organizationId })
       break
     case 'organization.deleted':
-      changed = await store.deactivateTenant(event.organizationId)
-      if (changed) await events.publish(TOPICS.TENANT_DELETED, { tenantId: event.organizationId }, event.organizationId)
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, tenantId: event.organizationId },
+        { topic: TOPICS.TENANT_DELETED, payload: { tenantId: event.organizationId }, key: event.organizationId },
+      )
       break
     case 'user.upsert':
-      changed = await store.upsertPrincipal({ id: event.userId, email: event.email, firstName: event.firstName, lastName: event.lastName, active: true })
-      if (changed) await events.publish(TOPICS.PRINCIPAL_SEEDED, { userId: event.userId }, event.userId)
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, principal: { id: event.userId, email: event.email, firstName: event.firstName, lastName: event.lastName, active: true } },
+        { topic: TOPICS.PRINCIPAL_SEEDED, payload: { userId: event.userId }, key: event.userId },
+      )
       break
     case 'user.deleted':
-      changed = await store.deactivatePrincipal(event.userId)
-      if (changed) await events.publish(TOPICS.PRINCIPAL_DELETED, { userId: event.userId }, event.userId)
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, principalId: event.userId },
+        { topic: TOPICS.PRINCIPAL_DELETED, payload: { userId: event.userId }, key: event.userId },
+      )
       break
     case 'membership.changed':
-      changed = await store.setOrganizationMembership({ tenantId: event.organizationId, principalId: event.userId, role: event.role, active: event.active })
-      if (changed) await events.publish(TOPICS.ORGANIZATION_MEMBERSHIP_CHANGED, { organizationId: event.organizationId, userId: event.userId, role: event.role, active: event.active }, `${event.organizationId}:${event.userId}`)
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, membership: { tenantId: event.organizationId, principalId: event.userId, role: event.role, active: event.active } },
+        { topic: TOPICS.ORGANIZATION_MEMBERSHIP_CHANGED, payload: { organizationId: event.organizationId, userId: event.userId, role: event.role, active: event.active }, key: `${event.organizationId}:${event.userId}` },
+      )
       break
   }
+  await relayOutboxBatch(store, events)
   response.status(202).json({ accepted: true, changed })
 })
 app.get('/api/v1/repositories', mayReadRepositories, async (request, response) =>
@@ -892,5 +901,11 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   console.error(error)
   response.status(500).json({ error: 'Unexpected service error' })
 })
+
+const outboxRelayIntervalMs = Number(process.env.OUTBOX_RELAY_INTERVAL_MS ?? 5_000)
+const outboxRelay = setInterval(() => {
+  void relayOutboxBatch(store, events).catch(error => console.error('FuzeQuality outbox relay failed', error))
+}, outboxRelayIntervalMs)
+outboxRelay.unref()
 
 app.listen(port, () => console.log(`FuzeQuality API listening on ${port}`))

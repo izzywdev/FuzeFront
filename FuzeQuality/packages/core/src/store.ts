@@ -28,6 +28,14 @@ import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
 export type PolicyGateReviewHistoryEntry = { evaluationId: string; tenantId: string; status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string; createdAt: string }
+export type IdentityLifecycleProjection =
+  | { type: 'organization.upsert'; tenant: QualityTenant }
+  | { type: 'organization.deleted'; tenantId: string }
+  | { type: 'user.upsert'; principal: QualityPrincipal }
+  | { type: 'user.deleted'; principalId: string }
+  | { type: 'membership.changed'; membership: QualityMembership }
+export type OutboxEventInput = { topic: string; key?: string; payload: unknown }
+export type OutboxEvent = OutboxEventInput & { id: string; attempts: number; createdAt: string }
 
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
@@ -71,6 +79,10 @@ export interface CatalogStore {
   upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
   deactivatePrincipal(principalId: string): Promise<boolean>
   setOrganizationMembership(membership: QualityMembership): Promise<boolean>
+  projectIdentityLifecycle(projection: IdentityLifecycleProjection, outbound: OutboxEventInput): Promise<boolean>
+  claimOutboxEvents(limit?: number, leaseMs?: number): Promise<OutboxEvent[]>
+  markOutboxPublished(id: string): Promise<void>
+  releaseOutboxEvent(id: string, error: string): Promise<void>
 }
 
 const emptyPortfolio = (): Portfolio => ({
@@ -118,6 +130,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private tenants = new Map<string, QualityTenant>()
   private principals = new Map<string, QualityPrincipal>()
   private memberships = new Map<string, QualityMembership>()
+  private outboxEvents: Array<OutboxEvent & { publishedAt?: string; lockedUntil?: number; lastError?: string }> = []
 
   constructor(seed?: Partial<Portfolio>) {
     this.data = { ...this.data, ...seed }
@@ -444,6 +457,41 @@ export class MemoryCatalogStore implements CatalogStore {
     this.memberships.set(key, structuredClone(membership))
     return changed
   }
+
+  async projectIdentityLifecycle(projection: IdentityLifecycleProjection, outbound: OutboxEventInput) {
+    let changed = false
+    switch (projection.type) {
+      case 'organization.upsert': changed = await this.upsertTenant(projection.tenant); break
+      case 'organization.deleted': changed = await this.deactivateTenant(projection.tenantId); break
+      case 'user.upsert': changed = await this.upsertPrincipal(projection.principal); break
+      case 'user.deleted': changed = await this.deactivatePrincipal(projection.principalId); break
+      case 'membership.changed': changed = await this.setOrganizationMembership(projection.membership); break
+    }
+    if (changed) this.outboxEvents.push({ ...structuredClone(outbound), id: randomUUID(), attempts: 0, createdAt: new Date().toISOString() })
+    return changed
+  }
+
+  async claimOutboxEvents(limit = 100, leaseMs = 30_000) {
+    const now = Date.now()
+    return this.outboxEvents
+      .filter(event => !event.publishedAt && (!event.lockedUntil || event.lockedUntil <= now))
+      .slice(0, limit)
+      .map(event => {
+        event.attempts += 1
+        event.lockedUntil = now + leaseMs
+        return structuredClone({ id: event.id, topic: event.topic, key: event.key, payload: event.payload, attempts: event.attempts, createdAt: event.createdAt })
+      })
+  }
+
+  async markOutboxPublished(id: string) {
+    const event = this.outboxEvents.find(candidate => candidate.id === id)
+    if (event) Object.assign(event, { publishedAt: new Date().toISOString(), lockedUntil: undefined, lastError: undefined })
+  }
+
+  async releaseOutboxEvent(id: string, error: string) {
+    const event = this.outboxEvents.find(candidate => candidate.id === id)
+    if (event) Object.assign(event, { lockedUntil: undefined, lastError: error })
+  }
 }
 
 export class PostgresCatalogStore implements CatalogStore {
@@ -672,6 +720,122 @@ export class PostgresCatalogStore implements CatalogStore {
       [membership.tenantId, membership.principalId, membership.role, membership.active],
     )
     return Boolean(result.rowCount)
+  }
+
+  async projectIdentityLifecycle(projection: IdentityLifecycleProjection, outbound: OutboxEventInput): Promise<boolean> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      let result: pg.QueryResult
+      switch (projection.type) {
+        case 'organization.upsert': {
+          const tenant = projection.tenant
+          result = await client.query(
+            `INSERT INTO fuzequality.tenants (id,slug,name,type,owner_id,active,deleted_at,updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,CASE WHEN $6 THEN NULL ELSE now() END,now())
+             ON CONFLICT (id) DO UPDATE SET slug=EXCLUDED.slug,name=EXCLUDED.name,type=EXCLUDED.type,
+               owner_id=EXCLUDED.owner_id,active=EXCLUDED.active,deleted_at=CASE WHEN EXCLUDED.active THEN NULL ELSE now() END,updated_at=now()
+             WHERE (fuzequality.tenants.slug,fuzequality.tenants.name,fuzequality.tenants.type,fuzequality.tenants.owner_id,fuzequality.tenants.active)
+               IS DISTINCT FROM (EXCLUDED.slug,EXCLUDED.name,EXCLUDED.type,EXCLUDED.owner_id,EXCLUDED.active)
+             RETURNING id`,
+            [tenant.id, tenant.slug, tenant.name, tenant.type, tenant.ownerId ?? null, tenant.active],
+          )
+          break
+        }
+        case 'organization.deleted':
+          result = await client.query(
+            'UPDATE fuzequality.tenants SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+            [projection.tenantId],
+          )
+          break
+        case 'user.upsert': {
+          const principal = projection.principal
+          result = await client.query(
+            `INSERT INTO fuzequality.principals (id,email,first_name,last_name,active,deleted_at,updated_at)
+             VALUES ($1,$2,$3,$4,$5,CASE WHEN $5 THEN NULL ELSE now() END,now())
+             ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email,first_name=EXCLUDED.first_name,last_name=EXCLUDED.last_name,
+               active=EXCLUDED.active,deleted_at=CASE WHEN EXCLUDED.active THEN NULL ELSE now() END,updated_at=now()
+             WHERE (fuzequality.principals.email,fuzequality.principals.first_name,fuzequality.principals.last_name,fuzequality.principals.active)
+               IS DISTINCT FROM (EXCLUDED.email,EXCLUDED.first_name,EXCLUDED.last_name,EXCLUDED.active)
+             RETURNING id`,
+            [principal.id, principal.email, principal.firstName ?? null, principal.lastName ?? null, principal.active],
+          )
+          break
+        }
+        case 'user.deleted':
+          result = await client.query(
+            'UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+            [projection.principalId],
+          )
+          break
+        case 'membership.changed': {
+          const membership = projection.membership
+          result = await client.query(
+            `INSERT INTO fuzequality.organization_memberships (tenant_id,principal_id,role,active,updated_at)
+             VALUES ($1,$2,$3,$4,now())
+             ON CONFLICT (tenant_id,principal_id) DO UPDATE SET role=EXCLUDED.role,active=EXCLUDED.active,updated_at=now()
+             WHERE (fuzequality.organization_memberships.role,fuzequality.organization_memberships.active)
+               IS DISTINCT FROM (EXCLUDED.role,EXCLUDED.active)
+             RETURNING tenant_id`,
+            [membership.tenantId, membership.principalId, membership.role, membership.active],
+          )
+          break
+        }
+      }
+      const changed = Boolean(result.rowCount)
+      if (changed) {
+        await client.query(
+          'INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+          [outbound.topic, outbound.key ?? null, JSON.stringify(outbound.payload)],
+        )
+      }
+      await client.query('COMMIT')
+      return changed
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async claimOutboxEvents(limit = 100, leaseMs = 30_000): Promise<OutboxEvent[]> {
+    const result = await this.pool.query(
+      `WITH candidates AS (
+         SELECT id FROM fuzequality.outbox_events
+         WHERE published_at IS NULL AND (locked_until IS NULL OR locked_until <= now())
+         ORDER BY created_at
+         LIMIT $1
+         FOR UPDATE SKIP LOCKED
+       )
+       UPDATE fuzequality.outbox_events event
+       SET attempts=event.attempts+1, locked_until=now() + ($2 * interval '1 millisecond')
+       FROM candidates WHERE event.id=candidates.id
+       RETURNING event.id,event.topic,event.event_key,event.payload,event.attempts,event.created_at`,
+      [limit, leaseMs],
+    )
+    return result.rows.map(row => ({
+      id: row.id,
+      topic: row.topic,
+      key: row.event_key ?? undefined,
+      payload: row.payload,
+      attempts: row.attempts,
+      createdAt: row.created_at.toISOString(),
+    }))
+  }
+
+  async markOutboxPublished(id: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE fuzequality.outbox_events SET published_at=now(),locked_until=NULL,last_error=NULL WHERE id=$1',
+      [id],
+    )
+  }
+
+  async releaseOutboxEvent(id: string, error: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE fuzequality.outbox_events SET locked_until=NULL,last_error=$2 WHERE id=$1 AND published_at IS NULL',
+      [id, error.slice(0, 2000)],
+    )
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
