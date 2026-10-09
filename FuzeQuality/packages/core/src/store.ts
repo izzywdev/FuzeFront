@@ -614,15 +614,15 @@ export class PostgresCatalogStore implements CatalogStore {
        WHERE repository_id=$1 AND tenant_id=$2 ORDER BY created_at DESC`,
       [repositoryId, tenantId],
     )
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, source: row.source, createdAt: row.created_at.toISOString() }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() }))
   }
 
   async saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void> {
     for (const item of candidates) await this.pool.query(
-      `INSERT INTO fuzequality.repository_flow_candidates (id,repository_id,tenant_id,revision,title,confidence,evidence,steps,wireframe,status,source,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-       ON CONFLICT (repository_id,revision,title,source) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,created_at=EXCLUDED.created_at`,
-      [item.id,item.repositoryId,item.tenantId,item.revision,item.title,item.confidence,JSON.stringify(item.evidence),JSON.stringify(item.steps),JSON.stringify(item.wireframe ?? { kind: 'sequence', nodes: [] }),item.status,item.source,item.createdAt],
+      `INSERT INTO fuzequality.repository_flow_candidates (id,repository_id,tenant_id,revision,title,confidence,evidence,steps,wireframe,status,source,analysis_provenance,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (repository_id,revision,title,source) DO UPDATE SET confidence=EXCLUDED.confidence,evidence=EXCLUDED.evidence,steps=EXCLUDED.steps,wireframe=EXCLUDED.wireframe,analysis_provenance=EXCLUDED.analysis_provenance,created_at=EXCLUDED.created_at`,
+      [item.id,item.repositoryId,item.tenantId,item.revision,item.title,item.confidence,JSON.stringify(item.evidence),JSON.stringify(item.steps),JSON.stringify(item.wireframe ?? { kind: 'sequence', nodes: [] }),item.status,item.source,item.analysis ? JSON.stringify(item.analysis) : null,item.createdAt],
     )
   }
 
@@ -647,7 +647,7 @@ export class PostgresCatalogStore implements CatalogStore {
       client.release()
     }
     const row = result.rows[0]
-    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, source: row.source, createdAt: row.created_at.toISOString() } : undefined
+    return row ? { id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, title: row.title, confidence: Number(row.confidence), evidence: row.evidence, steps: row.steps, wireframe: flowWireframe(row.wireframe, row.steps), status: row.status, reviewedAt: row.reviewed_at?.toISOString(), reviewedBy: row.reviewed_by ?? undefined, reviewReason: row.review_reason ?? undefined, analysis: row.analysis_provenance ?? undefined, source: row.source, createdAt: row.created_at.toISOString() } : undefined
   }
 
   async repositoryFlowReviewHistory(candidateId: string, tenantId: string): Promise<RepositoryFlowReviewHistoryEntry[]> {

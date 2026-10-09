@@ -18,6 +18,20 @@ const candidate: RepositoryFlowCandidate = {
 }
 
 describe('repository flow review lifecycle', () => {
+  it('persists FuzeInfra LiteLLM analysis provenance', async () => {
+    const store = new MemoryCatalogStore()
+    const analysis = {
+      provider: 'fuzeinfra-litellm' as const,
+      model: 'quality-analysis',
+      promptVersion: 'fuzequality-repository-flow-v1',
+      schemaVersion: '1.0',
+    }
+    await store.saveRepositoryFlowCandidates([{ ...candidate, analysis }])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId)).resolves.toEqual([
+      expect.objectContaining({ analysis }),
+    ])
+  })
+
   it('preserves the human decision and attribution when the same analysis is replayed', async () => {
     const store = new MemoryCatalogStore()
     await store.saveRepositoryFlowCandidates([candidate])

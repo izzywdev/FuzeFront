@@ -38,6 +38,7 @@ import { isPlatformAuthenticatedRequest, isPublicRequest } from './authenticatio
 import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
 import { executionRecord } from './test-execution-ingestion'
+import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -356,7 +357,11 @@ app.get('/api/v1/internal/repositories/:id/quality-artifacts', async (request, r
   response.json(await store.qualityArtifacts(repositoryId, repository.tenantId ?? 'legacy'))
 })
 app.post('/api/v1/internal/repository-flow-candidates', async (request, response) => {
-  await store.saveRepositoryFlowCandidates(request.body.candidates ?? [])
+  const parsed = repositoryFlowCandidateIngestionSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const ownershipError = await candidateOwnershipError(parsed.data.candidates, id => store.repository(id))
+  if (ownershipError) return response.status(400).json({ error: 'Candidate repository/tenant ownership mismatch', ...ownershipError })
+  await store.saveRepositoryFlowCandidates(parsed.data.candidates)
   response.status(202).json({ accepted: true })
 })
 app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (request, response) => {

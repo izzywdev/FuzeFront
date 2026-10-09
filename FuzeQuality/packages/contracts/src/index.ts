@@ -436,6 +436,12 @@ export type RepositoryFlowCandidate = {
   reviewedAt?: string
   reviewedBy?: string
   reviewReason?: string
+  analysis?: {
+    provider: 'fuzeinfra-litellm'
+    model: string
+    promptVersion: string
+    schemaVersion: string
+  }
   source: 'deterministic' | 'litellm'
   createdAt: string
 }

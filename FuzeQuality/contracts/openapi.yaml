@@ -155,12 +155,15 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: false
+              required: [candidates]
               properties:
                 candidates:
                   type: array
                   items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
       responses:
         '202': { $ref: '#/components/responses/Accepted' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /api/v1/repositories/{repositoryId}/flow-candidates:
@@ -573,8 +576,18 @@ components:
         reviewedAt: { type: string, format: date-time }
         reviewedBy: { type: string }
         reviewReason: { type: string }
+        analysis: { $ref: '#/components/schemas/RepositoryFlowAnalysisProvenance' }
         source: { type: string, enum: [deterministic, litellm] }
         createdAt: { type: string, format: date-time }
+    RepositoryFlowAnalysisProvenance:
+      type: object
+      additionalProperties: false
+      required: [provider, model, promptVersion, schemaVersion]
+      properties:
+        provider: { type: string, enum: [fuzeinfra-litellm] }
+        model: { type: string }
+        promptVersion: { type: string }
+        schemaVersion: { type: string }
     RepositoryFlowReviewHistoryEntry:
       type: object
       additionalProperties: false
