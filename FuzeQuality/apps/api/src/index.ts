@@ -6,6 +6,8 @@ import {
   repositoryInputSchema,
   reviewDecisionSchema,
   expectationExclusionSchema,
+  testExecutionInputSchema,
+  performanceTestRequestSchema,
   testImplementationRequestSchema,
   type OrganizationQualitySummary,
   type Portfolio,
@@ -15,6 +17,10 @@ import {
   coverageSummary,
   createCatalogStore,
   createEventBus,
+  linkExecutionArtifacts,
+  executionPerformance,
+  filterTestExecutions,
+  relayOutboxBatch,
   repositoryCatalogStatus,
 } from '@fuzequality/core'
 import { scanRepository } from '@fuzequality/scanner'
@@ -22,13 +28,17 @@ import {
   githubWebhookHeadersSchema,
   verifyGithubWebhook,
   webhookScanCommands,
+  webhookWorkflowExecutions,
 } from '@fuzequality/github-app'
-import { githubInstallationToken } from '../../workers/src/github'
+import { dispatchPerformanceWorkflow, githubInstallationToken } from '../../workers/src/github'
 import { createGitHubAccessVerifier, publicAccessError } from './repository-onboarding'
 import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermission } from './platform-authorization'
 import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
+import { executionFilterSchema } from './execution-filter'
+import { executionRecord } from './test-execution-ingestion'
+import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -59,6 +69,7 @@ const maySyncRequirements: express.RequestHandler = (request, response, next) =>
 }
 const mayCreateTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'create')
 const mayReadTestImplementation = requirePlatformPermission(qualityResources.testImplementation, 'read')
+const mayRunExecution = requirePlatformPermission(qualityResources.execution, 'run')
 const mayReadOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'read')
 const mayManageOrganizationAccess = requirePlatformPermission(qualityResources.organizationAccess, 'manage')
 const mayManageRepositoryAdministration = requirePlatformPermission(qualityResources.repositoryAdministration, 'manage')
@@ -70,6 +81,11 @@ const invitationSchema = z.object({
   role: organizationRoleSchema,
 }).strict()
 const memberRoleSchema = z.object({ role: organizationRoleSchema }).strict()
+const repositoryFlowReviewSchema = z.object({
+  status: z.enum(['confirmed', 'rejected']),
+  reason: z.string().trim().min(3).max(2000).optional(),
+}).strict()
+const policyGateReviewSchema = z.object({ status: z.enum(['accepted', 'dismissed']), reason: z.string().trim().min(3).max(2000).optional() }).strict()
 const intelligenceFailureSchema = z.object({
   sourceType: z.literal('jira'),
   sourceKey: z.string().trim().min(1).max(200),
@@ -86,6 +102,23 @@ const repositoryAdministrationSchema = z.object({
   })).max(100),
   storybookBaseUrl: z.string().trim().url().refine(value => new URL(value).protocol === 'https:').optional(),
 }).strict()
+const identityLifecycleEventSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('organization.upsert'),
+    organizationId: z.string().uuid(), slug: z.string().min(1), name: z.string().min(1),
+    organizationType: z.enum(['platform', 'organization', 'personal']), ownerId: z.string().uuid().nullable(), isActive: z.boolean(),
+  }).strict(),
+  z.object({ type: z.literal('organization.deleted'), organizationId: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('user.upsert'), userId: z.string().uuid(), email: z.string().email(),
+    firstName: z.string().optional(), lastName: z.string().optional(),
+  }).strict(),
+  z.object({ type: z.literal('user.deleted'), userId: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('membership.changed'), organizationId: z.string().uuid(), userId: z.string().uuid(),
+    role: z.string().min(1), active: z.boolean(),
+  }).strict(),
+])
 
 async function proxyOrganizationSecurity(
   request: express.Request,
@@ -317,6 +350,76 @@ app.get('/api/v1/internal/repositories/:id', async (request, response) => {
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repository)
 })
+app.get('/api/v1/internal/repositories/:id/quality-artifacts', async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.repository(repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.qualityArtifacts(repositoryId, repository.tenantId ?? 'legacy'))
+})
+app.post('/api/v1/internal/repository-flow-candidates', async (request, response) => {
+  const parsed = repositoryFlowCandidateIngestionSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const ownershipError = await candidateOwnershipError(parsed.data.candidates, id => store.repository(id))
+  if (ownershipError) return response.status(400).json({ error: 'Candidate repository/tenant ownership mismatch', ...ownershipError })
+  await store.saveRepositoryFlowCandidates(parsed.data.candidates)
+  response.status(202).json({ accepted: true })
+})
+app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.repository(repositoryId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy'))
+})
+app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) => {
+  await store.savePolicyGateEvaluations(request.body.evaluations ?? [])
+  response.status(202).json({ accepted: true })
+})
+app.post('/api/v1/internal/test-executions', async (request, response) => {
+  const execution = testExecutionInputSchema.parse(request.body)
+  const repository = await store.repository(execution.repositoryId, execution.tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const id = randomUUID()
+  await store.saveTestExecution(executionRecord(execution, id))
+  response.status(202).json({ accepted: true })
+})
+app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
+  const event = identityLifecycleEventSchema.parse(request.body)
+  let changed = false
+  switch (event.type) {
+    case 'organization.upsert':
+      changed = await store.projectIdentityLifecycle({ type: event.type, tenant: {
+        id: event.organizationId, slug: event.slug, name: event.name, type: event.organizationType,
+        ownerId: event.ownerId ?? undefined, active: event.isActive,
+      } }, { topic: TOPICS.TENANT_SEEDED, payload: { tenantId: event.organizationId, tenantType: event.organizationType, active: event.isActive }, key: event.organizationId })
+      break
+    case 'organization.deleted':
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, tenantId: event.organizationId },
+        { topic: TOPICS.TENANT_DELETED, payload: { tenantId: event.organizationId }, key: event.organizationId },
+      )
+      break
+    case 'user.upsert':
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, principal: { id: event.userId, email: event.email, firstName: event.firstName, lastName: event.lastName, active: true } },
+        { topic: TOPICS.PRINCIPAL_SEEDED, payload: { userId: event.userId }, key: event.userId },
+      )
+      break
+    case 'user.deleted':
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, principalId: event.userId },
+        { topic: TOPICS.PRINCIPAL_DELETED, payload: { userId: event.userId }, key: event.userId },
+      )
+      break
+    case 'membership.changed':
+      changed = await store.projectIdentityLifecycle(
+        { type: event.type, membership: { tenantId: event.organizationId, principalId: event.userId, role: event.role, active: event.active } },
+        { topic: TOPICS.ORGANIZATION_MEMBERSHIP_CHANGED, payload: { organizationId: event.organizationId, userId: event.userId, role: event.role, active: event.active }, key: `${event.organizationId}:${event.userId}` },
+      )
+      break
+  }
+  await relayOutboxBatch(store, events)
+  response.status(202).json({ accepted: true, changed })
+})
 app.get('/api/v1/repositories', mayReadRepositories, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).repositories)
 )
@@ -331,6 +434,105 @@ app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (req
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   response.json(await store.repositoryScanHistory(repositoryId, tenantId))
+})
+app.get('/api/v1/repositories/:id/quality-artifacts', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.qualityArtifacts(repositoryId, tenantId))
+})
+app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.repositoryFlowCandidates(repositoryId, tenantId))
+})
+app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const candidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
+  response.json(await store.repositoryFlowReviewHistory(candidateId, tenantId))
+})
+app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayReviewSuggestions, async (request, response) => {
+  const parsed = repositoryFlowReviewSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const existingCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  if (!existingCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
+  const candidate = await store.reviewRepositoryFlowCandidate(candidateId, tenantId, {
+    status: parsed.data.status,
+    reviewedBy: requestIdentity(request)!.userId,
+    reason: parsed.data.reason,
+  })
+  if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
+  response.json(candidate)
+})
+app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  response.json(await store.policyGateEvaluations(repositoryId, tenantId))
+})
+app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const evaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  response.json(await store.policyGateReviewHistory(evaluationId, tenantId))
+})
+app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review', mayReviewSuggestions, async (request, response) => {
+  const parsed = policyGateReviewSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const existingEvaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason })
+  if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  response.json(evaluation)
+})
+app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const filter = executionFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  response.json(filterTestExecutions(await store.testExecutions(repositoryId, tenantId), filter.data))
+})
+app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const filter = executionFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  response.json(executionPerformance(filterTestExecutions(await store.testExecutions(repositoryId, tenantId), filter.data)))
+})
+app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
+  const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const artifact = (await store.qualityArtifacts(repositoryId, tenantId)).find(item => item.id === parsed.data.artifactId)
+  if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Dispatchable performance test not found' })
+  if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
+  try {
+    await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, defaultBranch: repository.defaultBranch, installationId: repository.installationId, workflowPath: artifact.sourcePath })
+    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath: artifact.sourcePath, ref: repository.defaultBranch })
+  } catch (error) {
+    response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'PERFORMANCE_DISPATCH_FAILED' })
+  }
 })
 app.get('/api/v1/repositories/:id/catalog-status', mayReadCatalog, async (request, response) => {
   const portfolio = await store.portfolio(requestIdentity(request)!.tenantId)
@@ -689,6 +891,13 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
   }
   const repositories = (await store.portfolio()).repositories
   const commands = webhookScanCommands(headers.data.event, request.body, repositories)
+  const workflowExecutions = webhookWorkflowExecutions(headers.data.event, request.body, repositories)
+  for (const execution of workflowExecutions) {
+    const repository = repositories.find(item => item.id === execution.repositoryId)
+    if (!repository?.tenantId) continue
+    const links = linkExecutionArtifacts(execution.name, await store.qualityArtifacts(repository.id, repository.tenantId))
+    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, ...links, ...execution })
+  }
   for (const command of commands) {
     let commitSha = command.commitSha
     if (!commitSha) {
@@ -708,12 +917,18 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
       command.repositoryId
     )
   }
-  response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued: commands.length })
+  response.status(202).json({ accepted: true, delivery: headers.data.delivery, queued: commands.length, executions: workflowExecutions.length })
 })
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   console.error(error)
   response.status(500).json({ error: 'Unexpected service error' })
 })
+
+const outboxRelayIntervalMs = Number(process.env.OUTBOX_RELAY_INTERVAL_MS ?? 5_000)
+const outboxRelay = setInterval(() => {
+  void relayOutboxBatch(store, events).catch(error => console.error('FuzeQuality outbox relay failed', error))
+}, outboxRelayIntervalMs)
+outboxRelay.unref()
 
 app.listen(port, () => console.log(`FuzeQuality API listening on ${port}`))

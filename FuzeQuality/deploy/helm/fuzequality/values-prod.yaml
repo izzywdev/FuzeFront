@@ -10,6 +10,12 @@ frontendImage:
   repository: ghcr.io/izzywdev/fuzequality-frontend
   tag: 9e5483e06726
 
+# FuzeQuality is a live, same-origin federated remote. Its registration assets
+# and sealed registration token are delivered by this chart, so run the
+# idempotent post-upgrade registration Job and restore the portal entry.
+registration:
+  enabled: true
+
 ingress:
   enabled: true
   className: traefik

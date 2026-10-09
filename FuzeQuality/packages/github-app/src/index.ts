@@ -5,6 +5,7 @@ export const GITHUB_APP_PERMISSIONS = {
   metadata: 'read',
   contents: 'read',
   pull_requests: 'read',
+  actions: 'write',
 } as const
 
 export const GITHUB_APP_EVENTS = [
@@ -12,6 +13,7 @@ export const GITHUB_APP_EVENTS = [
   'repository',
   'installation',
   'installation_repositories',
+  'workflow_run',
 ] as const
 
 export const githubWebhookHeadersSchema = z.object({
@@ -32,6 +34,21 @@ export type ScanCommand = {
   repositoryId: string
   commitSha?: string
   trigger: 'push' | 'reconcile'
+}
+
+export type WorkflowExecutionCommand = {
+  repositoryId: string
+  provider: 'github-actions'
+  externalRunId: string
+  attempt: number
+  revision: string
+  kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  name: string
+  sourceUrl?: string
+  startedAt?: string
+  completedAt?: string
+  summary?: string
 }
 
 type GithubRepository = {
@@ -60,6 +77,16 @@ const installationSchema = z.object({
   repositories: z.array(z.object({ full_name: z.string() })).optional(),
   repositories_added: z.array(z.object({ full_name: z.string() })).optional(),
 })
+const workflowRunSchema = z.object({
+  action: z.enum(['requested', 'in_progress', 'completed']),
+  repository: z.object({ full_name: z.string(), default_branch: z.string() }),
+  workflow_run: z.object({
+    id: z.number().int().positive(), run_attempt: z.number().int().positive(),
+    head_branch: z.string().nullable(), head_sha: z.string().regex(/^[0-9a-f]{40}$/i), name: z.string().min(1),
+    status: z.enum(['queued', 'in_progress', 'completed']), conclusion: z.enum(['success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', 'action_required']).nullable(),
+    html_url: z.string().url().optional(), run_started_at: z.string().datetime().nullable(), updated_at: z.string().datetime(),
+  }),
+})
 
 export function verifyGithubWebhook(payload: Buffer, signature: string, secret: string): boolean {
   if (!secret || !/^sha256=[0-9a-f]{64}$/i.test(signature)) return false
@@ -76,9 +103,9 @@ export function webhookScanCommands(
   if (event === 'push') {
     const parsed = pushSchema.safeParse(payload)
     if (!parsed.success) return []
-    const repository = findRepository(repositories, parsed.data.repository)
-    if (!repository || parsed.data.ref !== `refs/heads/${repository.defaultBranch}`) return []
-    return [{ repositoryId: repository.id, commitSha: parsed.data.after, trigger: 'push' }]
+    return findRepositories(repositories, parsed.data.repository)
+      .filter(repository => parsed.data.ref === `refs/heads/${repository.defaultBranch}`)
+      .map(repository => ({ repositoryId: repository.id, commitSha: parsed.data.after, trigger: 'push' as const }))
   }
 
   if (event === 'repository') {
@@ -88,8 +115,9 @@ export function webhookScanCommands(
       parsed.data.action === 'edited' && parsed.data.changes?.default_branch
     )
     const relevantAction = defaultBranchChanged || ['renamed', 'transferred'].includes(parsed.data.action)
-    const repository = findRepository(repositories, parsed.data.repository)
-    return relevantAction && repository ? [{ repositoryId: repository.id, trigger: 'reconcile' }] : []
+    return relevantAction
+      ? findRepositories(repositories, parsed.data.repository).map(repository => ({ repositoryId: repository.id, trigger: 'reconcile' as const }))
+      : []
   }
 
   if (event === 'installation' || event === 'installation_repositories') {
@@ -108,9 +136,33 @@ export function webhookScanCommands(
   return []
 }
 
-function findRepository(repositories: OnboardedRepository[], githubRepository: GithubRepository) {
+/** Maps only default-branch GitHub Actions evidence to immutable execution rows. */
+export function webhookWorkflowExecutions(event: string, payload: unknown, repositories: OnboardedRepository[]): WorkflowExecutionCommand[] {
+  if (event !== 'workflow_run') return []
+  const parsed = workflowRunSchema.safeParse(payload)
+  if (!parsed.success || parsed.data.workflow_run.head_branch !== parsed.data.repository.default_branch) return []
+  const run = parsed.data.workflow_run
+  const kind = /stress/i.test(run.name) ? 'stress' : /load/i.test(run.name) ? 'load' : /post[- ]?prod|production/i.test(run.name) ? 'post-production' : /integration/i.test(run.name) ? 'integration' : 'ci'
+  const status = run.status !== 'completed' ? 'running' : run.conclusion === 'success' ? 'passed' : run.conclusion === 'cancelled' || run.conclusion === 'skipped' ? 'cancelled' : 'failed'
+  return findRepositories(repositories, parsed.data.repository).map(repository => ({
+    repositoryId: repository.id,
+    provider: 'github-actions' as const,
+    externalRunId: String(run.id),
+    attempt: run.run_attempt,
+    revision: run.head_sha,
+    kind,
+    status,
+    name: run.name,
+    sourceUrl: run.html_url,
+    startedAt: run.run_started_at ?? undefined,
+    completedAt: run.status === 'completed' ? run.updated_at : undefined,
+    summary: run.conclusion ?? undefined,
+  }))
+}
+
+function findRepositories(repositories: OnboardedRepository[], githubRepository: GithubRepository) {
   const fullName = githubRepository.full_name?.toLowerCase()
-  return repositories.find(repository => `${repository.owner}/${repository.name}`.toLowerCase() === fullName)
+  return repositories.filter(repository => `${repository.owner}/${repository.name}`.toLowerCase() === fullName)
 }
 
 export function redactGithubDiagnostic(value: unknown): string {

@@ -18,11 +18,13 @@ export function IconButton({
   active = false,
   disabled = false,
   style,
+  ref,
   ...rest
 }) {
   const s = SIZES[size] || SIZES.md;
   return (
     <button
+      ref={ref}
       type="button"
       title={label}
       aria-label={label}

@@ -101,7 +101,11 @@ router.get('/health', authenticateToken, async (req: any, res) => {
 
     const flagCtx = { orgId: req.user?.organizationId, userId: req.user?.id }
     const prefixed = await isPrefixedIdsEnabled(flagCtx)
-    res.json(healthChecks.map((item: any) => prefixDtoIds(item, prefixed, { id: 'app' })))
+    res.json(
+      healthChecks.map((item: any) =>
+        prefixDtoIds(item, prefixed, { id: 'app' })
+      )
+    )
   } catch (error) {
     console.error('Error checking app health:', error)
     res.status(500).json({ error: 'Failed to check app health' })
@@ -184,18 +188,21 @@ router.get('/', authenticateToken, async (req: any, res) => {
           isActive: Boolean(app.is_active),
           isHealthy: isHealthy,
           integrationType: app.integration_type as
-            | 'module-federation'
-            | 'iframe'
-            | 'web-component'
-            | 'spa',
+            'module-federation' | 'iframe' | 'web-component' | 'spa',
           remoteUrl: app.remote_url,
           scope: app.scope,
           module: app.module,
           description: app.description,
           scopeLevel: app.scope_level ?? 'both',
           orgLevelOnly: isOrgLevelOnly,
-          installMode: manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
-          requiresOrgContext: Boolean(manifest.requiresOrgContext || app.scope_level === 'organization'),
+          installMode:
+            manifest.installMode ?? (isOrgLevelOnly ? 'everyone' : 'both'),
+          organizationInstallMode:
+            manifest.organizationInstallMode ??
+            (isOrgLevelOnly ? 'everyone' : (manifest.installMode ?? 'both')),
+          requiresOrgContext: Boolean(
+            manifest.requiresOrgContext || app.scope_level === 'organization'
+          ),
         }
       })
     )
@@ -213,7 +220,11 @@ router.get('/', authenticateToken, async (req: any, res) => {
         })
       )
     } else {
-      res.json(appsWithHealth.map((app: any) => prefixDtoIds(app, prefixed, { id: 'app' })))
+      res.json(
+        appsWithHealth.map((app: any) =>
+          prefixDtoIds(app, prefixed, { id: 'app' })
+        )
+      )
     }
   } catch (error) {
     console.error('Error fetching apps:', error)
@@ -679,7 +690,10 @@ router.post('/register', async (req: any, res) => {
       })
     }
 
-    console.log('🚀 App "%s" self-registered successfully', sanitizeForLog(name))
+    console.log(
+      '🚀 App "%s" self-registered successfully',
+      sanitizeForLog(name)
+    )
 
     const flagCtx = {}
     const prefixed = await isPrefixedIdsEnabled(flagCtx)
@@ -718,7 +732,9 @@ router.post('/register', async (req: any, res) => {
             installCount: 0,
           }
           const catchPrefixed = await isPrefixedIdsEnabled({})
-          return res.status(200).json(prefixDtoIds(app as any, catchPrefixed, { id: 'app' }))
+          return res
+            .status(200)
+            .json(prefixDtoIds(app as any, catchPrefixed, { id: 'app' }))
         }
       } catch (fetchError) {
         console.error('Error fetching existing app:', fetchError)

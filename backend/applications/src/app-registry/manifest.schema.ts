@@ -224,6 +224,7 @@ export const appManifestSchema = z
     scopeLevel: z.enum(['personal', 'organization', 'both']).optional(),
     requiresOrgContext: z.boolean().optional(),
     installMode: z.enum(['self', 'everyone', 'both']).optional(),
+    organizationInstallMode: z.enum(['self', 'everyone', 'both']).optional(),
     orgLevelOnly: z.boolean().optional(),
     roles: z.array(z.string()).optional(),
   })
@@ -241,8 +242,10 @@ export type Nav = z.infer<typeof navSchema>
 const orgIdSchema = z
   .string()
   .refine(
-    v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ||
-         /^org_[0-9a-hj-km-np-tv-z]{26}$/.test(v),
+    v =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        v
+      ) || /^org_[0-9a-hj-km-np-tv-z]{26}$/.test(v),
     { message: 'must be a UUID or an organization TypeID (org_...)' }
   )
 
@@ -347,7 +350,9 @@ export const billingProfileSchema = z
       .max(100)
       .regex(/^[a-z0-9][a-z0-9-]*$/, 'must match ^[a-z0-9][a-z0-9-]*$'),
     currencies: z
-      .array(z.string().regex(/^[a-z]{3}$/, 'must be a lowercase ISO-4217 code'))
+      .array(
+        z.string().regex(/^[a-z]{3}$/, 'must be a lowercase ISO-4217 code')
+      )
       .optional(),
     maxTotalCents: z.number().int().min(1).optional(),
   })

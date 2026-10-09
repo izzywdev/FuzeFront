@@ -19,6 +19,7 @@
     "start:scanner": "tsx apps/workers/src/scanner.ts",
     "start:intelligence": "tsx apps/workers/src/intelligence.ts",
     "start:projector": "tsx apps/workers/src/projector.ts",
+    "start:identity-lifecycle": "tsx apps/workers/src/identity-lifecycle.ts",
     "migrate": "tsx scripts/migrate.ts",
     "bootstrap": "tsx scripts/bootstrap.ts",
     "scan": "tsx scripts/scan.ts",
@@ -26,7 +27,8 @@
   },
   "dependencies": {
     "@apidevtools/swagger-parser": "^10.1.1",
-    "@fuzefront/security-client": "npm:@izzywdev/fuzefront-security-client@0.8.0",
+    "@fuzefront/design-system": "file:../design-system",
+    "@fuzefront/security-client": "file:../packages/security",
     "express": "^5.1.0",
     "fast-glob": "^3.3.3",
     "jose": "^6.1.0",
