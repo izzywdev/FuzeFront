@@ -37,7 +37,7 @@ FuzeFront is open to developers, platform engineers, architects, engineering lea
 | **An enterprise architect / CTO** | Review the [Architecture & Governance Guardrails](docs/SOFTWARE_FACTORY.md) and join the [Architecture Review](https://github.com/izzywdev/FuzeFront/issues/1015). |
 | **A software house / agency** | Become a [Design Partner](https://github.com/izzywdev/FuzeFront/issues/1016) to test agentic client delivery against production workloads. |
 | **A solo developer / founder** | Run the [Adoption Quickstart](docs/ADOPTION_QUICKSTART.md) and spin up a federated application in minutes. |
-| **A platform / DevOps engineer** | Test the Kubernetes path (kind/k3s/cloud) and challenge our runtime and infrastructure assumptions. |
+| **A platform / DevOps engineer** | Test the Kubernetes path (kind/k3s/cloud), work through the [Production Readiness Checklist](docs/PRODUCTION_READINESS_CHECKLIST.md), and challenge our runtime and infrastructure assumptions. |
 | **A contributor** | Read [COMMUNITY.md](COMMUNITY.md), pick a focused issue, and submit a PR. |
 
 ### We actively want criticism
@@ -288,7 +288,12 @@ Configure the federation contract, register with the FuzeFront API, and begin pu
 
 Production deployments leverage Kubernetes and GitOps practices. Current deployment assets support k3s and managed Kubernetes clusters orchestrated through Argo CD, with GHCR images and automated TLS via cert-manager.
 
-See:
+Evaluating FuzeFront for a real workload? Start with the
+[Production Readiness Checklist](docs/PRODUCTION_READINESS_CHECKLIST.md) —
+required vs. recommended items across auth, secrets, ingress/TLS, backups,
+and GitOps, plus what FuzeFront does **not** guarantee for you.
+
+See also:
 - `docs/PRODUCTION_DEPLOYMENT.md`
 - `deploy/contabo/README.md`
 - `deploy/helm/fuzefront/README.md`
