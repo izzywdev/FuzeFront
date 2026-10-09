@@ -9,10 +9,19 @@ const keyTerms = (artifact: QualityArtifact) => new Set(
 const sharedTerms = (left: QualityArtifact, right: QualityArtifact) =>
   [...keyTerms(left)].filter(term => keyTerms(right).has(term))
 
-/** Links execution evidence only when a workflow name shares a specific subject with a gate. */
-export function linkExecutionArtifacts(workflowName: string, artifacts: QualityArtifact[]) {
+/**
+ * Links execution evidence to the checked-in gate that produced it. GitHub's
+ * workflow path is authoritative when present; the conservative subject match
+ * remains for legacy/external producers that only supplied a display name.
+ */
+export function linkExecutionArtifacts(workflowName: string, artifacts: QualityArtifact[], workflowPath?: string) {
   const workflow = new Set(workflowName.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g)?.filter(word => !new Set(['workflow', 'test', 'tests', 'check', 'suite', 'post', 'production']).has(word)) ?? [])
-  const gates = artifacts.filter(item => item.kind === 'gate' && [...keyTerms(item)].some(term => workflow.has(term)))
+  const exactGates = workflowPath
+    ? artifacts.filter(item => item.kind === 'gate' && item.sourcePath === workflowPath)
+    : []
+  const gates = exactGates.length
+    ? exactGates
+    : artifacts.filter(item => item.kind === 'gate' && [...keyTerms(item)].some(term => workflow.has(term)))
   const gateTerms = new Set(gates.flatMap(item => [...keyTerms(item)]))
   const policies = artifacts.filter(item => item.kind === 'policy' && [...keyTerms(item)].some(term => gateTerms.has(term)))
   return { policyArtifactIds: policies.map(item => item.id), gateArtifactIds: gates.map(item => item.id) }

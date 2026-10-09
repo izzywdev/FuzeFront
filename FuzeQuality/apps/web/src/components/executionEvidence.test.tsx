@@ -50,6 +50,27 @@ const execution: TestExecution = {
   ],
 }
 
+const artifacts = [
+  {
+    id: 'policy-performance',
+    repositoryId: execution.repositoryId,
+    kind: 'policy' as const,
+    title: 'Performance budget policy',
+    sourcePath: 'governance/performance.md',
+    summary: 'Latency budget policy',
+    evidence: ['p95 latency must remain below 400 ms'],
+  },
+  {
+    id: 'gate-load-budget',
+    repositoryId: execution.repositoryId,
+    kind: 'gate' as const,
+    title: 'Load budget workflow',
+    sourcePath: '.github/workflows/load-test.yml',
+    summary: 'Load budget gate',
+    evidence: ['Run the load budget gate'],
+  },
+]
+
 describe('ExecutionThresholdEvidence', () => {
   it('renders the workflow file with the provider-owned run identity', () => {
     render(<ExecutionEvidenceMetadata execution={execution} />)
@@ -79,13 +100,19 @@ describe('ExecutionThresholdEvidence', () => {
   })
 
   it('renders explicit policy-gate outcomes without inferring pairs', () => {
-    render(<ExecutionGateEvidence execution={execution} />)
+    render(
+      <ExecutionGateEvidence execution={execution} artifacts={artifacts} />
+    )
 
     expect(
       screen.getByRole('region', { name: 'Policy gate evidence' })
     ).toBeInTheDocument()
+    expect(screen.getByText('Performance budget policy')).toBeInTheDocument()
+    expect(screen.getByText('Load budget workflow')).toBeInTheDocument()
     expect(
-      screen.getByText('policy-performance → gate-load-budget')
+      screen.getByText(
+        'governance/performance.md → .github/workflows/load-test.yml'
+      )
     ).toBeInTheDocument()
     expect(screen.getByText('Latency budget exceeded.')).toBeInTheDocument()
     expect(screen.getByText('failed')).toBeInTheDocument()

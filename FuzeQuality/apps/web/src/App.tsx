@@ -3786,7 +3786,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
                   <ExecutionEvidenceLinks execution={execution} />
-                  <ExecutionGateEvidence execution={execution} />
+                  <ExecutionGateEvidence
+                    execution={execution}
+                    artifacts={artifacts}
+                  />
                   <ExecutionThresholdEvidence execution={execution} />
                   {execution.sourceUrl && (
                     <a

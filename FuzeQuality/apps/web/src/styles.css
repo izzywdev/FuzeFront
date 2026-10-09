@@ -162,6 +162,8 @@ button:disabled { cursor: wait; opacity: .55; }
 .execution-gates > strong { color: var(--muted); font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
 .execution-gates ul { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
 .execution-gates li { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(120px, 2fr) auto; align-items: center; gap: 9px; padding-top: 6px; border-top: 1px solid var(--line); }
+.execution-gate-pair { display: grid; gap: 3px; min-width: 0; }
+.execution-gate-pair > span { color: var(--text); font-size: 11px; overflow-wrap: anywhere; }
 .execution-gates code { color: #b9cdda; font: 10px var(--font-mono); overflow-wrap: anywhere; }
 .execution-gates li > span:not(.status-pill) { color: var(--muted); font-size: 10px; }
 .execution-gates .status-passed { color: var(--cyan); background: #123336; }

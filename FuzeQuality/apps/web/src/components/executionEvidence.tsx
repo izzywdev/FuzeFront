@@ -1,4 +1,4 @@
-import type { TestExecution } from '@fuzequality/contracts'
+import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
 
 const THRESHOLD_OPERATOR_LABELS = {
   lt: '<',
@@ -121,29 +121,45 @@ export function ExecutionThresholdEvidence({
 /** Per-pair gate results captured by the producer or an unambiguous workflow link. */
 export function ExecutionGateEvidence({
   execution,
+  artifacts = [],
 }: {
   execution: TestExecution
+  artifacts?: QualityArtifact[]
 }) {
   const gateEvaluations = execution.gateEvaluations ?? []
   if (!gateEvaluations.length) return null
+  const artifactById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
 
   return (
     <section className="execution-gates" aria-label="Policy gate evidence">
       <strong>Policy–gate evidence</strong>
       <ul>
-        {gateEvaluations.map(evaluation => (
-          <li key={`${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`}>
-            <code>
-              {evaluation.policyArtifactId} → {evaluation.gateArtifactId}
-            </code>
-            {evaluation.detail && <span>{evaluation.detail}</span>}
-            <span
-              className={`status-pill status-${evaluation.status}`}
-            >
-              {evaluation.status}
-            </span>
-          </li>
-        ))}
+        {gateEvaluations.map(evaluation => {
+          const policy = artifactById.get(evaluation.policyArtifactId)
+          const gate = artifactById.get(evaluation.gateArtifactId)
+          return (
+            <li key={`${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`}>
+              <div className="execution-gate-pair">
+                <span>
+                  <strong>{policy?.title ?? evaluation.policyArtifactId}</strong>
+                  <span aria-hidden="true"> → </span>
+                  <strong>{gate?.title ?? evaluation.gateArtifactId}</strong>
+                </span>
+                {(policy || gate) && (
+                  <code>
+                    {[policy?.sourcePath, gate?.sourcePath]
+                      .filter(Boolean)
+                      .join(' → ')}
+                  </code>
+                )}
+              </div>
+              {evaluation.detail && <span>{evaluation.detail}</span>}
+              <span className={`status-pill status-${evaluation.status}`}>
+                {evaluation.status}
+              </span>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )

@@ -76,6 +76,7 @@ const testExecutions = [{
   workflowPath: '.github/workflows/post-prod.yml',
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/123', startedAt: '2026-10-08T11:00:00.000Z', completedAt: '2026-10-08T11:02:00.000Z',
   policyArtifactIds: ['policy-artifact'], gateArtifactIds: ['gate-artifact'], summary: 'Authorization assertion failed.',
+  gateEvaluations: [{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', status: 'failed', detail: 'The production authorization assertion failed.' }],
 }]
 
 async function mockQualityApi(page: Page, fixture = portfolio) {
@@ -244,12 +245,16 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Initial evidence was incomplete.')).toBeVisible()
 
     await expect(page.getByText('Production suspension journey', { exact: true })).toBeVisible()
-    await expect(page.getByText('Authorization assertion failed.')).toBeVisible()
+    await expect(page.getByText('Authorization assertion failed.', { exact: true })).toBeVisible()
     const executionMetadata = page.getByLabel('Execution provider metadata')
     await expect(executionMetadata.locator('[data-field="provider-run-id"]')).toContainText('github-actions · 123')
     await expect(executionMetadata.locator('[data-field="attempt"]')).toContainText('2')
     await expect(executionMetadata.locator('[data-field="workflow-path"]')).toContainText('.github/workflows/post-prod.yml')
     await expect(executionMetadata.locator('[data-field="duration"]')).toContainText('2m 0s')
+    const gateEvidence = page.getByLabel('Policy gate evidence')
+    await expect(gateEvidence.getByText('Administrative suspension policy')).toBeVisible()
+    await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
+    await expect(gateEvidence).toContainText('docs/policies/apps.md → .github/workflows/quality.yml')
     await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
     await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()
     await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
