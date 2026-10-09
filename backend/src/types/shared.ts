@@ -1,5 +1,7 @@
 export interface User {
   id: string
+  /** Authenticated server session; never accepted from client input. */
+  sessionId?: string
   email: string
   defaultAppId?: string
   roles: string[]

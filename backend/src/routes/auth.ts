@@ -672,6 +672,30 @@ router.post('/logout', authenticateToken, async (req: any, res) => {
   }
 })
 
+// Persist the user-selected context in the authenticated server session so
+// connector delegation never trusts a browser-supplied organization id.
+router.patch('/session/active-organization', authenticateToken, async (req: any, res) => {
+  const supplied = req.body?.organizationId
+  if (supplied !== null && typeof supplied !== 'string') {
+    return res.status(400).json({ error: 'organizationId must be a string or null' })
+  }
+  if (!req.user?.sessionId) return res.status(401).json({ error: 'Session context is required' })
+  try {
+    const organizationId = supplied === null ? null : toUuid('organization', supplied)
+    if (organizationId && !await isActiveOrgMember(req.user.id, organizationId)) {
+      return res.status(403).json({ error: 'Active organization membership required' })
+    }
+    const updated = await db('sessions')
+      .where({ id: req.user.sessionId, user_id: req.user.id })
+      .where('expires_at', '>', new Date())
+      .update({ active_organization_id: organizationId })
+    if (updated !== 1) return res.status(401).json({ error: 'Session context is unavailable' })
+    return res.json({ activeOrganizationId: supplied })
+  } catch {
+    return res.status(400).json({ error: 'A valid organization identifier is required' })
+  }
+})
+
 /**
  * @swagger
  * /api/auth/oidc/login:

@@ -112,6 +112,7 @@ export const authenticateToken = async (
 
     const user: User = {
       id: userRow.id,
+      sessionId: decoded.sessionId,
       email: userRow.email,
       firstName: userRow.first_name,
       lastName: userRow.last_name,

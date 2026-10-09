@@ -1,5 +1,9 @@
 # Changelog — @fuzefront/security-client
 
+## 0.10.1 — Connector credential scope (unreleased)
+
+- Adds the optional verified organization selector to delegated token exchange.
+
 ## 0.10.0 — Trusted membership bootstrap (unreleased)
 
 - Adds operator membership proof and explicit session tenant verification.
