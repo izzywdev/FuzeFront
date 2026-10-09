@@ -53,6 +53,12 @@ workers:
     resources:
       requests: { cpu: 25m, memory: 64Mi }
       limits: { cpu: 500m, memory: 512Mi }
+  design-test-links:
+    replicas: 1
+    command: ["npm", "run", "start:design-test-links"]
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 512Mi }
 
 config:
   # The platform security service is the authority for portal bearer tokens and

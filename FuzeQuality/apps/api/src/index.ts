@@ -6,6 +6,7 @@ import {
   repositoryInputSchema,
   reviewDecisionSchema,
   expectationExclusionSchema,
+  designTestLinkEventSchema,
   testExecutionInputSchema,
   performanceTestRequestSchema,
   testImplementationRequestSchema,
@@ -118,6 +119,10 @@ const identityLifecycleEventSchema = z.discriminatedUnion('type', [
     type: z.literal('membership.changed'), organizationId: z.string().uuid(), userId: z.string().uuid(),
     role: z.string().min(1), active: z.boolean(),
   }).strict(),
+])
+const designTestLinkLifecycleEventSchema = z.discriminatedUnion('type', [
+  designTestLinkEventSchema.extend({ type: z.literal('design-test-link.upsert') }),
+  designTestLinkEventSchema.extend({ type: z.literal('design-test-link.removed') }),
 ])
 
 async function proxyOrganizationSecurity(
@@ -417,6 +422,27 @@ app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
       )
       break
   }
+  await relayOutboxBatch(store, events)
+  response.status(202).json({ accepted: true, changed })
+})
+app.post('/api/v1/internal/design-test-links', async (request, response) => {
+  const event = designTestLinkLifecycleEventSchema.parse(request.body)
+  const topic = event.type === 'design-test-link.upsert'
+    ? TOPICS.DESIGN_TEST_LINK_VERIFIED
+    : TOPICS.DESIGN_TEST_LINK_REVOKED
+  const changed = await store.projectDesignTestLink(event, {
+    topic,
+    key: `${event.tenantId}:${event.traceLinkId}`,
+    payload: {
+      tenantId: event.tenantId,
+      traceLinkId: event.traceLinkId,
+      fuzexProjectId: event.fuzexProjectId,
+      targetKind: event.targetKind,
+      targetRef: event.targetRef,
+      testCaseId: event.testCaseId,
+      active: event.type === 'design-test-link.upsert',
+    },
+  })
   await relayOutboxBatch(store, events)
   response.status(202).json({ accepted: true, changed })
 })

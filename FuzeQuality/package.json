@@ -20,6 +20,7 @@
     "start:intelligence": "tsx apps/workers/src/intelligence.ts",
     "start:projector": "tsx apps/workers/src/projector.ts",
     "start:identity-lifecycle": "tsx apps/workers/src/identity-lifecycle.ts",
+    "start:design-test-links": "tsx apps/workers/src/design-test-links.ts",
     "migrate": "tsx scripts/migrate.ts",
     "bootstrap": "tsx scripts/bootstrap.ts",
     "scan": "tsx scripts/scan.ts",
