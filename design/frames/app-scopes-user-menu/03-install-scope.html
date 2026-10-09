@@ -22,6 +22,10 @@
   table.matrix th { font-family: var(--font-mono); font-size: var(--text-2xs);
     text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-tertiary); }
   table.matrix code { font-family: var(--font-mono); color: var(--cyan-400); }
+  .ffs-callout--info { margin-top: var(--space-5); background: var(--accent-soft);
+    color: var(--text-secondary); border: 1px solid var(--accent-color); }
+  .ffi-dialog [data-action='install'][disabled] { opacity: 0.45; cursor: not-allowed;
+    box-shadow: none; }
 </style>
 </head>
 <body>
@@ -29,15 +33,17 @@
   <div class="crumb"><a href="index.html">← All frames</a> · Frame (c)</div>
   <h1>Installing an app: where, and for whom</h1>
   <p class="lead">Every registered app declares a <b>scope level</b> — <code>personal</code>,
-    <code>organization</code>, or <code>both</code>. The dialog only ever asks questions the app and
-    the caller's role actually leave open; a single-scope app installs without a scope question at all.</p>
+    <code>organization</code>, or <code>both</code> — and an organization install policy. Personal
+    installs always remain personal. An app may require every organization install to be organization-wide;
+    in that case the dialog states the fixed outcome instead of asking an invalid “me or everyone” question.</p>
 
   <div class="ffs-grid">
 
-    <div class="ffs-case" data-case="both-scopes">
-      <div class="ffs-case__label">scopeLevel = both, caller is org owner</div>
+    <div class="ffs-case" data-case="personal-or-organization-wide">
+      <div class="ffs-case__label">personal available · organization forces everyone</div>
       <div class="ffi-dialog" role="dialog" aria-modal="true"
-           aria-labelledby="t1" data-dialog="install-app" data-scope-level="both">
+           aria-labelledby="t1" data-dialog="install-app" data-scope-level="both"
+           data-organization-install-mode="everyone">
         <div class="ffi-dialog__seam"></div>
         <div class="ffi-dialog__body">
           <h2 class="ffi-dialog__title" id="t1">Install Timesheets</h2>
@@ -59,8 +65,72 @@
             </div>
           </div>
 
-          <div class="ffi-group" data-group="mode" role="radiogroup"
-               aria-label="Who can use it" style="margin-top: var(--space-6);">
+          <div class="ffs-callout ffs-callout--info" data-guard="organization-wide">
+            <div><b>Organization-wide install</b><br />Timesheets will be added for everyone in
+              Northwind Labs. To install only for yourself, choose My personal space.</div>
+          </div>
+        </div>
+        <div class="ffi-dialog__foot">
+          <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          <button class="btn btn-primary" data-action="install">Install</button>
+        </div>
+      </div>
+      <p class="ffs-case__note">The personal destination remains available. Because this app fixes
+        organization installs to <code>everyone</code>, there is no <code>data-group="mode"</code>
+        selector to imply that an organization-only self install is valid.</p>
+    </div>
+
+    <div class="ffs-case" data-case="organization-wide-requires-admin">
+      <div class="ffs-case__label">organization-wide policy · plain member blocked</div>
+      <div class="ffi-dialog" role="dialog" aria-modal="true"
+           data-dialog="install-app" data-scope-level="both"
+           data-organization-install-mode="everyone">
+        <div class="ffi-dialog__seam"></div>
+        <div class="ffi-dialog__body">
+          <h2 class="ffi-dialog__title">Install Timesheets</h2>
+          <p class="ffi-dialog__lead">Choose where this app is installed.</p>
+          <div class="ffi-group" data-group="scope" role="radiogroup" aria-label="Install scope">
+            <div class="ffi-legend">Install to</div>
+            <div class="ffi-card" role="radio" aria-checked="false" data-scope="personal">
+              <div>
+                <div class="ffi-card__title">My personal space</div>
+                <div class="ffi-card__desc">Only you see it. It follows you across organizations.</div>
+              </div>
+            </div>
+            <div class="ffi-card" role="radio" aria-checked="true" data-scope="organization">
+              <div>
+                <div class="ffi-card__title">Northwind Labs</div>
+                <div class="ffi-card__desc">Organization installs include every member.</div>
+              </div>
+            </div>
+          </div>
+          <div class="ffs-callout ffs-callout--warning" style="margin-top: var(--space-5);"
+               data-guard="requires-org-admin">
+            Installing for everyone requires a Northwind Labs owner or admin. Choose My personal
+            space or ask an administrator to install it organization-wide.
+          </div>
+        </div>
+        <div class="ffi-dialog__foot">
+          <button class="btn btn-ghost" data-action="cancel">Cancel</button>
+          <button class="btn btn-primary" data-action="install" disabled aria-disabled="true"
+                  data-guard="requires-org-admin">Install</button>
+        </div>
+      </div>
+      <p class="ffs-case__note">A plain member cannot downgrade the organization policy to
+        “install for me.” The write stays disabled while the organization destination is selected;
+        choosing the still-available personal destination is the safe alternative.</p>
+    </div>
+
+    <div class="ffs-case" data-case="organization-mode-choice">
+      <div class="ffs-case__label">organization policy = both · caller is org owner</div>
+      <div class="ffi-dialog" role="dialog" aria-modal="true"
+           data-dialog="install-app" data-scope-level="organization"
+           data-organization-install-mode="both">
+        <div class="ffi-dialog__seam"></div>
+        <div class="ffi-dialog__body">
+          <h2 class="ffi-dialog__title">Install Release Notes</h2>
+          <p class="ffi-dialog__lead">Installing into <b>Northwind Labs</b>.</p>
+          <div class="ffi-group" data-group="mode" role="radiogroup" aria-label="Who can use it">
             <div class="ffi-legend">Who can use it</div>
             <div class="ffi-card" role="radio" aria-checked="true" data-mode="self">
               <div>
@@ -81,43 +151,8 @@
           <button class="btn btn-primary" data-action="install">Install</button>
         </div>
       </div>
-      <p class="ffs-case__note">The “who can use it” group appears only when the organization scope is
-        selected. Selecting the personal scope hides it — a personal install is always just you.</p>
-    </div>
-
-    <div class="ffs-case" data-case="member-cannot-install-for-everyone">
-      <div class="ffs-case__label">Caller is a plain member — fail-closed</div>
-      <div class="ffi-dialog" role="dialog" aria-modal="true"
-           data-dialog="install-app" data-scope-level="organization">
-        <div class="ffi-dialog__seam"></div>
-        <div class="ffi-dialog__body">
-          <h2 class="ffi-dialog__title">Install Timesheets</h2>
-          <p class="ffi-dialog__lead">Installing into <b>Northwind Labs</b>.</p>
-          <div class="ffi-group" data-group="mode" role="radiogroup" aria-label="Who can use it">
-            <div class="ffi-legend">Who can use it</div>
-            <div class="ffi-card" role="radio" aria-checked="true" data-mode="self">
-              <div>
-                <div class="ffi-card__title">Install for me</div>
-                <div class="ffi-card__desc">Adds it to your launcher in this organization only.</div>
-              </div>
-            </div>
-            <div class="ffi-card ffi-card--disabled" role="radio" aria-checked="false"
-                 aria-disabled="true" data-mode="everyone" data-guard="requires-org-admin">
-              <div>
-                <div class="ffi-card__title">Install for everyone</div>
-                <div class="ffi-card__desc">Requires an organization owner or admin.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="ffi-dialog__foot">
-          <button class="btn btn-ghost" data-action="cancel">Cancel</button>
-          <button class="btn btn-primary" data-action="install">Install</button>
-        </div>
-      </div>
-      <p class="ffs-case__note">One member must not be able to push an app into every colleague's
-        launcher. The option is visible but disabled and says why, so the user learns the rule rather
-        than hitting a 403 after committing.</p>
+      <p class="ffs-case__note">The self/everyone selector exists only for apps whose organization
+        install policy explicitly permits both modes. It is not shown for organization-wide-only apps.</p>
     </div>
 
     <div class="ffs-case" data-case="personal-only">
@@ -165,14 +200,16 @@
 
   <h2 class="sec">What the API accepts</h2>
   <table class="matrix">
-    <thead><tr><th>App scopeLevel</th><th>Requested scope</th><th>Mode</th><th>Outcome</th></tr></thead>
+    <thead><tr><th>App scopeLevel</th><th>Org policy</th><th>Requested scope</th><th>Mode</th><th>Outcome</th></tr></thead>
     <tbody>
-      <tr><td><code>both</code></td><td><code>personal</code></td><td><code>self</code></td><td>Installed for the caller.</td></tr>
-      <tr><td><code>both</code></td><td><code>organization</code></td><td><code>self</code></td><td>Requires active membership.</td></tr>
-      <tr><td><code>both</code></td><td><code>organization</code></td><td><code>everyone</code></td><td>Requires <code>owner</code> or <code>admin</code>, else <b>403</b>.</td></tr>
-      <tr><td><code>personal</code></td><td><code>organization</code></td><td>—</td><td><b>422</b> — scope not permitted for this app.</td></tr>
-      <tr><td><code>organization</code></td><td><code>personal</code></td><td>—</td><td><b>422</b> — scope not permitted for this app.</td></tr>
-      <tr><td>any</td><td>any</td><td>any</td><td>App not visible to the caller → <b>404</b>, never 403 (id probing).</td></tr>
+      <tr><td><code>both</code></td><td><code>everyone</code></td><td><code>personal</code></td><td><code>self</code></td><td>Installed for the caller; org policy does not affect personal space.</td></tr>
+      <tr><td><code>both</code></td><td><code>everyone</code></td><td><code>organization</code></td><td><code>everyone</code></td><td>Requires <code>owner</code> or <code>admin</code>, else <b>403</b>.</td></tr>
+      <tr><td><code>both</code></td><td><code>everyone</code></td><td><code>organization</code></td><td><code>self</code></td><td><b>422</b> — organization policy does not permit a single-member install.</td></tr>
+      <tr><td><code>both</code></td><td><code>both</code></td><td><code>organization</code></td><td><code>self</code></td><td>Requires active membership.</td></tr>
+      <tr><td><code>both</code></td><td><code>both</code></td><td><code>organization</code></td><td><code>everyone</code></td><td>Requires <code>owner</code> or <code>admin</code>, else <b>403</b>.</td></tr>
+      <tr><td><code>personal</code></td><td>—</td><td><code>organization</code></td><td>—</td><td><b>422</b> — scope not permitted for this app.</td></tr>
+      <tr><td><code>organization</code></td><td>any</td><td><code>personal</code></td><td>—</td><td><b>422</b> — scope not permitted for this app.</td></tr>
+      <tr><td>any</td><td>any</td><td>any</td><td>any</td><td>App not visible to the caller → <b>404</b>, never 403 (id probing).</td></tr>
     </tbody>
   </table>
 
@@ -184,8 +221,9 @@
         with the unique-per-target constraint.</li>
     </ul>
     Test hooks: <code>[data-dialog='install-app']</code> · <code>[data-scope-level]</code> ·
+    <code>[data-organization-install-mode='everyone'|'both']</code> ·
     <code>[data-scope='personal'|'organization']</code> · <code>[data-mode='self'|'everyone']</code> ·
-    <code>[data-guard='requires-org-admin']</code> · <code>[data-guard='already-installed']</code> ·
+    <code>[data-guard='organization-wide'|'requires-org-admin'|'already-installed']</code> ·
     <code>[data-action='install'|'uninstall'|'cancel']</code>.
   </div>
 </div>
