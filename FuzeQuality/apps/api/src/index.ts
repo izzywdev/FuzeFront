@@ -369,7 +369,8 @@ app.post('/api/v1/internal/test-executions', async (request, response) => {
   const execution = testExecutionInputSchema.parse(request.body)
   const repository = await store.repository(execution.repositoryId, execution.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  await store.saveTestExecution({ id: request.body.id ?? randomUUID(), ...execution })
+  const id = randomUUID()
+  await store.saveTestExecution({ id, ...execution, externalRunId: execution.externalRunId ?? id })
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
@@ -873,7 +874,7 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     const repository = repositories.find(item => item.id === execution.repositoryId)
     if (!repository?.tenantId) continue
     const links = linkExecutionArtifacts(execution.name, await store.qualityArtifacts(repository.id, repository.tenantId))
-    await store.saveTestExecution({ id: `${headers.data.delivery}:${execution.repositoryId}`, tenantId: repository.tenantId, ...links, ...execution })
+    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, ...links, ...execution })
   }
   for (const command of commands) {
     let commitSha = command.commitSha

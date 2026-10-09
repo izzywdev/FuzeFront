@@ -462,6 +462,12 @@ export type TestExecution = {
   id: string
   repositoryId: string
   tenantId: string
+  /** System that owns the stable execution identity. */
+  provider: 'github-actions' | 'external'
+  /** Provider-owned run identifier. Status changes keep this value stable. */
+  externalRunId: string
+  /** Provider retry/rerun attempt; a new attempt is retained as new evidence. */
+  attempt: number
   revision: string
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
@@ -476,6 +482,9 @@ export type TestExecution = {
 
 export const testExecutionInputSchema = z.object({
   repositoryId: z.string().uuid(), tenantId: z.string().min(1), revision: z.string().min(1).max(200),
+  provider: z.enum(['github-actions', 'external']).default('external'),
+  externalRunId: z.string().trim().min(1).max(500).optional(),
+  attempt: z.number().int().positive().default(1),
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
   sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),

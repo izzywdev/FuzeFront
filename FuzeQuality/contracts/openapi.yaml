@@ -596,6 +596,9 @@ components:
       properties:
         repositoryId: { type: string, format: uuid }
         tenantId: { type: string, minLength: 1 }
+        provider: { type: string, enum: [github-actions, external], default: external }
+        externalRunId: { type: string, minLength: 1, maxLength: 500 }
+        attempt: { type: integer, minimum: 1, default: 1 }
         revision: { type: string, minLength: 1, maxLength: 200 }
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
@@ -616,11 +619,14 @@ components:
         summary: { type: string, maxLength: 5000 }
     TestExecution:
       type: object
-      required: [id, repositoryId, tenantId, revision, kind, status, name, policyArtifactIds, gateArtifactIds]
+      required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds]
       properties:
         id: { type: string }
         repositoryId: { type: string, format: uuid }
         tenantId: { type: string }
+        provider: { type: string, enum: [github-actions, external] }
+        externalRunId: { type: string }
+        attempt: { type: integer, minimum: 1 }
         revision: { type: string }
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }

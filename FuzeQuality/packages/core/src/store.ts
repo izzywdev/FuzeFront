@@ -228,7 +228,7 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async saveTestExecution(execution: TestExecution) {
-    const index = this.executions.findIndex(item => item.repositoryId === execution.repositoryId && item.revision === execution.revision && item.kind === execution.kind && item.name === execution.name && item.sourceUrl === execution.sourceUrl)
+    const index = this.executions.findIndex(item => item.repositoryId === execution.repositoryId && item.provider === execution.provider && item.externalRunId === execution.externalRunId && item.attempt === execution.attempt)
     if (index >= 0) this.executions[index] = execution
     else this.executions.push(execution)
   }
@@ -651,15 +651,15 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]> {
     const result = await this.pool.query('SELECT * FROM fuzequality.test_executions WHERE repository_id=$1 AND tenant_id=$2 ORDER BY completed_at DESC NULLS LAST, created_at DESC', [repositoryId, tenantId])
-    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, revision: row.revision, kind: row.kind, status: row.status, name: row.name, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, summary: row.summary ?? undefined }))
+    return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, summary: row.summary ?? undefined }))
   }
 
   async saveTestExecution(item: TestExecution): Promise<void> {
     await this.pool.query(
-      `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,revision,kind,status,name,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,summary)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (repository_id,revision,kind,name,source_url) DO UPDATE SET status=EXCLUDED.status,started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,summary=EXCLUDED.summary`,
-      [item.id,item.repositoryId,item.tenantId,item.revision,item.kind,item.status,item.name,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.summary ?? null],
+      `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,summary)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,source_url=EXCLUDED.source_url,started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,summary=EXCLUDED.summary`,
+      [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.kind,item.status,item.name,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),item.summary ?? null],
     )
   }
 

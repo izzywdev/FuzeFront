@@ -56,6 +56,38 @@ describe('FuzeQuality GitHub App contract', () => {
   })
 
   it('maps completed default-branch workflow runs to execution evidence', () => {
-    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/1', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({ repositoryId: 'repo-1', kind: 'post-production', status: 'passed' })])
+    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({ repositoryId: 'repo-1', provider: 'github-actions', externalRunId: '101', attempt: 2, kind: 'post-production', status: 'passed' })])
+  })
+
+  it('keeps one run attempt identity while its lifecycle advances', () => {
+    const base = {
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 202, run_attempt: 1, head_branch: 'main', head_sha: 'b'.repeat(40), name: 'Integration suite',
+        status: 'in_progress', conclusion: null, html_url: undefined, run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:10.000Z',
+      },
+    }
+    const running = webhookWorkflowExecutions('workflow_run', { action: 'in_progress', ...base }, repositories)[0]
+    const completed = webhookWorkflowExecutions('workflow_run', {
+      action: 'completed', ...base, workflow_run: { ...base.workflow_run, status: 'completed', conclusion: 'failure', updated_at: '2026-01-01T00:01:00.000Z' },
+    }, repositories)[0]
+    expect(running).toMatchObject({ externalRunId: '202', attempt: 1, status: 'running', sourceUrl: undefined })
+    expect(completed).toMatchObject({ externalRunId: '202', attempt: 1, status: 'failed', sourceUrl: undefined })
+  })
+
+  it('retains rerun attempts and fans evidence out to every onboarded tenant copy', () => {
+    const tenantCopies = [
+      repositories[0],
+      { ...repositories[0], id: 'repo-2', installationId: '84' },
+    ]
+    const payload = {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: { id: 303, run_attempt: 3, head_branch: 'main', head_sha: 'c'.repeat(40), name: 'Load test', status: 'completed', conclusion: 'success', run_started_at: null, updated_at: '2026-01-01T00:01:00.000Z' },
+    }
+    expect(webhookWorkflowExecutions('workflow_run', payload, tenantCopies)).toEqual([
+      expect.objectContaining({ repositoryId: 'repo-1', externalRunId: '303', attempt: 3, kind: 'load' }),
+      expect.objectContaining({ repositoryId: 'repo-2', externalRunId: '303', attempt: 3, kind: 'load' }),
+    ])
   })
 })
