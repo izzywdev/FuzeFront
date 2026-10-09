@@ -46,10 +46,12 @@ describe('test execution evidence', () => {
     const store = new PostgresCatalogStore('postgres://unused')
     ;(store as unknown as { pool: unknown }).pool = { query }
 
-    await store.saveTestExecution({ id: 'delivery', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions', externalRunId: '789', attempt: 1, revision: 'abc', kind: 'ci', status: 'running', name: 'CI', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] })
+    await store.saveTestExecution({ id: 'delivery', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions', externalRunId: '789', attempt: 1, revision: 'abc', kind: 'ci', status: 'running', name: 'CI', workflowPath: '.github/workflows/ci.yml', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] })
 
     expect(query).toHaveBeenCalledOnce()
     const sql = String(query.mock.calls[0][0])
     expect(sql).toContain("WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'")
+    expect(sql).toContain('workflow_path')
+    expect(query.mock.calls[0][1][10]).toBe('.github/workflows/ci.yml')
   })
 })

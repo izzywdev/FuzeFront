@@ -45,6 +45,8 @@ export type WorkflowExecutionCommand = {
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   name: string
+  /** Repository-relative workflow file that produced this run. */
+  workflowPath?: string
   sourceUrl?: string
   startedAt?: string
   completedAt?: string
@@ -85,6 +87,7 @@ const workflowRunSchema = z.object({
     id: z.number().int().positive(), run_attempt: z.number().int().positive(),
     head_branch: z.string().nullable(), head_sha: z.string().regex(/^[0-9a-f]{40}$/i), name: z.string().min(1),
     status: z.enum(['queued', 'in_progress', 'completed']), conclusion: z.enum(['success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', 'action_required']).nullable(),
+    path: z.string().trim().min(1).max(1000).optional(),
     html_url: z.string().url().optional(), run_started_at: z.string().datetime().nullable(), updated_at: z.string().datetime(),
   }),
 })
@@ -143,7 +146,7 @@ export function webhookWorkflowExecutions(event: string, payload: unknown, repos
   const parsed = workflowRunSchema.safeParse(payload)
   if (!parsed.success || parsed.data.workflow_run.head_branch !== parsed.data.repository.default_branch) return []
   const run = parsed.data.workflow_run
-  const kind = /stress/i.test(run.name) ? 'stress' : /load/i.test(run.name) ? 'load' : /post[- ]?prod|production/i.test(run.name) ? 'post-production' : /integration/i.test(run.name) ? 'integration' : 'ci'
+  const kind = workflowExecutionKind(run.name, run.path)
   const status = run.status !== 'completed' ? 'running' : run.conclusion === 'success' ? 'passed' : run.conclusion === 'cancelled' || run.conclusion === 'skipped' ? 'cancelled' : 'failed'
   return findRepositories(repositories, parsed.data.repository).map(repository => ({
     repositoryId: repository.id,
@@ -154,12 +157,26 @@ export function webhookWorkflowExecutions(event: string, payload: unknown, repos
     kind,
     status,
     name: run.name,
+    workflowPath: run.path,
     sourceUrl: run.html_url,
     startedAt: run.run_started_at ?? undefined,
     completedAt: run.status === 'completed' ? run.updated_at : undefined,
     evidenceLinks: run.html_url ? [{ kind: 'report' as const, name: 'GitHub Actions artifacts', url: `${run.html_url}#artifacts` }] : [],
     summary: run.conclusion ?? undefined,
   }))
+}
+
+/** Classifies a run from both its display name and its durable workflow file. */
+export function workflowExecutionKind(
+  name: string,
+  workflowPath?: string,
+): WorkflowExecutionCommand['kind'] {
+  const evidence = `${name} ${workflowPath ?? ''}`.replace(/[_./-]+/g, ' ')
+  if (/\b(?:stress|soak)\b/i.test(evidence)) return 'stress'
+  if (/\b(?:load|performance|k6|artillery)\b/i.test(evidence)) return 'load'
+  if (/\bpost[-_ ]?prod(?:uction)?\b|\bproduction\b/i.test(evidence)) return 'post-production'
+  if (/\bintegration\b/i.test(evidence)) return 'integration'
+  return 'ci'
 }
 
 function findRepositories(repositories: OnboardedRepository[], githubRepository: GithubRepository) {

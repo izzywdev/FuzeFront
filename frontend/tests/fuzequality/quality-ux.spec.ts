@@ -72,6 +72,7 @@ const policyGateEvaluations = [{
 const testExecutions = [{
   id: 'execution-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'post-production', status: 'failed', name: 'Production suspension journey',
   provider: 'github-actions', externalRunId: '123', attempt: 2,
+  workflowPath: '.github/workflows/post-prod.yml',
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/123', startedAt: '2026-10-08T11:00:00.000Z', completedAt: '2026-10-08T11:02:00.000Z',
   policyArtifactIds: ['policy-artifact'], gateArtifactIds: ['gate-artifact'], summary: 'Authorization assertion failed.',
 }]
@@ -216,6 +217,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const executionMetadata = page.getByLabel('Execution provider metadata')
     await expect(executionMetadata.locator('[data-field="provider-run-id"]')).toContainText('github-actions · 123')
     await expect(executionMetadata.locator('[data-field="attempt"]')).toContainText('2')
+    await expect(executionMetadata.locator('[data-field="workflow-path"]')).toContainText('.github/workflows/post-prod.yml')
     await expect(executionMetadata.locator('[data-field="duration"]')).toContainText('2m 0s')
     await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
     await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()

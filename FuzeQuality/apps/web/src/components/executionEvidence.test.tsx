@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceLinks, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
+import { ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -17,6 +17,7 @@ const execution: TestExecution = {
   kind: 'load',
   status: 'failed',
   name: 'Checkout load test',
+  workflowPath: '.github/workflows/load-test.yml',
   policyArtifactIds: [],
   gateArtifactIds: [],
   gateEvaluations: [{
@@ -50,6 +51,13 @@ const execution: TestExecution = {
 }
 
 describe('ExecutionThresholdEvidence', () => {
+  it('renders the workflow file with the provider-owned run identity', () => {
+    render(<ExecutionEvidenceMetadata execution={execution} />)
+
+    expect(screen.getByText('.github/workflows/load-test.yml')).toBeInTheDocument()
+    expect(screen.getByText('external · load-42')).toBeInTheDocument()
+  })
+
   it('renders observed-versus-target values and evaluated outcomes', () => {
     render(<ExecutionThresholdEvidence execution={execution} />)
 

@@ -795,6 +795,7 @@ components:
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string, minLength: 1, maxLength: 500 }
+        workflowPath: { type: string, minLength: 1, maxLength: 1000 }
         sourceUrl: { type: string, format: uri }
         startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
@@ -838,6 +839,7 @@ components:
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string }
+        workflowPath: { type: string }
         sourceUrl: { type: string, format: uri }
         startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }

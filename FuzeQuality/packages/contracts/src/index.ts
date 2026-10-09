@@ -494,6 +494,8 @@ export type TestExecution = {
   kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
   status: 'passed' | 'failed' | 'cancelled' | 'running'
   name: string
+  /** Repository-relative CI workflow that produced this execution. */
+  workflowPath?: string
   sourceUrl?: string
   startedAt?: string
   completedAt?: string
@@ -562,6 +564,7 @@ export const testExecutionInputSchema = z.object({
   attempt: z.number().int().positive().default(1),
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
+  workflowPath: z.string().trim().min(1).max(1000).optional(),
   sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
   policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
   gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),

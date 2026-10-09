@@ -32,12 +32,14 @@ describe('internal execution ingestion compatibility', () => {
       kind: 'ci',
       status: 'running',
       name: 'CI',
+      workflowPath: '.github/workflows/ci.yml',
     })
 
     expect(executionRecord(input, 'generated-id')).toMatchObject({
       provider: 'github-actions',
       externalRunId: '98765',
       attempt: 3,
+      workflowPath: '.github/workflows/ci.yml',
     })
   })
 

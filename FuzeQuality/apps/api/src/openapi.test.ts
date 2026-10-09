@@ -102,6 +102,8 @@ describe('contract discovery', () => {
       )
       expect(schemas.TestExecution.required).toContain('evidenceLinks')
       expect(schemas.TestExecutionEvidenceLink.properties.url.pattern).toBe('^https://')
+      expect(schemas.TestExecutionInput.properties.workflowPath.maxLength).toBe(1000)
+      expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )
