@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ConnectorIcon from '../components/ConnectorIcon'
-import { ConnectorEntry, connectionLabel, connectorRequest } from '../lib/connectors'
+import { ConnectorEntry, connectionLabel, connectorRequest, isConnectorStatus, withGmailCatalogEntry } from '../lib/connectors'
 
 export default function ConnectorsPage() {
   const generation = useRef(0)
@@ -18,11 +18,12 @@ export default function ConnectorsPage() {
     try {
       const catalog = await connectorRequest<{ connectors: ConnectorEntry[] }>('/catalog')
       if (current !== generation.current) return
-      const entries = catalog.connectors.map(entry => ({ ...entry, status: 'loading' as const }))
+      const entries = withGmailCatalogEntry(catalog.connectors).map(entry => ({ ...entry, status: 'loading' as const }))
       setConnectors(entries)
       await Promise.all(entries.map(async entry => {
         try {
           const status = await connectorRequest<ConnectorEntry>(`/${entry.id}`)
+          if (!isConnectorStatus(status.status)) throw new Error('Invalid connector status')
           const resolved = pendingId === entry.id && status.status !== 'connected' ? { ...status, status: 'authorization_pending' as const } : status
           if (current === generation.current) setConnectors(all => all.map(item => item.id === entry.id ? { ...entry, ...resolved } : item))
         } catch {
@@ -38,7 +39,7 @@ export default function ConnectorsPage() {
   const visible = connectors.filter(item => `${item.name} ${item.description || ''}`.toLowerCase().includes(query.toLowerCase()))
   const hasStatusError = connectors.some(item => item.status === 'error')
 
-  return <main style={{ padding: 'var(--space-8)', maxWidth: 960, margin: '0 auto' }}>
+  return <main style={{ padding: 'var(--space-8)', maxWidth: 960, margin: '0 auto', textAlign: 'left' }}>
     <header style={{ marginBottom: 'var(--space-6)' }}>
       <h1 style={{ margin: 0, letterSpacing: '-0.02em' }}>Connectors</h1>
       <p style={{ color: 'var(--text-secondary)', marginBottom: 0 }}>Connect the tools FuzeFront can use on your behalf. Your credentials stay in FuzeKeys.</p>
@@ -48,11 +49,11 @@ export default function ConnectorsPage() {
       <Search aria-hidden="true" size={18} style={{ position: 'absolute', left: 14, top: 13, color: 'var(--text-secondary)' }} />
       <input aria-label="Search connectors" placeholder="Search connectors" value={query} onChange={event => setQuery(event.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px 12px 42px', borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }} />
     </label>
-    {error && <div role="alert" style={{ color: 'var(--error-color)', marginBottom: 'var(--space-4)' }}>{error} <button onClick={() => void load()}>Retry</button></div>}
-    {!error && hasStatusError && <button onClick={() => void load()} style={{ marginBottom: 'var(--space-4)' }}>Retry</button>}
+    {error && <div role="alert" style={{ color: 'var(--error-color)', marginBottom: 'var(--space-4)' }}>{error} <button disabled={loading} onClick={() => void load()}>Retry</button></div>}
+    {!error && hasStatusError && <button disabled={loading} onClick={() => void load()} style={{ marginBottom: 'var(--space-4)' }}>Retry</button>}
     {loading && !connectors.length ? <p role="status">Loading connector catalog…</p> :
       <section aria-label="Connector catalog" style={{ border: '1px solid var(--border-color)', borderRadius: 18, overflow: 'hidden', background: 'var(--bg-secondary)' }}>
-        {visible.map((connector, index) => <Link key={connector.id} to={`/connectors/${encodeURIComponent(connector.id)}`} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', color: 'inherit', textDecoration: 'none', borderTop: index ? '1px solid var(--border-color)' : undefined }}>
+        {visible.map((connector, index) => <Link key={connector.id} to={`/connectors/${encodeURIComponent(connector.id)}${pendingId === connector.id ? '?authorization_pending=1' : ''}`} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', color: 'inherit', textDecoration: 'none', borderTop: index ? '1px solid var(--border-color)' : undefined }}>
           <ConnectorIcon id={connector.id} name={connector.name} />
           <span style={{ minWidth: 0, flex: 1 }}><strong style={{ display: 'block', fontSize: '1rem' }}>{connector.name}</strong><span style={{ display: 'block', color: 'var(--text-secondary)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{connector.description || connectionLabel(connector)}</span></span>
           <span style={{ color: connector.status === 'connected' ? 'var(--success-color)' : 'var(--text-secondary)', fontSize: '.9rem', textAlign: 'right' }}>{connectionLabel(connector)}</span>

@@ -26,6 +26,8 @@ test('allows retrying an unavailable connection status before connecting', async
 
   fireEvent.click(screen.getByRole('button', { name: 'Retry status' }))
   await waitFor(() => expect(screen.getByText('Not connected')).toBeTruthy())
+  expect((screen.getByRole('button', { name: 'Save key' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'test-key' } })
   expect((screen.getByRole('button', { name: 'Save key' }) as HTMLButtonElement).disabled).toBe(false)
 })
 

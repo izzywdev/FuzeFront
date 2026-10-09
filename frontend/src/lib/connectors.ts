@@ -9,6 +9,21 @@ export type ConnectorEntry = {
   configured?: boolean
   status?: ConnectorStatus
   identity_email?: string
+  configuration?: { query?: string; include_spam_trash?: boolean }
+}
+
+export const CONNECTOR_STATUSES: ConnectorStatus[] = ['connected', 'disconnected', 'error', 'authorization_pending', 'loading']
+
+export function isConnectorStatus(value: unknown): value is ConnectorStatus {
+  return typeof value === 'string' && CONNECTOR_STATUSES.includes(value as ConnectorStatus)
+}
+
+/** Gmail remains served by the legacy OAuth route, so include it in the unified UI catalog. */
+export function withGmailCatalogEntry(entries: ConnectorEntry[]): ConnectorEntry[] {
+  return entries.some(entry => entry.id === 'google-gmail') ? entries : [
+    { id: 'google-gmail', name: 'Google Gmail', description: 'Read and search email', authentication: 'oauth', configured: true },
+    ...entries,
+  ]
 }
 
 export async function connectorRequest<T>(path: string, init?: RequestInit): Promise<T> {
