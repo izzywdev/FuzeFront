@@ -34,8 +34,8 @@ describe('repository scanner', () => {
     await writeFile(join(root, 'load', 'k6-test.js'), 'export const options = { thresholds: { http_req_failed: ["rate<0.01"] } }')
     await writeFile(join(root, 'performance.yml'), 'name: Load performance\non: workflow_dispatch')
     await writeFile(join(root, 'journey.md'), '# Checkout journey\nThe user follows the checkout flow to the confirmation screen.')
-    await writeFile(join(root, 'stories', 'Checkout.stories.tsx'), `export default { title: 'Checkout' }; export const Complete = { play: async () => {} }`)
-    await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {})`)
+    await writeFile(join(root, 'stories', 'Checkout.stories.tsx'), `export default { title: 'Checkout' }; export const Complete = { play: async () => {} }; export const Empty = {}`)
+    await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {}); test('customer sees an empty basket', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
     await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
     await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
@@ -64,6 +64,17 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
       expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
     ]))
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'story' && item.sourcePath === 'stories/Checkout.stories.tsx')).toHaveLength(2)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan' && item.sourcePath === 'tests/checkout.spec.ts')).toHaveLength(2)
+
+    await writeFile(join(root, 'journey.md'), '# Checkout journey\nThe user follows a revised checkout flow to the receipt screen.')
+    const rescanned = await scanRepository(repository, root)
+    expect(rescanned.revision).not.toBe(result.revision)
+    expect(new Set(rescanned.qualityArtifacts?.map(item => item.id)).size).toBe(
+      rescanned.qualityArtifacts?.length
+    )
+    const originalIds = new Set(result.qualityArtifacts?.map(item => item.id))
+    expect(rescanned.qualityArtifacts?.every(item => !originalIds.has(item.id))).toBe(true)
   })
 
   it('builds API and frontend expectations from repository files', async () => {

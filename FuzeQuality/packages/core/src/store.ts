@@ -28,6 +28,12 @@ import { buildApiExpectations, buildFindings, buildFrontendExpectations } from '
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
+
+export const currentQualityArtifactsSql = `SELECT id, repository_id, kind, title, source_path, summary, evidence, execution_target
+       FROM fuzequality.repository_quality_artifacts
+       WHERE repository_id=$1
+         AND revision=(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)
+       ORDER BY kind, source_path, title, id`
 export type PolicyGateReviewHistoryEntry = { evaluationId: string; tenantId: string; status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string; createdAt: string }
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
@@ -688,12 +694,7 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async qualityArtifacts(repositoryId: string, tenantId: string): Promise<QualityArtifact[]> {
     if (!await this.repository(repositoryId, tenantId)) return []
-    const result = await this.pool.query(
-      `SELECT DISTINCT ON (kind, source_path) id, repository_id, kind, title, source_path, summary, evidence, execution_target
-       FROM fuzequality.repository_quality_artifacts
-       WHERE repository_id=$1 ORDER BY kind, source_path, discovered_at DESC`,
-      [repositoryId],
-    )
+    const result = await this.pool.query(currentQualityArtifactsSql, [repositoryId])
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
   }
 
@@ -1108,7 +1109,7 @@ export class PostgresCatalogStore implements CatalogStore {
       for (const item of result.qualityArtifacts ?? []) await client.query(
         `INSERT INTO fuzequality.repository_quality_artifacts (id,repository_id,revision,kind,title,source_path,summary,evidence,execution_target)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (repository_id,revision,kind,source_path) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
+         ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,evidence=EXCLUDED.evidence,execution_target=EXCLUDED.execution_target,discovered_at=now()`,
         [item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
       )
       await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails)])

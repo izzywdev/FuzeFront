@@ -25,6 +25,13 @@ import { parseOpenApiDocument, referencedOpenApiPaths } from './openapi'
 const digest = (...parts: string[]) =>
   createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24)
 
+const qualityArtifactId = (
+  repositoryId: string,
+  revision: string,
+  kind: QualityArtifact['kind'],
+  ...identity: string[]
+) => `artifact:${repositoryId}:${digest(revision, kind, ...identity)}`
+
 const fingerprint = (content: string) => createHash('sha256').update(content).digest('hex')
 
 const normalize = (path: string) => path.split(sep).join('/')
@@ -537,9 +544,14 @@ export async function scanRepository(
   const findings = buildFindings(repository.id, operations, surfaces, expectations, owner)
   const discoveredQuality = await discoverQualityArtifacts(root, repository, ignore)
   contentFingerprints.push(...discoveredQuality.fingerprints)
+  const revision = digest(
+    repository.name,
+    SCANNER_VERSION,
+    ...contentFingerprints.sort()
+  )
   const qualityArtifacts = [
     ...surfaces.filter(surface => surface.routePath).map(surface => ({
-      id: `artifact:${repository.id}:${digest('route', surface.sourcePath)}`,
+      id: qualityArtifactId(repository.id, revision, 'route', surface.sourcePath),
       repositoryId: repository.id,
       kind: 'route' as const,
       title: surface.name,
@@ -548,7 +560,7 @@ export async function scanRepository(
       evidence: [surface.routePath!],
     })),
     ...operations.map(operation => ({
-      id: `artifact:${repository.id}:${digest('route', operation.documentPath, operation.method, operation.path)}`,
+      id: qualityArtifactId(repository.id, revision, 'route', operation.documentPath, operation.method, operation.path),
       repositoryId: repository.id,
       kind: 'route' as const,
       title: `${operation.method.toUpperCase()} ${operation.path}`,
@@ -557,7 +569,7 @@ export async function scanRepository(
       evidence: [operation.operationId ?? operation.path],
     })),
     ...stories.map(story => ({
-      id: `artifact:${repository.id}:${digest('story', story.sourcePath, story.id)}`,
+      id: qualityArtifactId(repository.id, revision, 'story', story.sourcePath, story.id),
       repositoryId: repository.id,
       kind: 'story' as const,
       title: `${story.title} / ${story.name}`,
@@ -566,7 +578,7 @@ export async function scanRepository(
       evidence: [story.previewPath, ...(story.hasPlay ? ['play-function'] : [])],
     })),
     ...tests.map(test => ({
-      id: `artifact:${repository.id}:${digest('test-plan', test.sourcePath, test.id)}`,
+      id: qualityArtifactId(repository.id, revision, 'test-plan', test.sourcePath, test.id),
       repositoryId: repository.id,
       kind: 'test-plan' as const,
       title: test.title,
@@ -574,7 +586,10 @@ export async function scanRepository(
       summary: `${test.level} ${test.framework} test discovered during repository analysis`,
       evidence: [...new Set([test.id, ...test.targets])].slice(0, 20),
     })),
-    ...discoveredQuality.artifacts,
+    ...discoveredQuality.artifacts.map(item => ({
+      ...item,
+      id: qualityArtifactId(repository.id, revision, item.kind, item.sourcePath),
+    })),
   ]
   for (const diagnostic of diagnostics.filter(item => item.category === 'openapi')) {
     findings.push({
@@ -591,10 +606,6 @@ export async function scanRepository(
       status: 'open',
     })
   }
-  const revision = digest(
-    repository.name,
-    ...contentFingerprints.sort()
-  )
   const candidate = (
     sourcePath: string,
     kind: RepositoryScanCandidate['kind']

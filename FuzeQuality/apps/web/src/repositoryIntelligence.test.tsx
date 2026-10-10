@@ -81,6 +81,26 @@ const storyArtifact: QualityArtifact = {
   evidence: ['checkout--complete'],
 }
 
+const documentationArtifact: QualityArtifact = {
+  id: 'artifact-documentation-1',
+  repositoryId: repository.id,
+  kind: 'documentation',
+  title: 'Checkout journey',
+  sourcePath: 'docs/checkout.md',
+  summary: 'Repository documentation: Checkout journey',
+  evidence: ['The buyer completes checkout.'],
+}
+
+const testPlanArtifact: QualityArtifact = {
+  id: 'artifact-test-plan-1',
+  repositoryId: repository.id,
+  kind: 'test-plan',
+  title: 'customer completes checkout',
+  sourcePath: 'tests/checkout.spec.ts',
+  summary: 'e2e playwright test discovered during repository analysis',
+  evidence: ['test:checkout'],
+}
+
 const loadArtifact: QualityArtifact = {
   id: 'artifact-load-1',
   repositoryId: repository.id,
@@ -310,6 +330,25 @@ describe('RepositoryIntelligence flow inventory', () => {
       screen.getByText('story · src/Checkout.stories.tsx')
     ).toBeVisible()
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
+  })
+
+  it('renders repository evidence classes supplied to reviewed flow analysis', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([
+      storyArtifact,
+      documentationArtifact,
+      testPlanArtifact,
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByRole('heading', { name: 'Storybook states' })).toBeVisible()
+    expect(screen.getByText(storyArtifact.title)).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Repository documentation' })).toBeVisible()
+    expect(screen.getByText(documentationArtifact.title)).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Existing test plans' })).toBeVisible()
+    expect(screen.getByText(testPlanArtifact.title)).toBeVisible()
   })
 
   it('shows a durable handoff message after dispatching a performance workflow', async () => {

@@ -3402,6 +3402,21 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       'Routes and API transitions discovered from repository analysis',
     ],
     [
+      'story',
+      'Storybook states',
+      'Component states and interaction stories supplied to reviewed flow analysis',
+    ],
+    [
+      'documentation',
+      'Repository documentation',
+      'Journey, policy, release, and testing context discovered in source',
+    ],
+    [
+      'test-plan',
+      'Existing test plans',
+      'Repository test cases available for flow and coverage analysis',
+    ],
+    [
       'policy',
       'Policies',
       'Repository policy evidence awaiting governance review',
