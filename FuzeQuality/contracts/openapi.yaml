@@ -431,6 +431,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
+        - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -457,6 +458,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
+        - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -530,6 +532,11 @@ components:
       name: status
       in: query
       schema: { $ref: '#/components/schemas/ExecutionStatus' }
+    ExecutionProvider:
+      name: provider
+      in: query
+      description: Execution-ingestion origin.
+      schema: { $ref: '#/components/schemas/ExecutionProvider' }
     ExecutionFrom:
       name: from
       in: query
@@ -762,6 +769,9 @@ components:
     ExecutionStatus:
       type: string
       enum: [passed, failed, cancelled, running]
+    ExecutionProvider:
+      type: string
+      enum: [github-actions, external]
     TestExecutionThresholdInput:
       type: object
       additionalProperties: false

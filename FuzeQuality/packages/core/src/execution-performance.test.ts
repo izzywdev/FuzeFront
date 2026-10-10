@@ -57,6 +57,8 @@ it('filters and trends only timestamped execution evidence', () => {
     { id: 'two', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'two', attempt: 1, revision: 'b', kind: 'load' as const, status: 'failed' as const, name: 'Load', completedAt: '2026-10-08T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },
   ]
   expect(filterTestExecutions(executions, { kind: 'load', from: '2026-10-08T00:00:00.000Z' })).toEqual([executions[1]])
+  expect(filterTestExecutions(executions, { provider: 'github-actions' })).toEqual([])
+  expect(filterTestExecutions(executions, { provider: 'external' })).toEqual(executions)
   expect(executionOutcomeTrend(executions)).toEqual([
     { date: '2026-10-07', passed: 1, failed: 0, cancelled: 0, running: 0 },
     { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0 },

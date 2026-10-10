@@ -10,6 +10,7 @@ import { z } from 'zod'
 export const executionFilterSchema = z.object({
   kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']).optional(),
   status: z.enum(['passed', 'failed', 'cancelled', 'running']).optional(),
+  provider: z.enum(['github-actions', 'external']).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
 }).strict().superRefine((value, context) => {

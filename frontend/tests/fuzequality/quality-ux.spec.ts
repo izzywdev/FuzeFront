@@ -256,6 +256,11 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
     await expect(gateEvidence).toContainText('docs/policies/apps.md → .github/workflows/quality.yml')
     await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
+    const providerRequest = page.waitForRequest(request =>
+      request.url().includes('/test-executions?provider=github-actions')
+    )
+    await page.getByLabel('Ingestion provider').selectOption('github-actions')
+    await providerRequest
     await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
     await expect(page.getByLabel('Evidence repository')).toHaveText('izzywdev/FuzeService')
     await expect(page.getByText('docs/policies/apps.md → .github/workflows/authorization.yml')).toBeVisible()

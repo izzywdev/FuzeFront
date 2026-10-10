@@ -333,6 +333,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
   })
 
+  it('filters execution evidence and gate performance by provider', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Ingestion provider'), {
+      target: { value: 'github-actions' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        provider: 'github-actions',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        provider: 'github-actions',
+      })
+    })
+  })
+
   it('submits governance rationale through inline Design System controls', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([

@@ -3012,6 +3012,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionStatus, setExecutionStatus] = useState<
     TestExecution['status'] | ''
   >('')
+  const [executionProvider, setExecutionProvider] = useState<
+    TestExecution['provider'] | ''
+  >('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
   const invalidExecutionRange = Boolean(
@@ -3131,11 +3134,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       Object.entries({
         kind: executionKind,
         status: executionStatus,
+        provider: executionProvider,
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionFrom, executionUntil])
   useEffect(() => {
     let active = true
     void Promise.all(
@@ -3730,6 +3734,21 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     {status}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Ingestion provider
+              <select
+                value={executionProvider}
+                onChange={event =>
+                  setExecutionProvider(
+                    event.target.value as TestExecution['provider'] | ''
+                  )
+                }
+              >
+                <option value="">All providers</option>
+                <option value="github-actions">GitHub Actions</option>
+                <option value="external">External ingestion</option>
               </select>
             </label>
             <label>

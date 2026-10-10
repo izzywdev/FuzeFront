@@ -6,9 +6,14 @@ describe('execution evidence filter', () => {
     expect(executionFilterSchema.safeParse({
       kind: 'post-production',
       status: 'failed',
+      provider: 'github-actions',
       from: '2026-10-01T00:00:00.000Z',
       until: '2026-10-08T00:00:00.000Z',
     }).success).toBe(true)
+  })
+
+  it('rejects an unknown execution provider', () => {
+    expect(executionFilterSchema.safeParse({ provider: 'jenkins' }).success).toBe(false)
   })
 
   it('rejects an inverted time range instead of returning misleading empty evidence', () => {
