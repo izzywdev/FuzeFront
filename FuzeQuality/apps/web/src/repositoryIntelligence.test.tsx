@@ -116,12 +116,12 @@ const loadArtifact: QualityArtifact = {
   repositoryId: repository.id,
   kind: 'load-test',
   title: 'Load test',
-  sourcePath: '.github/workflows/load-test.yml',
+  sourcePath: '.github/workflows/nightly-benchmark.yml',
   summary: 'Load workflow',
   evidence: ['workflow_dispatch'],
   execution: {
     provider: 'github-actions',
-    workflowPath: '.github/workflows/load-test.yml',
+    workflowPath: '.github/workflows/nightly-benchmark.yml',
     trigger: 'workflow_dispatch',
   },
 }
@@ -478,7 +478,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       )
     )
     expect(await screen.findByRole('status')).toHaveTextContent(
-      `Dispatched .github/workflows/load-test.yml from main at analyzed commit ${'a'.repeat(40)}`
+      `Dispatched ${loadArtifact.sourcePath} from main at analyzed commit ${'a'.repeat(40)}`
     )
   })
 

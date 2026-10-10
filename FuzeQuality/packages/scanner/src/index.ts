@@ -59,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.7.0'
+export const SCANNER_VERSION = '1.8.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -76,39 +76,36 @@ const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: strin
   // Treat every checked-in workflow as gate evidence and let the reviewed
   // policy/gate analysis decide whether it actually guards a policy.
   { kind: 'gate', glob: '**/.github/workflows/*.{yaml,yml}' },
-  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,load-test,load-tests,performance,performance-test,performance-tests,k6,artillery}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'load-test', glob: '**/{load,performance,k6,artillery}.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'load-test', glob: '**/{load,load-test,performance,performance-test,k6,artillery}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
   { kind: 'load-test', glob: '**/.github/workflows/{load,load-test,performance,performance-test,k6,artillery}.{yaml,yml}' },
-  { kind: 'stress-test', glob: '**/{stress,soak}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,stress-test,stress-tests,soak,soak-test,soak-tests}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'stress-test', glob: '**/{stress,soak}.{ts,js,mjs,py,json,yaml,yml}' },
   { kind: 'stress-test', glob: '**/{stress,stress-test,soak,soak-test}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
   { kind: 'stress-test', glob: '**/.github/workflows/{stress,stress-test,soak,soak-test}.{yaml,yml}' },
 ]
 
-function performanceExecutionTarget(
-  kind: QualityArtifact['kind'],
+function performanceWorkflowMetadata(
   sourcePath: string,
   source: string,
-): QualityArtifact['execution'] {
-  if (
-    !['load-test', 'stress-test'].includes(kind) ||
-    !sourcePath.startsWith('.github/workflows/') ||
-    !/\.ya?ml$/i.test(sourcePath)
-  ) return undefined
+): { kind: 'load-test' | 'stress-test'; execution?: NonNullable<QualityArtifact['execution']> } | undefined {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return undefined
   try {
     const document = parseYaml(source) as {
       on?: unknown
       env?: Record<string, unknown>
     } | undefined
     const triggers = document?.on
-    const reviewedKind = kind === 'load-test' ? 'load' : 'stress'
+    const reviewedKind = document?.env?.FUZEQUALITY_PERFORMANCE
+    if (reviewedKind !== 'load' && reviewedKind !== 'stress') return undefined
     const dispatchable = triggers === 'workflow_dispatch' ||
       (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
       (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
-    return dispatchable && document?.env?.FUZEQUALITY_PERFORMANCE === reviewedKind
-      ? { provider: 'github-actions', workflowPath: sourcePath, trigger: 'workflow_dispatch' }
-      : undefined
+    return {
+      kind: reviewedKind === 'load' ? 'load-test' : 'stress-test',
+      ...(dispatchable ? { execution: { provider: 'github-actions', workflowPath: sourcePath, trigger: 'workflow_dispatch' } as const } : {}),
+    }
   } catch {
     return undefined
   }
@@ -149,17 +146,28 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
       const source = await qualitySource(file)
       if (source === undefined) continue
       const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required|needs:|playwright|production|deploy|test/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
-      const key = `${candidate.kind}:${sourcePath}`
-      artifacts.set(key, {
-        id: `artifact:${repository.id}:${digest(candidate.kind, sourcePath)}`,
-        repositoryId: repository.id,
-        kind: candidate.kind,
-        title: sourcePath.split('/').at(-1) ?? sourcePath,
-        sourcePath,
-        summary: `${candidate.kind.replace('-', ' ')} evidence discovered during repository analysis`,
-        evidence,
-        execution: performanceExecutionTarget(candidate.kind, sourcePath, source),
-      })
+      const performance = performanceWorkflowMetadata(sourcePath, source)
+      const record = (kind: QualityArtifact['kind'], execution?: QualityArtifact['execution']) => {
+        const key = `${kind}:${sourcePath}`
+        artifacts.set(key, {
+          id: `artifact:${repository.id}:${digest(kind, sourcePath)}`,
+          repositoryId: repository.id,
+          kind,
+          title: sourcePath.split('/').at(-1) ?? sourcePath,
+          sourcePath,
+          summary: `${kind.replace('-', ' ')} evidence discovered during repository analysis`,
+          evidence,
+          execution,
+        })
+      }
+      if (candidate.kind === 'gate') {
+        record('gate')
+        if (performance) record(performance.kind, performance.execution)
+      } else if (performance) {
+        record(performance.kind, performance.execution)
+      } else {
+        record(candidate.kind)
+      }
     }
   }
   const documentationFiles = await fg('**/*.{md,mdx}', { cwd: root, ignore, onlyFiles: true, dot: true, followSymbolicLinks: false })

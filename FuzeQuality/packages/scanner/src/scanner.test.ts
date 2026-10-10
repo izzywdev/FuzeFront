@@ -41,6 +41,8 @@ describe('repository scanner', () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-governance-'))
     await mkdir(join(root, 'governance'), { recursive: true })
     await mkdir(join(root, 'load'), { recursive: true })
+    await mkdir(join(root, 'load-tests'), { recursive: true })
+    await mkdir(join(root, 'stress-tests'), { recursive: true })
     await mkdir(join(root, 'stories'), { recursive: true })
     await mkdir(join(root, 'tests'), { recursive: true })
     await mkdir(join(root, 'src'), { recursive: true })
@@ -50,6 +52,8 @@ describe('repository scanner', () => {
     await writeFile(join(root, 'governance', 'security-policy.md'), '# Policy\nEvery release must pass the authentication gate.')
     await writeFile(join(root, 'governance', 'gate_platform_auth.py'), 'REQUIRED_CHECK = "authentication gate"')
     await writeFile(join(root, 'load', 'k6-test.js'), 'export const options = { thresholds: { http_req_failed: ["rate<0.01"] } }')
+    await writeFile(join(root, 'load-tests', 'scenario.js'), 'export const options = { vus: 10 }')
+    await writeFile(join(root, 'stress-tests', 'scenario.js'), 'export const options = { vus: 100 }')
     await writeFile(join(root, 'performance.yml'), 'name: Load performance\non: workflow_dispatch')
     await writeFile(join(root, 'journey.md'), '# Checkout journey\nThe user follows the checkout flow to the confirmation screen.')
     await writeFile(join(root, 'stories', 'Checkout.stories.tsx'), `export default { title: 'Checkout' }; export const Complete = { play: async () => {} }; export const Empty = {}`)
@@ -59,6 +63,7 @@ describe('repository scanner', () => {
     await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
     await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Invalid legacy marker\nx-fuzequality-performance: load\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
     await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\nenv:\n  FUZEQUALITY_PERFORMANCE: stress\non: [workflow_dispatch]\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
+    await writeFile(join(root, '.github', 'workflows', 'nightly-benchmark.yml'), 'name: Nightly benchmark\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non: workflow_dispatch\njobs:\n  benchmark:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run benchmark')
     await writeFile(join(root, 'src', 'loader.ts'), 'export const loader = () => "production"')
     await writeFile(join(root, 'src', 'performanceConfig.js'), 'export const budget = 100')
     await writeFile(join(root, 'app', 'loading.ts'), 'export default function Loading() {}')
@@ -71,6 +76,8 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/ci.yml' }),
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/post-prod.yml' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'load/k6-test.js' }),
+      expect.objectContaining({ kind: 'load-test', sourcePath: 'load-tests/scenario.js' }),
+      expect.objectContaining({ kind: 'stress-test', sourcePath: 'stress-tests/scenario.js' }),
       expect.objectContaining({ kind: 'load-test', sourcePath: 'performance.yml' }),
       expect.objectContaining({
         kind: 'load-test',
@@ -91,6 +98,16 @@ describe('repository scanner', () => {
         },
       }),
       expect.objectContaining({ kind: 'documentation', sourcePath: 'journey.md' }),
+      expect.objectContaining({
+        kind: 'load-test',
+        sourcePath: '.github/workflows/nightly-benchmark.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/nightly-benchmark.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
+      expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/nightly-benchmark.yml' }),
       expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
       expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
     ]))
@@ -190,7 +207,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.7.0',
+      scannerVersion: '1.8.0',
       partial: false,
       counts: {
         operations: 1,
