@@ -1,0 +1,125 @@
+{{- if and .Values.configService.enabled .Values.configMcp.enabled }}
+{{/*
+MCP SSE gateway for the config-service.
+
+Same shared `ghcr.io/izzywdev/fuze-mcp-gateway` image as the other gateways;
+what makes this pod "the config gateway" is the two mounted files: the
+config-service OpenAPI spec (a COMPUTED copy of services/config-service/
+openapi.yaml with the secret-reveal path removed — verify with
+scripts/check-mcp-spec-drift.sh) and the reversibility overrides.
+
+SECRET MATERIAL: POST /v1/config/secrets/reveal returns plaintext and is
+deliberately NOT in the mounted spec, so no tool exists for it.
+
+UPSTREAM: in-cluster Service of the config-service. No /v1 suffix on the base
+URL — the spec's operation paths already start with /v1. The gateway forwards
+the CALLER'S bearer token; the config-service's own authz still applies.
+Both configService.enabled and configMcp.enabled must be true.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-mcp-spec
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-mcp-gateway
+data:
+  openapi.yaml: |-
+{{ .Files.Get "files/config-service-openapi.yaml" | indent 4 }}
+  tools.overrides.yaml: |-
+{{ .Files.Get "files/mcp-tools-config.overrides.yaml" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-mcp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-mcp-gateway
+spec:
+  replicas: {{ .Values.configMcp.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: fuzefront
+      app.kubernetes.io/component: config-mcp-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: fuzefront
+        app.kubernetes.io/component: config-mcp-gateway
+      annotations:
+        checksum/spec: {{ .Files.Get "files/config-service-openapi.yaml" | sha256sum }}
+        checksum/overrides: {{ .Files.Get "files/mcp-tools-config.overrides.yaml" | sha256sum }}
+    spec:
+      {{- include "fuzefront.scheduling" (dict "svc" .Values.configMcp "root" .) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp-gateway
+          image: "{{ .Values.configMcp.image.repository }}:{{ .Values.configMcp.image.tag }}"
+          imagePullPolicy: {{ .Values.configMcp.image.pullPolicy | default .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.configMcp.port }}
+          env:
+            - name: MCP_PRODUCT
+              value: fuzefront-config
+            - name: MCP_UPSTREAM_BASE_URL
+              value: {{ printf "http://fuzefront-config-service:%v" .Values.configService.port | quote }}
+            - name: MCP_OPENAPI_SPEC
+              value: /spec/openapi.yaml
+            - name: MCP_TOOL_OVERRIDES
+              value: /spec/tools.overrides.yaml
+            - name: PORT
+              value: {{ .Values.configMcp.port | quote }}
+          # No credential env var — the gateway forwards the caller's identity.
+          # It refuses to start if MCP_UPSTREAM_TOKEN / MCP_SERVICE_TOKEN /
+          # MCP_API_KEY is present (packages/mcp-gateway/src/config.ts).
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.configMcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: spec
+              mountPath: /spec
+              readOnly: true
+      volumes:
+        - name: spec
+          configMap:
+            name: config-mcp-spec
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-mcp
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config-mcp-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/part-of: fuzefront
+    app.kubernetes.io/component: config-mcp-gateway
+  ports:
+    - name: http
+      port: {{ .Values.configMcp.port }}
+      targetPort: http
+{{- end }}

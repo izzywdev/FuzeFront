@@ -960,6 +960,32 @@ selectionListsMcp:
   affinity: {}
   tolerations: []
 
+# MCP SSE gateway for the config-service (tools: namespaces, key definitions,
+# effective config, config writes, history; secret reveal is intentionally NOT
+# exposed). Both configService.enabled AND configMcp.enabled must be true.
+# Port 8083: 8081=app-registry, 8082=selection-lists gateways.
+# NOTE: port MUST be declared explicitly — no | int / | default / | toString
+# in the template (FuzeInfra#501 precedent).
+configMcp:
+  enabled: false
+  replicas: 1
+  port: 8083
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    # Same image as the app-registry gateway; keep in sync with mcp.image.tag.
+    tag: "1abe510f5981"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
 # devportal-service — spec registry, Authentik OIDC exchange, and sandboxed
 # "Try it" playground proxy backing developers.fuzefront.com (docs/planning/
 # developers-portal.md). Ships dark by default; gate: fuzefront.devportal.enabled.
