@@ -525,7 +525,7 @@ paths:
         schema: { type: string, minLength: 1, maxLength: 500 }
     post:
       operationId: executePerformanceTest
-      summary: Dispatch a scanner-verified workflow_dispatch load or stress test through the repository GitHub App
+      summary: Dispatch a scanner-verified workflow_dispatch load or stress test at its immutable analyzed commit
       tags: [executions]
       security: [{ platformBearer: [] }]
       responses:
@@ -538,6 +538,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The current catalog is not bound to an immutable analyzed source commit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         '422':
           description: The definition is inventory-only, the GitHub App installation is unavailable, or dispatch failed.
           content:

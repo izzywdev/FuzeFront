@@ -103,10 +103,11 @@ describe('secure GitHub checkout', () => {
 })
 
 describe('controlled performance workflow dispatch', () => {
-  it('dispatches only a scanned workflow against the configured default branch', async () => {
+  it('dispatches only a scanned workflow against the immutable analyzed commit', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
-    await dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', defaultBranch: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })
-    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining('/actions/workflows/.github%2Fworkflows%2Fload-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'main' }) }))
-    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', defaultBranch: 'main', installationId: '1234', workflowPath: '../workflow.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
+    await dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'a'.repeat(40), installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })
+    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining('/actions/workflows/.github%2Fworkflows%2Fload-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'a'.repeat(40) }) }))
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'a'.repeat(40), installationId: '1234', workflowPath: '../workflow.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('exact analyzed commit')
   })
 })

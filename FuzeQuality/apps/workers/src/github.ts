@@ -124,11 +124,11 @@ export async function githubInstallationToken(installationId: string): Promise<s
   return body.token
 }
 
-/** Dispatches only a repository-owned workflow on its configured default branch. */
+/** Dispatches only a repository-owned workflow at an immutable analyzed commit. */
 export async function dispatchPerformanceWorkflow(input: {
   owner: string
   name: string
-  defaultBranch: string
+  sourceRevision: string
   installationId: string
   workflowPath: string
   tokenProvider?: (installationId: string) => Promise<string>
@@ -136,6 +136,9 @@ export async function dispatchPerformanceWorkflow(input: {
 }): Promise<void> {
   assertIdentifier(input.owner, 'owner')
   assertIdentifier(input.name, 'repository name')
+  if (!immutableCommit.test(input.sourceRevision)) {
+    throw new Error('An exact analyzed commit SHA is required for performance dispatch')
+  }
   if (!input.workflowPath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(input.workflowPath) || input.workflowPath.includes('..')) {
     throw new Error('Only a scanned .github/workflows YAML performance workflow may be dispatched')
   }
@@ -145,7 +148,7 @@ export async function dispatchPerformanceWorkflow(input: {
     {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'content-type': 'application/json' },
-      body: JSON.stringify({ ref: input.defaultBranch }),
+      body: JSON.stringify({ ref: input.sourceRevision }),
     },
   )
   if (!response.ok) throw new Error(`GitHub performance workflow dispatch failed: ${response.status}`)

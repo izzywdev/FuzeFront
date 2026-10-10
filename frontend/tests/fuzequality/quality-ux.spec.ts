@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const portfolio = {
-  repositories: [{ id: 'repo-1', tenantId: 'tenant-1', owner: 'izzywdev', name: 'FuzeService', canonicalUrl: 'https://github.com/izzywdev/FuzeService', defaultBranch: 'main', kind: 'service', enabled: true, lastScanStatus: 'complete', lastScanRevision: 'abcdef123456', jiraBindings: [] }],
+  repositories: [{ id: 'repo-1', tenantId: 'tenant-1', owner: 'izzywdev', name: 'FuzeService', canonicalUrl: 'https://github.com/izzywdev/FuzeService', defaultBranch: 'main', kind: 'service', enabled: true, lastScanStatus: 'complete', lastScanRevision: 'abcdef123456', lastScanDetails: { sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', catalogRevision: 'abcdef123456', scannerVersion: '1.5.0', configVersion: 'config-1', partial: false, candidates: [], counts: { candidates: 0, operations: 1, frontendSurfaces: 1, tests: 0, diagnostics: 1 } }, jiraBindings: [] }],
   operations: [{ id: 'api-1', repositoryId: 'repo-1', documentPath: 'openapi.yaml', method: 'post', path: '/apps/{slug}/suspend', tags: ['apps'], summary: 'Suspend app', security: true, parameters: [], responses: ['200'] }],
   surfaces: [{ id: 'ui-1', repositoryId: 'repo-1', name: 'PlanPicker', packageName: '@fuze/ui', sourcePath: 'src/PlanPicker.tsx', kind: 'component', public: true, states: ['default'], hasStory: false, stories: [] }],
   tests: [],
@@ -150,7 +150,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       status: 'dispatched',
       artifactId: 'load-artifact',
       workflowPath: '.github/workflows/load.yml',
-      ref: 'main',
+      ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     }, 202)
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
@@ -422,11 +422,11 @@ test.describe('FuzeQuality implemented UX flows', () => {
       request.url().endsWith('/performance-tests/load-artifact/execute')
     )
 
-    await page.getByRole('button', { name: 'Run on default branch' }).click()
+    await page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' }).click()
 
     expect((await dispatchRequest).method()).toBe('POST')
     await expect(page.getByRole('status')).toContainText(
-      'Dispatched .github/workflows/load.yml on main'
+      'Dispatched .github/workflows/load.yml at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     )
     await expect(page.getByRole('status')).toContainText(
       'GitHub Actions will report the run as execution evidence.'

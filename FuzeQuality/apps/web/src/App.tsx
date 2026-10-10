@@ -83,6 +83,13 @@ export type View =
   | 'organization'
   | 'administration'
 
+function analyzedSourceRevision(repository: Repository): string | undefined {
+  const details = repository.lastScanDetails
+  if (!repository.lastScanRevision || details?.catalogRevision !== repository.lastScanRevision) return undefined
+  const revision = details.sourceRevision
+  return revision && /^[0-9a-f]{40}$/i.test(revision) ? revision : undefined
+}
+
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
   { id: 'repositories', label: 'Repositories', icon: GitBranch },
@@ -3198,9 +3205,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
   }
   const runPerformanceTest = async (artifact: QualityArtifact) => {
+    const repository = data.repositories.find(
+      candidate => candidate.id === artifact.repositoryId
+    )
+    const sourceRevision = repository
+      ? analyzedSourceRevision(repository)
+      : undefined
+    if (!sourceRevision) return
     if (
       !window.confirm(
-        `Dispatch ${artifact.title} on the repository default branch?`
+        `Dispatch ${artifact.title} at analyzed commit ${sourceRevision}?`
       )
     )
       return
@@ -3214,7 +3228,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setPerformanceDispatch({
         artifactId: artifact.id,
         state: 'success',
-        message: `Dispatched ${receipt.workflowPath} on ${receipt.ref}. GitHub Actions will report the run as execution evidence.`,
+        message: `Dispatched ${receipt.workflowPath} at ${receipt.ref}. GitHub Actions will report the run as execution evidence.`,
       })
     } catch (error) {
       setPerformanceDispatch({
@@ -3843,6 +3857,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         ))}
                     {items.slice(0, 12).map(item => {
                       const latestExecution = latestPerformanceExecution(item, performanceExecutions)
+                      const repository = data.repositories.find(
+                        candidate => candidate.id === item.repositoryId
+                      )
+                      const analyzedRevision = repository
+                        ? analyzedSourceRevision(repository)
+                        : undefined
                       return (
                       <article className="catalog-row" key={item.id}>
                         <div>
@@ -3859,7 +3879,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             <small>{item.evidence[0]}</small>
                           )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
-                            item.execution?.trigger === 'workflow_dispatch' && (
+                            item.execution?.trigger === 'workflow_dispatch' &&
+                            analyzedRevision && (
                               <div className="row-actions">
                                 <button
                                   className="secondary-button"
@@ -3869,7 +3890,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <Activity size={14} />{' '}
                                   {dispatchingArtifact === item.id
                                     ? 'Dispatching…'
-                                    : 'Run on default branch'}
+                                    : `Run analyzed revision ${analyzedRevision.slice(0, 12)}`}
                                 </button>
                               </div>
                             )}
@@ -3880,6 +3901,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 workflow_dispatch workflow must declare the
                                 reviewed x-fuzequality-performance marker to
                                 enable a controlled run.
+                              </small>
+                            )}
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            item.execution &&
+                            !analyzedRevision && (
+                              <small className="performance-inventory-only">
+                                Inventory only · run repository analysis at an
+                                exact commit before dispatching this workflow.
                               </small>
                             )}
                           {['load-test', 'stress-test'].includes(item.kind) && item.execution && (

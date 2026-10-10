@@ -32,6 +32,15 @@ const repository: Repository = {
   enabled: true,
   lastScanRevision: 'revision-1',
   lastScanStatus: 'complete',
+  lastScanDetails: {
+    sourceRevision: 'a'.repeat(40),
+    catalogRevision: 'revision-1',
+    scannerVersion: '1.5.0',
+    configVersion: 'config-1',
+    partial: false,
+    candidates: [],
+    counts: { candidates: 0, operations: 0, frontendSurfaces: 0, tests: 0, diagnostics: 0 },
+  },
 }
 
 const candidate: RepositoryFlowCandidate = {
@@ -411,13 +420,13 @@ describe('RepositoryIntelligence flow inventory', () => {
       status: 'dispatched',
       artifactId: loadArtifact.id,
       workflowPath: loadArtifact.sourcePath,
-      ref: 'main',
+      ref: 'a'.repeat(40),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     render(<RepositoryIntelligence data={portfolio} />)
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Run on default branch' })
+      await screen.findByRole('button', { name: /Run analyzed revision a{12}/ })
     )
 
     await waitFor(() =>
@@ -427,7 +436,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       )
     )
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Dispatched .github/workflows/load-test.yml on main'
+      `Dispatched .github/workflows/load-test.yml at ${'a'.repeat(40)}`
     )
   })
 
@@ -442,7 +451,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     render(<RepositoryIntelligence data={portfolio} />)
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Run on default branch' })
+      await screen.findByRole('button', { name: /Run analyzed revision a{12}/ })
     )
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -463,7 +472,23 @@ describe('RepositoryIntelligence flow inventory', () => {
       'workflow_dispatch workflow must declare the reviewed x-fuzequality-performance marker'
     )
     expect(
-      screen.queryByRole('button', { name: 'Run on default branch' })
+      screen.queryByRole('button', { name: /Run analyzed revision/ })
+    ).not.toBeInTheDocument()
+  })
+
+  it('does not offer dispatch without an immutable analyzed source revision', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={{
+      ...portfolio,
+      repositories: [{ ...repository, lastScanDetails: undefined }],
+    }} />)
+
+    expect(await screen.findByText(/run repository analysis at an exact commit/)).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: /Run analyzed revision/ })
     ).not.toBeInTheDocument()
   })
 

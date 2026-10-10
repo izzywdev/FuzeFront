@@ -20,6 +20,7 @@ import {
   createEventBus,
   executionPerformance,
   filterTestExecutions,
+  performanceDispatchRevision,
   performanceWorkflowTarget,
   relayOutboxBatch,
   repositoryCatalogStatus,
@@ -575,14 +576,16 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  const artifact = (await store.qualityArtifacts(repositoryId, tenantId)).find(item => item.id === parsed.data.artifactId)
+  const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
   if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Performance test not found' })
   const workflowPath = performanceWorkflowTarget(artifact)
   if (!workflowPath) return response.status(422).json({ error: 'Performance definition is not a scanner-verified workflow_dispatch workflow', code: 'PERFORMANCE_WORKFLOW_NOT_DISPATCHABLE' })
+  const sourceRevision = performanceDispatchRevision(repository)
+  if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
   if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
   try {
-    await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, defaultBranch: repository.defaultBranch, installationId: repository.installationId, workflowPath })
-    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: repository.defaultBranch })
+    await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, installationId: repository.installationId, workflowPath })
+    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: sourceRevision })
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'PERFORMANCE_DISPATCH_FAILED' })
   }

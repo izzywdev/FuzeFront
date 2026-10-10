@@ -158,7 +158,10 @@ describe('contract discovery', () => {
       ).toEqual(['kind', 'severity', 'reviewStatus', 'revision'])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
-      ).toContain('scanner-verified workflow_dispatch')
+      ).toContain('immutable analyzed commit')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.responses
+      ).toHaveProperty('409')
     })
   })
 

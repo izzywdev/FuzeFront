@@ -1,4 +1,4 @@
-import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import type { QualityArtifact, Repository, TestExecution } from '@fuzequality/contracts'
 
 /** Returns only scanner-verified, manually dispatchable performance workflows. */
 export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {
@@ -7,6 +7,14 @@ export function performanceWorkflowTarget(artifact: QualityArtifact): string | u
   if (artifact.execution.workflowPath !== artifact.sourcePath) return undefined
   if (!artifact.sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(artifact.sourcePath)) return undefined
   return artifact.sourcePath
+}
+
+/** Returns the immutable source commit that produced the current reviewed catalog. */
+export function performanceDispatchRevision(repository: Repository): string | undefined {
+  const details = repository.lastScanDetails
+  if (!repository.lastScanRevision || details?.catalogRevision !== repository.lastScanRevision) return undefined
+  const revision = details.sourceRevision
+  return revision && /^[0-9a-f]{40}$/i.test(revision) ? revision : undefined
 }
 
 export type PolicyGatePerformance = {

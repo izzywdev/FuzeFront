@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceWorkflowTarget } from './execution-performance'
+import { executionOutcomeTrend, executionPerformance, filterTestExecutions, performanceDispatchRevision, performanceWorkflowTarget } from './execution-performance'
 
 describe('execution performance', () => {
+  it('dispatches only the immutable source commit that produced the current catalog', () => {
+    const repository = {
+      id: 'repo', owner: 'fuze', name: 'sample', canonicalUrl: 'https://github.com/fuze/sample',
+      defaultBranch: 'main', kind: 'application' as const, includeGlobs: [], excludeGlobs: [],
+      jiraProjects: [], jiraBindings: [], enabled: true, lastScanStatus: 'complete' as const,
+      lastScanRevision: 'catalog',
+      lastScanDetails: {
+        sourceRevision: 'a'.repeat(40), catalogRevision: 'catalog', scannerVersion: '1.5.0',
+        configVersion: 'config', partial: false, candidates: [],
+        counts: { candidates: 0, operations: 0, frontendSurfaces: 0, tests: 0, diagnostics: 0 },
+      },
+    }
+    expect(performanceDispatchRevision(repository)).toBe('a'.repeat(40))
+    expect(performanceDispatchRevision({ ...repository, lastScanDetails: { ...repository.lastScanDetails, sourceRevision: 'main' } })).toBeUndefined()
+    expect(performanceDispatchRevision({ ...repository, lastScanRevision: 'different-catalog' })).toBeUndefined()
+    expect(performanceDispatchRevision({ ...repository, lastScanDetails: undefined })).toBeUndefined()
+  })
+
   it('dispatches only an exact scanner-verified workflow_dispatch target', () => {
     const artifact = {
       id: 'load', repositoryId: 'repo', kind: 'load-test' as const, title: 'Load',
