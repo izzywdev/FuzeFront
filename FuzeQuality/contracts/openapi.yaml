@@ -432,6 +432,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -459,6 +460,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionRevision'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -537,6 +539,11 @@ components:
       in: query
       description: Execution-ingestion origin.
       schema: { $ref: '#/components/schemas/ExecutionProvider' }
+    ExecutionRevision:
+      name: revision
+      in: query
+      description: Exact source revision recorded with the execution evidence.
+      schema: { type: string, minLength: 1, maxLength: 200 }
     ExecutionFrom:
       name: from
       in: query

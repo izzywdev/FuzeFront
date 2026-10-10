@@ -7,6 +7,7 @@ describe('execution evidence filter', () => {
       kind: 'post-production',
       status: 'failed',
       provider: 'github-actions',
+      revision: 'abcdef123456',
       from: '2026-10-01T00:00:00.000Z',
       until: '2026-10-08T00:00:00.000Z',
     }).success).toBe(true)
@@ -14,6 +15,11 @@ describe('execution evidence filter', () => {
 
   it('rejects an unknown execution provider', () => {
     expect(executionFilterSchema.safeParse({ provider: 'jenkins' }).success).toBe(false)
+  })
+
+  it('rejects an empty or oversized revision', () => {
+    expect(executionFilterSchema.safeParse({ revision: ' ' }).success).toBe(false)
+    expect(executionFilterSchema.safeParse({ revision: 'a'.repeat(201) }).success).toBe(false)
   })
 
   it('rejects an inverted time range instead of returning misleading empty evidence', () => {

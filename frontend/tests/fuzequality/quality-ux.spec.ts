@@ -261,6 +261,14 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
     await page.getByLabel('Ingestion provider').selectOption('github-actions')
     await providerRequest
+    const revisionRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/test-executions') &&
+        url.searchParams.get('provider') === 'github-actions' &&
+        url.searchParams.get('revision') === 'abcdef123456'
+    })
+    await page.getByLabel('Source revision').fill('abcdef123456')
+    await revisionRequest
     await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
     await expect(page.getByLabel('Evidence repository')).toHaveText('izzywdev/FuzeService')
     await expect(page.getByText('docs/policies/apps.md → .github/workflows/authorization.yml')).toBeVisible()

@@ -3015,6 +3015,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionProvider, setExecutionProvider] = useState<
     TestExecution['provider'] | ''
   >('')
+  const [executionRevision, setExecutionRevision] = useState('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
   const invalidExecutionRange = Boolean(
@@ -3135,11 +3136,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         kind: executionKind,
         status: executionStatus,
         provider: executionProvider,
+        revision: executionRevision.trim(),
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionRevision, executionFrom, executionUntil])
   useEffect(() => {
     let active = true
     void Promise.all(
@@ -3750,6 +3752,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 <option value="github-actions">GitHub Actions</option>
                 <option value="external">External ingestion</option>
               </select>
+            </label>
+            <label>
+              Source revision
+              <input
+                type="text"
+                value={executionRevision}
+                maxLength={200}
+                placeholder="Exact commit SHA"
+                onChange={event => setExecutionRevision(event.target.value)}
+              />
             </label>
             <label>
               From

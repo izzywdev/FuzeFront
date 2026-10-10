@@ -353,6 +353,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('filters execution evidence and gate performance by exact source revision', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Source revision'), {
+      target: { value: 'revision-1' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+        revision: 'revision-1',
+      })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+        revision: 'revision-1',
+      })
+    })
+  })
+
   it('submits governance rationale through inline Design System controls', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([
