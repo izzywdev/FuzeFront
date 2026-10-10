@@ -44,6 +44,7 @@ import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from 
 import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
+import { policyGateReviewConflict } from './policy-gate-review'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -533,9 +534,12 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const existingEvaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
   if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  const conflict = policyGateReviewConflict(repository, existingEvaluation)
+  if (conflict) return response.status(409).json(conflict)
   const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason })
   if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   response.json(evaluation)

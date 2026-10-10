@@ -375,6 +375,41 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
   })
 
+  test('keeps historical governance findings visible but review-locked', async ({ page }) => {
+    const historicalEvaluation = {
+      ...policyGateEvaluations[0],
+      revision: 'historical-revision',
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    await page.route(
+      url =>
+        url.pathname ===
+        '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([historicalEvaluation]),
+        })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(
+      page.getByText(/Historical governance finding/)
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Accept recommendation' })
+    ).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
+    await expect(
+      page.getByLabel('Optional governance rationale')
+    ).toBeDisabled()
+  })
+
   test('keeps a failed UX flow review actionable', async ({ page }) => {
     await page.route('**/api/v1/repositories/repo-1/flow-candidates/candidate-1/review', route => route.fulfill({
       status: 503,

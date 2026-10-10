@@ -423,6 +423,27 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('locks governance review controls for a historical analysis revision', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([
+      { ...governanceEvaluation, revision: 'historical-revision' },
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(
+      await screen.findByText(/Historical governance finding/)
+    ).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Accept recommendation' })
+    ).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
+    expect(
+      screen.getByLabelText('Optional governance rationale')
+    ).toBeDisabled()
+  })
+
   it('keeps a failed governance decision actionable without losing rationale', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([

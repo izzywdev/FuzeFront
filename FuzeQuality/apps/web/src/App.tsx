@@ -2905,9 +2905,11 @@ function PolicyGateReviewHistory({
 
 function PolicyGateReviewControls({
   evaluation,
+  currentRevision,
   onReview,
 }: {
   evaluation: PolicyGateEvaluation
+  currentRevision?: string
   onReview: (
     evaluation: PolicyGateEvaluation,
     status: 'accepted' | 'dismissed',
@@ -2917,6 +2919,9 @@ function PolicyGateReviewControls({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const isCurrentRevision = Boolean(
+    currentRevision && evaluation.revision === currentRevision
+  )
 
   const submit = async (status: 'accepted' | 'dismissed') => {
     setBusy(true)
@@ -2939,10 +2944,17 @@ function PolicyGateReviewControls({
     <>
       {evaluation.reviewStatus === 'proposed' && (
         <div className="flow-review-controls">
+          {!isCurrentRevision && (
+            <p className="form-error" role="status">
+              Historical governance finding — review is locked until repository
+              analysis produces a finding for the current revision.
+            </p>
+          )}
           <label>
             Optional governance rationale
             <input
               value={reason}
+              disabled={!isCurrentRevision || busy}
               onChange={event => setReason(event.target.value)}
               placeholder="Why should this recommendation be accepted or dismissed?"
             />
@@ -2950,14 +2962,14 @@ function PolicyGateReviewControls({
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy}
+              disabled={busy || !isCurrentRevision}
               onClick={() => void submit('accepted')}
             >
               <Check size={14} /> Accept recommendation
             </QualityAction>
             <QualityAction
               intent="danger"
-              disabled={busy}
+              disabled={busy || !isCurrentRevision}
               onClick={() => void submit('dismissed')}
             >
               <X size={14} /> Dismiss
@@ -3611,6 +3623,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               />
                               <PolicyGateReviewControls
                                 evaluation={evaluation}
+                                currentRevision={
+                                  data.repositories.find(
+                                    repository =>
+                                      repository.id === evaluation.repositoryId
+                                  )?.lastScanRevision
+                                }
                                 onReview={reviewPolicyGate}
                               />
                             </div>

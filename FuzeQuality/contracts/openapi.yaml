@@ -385,6 +385,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The finding is not from the repository current analyzed revision and cannot be reviewed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StalePolicyGateEvaluationError' }
 
   /api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history:
     parameters:
@@ -987,6 +992,15 @@ components:
         error: { type: string }
         code: { type: string, enum: [STALE_FLOW_CANDIDATE] }
         candidateRevision: { type: string }
+        currentRevision: { type: string, nullable: true }
+    StalePolicyGateEvaluationError:
+      type: object
+      additionalProperties: false
+      required: [error, code, evaluationRevision, currentRevision]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [STALE_POLICY_GATE_EVALUATION] }
+        evaluationRevision: { type: string }
         currentRevision: { type: string, nullable: true }
     Health:
       type: object

@@ -135,6 +135,11 @@ describe('contract discovery', () => {
         ].schema.$ref
       ).toBe('#/components/schemas/StaleFlowCandidateError')
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['409'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/StalePolicyGateEvaluationError')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
       ).toContain('scanner-verified workflow_dispatch')
     })
