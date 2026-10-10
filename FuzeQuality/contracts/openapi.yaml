@@ -459,6 +459,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionRevision'
+        - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -487,6 +488,7 @@ paths:
         - $ref: '#/components/parameters/ExecutionStatus'
         - $ref: '#/components/parameters/ExecutionProvider'
         - $ref: '#/components/parameters/ExecutionRevision'
+        - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -570,6 +572,11 @@ components:
       in: query
       description: Exact source revision recorded with the execution evidence.
       schema: { type: string, minLength: 1, maxLength: 200 }
+    ExecutionWorkflowPath:
+      name: workflowPath
+      in: query
+      description: Exact repository-relative workflow path recorded with the execution evidence.
+      schema: { type: string, minLength: 1, maxLength: 1000 }
     ExecutionFrom:
       name: from
       in: query

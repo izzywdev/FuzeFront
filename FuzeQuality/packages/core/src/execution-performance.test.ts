@@ -60,6 +60,7 @@ it('filters and trends only timestamped execution evidence', () => {
   expect(filterTestExecutions(executions, { provider: 'github-actions' })).toEqual([])
   expect(filterTestExecutions(executions, { provider: 'external' })).toEqual(executions)
   expect(filterTestExecutions(executions, { revision: 'b' })).toEqual([executions[1]])
+  expect(filterTestExecutions(executions, { workflowPath: '.github/workflows/load.yml' })).toEqual([])
   expect(executionOutcomeTrend(executions)).toEqual([
     { date: '2026-10-07', passed: 1, failed: 0, cancelled: 0, running: 0 },
     { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0 },

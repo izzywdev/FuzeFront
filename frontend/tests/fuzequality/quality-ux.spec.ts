@@ -77,6 +77,13 @@ const testExecutions = [{
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/123', startedAt: '2026-10-08T11:00:00.000Z', completedAt: '2026-10-08T11:02:00.000Z',
   policyArtifactIds: ['policy-artifact'], gateArtifactIds: ['gate-artifact'], summary: 'Authorization assertion failed.',
   gateEvaluations: [{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', status: 'failed', detail: 'The production authorization assertion failed.' }],
+  thresholds: [], evidenceLinks: [],
+}, {
+  id: 'execution-load-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'load', status: 'failed', name: 'Application API load test',
+  provider: 'github-actions', externalRunId: '456', attempt: 1, workflowPath: '.github/workflows/load.yml',
+  sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/456', startedAt: '2026-10-09T11:00:00.000Z', completedAt: '2026-10-09T11:05:00.000Z',
+  policyArtifactIds: [], gateArtifactIds: [], summary: 'p95 latency exceeded the release threshold.', gateEvaluations: [], evidenceLinks: [],
+  thresholds: [{ metric: 'p95 latency', observed: 640, unit: 'ms', operator: 'lte', target: 500, passed: false }],
 }]
 
 async function mockQualityApi(page: Page, fixture = portfolio) {
@@ -249,7 +256,8 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
     await expect(page.getByText('Production suspension journey', { exact: true })).toBeVisible()
     await expect(page.getByText('Authorization assertion failed.', { exact: true })).toBeVisible()
-    const executionMetadata = page.getByLabel('Execution provider metadata')
+    const productionExecution = page.getByText('Production suspension journey', { exact: true }).locator('..')
+    const executionMetadata = productionExecution.getByLabel('Execution provider metadata')
     await expect(executionMetadata.locator('[data-field="provider-run-id"]')).toContainText('github-actions · 123')
     await expect(executionMetadata.locator('[data-field="attempt"]')).toContainText('2')
     await expect(executionMetadata.locator('[data-field="workflow-path"]')).toContainText('.github/workflows/post-prod.yml')
@@ -258,7 +266,12 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(gateEvidence.getByText('Administrative suspension policy')).toBeVisible()
     await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
     await expect(gateEvidence).toContainText('docs/policies/apps.md → .github/workflows/quality.yml')
-    await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
+    await expect(productionExecution.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
+    const latestLoad = page.getByLabel('Latest execution for Application API load test')
+    await expect(latestLoad).toContainText('failed · abcdef123456')
+    await expect(latestLoad).toContainText('p95 latency exceeded the release threshold.')
+    await expect(latestLoad.getByLabel('Execution threshold evidence')).toContainText('640 ms ≤ 500 ms')
+    await expect(latestLoad.getByText('Failed', { exact: true })).toBeVisible()
     const providerRequest = page.waitForRequest(request =>
       request.url().includes('/test-executions?provider=github-actions')
     )

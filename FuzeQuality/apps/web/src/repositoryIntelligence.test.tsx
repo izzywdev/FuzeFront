@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type {
   Portfolio,
   QualityArtifact,
   Repository,
   RepositoryFlowCandidate,
   PolicyGateEvaluation,
+  TestExecution,
 } from '@fuzequality/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -111,6 +112,18 @@ const governanceEvaluation: PolicyGateEvaluation = {
   recommendation: 'Add an authentication gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T00:00:00.000Z',
+}
+
+const loadExecution: TestExecution = {
+  id: 'execution-load-1', repositoryId: repository.id, tenantId: 'tenant-1',
+  provider: 'github-actions', externalRunId: '12345', attempt: 1,
+  revision: 'revision-1', kind: 'load', status: 'failed', name: 'Load test',
+  workflowPath: loadArtifact.sourcePath,
+  sourceUrl: 'https://github.com/fuze/front/actions/runs/12345',
+  completedAt: '2026-10-09T12:00:00.000Z',
+  policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], evidenceLinks: [],
+  thresholds: [{ metric: 'p95 latency', observed: 420, unit: 'ms', operator: 'lte', target: 300, passed: false }],
+  summary: 'Latency threshold exceeded.',
 }
 
 function mockEvidenceApis() {
@@ -320,6 +333,22 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('shows the latest matching load outcome and threshold beside its definition', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const outcome = await screen.findByLabelText(`Latest execution for ${loadArtifact.title}`)
+    expect(outcome).toHaveTextContent('failed · revision-1')
+    expect(outcome).toHaveTextContent('Latency threshold exceeded.')
+    expect(outcome).toHaveTextContent('p95 latency')
+    expect(outcome).toHaveTextContent('420 ms ≤ 300 ms')
+    expect(within(outcome).getByRole('link', { name: /Open CI run/ })).toHaveAttribute('href', loadExecution.sourceUrl)
+  })
+
   it('shows policy and gate names with their source paths in observed outcomes', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
@@ -384,6 +413,22 @@ describe('RepositoryIntelligence flow inventory', () => {
       expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
         revision: 'revision-1',
       })
+    })
+  })
+
+  it('filters execution evidence and gate performance by exact workflow file', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await waitFor(() => expect(api.testExecutions).toHaveBeenCalled())
+    fireEvent.change(screen.getByLabelText('Workflow file'), {
+      target: { value: '.github/workflows/load.yml' },
+    })
+
+    await waitFor(() => {
+      expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, { workflowPath: '.github/workflows/load.yml' })
+      expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, { workflowPath: '.github/workflows/load.yml' })
     })
   })
 

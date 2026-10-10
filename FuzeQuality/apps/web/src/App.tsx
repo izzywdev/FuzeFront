@@ -65,6 +65,7 @@ import {
   ExecutionEvidenceLinks,
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
+  latestPerformanceExecution,
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
@@ -3026,6 +3027,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     PolicyGateEvaluation[]
   >([])
   const [executions, setExecutions] = useState<TestExecution[]>([])
+  const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
     PolicyGatePerformance[]
   >([])
@@ -3040,6 +3042,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     TestExecution['provider'] | ''
   >('')
   const [executionRevision, setExecutionRevision] = useState('')
+  const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
   const invalidExecutionRange = Boolean(
@@ -3163,17 +3166,18 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         status: executionStatus,
         provider: executionProvider,
         revision: executionRevision.trim(),
+        workflowPath: executionWorkflowPath.trim(),
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionProvider, executionRevision, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionRevision, executionWorkflowPath, executionFrom, executionUntil])
   useEffect(() => {
     let active = true
     void Promise.all(
-      data.repositories.map(async repository => ({
-        artifacts: await api.qualityArtifacts(repository.id),
-        evaluations:
+      data.repositories.map(async repository => {
+        const [repositoryArtifacts, evaluations] = await Promise.all([
+          api.qualityArtifacts(repository.id),
           policyGateRevisionScope === 'current' &&
           !repository.lastScanRevision
             ? []
@@ -3191,18 +3195,31 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   }).filter(([, value]) => Boolean(value))
                 )
               ),
-      }))
+        ])
+        const hasPerformanceDefinitions = repositoryArtifacts.some(artifact =>
+          ['load-test', 'stress-test'].includes(artifact.kind)
+        )
+        return {
+          artifacts: repositoryArtifacts,
+          evaluations,
+          performanceExecutions: hasPerformanceDefinitions
+            ? await api.testExecutions(repository.id)
+            : [],
+        }
+      })
     )
       .then(groups => {
         if (active) {
           setArtifacts(groups.flatMap(group => group.artifacts))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
+          setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions))
         }
       })
       .catch(() => {
         if (active) {
           setArtifacts([])
           setPolicyGateEvaluations([])
+          setPerformanceExecutions([])
         }
       })
       .finally(() => {
@@ -3673,7 +3690,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             </div>
                           </article>
                         ))}
-                    {items.slice(0, 12).map(item => (
+                    {items.slice(0, 12).map(item => {
+                      const latestExecution = latestPerformanceExecution(item, performanceExecutions)
+                      return (
                       <article className="catalog-row" key={item.id}>
                         <div>
                           <strong>{item.title}</strong>
@@ -3705,6 +3724,30 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                 controlled run.
                               </small>
                             )}
+                          {['load-test', 'stress-test'].includes(item.kind) && item.execution && (
+                            <section
+                              className="performance-latest-execution"
+                              aria-label={`Latest execution for ${item.title}`}
+                            >
+                              <strong>Latest recorded outcome</strong>
+                              {latestExecution ? (
+                                <>
+                                  <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
+                                  <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
+                                  <ExecutionEvidenceMetadata execution={latestExecution} />
+                                  <ExecutionThresholdEvidence execution={latestExecution} />
+                                  <ExecutionEvidenceLinks execution={latestExecution} />
+                                  {latestExecution.sourceUrl && (
+                                    <a className="execution-source" href={latestExecution.sourceUrl} target="_blank" rel="noreferrer">
+                                      Open CI run <ExternalLink size={13} />
+                                    </a>
+                                  )}
+                                </>
+                              ) : (
+                                <small>No matching execution has been ingested for this workflow yet.</small>
+                              )}
+                            </section>
+                          )}
                           {performanceDispatch?.artifactId === item.id && (
                             <p
                               className={
@@ -3723,7 +3766,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           )}
                         </div>
                       </article>
-                    ))}
+                      )
+                    })}
                     {items.length === 0 &&
                       !(kind === 'route' &&
                         (!flowResultsAreCurrent ||
@@ -3835,6 +3879,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 maxLength={200}
                 placeholder="Exact commit SHA"
                 onChange={event => setExecutionRevision(event.target.value)}
+              />
+            </label>
+            <label>
+              Workflow file
+              <input
+                type="text"
+                value={executionWorkflowPath}
+                maxLength={1000}
+                placeholder=".github/workflows/load.yml"
+                onChange={event => setExecutionWorkflowPath(event.target.value)}
               />
             </label>
             <label>

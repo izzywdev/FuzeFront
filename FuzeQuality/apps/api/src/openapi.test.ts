@@ -104,6 +104,11 @@ describe('contract discovery', () => {
       expect(schemas.TestExecutionEvidenceLink.properties.url.pattern).toBe('^https://')
       expect(schemas.TestExecutionInput.properties.workflowPath.maxLength).toBe(1000)
       expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
+          .map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toContain('#/components/parameters/ExecutionWorkflowPath')
+      expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

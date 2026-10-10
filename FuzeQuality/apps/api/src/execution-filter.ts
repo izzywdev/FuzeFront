@@ -12,6 +12,7 @@ export const executionFilterSchema = z.object({
   status: z.enum(['passed', 'failed', 'cancelled', 'running']).optional(),
   provider: z.enum(['github-actions', 'external']).optional(),
   revision: z.string().trim().min(1).max(200).optional(),
+  workflowPath: z.string().trim().min(1).max(1000).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
 }).strict().superRefine((value, context) => {
