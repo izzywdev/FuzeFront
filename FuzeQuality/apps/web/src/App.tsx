@@ -2994,6 +2994,9 @@ type FlowInventorySelection = {
   source: RepositoryFlowCandidate['source'] | ''
   status: RepositoryFlowCandidate['status'] | ''
   revisionScope: FlowRevisionScope
+  model: string
+  promptVersion: string
+  schemaVersion: string
 }
 
 export function flowCandidateMatchesInventory(
@@ -3005,6 +3008,17 @@ export function flowCandidateMatchesInventory(
     return false
   if (selection.source && flow.source !== selection.source) return false
   if (selection.status && flow.status !== selection.status) return false
+  if (selection.model && flow.analysis?.model !== selection.model) return false
+  if (
+    selection.promptVersion &&
+    flow.analysis?.promptVersion !== selection.promptVersion
+  )
+    return false
+  if (
+    selection.schemaVersion &&
+    flow.analysis?.schemaVersion !== selection.schemaVersion
+  )
+    return false
   if (selection.revisionScope === 'current') {
     const repository = repositories.find(item => item.id === flow.repositoryId)
     return Boolean(
@@ -3024,6 +3038,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
   const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
   const [flowRevisionScope, setFlowRevisionScope] = useState<FlowRevisionScope>('all')
+  const [flowModel, setFlowModel] = useState('')
+  const [flowPromptVersion, setFlowPromptVersion] = useState('')
+  const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
@@ -3076,6 +3093,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     source: flowSource,
     status: flowStatus,
     revisionScope: flowRevisionScope,
+    model: flowModel.trim(),
+    promptVersion: flowPromptVersion.trim(),
+    schemaVersion: flowSchemaVersion.trim(),
   }
   const flowSelectionRef = useRef(flowSelection)
   flowSelectionRef.current = flowSelection
@@ -3088,6 +3108,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowSource,
     flowStatus,
     flowRevisionScope,
+    flowModel.trim(),
+    flowPromptVersion.trim(),
+    flowSchemaVersion.trim(),
   ])
   const flowResultsAreCurrent =
     !loadingFlows && loadedFlowQuery === flowQuery
@@ -3255,6 +3278,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       flowRevisionScope === 'current'
                         ? repository.lastScanRevision ?? ''
                         : '',
+                    model: flowModel.trim(),
+                    promptVersion: flowPromptVersion.trim(),
+                    schemaVersion: flowSchemaVersion.trim(),
                   }).filter(([, value]) => Boolean(value))
                 )
               )
@@ -3282,6 +3308,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowRevisionScope,
     flowSource,
     flowStatus,
+    flowModel,
+    flowPromptVersion,
+    flowSchemaVersion,
   ])
   useEffect(() => {
     let active = true
@@ -3402,10 +3431,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             source={flowSource}
             status={flowStatus}
             revisionScope={flowRevisionScope}
+            model={flowModel}
+            promptVersion={flowPromptVersion}
+            schemaVersion={flowSchemaVersion}
             onRepositoryIdChange={setFlowRepositoryId}
             onSourceChange={setFlowSource}
             onStatusChange={setFlowStatus}
             onRevisionScopeChange={setFlowRevisionScope}
+            onModelChange={setFlowModel}
+            onPromptVersionChange={setFlowPromptVersion}
+            onSchemaVersionChange={setFlowSchemaVersion}
           />
           <div
             className="catalog-filters"
@@ -3545,6 +3580,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         <article className="catalog-row" key={flow.id}>
                           <div>
                             <strong>{flow.title}</strong>
+                            <small className="flow-repository-label">
+                              Repository {repositoryLabels.get(flow.repositoryId) ?? flow.repositoryId}
+                            </small>
                             <div className="flow-origin-line">
                               <span
                                 className={`flow-origin-badge flow-origin-${flow.source}`}

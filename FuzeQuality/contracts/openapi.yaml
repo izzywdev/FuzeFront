@@ -217,6 +217,18 @@ paths:
         - name: revision
           in: query
           schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: model
+          in: query
+          description: Exact FuzeInfra LiteLLM model identity stored with the proposal.
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: promptVersion
+          in: query
+          description: Exact reviewed analysis prompt version.
+          schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: schemaVersion
+          in: query
+          description: Exact structured-output schema version.
+          schema: { type: string, minLength: 1, maxLength: 100 }
       responses:
         '200':
           description: UX-flow candidates discovered for the repository.

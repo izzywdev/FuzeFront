@@ -107,7 +107,17 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     })
     if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
     if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
-    if (url.pathname.endsWith('/flow-candidates')) return respond(flowCandidates)
+    if (url.pathname.endsWith('/flow-candidates')) {
+      const filtered = flowCandidates.filter(flow =>
+        (!url.searchParams.get('source') || flow.source === url.searchParams.get('source')) &&
+        (!url.searchParams.get('status') || flow.status === url.searchParams.get('status')) &&
+        (!url.searchParams.get('revision') || flow.revision === url.searchParams.get('revision')) &&
+        (!url.searchParams.get('model') || flow.analysis?.model === url.searchParams.get('model')) &&
+        (!url.searchParams.get('promptVersion') || flow.analysis?.promptVersion === url.searchParams.get('promptVersion')) &&
+        (!url.searchParams.get('schemaVersion') || flow.analysis?.schemaVersion === url.searchParams.get('schemaVersion'))
+      )
+      return respond(filtered)
+    }
     if (url.pathname.endsWith('/flow-candidates/candidate-1/history')) return respond(flowReviewHistory)
     if (url.pathname.endsWith('/flow-candidates/candidate-1/review') && method === 'POST') {
       const payload = route.request().postDataJSON() as { status: 'confirmed' | 'rejected', reason?: string }
@@ -218,6 +228,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await expect(page.getByText('Suspend an application', { exact: true })).toBeVisible()
     const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await expect(flowCard.getByText('Repository izzywdev/FuzeService')).toBeVisible()
     await expect(page.getByText('FuzeInfra LiteLLM proposal', { exact: true })).toBeVisible()
     const analysisProvenance = page.getByLabel('Suspend an application analysis provenance')
     await expect(analysisProvenance).toContainText('fuzeinfra-litellm')
@@ -227,6 +238,27 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Deterministic repository evidence', { exact: true })).toBeVisible()
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
+    const modelRequest = page.waitForRequest(request =>
+      new URL(request.url()).searchParams.get('model') === 'quality-analysis'
+    )
+    await page.getByLabel('Analysis model').fill('quality-analysis')
+    await modelRequest
+    const promptRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.searchParams.get('model') === 'quality-analysis' &&
+        url.searchParams.get('promptVersion') === 'repository-flow-v1'
+    })
+    await page.getByLabel('Prompt version').fill('repository-flow-v1')
+    await promptRequest
+    const schemaRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.searchParams.get('promptVersion') === 'repository-flow-v1' &&
+        url.searchParams.get('schemaVersion') === '1.0'
+    })
+    await page.getByLabel('Schema version').fill('1.0')
+    await schemaRequest
+    await expect(originSummary).toContainText('0 deterministic flows')
+    await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await flowCard.getByText('Source evidence', { exact: true }).click()
     await expect(flowCard.getByText('Revision abcdef123456')).toBeVisible()
     await expect(flowCard.getByText('src/routes/apps.ts:42')).toBeVisible()

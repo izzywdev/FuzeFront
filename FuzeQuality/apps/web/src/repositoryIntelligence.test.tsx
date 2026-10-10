@@ -236,6 +236,9 @@ describe('RepositoryIntelligence flow inventory', () => {
         source: 'litellm',
         status: 'proposed',
         revisionScope: 'current',
+        model: '',
+        promptVersion: '',
+        schemaVersion: '',
       })
     ).toBe(true)
     expect(
@@ -247,9 +250,49 @@ describe('RepositoryIntelligence flow inventory', () => {
           source: 'litellm',
           status: 'proposed',
           revisionScope: 'current',
+          model: '',
+          promptVersion: '',
+          schemaVersion: '',
         }
       )
     ).toBe(false)
+  })
+
+  it('queries and labels flows by exact LiteLLM provenance', async () => {
+    mockEvidenceApis()
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([
+      {
+        ...candidate,
+        analysis: {
+          provider: 'fuzeinfra-litellm',
+          model: 'quality-analysis',
+          promptVersion: 'flow-v2',
+          schemaVersion: '2.0',
+        },
+      },
+    ])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    expect(screen.getByText('Repository fuze/front')).toBeVisible()
+
+    fireEvent.change(screen.getByLabelText('Analysis model'), {
+      target: { value: 'quality-analysis' },
+    })
+    fireEvent.change(screen.getByLabelText('Prompt version'), {
+      target: { value: 'flow-v2' },
+    })
+    fireEvent.change(screen.getByLabelText('Schema version'), {
+      target: { value: '2.0' },
+    })
+
+    await waitFor(() =>
+      expect(flowRequest).toHaveBeenLastCalledWith(repository.id, {
+        model: 'quality-analysis',
+        promptVersion: 'flow-v2',
+        schemaVersion: '2.0',
+      })
+    )
   })
 
   it('resolves flow evidence identifiers to repository source paths', async () => {

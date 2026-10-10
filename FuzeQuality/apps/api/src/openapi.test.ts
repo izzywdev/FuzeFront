@@ -133,7 +133,14 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
-      ).toEqual(['source', 'status', 'revision'])
+      ).toEqual([
+        'source',
+        'status',
+        'revision',
+        'model',
+        'promptVersion',
+        'schemaVersion',
+      ])
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['409'].content[
           'application/json'
