@@ -410,6 +410,29 @@ test.describe('FuzeQuality implemented UX flows', () => {
     ).toBeDisabled()
   })
 
+  test('scopes governance findings to the current analysis by default', async ({ page }) => {
+    const currentRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return (
+        url.pathname.endsWith('/policy-gate-evaluations') &&
+        url.searchParams.get('revision') === 'abcdef123456'
+      )
+    })
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await currentRequest
+
+    const historyRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return (
+        url.pathname.endsWith('/policy-gate-evaluations') &&
+        !url.searchParams.has('revision')
+      )
+    })
+    await page.getByLabel('Governance revision').selectOption('all')
+    await historyRequest
+  })
+
   test('keeps a failed UX flow review actionable', async ({ page }) => {
     await page.route('**/api/v1/repositories/repo-1/flow-candidates/candidate-1/review', route => route.fulfill({
       status: 503,

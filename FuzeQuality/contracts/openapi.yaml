@@ -343,6 +343,22 @@ paths:
       summary: List tenant-scoped policy/gate findings and their current review state
       tags: [policy-gates]
       security: [{ platformBearer: [] }]
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+        - name: severity
+          in: query
+          schema: { type: string, enum: [high, medium, low] }
+        - name: reviewStatus
+          in: query
+          schema: { type: string, enum: [proposed, accepted, dismissed] }
+        - name: revision
+          in: query
+          description: Exact repository analysis revision that produced the finding.
+          schema: { type: string, minLength: 1, maxLength: 500 }
       responses:
         '200':
           description: Policy/gate evaluations for the repository.
@@ -351,6 +367,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

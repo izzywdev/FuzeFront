@@ -3056,6 +3056,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateReviewStatus, setPolicyGateReviewStatus] = useState<
     PolicyGateEvaluation['reviewStatus'] | ''
   >('')
+  const [policyGateRevisionScope, setPolicyGateRevisionScope] =
+    useState<FlowRevisionScope>('current')
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
   const [performanceDispatch, setPerformanceDispatch] = useState<{
     artifactId: string
@@ -3171,7 +3173,24 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     void Promise.all(
       data.repositories.map(async repository => ({
         artifacts: await api.qualityArtifacts(repository.id),
-        evaluations: await api.policyGateEvaluations(repository.id),
+        evaluations:
+          policyGateRevisionScope === 'current' &&
+          !repository.lastScanRevision
+            ? []
+            : await api.policyGateEvaluations(
+                repository.id,
+                Object.fromEntries(
+                  Object.entries({
+                    kind: policyGateKind,
+                    severity: policyGateSeverity,
+                    reviewStatus: policyGateReviewStatus,
+                    revision:
+                      policyGateRevisionScope === 'current'
+                        ? repository.lastScanRevision ?? ''
+                        : '',
+                  }).filter(([, value]) => Boolean(value))
+                )
+              ),
       }))
     )
       .then(groups => {
@@ -3192,7 +3211,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     return () => {
       active = false
     }
-  }, [data.repositories])
+  }, [
+    data.repositories,
+    policyGateKind,
+    policyGateRevisionScope,
+    policyGateReviewStatus,
+    policyGateSeverity,
+  ])
   useEffect(() => {
     let active = true
     setLoadingFlows(true)
@@ -3426,6 +3451,20 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     {status}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Governance revision
+              <select
+                value={policyGateRevisionScope}
+                onChange={event =>
+                  setPolicyGateRevisionScope(
+                    event.target.value as FlowRevisionScope
+                  )
+                }
+              >
+                <option value="current">Current analysis</option>
+                <option value="all">All revisions</option>
               </select>
             </label>
           </div>

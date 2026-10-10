@@ -140,6 +140,11 @@ describe('contract discovery', () => {
         ].schema.$ref
       ).toBe('#/components/schemas/StalePolicyGateEvaluationError')
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters.map(
+          (parameter: { name: string }) => parameter.name
+        )
+      ).toEqual(['kind', 'severity', 'reviewStatus', 'revision'])
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
       ).toContain('scanner-verified workflow_dispatch')
     })

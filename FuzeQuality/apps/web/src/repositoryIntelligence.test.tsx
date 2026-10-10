@@ -423,6 +423,31 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('requests current governance findings by default and can include history', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    await waitFor(() =>
+      expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(
+        repository.id,
+        { revision: 'revision-1' }
+      )
+    )
+
+    fireEvent.change(screen.getByLabelText('Governance revision'), {
+      target: { value: 'all' },
+    })
+
+    await waitFor(() =>
+      expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(
+        repository.id,
+        {}
+      )
+    )
+  })
+
   it('locks governance review controls for a historical analysis revision', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([

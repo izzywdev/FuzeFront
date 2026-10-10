@@ -44,6 +44,7 @@ import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from 
 import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
+import { filterPolicyGateEvaluations, policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateReviewConflict } from './policy-gate-review'
 import {
   buildImplementationManifest,
@@ -517,7 +518,9 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, asyn
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.policyGateEvaluations(repositoryId, tenantId))
+  const filter = policyGateFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  response.json(filterPolicyGateEvaluations(await store.policyGateEvaluations(repositoryId, tenantId), filter.data))
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
