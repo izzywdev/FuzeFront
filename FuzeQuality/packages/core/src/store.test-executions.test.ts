@@ -18,10 +18,32 @@ describe('test execution evidence', () => {
 
     const executions = await store.testExecutions('repo-1', 'org-1')
     expect(executions).toEqual([
-      expect.objectContaining({ id: 'delivery-2', attempt: 1, status: 'failed' }),
+      expect.objectContaining({ id: 'delivery-1', attempt: 1, status: 'failed' }),
       expect.objectContaining({ id: 'delivery-3', attempt: 2, status: 'passed' }),
     ])
     expect(executions.every(execution => execution.sourceUrl === undefined)).toBe(true)
+  })
+
+  it('does not erase detailed evidence when a later lifecycle delivery is sparse', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '900', attempt: 1, revision: 'abc', kind: 'load' as const, status: 'failed' as const, name: 'Load', workflowPath: '.github/workflows/load.yml' }
+    await store.saveTestExecution({ id: 'stable-id', ...base, policyArtifactIds: ['policy-performance'], gateArtifactIds: ['gate-performance'], gateEvaluations: [{ policyArtifactId: 'policy-performance', gateArtifactId: 'gate-performance', status: 'failed' }], thresholds: [{ metric: 'p95', observed: 640, unit: 'ms', operator: 'lte', target: 500, passed: false }], evidenceLinks: [{ kind: 'video', name: 'Recorded run', url: 'https://evidence.example/load.webm' }], summary: 'p95 exceeded the 500 ms release threshold' })
+    await store.saveTestExecution({ id: 'late-webhook-id', ...base, policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [{ kind: 'report', name: 'GitHub Actions artifacts', url: 'https://github.com/acme/app/actions/runs/900#artifacts' }], summary: 'failure' })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({
+        id: 'stable-id',
+        policyArtifactIds: ['policy-performance'],
+        gateArtifactIds: ['gate-performance'],
+        gateEvaluations: [expect.objectContaining({ status: 'failed' })],
+        thresholds: [expect.objectContaining({ metric: 'p95', passed: false })],
+        evidenceLinks: [
+          expect.objectContaining({ kind: 'video' }),
+          expect.objectContaining({ kind: 'report' }),
+        ],
+        summary: 'p95 exceeded the 500 ms release threshold',
+      }),
+    ])
   })
 
   it('does not regress terminal evidence when a running delivery arrives late', async () => {
@@ -52,6 +74,9 @@ describe('test execution evidence', () => {
     const sql = String(query.mock.calls[0][0])
     expect(sql).toContain("WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'")
     expect(sql).toContain('workflow_path')
+    expect(sql).toContain('jsonb_array_length(EXCLUDED.thresholds)>0')
+    expect(sql).toContain('test_executions.evidence_links || EXCLUDED.evidence_links')
+    expect(sql).toContain("length(COALESCE(EXCLUDED.summary,''))")
     expect(query.mock.calls[0][1][10]).toBe('.github/workflows/ci.yml')
   })
 })

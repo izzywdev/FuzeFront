@@ -270,6 +270,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const latestLoad = page.getByLabel('Latest execution for Application API load test')
     await expect(latestLoad).toContainText('failed · abcdef123456')
     await expect(latestLoad).toContainText('p95 latency exceeded the release threshold.')
+    await expect(latestLoad.getByLabel('Execution evidence coverage')).toContainText(
+      '1 thresholds · 0 artifacts · 0 policy–gate outcomes'
+    )
     await expect(latestLoad.getByLabel('Execution threshold evidence')).toContainText('640 ms ≤ 500 ms')
     await expect(latestLoad.getByText('Failed', { exact: true })).toBeVisible()
     const providerRequest = page.waitForRequest(request =>

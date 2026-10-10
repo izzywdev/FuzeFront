@@ -216,3 +216,27 @@ export function ExecutionEvidenceLinks({
     </section>
   )
 }
+
+/** Makes sparse provider lifecycle events distinguishable from detailed test evidence. */
+export function ExecutionEvidenceCoverage({
+  execution,
+}: {
+  execution: TestExecution
+}) {
+  const thresholds = execution.thresholds?.length ?? 0
+  const links = execution.evidenceLinks?.length ?? 0
+  const gatePairs = execution.gateEvaluations?.length ?? 0
+  const missingThresholds = ['load', 'stress'].includes(execution.kind) && !thresholds
+
+  return (
+    <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
+      <strong>Evidence coverage</strong>
+      <small>{thresholds} thresholds · {links} artifacts · {gatePairs} policy–gate outcomes</small>
+      {missingThresholds && (
+        <span className="status-pill status-running">
+          No performance threshold observations ingested
+        </span>
+      )}
+    </section>
+  )
+}

@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -130,6 +130,22 @@ describe('ExecutionThresholdEvidence', () => {
       'href',
       'https://evidence.example/run-42/report/'
     )
+  })
+
+  it('summarizes detailed evidence and flags a lifecycle-only performance run', () => {
+    const { rerender } = render(<ExecutionEvidenceCoverage execution={execution} />)
+
+    expect(screen.getByRole('region', { name: 'Execution evidence coverage' })).toHaveTextContent(
+      '2 thresholds · 2 artifacts · 1 policy–gate outcomes'
+    )
+    expect(screen.queryByText(/No performance threshold/)).not.toBeInTheDocument()
+
+    rerender(
+      <ExecutionEvidenceCoverage
+        execution={{ ...execution, thresholds: [], evidenceLinks: [], gateEvaluations: [] }}
+      />
+    )
+    expect(screen.getByText('No performance threshold observations ingested')).toBeVisible()
   })
 
   it('renders legacy executions without optional evidence collections safely', () => {

@@ -63,6 +63,7 @@ import { QualityAction, QualityIconAction } from './components/primitives'
 import {
   ExecutionEvidenceMetadata,
   ExecutionEvidenceLinks,
+  ExecutionEvidenceCoverage,
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
   latestPerformanceExecution,
@@ -3735,6 +3736,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
                                   <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
                                   <ExecutionEvidenceMetadata execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage execution={latestExecution} />
                                   <ExecutionThresholdEvidence execution={latestExecution} />
                                   <ExecutionEvidenceLinks execution={latestExecution} />
                                   {latestExecution.sourceUrl && (
@@ -3953,6 +3955,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         : ''}
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
+                  <ExecutionEvidenceCoverage execution={execution} />
                   <ExecutionEvidenceLinks execution={execution} />
                   <ExecutionGateEvidence
                     execution={execution}

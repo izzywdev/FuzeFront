@@ -174,6 +174,10 @@ button:disabled { cursor: wait; opacity: .55; }
 .execution-evidence-links ul { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0 0; padding: 0; list-style: none; }
 .execution-evidence-links li { display: inline-flex; align-items: center; gap: 6px; }
 .execution-evidence-links a { color: var(--cyan); font-size: 11px; }
+.execution-evidence-coverage { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 10px; padding: 9px; border: 1px solid var(--line); background: var(--panel-raised); }
+.execution-evidence-coverage > strong { color: var(--muted); font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: .05em; }
+.execution-evidence-coverage > small { color: #b9cdda; font: 10px var(--font-mono); }
+.execution-evidence-coverage .status-running { color: var(--amber); background: #352b16; }
 .catalog-filters label, .snapshot-stamp { display: grid; gap: 6px; padding: 11px 12px; border: 1px solid var(--line); background: #091724; color: var(--muted); font: 10px 'IBM Plex Mono'; text-transform: uppercase; letter-spacing: .06em; }
 .catalog-filters select, .catalog-filters input { width: 100%; border: 0; background: transparent; color: var(--text); text-transform: none; }
 .catalog-filters option { background: var(--panel); }

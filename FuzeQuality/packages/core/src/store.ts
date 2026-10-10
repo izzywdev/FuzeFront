@@ -47,6 +47,44 @@ export type DesignTestLinkProjection = {
   testCaseId: string
 }
 
+/** Merge lifecycle updates without erasing richer evidence for the same run attempt. */
+export function mergeTestExecutionEvidence(
+  existing: TestExecution,
+  incoming: TestExecution
+): TestExecution {
+  const evidenceLinks = new Map(
+    [...existing.evidenceLinks, ...incoming.evidenceLinks].map(link => [
+      `${link.kind}:${link.url}`,
+      link,
+    ])
+  )
+  const richerSummary = (incoming.summary?.length ?? 0) > (existing.summary?.length ?? 0)
+    ? incoming.summary
+    : existing.summary
+  return {
+    ...existing,
+    ...incoming,
+    id: existing.id,
+    sourceUrl: incoming.sourceUrl ?? existing.sourceUrl,
+    startedAt: incoming.startedAt ?? existing.startedAt,
+    completedAt: incoming.completedAt ?? existing.completedAt,
+    policyArtifactIds: incoming.policyArtifactIds.length
+      ? incoming.policyArtifactIds
+      : existing.policyArtifactIds,
+    gateArtifactIds: incoming.gateArtifactIds.length
+      ? incoming.gateArtifactIds
+      : existing.gateArtifactIds,
+    gateEvaluations: incoming.gateEvaluations.length
+      ? incoming.gateEvaluations
+      : existing.gateEvaluations,
+    thresholds: incoming.thresholds.length
+      ? incoming.thresholds
+      : existing.thresholds,
+    evidenceLinks: [...evidenceLinks.values()],
+    summary: richerSummary,
+  }
+}
+
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
@@ -261,7 +299,7 @@ export class MemoryCatalogStore implements CatalogStore {
     // GitHub webhook delivery is not ordered. A delayed requested or
     // in-progress event must not erase a terminal result for this attempt.
     if (index >= 0 && this.executions[index].status !== 'running' && execution.status === 'running') return
-    if (index >= 0) this.executions[index] = execution
+    if (index >= 0) this.executions[index] = mergeTestExecutionEvidence(this.executions[index], execution)
     else this.executions.push(execution)
   }
 
@@ -752,7 +790,7 @@ export class PostgresCatalogStore implements CatalogStore {
     await this.pool.query(
       `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=EXCLUDED.workflow_path,source_url=EXCLUDED.source_url,started_at=EXCLUDED.started_at,completed_at=EXCLUDED.completed_at,policy_artifact_ids=EXCLUDED.policy_artifact_ids,gate_artifact_ids=EXCLUDED.gate_artifact_ids,gate_evaluations=EXCLUDED.gate_evaluations,thresholds=EXCLUDED.thresholds,evidence_links=EXCLUDED.evidence_links,summary=EXCLUDED.summary
+       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations ELSE fuzequality.test_executions.gate_evaluations END,thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,evidence_links=(SELECT COALESCE(jsonb_agg(link),'[]'::jsonb) FROM (SELECT DISTINCT link FROM jsonb_array_elements(fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links) AS evidence(link)) AS unique_links),summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
        WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'`,
       [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.summary ?? null],
     )
