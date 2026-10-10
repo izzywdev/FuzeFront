@@ -121,7 +121,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       { status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
     ])
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
-    if (url.pathname.endsWith('/execution-performance')) return respond([{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
+    if (url.pathname.endsWith('/execution-performance')) return respond([{ policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
     if (url.pathname.endsWith('/performance-tests/load-artifact/execute') && method === 'POST') return respond({
       status: 'dispatched',
       artifactId: 'load-artifact',
@@ -256,7 +256,8 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
     await expect(gateEvidence).toContainText('docs/policies/apps.md → .github/workflows/quality.yml')
     await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
-    await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
+    await expect(page.getByText('docs/policies/apps.md → .github/workflows/authorization.yml')).toBeVisible()
     await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
   })
 

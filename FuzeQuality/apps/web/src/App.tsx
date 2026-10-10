@@ -50,6 +50,7 @@ import type {
   TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
+import type { PolicyGatePerformance } from '@fuzequality/core'
 import {
   api,
   configurePlatformSecurity,
@@ -3002,15 +3003,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >([])
   const [executions, setExecutions] = useState<TestExecution[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
-    Array<{
-      policyArtifactId: string
-      gateArtifactId: string
-      passed: number
-      failed: number
-      cancelled: number
-      running: number
-      latestCompletedAt?: string
-    }>
+    PolicyGatePerformance[]
   >([])
   const [executionRepositoryId, setExecutionRepositoryId] = useState('')
   const [executionKind, setExecutionKind] = useState<
@@ -3843,7 +3836,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               >
                 <div>
                   <strong>
-                    {pair.policyArtifactId} → {pair.gateArtifactId}
+                    {pair.policyTitle ?? pair.policyArtifactId} →{' '}
+                    {pair.gateTitle ?? pair.gateArtifactId}
                   </strong>
                   <code>
                     {pair.passed} passed · {pair.failed} failed ·{' '}
@@ -3854,6 +3848,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
                       : 'No completed run yet'}
                   </small>
+                  {(pair.policySourcePath || pair.gateSourcePath) && (
+                    <small>
+                      {pair.policySourcePath ?? pair.policyArtifactId} →{' '}
+                      {pair.gateSourcePath ?? pair.gateArtifactId}
+                    </small>
+                  )}
                 </div>
               </article>
             ))}

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.3.0
+  version: 0.4.0
   license:
     name: UNLICENSED
 servers:
@@ -929,7 +929,11 @@ components:
       required: [policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
       properties:
         policyArtifactId: { type: string }
+        policyTitle: { type: string }
+        policySourcePath: { type: string }
         gateArtifactId: { type: string }
+        gateTitle: { type: string }
+        gateSourcePath: { type: string }
         passed: { type: integer, minimum: 0 }
         failed: { type: integer, minimum: 0 }
         cancelled: { type: integer, minimum: 0 }

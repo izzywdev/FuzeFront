@@ -11,7 +11,11 @@ export function performanceWorkflowTarget(artifact: QualityArtifact): string | u
 
 export type PolicyGatePerformance = {
   policyArtifactId: string
+  policyTitle?: string
+  policySourcePath?: string
   gateArtifactId: string
+  gateTitle?: string
+  gateSourcePath?: string
   passed: number
   failed: number
   cancelled: number
@@ -52,8 +56,9 @@ export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOut
 }
 
 /** Aggregates immutable execution evidence; no missing link is inferred as a passing gate. */
-export function executionPerformance(executions: TestExecution[]): PolicyGatePerformance[] {
+export function executionPerformance(executions: TestExecution[], artifacts: QualityArtifact[] = []): PolicyGatePerformance[] {
   const results = new Map<string, PolicyGatePerformance>()
+  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
   for (const execution of executions) {
     // Rows created before explicit pair evidence existed are only safe to use
     // when there is exactly one possible pair. Never create a Cartesian product.
@@ -64,7 +69,18 @@ export function executionPerformance(executions: TestExecution[]): PolicyGatePer
         : []
     for (const evaluation of gateEvaluations) {
       const key = `${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
-      const current = results.get(key) ?? { policyArtifactId: evaluation.policyArtifactId, gateArtifactId: evaluation.gateArtifactId, passed: 0, failed: 0, cancelled: 0, running: 0 }
+      const policy = artifactsById.get(evaluation.policyArtifactId)
+      const gate = artifactsById.get(evaluation.gateArtifactId)
+      const current = results.get(key) ?? {
+        policyArtifactId: evaluation.policyArtifactId,
+        ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
+        gateArtifactId: evaluation.gateArtifactId,
+        ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
+        passed: 0,
+        failed: 0,
+        cancelled: 0,
+        running: 0,
+      }
       current[evaluation.status]++
       if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
       results.set(key, current)

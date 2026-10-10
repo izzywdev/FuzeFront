@@ -306,6 +306,31 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('shows policy and gate names with their source paths in observed outcomes', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.executionPerformance).mockResolvedValue([
+      {
+        policyArtifactId: 'policy-auth',
+        policyTitle: 'Authentication policy',
+        policySourcePath: 'governance/auth.md',
+        gateArtifactId: 'gate-auth',
+        gateTitle: 'Authentication gate',
+        gateSourcePath: '.github/workflows/auth.yml',
+        passed: 3,
+        failed: 1,
+        cancelled: 0,
+        running: 0,
+      },
+    ])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText('Authentication policy → Authentication gate')).toBeVisible()
+    expect(screen.getByText('governance/auth.md → .github/workflows/auth.yml')).toBeVisible()
+    expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
+  })
+
   it('submits governance rationale through inline Design System controls', async () => {
     mockEvidenceApis()
     vi.mocked(api.policyGateEvaluations).mockResolvedValue([
