@@ -3876,7 +3876,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </small>
                             )}
                           {item.evidence.length > 0 && (
-                            <small>{item.evidence[0]}</small>
+                            item.kind === 'test-plan' ? (
+                              <small
+                                className="test-plan-identity"
+                                aria-label={`Evidence identity ${item.id}`}
+                              >
+                                Evidence ID <code>{item.evidence[0]}</code>
+                              </small>
+                            ) : (
+                              <small>{item.evidence[0]}</small>
+                            )
                           )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
                             item.execution?.trigger === 'workflow_dispatch' &&

@@ -50,6 +50,7 @@ const qualityArtifacts = [
   { id: 'story-artifact', repositoryId: 'repo-1', kind: 'story', title: 'App settings / Suspended', sourcePath: 'src/AppSettings.stories.tsx', summary: 'Storybook interaction surface', evidence: ['app-settings--suspended'] },
   { id: 'documentation-artifact', repositoryId: 'repo-1', kind: 'documentation', title: 'Application suspension journey', sourcePath: 'docs/suspension.md', summary: 'Repository documentation: Application suspension journey', evidence: ['An administrator suspends an application.'] },
   { id: 'test-plan-artifact', repositoryId: 'repo-1', kind: 'test-plan', title: 'administrator suspends an application', sourcePath: 'tests/suspension.spec.ts', summary: 'e2e playwright test discovered during repository analysis', evidence: ['test:suspension'] },
+  { id: 'test-plan-artifact-retry', repositoryId: 'repo-1', kind: 'test-plan', title: 'administrator suspends an application', sourcePath: 'tests/suspension.spec.ts', summary: 'e2e playwright test discovered during repository analysis', evidence: ['test:suspension:retry'] },
   { id: 'policy-artifact', repositoryId: 'repo-1', kind: 'policy', title: 'Administrative suspension policy', sourcePath: 'docs/policies/apps.md', summary: 'Only administrators may suspend apps', evidence: ['role=administrator'] },
   { id: 'gate-artifact', repositoryId: 'repo-1', kind: 'gate', title: 'Suspension authorization gate', sourcePath: '.github/workflows/quality.yml', summary: 'Checks the administrator boundary', evidence: ['npm run test:authorization'] },
   { id: 'load-artifact', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
@@ -255,7 +256,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByRole('heading', { name: 'Repository documentation' })).toBeVisible()
     await expect(page.getByText('Application suspension journey', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Existing test plans' })).toBeVisible()
-    await expect(page.getByText('administrator suspends an application', { exact: true })).toBeVisible()
+    await expect(page.getByText('administrator suspends an application', { exact: true })).toHaveCount(2)
+    await expect(page.getByText('test:suspension', { exact: true })).toBeVisible()
+    await expect(page.getByText('test:suspension:retry', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
     const modelRequest = page.waitForRequest(request =>
       new URL(request.url()).searchParams.get('model') === 'quality-analysis'

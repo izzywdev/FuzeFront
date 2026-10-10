@@ -412,6 +412,25 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText(testPlanArtifact.title)).toBeVisible()
   })
 
+  it('renders repeated test titles as separate evidence plans', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([
+      testPlanArtifact,
+      {
+        ...testPlanArtifact,
+        id: 'artifact-test-plan-2',
+        evidence: ['test:checkout:second'],
+      },
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findAllByText(testPlanArtifact.title)).toHaveLength(2)
+    expect(screen.getByText('test:checkout')).toBeVisible()
+    expect(screen.getByText('test:checkout:second')).toBeVisible()
+  })
+
   it('shows a durable handoff message after dispatching a performance workflow', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])

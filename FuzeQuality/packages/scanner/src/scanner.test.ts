@@ -106,6 +106,39 @@ describe('repository scanner', () => {
     expect(rescanned.qualityArtifacts?.every(item => !originalIds.has(item.id))).toBe(true)
   })
 
+  it('keeps repeated test titles as distinct repository evidence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-duplicate-tests-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    await writeFile(
+      join(root, 'tests', 'authorization.spec.ts'),
+      `import { test, expect } from '@playwright/test'
+       test('rejects unauthorized access', async () => {
+         // @fuzequality target /organizations/first
+         expect(true).toBe(true)
+       })
+       test('rejects unauthorized access', async () => {
+         // @fuzequality target /organizations/second
+         expect(true).toBe(true)
+       })`,
+    )
+
+    const result = await scanRepository(repository, root)
+    const repeatedTests = result.tests.filter(item => item.title === 'rejects unauthorized access')
+    const repeatedPlans = result.qualityArtifacts?.filter(
+      item => item.kind === 'test-plan' && item.title === 'rejects unauthorized access'
+    ) ?? []
+
+    expect(repeatedTests).toHaveLength(2)
+    expect(new Set(repeatedTests.map(item => item.id)).size).toBe(2)
+    expect(repeatedTests.map(item => item.targets)).toEqual([
+      ['/organizations/first'],
+      ['/organizations/second'],
+    ])
+    expect(repeatedPlans).toHaveLength(2)
+    expect(new Set(repeatedPlans.map(item => item.id)).size).toBe(2)
+    expect(new Set(repeatedPlans.flatMap(item => item.evidence)).size).toBeGreaterThanOrEqual(2)
+  })
+
   it('builds API and frontend expectations from repository files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-'))
     await mkdir(join(root, 'src'), { recursive: true })
@@ -149,7 +182,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.5.0',
+      scannerVersion: '1.6.0',
       partial: false,
       counts: {
         operations: 1,

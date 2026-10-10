@@ -59,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.5.0'
+export const SCANNER_VERSION = '1.6.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -256,7 +256,7 @@ function extractTests(repository: Repository, file: string, source: string): Tes
     const end = titleMatches[index + 1]?.index ?? source.length
     const evidence = metadata(source.slice(start, end))
     cases.push({
-      id: `test:${repository.name}:${digest(file, title)}`,
+      id: `test:${repository.name}:${digest(file, title, String(start))}`,
       repositoryId: repository.id,
       framework: frameworkFor(file, source),
       level: levelFor(file, source),
