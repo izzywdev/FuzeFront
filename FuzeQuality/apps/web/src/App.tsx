@@ -3214,7 +3214,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     if (!sourceRevision) return
     if (
       !window.confirm(
-        `Dispatch ${artifact.title} at analyzed commit ${sourceRevision}?`
+        `Dispatch ${artifact.title} from ${repository?.defaultBranch ?? 'the analyzed branch'} at analyzed commit ${sourceRevision}?`
       )
     )
       return
@@ -3228,7 +3228,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setPerformanceDispatch({
         artifactId: artifact.id,
         state: 'success',
-        message: `Dispatched ${receipt.workflowPath} at ${receipt.ref}. GitHub Actions will report the run as execution evidence.`,
+        message: `Dispatched ${receipt.workflowPath} from ${receipt.ref} at analyzed commit ${receipt.sourceRevision}. GitHub Actions will report the run as execution evidence.`,
       })
     } catch (error) {
       setPerformanceDispatch({

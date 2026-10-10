@@ -439,7 +439,8 @@ describe('RepositoryIntelligence flow inventory', () => {
       status: 'dispatched',
       artifactId: loadArtifact.id,
       workflowPath: loadArtifact.sourcePath,
-      ref: 'a'.repeat(40),
+      ref: 'main',
+      sourceRevision: 'a'.repeat(40),
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -455,7 +456,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       )
     )
     expect(await screen.findByRole('status')).toHaveTextContent(
-      `Dispatched .github/workflows/load-test.yml at ${'a'.repeat(40)}`
+      `Dispatched .github/workflows/load-test.yml from main at analyzed commit ${'a'.repeat(40)}`
     )
   })
 

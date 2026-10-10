@@ -584,8 +584,8 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
   if (!sourceRevision) return response.status(409).json({ error: 'An exact analyzed source revision is required before dispatch', code: 'ANALYSIS_SOURCE_REVISION_REQUIRED' })
   if (!repository.installationId) return response.status(422).json({ error: 'GitHub App installation is required', code: 'INSTALLATION_REQUIRED' })
   try {
-    await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, installationId: repository.installationId, workflowPath })
-    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: sourceRevision })
+    const receipt = await dispatchPerformanceWorkflow({ owner: repository.owner, name: repository.name, sourceRevision, sourceRef: repository.defaultBranch, installationId: repository.installationId, workflowPath })
+    response.status(202).json({ status: 'dispatched', artifactId: artifact.id, workflowPath, ref: receipt.ref, sourceRevision: receipt.sourceRevision })
   } catch (error) {
     response.status(422).json({ error: error instanceof Error ? error.message : String(error), code: 'PERFORMANCE_DISPATCH_FAILED' })
   }
