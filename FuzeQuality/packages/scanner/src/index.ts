@@ -59,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.6.0'
+export const SCANNER_VERSION = '1.7.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -99,14 +99,14 @@ function performanceExecutionTarget(
   try {
     const document = parseYaml(source) as {
       on?: unknown
-      'x-fuzequality-performance'?: unknown
+      env?: Record<string, unknown>
     } | undefined
     const triggers = document?.on
     const reviewedKind = kind === 'load-test' ? 'load' : 'stress'
     const dispatchable = triggers === 'workflow_dispatch' ||
       (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
       (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
-    return dispatchable && document?.['x-fuzequality-performance'] === reviewedKind
+    return dispatchable && document?.env?.FUZEQUALITY_PERFORMANCE === reviewedKind
       ? { provider: 'github-actions', workflowPath: sourcePath, trigger: 'workflow_dispatch' }
       : undefined
   } catch {

@@ -3908,8 +3908,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               <small className="performance-inventory-only">
                                 Inventory only · a repository-owned
                                 workflow_dispatch workflow must declare the
-                                reviewed x-fuzequality-performance marker to
-                                enable a controlled run.
+                                reviewed FUZEQUALITY_PERFORMANCE environment
+                                marker as load or stress to enable a controlled
+                                run.
                               </small>
                             )}
                           {['load-test', 'stress-test'].includes(item.kind) &&

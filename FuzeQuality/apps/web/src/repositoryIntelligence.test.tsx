@@ -489,7 +489,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     expect(await screen.findByText(/Inventory only/)).toHaveTextContent(
-      'workflow_dispatch workflow must declare the reviewed x-fuzequality-performance marker'
+      'workflow_dispatch workflow must declare the reviewed FUZEQUALITY_PERFORMANCE environment marker as load or stress'
     )
     expect(
       screen.queryByRole('button', { name: /Run analyzed revision/ })

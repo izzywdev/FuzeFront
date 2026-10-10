@@ -152,7 +152,8 @@ The complete registration, webhook, rotation, and verification contract is in
 - Scanner checkouts use short-lived GitHub App tokens and temporary directories.
 - A performance workflow is dispatchable only when it is a checked-in
   `workflow_dispatch` file under `.github/workflows/` and explicitly declares
-  `x-fuzequality-performance: load` or `x-fuzequality-performance: stress`.
+  `FUZEQUALITY_PERFORMANCE: load` or `FUZEQUALITY_PERFORMANCE: stress` in its
+  workflow-level `env` map.
   Filename discovery alone produces inventory evidence and never execution
   authority.
 - Invalid Kafka messages are routed to per-topic `.dlq` topics.

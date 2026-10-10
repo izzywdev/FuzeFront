@@ -56,9 +56,9 @@ describe('repository scanner', () => {
     await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {}); test('customer sees an empty basket', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
     await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
-    await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nx-fuzequality-performance: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
-    await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Unreviewed load-like workflow\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
-    await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\non: push\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
+    await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
+    await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Invalid legacy marker\nx-fuzequality-performance: load\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
+    await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\nenv:\n  FUZEQUALITY_PERFORMANCE: stress\non: [workflow_dispatch]\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
     await writeFile(join(root, 'src', 'loader.ts'), 'export const loader = () => "production"')
     await writeFile(join(root, 'src', 'performanceConfig.js'), 'export const budget = 100')
     await writeFile(join(root, 'app', 'loading.ts'), 'export default function Loading() {}')
@@ -81,7 +81,15 @@ describe('repository scanner', () => {
           trigger: 'workflow_dispatch',
         },
       }),
-      expect.objectContaining({ kind: 'stress-test', sourcePath: '.github/workflows/stress.yml', execution: undefined }),
+      expect.objectContaining({
+        kind: 'stress-test',
+        sourcePath: '.github/workflows/stress.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/stress.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }),
       expect.objectContaining({ kind: 'documentation', sourcePath: 'journey.md' }),
       expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
       expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
@@ -182,7 +190,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.6.0',
+      scannerVersion: '1.7.0',
       partial: false,
       counts: {
         operations: 1,
