@@ -157,7 +157,10 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
 }
 
 test.describe('FuzeQuality implemented UX flows', () => {
-  test.beforeEach(async ({ page }) => { await mockQualityApi(page); await page.goto('/') })
+  test.beforeEach(async ({ page }) => {
+    await mockQualityApi(page)
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+  })
 
   test('loads the portfolio and navigates every implemented workspace', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /See what the platform promises/i })).toBeVisible()
@@ -181,7 +184,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
         },
       }
     })
-    await page.goto('/')
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
     await page.evaluate(() => {
       window.history.pushState({}, '', '/app/fuzequality/operations')
       window.dispatchEvent(new PopStateEvent('popstate'))
@@ -288,6 +291,36 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(originSummary).toContainText('No AI proposals are available for this revision.')
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
+  })
+
+  test('keeps historical UX-flow proposals visible but review-locked', async ({ page }) => {
+    await page.route(
+      url =>
+        url.pathname ===
+        '/api/v1/repositories/repo-1/flow-candidates',
+      route =>
+        route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              ...repositoryFlowCandidates[0],
+              revision: 'historical-revision',
+            },
+          ]),
+        })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const flowCard = page
+      .getByText('Suspend an application', { exact: true })
+      .locator('..')
+    await expect(flowCard.getByText(/Historical proposal/)).toBeVisible()
+    await expect(flowCard.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    await expect(flowCard.getByRole('button', { name: 'Reject' })).toBeDisabled()
+    await expect(
+      flowCard.getByLabel('Optional review rationale')
+    ).toBeDisabled()
   })
 
   test('dispatches a reviewed load workflow with visible execution handoff', async ({ page }) => {

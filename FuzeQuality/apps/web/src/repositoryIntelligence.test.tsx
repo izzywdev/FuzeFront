@@ -149,6 +149,20 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('locks review controls for a candidate from a historical revision', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([
+      { ...candidate, revision: 'historical-revision' },
+    ])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/Historical proposal/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
+    expect(screen.getByLabelText('Optional review rationale')).toBeDisabled()
+  })
+
   it('reloads only flows, hides stale results, and is not blocked by an invalid execution range', async () => {
     mockEvidenceApis()
     let resolveFiltered: (value: RepositoryFlowCandidate[]) => void = () => {}

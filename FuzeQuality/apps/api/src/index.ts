@@ -42,6 +42,7 @@ import { executionFilterSchema } from './execution-filter'
 import { executionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
+import { repositoryFlowReviewConflict } from './repository-flow-review'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import {
   buildImplementationManifest,
@@ -497,9 +498,12 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const existingCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
   if (!existingCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
+  const conflict = repositoryFlowReviewConflict(repository, existingCandidate)
+  if (conflict) return response.status(409).json(conflict)
   const candidate = await store.reviewRepositoryFlowCandidate(candidateId, tenantId, {
     status: parsed.data.status,
     reviewedBy: requestIdentity(request)!.userId,

@@ -130,6 +130,11 @@ describe('contract discovery', () => {
         )
       ).toEqual(['source', 'status', 'revision'])
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['409'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/StaleFlowCandidateError')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
       ).toContain('scanner-verified workflow_dispatch')
     })

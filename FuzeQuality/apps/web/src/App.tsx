@@ -2744,9 +2744,11 @@ function FlowReviewHistory({
 
 function FlowReviewControls({
   flow,
+  currentRevision,
   onReview,
 }: {
   flow: RepositoryFlowCandidate
+  currentRevision?: string
   onReview: (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -2756,6 +2758,9 @@ function FlowReviewControls({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const isCurrentRevision = Boolean(
+    currentRevision && flow.revision === currentRevision
+  )
 
   const submit = async (status: 'confirmed' | 'rejected') => {
     setBusy(true)
@@ -2784,10 +2789,17 @@ function FlowReviewControls({
       )}
       {flow.status === 'proposed' && (
         <div className="flow-review-controls">
+          {!isCurrentRevision && (
+            <p className="form-error" role="status">
+              Historical proposal — review is locked until repository analysis
+              produces a candidate for the current revision.
+            </p>
+          )}
           <label>
             Optional review rationale
             <input
               value={reason}
+              disabled={!isCurrentRevision || busy}
               onChange={event => setReason(event.target.value)}
               placeholder="Why is this flow accurate or unsuitable?"
             />
@@ -2795,14 +2807,14 @@ function FlowReviewControls({
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy}
+              disabled={busy || !isCurrentRevision}
               onClick={() => void submit('confirmed')}
             >
               <Check size={14} /> Confirm
             </QualityAction>
             <QualityAction
               intent="danger"
-              disabled={busy}
+              disabled={busy || !isCurrentRevision}
               onClick={() => void submit('rejected')}
             >
               <X size={14} /> Reject
@@ -3558,6 +3570,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             </details>
                             <FlowReviewControls
                               flow={flow}
+                              currentRevision={
+                                data.repositories.find(
+                                  repository => repository.id === flow.repositoryId
+                                )?.lastScanRevision
+                              }
                               onReview={reviewFlow}
                             />
                           </div>
