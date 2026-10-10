@@ -392,6 +392,22 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(within(outcome).getByRole('link', { name: /Open CI run/ })).toHaveAttribute('href', loadExecution.sourceUrl)
   })
 
+  it('keeps repository and governance evidence visible when optional performance history fails', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([governanceEvaluation])
+    vi.mocked(api.testExecutions).mockRejectedValue(new Error('execution history unavailable'))
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(loadArtifact.title)).toBeVisible()
+    expect(screen.getByText(governanceEvaluation.title)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Latest execution evidence is temporarily unavailable'
+    )
+  })
+
   it('shows policy and gate names with their source paths in observed outcomes', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

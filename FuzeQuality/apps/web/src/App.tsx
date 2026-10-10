@@ -3046,6 +3046,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >([])
   const [executions, setExecutions] = useState<TestExecution[]>([])
   const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
+  const [performanceEvidenceFailures, setPerformanceEvidenceFailures] = useState<string[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
     PolicyGatePerformance[]
   >([])
@@ -3227,8 +3228,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           artifacts: repositoryArtifacts,
           evaluations,
           performanceExecutions: hasPerformanceDefinitions
-            ? await api.testExecutions(repository.id)
-            : [],
+            ? await api.testExecutions(repository.id).then(
+                executions => ({ executions, failed: false }),
+                () => ({ executions: [], failed: true })
+              )
+            : { executions: [], failed: false },
+          repositoryId: repository.id,
         }
       })
     )
@@ -3236,7 +3241,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         if (active) {
           setArtifacts(groups.flatMap(group => group.artifacts))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
-          setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions))
+          setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions.executions))
+          setPerformanceEvidenceFailures(
+            groups
+              .filter(group => group.performanceExecutions.failed)
+              .map(group => group.repositoryId)
+          )
         }
       })
       .catch(() => {
@@ -3244,6 +3254,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setArtifacts([])
           setPolicyGateEvaluations([])
           setPerformanceExecutions([])
+          setPerformanceEvidenceFailures([])
         }
       })
       .finally(() => {
@@ -3737,6 +3748,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           <strong>{item.title}</strong>
                           <code>{item.sourcePath}</code>
                           <p>{item.summary}</p>
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            performanceEvidenceFailures.includes(item.repositoryId) && (
+                              <small className="performance-evidence-warning" role="alert">
+                                Latest execution evidence is temporarily unavailable. The discovered test definition remains available.
+                              </small>
+                            )}
                           {item.evidence.length > 0 && (
                             <small>{item.evidence[0]}</small>
                           )}

@@ -65,6 +65,7 @@ export function mergeTestExecutionEvidence(
     ...existing,
     ...incoming,
     id: existing.id,
+    workflowPath: incoming.workflowPath ?? existing.workflowPath,
     sourceUrl: incoming.sourceUrl ?? existing.sourceUrl,
     startedAt: incoming.startedAt ?? existing.startedAt,
     completedAt: incoming.completedAt ?? existing.completedAt,

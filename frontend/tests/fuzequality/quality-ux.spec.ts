@@ -341,6 +341,25 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
   })
 
+  test('keeps discovered tests and governance visible when execution history is unavailable', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/test-executions'),
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Execution history temporarily unavailable' }),
+      })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByText('Application API load test', { exact: true })).toBeVisible()
+    await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText(
+      'Latest execution evidence is temporarily unavailable'
+    )
+  })
+
   test('keeps historical UX-flow proposals visible but review-locked', async ({ page }) => {
     await page.route(
       url =>
