@@ -28,7 +28,11 @@ const portfolio = {
       analysis: { promptVersion: 'fuzequality-flow-v1', schemaVersion: '1.0', model: 'quality-analysis' },
     },
   }],
-  diagnostics: [],
+  diagnostics: [{
+    repositoryId: 'repo-1', revision: 'abcdef123456', sourcePath: 'docs/oversized-journey.md',
+    category: 'repository', severity: 'error', code: 'unreadable-quality-evidence',
+    message: 'File exceeds 5 MB scan limit: docs/oversized-journey.md',
+  }],
 }
 
 const documentedStoryPortfolio = {
@@ -229,6 +233,8 @@ test.describe('FuzeQuality implemented UX flows', () => {
   test('reviews repository flows, governance history, and execution evidence together', async ({ page }) => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
     await expect(page.getByRole('heading', { name: 'Quality intelligence' })).toBeVisible()
+    await expect(page.getByText('Repository analysis diagnostics')).toBeVisible()
+    await expect(page.getByText('unreadable-quality-evidence')).toBeVisible()
 
     const originSummary = page.getByLabel('UX flow origin summary')
     await expect(originSummary).toContainText('1 deterministic flow')

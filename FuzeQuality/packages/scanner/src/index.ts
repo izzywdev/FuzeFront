@@ -59,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.4.0'
+export const SCANNER_VERSION = '1.5.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -114,15 +114,40 @@ function performanceExecutionTarget(
   }
 }
 
-async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<{ artifacts: QualityArtifact[]; fingerprints: string[] }> {
+async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<{ artifacts: QualityArtifact[]; fingerprints: string[]; diagnostics: ScanDiagnostic[] }> {
   const artifacts = new Map<string, QualityArtifact>()
   const fingerprints = new Map<string, string>()
+  const diagnostics = new Map<string, ScanDiagnostic>()
+  const sources = new Map<string, Promise<string | undefined>>()
+  const qualitySource = (file: string) => {
+    const sourcePath = normalize(file)
+    const existing = sources.get(sourcePath)
+    if (existing) return existing
+    const pending = readText(root, file).then(
+      source => {
+        fingerprints.set(sourcePath, `${sourcePath}:${fingerprint(source)}`)
+        return source
+      },
+      error => {
+        diagnostics.set(sourcePath, {
+          sourcePath,
+          category: 'repository',
+          severity: 'error',
+          code: 'unreadable-quality-evidence',
+          message: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+      },
+    )
+    sources.set(sourcePath, pending)
+    return pending
+  }
   for (const candidate of QUALITY_ARTIFACT_GLOBS) {
     const files = await fg(candidate.glob, { cwd: root, ignore, onlyFiles: true, dot: true })
     for (const file of files.slice(0, 100)) {
       const sourcePath = normalize(file)
-      const source = await readText(root, file).catch(() => '')
-      fingerprints.set(sourcePath, `${sourcePath}:${fingerprint(source)}`)
+      const source = await qualitySource(file)
+      if (source === undefined) continue
       const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required|needs:|playwright|production|deploy|test/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
       const key = `${candidate.kind}:${sourcePath}`
       artifacts.set(key, {
@@ -140,8 +165,8 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
   const documentationFiles = await fg('**/*.{md,mdx}', { cwd: root, ignore, onlyFiles: true, dot: true, followSymbolicLinks: false })
   for (const file of documentationFiles.slice(0, 100)) {
     const sourcePath = normalize(file)
-    const source = await readText(root, file).catch(() => '')
-    fingerprints.set(sourcePath, `${sourcePath}:${fingerprint(source)}`)
+    const source = await qualitySource(file)
+    if (source === undefined) continue
     const heading = source.match(/^#{1,3}\s+(.+)$/m)?.[1]?.trim()
     const evidence = source
       .split(/\r?\n/)
@@ -162,6 +187,7 @@ async function discoverQualityArtifacts(root: string, repository: Repository, ig
   return {
     artifacts: [...artifacts.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind)),
     fingerprints: [...fingerprints.values()],
+    diagnostics: [...diagnostics.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
   }
 }
 
@@ -552,6 +578,7 @@ export async function scanRepository(
   const findings = buildFindings(repository.id, operations, surfaces, expectations, owner)
   const discoveredQuality = await discoverQualityArtifacts(root, repository, ignore)
   contentFingerprints.push(...discoveredQuality.fingerprints)
+  diagnostics.push(...discoveredQuality.diagnostics)
   const revision = digest(
     repository.name,
     SCANNER_VERSION,

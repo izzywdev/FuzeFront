@@ -161,6 +161,27 @@ afterEach(() => {
 })
 
 describe('RepositoryIntelligence flow inventory', () => {
+  it('surfaces repository evidence scan failures to reviewers', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    render(<RepositoryIntelligence data={{
+      ...portfolio,
+      diagnostics: [{
+        repositoryId: repository.id,
+        revision: 'revision-1',
+        sourcePath: 'docs/journey.md',
+        category: 'repository',
+        severity: 'error',
+        code: 'unreadable-quality-evidence',
+        message: 'File exceeds 5 MB scan limit: docs/journey.md',
+      }],
+    }} />)
+
+    expect(screen.getByText('Repository analysis diagnostics')).toBeVisible()
+    expect(screen.getByText('unreadable-quality-evidence')).toBeVisible()
+    expect(screen.getByText(/fuze\/front · docs\/journey\.md/)).toBeVisible()
+  })
+
   it('excludes a reviewed candidate when it no longer matches the active status', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])

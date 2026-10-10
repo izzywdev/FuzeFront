@@ -36,4 +36,17 @@ describe('execution-to-governance linking', () => {
       gateArtifactIds: ['gate-auth'],
     })
   })
+
+  it('does not name-match a different gate when workflow-path provenance is present', () => {
+    const artifacts = [
+      { id: 'policy-auth', repositoryId: 'repo', kind: 'policy' as const, title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication required.', evidence: [] },
+      { id: 'gate-auth', repositoryId: 'repo', kind: 'gate' as const, title: 'Authentication gate', sourcePath: '.github/workflows/authentication.yml', summary: 'Authentication required check.', evidence: [] },
+    ]
+
+    expect(linkExecutionArtifacts(
+      'Authentication integration',
+      artifacts,
+      '.github/workflows/different.yml',
+    )).toEqual({ policyArtifactIds: [], gateArtifactIds: [] })
+  })
 })

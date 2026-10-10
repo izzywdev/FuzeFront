@@ -19,7 +19,7 @@ export function linkExecutionArtifacts(workflowName: string, artifacts: QualityA
   const exactGates = workflowPath
     ? artifacts.filter(item => item.kind === 'gate' && item.sourcePath === workflowPath)
     : []
-  const gates = exactGates.length
+  const gates = workflowPath
     ? exactGates
     : artifacts.filter(item => item.kind === 'gate' && [...keyTerms(item)].some(term => workflow.has(term)))
   const gateTerms = new Set(gates.flatMap(item => [...keyTerms(item)]))

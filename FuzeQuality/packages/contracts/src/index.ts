@@ -378,7 +378,7 @@ export type SuggestionDecision = {
 
 export type ScanDiagnostic = {
   sourcePath: string
-  category: 'openapi' | 'test' | 'frontend' | 'storybook'
+  category: 'openapi' | 'test' | 'frontend' | 'storybook' | 'repository'
   severity: 'error' | 'warning'
   code: string
   message: string

@@ -21,6 +21,22 @@ const repository: Repository = {
 }
 
 describe('repository scanner', () => {
+  it('reports and omits repository evidence that exceeds the safe read limit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-oversized-evidence-'))
+    await writeFile(join(root, 'journey.md'), `# Oversized journey\n${'x'.repeat(5_000_001)}`)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.qualityArtifacts?.some(item => item.sourcePath === 'journey.md')).toBe(false)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      sourcePath: 'journey.md',
+      category: 'repository',
+      severity: 'error',
+      code: 'unreadable-quality-evidence',
+    }))
+    expect(result.scanDetails.partial).toBe(true)
+  })
+
   it('records deterministic policy, gate, and performance evidence for later reviewed analysis', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-governance-'))
     await mkdir(join(root, 'governance'), { recursive: true })
@@ -133,7 +149,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.4.0',
+      scannerVersion: '1.5.0',
       partial: false,
       counts: {
         operations: 1,

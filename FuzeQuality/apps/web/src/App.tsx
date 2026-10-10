@@ -3494,6 +3494,27 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         title="Quality intelligence"
         detail="Deterministic repository evidence is stored by revision. LiteLLM proposals remain reviewable suggestions before they affect flows or policy governance."
       />
+      {data.diagnostics.filter(item => item.category === 'repository').length > 0 && (
+        <details className="scan-diagnostics" open>
+          <summary>
+            <AlertTriangle size={14} /> Repository analysis diagnostics
+          </summary>
+          <div>
+            {data.diagnostics
+              .filter(item => item.category === 'repository')
+              .map(item => (
+                <article key={`${item.repositoryId}:${item.revision}:${item.sourcePath}:${item.code}`}>
+                  <span className={`diagnostic-severity diagnostic-${item.severity}`}>
+                    {item.severity}
+                  </span>
+                  <code>{repositoryLabels.get(item.repositoryId) ?? item.repositoryId} · {item.sourcePath}</code>
+                  <strong>{item.code}</strong>
+                  <p>{item.message}</p>
+                </article>
+              ))}
+          </div>
+        </details>
+      )}
       {loadingArtifacts ? (
         <div className="loading-screen">
           <RefreshCw className="spin" />
