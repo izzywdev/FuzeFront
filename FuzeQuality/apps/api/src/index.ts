@@ -363,9 +363,11 @@ app.get('/api/v1/internal/repositories/:id', async (request, response) => {
 })
 app.get('/api/v1/internal/repositories/:id/quality-artifacts', async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const query = z.object({ revision: z.string().trim().min(1).max(500).optional() }).strict().safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
   const repository = await store.repository(repositoryId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.qualityArtifacts(repositoryId, repository.tenantId ?? 'legacy'))
+  response.json(await store.qualityArtifacts(repositoryId, repository.tenantId ?? 'legacy', query.data.revision))
 })
 app.post('/api/v1/internal/repository-flow-candidates', async (request, response) => {
   const parsed = repositoryFlowCandidateIngestionSchema.safeParse(request.body)

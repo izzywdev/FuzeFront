@@ -56,7 +56,7 @@ const repositoryFlowCandidates = [{
   evidence: [],
   steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['route-artifact'] }],
   wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['AppSettings'] }, { label: 'Confirm suspension', targetIds: ['SuspendDialog'] }, { label: 'Suspended state', targetIds: ['AppStatus'] }] },
-  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v2', schemaVersion: '1.0' },
+  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v3', schemaVersion: '1.0' },
   status: 'proposed', source: 'litellm', createdAt: '2026-10-08T09:00:00.000Z',
 }, {
   id: 'candidate-deterministic', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Indexed suspension route', confidence: 1,
@@ -82,7 +82,7 @@ const testExecutions = [{
   gateEvaluations: [{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', status: 'failed', detail: 'The production authorization assertion failed.' }],
   thresholds: [], evidenceLinks: [],
 }, {
-  id: 'execution-load-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'load', status: 'failed', name: 'Application API load test',
+  id: 'execution-load-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'stress', status: 'failed', name: 'Soak benchmark',
   provider: 'github-actions', externalRunId: '456', attempt: 1, workflowPath: '.github/workflows/load.yml',
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/456', startedAt: '2026-10-09T11:00:00.000Z', completedAt: '2026-10-09T11:05:00.000Z',
   policyArtifactIds: [], gateArtifactIds: [], summary: 'p95 latency exceeded the release threshold.', gateEvaluations: [], evidenceLinks: [],
@@ -236,7 +236,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const analysisProvenance = page.getByLabel('Suspend an application analysis provenance')
     await expect(analysisProvenance).toContainText('fuzeinfra-litellm')
     await expect(analysisProvenance).toContainText('quality-analysis')
-    await expect(analysisProvenance).toContainText('fuzequality-repository-flow-v2')
+    await expect(analysisProvenance).toContainText('fuzequality-repository-flow-v3')
     await expect(analysisProvenance).toContainText('1.0')
     await expect(page.getByText('Deterministic repository evidence', { exact: true })).toBeVisible()
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
@@ -255,13 +255,13 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const promptRequest = page.waitForRequest(request => {
       const url = new URL(request.url())
       return url.searchParams.get('model') === 'quality-analysis' &&
-        url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v2'
+        url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v3'
     })
-    await page.getByLabel('Prompt version').fill('fuzequality-repository-flow-v2')
+    await page.getByLabel('Prompt version').fill('fuzequality-repository-flow-v3')
     await promptRequest
     const schemaRequest = page.waitForRequest(request => {
       const url = new URL(request.url())
-      return url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v2' &&
+      return url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v3' &&
         url.searchParams.get('schemaVersion') === '1.0'
     })
     await page.getByLabel('Schema version').fill('1.0')

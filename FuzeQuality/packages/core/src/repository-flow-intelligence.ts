@@ -11,7 +11,7 @@ const responseSchema = z.object({
   }).strict()).max(30),
 }).strict()
 
-export const REPOSITORY_FLOW_PROMPT_VERSION = 'fuzequality-repository-flow-v2'
+export const REPOSITORY_FLOW_PROMPT_VERSION = 'fuzequality-repository-flow-v3'
 export const REPOSITORY_FLOW_SCHEMA_VERSION = '1.0'
 export const REPOSITORY_FLOW_SOURCE_BUDGET_BYTES = 64 * 1024
 const REPOSITORY_FLOW_SOURCE_FIELD_BYTES = 2 * 1024
@@ -31,10 +31,17 @@ function balancedAnalysisArtifacts(artifacts: QualityArtifact[], limit = 100): Q
     group.push(artifact)
     groups.set(artifact.kind, group)
   }
+  const orderedGroups = [...groups.entries()]
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    .map(([, group]) => [...group].sort((left, right) => {
+      const leftKey = `${left.sourcePath}\u0000${left.title}\u0000${left.id}`
+      const rightKey = `${right.sourcePath}\u0000${right.title}\u0000${right.id}`
+      return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0
+    }))
   const selected: QualityArtifact[] = []
   for (let index = 0; selected.length < limit; index++) {
     let added = false
-    for (const group of groups.values()) {
+    for (const group of orderedGroups) {
       const artifact = group[index]
       if (!artifact) continue
       selected.push(artifact)

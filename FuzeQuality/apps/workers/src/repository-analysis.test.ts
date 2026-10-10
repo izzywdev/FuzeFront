@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runRepositoryInventoryAnalysis } from './repository-analysis'
+import { repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis } from './repository-analysis'
 
 const repository = { id: 'repo-1', tenantId: 'tenant-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://example.test/front', defaultBranch: 'main', kind: 'application' as const, includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true, lastScanStatus: 'complete' as const }
 const artifacts = [{ id: 'route-1', repositoryId: 'repo-1', kind: 'route' as const, title: 'Checkout', sourcePath: 'apps/web/Checkout.tsx', summary: 'Open checkout', evidence: [] }]
 
 describe('repository inventory analysis ordering', () => {
+  it('requests artifacts for the inventory event revision exactly', () => {
+    expect(repositoryQualityArtifactsPath('repo/one', 'release #1')).toBe(
+      '/api/v1/internal/repositories/repo%2Fone/quality-artifacts?revision=release%20%231'
+    )
+  })
+
   it('persists deterministic flows and policy evaluations before a failed LiteLLM call', async () => {
     const calls: string[] = []
     const persistCandidates = vi.fn(async () => { calls.push('deterministic') })

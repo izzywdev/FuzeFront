@@ -81,6 +81,31 @@ describe('repository flow wireframes', () => {
     expect(new Set(requestKinds)).toEqual(new Set(['route', 'story', 'test-plan', 'documentation']))
   })
 
+  it('selects the same bounded prompt artifacts regardless of store ordering', async () => {
+    const kinds = ['route', 'story', 'documentation', 'test-plan'] as const
+    const inventory = Array.from({ length: 120 }, (_, index) => ({
+      ...artifacts[0],
+      id: `artifact-${String(index).padStart(3, '0')}`,
+      kind: kinds[index % kinds.length],
+      title: `Artifact ${index}`,
+      sourcePath: `src/${String(119 - index).padStart(3, '0')}.tsx`,
+    }))
+    const requests: string[][] = []
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      const prompt = JSON.parse(body.messages[1].content)
+      requests.push(prompt.artifacts.map((artifact: { id: string }) => artifact.id))
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"flows":[]}' } }] }))
+    }) as typeof fetch
+    const analyzer = new LiteLlmRepositoryFlowAnalyzer('http://litellm/v1', 'quality-analysis', undefined, fetchImpl)
+
+    await analyzer.analyze(repository, 'abc', inventory)
+    await analyzer.analyze(repository, 'abc', [...inventory].reverse())
+
+    expect(requests[0]).toHaveLength(100)
+    expect(requests[1]).toEqual(requests[0])
+  })
+
   it('bounds repository-derived prompt text by UTF-8 bytes', async () => {
     const oversized = Array.from({ length: 40 }, (_, index) => ({
       ...artifacts[0],
@@ -110,6 +135,6 @@ describe('repository flow wireframes', () => {
     await analyzer.analyze(repository, 'abc', oversized)
 
     expect(sourceBytes).toBeLessThanOrEqual(REPOSITORY_FLOW_SOURCE_BUDGET_BYTES)
-    expect(promptVersion).toBe('fuzequality-repository-flow-v2')
+    expect(promptVersion).toBe('fuzequality-repository-flow-v3')
   })
 })

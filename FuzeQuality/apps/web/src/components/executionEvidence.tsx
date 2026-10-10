@@ -19,11 +19,9 @@ export function latestPerformanceExecution(
     artifact.execution.trigger !== 'workflow_dispatch' ||
     artifact.execution.workflowPath !== artifact.sourcePath
   ) return undefined
-  const kind = artifact.kind === 'load-test' ? 'load' : 'stress'
   return executions
     .filter(execution =>
       execution.repositoryId === artifact.repositoryId &&
-      execution.kind === kind &&
       execution.workflowPath === artifact.execution?.workflowPath
     )
     .sort((left, right) => {

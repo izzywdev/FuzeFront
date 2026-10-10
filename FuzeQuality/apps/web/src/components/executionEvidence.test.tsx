@@ -3,8 +3,8 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
+import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -72,6 +72,33 @@ const artifacts = [
 ]
 
 describe('ExecutionThresholdEvidence', () => {
+  it('matches a scanner-verified performance workflow despite heuristic run kind differences', () => {
+    const artifact: QualityArtifact = {
+      id: 'performance-workflow',
+      repositoryId: execution.repositoryId,
+      kind: 'load-test',
+      title: 'Performance workflow',
+      sourcePath: '.github/workflows/load-test.yml',
+      summary: 'Load and soak coverage',
+      evidence: [],
+      execution: {
+        provider: 'github-actions',
+        workflowPath: '.github/workflows/load-test.yml',
+        trigger: 'workflow_dispatch',
+      },
+    }
+    const heuristicStressRun = { ...execution, kind: 'stress' as const }
+
+    expect(latestPerformanceExecution(artifact, [heuristicStressRun])).toBe(
+      heuristicStressRun
+    )
+    expect(
+      latestPerformanceExecution(artifact, [
+        { ...heuristicStressRun, workflowPath: '.github/workflows/other.yml' },
+      ])
+    ).toBeUndefined()
+  })
+
   it('renders the workflow file with the provider-owned run identity', () => {
     render(<ExecutionEvidenceMetadata execution={execution} />)
 
