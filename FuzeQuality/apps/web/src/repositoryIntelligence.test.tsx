@@ -332,6 +332,36 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })
 
+  it('resolves artifacts referenced only by LiteLLM flow steps', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([storyArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([
+      {
+        ...candidate,
+        evidence: [],
+        steps: [
+          {
+            ...candidate.steps[0],
+            targetIds: [storyArtifact.id],
+          },
+        ],
+      },
+    ])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    fireEvent.click(screen.getByText('Source evidence'))
+
+    expect(
+      screen.getByText('story · src/Checkout.stories.tsx')
+    ).toBeVisible()
+    expect(
+      screen.getByLabelText('Completes checkout targets')
+    ).toHaveTextContent(
+      'story · src/Checkout.stories.tsx · Checkout / Complete'
+    )
+  })
+
   it('renders repository evidence classes supplied to reviewed flow analysis', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([

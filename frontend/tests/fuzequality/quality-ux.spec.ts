@@ -53,10 +53,10 @@ const qualityArtifacts = [
 
 const repositoryFlowCandidates = [{
   id: 'candidate-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Suspend an application', confidence: 0.94,
-  evidence: ['src/routes/apps.ts:42', 'frontend/src/pages/AppSettings.tsx:88'],
-  steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['POST /apps/{slug}/suspend'] }],
+  evidence: [],
+  steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['route-artifact'] }],
   wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['AppSettings'] }, { label: 'Confirm suspension', targetIds: ['SuspendDialog'] }, { label: 'Suspended state', targetIds: ['AppStatus'] }] },
-  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'repository-flow-v1', schemaVersion: '1.0' },
+  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v2', schemaVersion: '1.0' },
   status: 'proposed', source: 'litellm', createdAt: '2026-10-08T09:00:00.000Z',
 }, {
   id: 'candidate-deterministic', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Indexed suspension route', confidence: 1,
@@ -236,7 +236,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const analysisProvenance = page.getByLabel('Suspend an application analysis provenance')
     await expect(analysisProvenance).toContainText('fuzeinfra-litellm')
     await expect(analysisProvenance).toContainText('quality-analysis')
-    await expect(analysisProvenance).toContainText('repository-flow-v1')
+    await expect(analysisProvenance).toContainText('fuzequality-repository-flow-v2')
     await expect(analysisProvenance).toContainText('1.0')
     await expect(page.getByText('Deterministic repository evidence', { exact: true })).toBeVisible()
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
@@ -255,13 +255,13 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const promptRequest = page.waitForRequest(request => {
       const url = new URL(request.url())
       return url.searchParams.get('model') === 'quality-analysis' &&
-        url.searchParams.get('promptVersion') === 'repository-flow-v1'
+        url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v2'
     })
-    await page.getByLabel('Prompt version').fill('repository-flow-v1')
+    await page.getByLabel('Prompt version').fill('fuzequality-repository-flow-v2')
     await promptRequest
     const schemaRequest = page.waitForRequest(request => {
       const url = new URL(request.url())
-      return url.searchParams.get('promptVersion') === 'repository-flow-v1' &&
+      return url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v2' &&
         url.searchParams.get('schemaVersion') === '1.0'
     })
     await page.getByLabel('Schema version').fill('1.0')
@@ -270,7 +270,13 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await flowCard.getByText('Source evidence', { exact: true }).click()
     await expect(flowCard.getByText('Revision abcdef123456')).toBeVisible()
-    await expect(flowCard.getByText('src/routes/apps.ts:42')).toBeVisible()
+    await expect(
+      flowCard.getByText('route · src/routes/apps.ts', { exact: true })
+    ).toBeVisible()
+    await expect(flowCard.getByText('Artifact: Suspend app route')).toBeVisible()
+    await expect(flowCard.getByLabel('selects Suspend targets')).toContainText(
+      'route · src/routes/apps.ts · Suspend app route'
+    )
 
     await flowCard.getByLabel('Optional review rationale').fill('Matches the protected suspension journey.')
     const flowReviewRequest = page.waitForRequest(request => request.url().endsWith('/flow-candidates/candidate-1/review'))

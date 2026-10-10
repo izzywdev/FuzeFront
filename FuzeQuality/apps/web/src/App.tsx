@@ -3379,6 +3379,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       ),
     [data.repositories]
   )
+  const artifactsById = useMemo(
+    () => new Map(artifacts.map(artifact => [artifact.id, artifact])),
+    [artifacts]
+  )
   const filteredPolicyGateEvaluations = useMemo(
     () =>
       policyGateEvaluations.filter(
@@ -3668,10 +3672,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               <summary>Source evidence</summary>
                               <small>Revision {flow.revision}</small>
                               <ul>
-                                {flow.evidence.map(evidence => {
-                                  const artifact = artifacts.find(
-                                    item => item.id === evidence
-                                  )
+                                {[
+                                  ...new Set([
+                                    ...flow.evidence,
+                                    ...flow.steps.flatMap(
+                                      step => step.targetIds
+                                    ),
+                                  ]),
+                                ].map(evidence => {
+                                  const artifact = artifactsById.get(evidence)
                                   return (
                                     <li key={evidence}>
                                       <code>
@@ -3692,9 +3701,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                     <strong>{step.actor}</strong> —{' '}
                                     {step.action} → {step.expectedOutcome}
                                     {step.targetIds.length ? (
-                                      <small>
+                                      <small
+                                        aria-label={`${step.action} targets`}
+                                      >
                                         {' '}
-                                        ({step.targetIds.join(', ')})
+                                        ({step.targetIds
+                                          .map(targetId => {
+                                            const artifact =
+                                              artifactsById.get(targetId)
+                                            return artifact
+                                              ? `${artifact.kind} · ${artifact.sourcePath} · ${artifact.title}`
+                                              : targetId
+                                          })
+                                          .join(', ')})
                                       </small>
                                     ) : null}
                                   </li>
