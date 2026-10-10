@@ -311,6 +311,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
     vi.mocked(api.executionPerformance).mockResolvedValue([
       {
+        repositoryId: repository.id,
         policyArtifactId: 'policy-auth',
         policyTitle: 'Authentication policy',
         policySourcePath: 'governance/auth.md',
@@ -327,6 +328,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     expect(await screen.findByText('Authentication policy → Authentication gate')).toBeVisible()
+    expect(screen.getByLabelText('Evidence repository')).toHaveTextContent('fuze/front')
     expect(screen.getByText('governance/auth.md → .github/workflows/auth.yml')).toBeVisible()
     expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
   })

@@ -3256,6 +3256,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     () => executionOutcomeTrend(executions),
     [executions]
   )
+  const repositoryLabels = useMemo(
+    () =>
+      new Map(
+        data.repositories.map(repository => [
+          repository.id,
+          `${repository.owner}/${repository.name}`,
+        ])
+      ),
+    [data.repositories]
+  )
   const filteredPolicyGateEvaluations = useMemo(
     () =>
       policyGateEvaluations.filter(
@@ -3832,9 +3842,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             {executionPerformance.map(pair => (
               <article
                 className="catalog-row"
-                key={`${pair.policyArtifactId}:${pair.gateArtifactId}`}
+                key={`${pair.repositoryId}:${pair.policyArtifactId}:${pair.gateArtifactId}`}
               >
                 <div>
+                  <small aria-label="Evidence repository">
+                    {repositoryLabels.get(pair.repositoryId) ?? pair.repositoryId}
+                  </small>
                   <strong>
                     {pair.policyTitle ?? pair.policyArtifactId} →{' '}
                     {pair.gateTitle ?? pair.gateArtifactId}

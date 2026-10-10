@@ -22,7 +22,32 @@ describe('execution performance', () => {
       { id: 'policy', repositoryId: 'repo', kind: 'policy', title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Require authentication', evidence: [] },
       { id: 'gate', repositoryId: 'repo', kind: 'gate', title: 'Authentication gate', sourcePath: '.github/workflows/auth.yml', summary: 'Enforce authentication', evidence: [] },
     ])
-    expect(rows).toEqual([{ policyArtifactId: 'policy', policyTitle: 'Authentication policy', policySourcePath: 'governance/auth.md', gateArtifactId: 'gate', gateTitle: 'Authentication gate', gateSourcePath: '.github/workflows/auth.yml', passed: 1, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-01-02T00:00:00.000Z' }])
+    expect(rows).toEqual([{ repositoryId: 'repo', policyArtifactId: 'policy', policyTitle: 'Authentication policy', policySourcePath: 'governance/auth.md', gateArtifactId: 'gate', gateTitle: 'Authentication gate', gateSourcePath: '.github/workflows/auth.yml', passed: 1, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-01-02T00:00:00.000Z' }])
+  })
+
+  it('keeps identical artifact identifiers isolated by repository', () => {
+    const execution = (repositoryId: string, status: 'passed' | 'failed') => ({
+      id: repositoryId,
+      repositoryId,
+      tenantId: 'org',
+      provider: 'external' as const,
+      externalRunId: repositoryId,
+      attempt: 1,
+      revision: 'a',
+      kind: 'ci' as const,
+      status,
+      name: 'shared workflow',
+      policyArtifactIds: ['policy'],
+      gateArtifactIds: ['gate'],
+      gateEvaluations: [{ policyArtifactId: 'policy', gateArtifactId: 'gate', status }],
+      thresholds: [],
+      evidenceLinks: [],
+    })
+
+    expect(executionPerformance([execution('repo-one', 'passed'), execution('repo-two', 'failed')])).toEqual([
+      { repositoryId: 'repo-two', policyArtifactId: 'policy', gateArtifactId: 'gate', passed: 0, failed: 1, cancelled: 0, running: 0 },
+      { repositoryId: 'repo-one', policyArtifactId: 'policy', gateArtifactId: 'gate', passed: 1, failed: 0, cancelled: 0, running: 0 },
+    ])
   })
 })
 

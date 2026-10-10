@@ -926,8 +926,9 @@ components:
           description: False when the received lifecycle event was an idempotent replay.
     PolicyGatePerformance:
       type: object
-      required: [policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
+      required: [repositoryId, policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
       properties:
+        repositoryId: { type: string }
         policyArtifactId: { type: string }
         policyTitle: { type: string }
         policySourcePath: { type: string }

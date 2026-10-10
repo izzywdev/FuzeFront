@@ -10,6 +10,7 @@ export function performanceWorkflowTarget(artifact: QualityArtifact): string | u
 }
 
 export type PolicyGatePerformance = {
+  repositoryId: string
   policyArtifactId: string
   policyTitle?: string
   policySourcePath?: string
@@ -68,10 +69,11 @@ export function executionPerformance(executions: TestExecution[], artifacts: Qua
         ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0], status: execution.status }]
         : []
     for (const evaluation of gateEvaluations) {
-      const key = `${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
+      const key = `${execution.repositoryId}:${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
       const policy = artifactsById.get(evaluation.policyArtifactId)
       const gate = artifactsById.get(evaluation.gateArtifactId)
       const current = results.get(key) ?? {
+        repositoryId: execution.repositoryId,
         policyArtifactId: evaluation.policyArtifactId,
         ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
         gateArtifactId: evaluation.gateArtifactId,
