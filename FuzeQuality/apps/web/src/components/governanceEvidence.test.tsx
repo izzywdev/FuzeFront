@@ -68,4 +68,11 @@ describe('PolicyGateEvidence', () => {
     expect(screen.getByText('Unknown')).toBeInTheDocument()
     expect(screen.getByText('Repository scope was not recorded for this legacy evaluation.')).toBeInTheDocument()
   })
+
+  it('does not render generated metadata as a decisive repository passage', () => {
+    const view = render(<PolicyGateEvidence evaluation={{ ...evaluation, evidencePassages: [] }} artifacts={artifacts} />)
+
+    expect(view.container.querySelector('.governance-passages')).toBeNull()
+    expect(view.container).not.toHaveTextContent('policy evidence discovered during repository analysis')
+  })
 })

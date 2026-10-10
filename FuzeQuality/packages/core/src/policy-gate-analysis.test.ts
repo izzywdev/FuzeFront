@@ -19,6 +19,26 @@ describe('policy gate evaluation', () => {
     ]))
   })
 
+  it('does not match unrelated artifacts through generated scanner boilerplate', () => {
+    const results = evaluatePolicyGates(repository, 'abc', [
+      { id: 'policy-auth', repositoryId: 'repo-1', kind: 'policy', title: 'authentication.md', sourcePath: 'governance/authentication.md', summary: 'policy evidence discovered during repository analysis', evidence: ['Authentication must be verified.'] },
+      { id: 'gate-deploy', repositoryId: 'repo-1', kind: 'gate', title: 'deploy.yml', sourcePath: '.github/workflows/deploy.yml', summary: 'gate evidence discovered during repository analysis', evidence: ['Deploy the application image.'] },
+    ])
+
+    expect(results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'unguarded-policy', policyArtifactIds: ['policy-auth'], gateArtifactIds: [] }),
+      expect.objectContaining({ kind: 'guard-without-policy', policyArtifactIds: [], gateArtifactIds: ['gate-deploy'] }),
+    ]))
+  })
+
+  it('never presents generated summaries or filenames as source passages', () => {
+    const results = evaluatePolicyGates(repository, 'abc', [
+      { id: 'policy-empty', repositoryId: 'repo-1', kind: 'policy', title: 'security-policy.md', sourcePath: 'governance/security-policy.md', summary: 'policy evidence discovered during repository analysis', evidence: [] },
+    ])
+
+    expect(results.find(item => item.kind === 'unguarded-policy')?.evidencePassages).toEqual([])
+  })
+
   it('does not call a gate ungoverned when it shares an enforceable subject', () => {
     const results = evaluatePolicyGates(repository, 'abc', [
       { id: 'policy-auth', repositoryId: 'repo-1', kind: 'policy', title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication required.', evidence: ['authentication required'] },

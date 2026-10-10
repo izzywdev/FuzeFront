@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import type { PolicyGateEvaluation, QualityArtifact, Repository } from '@fuzequality/contracts'
 
+const generatedScannerSummary = /^(?:policy|gate) evidence discovered during repository analysis$/i
+
 const keyTerms = (artifact: QualityArtifact) => new Set(
-  `${artifact.title}\n${artifact.summary}\n${artifact.evidence.join('\n')}`
+  `${artifact.title}\n${generatedScannerSummary.test(artifact.summary) ? '' : artifact.summary}\n${artifact.evidence.join('\n')}`
     .toLowerCase().match(/[a-z][a-z0-9-]{3,}/g)?.filter(word => !new Set(['policy', 'gate', 'must', 'with', 'that', 'this', 'from', 'every', 'should', 'required', 'check', 'release']).has(word)) ?? [],
 )
 
@@ -39,8 +41,6 @@ type EvidenceSignal = NonNullable<PolicyGateEvaluation['evidencePassages']>[numb
 
 const policyPassages = (artifact: QualityArtifact) => [
   ...artifact.evidence,
-  artifact.summary,
-  artifact.title,
 ].map(text => text.trim()).filter(Boolean)
 
 const prohibitionPattern = /\b(?:must not|shall not|may not|cannot|can't|prohibit(?:ed|s)?|forbid(?:den|s)?|never)\b/i
