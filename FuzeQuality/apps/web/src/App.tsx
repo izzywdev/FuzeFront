@@ -3855,9 +3855,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           {['load-test', 'stress-test'].includes(item.kind) &&
                             !item.execution && (
                               <small className="performance-inventory-only">
-                                Inventory only · add a repository-owned GitHub
-                                Actions workflow_dispatch workflow to enable a
-                                controlled run.
+                                Inventory only · a repository-owned
+                                workflow_dispatch workflow must declare the
+                                reviewed x-fuzequality-performance marker to
+                                enable a controlled run.
                               </small>
                             )}
                           {['load-test', 'stress-test'].includes(item.kind) && item.execution && (
@@ -4217,6 +4218,12 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const portalContext = usePortalContextKey()
   const embedded = Boolean(runtimeBridge()?.menu)
   usePortalMenu(setView)
+  const navigateToView = (nextView: View) => {
+    if (!embedded) {
+      window.history.pushState({}, '', pathForView(nextView, false))
+    }
+    setView(nextView)
+  }
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
   useEffect(() => configurePlatformSecurity(getToken), [getToken])
@@ -4276,10 +4283,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
               <button
                 key={item.id}
                 className={view === item.id ? 'active' : ''}
-                onClick={() => {
-                  window.history.pushState({}, '', pathForView(item.id, false))
-                  setView(item.id)
-                }}
+                onClick={() => navigateToView(item.id)}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
@@ -4328,7 +4332,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
           ) : (
             <>
               {view === 'overview' && (
-                <Overview data={data} onNavigate={setView} />
+                <Overview data={data} onNavigate={navigateToView} />
               )}
               {view === 'repositories' && (
                 <Repositories data={data} reload={reload} />

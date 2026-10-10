@@ -439,7 +439,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     expect(await screen.findByText(/Inventory only/)).toHaveTextContent(
-      'add a repository-owned GitHub Actions workflow_dispatch workflow'
+      'workflow_dispatch workflow must declare the reviewed x-fuzequality-performance marker'
     )
     expect(
       screen.queryByRole('button', { name: 'Run on default branch' })

@@ -217,6 +217,10 @@ test.describe('FuzeQuality implemented UX flows', () => {
   })
 
   test('keeps standalone navigation deep-linkable', async ({ page }) => {
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await expect(page).toHaveURL(/\/repositories$/)
+    await expect(page.getByRole('heading', { name: 'Repository inventory' })).toBeVisible()
+
     await page.getByRole('button', { name: 'Operations' }).click()
     await expect(page).toHaveURL(/\/operations$/)
     await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toBeVisible()

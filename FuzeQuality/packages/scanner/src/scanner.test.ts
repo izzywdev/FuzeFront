@@ -27,6 +27,8 @@ describe('repository scanner', () => {
     await mkdir(join(root, 'load'), { recursive: true })
     await mkdir(join(root, 'stories'), { recursive: true })
     await mkdir(join(root, 'tests'), { recursive: true })
+    await mkdir(join(root, 'src'), { recursive: true })
+    await mkdir(join(root, 'app'), { recursive: true })
     await mkdir(join(root, '.github', 'workflows'), { recursive: true })
     await writeFile(join(root, 'package.json'), JSON.stringify({ name: '@fuze/governance' }))
     await writeFile(join(root, 'governance', 'security-policy.md'), '# Policy\nEvery release must pass the authentication gate.')
@@ -38,8 +40,12 @@ describe('repository scanner', () => {
     await writeFile(join(root, 'tests', 'checkout.spec.ts'), `import { test } from '@playwright/test'; test('customer completes checkout', async () => {}); test('customer sees an empty basket', async () => {})`)
     await writeFile(join(root, '.github', 'workflows', 'ci.yml'), 'name: CI\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test')
     await writeFile(join(root, '.github', 'workflows', 'post-prod.yml'), 'name: Post production\njobs:\n  playwright:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:post-prod')
-    await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
+    await writeFile(join(root, '.github', 'workflows', 'load.yml'), 'name: Load test\nx-fuzequality-performance: load\non:\n  workflow_dispatch:\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
+    await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Unreviewed load-like workflow\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
     await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\non: push\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
+    await writeFile(join(root, 'src', 'loader.ts'), 'export const loader = () => "production"')
+    await writeFile(join(root, 'src', 'performanceConfig.js'), 'export const budget = 100')
+    await writeFile(join(root, 'app', 'loading.ts'), 'export default function Loading() {}')
 
     const result = await scanRepository(repository, root)
 
@@ -64,6 +70,13 @@ describe('repository scanner', () => {
       expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
       expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
     ]))
+    expect(result.qualityArtifacts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'load-test', sourcePath: '.github/workflows/load-test.yml', execution: undefined }),
+    ]))
+    expect(result.qualityArtifacts?.some(item =>
+      ['src/loader.ts', 'src/performanceConfig.js', 'app/loading.ts'].includes(item.sourcePath) &&
+      ['load-test', 'stress-test'].includes(item.kind)
+    )).toBe(false)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'story' && item.sourcePath === 'stories/Checkout.stories.tsx')).toHaveLength(2)
     expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan' && item.sourcePath === 'tests/checkout.spec.ts')).toHaveLength(2)
 
@@ -120,7 +133,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.3.0',
+      scannerVersion: '1.4.0',
       partial: false,
       counts: {
         operations: 1,

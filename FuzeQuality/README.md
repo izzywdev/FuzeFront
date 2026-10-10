@@ -150,6 +150,11 @@ The complete registration, webhook, rotation, and verification contract is in
 - AI suggestions remain proposed until confirmed.
 - Storybook stories are documentation evidence, not executed test evidence.
 - Scanner checkouts use short-lived GitHub App tokens and temporary directories.
+- A performance workflow is dispatchable only when it is a checked-in
+  `workflow_dispatch` file under `.github/workflows/` and explicitly declares
+  `x-fuzequality-performance: load` or `x-fuzequality-performance: stress`.
+  Filename discovery alone produces inventory evidence and never execution
+  authority.
 - Invalid Kafka messages are routed to per-topic `.dlq` topics.
 
 The intelligence worker builds immutable, content-addressed Chroma collections

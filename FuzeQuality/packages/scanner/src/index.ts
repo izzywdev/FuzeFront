@@ -59,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.3.0'
+export const SCANNER_VERSION = '1.4.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -76,10 +76,14 @@ const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: strin
   // Treat every checked-in workflow as gate evidence and let the reviewed
   // policy/gate analysis decide whether it actually guards a policy.
   { kind: 'gate', glob: '**/.github/workflows/*.{yaml,yml}' },
-  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
-  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}*.{ts,js,mjs,py,json,yaml,yml}' },
-  { kind: 'stress-test', glob: '**/{stress,soak}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
-  { kind: 'stress-test', glob: '**/{stress,soak}*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,load-test,performance,performance-test,k6,artillery}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
+  { kind: 'load-test', glob: '**/.github/workflows/{load,load-test,performance,performance-test,k6,artillery}.{yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,soak}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,soak}.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,stress-test,soak,soak-test}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
+  { kind: 'stress-test', glob: '**/.github/workflows/{stress,stress-test,soak,soak-test}.{yaml,yml}' },
 ]
 
 function performanceExecutionTarget(
@@ -93,12 +97,16 @@ function performanceExecutionTarget(
     !/\.ya?ml$/i.test(sourcePath)
   ) return undefined
   try {
-    const document = parseYaml(source) as { on?: unknown } | undefined
+    const document = parseYaml(source) as {
+      on?: unknown
+      'x-fuzequality-performance'?: unknown
+    } | undefined
     const triggers = document?.on
+    const reviewedKind = kind === 'load-test' ? 'load' : 'stress'
     const dispatchable = triggers === 'workflow_dispatch' ||
       (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
       (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
-    return dispatchable
+    return dispatchable && document?.['x-fuzequality-performance'] === reviewedKind
       ? { provider: 'github-actions', workflowPath: sourcePath, trigger: 'workflow_dispatch' }
       : undefined
   } catch {
