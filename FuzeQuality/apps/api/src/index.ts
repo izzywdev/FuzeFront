@@ -18,7 +18,6 @@ import {
   coverageSummary,
   createCatalogStore,
   createEventBus,
-  linkExecutionArtifacts,
   executionPerformance,
   filterTestExecutions,
   performanceWorkflowTarget,
@@ -39,7 +38,7 @@ import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
-import { executionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
@@ -949,10 +948,11 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
   for (const execution of workflowExecutions) {
     const repository = repositories.find(item => item.id === execution.repositoryId)
     if (!repository?.tenantId) continue
-    const links = linkExecutionArtifacts(
-      execution.name,
-      await store.qualityArtifacts(repository.id, repository.tenantId),
-      execution.workflowPath,
+    const links = await linkExecutionToRevisionArtifacts(
+      execution,
+      repository.tenantId,
+      (repositoryId, tenantId, revision) =>
+        store.qualityArtifacts(repositoryId, tenantId, revision)
     )
     const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
       ? [{ policyArtifactId: links.policyArtifactIds[0], gateArtifactId: links.gateArtifactIds[0], status: execution.status }]

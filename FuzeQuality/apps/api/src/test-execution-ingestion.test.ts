@@ -1,8 +1,27 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { testExecutionInputSchema } from '@fuzequality/contracts'
-import { executionRecord } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
+  it('links workflow evidence from the execution source revision only', async () => {
+    const loadArtifacts = vi.fn().mockResolvedValue([])
+    const workflow = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      revision: 'run-commit-a',
+      name: 'Production smoke tests',
+      workflowPath: '.github/workflows/post-prod.yml',
+    }
+
+    await expect(
+      linkExecutionToRevisionArtifacts(workflow, 'org-1', loadArtifacts)
+    ).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [] })
+    expect(loadArtifacts).toHaveBeenCalledWith(
+      workflow.repositoryId,
+      'org-1',
+      'run-commit-a'
+    )
+  })
+
   it('uses the generated id when a legacy producer omits provider run identity', () => {
     const input = testExecutionInputSchema.parse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

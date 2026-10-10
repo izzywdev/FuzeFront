@@ -13,6 +13,7 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   flowCandidateMatchesInventory,
+  policyGateEvaluationMatchesInventory,
   RepositoryIntelligence,
 } from './App'
 import { api } from './api'
@@ -594,6 +595,51 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(
       screen.queryByRole('button', { name: 'Accept recommendation' })
     ).not.toBeInTheDocument()
+  })
+
+  it('removes a reviewed governance finding that no longer matches the active filter', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([
+      governanceEvaluation,
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockResolvedValue({
+      ...governanceEvaluation,
+      reviewStatus: 'accepted',
+      reviewedAt: '2026-10-09T01:00:00.000Z',
+      reviewedBy: 'quality-owner',
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+    fireEvent.change(screen.getByLabelText('Review'), {
+      target: { value: 'proposed' },
+    })
+    await waitFor(() =>
+      expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(
+        repository.id,
+        expect.objectContaining({ reviewStatus: 'proposed' })
+      )
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Accept recommendation' })
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByText(governanceEvaluation.title)).not.toBeInTheDocument()
+    )
+    expect(
+      policyGateEvaluationMatchesInventory(
+        { ...governanceEvaluation, reviewStatus: 'accepted' },
+        [repository],
+        {
+          kind: '',
+          severity: '',
+          reviewStatus: 'proposed',
+          revisionScope: 'current',
+        }
+      )
+    ).toBe(false)
   })
 
   it('requests current governance findings by default and can include history', async () => {

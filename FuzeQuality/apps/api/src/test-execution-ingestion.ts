@@ -1,6 +1,34 @@
-import { testExecutionInputSchema, type TestExecution } from '@fuzequality/contracts'
+import { testExecutionInputSchema, type QualityArtifact, type TestExecution } from '@fuzequality/contracts'
+import { linkExecutionArtifacts } from '@fuzequality/core'
 
 type ThresholdInput = ReturnType<typeof testExecutionInputSchema.parse>['thresholds'][number]
+
+type WorkflowExecutionIdentity = Pick<
+  TestExecution,
+  'repositoryId' | 'revision' | 'name' | 'workflowPath'
+>
+
+/** Link a workflow run only to policy/gate evidence from its source revision. */
+export async function linkExecutionToRevisionArtifacts(
+  execution: WorkflowExecutionIdentity,
+  tenantId: string,
+  loadArtifacts: (
+    repositoryId: string,
+    tenantId: string,
+    revision: string
+  ) => Promise<QualityArtifact[]>
+) {
+  const artifacts = await loadArtifacts(
+    execution.repositoryId,
+    tenantId,
+    execution.revision
+  )
+  return linkExecutionArtifacts(
+    execution.name,
+    artifacts,
+    execution.workflowPath
+  )
+}
 
 export function thresholdPassed(threshold: ThresholdInput): boolean {
   switch (threshold.operator) {

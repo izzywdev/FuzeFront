@@ -2999,6 +2999,38 @@ type FlowInventorySelection = {
   schemaVersion: string
 }
 
+type PolicyGateInventorySelection = {
+  kind: PolicyGateEvaluation['kind'] | ''
+  severity: PolicyGateEvaluation['severity'] | ''
+  reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
+  revisionScope: FlowRevisionScope
+}
+
+export function policyGateEvaluationMatchesInventory(
+  evaluation: PolicyGateEvaluation,
+  repositories: Repository[],
+  selection: PolicyGateInventorySelection
+) {
+  if (selection.kind && evaluation.kind !== selection.kind) return false
+  if (selection.severity && evaluation.severity !== selection.severity)
+    return false
+  if (
+    selection.reviewStatus &&
+    evaluation.reviewStatus !== selection.reviewStatus
+  )
+    return false
+  if (selection.revisionScope === 'current') {
+    const repository = repositories.find(
+      item => item.id === evaluation.repositoryId
+    )
+    return Boolean(
+      repository?.lastScanRevision &&
+        evaluation.revision === repository.lastScanRevision
+    )
+  }
+  return true
+}
+
 export function flowCandidateMatchesInventory(
   flow: RepositoryFlowCandidate,
   repositories: Repository[],
@@ -3080,6 +3112,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >('')
   const [policyGateRevisionScope, setPolicyGateRevisionScope] =
     useState<FlowRevisionScope>('current')
+  const policyGateSelection: PolicyGateInventorySelection = {
+    kind: policyGateKind,
+    severity: policyGateSeverity,
+    reviewStatus: policyGateReviewStatus,
+    revisionScope: policyGateRevisionScope,
+  }
+  const policyGateSelectionRef = useRef(policyGateSelection)
+  policyGateSelectionRef.current = policyGateSelection
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
   const [performanceDispatch, setPerformanceDispatch] = useState<{
     artifactId: string
@@ -3148,7 +3188,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       reason
     )
     setPolicyGateEvaluations(current =>
-      current.map(item => (item.id === reviewed.id ? reviewed : item))
+      policyGateEvaluationMatchesInventory(
+        reviewed,
+        data.repositories,
+        policyGateSelectionRef.current
+      )
+        ? current.map(item => (item.id === reviewed.id ? reviewed : item))
+        : current.filter(item => item.id !== reviewed.id)
     )
   }
   const runPerformanceTest = async (artifact: QualityArtifact) => {
