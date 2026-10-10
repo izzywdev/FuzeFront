@@ -477,7 +477,9 @@ app.get('/api/v1/repositories/:id/quality-artifacts', mayReadCatalog, async (req
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.qualityArtifacts(repositoryId, tenantId))
+  const query = z.object({ revision: z.string().trim().min(1).max(500).optional() }).strict().safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
+  response.json(await store.qualityArtifacts(repositoryId, tenantId, query.data.revision))
 })
 app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

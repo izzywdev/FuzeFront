@@ -3070,6 +3070,8 @@ export function flowCandidateMatchesInventory(
 
 export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
+  const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
   >([])
@@ -3281,11 +3283,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 )
               ),
         ])
+        const historicalGovernanceArtifacts = policyGateRevisionScope === 'all'
+          ? (await Promise.all(
+              [...new Set(evaluations.map(evaluation => evaluation.revision))]
+                .filter(revision => revision !== repository.lastScanRevision)
+                .map(revision => api.qualityArtifacts(repository.id, revision).catch(() => []))
+            )).flat()
+          : []
         const hasPerformanceDefinitions = repositoryArtifacts.some(artifact =>
           ['load-test', 'stress-test'].includes(artifact.kind)
         )
         return {
           artifacts: repositoryArtifacts,
+          historicalGovernanceArtifacts,
           evaluations,
           performanceExecutions: hasPerformanceDefinitions
             ? await api.testExecutions(repository.id).then(
@@ -3300,6 +3310,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       .then(groups => {
         if (active) {
           setArtifacts(groups.flatMap(group => group.artifacts))
+          setGovernanceEvidenceArtifacts(groups.flatMap(group => group.historicalGovernanceArtifacts))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
           setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions.executions))
           setPerformanceEvidenceFailures(
@@ -3312,6 +3323,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       .catch(() => {
         if (active) {
           setArtifacts([])
+          setGovernanceEvidenceArtifacts([])
           setPolicyGateEvaluations([])
           setPerformanceExecutions([])
           setPerformanceEvidenceFailures([])
@@ -3385,6 +3397,29 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   ])
   useEffect(() => {
     let active = true
+    if (!flowResultsAreCurrent || flowRevisionScope !== 'all') {
+      setFlowEvidenceArtifacts([])
+      return () => { active = false }
+    }
+    const currentRevisions = new Map(
+      data.repositories.map(repository => [repository.id, repository.lastScanRevision])
+    )
+    const requested = new Set<string>()
+    const requests = flowCandidates.flatMap(candidate => {
+      if (candidate.revision === currentRevisions.get(candidate.repositoryId)) return []
+      const key = `${candidate.repositoryId}:${candidate.revision}`
+      if (requested.has(key)) return []
+      requested.add(key)
+      return [api.qualityArtifacts(candidate.repositoryId, candidate.revision)]
+    })
+    void Promise.all(requests).then(
+      groups => { if (active) setFlowEvidenceArtifacts(groups.flat()) },
+      () => { if (active) setFlowEvidenceArtifacts([]) },
+    )
+    return () => { active = false }
+  }, [data.repositories, flowCandidates, flowResultsAreCurrent, flowRevisionScope])
+  useEffect(() => {
+    let active = true
     if (invalidExecutionRange) {
       setExecutions([])
       setExecutionPerformance([])
@@ -3439,9 +3474,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       ),
     [data.repositories]
   )
+  const evidenceArtifacts = useMemo(
+    () => [...new Map(
+      [...artifacts, ...governanceEvidenceArtifacts, ...flowEvidenceArtifacts]
+        .map(artifact => [artifact.id, artifact])
+    ).values()],
+    [artifacts, governanceEvidenceArtifacts, flowEvidenceArtifacts]
+  )
   const artifactsById = useMemo(
-    () => new Map(artifacts.map(artifact => [artifact.id, artifact])),
-    [artifacts]
+    () => new Map(evidenceArtifacts.map(artifact => [artifact.id, artifact])),
+    [evidenceArtifacts]
   )
   const filteredPolicyGateEvaluations = useMemo(
     () =>
@@ -3840,7 +3882,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </small>
                               <PolicyGateEvidence
                                 evaluation={evaluation}
-                                artifacts={artifacts}
+                                artifacts={evidenceArtifacts}
                               />
                               <PolicyGateReviewControls
                                 evaluation={evaluation}
@@ -4155,7 +4197,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   <ExecutionEvidenceLinks execution={execution} />
                   <ExecutionGateEvidence
                     execution={execution}
-                    artifacts={artifacts}
+                    artifacts={evidenceArtifacts}
                   />
                   <ExecutionThresholdEvidence execution={execution} />
                   {execution.sourceUrl && (

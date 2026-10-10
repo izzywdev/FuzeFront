@@ -393,6 +393,28 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('loads revision-specific artifacts for historical flow evidence', async () => {
+    mockEvidenceApis()
+    const historicalArtifact = { ...storyArtifact, id: 'artifact-story-historical' }
+    vi.mocked(api.qualityArtifacts).mockImplementation(async (_repositoryId, revision) =>
+      revision === 'historical-revision' ? [historicalArtifact] : []
+    )
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
+      ...candidate,
+      id: 'flow-historical',
+      revision: 'historical-revision',
+      evidence: [historicalArtifact.id],
+    }])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    fireEvent.click(screen.getByText('Source evidence'))
+
+    expect(api.qualityArtifacts).toHaveBeenCalledWith(repository.id, 'historical-revision')
+    expect(await screen.findByText('story · src/Checkout.stories.tsx')).toBeVisible()
+    expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
+  })
+
   it('renders repository evidence classes supplied to reviewed flow analysis', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([
@@ -542,6 +564,42 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Latest execution evidence is temporarily unavailable'
     )
+  })
+
+  it('loads revision-specific artifacts for historical governance evidence', async () => {
+    mockEvidenceApis()
+    const historicalArtifact: QualityArtifact = {
+      id: 'policy-auth-historical',
+      repositoryId: repository.id,
+      kind: 'policy',
+      title: 'Historical authentication policy',
+      sourcePath: 'governance/auth-v1.md',
+      summary: 'Authentication must be verified.',
+      evidence: ['Authentication must be verified.'],
+    }
+    const historicalEvaluation: PolicyGateEvaluation = {
+      ...governanceEvaluation,
+      id: 'evaluation-historical',
+      revision: 'historical-revision',
+      policyArtifactIds: [historicalArtifact.id],
+    }
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.revision ? [] : [historicalEvaluation]
+    )
+    vi.mocked(api.qualityArtifacts).mockImplementation(async (_repositoryId, revision) =>
+      revision === 'historical-revision' ? [historicalArtifact] : []
+    )
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.change(await screen.findByLabelText('Governance revision'), {
+      target: { value: 'all' },
+    })
+
+    expect(await screen.findByText(governanceEvaluation.title)).toBeVisible()
+    expect(api.qualityArtifacts).toHaveBeenCalledWith(repository.id, 'historical-revision')
+    expect(screen.getByText('Historical authentication policy')).toBeVisible()
+    expect(screen.getByText('policy · governance/auth-v1.md')).toBeVisible()
   })
 
   it('shows policy and gate names with their source paths in observed outcomes', async () => {
