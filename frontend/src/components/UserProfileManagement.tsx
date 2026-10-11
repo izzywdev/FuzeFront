@@ -430,7 +430,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                 </div>
               </ResponsiveGrid>
 
-              <div className="text-sm text-gray-500">
+              <Text as="div" tone="secondary" size="sm">
                 <p>
                   Member since:{' '}
                   {new Date(profile.created_at).toLocaleDateString()}
@@ -439,7 +439,7 @@ export const UserProfileManagement: React.FC<UserProfileManagementProps> = ({
                   Last updated:{' '}
                   {new Date(profile.updated_at).toLocaleDateString()}
                 </p>
-              </div>
+              </Text>
             </div>
           )}
 
