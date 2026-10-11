@@ -3,8 +3,8 @@
 import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceLinks, ExecutionGateEvidence, ExecutionThresholdEvidence } from './executionEvidence'
+import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -17,6 +17,7 @@ const execution: TestExecution = {
   kind: 'load',
   status: 'failed',
   name: 'Checkout load test',
+  workflowPath: '.github/workflows/load-test.yml',
   policyArtifactIds: [],
   gateArtifactIds: [],
   gateEvaluations: [{
@@ -49,7 +50,62 @@ const execution: TestExecution = {
   ],
 }
 
+const artifacts = [
+  {
+    id: 'policy-performance',
+    repositoryId: execution.repositoryId,
+    kind: 'policy' as const,
+    title: 'Performance budget policy',
+    sourcePath: 'governance/performance.md',
+    summary: 'Latency budget policy',
+    evidence: ['p95 latency must remain below 400 ms'],
+  },
+  {
+    id: 'gate-load-budget',
+    repositoryId: execution.repositoryId,
+    kind: 'gate' as const,
+    title: 'Load budget workflow',
+    sourcePath: '.github/workflows/load-test.yml',
+    summary: 'Load budget gate',
+    evidence: ['Run the load budget gate'],
+  },
+]
+
 describe('ExecutionThresholdEvidence', () => {
+  it('matches a scanner-verified performance workflow despite heuristic run kind differences', () => {
+    const artifact: QualityArtifact = {
+      id: 'performance-workflow',
+      repositoryId: execution.repositoryId,
+      kind: 'load-test',
+      title: 'Performance workflow',
+      sourcePath: '.github/workflows/load-test.yml',
+      summary: 'Load and soak coverage',
+      evidence: [],
+      execution: {
+        provider: 'github-actions',
+        workflowPath: '.github/workflows/load-test.yml',
+        trigger: 'workflow_dispatch',
+      },
+    }
+    const heuristicStressRun = { ...execution, kind: 'stress' as const }
+
+    expect(latestPerformanceExecution(artifact, [heuristicStressRun])).toBe(
+      heuristicStressRun
+    )
+    expect(
+      latestPerformanceExecution(artifact, [
+        { ...heuristicStressRun, workflowPath: '.github/workflows/other.yml' },
+      ])
+    ).toBeUndefined()
+  })
+
+  it('renders the workflow file with the provider-owned run identity', () => {
+    render(<ExecutionEvidenceMetadata execution={execution} />)
+
+    expect(screen.getByText('.github/workflows/load-test.yml')).toBeInTheDocument()
+    expect(screen.getByText('external · load-42')).toBeInTheDocument()
+  })
+
   it('renders observed-versus-target values and evaluated outcomes', () => {
     render(<ExecutionThresholdEvidence execution={execution} />)
 
@@ -71,13 +127,19 @@ describe('ExecutionThresholdEvidence', () => {
   })
 
   it('renders explicit policy-gate outcomes without inferring pairs', () => {
-    render(<ExecutionGateEvidence execution={execution} />)
+    render(
+      <ExecutionGateEvidence execution={execution} artifacts={artifacts} />
+    )
 
     expect(
       screen.getByRole('region', { name: 'Policy gate evidence' })
     ).toBeInTheDocument()
+    expect(screen.getByText('Performance budget policy')).toBeInTheDocument()
+    expect(screen.getByText('Load budget workflow')).toBeInTheDocument()
     expect(
-      screen.getByText('policy-performance → gate-load-budget')
+      screen.getByText(
+        'governance/performance.md → .github/workflows/load-test.yml'
+      )
     ).toBeInTheDocument()
     expect(screen.getByText('Latency budget exceeded.')).toBeInTheDocument()
     expect(screen.getByText('failed')).toBeInTheDocument()
@@ -95,6 +157,22 @@ describe('ExecutionThresholdEvidence', () => {
       'href',
       'https://evidence.example/run-42/report/'
     )
+  })
+
+  it('summarizes detailed evidence and flags a lifecycle-only performance run', () => {
+    const { rerender } = render(<ExecutionEvidenceCoverage execution={execution} />)
+
+    expect(screen.getByRole('region', { name: 'Execution evidence coverage' })).toHaveTextContent(
+      '2 thresholds · 2 artifacts · 1 policy–gate outcomes'
+    )
+    expect(screen.queryByText(/No performance threshold/)).not.toBeInTheDocument()
+
+    rerender(
+      <ExecutionEvidenceCoverage
+        execution={{ ...execution, thresholds: [], evidenceLinks: [], gateEvaluations: [] }}
+      />
+    )
+    expect(screen.getByText('No performance threshold observations ingested')).toBeVisible()
   })
 
   it('renders legacy executions without optional evidence collections safely', () => {

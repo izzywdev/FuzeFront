@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.3.0
+  version: 0.4.0
   license:
     name: UNLICENSED
 servers:
@@ -217,6 +217,18 @@ paths:
         - name: revision
           in: query
           schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: model
+          in: query
+          description: Exact FuzeInfra LiteLLM model identity stored with the proposal.
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: promptVersion
+          in: query
+          description: Exact reviewed analysis prompt version.
+          schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: schemaVersion
+          in: query
+          description: Exact structured-output schema version.
+          schema: { type: string, minLength: 1, maxLength: 100 }
       responses:
         '200':
           description: UX-flow candidates discovered for the repository.
@@ -229,7 +241,6 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-
   /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -263,6 +274,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The candidate is not from the repository current analyzed revision and cannot be reviewed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaleFlowCandidateError' }
 
   /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history:
     parameters:
@@ -339,6 +355,22 @@ paths:
       summary: List tenant-scoped policy/gate findings and their current review state
       tags: [policy-gates]
       security: [{ platformBearer: [] }]
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [unguarded-policy, guard-without-policy, contradictory-policy, ambiguous-policy]
+        - name: severity
+          in: query
+          schema: { type: string, enum: [high, medium, low] }
+        - name: reviewStatus
+          in: query
+          schema: { type: string, enum: [proposed, accepted, dismissed] }
+        - name: revision
+          in: query
+          description: Exact repository analysis revision that produced the finding.
+          schema: { type: string, minLength: 1, maxLength: 500 }
       responses:
         '200':
           description: Policy/gate evaluations for the repository.
@@ -347,6 +379,7 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -381,6 +414,11 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The finding is not from the repository current analyzed revision and cannot be reviewed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StalePolicyGateEvaluationError' }
 
   /api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history:
     parameters:
@@ -431,6 +469,9 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
+        - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionRevision'
+        - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -457,6 +498,9 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ExecutionKind'
         - $ref: '#/components/parameters/ExecutionStatus'
+        - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionRevision'
+        - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
       responses:
@@ -481,7 +525,7 @@ paths:
         schema: { type: string, minLength: 1, maxLength: 500 }
     post:
       operationId: executePerformanceTest
-      summary: Dispatch a reviewed load or stress test through the repository GitHub App
+      summary: Dispatch a scanner-verified workflow_dispatch load or stress test at its immutable analyzed commit
       tags: [executions]
       security: [{ platformBearer: [] }]
       responses:
@@ -494,8 +538,13 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The current catalog is not bound to an immutable analyzed source commit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         '422':
-          description: The GitHub App installation is unavailable or dispatch failed.
+          description: The definition is inventory-only, the GitHub App installation is unavailable, or dispatch failed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -530,6 +579,21 @@ components:
       name: status
       in: query
       schema: { $ref: '#/components/schemas/ExecutionStatus' }
+    ExecutionProvider:
+      name: provider
+      in: query
+      description: Execution-ingestion origin.
+      schema: { $ref: '#/components/schemas/ExecutionProvider' }
+    ExecutionRevision:
+      name: revision
+      in: query
+      description: Exact source revision recorded with the execution evidence.
+      schema: { type: string, minLength: 1, maxLength: 200 }
+    ExecutionWorkflowPath:
+      name: workflowPath
+      in: query
+      description: Exact repository-relative workflow path recorded with the execution evidence.
+      schema: { type: string, minLength: 1, maxLength: 1000 }
     ExecutionFrom:
       name: from
       in: query
@@ -647,6 +711,17 @@ components:
         reviewedBy: { type: string }
         reason: { type: string }
         createdAt: { type: string, format: date-time }
+    PolicyGateEvidencePassage:
+      type: object
+      additionalProperties: false
+      required: [artifactId, sourcePath, text, signal]
+      properties:
+        artifactId: { type: string, minLength: 1, maxLength: 500 }
+        sourcePath: { type: string, minLength: 1, maxLength: 1000 }
+        text: { type: string, minLength: 1, maxLength: 2000 }
+        signal:
+          type: string
+          enum: [policy, gate, obligation, prohibition, ambiguous]
     PolicyGateEvaluationInput:
       type: object
       additionalProperties: false
@@ -685,6 +760,11 @@ components:
               type: array
               maxItems: 100
               items: { type: string, minLength: 1, maxLength: 200 }
+        evidencePassages:
+          type: array
+          maxItems: 100
+          default: []
+          items: { $ref: '#/components/schemas/PolicyGateEvidencePassage' }
         recommendation: { type: string, minLength: 1, maxLength: 5000 }
         reviewStatus: { type: string, enum: [proposed] }
         createdAt: { type: string, format: date-time }
@@ -721,6 +801,9 @@ components:
             subjects:
               type: array
               items: { type: string }
+        evidencePassages:
+          type: array
+          items: { $ref: '#/components/schemas/PolicyGateEvidencePassage' }
         recommendation: { type: string }
         reviewStatus: { type: string, enum: [proposed, accepted, dismissed] }
         reviewedAt: { type: string, format: date-time }
@@ -743,6 +826,9 @@ components:
     ExecutionStatus:
       type: string
       enum: [passed, failed, cancelled, running]
+    ExecutionProvider:
+      type: string
+      enum: [github-actions, external]
     TestExecutionThresholdInput:
       type: object
       additionalProperties: false
@@ -795,6 +881,7 @@ components:
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string, minLength: 1, maxLength: 500 }
+        workflowPath: { type: string, minLength: 1, maxLength: 1000 }
         sourceUrl: { type: string, format: uri }
         startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
@@ -838,6 +925,7 @@ components:
         kind: { $ref: '#/components/schemas/ExecutionKind' }
         status: { $ref: '#/components/schemas/ExecutionStatus' }
         name: { type: string }
+        workflowPath: { type: string }
         sourceUrl: { type: string, format: uri }
         startedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
@@ -905,10 +993,15 @@ components:
           description: False when the received lifecycle event was an idempotent replay.
     PolicyGatePerformance:
       type: object
-      required: [policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
+      required: [repositoryId, policyArtifactId, gateArtifactId, passed, failed, cancelled, running]
       properties:
+        repositoryId: { type: string }
         policyArtifactId: { type: string }
+        policyTitle: { type: string }
+        policySourcePath: { type: string }
         gateArtifactId: { type: string }
+        gateTitle: { type: string }
+        gateSourcePath: { type: string }
         passed: { type: integer, minimum: 0 }
         failed: { type: integer, minimum: 0 }
         cancelled: { type: integer, minimum: 0 }
@@ -916,12 +1009,13 @@ components:
         latestCompletedAt: { type: string, format: date-time }
     PerformanceDispatch:
       type: object
-      required: [status, artifactId, workflowPath, ref]
+      required: [status, artifactId, workflowPath, ref, sourceRevision]
       properties:
         status: { type: string, enum: [dispatched] }
         artifactId: { type: string }
         workflowPath: { type: string }
         ref: { type: string }
+        sourceRevision: { type: string, pattern: '^[0-9a-fA-F]{40}$' }
     ApiError:
       type: object
       required: [error]
@@ -932,6 +1026,24 @@ components:
             - type: object
               additionalProperties: true
         code: { type: string }
+    StaleFlowCandidateError:
+      type: object
+      additionalProperties: false
+      required: [error, code, candidateRevision, currentRevision]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [STALE_FLOW_CANDIDATE] }
+        candidateRevision: { type: string }
+        currentRevision: { type: string, nullable: true }
+    StalePolicyGateEvaluationError:
+      type: object
+      additionalProperties: false
+      required: [error, code, evaluationRevision, currentRevision]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [STALE_POLICY_GATE_EVALUATION] }
+        evaluationRevision: { type: string }
+        currentRevision: { type: string, nullable: true }
     Health:
       type: object
       required: [status, service, version, openapi]

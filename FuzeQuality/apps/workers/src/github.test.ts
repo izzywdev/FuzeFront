@@ -103,10 +103,21 @@ describe('secure GitHub checkout', () => {
 })
 
 describe('controlled performance workflow dispatch', () => {
-  it('dispatches only a scanned workflow against the configured default branch', async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
-    await dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', defaultBranch: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })
-    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining('/actions/workflows/.github%2Fworkflows%2Fload-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'main' }) }))
-    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', defaultBranch: 'main', installationId: '1234', workflowPath: '../workflow.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
+  it('revalidates the analyzed branch before dispatching the scanned workflow', async () => {
+    const sourceRevision = 'a'.repeat(40)
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commit: { sha: sourceRevision } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).resolves.toEqual({ ref: 'main', sourceRevision })
+    expect(fetcher).toHaveBeenNthCalledWith(1, expect.stringContaining('/branches/main'), expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer secret' }) }))
+    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('/actions/workflows/.github%2Fworkflows%2Fload-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'main' }) }))
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '../workflow.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'main', sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('exact analyzed commit')
+  })
+
+  it('refuses dispatch when the analyzed branch has advanced', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ commit: { sha: 'b'.repeat(40) } }), { status: 200 }))
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'a'.repeat(40), sourceRef: 'feature/load-tests', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('branch has advanced')
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
 })

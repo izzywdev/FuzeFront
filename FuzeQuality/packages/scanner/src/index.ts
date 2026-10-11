@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
 import fg from 'fast-glob'
+import { parse as parseYaml } from 'yaml'
 import type {
   ApiOperation,
   FrontendSurface,
@@ -23,6 +24,13 @@ import { parseOpenApiDocument, referencedOpenApiPaths } from './openapi'
 
 const digest = (...parts: string[]) =>
   createHash('sha256').update(parts.join('\u0000')).digest('hex').slice(0, 24)
+
+const qualityArtifactId = (
+  repositoryId: string,
+  revision: string,
+  kind: QualityArtifact['kind'],
+  ...identity: string[]
+) => `artifact:${repositoryId}:${digest(revision, kind, ...identity)}`
 
 const fingerprint = (content: string) => createHash('sha256').update(content).digest('hex')
 
@@ -51,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.2.0'
+export const SCANNER_VERSION = '1.8.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -68,23 +76,127 @@ const QUALITY_ARTIFACT_GLOBS: Array<{ kind: QualityArtifact['kind']; glob: strin
   // Treat every checked-in workflow as gate evidence and let the reviewed
   // policy/gate analysis decide whether it actually guards a policy.
   { kind: 'gate', glob: '**/.github/workflows/*.{yaml,yml}' },
-  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
-  { kind: 'stress-test', glob: '**/{stress,soak}*/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,load-test,load-tests,performance,performance-test,performance-tests,k6,artillery}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,performance,k6,artillery}.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'load-test', glob: '**/{load,load-test,performance,performance-test,k6,artillery}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
+  { kind: 'load-test', glob: '**/.github/workflows/{load,load-test,performance,performance-test,k6,artillery}.{yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,stress-test,stress-tests,soak,soak-test,soak-tests}/**/*.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,soak}.{ts,js,mjs,py,json,yaml,yml}' },
+  { kind: 'stress-test', glob: '**/{stress,stress-test,soak,soak-test}.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}' },
+  { kind: 'stress-test', glob: '**/.github/workflows/{stress,stress-test,soak,soak-test}.{yaml,yml}' },
 ]
 
-async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<QualityArtifact[]> {
+function performanceWorkflowMetadata(
+  sourcePath: string,
+  source: string,
+): { kind: 'load-test' | 'stress-test'; execution?: NonNullable<QualityArtifact['execution']> } | undefined {
+  if (!sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(sourcePath)) return undefined
+  try {
+    const document = parseYaml(source) as {
+      on?: unknown
+      env?: Record<string, unknown>
+    } | undefined
+    const triggers = document?.on
+    const reviewedKind = document?.env?.FUZEQUALITY_PERFORMANCE
+    if (reviewedKind !== 'load' && reviewedKind !== 'stress') return undefined
+    const dispatchable = triggers === 'workflow_dispatch' ||
+      (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
+      (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
+    return {
+      kind: reviewedKind === 'load' ? 'load-test' : 'stress-test',
+      ...(dispatchable ? { execution: { provider: 'github-actions', workflowPath: sourcePath, trigger: 'workflow_dispatch' } as const } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+async function discoverQualityArtifacts(root: string, repository: Repository, ignore: string[]): Promise<{ artifacts: QualityArtifact[]; fingerprints: string[]; diagnostics: ScanDiagnostic[] }> {
   const artifacts = new Map<string, QualityArtifact>()
+  const fingerprints = new Map<string, string>()
+  const diagnostics = new Map<string, ScanDiagnostic>()
+  const sources = new Map<string, Promise<string | undefined>>()
+  const qualitySource = (file: string) => {
+    const sourcePath = normalize(file)
+    const existing = sources.get(sourcePath)
+    if (existing) return existing
+    const pending = readText(root, file).then(
+      source => {
+        fingerprints.set(sourcePath, `${sourcePath}:${fingerprint(source)}`)
+        return source
+      },
+      error => {
+        diagnostics.set(sourcePath, {
+          sourcePath,
+          category: 'repository',
+          severity: 'error',
+          code: 'unreadable-quality-evidence',
+          message: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+      },
+    )
+    sources.set(sourcePath, pending)
+    return pending
+  }
   for (const candidate of QUALITY_ARTIFACT_GLOBS) {
     const files = await fg(candidate.glob, { cwd: root, ignore, onlyFiles: true, dot: true })
     for (const file of files.slice(0, 100)) {
       const sourcePath = normalize(file)
-      const source = await readText(root, file).catch(() => '')
+      const source = await qualitySource(file)
+      if (source === undefined) continue
       const evidence = source.split(/\r?\n/).filter(line => /policy|gate|threshold|load|stress|required|needs:|playwright|production|deploy|test/i.test(line)).slice(0, 8).map(line => line.trim()).filter(Boolean)
-      const key = `${candidate.kind}:${sourcePath}`
-      artifacts.set(key, { id: `artifact:${repository.id}:${digest(candidate.kind, sourcePath)}`, repositoryId: repository.id, kind: candidate.kind, title: sourcePath.split('/').at(-1) ?? sourcePath, sourcePath, summary: `${candidate.kind.replace('-', ' ')} evidence discovered during repository analysis`, evidence })
+      const performance = performanceWorkflowMetadata(sourcePath, source)
+      const record = (kind: QualityArtifact['kind'], execution?: QualityArtifact['execution']) => {
+        const key = `${kind}:${sourcePath}`
+        artifacts.set(key, {
+          id: `artifact:${repository.id}:${digest(kind, sourcePath)}`,
+          repositoryId: repository.id,
+          kind,
+          title: sourcePath.split('/').at(-1) ?? sourcePath,
+          sourcePath,
+          summary: `${kind.replace('-', ' ')} evidence discovered during repository analysis`,
+          evidence,
+          execution,
+        })
+      }
+      if (candidate.kind === 'gate') {
+        record('gate')
+        if (performance) record(performance.kind, performance.execution)
+      } else if (performance) {
+        record(performance.kind, performance.execution)
+      } else {
+        record(candidate.kind)
+      }
     }
   }
-  return [...artifacts.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind))
+  const documentationFiles = await fg('**/*.{md,mdx}', { cwd: root, ignore, onlyFiles: true, dot: true, followSymbolicLinks: false })
+  for (const file of documentationFiles.slice(0, 100)) {
+    const sourcePath = normalize(file)
+    const source = await qualitySource(file)
+    if (source === undefined) continue
+    const heading = source.match(/^#{1,3}\s+(.+)$/m)?.[1]?.trim()
+    const evidence = source
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => /user|journey|flow|screen|route|step|test|policy|gate|release|production/i.test(line))
+      .slice(0, 8)
+    const key = `documentation:${sourcePath}`
+    artifacts.set(key, {
+      id: `artifact:${repository.id}:${digest('documentation', sourcePath)}`,
+      repositoryId: repository.id,
+      kind: 'documentation',
+      title: heading || sourcePath.split('/').at(-1) || sourcePath,
+      sourcePath,
+      summary: heading ? `Repository documentation: ${heading}` : 'Repository documentation discovered during analysis',
+      evidence,
+    })
+  }
+  return {
+    artifacts: [...artifacts.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind)),
+    fingerprints: [...fingerprints.values()],
+    diagnostics: [...diagnostics.values()].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath)),
+  }
 }
 
 function safeRoot(root: string) {
@@ -152,7 +264,7 @@ function extractTests(repository: Repository, file: string, source: string): Tes
     const end = titleMatches[index + 1]?.index ?? source.length
     const evidence = metadata(source.slice(start, end))
     cases.push({
-      id: `test:${repository.name}:${digest(file, title)}`,
+      id: `test:${repository.name}:${digest(file, title, String(start))}`,
       repositoryId: repository.id,
       framework: frameworkFor(file, source),
       level: levelFor(file, source),
@@ -472,9 +584,17 @@ export async function scanRepository(
   }
   const owner = repository.ownership?.team
   const findings = buildFindings(repository.id, operations, surfaces, expectations, owner)
+  const discoveredQuality = await discoverQualityArtifacts(root, repository, ignore)
+  contentFingerprints.push(...discoveredQuality.fingerprints)
+  diagnostics.push(...discoveredQuality.diagnostics)
+  const revision = digest(
+    repository.name,
+    SCANNER_VERSION,
+    ...contentFingerprints.sort()
+  )
   const qualityArtifacts = [
     ...surfaces.filter(surface => surface.routePath).map(surface => ({
-      id: `artifact:${repository.id}:${digest('route', surface.sourcePath)}`,
+      id: qualityArtifactId(repository.id, revision, 'route', surface.sourcePath),
       repositoryId: repository.id,
       kind: 'route' as const,
       title: surface.name,
@@ -483,7 +603,7 @@ export async function scanRepository(
       evidence: [surface.routePath!],
     })),
     ...operations.map(operation => ({
-      id: `artifact:${repository.id}:${digest('route', operation.documentPath, operation.method, operation.path)}`,
+      id: qualityArtifactId(repository.id, revision, 'route', operation.documentPath, operation.method, operation.path),
       repositoryId: repository.id,
       kind: 'route' as const,
       title: `${operation.method.toUpperCase()} ${operation.path}`,
@@ -491,7 +611,28 @@ export async function scanRepository(
       summary: operation.summary,
       evidence: [operation.operationId ?? operation.path],
     })),
-    ...await discoverQualityArtifacts(root, repository, ignore),
+    ...stories.map(story => ({
+      id: qualityArtifactId(repository.id, revision, 'story', story.sourcePath, story.id),
+      repositoryId: repository.id,
+      kind: 'story' as const,
+      title: `${story.title} / ${story.name}`,
+      sourcePath: story.sourcePath,
+      summary: `Storybook interaction surface ${story.previewPath}`,
+      evidence: [story.previewPath, ...(story.hasPlay ? ['play-function'] : [])],
+    })),
+    ...tests.map(test => ({
+      id: qualityArtifactId(repository.id, revision, 'test-plan', test.sourcePath, test.id),
+      repositoryId: repository.id,
+      kind: 'test-plan' as const,
+      title: test.title,
+      sourcePath: test.sourcePath,
+      summary: `${test.level} ${test.framework} test discovered during repository analysis`,
+      evidence: [...new Set([test.id, ...test.targets])].slice(0, 20),
+    })),
+    ...discoveredQuality.artifacts.map(item => ({
+      ...item,
+      id: qualityArtifactId(repository.id, revision, item.kind, item.sourcePath),
+    })),
   ]
   for (const diagnostic of diagnostics.filter(item => item.category === 'openapi')) {
     findings.push({
@@ -508,10 +649,6 @@ export async function scanRepository(
       status: 'open',
     })
   }
-  const revision = digest(
-    repository.name,
-    ...contentFingerprints.sort()
-  )
   const candidate = (
     sourcePath: string,
     kind: RepositoryScanCandidate['kind']

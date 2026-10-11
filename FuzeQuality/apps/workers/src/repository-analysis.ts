@@ -1,6 +1,9 @@
 import type { PolicyGateEvaluation, QualityArtifact, Repository, RepositoryFlowCandidate } from '@fuzequality/contracts'
 import { deterministicRepositoryFlows, evaluatePolicyGates, type LiteLlmRepositoryFlowAnalyzer } from '@fuzequality/core'
 
+export const repositoryQualityArtifactsPath = (repositoryId: string, revision: string) =>
+  `/api/v1/internal/repositories/${encodeURIComponent(repositoryId)}/quality-artifacts?revision=${encodeURIComponent(revision)}`
+
 export async function runRepositoryInventoryAnalysis(
   repository: Repository,
   revision: string,

@@ -99,6 +99,8 @@ spec:
                   key: token
                   # NOT optional: a missing secret must fail the Job, not
                   # silently skip registration and report success.
+            - name: FUZEFRONT_REMOTE_HEALTH_URL
+              value: {{ .Values.registration.remoteHealthUrl | quote }}
             - name: REGISTRATION_DIR
               value: /registration
           volumeMounts:

@@ -10,19 +10,25 @@ const candidate = (overrides: Partial<RepositoryFlowCandidate> = {}): Repository
 })
 
 describe('repository flow inventory filter', () => {
-  it('filters source, review status, and exact analysis revision together', () => {
+  it('filters source, review status, revision, and exact LiteLLM provenance together', () => {
     const candidates = [
       candidate(),
-      candidate({ id: 'flow-2', source: 'litellm', status: 'confirmed', revision: 'def' }),
-      candidate({ id: 'flow-3', source: 'litellm', status: 'rejected', revision: 'def' }),
+      candidate({ id: 'flow-2', source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0' } }),
+      candidate({ id: 'flow-3', source: 'litellm', status: 'confirmed', revision: 'def', analysis: { provider: 'fuzeinfra-litellm', model: 'legacy-analysis', promptVersion: 'flow-v1', schemaVersion: '1.0' } }),
     ]
-    const filter = repositoryFlowFilterSchema.parse({ source: 'litellm', status: 'confirmed', revision: 'def' })
+    const filter = repositoryFlowFilterSchema.parse({ source: 'litellm', status: 'confirmed', revision: 'def', model: 'quality-analysis', promptVersion: 'flow-v2', schemaVersion: '2.0' })
     expect(filterRepositoryFlowCandidates(candidates, filter)).toEqual([candidates[1]])
+  })
+
+  it('does not treat deterministic or legacy candidates as matching model provenance', () => {
+    const filter = repositoryFlowFilterSchema.parse({ model: 'quality-analysis' })
+    expect(filterRepositoryFlowCandidates([candidate()], filter)).toEqual([])
   })
 
   it('rejects unknown query keys and invalid filter values', () => {
     expect(repositoryFlowFilterSchema.safeParse({ source: 'direct-llm' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ status: 'published' }).success).toBe(false)
+    expect(repositoryFlowFilterSchema.safeParse({ model: '' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ unexpected: 'value' }).success).toBe(false)
   })
 })

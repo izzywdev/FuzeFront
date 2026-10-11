@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const portfolio = {
-  repositories: [{ id: 'repo-1', tenantId: 'tenant-1', owner: 'izzywdev', name: 'FuzeService', canonicalUrl: 'https://github.com/izzywdev/FuzeService', defaultBranch: 'main', kind: 'service', enabled: true, lastScanStatus: 'complete', lastScanRevision: 'abcdef123456', jiraBindings: [] }],
+  repositories: [{ id: 'repo-1', tenantId: 'tenant-1', owner: 'izzywdev', name: 'FuzeService', canonicalUrl: 'https://github.com/izzywdev/FuzeService', defaultBranch: 'main', kind: 'service', enabled: true, lastScanStatus: 'complete', lastScanRevision: 'abcdef123456', lastScanDetails: { sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', catalogRevision: 'abcdef123456', scannerVersion: '1.5.0', configVersion: 'config-1', partial: false, candidates: [], counts: { candidates: 0, operations: 1, frontendSurfaces: 1, tests: 0, diagnostics: 1 } }, jiraBindings: [] }],
   operations: [{ id: 'api-1', repositoryId: 'repo-1', documentPath: 'openapi.yaml', method: 'post', path: '/apps/{slug}/suspend', tags: ['apps'], summary: 'Suspend app', security: true, parameters: [], responses: ['200'] }],
   surfaces: [{ id: 'ui-1', repositoryId: 'repo-1', name: 'PlanPicker', packageName: '@fuze/ui', sourcePath: 'src/PlanPicker.tsx', kind: 'component', public: true, states: ['default'], hasStory: false, stories: [] }],
   tests: [],
@@ -28,7 +28,11 @@ const portfolio = {
       analysis: { promptVersion: 'fuzequality-flow-v1', schemaVersion: '1.0', model: 'quality-analysis' },
     },
   }],
-  diagnostics: [],
+  diagnostics: [{
+    repositoryId: 'repo-1', revision: 'abcdef123456', sourcePath: 'docs/oversized-journey.md',
+    category: 'repository', severity: 'error', code: 'unreadable-quality-evidence',
+    message: 'File exceeds 5 MB scan limit: docs/oversized-journey.md',
+  }],
 }
 
 const documentedStoryPortfolio = {
@@ -43,17 +47,21 @@ const documentedStoryPortfolio = {
 
 const qualityArtifacts = [
   { id: 'route-artifact', repositoryId: 'repo-1', kind: 'route', title: 'Suspend app route', sourcePath: 'src/routes/apps.ts', summary: 'Authenticated suspension route', evidence: ['POST /apps/{slug}/suspend'] },
+  { id: 'story-artifact', repositoryId: 'repo-1', kind: 'story', title: 'App settings / Suspended', sourcePath: 'src/AppSettings.stories.tsx', summary: 'Storybook interaction surface', evidence: ['app-settings--suspended'] },
+  { id: 'documentation-artifact', repositoryId: 'repo-1', kind: 'documentation', title: 'Application suspension journey', sourcePath: 'docs/suspension.md', summary: 'Repository documentation: Application suspension journey', evidence: ['An administrator suspends an application.'] },
+  { id: 'test-plan-artifact', repositoryId: 'repo-1', kind: 'test-plan', title: 'administrator suspends an application', sourcePath: 'tests/suspension.spec.ts', summary: 'e2e playwright test discovered during repository analysis', evidence: ['test:suspension'] },
+  { id: 'test-plan-artifact-retry', repositoryId: 'repo-1', kind: 'test-plan', title: 'administrator suspends an application', sourcePath: 'tests/suspension.spec.ts', summary: 'e2e playwright test discovered during repository analysis', evidence: ['test:suspension:retry'] },
   { id: 'policy-artifact', repositoryId: 'repo-1', kind: 'policy', title: 'Administrative suspension policy', sourcePath: 'docs/policies/apps.md', summary: 'Only administrators may suspend apps', evidence: ['role=administrator'] },
   { id: 'gate-artifact', repositoryId: 'repo-1', kind: 'gate', title: 'Suspension authorization gate', sourcePath: '.github/workflows/quality.yml', summary: 'Checks the administrator boundary', evidence: ['npm run test:authorization'] },
-  { id: 'load-artifact', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'] },
+  { id: 'load-artifact', repositoryId: 'repo-1', kind: 'load-test', title: 'Application API load test', sourcePath: '.github/workflows/load.yml', summary: 'Sustained application API load', evidence: ['p95 < 500ms'], execution: { provider: 'github-actions', workflowPath: '.github/workflows/load.yml', trigger: 'workflow_dispatch' } },
 ]
 
 const repositoryFlowCandidates = [{
   id: 'candidate-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Suspend an application', confidence: 0.94,
-  evidence: ['src/routes/apps.ts:42', 'frontend/src/pages/AppSettings.tsx:88'],
-  steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['POST /apps/{slug}/suspend'] }],
+  evidence: [],
+  steps: [{ actor: 'administrator', action: 'selects Suspend', expectedOutcome: 'the application is suspended', targetIds: ['route-artifact'] }],
   wireframe: { kind: 'sequence', nodes: [{ label: 'App settings', targetIds: ['AppSettings'] }, { label: 'Confirm suspension', targetIds: ['SuspendDialog'] }, { label: 'Suspended state', targetIds: ['AppStatus'] }] },
-  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'repository-flow-v1', schemaVersion: '1.0' },
+  analysis: { provider: 'fuzeinfra-litellm', model: 'quality-analysis', promptVersion: 'fuzequality-repository-flow-v3', schemaVersion: '1.0' },
   status: 'proposed', source: 'litellm', createdAt: '2026-10-08T09:00:00.000Z',
 }, {
   id: 'candidate-deterministic', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', title: 'Indexed suspension route', confidence: 1,
@@ -66,14 +74,24 @@ const repositoryFlowCandidates = [{
 const policyGateEvaluations = [{
   id: 'evaluation-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'unguarded-policy', severity: 'high',
   title: 'Suspension policy requires a protected gate', detail: 'The policy is not enforced on every production path.', policyArtifactIds: ['policy-artifact'], gateArtifactIds: [],
+  confidence: 0.75, scope: { sourcePaths: ['docs/policies/apps.md'], subjects: ['suspension'] }, evidencePassages: [{ artifactId: 'policy-artifact', sourcePath: 'docs/policies/apps.md', text: 'Only administrators may suspend apps.', signal: 'obligation' }],
   recommendation: 'Require the authorization suite before production deployment.', reviewStatus: 'accepted', reviewedAt: '2026-10-08T10:00:00.000Z', reviewedBy: 'quality-owner', reviewReason: 'Required for every production release.', createdAt: '2026-10-08T09:30:00.000Z',
 }]
 
 const testExecutions = [{
   id: 'execution-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'post-production', status: 'failed', name: 'Production suspension journey',
   provider: 'github-actions', externalRunId: '123', attempt: 2,
+  workflowPath: '.github/workflows/post-prod.yml',
   sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/123', startedAt: '2026-10-08T11:00:00.000Z', completedAt: '2026-10-08T11:02:00.000Z',
   policyArtifactIds: ['policy-artifact'], gateArtifactIds: ['gate-artifact'], summary: 'Authorization assertion failed.',
+  gateEvaluations: [{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', status: 'failed', detail: 'The production authorization assertion failed.' }],
+  thresholds: [], evidenceLinks: [],
+}, {
+  id: 'execution-load-1', repositoryId: 'repo-1', tenantId: 'tenant-1', revision: 'abcdef123456', kind: 'stress', status: 'failed', name: 'Soak benchmark',
+  provider: 'github-actions', externalRunId: '456', attempt: 1, workflowPath: '.github/workflows/load.yml',
+  sourceUrl: 'https://github.com/izzywdev/FuzeService/actions/runs/456', startedAt: '2026-10-09T11:00:00.000Z', completedAt: '2026-10-09T11:05:00.000Z',
+  policyArtifactIds: [], gateArtifactIds: [], summary: 'p95 latency exceeded the release threshold.', gateEvaluations: [], evidenceLinks: [],
+  thresholds: [{ metric: 'p95 latency', observed: 640, unit: 'ms', operator: 'lte', target: 500, passed: false }],
 }]
 
 async function mockQualityApi(page: Page, fixture = portfolio) {
@@ -97,7 +115,17 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
     })
     if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
     if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
-    if (url.pathname.endsWith('/flow-candidates')) return respond(flowCandidates)
+    if (url.pathname.endsWith('/flow-candidates')) {
+      const filtered = flowCandidates.filter(flow =>
+        (!url.searchParams.get('source') || flow.source === url.searchParams.get('source')) &&
+        (!url.searchParams.get('status') || flow.status === url.searchParams.get('status')) &&
+        (!url.searchParams.get('revision') || flow.revision === url.searchParams.get('revision')) &&
+        (!url.searchParams.get('model') || flow.analysis?.model === url.searchParams.get('model')) &&
+        (!url.searchParams.get('promptVersion') || flow.analysis?.promptVersion === url.searchParams.get('promptVersion')) &&
+        (!url.searchParams.get('schemaVersion') || flow.analysis?.schemaVersion === url.searchParams.get('schemaVersion'))
+      )
+      return respond(filtered)
+    }
     if (url.pathname.endsWith('/flow-candidates/candidate-1/history')) return respond(flowReviewHistory)
     if (url.pathname.endsWith('/flow-candidates/candidate-1/review') && method === 'POST') {
       const payload = route.request().postDataJSON() as { status: 'confirmed' | 'rejected', reason?: string }
@@ -118,7 +146,13 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       { status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
     ])
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
-    if (url.pathname.endsWith('/execution-performance')) return respond([{ policyArtifactId: 'policy-artifact', gateArtifactId: 'gate-artifact', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
+    if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
+    if (url.pathname.endsWith('/performance-tests/load-artifact/execute') && method === 'POST') return respond({
+      status: 'dispatched',
+      artifactId: 'load-artifact',
+      workflowPath: '.github/workflows/load.yml',
+      ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    }, 202)
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
     if (url.pathname.endsWith('/organization/members') && method === 'GET') return respond(members)
@@ -148,7 +182,10 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
 }
 
 test.describe('FuzeQuality implemented UX flows', () => {
-  test.beforeEach(async ({ page }) => { await mockQualityApi(page); await page.goto('/') })
+  test.beforeEach(async ({ page }) => {
+    await mockQualityApi(page)
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+  })
 
   test('loads the portfolio and navigates every implemented workspace', async ({ page }) => {
     await expect(page.getByRole('heading', { name: /See what the platform promises/i })).toBeVisible()
@@ -161,27 +198,102 @@ test.describe('FuzeQuality implemented UX flows', () => {
     }
   })
 
+  test('uses host-owned chrome when mounted as a federated portal remote', async ({ page }) => {
+    await page.addInitScript(() => {
+      const menuItems: unknown[] = []
+      ;(window as any).__QUALITY_PORTAL_MENU__ = menuItems
+      ;(window as any).__FUZEFRONT__ = {
+        navigate: (path: string) => window.history.pushState({}, '', path),
+        menu: {
+          add: (_appId: string, items: unknown[]) => menuItems.push(...items),
+          remove: () => undefined,
+        },
+      }
+    })
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await expect(page).toHaveURL(/\/app\/fuzequality\/repositories$/)
+    await expect(page.getByRole('heading', { name: 'Repository inventory' })).toBeVisible()
+    await page.evaluate(() => {
+      window.history.pushState({}, '', '/app/fuzequality/operations')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+
+    await expect(page.locator('aside.sidebar')).toHaveCount(0)
+    await expect(page.locator('.topbar')).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => (window as any).__QUALITY_PORTAL_MENU__.map((item: any) => item.id))).toContain('operations')
+  })
+
+  test('keeps standalone navigation deep-linkable', async ({ page }) => {
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await expect(page).toHaveURL(/\/repositories$/)
+    await expect(page.getByRole('heading', { name: 'Repository inventory' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Operations' }).click()
+    await expect(page).toHaveURL(/\/operations$/)
+    await expect(page.getByRole('heading', { name: 'Operations', exact: true })).toBeVisible()
+  })
+
   test('reviews repository flows, governance history, and execution evidence together', async ({ page }) => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
     await expect(page.getByRole('heading', { name: 'Quality intelligence' })).toBeVisible()
+    await expect(page.getByText('Repository analysis diagnostics')).toBeVisible()
+    await expect(page.getByText('unreadable-quality-evidence')).toBeVisible()
 
     const originSummary = page.getByLabel('UX flow origin summary')
     await expect(originSummary).toContainText('1 deterministic flow')
     await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await expect(page.getByText('Suspend an application', { exact: true })).toBeVisible()
     const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await expect(flowCard.getByText('Repository izzywdev/FuzeService')).toBeVisible()
     await expect(page.getByText('FuzeInfra LiteLLM proposal', { exact: true })).toBeVisible()
     const analysisProvenance = page.getByLabel('Suspend an application analysis provenance')
     await expect(analysisProvenance).toContainText('fuzeinfra-litellm')
     await expect(analysisProvenance).toContainText('quality-analysis')
-    await expect(analysisProvenance).toContainText('repository-flow-v1')
+    await expect(analysisProvenance).toContainText('fuzequality-repository-flow-v3')
     await expect(analysisProvenance).toContainText('1.0')
     await expect(page.getByText('Deterministic repository evidence', { exact: true })).toBeVisible()
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Storybook states' })).toBeVisible()
+    await expect(page.getByText('App settings / Suspended', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Repository documentation' })).toBeVisible()
+    await expect(page.getByText('Application suspension journey', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Existing test plans' })).toBeVisible()
+    await expect(page.getByText('administrator suspends an application', { exact: true })).toHaveCount(2)
+    await expect(page.getByText('test:suspension', { exact: true })).toBeVisible()
+    await expect(page.getByText('test:suspension:retry', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
+    const modelRequest = page.waitForRequest(request =>
+      new URL(request.url()).searchParams.get('model') === 'quality-analysis'
+    )
+    await page.getByLabel('Analysis model').fill('quality-analysis')
+    await modelRequest
+    const promptRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.searchParams.get('model') === 'quality-analysis' &&
+        url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v3'
+    })
+    await page.getByLabel('Prompt version').fill('fuzequality-repository-flow-v3')
+    await promptRequest
+    const schemaRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.searchParams.get('promptVersion') === 'fuzequality-repository-flow-v3' &&
+        url.searchParams.get('schemaVersion') === '1.0'
+    })
+    await page.getByLabel('Schema version').fill('1.0')
+    await schemaRequest
+    await expect(originSummary).toContainText('0 deterministic flows')
+    await expect(originSummary).toContainText('1 FuzeInfra LiteLLM proposal')
     await flowCard.getByText('Source evidence', { exact: true }).click()
     await expect(flowCard.getByText('Revision abcdef123456')).toBeVisible()
-    await expect(flowCard.getByText('src/routes/apps.ts:42')).toBeVisible()
+    await expect(
+      flowCard.getByText('route · src/routes/apps.ts', { exact: true })
+    ).toBeVisible()
+    await expect(flowCard.getByText('Artifact: Suspend app route')).toBeVisible()
+    await expect(flowCard.getByLabel('selects Suspend targets')).toContainText(
+      'route · src/routes/apps.ts · Suspend app route'
+    )
 
     await flowCard.getByLabel('Optional review rationale').fill('Matches the protected suspension journey.')
     const flowReviewRequest = page.waitForRequest(request => request.url().endsWith('/flow-candidates/candidate-1/review'))
@@ -201,18 +313,48 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(flowHistory.getByText('The first analysis missed the administrator boundary.')).toBeVisible()
 
     await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('Decisive policy passages')).toContainText('Only administrators may suspend apps.')
     await page.getByText('Review history', { exact: true }).click()
     await expect(page.getByText('quality-owner', { exact: true })).toBeVisible()
     await expect(page.getByText('Initial evidence was incomplete.')).toBeVisible()
 
     await expect(page.getByText('Production suspension journey', { exact: true })).toBeVisible()
-    await expect(page.getByText('Authorization assertion failed.')).toBeVisible()
-    const executionMetadata = page.getByLabel('Execution provider metadata')
+    await expect(page.getByText('Authorization assertion failed.', { exact: true })).toBeVisible()
+    const productionExecution = page.getByText('Production suspension journey', { exact: true }).locator('..')
+    const executionMetadata = productionExecution.getByLabel('Execution provider metadata')
     await expect(executionMetadata.locator('[data-field="provider-run-id"]')).toContainText('github-actions · 123')
     await expect(executionMetadata.locator('[data-field="attempt"]')).toContainText('2')
+    await expect(executionMetadata.locator('[data-field="workflow-path"]')).toContainText('.github/workflows/post-prod.yml')
     await expect(executionMetadata.locator('[data-field="duration"]')).toContainText('2m 0s')
-    await expect(page.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
-    await expect(page.getByText('policy-artifact → gate-artifact')).toBeVisible()
+    const gateEvidence = page.getByLabel('Policy gate evidence')
+    await expect(gateEvidence.getByText('Administrative suspension policy')).toBeVisible()
+    await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
+    await expect(gateEvidence).toContainText('docs/policies/apps.md → .github/workflows/quality.yml')
+    await expect(productionExecution.getByRole('link', { name: 'Open CI run' })).toHaveAttribute('href', 'https://github.com/izzywdev/FuzeService/actions/runs/123')
+    const latestLoad = page.getByLabel('Latest execution for Application API load test')
+    await expect(latestLoad).toContainText('failed · abcdef123456')
+    await expect(latestLoad).toContainText('p95 latency exceeded the release threshold.')
+    await expect(latestLoad.getByLabel('Execution evidence coverage')).toContainText(
+      '1 thresholds · 0 artifacts · 0 policy–gate outcomes'
+    )
+    await expect(latestLoad.getByLabel('Execution threshold evidence')).toContainText('640 ms ≤ 500 ms')
+    await expect(latestLoad.getByText('Failed', { exact: true })).toBeVisible()
+    const providerRequest = page.waitForRequest(request =>
+      request.url().includes('/test-executions?provider=github-actions')
+    )
+    await page.getByLabel('Ingestion provider').selectOption('github-actions')
+    await providerRequest
+    const revisionRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/test-executions') &&
+        url.searchParams.get('provider') === 'github-actions' &&
+        url.searchParams.get('revision') === 'abcdef123456'
+    })
+    await page.getByLabel('Source revision').fill('abcdef123456')
+    await revisionRequest
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
+    await expect(page.getByLabel('Evidence repository')).toHaveText('izzywdev/FuzeService')
+    await expect(page.getByText('docs/policies/apps.md → .github/workflows/authorization.yml')).toBeVisible()
     await expect(page.getByText('2 passed · 1 failed · 0 cancelled · 0 running')).toBeVisible()
   })
 
@@ -229,6 +371,165 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(originSummary).toContainText('No AI proposals are available for this revision.')
     await expect(page.getByText('Indexed suspension route', { exact: true })).toBeVisible()
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
+  })
+
+  test('keeps discovered tests and governance visible when execution history is unavailable', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/test-executions'),
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Execution history temporarily unavailable' }),
+      })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByText('Application API load test', { exact: true })).toBeVisible()
+    await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText(
+      'Latest execution evidence is temporarily unavailable'
+    )
+  })
+
+  test('keeps historical UX-flow proposals visible but review-locked', async ({ page }) => {
+    await page.route(
+      url =>
+        url.pathname ===
+        '/api/v1/repositories/repo-1/flow-candidates',
+      route =>
+        route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify([
+            {
+              ...repositoryFlowCandidates[0],
+              revision: 'historical-revision',
+            },
+          ]),
+        })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const flowCard = page
+      .getByText('Suspend an application', { exact: true })
+      .locator('..')
+    await expect(flowCard.getByText(/Historical proposal/)).toBeVisible()
+    await expect(flowCard.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    await expect(flowCard.getByRole('button', { name: 'Reject' })).toBeDisabled()
+    await expect(
+      flowCard.getByLabel('Optional review rationale')
+    ).toBeDisabled()
+  })
+
+  test('dispatches a reviewed load workflow with visible execution handoff', async ({ page }) => {
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    page.once('dialog', dialog => dialog.accept())
+    const dispatchRequest = page.waitForRequest(request =>
+      request.url().endsWith('/performance-tests/load-artifact/execute')
+    )
+
+    await page.getByRole('button', { name: 'Run analyzed revision aaaaaaaaaaaa' }).click()
+
+    expect((await dispatchRequest).method()).toBe('POST')
+    await expect(page.getByRole('status')).toContainText(
+      'Dispatched .github/workflows/load.yml at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    )
+    await expect(page.getByRole('status')).toContainText(
+      'GitHub Actions will report the run as execution evidence.'
+    )
+  })
+
+  test('keeps failed policy-gate review rationale available for retry', async ({ page }) => {
+    const proposedEvaluation = {
+      ...policyGateEvaluations[0],
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([proposedEvaluation]),
+      })
+    )
+    await page.route('**/api/v1/repositories/repo-1/policy-gate-evaluations/evaluation-1/review', route => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Governance review service unavailable' }),
+    }))
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const rationale = page.getByLabel('Optional governance rationale')
+    await rationale.fill('The gate owner is not identified.')
+
+    await page.getByRole('button', { name: 'Dismiss' }).click()
+
+    await expect(page.getByRole('alert')).toHaveText(
+      'Governance review service unavailable'
+    )
+    await expect(rationale).toHaveValue('The gate owner is not identified.')
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+  })
+
+  test('keeps historical governance findings visible but review-locked', async ({ page }) => {
+    const historicalEvaluation = {
+      ...policyGateEvaluations[0],
+      revision: 'historical-revision',
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    await page.route(
+      url =>
+        url.pathname ===
+        '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([historicalEvaluation]),
+        })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(
+      page.getByText(/Historical governance finding/)
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Accept recommendation' })
+    ).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
+    await expect(
+      page.getByLabel('Optional governance rationale')
+    ).toBeDisabled()
+  })
+
+  test('scopes governance findings to the current analysis by default', async ({ page }) => {
+    const currentRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return (
+        url.pathname.endsWith('/policy-gate-evaluations') &&
+        url.searchParams.get('revision') === 'abcdef123456'
+      )
+    })
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await currentRequest
+
+    const historyRequest = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return (
+        url.pathname.endsWith('/policy-gate-evaluations') &&
+        !url.searchParams.has('revision')
+      )
+    })
+    await page.getByLabel('Governance revision').selectOption('all')
+    await historyRequest
   })
 
   test('keeps a failed UX flow review actionable', async ({ page }) => {
@@ -274,7 +575,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
       }
     })
     await page.reload()
-    await page.getByRole('button', { name: 'Repositories' }).click()
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('fuzefront:navigate', {
+      detail: { id: 'repositories', section: 'repositories', route: '/repositories' },
+    })))
     await expect(page.getByRole('heading', { name: 'OrganizationOne' })).toBeVisible()
 
     const personalReload = page.waitForRequest(request => request.url().endsWith('/api/v1/portfolio'))

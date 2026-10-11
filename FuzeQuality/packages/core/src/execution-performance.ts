@@ -1,8 +1,30 @@
-import type { TestExecution } from '@fuzequality/contracts'
+import type { QualityArtifact, Repository, TestExecution } from '@fuzequality/contracts'
+
+/** Returns only scanner-verified, manually dispatchable performance workflows. */
+export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {
+  if (!['load-test', 'stress-test'].includes(artifact.kind)) return undefined
+  if (artifact.execution?.provider !== 'github-actions' || artifact.execution.trigger !== 'workflow_dispatch') return undefined
+  if (artifact.execution.workflowPath !== artifact.sourcePath) return undefined
+  if (!artifact.sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(artifact.sourcePath)) return undefined
+  return artifact.sourcePath
+}
+
+/** Returns the immutable source commit that produced the current reviewed catalog. */
+export function performanceDispatchRevision(repository: Repository): string | undefined {
+  const details = repository.lastScanDetails
+  if (!repository.lastScanRevision || details?.catalogRevision !== repository.lastScanRevision) return undefined
+  const revision = details.sourceRevision
+  return revision && /^[0-9a-f]{40}$/i.test(revision) ? revision : undefined
+}
 
 export type PolicyGatePerformance = {
+  repositoryId: string
   policyArtifactId: string
+  policyTitle?: string
+  policySourcePath?: string
   gateArtifactId: string
+  gateTitle?: string
+  gateSourcePath?: string
   passed: number
   failed: number
   cancelled: number
@@ -10,7 +32,7 @@ export type PolicyGatePerformance = {
   latestCompletedAt?: string
 }
 
-export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status'>> & { from?: string; until?: string }
+export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'revision' | 'workflowPath'>> & { from?: string; until?: string }
 
 /** Filters only the caller's already tenant-scoped execution evidence. */
 export function filterTestExecutions(executions: TestExecution[], filter: ExecutionFilter = {}) {
@@ -19,6 +41,9 @@ export function filterTestExecutions(executions: TestExecution[], filter: Execut
   return executions.filter(execution => {
     if (filter.kind && execution.kind !== filter.kind) return false
     if (filter.status && execution.status !== filter.status) return false
+    if (filter.provider && execution.provider !== filter.provider) return false
+    if (filter.revision && execution.revision !== filter.revision) return false
+    if (filter.workflowPath && execution.workflowPath !== filter.workflowPath) return false
     const occurredAt = Date.parse(execution.completedAt ?? execution.startedAt ?? '')
     if (from !== undefined && (!Number.isFinite(occurredAt) || occurredAt < from)) return false
     if (until !== undefined && (!Number.isFinite(occurredAt) || occurredAt > until)) return false
@@ -43,8 +68,9 @@ export function executionOutcomeTrend(executions: TestExecution[]): ExecutionOut
 }
 
 /** Aggregates immutable execution evidence; no missing link is inferred as a passing gate. */
-export function executionPerformance(executions: TestExecution[]): PolicyGatePerformance[] {
+export function executionPerformance(executions: TestExecution[], artifacts: QualityArtifact[] = []): PolicyGatePerformance[] {
   const results = new Map<string, PolicyGatePerformance>()
+  const artifactsById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
   for (const execution of executions) {
     // Rows created before explicit pair evidence existed are only safe to use
     // when there is exactly one possible pair. Never create a Cartesian product.
@@ -54,8 +80,20 @@ export function executionPerformance(executions: TestExecution[]): PolicyGatePer
         ? [{ policyArtifactId: execution.policyArtifactIds[0], gateArtifactId: execution.gateArtifactIds[0], status: execution.status }]
         : []
     for (const evaluation of gateEvaluations) {
-      const key = `${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
-      const current = results.get(key) ?? { policyArtifactId: evaluation.policyArtifactId, gateArtifactId: evaluation.gateArtifactId, passed: 0, failed: 0, cancelled: 0, running: 0 }
+      const key = `${execution.repositoryId}:${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`
+      const policy = artifactsById.get(evaluation.policyArtifactId)
+      const gate = artifactsById.get(evaluation.gateArtifactId)
+      const current = results.get(key) ?? {
+        repositoryId: execution.repositoryId,
+        policyArtifactId: evaluation.policyArtifactId,
+        ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
+        gateArtifactId: evaluation.gateArtifactId,
+        ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
+        passed: 0,
+        failed: 0,
+        cancelled: 0,
+        running: 0,
+      }
       current[evaluation.status]++
       if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
       results.set(key, current)

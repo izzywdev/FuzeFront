@@ -102,8 +102,25 @@ describe('contract discovery', () => {
       )
       expect(schemas.TestExecution.required).toContain('evidenceLinks')
       expect(schemas.TestExecutionEvidenceLink.properties.url.pattern).toBe('^https://')
+      expect(schemas.PerformanceDispatch.required).toContain('sourceRevision')
+      expect(schemas.PerformanceDispatch.properties.sourceRevision.pattern).toBe(
+        '^[0-9a-fA-F]{40}$'
+      )
+      expect(schemas.TestExecutionInput.properties.workflowPath.maxLength).toBe(1000)
+      expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
+          .map((parameter: { $ref?: string }) => parameter.$ref)
+      ).toContain('#/components/parameters/ExecutionWorkflowPath')
+      expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
+      )
+      expect(schemas.PolicyGateEvaluationInput.properties.evidencePassages.items.$ref).toBe(
+        '#/components/schemas/PolicyGateEvidencePassage'
+      )
+      expect(schemas.PolicyGateEvidencePassage.required).toEqual(
+        ['artifactId', 'sourcePath', 'text', 'signal']
       )
       const ingestionSchema = schemas.PolicyGateEvaluationInput
       expect(
@@ -120,7 +137,35 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates'].get.parameters.map(
           (parameter: { name: string }) => parameter.name
         )
-      ).toEqual(['source', 'status', 'revision'])
+      ).toEqual([
+        'source',
+        'status',
+        'revision',
+        'model',
+        'promptVersion',
+        'schemaVersion',
+      ])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['409'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/StaleFlowCandidateError')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/review'].post.responses['409'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/StalePolicyGateEvaluationError')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters.map(
+          (parameter: { name: string }) => parameter.name
+        )
+      ).toEqual(['kind', 'severity', 'reviewStatus', 'revision'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
+      ).toContain('immutable analyzed commit')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.responses
+      ).toHaveProperty('409')
     })
   })
 

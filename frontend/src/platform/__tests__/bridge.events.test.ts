@@ -77,4 +77,23 @@ describe('PlatformBridge org and account switch events', () => {
     expect(orgListener).toHaveBeenCalledWith(null)
     unsubscribe()
   })
+
+  it('delegates federated navigation to the host router handler', () => {
+    const onNavigate = vi.fn()
+    bridge.setHandlers({
+      onMenuAdd: vi.fn(),
+      onMenuRemove: vi.fn(),
+      onNavigate,
+      socket: {
+        on: vi.fn(),
+        off: vi.fn(),
+        emit: vi.fn(),
+        isConnected: () => false,
+      },
+    })
+
+    bridge.navigate('/app/fuzequality/repositories')
+
+    expect(onNavigate).toHaveBeenCalledWith('/app/fuzequality/repositories')
+  })
 })

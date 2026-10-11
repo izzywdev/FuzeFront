@@ -56,10 +56,28 @@ describe('FuzeQuality GitHub App contract', () => {
   })
 
   it('maps completed default-branch workflow runs to execution evidence', () => {
-    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({
+    expect(webhookWorkflowExecutions('workflow_run', { action: 'completed', repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' }, workflow_run: { id: 101, run_attempt: 2, head_branch: 'main', head_sha: 'a'.repeat(40), name: 'Post-production integration', path: '.github/workflows/post-prod.yml', status: 'completed', conclusion: 'success', html_url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101', run_started_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:01:00.000Z' } }, repositories)).toEqual([expect.objectContaining({
       repositoryId: 'repo-1', provider: 'github-actions', externalRunId: '101', attempt: 2, kind: 'post-production', status: 'passed',
+      workflowPath: '.github/workflows/post-prod.yml',
       evidenceLinks: [{ kind: 'report', name: 'GitHub Actions artifacts', url: 'https://github.com/izzywdev/FuzeOne/actions/runs/101#artifacts' }],
     })])
+  })
+
+  it('classifies a generically named run from its workflow file', () => {
+    const payload = {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },
+      workflow_run: {
+        id: 102, run_attempt: 1, head_branch: 'main', head_sha: 'd'.repeat(40), name: 'Quality checks',
+        path: '.github/workflows/post_prod_playwright.yml', status: 'completed', conclusion: 'success',
+        run_started_at: null, updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }
+
+    expect(webhookWorkflowExecutions('workflow_run', payload, repositories)[0]).toMatchObject({
+      kind: 'post-production',
+      workflowPath: '.github/workflows/post_prod_playwright.yml',
+    })
   })
 
   it('keeps one run attempt identity while its lifecycle advances', () => {

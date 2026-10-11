@@ -20,6 +20,7 @@ export function PolicyGateEvidence({
     ? `${Math.round(evaluation.confidence * 100)}%`
     : 'Unknown'
   const scope = evaluation.scope ?? { sourcePaths: [], subjects: [] }
+  const passages = evaluation.evidencePassages ?? []
 
   return (
     <section
@@ -65,6 +66,22 @@ export function PolicyGateEvidence({
           })}
         </ul>
       </div>
+      {passages.length > 0 && (
+        <div className="governance-passages" aria-label="Decisive policy passages">
+          <strong>Decisive passages</strong>
+          <ul>
+            {passages.map((passage, index) => (
+              <li key={`${passage.artifactId}:${passage.signal}:${index}`}>
+                <span className={`status-pill governance-signal-${passage.signal}`}>
+                  {passage.signal}
+                </span>
+                <q>{passage.text}</q>
+                <code>{passage.sourcePath}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   )
 }

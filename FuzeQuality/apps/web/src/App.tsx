@@ -50,6 +50,7 @@ import type {
   TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
+import type { PolicyGatePerformance } from '@fuzequality/core'
 import {
   api,
   configurePlatformSecurity,
@@ -62,8 +63,10 @@ import { QualityAction, QualityIconAction } from './components/primitives'
 import {
   ExecutionEvidenceMetadata,
   ExecutionEvidenceLinks,
+  ExecutionEvidenceCoverage,
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
+  latestPerformanceExecution,
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
@@ -79,6 +82,13 @@ export type View =
   | 'operations'
   | 'organization'
   | 'administration'
+
+function analyzedSourceRevision(repository: Repository): string | undefined {
+  const details = repository.lastScanDetails
+  if (!repository.lastScanRevision || details?.catalogRevision !== repository.lastScanRevision) return undefined
+  const revision = details.sourceRevision
+  return revision && /^[0-9a-f]{40}$/i.test(revision) ? revision : undefined
+}
 
 const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Portfolio', icon: Activity },
@@ -117,6 +127,7 @@ export type FuzeFrontRuntimeBridge = {
     add: (appId: string, items: typeof portalMenuItems) => void
     remove: (appId: string) => void
   }
+  navigate?: (path: string) => void
 }
 
 function runtimeBridge() {
@@ -193,7 +204,28 @@ function isView(value: unknown): value is View {
 export function viewFromPathname(pathname: string): View | undefined {
   if (/^\/app\/fuzequality\/?$/.test(pathname)) return 'overview'
   const match = pathname.match(/^\/app\/fuzequality\/([^/?#]+)/)
-  return match && isView(match[1]) ? match[1] : undefined
+  if (match && isView(match[1])) return match[1]
+  if (/^\/?$/.test(pathname)) return 'overview'
+  const standaloneMatch = pathname.match(/^\/([^/?#]+)/)
+  return standaloneMatch && isView(standaloneMatch[1])
+    ? standaloneMatch[1]
+    : undefined
+}
+
+export function pathForView(view: View, embedded: boolean) {
+  const suffix = view === 'overview' ? '' : `/${view}`
+  return embedded ? `/app/fuzequality${suffix}` : suffix || '/'
+}
+
+export function navigatePortalView(
+  view: View,
+  embedded: boolean,
+  bridge: FuzeFrontRuntimeBridge | undefined = runtimeBridge(),
+  history: Pick<History, 'pushState'> = window.history
+) {
+  const path = pathForView(view, embedded)
+  if (embedded && bridge?.navigate) bridge.navigate(path)
+  else history.pushState({}, '', path)
 }
 
 /** Connect host menu events and browser history to the app's active view. */
@@ -2733,9 +2765,11 @@ function FlowReviewHistory({
 
 function FlowReviewControls({
   flow,
+  currentRevision,
   onReview,
 }: {
   flow: RepositoryFlowCandidate
+  currentRevision?: string
   onReview: (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -2745,6 +2779,9 @@ function FlowReviewControls({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const isCurrentRevision = Boolean(
+    currentRevision && flow.revision === currentRevision
+  )
 
   const submit = async (status: 'confirmed' | 'rejected') => {
     setBusy(true)
@@ -2773,10 +2810,17 @@ function FlowReviewControls({
       )}
       {flow.status === 'proposed' && (
         <div className="flow-review-controls">
+          {!isCurrentRevision && (
+            <p className="form-error" role="status">
+              Historical proposal — review is locked until repository analysis
+              produces a candidate for the current revision.
+            </p>
+          )}
           <label>
             Optional review rationale
             <input
               value={reason}
+              disabled={!isCurrentRevision || busy}
               onChange={event => setReason(event.target.value)}
               placeholder="Why is this flow accurate or unsuitable?"
             />
@@ -2784,14 +2828,14 @@ function FlowReviewControls({
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy}
+              disabled={busy || !isCurrentRevision}
               onClick={() => void submit('confirmed')}
             >
               <Check size={14} /> Confirm
             </QualityAction>
             <QualityAction
               intent="danger"
-              disabled={busy}
+              disabled={busy || !isCurrentRevision}
               onClick={() => void submit('rejected')}
             >
               <X size={14} /> Reject
@@ -2880,11 +2924,130 @@ function PolicyGateReviewHistory({
   )
 }
 
+function PolicyGateReviewControls({
+  evaluation,
+  currentRevision,
+  onReview,
+}: {
+  evaluation: PolicyGateEvaluation
+  currentRevision?: string
+  onReview: (
+    evaluation: PolicyGateEvaluation,
+    status: 'accepted' | 'dismissed',
+    reason?: string
+  ) => Promise<void>
+}) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const isCurrentRevision = Boolean(
+    currentRevision && evaluation.revision === currentRevision
+  )
+
+  const submit = async (status: 'accepted' | 'dismissed') => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await onReview(evaluation, status, reason.trim() || undefined)
+      setReason('')
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Unable to save the governance review'
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      {evaluation.reviewStatus === 'proposed' && (
+        <div className="flow-review-controls">
+          {!isCurrentRevision && (
+            <p className="form-error" role="status">
+              Historical governance finding — review is locked until repository
+              analysis produces a finding for the current revision.
+            </p>
+          )}
+          <label>
+            Optional governance rationale
+            <input
+              value={reason}
+              disabled={!isCurrentRevision || busy}
+              onChange={event => setReason(event.target.value)}
+              placeholder="Why should this recommendation be accepted or dismissed?"
+            />
+          </label>
+          <div className="row-actions">
+            <QualityAction
+              intent="secondary"
+              disabled={busy || !isCurrentRevision}
+              onClick={() => void submit('accepted')}
+            >
+              <Check size={14} /> Accept recommendation
+            </QualityAction>
+            <QualityAction
+              intent="danger"
+              disabled={busy || !isCurrentRevision}
+              onClick={() => void submit('dismissed')}
+            >
+              <X size={14} /> Dismiss
+            </QualityAction>
+          </div>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+      <PolicyGateReviewHistory evaluation={evaluation} />
+    </>
+  )
+}
+
 type FlowInventorySelection = {
   repositoryId: string
   source: RepositoryFlowCandidate['source'] | ''
   status: RepositoryFlowCandidate['status'] | ''
   revisionScope: FlowRevisionScope
+  model: string
+  promptVersion: string
+  schemaVersion: string
+}
+
+type PolicyGateInventorySelection = {
+  kind: PolicyGateEvaluation['kind'] | ''
+  severity: PolicyGateEvaluation['severity'] | ''
+  reviewStatus: PolicyGateEvaluation['reviewStatus'] | ''
+  revisionScope: FlowRevisionScope
+}
+
+export function policyGateEvaluationMatchesInventory(
+  evaluation: PolicyGateEvaluation,
+  repositories: Repository[],
+  selection: PolicyGateInventorySelection
+) {
+  if (selection.kind && evaluation.kind !== selection.kind) return false
+  if (selection.severity && evaluation.severity !== selection.severity)
+    return false
+  if (
+    selection.reviewStatus &&
+    evaluation.reviewStatus !== selection.reviewStatus
+  )
+    return false
+  if (selection.revisionScope === 'current') {
+    const repository = repositories.find(
+      item => item.id === evaluation.repositoryId
+    )
+    return Boolean(
+      repository?.lastScanRevision &&
+        evaluation.revision === repository.lastScanRevision
+    )
+  }
+  return true
 }
 
 export function flowCandidateMatchesInventory(
@@ -2896,6 +3059,17 @@ export function flowCandidateMatchesInventory(
     return false
   if (selection.source && flow.source !== selection.source) return false
   if (selection.status && flow.status !== selection.status) return false
+  if (selection.model && flow.analysis?.model !== selection.model) return false
+  if (
+    selection.promptVersion &&
+    flow.analysis?.promptVersion !== selection.promptVersion
+  )
+    return false
+  if (
+    selection.schemaVersion &&
+    flow.analysis?.schemaVersion !== selection.schemaVersion
+  )
+    return false
   if (selection.revisionScope === 'current') {
     const repository = repositories.find(item => item.id === flow.repositoryId)
     return Boolean(
@@ -2908,6 +3082,8 @@ export function flowCandidateMatchesInventory(
 
 export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
+  const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
   >([])
@@ -2915,20 +3091,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
   const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
   const [flowRevisionScope, setFlowRevisionScope] = useState<FlowRevisionScope>('all')
+  const [flowModel, setFlowModel] = useState('')
+  const [flowPromptVersion, setFlowPromptVersion] = useState('')
+  const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
   const [executions, setExecutions] = useState<TestExecution[]>([])
+  const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
+  const [performanceEvidenceFailures, setPerformanceEvidenceFailures] = useState<string[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
-    Array<{
-      policyArtifactId: string
-      gateArtifactId: string
-      passed: number
-      failed: number
-      cancelled: number
-      running: number
-      latestCompletedAt?: string
-    }>
+    PolicyGatePerformance[]
   >([])
   const [executionRepositoryId, setExecutionRepositoryId] = useState('')
   const [executionKind, setExecutionKind] = useState<
@@ -2937,6 +3110,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionStatus, setExecutionStatus] = useState<
     TestExecution['status'] | ''
   >('')
+  const [executionProvider, setExecutionProvider] = useState<
+    TestExecution['provider'] | ''
+  >('')
+  const [executionRevision, setExecutionRevision] = useState('')
+  const [executionWorkflowPath, setExecutionWorkflowPath] = useState('')
   const [executionFrom, setExecutionFrom] = useState('')
   const [executionUntil, setExecutionUntil] = useState('')
   const invalidExecutionRange = Boolean(
@@ -2953,7 +3131,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateReviewStatus, setPolicyGateReviewStatus] = useState<
     PolicyGateEvaluation['reviewStatus'] | ''
   >('')
+  const [policyGateRevisionScope, setPolicyGateRevisionScope] =
+    useState<FlowRevisionScope>('current')
+  const policyGateSelection: PolicyGateInventorySelection = {
+    kind: policyGateKind,
+    severity: policyGateSeverity,
+    reviewStatus: policyGateReviewStatus,
+    revisionScope: policyGateRevisionScope,
+  }
+  const policyGateSelectionRef = useRef(policyGateSelection)
+  policyGateSelectionRef.current = policyGateSelection
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
+  const [performanceDispatch, setPerformanceDispatch] = useState<{
+    artifactId: string
+    state: 'success' | 'error'
+    message: string
+  }>()
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
   const [loadingFlows, setLoadingFlows] = useState(true)
   const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
@@ -2962,6 +3155,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     source: flowSource,
     status: flowStatus,
     revisionScope: flowRevisionScope,
+    model: flowModel.trim(),
+    promptVersion: flowPromptVersion.trim(),
+    schemaVersion: flowSchemaVersion.trim(),
   }
   const flowSelectionRef = useRef(flowSelection)
   flowSelectionRef.current = flowSelection
@@ -2974,6 +3170,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowSource,
     flowStatus,
     flowRevisionScope,
+    flowModel.trim(),
+    flowPromptVersion.trim(),
+    flowSchemaVersion.trim(),
   ])
   const flowResultsAreCurrent =
     !loadingFlows && loadedFlowQuery === flowQuery
@@ -3000,33 +3199,60 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }
   const reviewPolicyGate = async (
     evaluation: PolicyGateEvaluation,
-    status: 'accepted' | 'dismissed'
+    status: 'accepted' | 'dismissed',
+    reason?: string
   ) => {
-    const reason = window
-      .prompt(
-        `Optional rationale for ${status === 'accepted' ? 'accepting' : 'dismissing'} this recommendation:`
-      )
-      ?.trim()
     const reviewed = await api.reviewPolicyGateEvaluation(
       evaluation.repositoryId,
       evaluation.id,
       status,
-      reason || undefined
+      reason
     )
     setPolicyGateEvaluations(current =>
-      current.map(item => (item.id === reviewed.id ? reviewed : item))
+      policyGateEvaluationMatchesInventory(
+        reviewed,
+        data.repositories,
+        policyGateSelectionRef.current
+      )
+        ? current.map(item => (item.id === reviewed.id ? reviewed : item))
+        : current.filter(item => item.id !== reviewed.id)
     )
   }
   const runPerformanceTest = async (artifact: QualityArtifact) => {
+    const repository = data.repositories.find(
+      candidate => candidate.id === artifact.repositoryId
+    )
+    const sourceRevision = repository
+      ? analyzedSourceRevision(repository)
+      : undefined
+    if (!sourceRevision) return
     if (
       !window.confirm(
-        `Dispatch ${artifact.title} on the repository default branch?`
+        `Dispatch ${artifact.title} from ${repository?.defaultBranch ?? 'the analyzed branch'} at analyzed commit ${sourceRevision}?`
       )
     )
       return
     setDispatchingArtifact(artifact.id)
+    setPerformanceDispatch(undefined)
     try {
-      await api.runPerformanceTest(artifact.repositoryId, artifact.id)
+      const receipt = await api.runPerformanceTest(
+        artifact.repositoryId,
+        artifact.id
+      )
+      setPerformanceDispatch({
+        artifactId: artifact.id,
+        state: 'success',
+        message: `Dispatched ${receipt.workflowPath} from ${receipt.ref} at analyzed commit ${receipt.sourceRevision}. GitHub Actions will report the run as execution evidence.`,
+      })
+    } catch (error) {
+      setPerformanceDispatch({
+        artifactId: artifact.id,
+        state: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unable to dispatch the performance workflow.',
+      })
     } finally {
       setDispatchingArtifact(undefined)
     }
@@ -3037,29 +3263,82 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       Object.entries({
         kind: executionKind,
         status: executionStatus,
+        provider: executionProvider,
+        revision: executionRevision.trim(),
+        workflowPath: executionWorkflowPath.trim(),
         from: iso(executionFrom),
         until: iso(executionUntil),
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
-  }, [executionKind, executionStatus, executionFrom, executionUntil])
+  }, [executionKind, executionStatus, executionProvider, executionRevision, executionWorkflowPath, executionFrom, executionUntil])
   useEffect(() => {
     let active = true
     void Promise.all(
-      data.repositories.map(async repository => ({
-        artifacts: await api.qualityArtifacts(repository.id),
-        evaluations: await api.policyGateEvaluations(repository.id),
-      }))
+      data.repositories.map(async repository => {
+        const [repositoryArtifacts, evaluations] = await Promise.all([
+          api.qualityArtifacts(repository.id),
+          policyGateRevisionScope === 'current' &&
+          !repository.lastScanRevision
+            ? []
+            : await api.policyGateEvaluations(
+                repository.id,
+                Object.fromEntries(
+                  Object.entries({
+                    kind: policyGateKind,
+                    severity: policyGateSeverity,
+                    reviewStatus: policyGateReviewStatus,
+                    revision:
+                      policyGateRevisionScope === 'current'
+                        ? repository.lastScanRevision ?? ''
+                        : '',
+                  }).filter(([, value]) => Boolean(value))
+                )
+              ),
+        ])
+        const historicalGovernanceArtifacts = policyGateRevisionScope === 'all'
+          ? (await Promise.all(
+              [...new Set(evaluations.map(evaluation => evaluation.revision))]
+                .filter(revision => revision !== repository.lastScanRevision)
+                .map(revision => api.qualityArtifacts(repository.id, revision).catch(() => []))
+            )).flat()
+          : []
+        const hasPerformanceDefinitions = repositoryArtifacts.some(artifact =>
+          ['load-test', 'stress-test'].includes(artifact.kind)
+        )
+        return {
+          artifacts: repositoryArtifacts,
+          historicalGovernanceArtifacts,
+          evaluations,
+          performanceExecutions: hasPerformanceDefinitions
+            ? await api.testExecutions(repository.id).then(
+                executions => ({ executions, failed: false }),
+                () => ({ executions: [], failed: true })
+              )
+            : { executions: [], failed: false },
+          repositoryId: repository.id,
+        }
+      })
     )
       .then(groups => {
         if (active) {
           setArtifacts(groups.flatMap(group => group.artifacts))
+          setGovernanceEvidenceArtifacts(groups.flatMap(group => group.historicalGovernanceArtifacts))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
+          setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions.executions))
+          setPerformanceEvidenceFailures(
+            groups
+              .filter(group => group.performanceExecutions.failed)
+              .map(group => group.repositoryId)
+          )
         }
       })
       .catch(() => {
         if (active) {
           setArtifacts([])
+          setGovernanceEvidenceArtifacts([])
           setPolicyGateEvaluations([])
+          setPerformanceExecutions([])
+          setPerformanceEvidenceFailures([])
         }
       })
       .finally(() => {
@@ -3068,7 +3347,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     return () => {
       active = false
     }
-  }, [data.repositories])
+  }, [
+    data.repositories,
+    policyGateKind,
+    policyGateRevisionScope,
+    policyGateReviewStatus,
+    policyGateSeverity,
+  ])
   useEffect(() => {
     let active = true
     setLoadingFlows(true)
@@ -3088,6 +3373,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       flowRevisionScope === 'current'
                         ? repository.lastScanRevision ?? ''
                         : '',
+                    model: flowModel.trim(),
+                    promptVersion: flowPromptVersion.trim(),
+                    schemaVersion: flowSchemaVersion.trim(),
                   }).filter(([, value]) => Boolean(value))
                 )
               )
@@ -3115,7 +3403,33 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     flowRevisionScope,
     flowSource,
     flowStatus,
+    flowModel,
+    flowPromptVersion,
+    flowSchemaVersion,
   ])
+  useEffect(() => {
+    let active = true
+    if (!flowResultsAreCurrent || flowRevisionScope !== 'all') {
+      setFlowEvidenceArtifacts([])
+      return () => { active = false }
+    }
+    const currentRevisions = new Map(
+      data.repositories.map(repository => [repository.id, repository.lastScanRevision])
+    )
+    const requested = new Set<string>()
+    const requests = flowCandidates.flatMap(candidate => {
+      if (candidate.revision === currentRevisions.get(candidate.repositoryId)) return []
+      const key = `${candidate.repositoryId}:${candidate.revision}`
+      if (requested.has(key)) return []
+      requested.add(key)
+      return [api.qualityArtifacts(candidate.repositoryId, candidate.revision)]
+    })
+    void Promise.all(requests).then(
+      groups => { if (active) setFlowEvidenceArtifacts(groups.flat()) },
+      () => { if (active) setFlowEvidenceArtifacts([]) },
+    )
+    return () => { active = false }
+  }, [data.repositories, flowCandidates, flowResultsAreCurrent, flowRevisionScope])
   useEffect(() => {
     let active = true
     if (invalidExecutionRange) {
@@ -3162,6 +3476,27 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     () => executionOutcomeTrend(executions),
     [executions]
   )
+  const repositoryLabels = useMemo(
+    () =>
+      new Map(
+        data.repositories.map(repository => [
+          repository.id,
+          `${repository.owner}/${repository.name}`,
+        ])
+      ),
+    [data.repositories]
+  )
+  const evidenceArtifacts = useMemo(
+    () => [...new Map(
+      [...artifacts, ...governanceEvidenceArtifacts, ...flowEvidenceArtifacts]
+        .map(artifact => [artifact.id, artifact])
+    ).values()],
+    [artifacts, governanceEvidenceArtifacts, flowEvidenceArtifacts]
+  )
+  const artifactsById = useMemo(
+    () => new Map(evidenceArtifacts.map(artifact => [artifact.id, artifact])),
+    [evidenceArtifacts]
+  )
   const filteredPolicyGateEvaluations = useMemo(
     () =>
       policyGateEvaluations.filter(
@@ -3183,6 +3518,21 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       'route',
       'UX flows',
       'Routes and API transitions discovered from repository analysis',
+    ],
+    [
+      'story',
+      'Storybook states',
+      'Component states and interaction stories supplied to reviewed flow analysis',
+    ],
+    [
+      'documentation',
+      'Repository documentation',
+      'Journey, policy, release, and testing context discovered in source',
+    ],
+    [
+      'test-plan',
+      'Existing test plans',
+      'Repository test cases available for flow and coverage analysis',
     ],
     [
       'policy',
@@ -3212,6 +3562,27 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         title="Quality intelligence"
         detail="Deterministic repository evidence is stored by revision. LiteLLM proposals remain reviewable suggestions before they affect flows or policy governance."
       />
+      {data.diagnostics.filter(item => item.category === 'repository').length > 0 && (
+        <details className="scan-diagnostics" open>
+          <summary>
+            <AlertTriangle size={14} /> Repository analysis diagnostics
+          </summary>
+          <div>
+            {data.diagnostics
+              .filter(item => item.category === 'repository')
+              .map(item => (
+                <article key={`${item.repositoryId}:${item.revision}:${item.sourcePath}:${item.code}`}>
+                  <span className={`diagnostic-severity diagnostic-${item.severity}`}>
+                    {item.severity}
+                  </span>
+                  <code>{repositoryLabels.get(item.repositoryId) ?? item.repositoryId} · {item.sourcePath}</code>
+                  <strong>{item.code}</strong>
+                  <p>{item.message}</p>
+                </article>
+              ))}
+          </div>
+        </details>
+      )}
       {loadingArtifacts ? (
         <div className="loading-screen">
           <RefreshCw className="spin" />
@@ -3225,10 +3596,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             source={flowSource}
             status={flowStatus}
             revisionScope={flowRevisionScope}
+            model={flowModel}
+            promptVersion={flowPromptVersion}
+            schemaVersion={flowSchemaVersion}
             onRepositoryIdChange={setFlowRepositoryId}
             onSourceChange={setFlowSource}
             onStatusChange={setFlowStatus}
             onRevisionScopeChange={setFlowRevisionScope}
+            onModelChange={setFlowModel}
+            onPromptVersionChange={setFlowPromptVersion}
+            onSchemaVersionChange={setFlowSchemaVersion}
           />
           <div
             className="catalog-filters"
@@ -3294,6 +3671,20 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 ))}
               </select>
             </label>
+            <label>
+              Governance revision
+              <select
+                value={policyGateRevisionScope}
+                onChange={event =>
+                  setPolicyGateRevisionScope(
+                    event.target.value as FlowRevisionScope
+                  )
+                }
+              >
+                <option value="current">Current analysis</option>
+                <option value="all">All revisions</option>
+              </select>
+            </label>
           </div>
           <div className="catalog-grid">
             {groups.map(([kind, title, detail]) => {
@@ -3354,6 +3745,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         <article className="catalog-row" key={flow.id}>
                           <div>
                             <strong>{flow.title}</strong>
+                            <small className="flow-repository-label">
+                              Repository {repositoryLabels.get(flow.repositoryId) ?? flow.repositoryId}
+                            </small>
                             <div className="flow-origin-line">
                               <span
                                 className={`flow-origin-badge flow-origin-${flow.source}`}
@@ -3413,11 +3807,28 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               <summary>Source evidence</summary>
                               <small>Revision {flow.revision}</small>
                               <ul>
-                                {flow.evidence.map(evidence => (
-                                  <li key={evidence}>
-                                    <code>{evidence}</code>
-                                  </li>
-                                ))}
+                                {[
+                                  ...new Set([
+                                    ...flow.evidence,
+                                    ...flow.steps.flatMap(
+                                      step => step.targetIds
+                                    ),
+                                  ]),
+                                ].map(evidence => {
+                                  const artifact = artifactsById.get(evidence)
+                                  return (
+                                    <li key={evidence}>
+                                      <code>
+                                        {artifact
+                                          ? `${artifact.kind} · ${artifact.sourcePath}`
+                                          : evidence}
+                                      </code>
+                                      {artifact && (
+                                        <span>Artifact: {artifact.title}</span>
+                                      )}
+                                    </li>
+                                  )
+                                })}
                               </ul>
                               <ol>
                                 {flow.steps.map((step, index) => (
@@ -3425,9 +3836,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                     <strong>{step.actor}</strong> —{' '}
                                     {step.action} → {step.expectedOutcome}
                                     {step.targetIds.length ? (
-                                      <small>
+                                      <small
+                                        aria-label={`${step.action} targets`}
+                                      >
                                         {' '}
-                                        ({step.targetIds.join(', ')})
+                                        ({step.targetIds
+                                          .map(targetId => {
+                                            const artifact =
+                                              artifactsById.get(targetId)
+                                            return artifact
+                                              ? `${artifact.kind} · ${artifact.sourcePath} · ${artifact.title}`
+                                              : targetId
+                                          })
+                                          .join(', ')})
                                       </small>
                                     ) : null}
                                   </li>
@@ -3436,6 +3857,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             </details>
                             <FlowReviewControls
                               flow={flow}
+                              currentRevision={
+                                data.repositories.find(
+                                  repository => repository.id === flow.repositoryId
+                                )?.lastScanRevision
+                              }
                               onReview={reviewFlow}
                             />
                           </div>
@@ -3468,53 +3894,56 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </small>
                               <PolicyGateEvidence
                                 evaluation={evaluation}
-                                artifacts={artifacts}
+                                artifacts={evidenceArtifacts}
                               />
-                              {evaluation.reviewStatus === 'proposed' && (
-                                <div className="row-actions">
-                                  <button
-                                    className="secondary-button"
-                                    onClick={() =>
-                                      void reviewPolicyGate(
-                                        evaluation,
-                                        'accepted'
-                                      )
-                                    }
-                                  >
-                                    <Check size={14} /> Accept recommendation
-                                  </button>
-                                  <button
-                                    className="secondary-button"
-                                    onClick={() =>
-                                      void reviewPolicyGate(
-                                        evaluation,
-                                        'dismissed'
-                                      )
-                                    }
-                                  >
-                                    <X size={14} /> Dismiss
-                                  </button>
-                                </div>
-                              )}
-                              <PolicyGateReviewHistory
+                              <PolicyGateReviewControls
                                 evaluation={evaluation}
+                                currentRevision={
+                                  data.repositories.find(
+                                    repository =>
+                                      repository.id === evaluation.repositoryId
+                                  )?.lastScanRevision
+                                }
+                                onReview={reviewPolicyGate}
                               />
                             </div>
                           </article>
                         ))}
-                    {items.slice(0, 12).map(item => (
+                    {items.slice(0, 12).map(item => {
+                      const latestExecution = latestPerformanceExecution(item, performanceExecutions)
+                      const repository = data.repositories.find(
+                        candidate => candidate.id === item.repositoryId
+                      )
+                      const analyzedRevision = repository
+                        ? analyzedSourceRevision(repository)
+                        : undefined
+                      return (
                       <article className="catalog-row" key={item.id}>
                         <div>
                           <strong>{item.title}</strong>
                           <code>{item.sourcePath}</code>
                           <p>{item.summary}</p>
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            performanceEvidenceFailures.includes(item.repositoryId) && (
+                              <small className="performance-evidence-warning" role="alert">
+                                Latest execution evidence is temporarily unavailable. The discovered test definition remains available.
+                              </small>
+                            )}
                           {item.evidence.length > 0 && (
-                            <small>{item.evidence[0]}</small>
+                            item.kind === 'test-plan' ? (
+                              <small
+                                className="test-plan-identity"
+                                aria-label={`Evidence identity ${item.id}`}
+                              >
+                                Evidence ID <code>{item.evidence[0]}</code>
+                              </small>
+                            ) : (
+                              <small>{item.evidence[0]}</small>
+                            )
                           )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
-                            item.sourcePath.startsWith(
-                              '.github/workflows/'
-                            ) && (
+                            item.execution?.trigger === 'workflow_dispatch' &&
+                            analyzedRevision && (
                               <div className="row-actions">
                                 <button
                                   className="secondary-button"
@@ -3524,13 +3953,73 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <Activity size={14} />{' '}
                                   {dispatchingArtifact === item.id
                                     ? 'Dispatching…'
-                                    : 'Run on default branch'}
+                                    : `Run analyzed revision ${analyzedRevision.slice(0, 12)}`}
                                 </button>
                               </div>
                             )}
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            !item.execution && (
+                              <small className="performance-inventory-only">
+                                Inventory only · a repository-owned
+                                workflow_dispatch workflow must declare the
+                                reviewed FUZEQUALITY_PERFORMANCE environment
+                                marker as load or stress to enable a controlled
+                                run.
+                              </small>
+                            )}
+                          {['load-test', 'stress-test'].includes(item.kind) &&
+                            item.execution &&
+                            !analyzedRevision && (
+                              <small className="performance-inventory-only">
+                                Inventory only · run repository analysis at an
+                                exact commit before dispatching this workflow.
+                              </small>
+                            )}
+                          {['load-test', 'stress-test'].includes(item.kind) && item.execution && (
+                            <section
+                              className="performance-latest-execution"
+                              aria-label={`Latest execution for ${item.title}`}
+                            >
+                              <strong>Latest recorded outcome</strong>
+                              {latestExecution ? (
+                                <>
+                                  <code>{latestExecution.status} · {latestExecution.revision.slice(0, 12)}</code>
+                                  <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
+                                  <ExecutionEvidenceMetadata execution={latestExecution} />
+                                  <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionThresholdEvidence execution={latestExecution} />
+                                  <ExecutionEvidenceLinks execution={latestExecution} />
+                                  {latestExecution.sourceUrl && (
+                                    <a className="execution-source" href={latestExecution.sourceUrl} target="_blank" rel="noreferrer">
+                                      Open CI run <ExternalLink size={13} />
+                                    </a>
+                                  )}
+                                </>
+                              ) : (
+                                <small>No matching execution has been ingested for this workflow yet.</small>
+                              )}
+                            </section>
+                          )}
+                          {performanceDispatch?.artifactId === item.id && (
+                            <p
+                              className={
+                                performanceDispatch.state === 'error'
+                                  ? 'form-error'
+                                  : 'performance-dispatch-success'
+                              }
+                              role={
+                                performanceDispatch.state === 'error'
+                                  ? 'alert'
+                                  : 'status'
+                              }
+                            >
+                              {performanceDispatch.message}
+                            </p>
+                          )}
                         </div>
                       </article>
-                    ))}
+                      )
+                    })}
                     {items.length === 0 &&
                       !(kind === 'route' &&
                         (!flowResultsAreCurrent ||
@@ -3620,6 +4109,41 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </select>
             </label>
             <label>
+              Ingestion provider
+              <select
+                value={executionProvider}
+                onChange={event =>
+                  setExecutionProvider(
+                    event.target.value as TestExecution['provider'] | ''
+                  )
+                }
+              >
+                <option value="">All providers</option>
+                <option value="github-actions">GitHub Actions</option>
+                <option value="external">External ingestion</option>
+              </select>
+            </label>
+            <label>
+              Source revision
+              <input
+                type="text"
+                value={executionRevision}
+                maxLength={200}
+                placeholder="Exact commit SHA"
+                onChange={event => setExecutionRevision(event.target.value)}
+              />
+            </label>
+            <label>
+              Workflow file
+              <input
+                type="text"
+                value={executionWorkflowPath}
+                maxLength={1000}
+                placeholder=".github/workflows/load.yml"
+                onChange={event => setExecutionWorkflowPath(event.target.value)}
+              />
+            </label>
+            <label>
               From
               <input
                 type="datetime-local"
@@ -3681,8 +4205,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         : ''}
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
+                  <ExecutionEvidenceCoverage execution={execution} />
                   <ExecutionEvidenceLinks execution={execution} />
-                  <ExecutionGateEvidence execution={execution} />
+                  <ExecutionGateEvidence
+                    execution={execution}
+                    artifacts={evidenceArtifacts}
+                  />
                   <ExecutionThresholdEvidence execution={execution} />
                   {execution.sourceUrl && (
                     <a
@@ -3726,11 +4254,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             {executionPerformance.map(pair => (
               <article
                 className="catalog-row"
-                key={`${pair.policyArtifactId}:${pair.gateArtifactId}`}
+                key={`${pair.repositoryId}:${pair.policyArtifactId}:${pair.gateArtifactId}`}
               >
                 <div>
+                  <small aria-label="Evidence repository">
+                    {repositoryLabels.get(pair.repositoryId) ?? pair.repositoryId}
+                  </small>
                   <strong>
-                    {pair.policyArtifactId} → {pair.gateArtifactId}
+                    {pair.policyTitle ?? pair.policyArtifactId} →{' '}
+                    {pair.gateTitle ?? pair.gateArtifactId}
                   </strong>
                   <code>
                     {pair.passed} passed · {pair.failed} failed ·{' '}
@@ -3741,6 +4273,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
                       : 'No completed run yet'}
                   </small>
+                  {(pair.policySourcePath || pair.gateSourcePath) && (
+                    <small>
+                      {pair.policySourcePath ?? pair.policyArtifactId} →{' '}
+                      {pair.gateSourcePath ?? pair.gateArtifactId}
+                    </small>
+                  )}
                 </div>
               </article>
             ))}
@@ -3792,7 +4330,12 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
     useState<OrganizationQualitySummary[]>()
   const [loading, setLoading] = useState(true)
   const portalContext = usePortalContextKey()
+  const embedded = Boolean(runtimeBridge()?.menu)
   usePortalMenu(setView)
+  const navigateToView = (nextView: View) => {
+    navigatePortalView(nextView, embedded)
+    setView(nextView)
+  }
   // The portal owns the active account vault. A federated remote receives its
   // bearer-token resolver from the host rather than reading portal storage.
   useEffect(() => configurePlatformSecurity(getToken), [getToken])
@@ -3828,8 +4371,8 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
     [view, visibleNavigation]
   )
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${embedded ? ' portal-embedded' : ''}`}>
+      {!embedded && <aside className="sidebar">
         <div className="brand">
           <div className="brand-symbol">
             <span />
@@ -3852,7 +4395,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
               <button
                 key={item.id}
                 className={view === item.id ? 'active' : ''}
-                onClick={() => setView(item.id)}
+                onClick={() => navigateToView(item.id)}
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
@@ -3868,9 +4411,9 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
             <strong>{data ? 'live / v1' : 'connecting'}</strong>
           </div>
         </div>
-      </aside>
+      </aside>}
       <main>
-        <div className="topbar">
+        {!embedded && <div className="topbar">
           <span>{active?.label}</span>
           <div>
             <span className="live-dot" /> default branches{' '}
@@ -3882,7 +4425,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
               <RefreshCw size={15} className={loading ? 'spin' : ''} />
             </button>
           </div>
-        </div>
+        </div>}
         <div className="content">
           {error && (
             <div className="error-banner">
@@ -3901,7 +4444,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
           ) : (
             <>
               {view === 'overview' && (
-                <Overview data={data} onNavigate={setView} />
+                <Overview data={data} onNavigate={navigateToView} />
               )}
               {view === 'repositories' && (
                 <Repositories data={data} reload={reload} />

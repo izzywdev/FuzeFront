@@ -15,6 +15,7 @@ const evaluation: PolicyGateEvaluation = {
   gateArtifactIds: [],
   confidence: 0.75,
   scope: { sourcePaths: ['governance/auth.md'], subjects: ['authentication'] },
+  evidencePassages: [{ artifactId: 'policy-auth', sourcePath: 'governance/auth.md', text: 'Authentication is required.', signal: 'obligation' }],
   recommendation: 'Add an authentication gate.',
   reviewStatus: 'proposed',
   createdAt: '2026-10-09T08:00:00.000Z',
@@ -25,6 +26,10 @@ describe('policy gate evaluation ingestion', () => {
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [evaluation] }).success).toBe(true)
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{ ...evaluation, confidence: 2 }] }).success).toBe(false)
     expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{ ...evaluation, scope: { sourcePaths: [], subjects: [] } }] }).success).toBe(false)
+    expect(policyGateEvaluationIngestionSchema.safeParse({ evaluations: [{
+      ...evaluation,
+      evidencePassages: [{ ...evaluation.evidencePassages![0], artifactId: 'unrelated-artifact' }],
+    }] }).success).toBe(false)
   })
 
   it('binds evaluation evidence to the repository tenant', async () => {

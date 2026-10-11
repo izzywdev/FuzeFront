@@ -1,4 +1,4 @@
-import type { TestExecution } from '@fuzequality/contracts'
+import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
 
 const THRESHOLD_OPERATOR_LABELS = {
   lt: '<',
@@ -8,6 +8,30 @@ const THRESHOLD_OPERATOR_LABELS = {
   eq: '=',
 } as const
 
+/** Finds the newest ingested run matching one scanner-verified performance definition. */
+export function latestPerformanceExecution(
+  artifact: QualityArtifact,
+  executions: TestExecution[]
+): TestExecution | undefined {
+  if (
+    !['load-test', 'stress-test'].includes(artifact.kind) ||
+    artifact.execution?.provider !== 'github-actions' ||
+    artifact.execution.trigger !== 'workflow_dispatch' ||
+    artifact.execution.workflowPath !== artifact.sourcePath
+  ) return undefined
+  return executions
+    .filter(execution =>
+      execution.repositoryId === artifact.repositoryId &&
+      execution.workflowPath === artifact.execution?.workflowPath
+    )
+    .sort((left, right) => {
+      const leftTime = Date.parse(left.completedAt ?? left.startedAt ?? '')
+      const rightTime = Date.parse(right.completedAt ?? right.startedAt ?? '')
+      const comparableLeft = Number.isFinite(leftTime) ? leftTime : -Infinity
+      const comparableRight = Number.isFinite(rightTime) ? rightTime : -Infinity
+      return comparableRight - comparableLeft || right.attempt - left.attempt
+    })[0]
+}
 export function executionDurationLabel(
   startedAt?: string,
   completedAt?: string
@@ -44,6 +68,7 @@ export function ExecutionEvidenceMetadata({
   if (
     execution.externalRunId === undefined &&
     execution.attempt === undefined &&
+    execution.workflowPath === undefined &&
     !duration
   )
     return null
@@ -62,6 +87,12 @@ export function ExecutionEvidenceMetadata({
         <div data-field="attempt">
           <dt>Attempt</dt>
           <dd>{execution.attempt}</dd>
+        </div>
+      )}
+      {execution.workflowPath !== undefined && (
+        <div data-field="workflow-path">
+          <dt>Workflow file</dt>
+          <dd><code>{execution.workflowPath}</code></dd>
         </div>
       )}
       {duration && (
@@ -114,29 +145,45 @@ export function ExecutionThresholdEvidence({
 /** Per-pair gate results captured by the producer or an unambiguous workflow link. */
 export function ExecutionGateEvidence({
   execution,
+  artifacts = [],
 }: {
   execution: TestExecution
+  artifacts?: QualityArtifact[]
 }) {
   const gateEvaluations = execution.gateEvaluations ?? []
   if (!gateEvaluations.length) return null
+  const artifactById = new Map(artifacts.map(artifact => [artifact.id, artifact]))
 
   return (
     <section className="execution-gates" aria-label="Policy gate evidence">
       <strong>Policy–gate evidence</strong>
       <ul>
-        {gateEvaluations.map(evaluation => (
-          <li key={`${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`}>
-            <code>
-              {evaluation.policyArtifactId} → {evaluation.gateArtifactId}
-            </code>
-            {evaluation.detail && <span>{evaluation.detail}</span>}
-            <span
-              className={`status-pill status-${evaluation.status}`}
-            >
-              {evaluation.status}
-            </span>
-          </li>
-        ))}
+        {gateEvaluations.map(evaluation => {
+          const policy = artifactById.get(evaluation.policyArtifactId)
+          const gate = artifactById.get(evaluation.gateArtifactId)
+          return (
+            <li key={`${evaluation.policyArtifactId}:${evaluation.gateArtifactId}`}>
+              <div className="execution-gate-pair">
+                <span>
+                  <strong>{policy?.title ?? evaluation.policyArtifactId}</strong>
+                  <span aria-hidden="true"> → </span>
+                  <strong>{gate?.title ?? evaluation.gateArtifactId}</strong>
+                </span>
+                {(policy || gate) && (
+                  <code>
+                    {[policy?.sourcePath, gate?.sourcePath]
+                      .filter(Boolean)
+                      .join(' → ')}
+                  </code>
+                )}
+              </div>
+              {evaluation.detail && <span>{evaluation.detail}</span>}
+              <span className={`status-pill status-${evaluation.status}`}>
+                {evaluation.status}
+              </span>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )
@@ -164,6 +211,30 @@ export function ExecutionEvidenceLinks({
           </li>
         ))}
       </ul>
+    </section>
+  )
+}
+
+/** Makes sparse provider lifecycle events distinguishable from detailed test evidence. */
+export function ExecutionEvidenceCoverage({
+  execution,
+}: {
+  execution: TestExecution
+}) {
+  const thresholds = execution.thresholds?.length ?? 0
+  const links = execution.evidenceLinks?.length ?? 0
+  const gatePairs = execution.gateEvaluations?.length ?? 0
+  const missingThresholds = ['load', 'stress'].includes(execution.kind) && !thresholds
+
+  return (
+    <section className="execution-evidence-coverage" aria-label="Execution evidence coverage">
+      <strong>Evidence coverage</strong>
+      <small>{thresholds} thresholds · {links} artifacts · {gatePairs} policy–gate outcomes</small>
+      {missingThresholds && (
+        <span className="status-pill status-running">
+          No performance threshold observations ingested
+        </span>
+      )}
     </section>
   )
 }

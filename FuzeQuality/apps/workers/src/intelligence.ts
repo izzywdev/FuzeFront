@@ -10,7 +10,7 @@ import {
 } from '@fuzequality/core'
 import { apiRequest, failureCode, runConsumer } from './runtime'
 import { searchJira } from './jira'
-import { runRepositoryInventoryAnalysis } from './repository-analysis'
+import { repositoryQualityArtifactsPath, runRepositoryInventoryAnalysis } from './repository-analysis'
 
 await runConsumer(
   'fuzequality-intelligence-v1',
@@ -24,7 +24,7 @@ await runConsumer(
     if (!command && topic === TOPICS.REPOSITORY_INVENTORY_CHANGED) {
       const inventory = payload as { repositoryId: string; revision: string }
       const repository = await apiRequest<Repository>(`/api/v1/internal/repositories/${inventory.repositoryId}`)
-      const artifacts = await apiRequest<QualityArtifact[]>(`/api/v1/internal/repositories/${inventory.repositoryId}/quality-artifacts`)
+      const artifacts = await apiRequest<QualityArtifact[]>(repositoryQualityArtifactsPath(inventory.repositoryId, inventory.revision))
       const analyzer = new LiteLlmRepositoryFlowAnalyzer(process.env.LITELLM_URL ?? 'http://litellm.fuzeinfra.svc.cluster.local:4000/v1', process.env.FUZEQUALITY_LLM_MODEL ?? 'quality-analysis', process.env.LITELLM_MASTER_KEY)
       await runRepositoryInventoryAnalysis(repository, inventory.revision, artifacts, {
         analyzer,
