@@ -4,7 +4,7 @@ import type {
   Portfolio,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import type { Identity, SecurityErrorCode } from '@fuzefront/security-client'
+import type { Identity } from '@fuzefront/security-client'
 
 export type OrganizationRole = 'owner' | 'admin' | 'member' | 'viewer'
 export type OrganizationMember = { id: string; email?: string; name?: string; displayName?: string; userId?: string; user_id?: string; role: OrganizationRole; status?: string }
@@ -40,7 +40,14 @@ export function configurePlatformSecurity(getToken?: TokenProvider) {
 }
 
 export type PlatformSession = Pick<Identity, 'userId' | 'tenantId' | 'roles'>
-type SecurityFailure = { error?: string; code?: SecurityErrorCode }
+type ApiFailure = { error?: string; code?: string }
+
+export class CatalogApiError extends Error {
+  constructor(message: string, readonly code?: string, readonly status?: number) {
+    super(message)
+    this.name = 'CatalogApiError'
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
@@ -57,8 +64,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       },
     })
     if (!response.ok) {
-      const error = await response.json().catch(() => null) as SecurityFailure | null
-      throw new Error(error?.error ?? `Request failed: ${response.status}`)
+      const error = await response.json().catch(() => null) as ApiFailure | null
+      throw new CatalogApiError(
+        error?.error ?? `Request failed: ${response.status}`,
+        error?.code,
+        response.status
+      )
     }
     return response.json() as Promise<T>
   } catch (error) {

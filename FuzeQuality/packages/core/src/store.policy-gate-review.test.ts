@@ -31,4 +31,26 @@ describe('policy-gate review lifecycle', () => {
     expect(String(query.mock.calls[0][0])).toContain('evidence_passages')
     expect(query.mock.calls[0][1][12]).toBe(JSON.stringify(evidencePassages))
   })
+
+  it('atomically rejects a review when a newer analysis revision wins the race', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+    }
+
+    await expect(store.reviewPolicyGateEvaluation('evaluation-1', 'tenant-1', {
+      status: 'accepted',
+      reviewedBy: 'reviewer-1',
+    }, 'revision-1')).resolves.toBeUndefined()
+
+    const [statement, parameters] = query.mock.calls[1]
+    expect(String(statement)).toContain('evaluation.revision=$6')
+    expect(String(statement)).toContain('repository.last_scan_revision=$6')
+    expect(String(statement)).toContain('FOR UPDATE')
+    expect(parameters[5]).toBe('revision-1')
+    expect(query).toHaveBeenCalledTimes(3)
+    expect(release).toHaveBeenCalledOnce()
+  })
 })

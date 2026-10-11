@@ -515,8 +515,18 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
     status: parsed.data.status,
     reviewedBy: requestIdentity(request)!.userId,
     reason: parsed.data.reason,
-  })
-  if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
+  }, existingCandidate.revision)
+  if (!candidate) {
+    const latestRepository = await store.repository(repositoryId, tenantId)
+    const latestCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+    if (!latestRepository || !latestCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
+    return response.status(409).json(repositoryFlowReviewConflict(latestRepository, latestCandidate) ?? {
+      error: 'The UX-flow candidate changed while it was being reviewed. Refresh before deciding.',
+      code: 'STALE_FLOW_CANDIDATE',
+      candidateRevision: latestCandidate.revision,
+      currentRevision: latestRepository.lastScanRevision,
+    })
+  }
   response.json(candidate)
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, async (request, response) => {
@@ -548,8 +558,18 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   const conflict = policyGateReviewConflict(repository, existingEvaluation)
   if (conflict) return response.status(409).json(conflict)
-  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason })
-  if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+  const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason }, existingEvaluation.revision)
+  if (!evaluation) {
+    const latestRepository = await store.repository(repositoryId, tenantId)
+    const latestEvaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+    if (!latestRepository || !latestEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
+    return response.status(409).json(policyGateReviewConflict(latestRepository, latestEvaluation) ?? {
+      error: 'The policy-gate evaluation changed while it was being reviewed. Refresh before deciding.',
+      code: 'STALE_POLICY_GATE_EVALUATION',
+      evaluationRevision: latestEvaluation.revision,
+      currentRevision: latestRepository.lastScanRevision,
+    })
+  }
   response.json(evaluation)
 })
 app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (request, response) => {

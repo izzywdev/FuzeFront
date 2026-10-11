@@ -109,11 +109,11 @@ export interface CatalogStore {
   qualityArtifacts(repositoryId: string, tenantId: string, revision?: string): Promise<QualityArtifact[]>
   repositoryFlowCandidates(repositoryId: string, tenantId: string): Promise<RepositoryFlowCandidate[]>
   saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void>
-  reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }): Promise<RepositoryFlowCandidate | undefined>
+  reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }, expectedRevision?: string): Promise<RepositoryFlowCandidate | undefined>
   repositoryFlowReviewHistory(candidateId: string, tenantId: string): Promise<RepositoryFlowReviewHistoryEntry[]>
   policyGateEvaluations(repositoryId: string, tenantId: string): Promise<PolicyGateEvaluation[]>
   savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void>
-  reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }): Promise<PolicyGateEvaluation | undefined>
+  reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
   policyGateReviewHistory(evaluationId: string, tenantId: string): Promise<PolicyGateReviewHistoryEntry[]>
   testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]>
   saveTestExecution(execution: TestExecution): Promise<void>
@@ -277,9 +277,11 @@ export class MemoryCatalogStore implements CatalogStore {
     }
   }
 
-  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }) {
+  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }, expectedRevision?: string) {
     const item = this.flowCandidates.find(candidate => candidate.id === id && candidate.tenantId === tenantId)
     if (!item) return undefined
+    const repository = this.data.repositories.find(candidate => candidate.id === item.repositoryId && candidate.tenantId === tenantId)
+    if (expectedRevision && (item.revision !== expectedRevision || repository?.lastScanRevision !== expectedRevision)) return undefined
     item.status = review.status
     item.reviewedAt = new Date().toISOString()
     item.reviewedBy = review.reviewedBy
@@ -304,9 +306,11 @@ export class MemoryCatalogStore implements CatalogStore {
     }
   }
 
-  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }) {
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string) {
     const item = this.policyGateResults.find(evaluation => evaluation.id === id && evaluation.tenantId === tenantId)
     if (!item) return undefined
+    const repository = this.data.repositories.find(candidate => candidate.id === item.repositoryId && candidate.tenantId === tenantId)
+    if (expectedRevision && (item.revision !== expectedRevision || repository?.lastScanRevision !== expectedRevision)) return undefined
     item.reviewStatus = review.status
     item.reviewedAt = new Date().toISOString()
     item.reviewedBy = review.reviewedBy
@@ -759,14 +763,27 @@ export class PostgresCatalogStore implements CatalogStore {
     )
   }
 
-  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }) {
+  async reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }, expectedRevision?: string) {
     const client = await this.pool.connect()
     let result: pg.QueryResult
     try {
       await client.query('BEGIN')
       result = await client.query(
-        'UPDATE fuzequality.repository_flow_candidates SET status=$3,reviewed_at=now(),reviewed_by=$4,review_reason=$5 WHERE id=$1 AND tenant_id=$2 RETURNING *',
-        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null],
+        `UPDATE fuzequality.repository_flow_candidates AS candidate
+         SET status=$3,reviewed_at=now(),reviewed_by=$4,review_reason=$5
+         WHERE candidate.id=$1 AND candidate.tenant_id=$2
+           AND ($6::text IS NULL OR (
+             candidate.revision=$6
+             AND EXISTS (
+               SELECT 1 FROM fuzequality.repositories AS repository
+               WHERE repository.id=candidate.repository_id
+                 AND repository.tenant_id=candidate.tenant_id
+                 AND repository.last_scan_revision=$6
+               FOR UPDATE
+             )
+           ))
+         RETURNING candidate.*`,
+        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null],
       )
       if (result.rows[0]) await client.query(
         'INSERT INTO fuzequality.repository_flow_review_history (id,candidate_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)',
@@ -808,12 +825,28 @@ export class PostgresCatalogStore implements CatalogStore {
     )
   }
 
-  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }) {
+  async reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string) {
     const client = await this.pool.connect()
     let result: pg.QueryResult
     try {
       await client.query('BEGIN')
-      result = await client.query('UPDATE fuzequality.policy_gate_evaluations SET review_status=$3, reviewed_at=now(), reviewed_by=$4, review_reason=$5 WHERE id=$1 AND tenant_id=$2 RETURNING *', [id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
+      result = await client.query(
+        `UPDATE fuzequality.policy_gate_evaluations AS evaluation
+         SET review_status=$3, reviewed_at=now(), reviewed_by=$4, review_reason=$5
+         WHERE evaluation.id=$1 AND evaluation.tenant_id=$2
+           AND ($6::text IS NULL OR (
+             evaluation.revision=$6
+             AND EXISTS (
+               SELECT 1 FROM fuzequality.repositories AS repository
+               WHERE repository.id=evaluation.repository_id
+                 AND repository.tenant_id=evaluation.tenant_id
+                 AND repository.last_scan_revision=$6
+               FOR UPDATE
+             )
+           ))
+         RETURNING evaluation.*`,
+        [id, tenantId, review.status, review.reviewedBy, review.reason ?? null, expectedRevision ?? null],
+      )
       if (result.rows[0]) await client.query('INSERT INTO fuzequality.policy_gate_review_history (id,evaluation_id,tenant_id,status,reviewed_by,reason) VALUES ($1,$2,$3,$4,$5,$6)', [randomUUID(), id, tenantId, review.status, review.reviewedBy, review.reason ?? null])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }

@@ -53,6 +53,7 @@ import type {
 import type { PolicyGatePerformance } from '@fuzequality/core'
 import {
   api,
+  CatalogApiError,
   configurePlatformSecurity,
   type OrganizationMember,
   type OrganizationRole,
@@ -2779,9 +2780,16 @@ function FlowReviewControls({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const [stale, setStale] = useState(false)
   const isCurrentRevision = Boolean(
     currentRevision && flow.revision === currentRevision
   )
+  const isReviewable = isCurrentRevision && !stale
+
+  useEffect(() => {
+    setStale(false)
+    setError(undefined)
+  }, [flow.id, flow.revision])
 
   const submit = async (status: 'confirmed' | 'rejected') => {
     setBusy(true)
@@ -2790,6 +2798,9 @@ function FlowReviewControls({
       await onReview(flow, status, reason.trim() || undefined)
       setReason('')
     } catch (cause) {
+      if (cause instanceof CatalogApiError && cause.code === 'STALE_FLOW_CANDIDATE') {
+        setStale(true)
+      }
       setError(cause instanceof Error ? cause.message : 'Unable to save review')
     } finally {
       setBusy(false)
@@ -2820,7 +2831,7 @@ function FlowReviewControls({
             Optional review rationale
             <input
               value={reason}
-              disabled={!isCurrentRevision || busy}
+              disabled={!isReviewable || busy}
               onChange={event => setReason(event.target.value)}
               placeholder="Why is this flow accurate or unsuitable?"
             />
@@ -2828,14 +2839,14 @@ function FlowReviewControls({
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy || !isCurrentRevision}
+              disabled={busy || !isReviewable}
               onClick={() => void submit('confirmed')}
             >
               <Check size={14} /> Confirm
             </QualityAction>
             <QualityAction
               intent="danger"
-              disabled={busy || !isCurrentRevision}
+              disabled={busy || !isReviewable}
               onClick={() => void submit('rejected')}
             >
               <X size={14} /> Reject
@@ -2940,9 +2951,16 @@ function PolicyGateReviewControls({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const [stale, setStale] = useState(false)
   const isCurrentRevision = Boolean(
     currentRevision && evaluation.revision === currentRevision
   )
+  const isReviewable = isCurrentRevision && !stale
+
+  useEffect(() => {
+    setStale(false)
+    setError(undefined)
+  }, [evaluation.id, evaluation.revision])
 
   const submit = async (status: 'accepted' | 'dismissed') => {
     setBusy(true)
@@ -2951,6 +2969,12 @@ function PolicyGateReviewControls({
       await onReview(evaluation, status, reason.trim() || undefined)
       setReason('')
     } catch (cause) {
+      if (
+        cause instanceof CatalogApiError &&
+        cause.code === 'STALE_POLICY_GATE_EVALUATION'
+      ) {
+        setStale(true)
+      }
       setError(
         cause instanceof Error
           ? cause.message
@@ -2975,7 +2999,7 @@ function PolicyGateReviewControls({
             Optional governance rationale
             <input
               value={reason}
-              disabled={!isCurrentRevision || busy}
+              disabled={!isReviewable || busy}
               onChange={event => setReason(event.target.value)}
               placeholder="Why should this recommendation be accepted or dismissed?"
             />
@@ -2983,14 +3007,14 @@ function PolicyGateReviewControls({
           <div className="row-actions">
             <QualityAction
               intent="secondary"
-              disabled={busy || !isCurrentRevision}
+              disabled={busy || !isReviewable}
               onClick={() => void submit('accepted')}
             >
               <Check size={14} /> Accept recommendation
             </QualityAction>
             <QualityAction
               intent="danger"
-              disabled={busy || !isCurrentRevision}
+              disabled={busy || !isReviewable}
               onClick={() => void submit('dismissed')}
             >
               <X size={14} /> Dismiss

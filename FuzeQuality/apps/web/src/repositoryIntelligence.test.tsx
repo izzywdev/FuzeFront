@@ -16,7 +16,7 @@ import {
   policyGateEvaluationMatchesInventory,
   RepositoryIntelligence,
 } from './App'
-import { api } from './api'
+import { api, CatalogApiError } from './api'
 
 const repository: Repository = {
   id: 'repo-1',
@@ -225,6 +225,30 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
     expect(screen.getByLabelText('Optional review rationale')).toBeDisabled()
+  })
+
+  it('locks a flow review after an atomic stale-revision conflict and preserves rationale', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])
+    vi.spyOn(api, 'reviewRepositoryFlowCandidate').mockRejectedValue(
+      new CatalogApiError(
+        'The UX-flow candidate is stale. Refresh before deciding.',
+        'STALE_FLOW_CANDIDATE',
+        409
+      )
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    const rationale = screen.getByLabelText('Optional review rationale')
+    fireEvent.change(rationale, { target: { value: 'Matches the observed path.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Refresh before deciding')
+    expect(rationale).toHaveValue('Matches the observed path.')
+    expect(rationale).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled()
   })
 
   it('reloads only flows, hides stale results, and is not blocked by an invalid execution range', async () => {
@@ -854,5 +878,32 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
     expect(rationale).toHaveValue('Needs a named owner.')
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeEnabled()
+  })
+
+  it('locks governance review after an atomic stale-revision conflict and preserves rationale', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([
+      governanceEvaluation,
+    ])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockRejectedValue(
+      new CatalogApiError(
+        'The policy-gate evaluation is stale. Refresh before deciding.',
+        'STALE_POLICY_GATE_EVALUATION',
+        409
+      )
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(governanceEvaluation.title)
+    const rationale = screen.getByLabelText('Optional governance rationale')
+    fireEvent.change(rationale, { target: { value: 'Needs a named owner.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Refresh before deciding')
+    expect(rationale).toHaveValue('Needs a named owner.')
+    expect(rationale).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Accept recommendation' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeDisabled()
   })
 })

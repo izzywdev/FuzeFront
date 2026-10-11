@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { MemoryCatalogStore } from './store'
+import { MemoryCatalogStore, PostgresCatalogStore } from './store'
 
 const candidate: RepositoryFlowCandidate = {
   id: 'flow-candidate-1',
@@ -76,5 +76,27 @@ describe('repository flow review lifecycle', () => {
     await expect(store.reviewRepositoryFlowCandidate(candidate.id, 'tenant-2', {
       status: 'confirmed', reviewedBy: 'cross-tenant-reviewer',
     })).resolves.toBeUndefined()
+  })
+
+  it('atomically rejects a review when the repository revision changed', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const release = vi.fn()
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = {
+      connect: vi.fn().mockResolvedValue({ query, release }),
+    }
+
+    await expect(store.reviewRepositoryFlowCandidate(candidate.id, candidate.tenantId, {
+      status: 'confirmed',
+      reviewedBy: 'reviewer-1',
+    }, candidate.revision)).resolves.toBeUndefined()
+
+    const [statement, parameters] = query.mock.calls[1]
+    expect(String(statement)).toContain('candidate.revision=$6')
+    expect(String(statement)).toContain('repository.last_scan_revision=$6')
+    expect(String(statement)).toContain('FOR UPDATE')
+    expect(parameters[5]).toBe(candidate.revision)
+    expect(query).toHaveBeenCalledTimes(3)
+    expect(release).toHaveBeenCalledOnce()
   })
 })
