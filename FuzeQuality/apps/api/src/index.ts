@@ -50,7 +50,7 @@ import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateReviewConflict } from './policy-gate-review'
 import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
-import { decodeQualityArtifactCursor, qualityArtifactPage, qualityArtifactPageQuerySchema } from './quality-artifact-pagination'
+import { decodeQualityArtifactCursor, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -512,16 +512,23 @@ app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (req
 app.get('/api/v1/repositories/:id/quality-artifacts', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
-  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const repository = await store.repository(repositoryId, tenantId)
+  if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const query = qualityArtifactPageQuerySchema.safeParse(request.query)
   if (!query.success) return response.status(400).json({ error: query.error.flatten() })
   const cursor = decodeQualityArtifactCursor(query.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
-  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, query.data.revision, {
+  const resolvedRevision = resolveQualityArtifactRevision(
+    query.data.revision,
+    cursor.data?.revision,
+    repository.lastScanRevision,
+  )
+  if (!resolvedRevision.success) return response.status(400).json({ error: resolvedRevision.error })
+  const artifacts = await store.qualityArtifacts(repositoryId, tenantId, resolvedRevision.data, {
     afterId: cursor.data?.id,
     limit: query.data.limit + 1,
   })
-  response.json(qualityArtifactPage(artifacts, query.data.limit))
+  response.json(qualityArtifactPage(artifacts, query.data.limit, resolvedRevision.data))
 })
 app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

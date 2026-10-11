@@ -673,9 +673,24 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
     await expect(page.getByText('Application API load test', { exact: true })).toBeVisible()
     await expect(page.getByText('Suspension policy requires a protected gate', { exact: true })).toBeVisible()
-    await expect(page.getByRole('alert')).toContainText(
-      'Latest execution evidence is temporarily unavailable'
+    await expect(page.getByRole('alert').filter({ hasText: 'Latest execution evidence is temporarily unavailable' })).toBeVisible()
+  })
+
+  test('retains execution and policy-gate evidence when the outcome trend is unavailable', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      route => route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Execution trend temporarily unavailable' }),
+      })
     )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByText('Production suspension journey', { exact: true })).toBeVisible()
+    await expect(page.getByText('Administrative suspension policy → Admin authorization gate')).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: 'Execution outcome trend is temporarily unavailable for 1 repository' })).toBeVisible()
   })
 
   test('keeps historical UX-flow proposals visible but review-locked', async ({ page }) => {

@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import type { QualityArtifact } from '@fuzequality/contracts'
 
-const cursorSchema = z.object({ id: z.string().trim().min(1).max(500) }).strict()
+const cursorSchema = z.object({
+  id: z.string().trim().min(1).max(500),
+  revision: z.string().trim().min(1).max(500).optional(),
+}).strict()
 
 export const qualityArtifactPageQuerySchema = z.object({
   revision: z.string().trim().min(1).max(500).optional(),
@@ -9,8 +12,8 @@ export const qualityArtifactPageQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(2000).optional(),
 }).strict()
 
-export function encodeQualityArtifactCursor(id: string) {
-  return Buffer.from(JSON.stringify({ id }), 'utf8').toString('base64url')
+export function encodeQualityArtifactCursor(id: string, revision?: string) {
+  return Buffer.from(JSON.stringify({ id, ...(revision ? { revision } : {}) }), 'utf8').toString('base64url')
 }
 
 export function decodeQualityArtifactCursor(cursor?: string) {
@@ -25,13 +28,27 @@ export function decodeQualityArtifactCursor(cursor?: string) {
   }
 }
 
-export function qualityArtifactPage(items: QualityArtifact[], limit: number) {
+export function resolveQualityArtifactRevision(
+  requestedRevision?: string,
+  cursorRevision?: string,
+  currentRevision?: string,
+) {
+  if (requestedRevision && cursorRevision && requestedRevision !== cursorRevision) {
+    return { success: false as const, error: 'Quality artifact cursor revision does not match the requested revision' }
+  }
+  return {
+    success: true as const,
+    data: requestedRevision ?? cursorRevision ?? currentRevision,
+  }
+}
+
+export function qualityArtifactPage(items: QualityArtifact[], limit: number, revision?: string) {
   const pageItems = items.slice(0, limit)
   const last = pageItems.at(-1)
   return {
     items: pageItems,
     page: {
-      nextCursor: items.length > limit && last ? encodeQualityArtifactCursor(last.id) : null,
+      nextCursor: items.length > limit && last ? encodeQualityArtifactCursor(last.id, revision) : null,
       hasMore: items.length > limit,
     },
   }

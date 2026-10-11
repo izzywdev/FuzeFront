@@ -295,6 +295,48 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
   })
 
+  it('retains execution and policy-gate evidence when the optional trend request fails', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.mocked(api.executionPerformance).mockResolvedValue([{
+      repositoryId: repository.id,
+      policyArtifactId: 'policy-auth',
+      gateArtifactId: 'gate-auth',
+      passed: 2,
+      failed: 1,
+      cancelled: 0,
+      running: 0,
+    }])
+    vi.mocked(api.executionTrend).mockRejectedValue(new Error('trend unavailable'))
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(loadExecution.name)).toBeVisible()
+    expect(screen.getByText('policy-auth → gate-auth')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Execution outcome trend is temporarily unavailable for 1 repository'
+    )
+  })
+
+  it('retains execution history and trend when policy-gate performance fails', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.testExecutions).mockResolvedValue([loadExecution])
+    vi.mocked(api.executionTrend).mockResolvedValue([
+      { date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0 },
+    ])
+    vi.mocked(api.executionPerformance).mockRejectedValue(new Error('performance unavailable'))
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(loadExecution.name)).toBeVisible()
+    expect(screen.getByLabelText('Execution outcome trend')).toHaveTextContent('7 passed')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Policy-gate performance is temporarily unavailable for 1 repository'
+    )
+  })
+
   it('continues policy-gate performance from its aggregate cursor', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
@@ -791,9 +833,9 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(await screen.findByText(loadArtifact.title)).toBeVisible()
     expect(screen.getByText(governanceEvaluation.title)).toBeVisible()
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Latest execution evidence is temporarily unavailable'
-    )
+    expect(screen.getAllByRole('alert').some(alert =>
+      alert.textContent?.includes('Latest execution evidence is temporarily unavailable')
+    )).toBe(true)
   })
 
   it('loads revision-specific artifacts for historical governance evidence', async () => {

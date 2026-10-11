@@ -134,6 +134,10 @@ describe('contract discovery', () => {
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.TestExecutionPage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/quality-artifacts'].get.parameters
+          .find((parameter: { name?: string }) => parameter.name === 'cursor').description
+      ).toContain("first page's analyzed revision")
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/execution-performance'].get.parameters
           .filter((parameter: { name?: string }) => parameter.name)
           .map((parameter: { name: string }) => parameter.name)

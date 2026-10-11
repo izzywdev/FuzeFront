@@ -4,6 +4,7 @@ import {
   decodeQualityArtifactCursor,
   qualityArtifactPage,
   qualityArtifactPageQuerySchema,
+  resolveQualityArtifactRevision,
 } from './quality-artifact-pagination'
 
 const artifact = (id: string): QualityArtifact => ({
@@ -18,12 +19,27 @@ const artifact = (id: string): QualityArtifact => ({
 
 describe('quality artifact pagination', () => {
   it('continues after the last stable artifact ID', () => {
-    const page = qualityArtifactPage([artifact('artifact-a'), artifact('artifact-b')], 1)
+    const page = qualityArtifactPage([artifact('artifact-a'), artifact('artifact-b')], 1, 'catalog-revision-1')
     expect(page.items.map(item => item.id)).toEqual(['artifact-a'])
     expect(page.page.hasMore).toBe(true)
     expect(decodeQualityArtifactCursor(page.page.nextCursor ?? undefined)).toEqual({
       success: true,
-      data: { id: 'artifact-a' },
+      data: { id: 'artifact-a', revision: 'catalog-revision-1' },
+    })
+  })
+
+  it('pins implicit pagination to the first page revision and rejects revision changes', () => {
+    expect(resolveQualityArtifactRevision(undefined, undefined, 'catalog-current')).toEqual({
+      success: true,
+      data: 'catalog-current',
+    })
+    expect(resolveQualityArtifactRevision(undefined, 'catalog-original', 'catalog-new')).toEqual({
+      success: true,
+      data: 'catalog-original',
+    })
+    expect(resolveQualityArtifactRevision('catalog-new', 'catalog-original', 'catalog-new')).toEqual({
+      success: false,
+      error: 'Quality artifact cursor revision does not match the requested revision',
     })
   })
 

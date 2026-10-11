@@ -3213,6 +3213,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionNextCursors, setExecutionNextCursors] = useState<Record<string, string>>({})
   const [loadingMoreExecutions, setLoadingMoreExecutions] = useState(false)
   const [executionPaginationError, setExecutionPaginationError] = useState<string>()
+  const [executionHistoryFailures, setExecutionHistoryFailures] = useState<string[]>([])
+  const [executionTrendFailures, setExecutionTrendFailures] = useState<string[]>([])
   const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
   const [performanceEvidenceFailures, setPerformanceEvidenceFailures] = useState<string[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
@@ -3221,6 +3223,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [performanceNextCursors, setPerformanceNextCursors] = useState<Record<string, string>>({})
   const [loadingMorePerformance, setLoadingMorePerformance] = useState(false)
   const [performancePaginationError, setPerformancePaginationError] = useState<string>()
+  const [executionPerformanceFailures, setExecutionPerformanceFailures] = useState<string[]>([])
   const [executionRepositoryId, setExecutionRepositoryId] = useState('')
   const [executionKind, setExecutionKind] = useState<
     TestExecution['kind'] | ''
@@ -3608,6 +3611,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setExecutionPaginationError(undefined)
     setPerformanceNextCursors({})
     setPerformancePaginationError(undefined)
+    setExecutionHistoryFailures([])
+    setExecutionTrendFailures([])
+    setExecutionPerformanceFailures([])
     if (invalidExecutionRange) {
       setExecutions([])
       setExecutionPerformance([])
@@ -3617,21 +3623,37 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       }
     }
     void Promise.all(
-      data.repositories.map(async repository => ({
-        repositoryId: repository.id,
-        executions:
-          executionRepositoryId && executionRepositoryId !== repository.id
-            ? { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } }
-            : normalizeHistoryPage(await api.testExecutions(repository.id, executionFilter)),
-        performance:
-          executionRepositoryId && executionRepositoryId !== repository.id
-            ? { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } }
-            : normalizeHistoryPage(await api.executionPerformance(repository.id, executionFilter)),
-        trend:
-          executionRepositoryId && executionRepositoryId !== repository.id
-            ? []
-            : await api.executionTrend(repository.id, executionFilter),
-      }))
+      data.repositories.map(async repository => {
+        if (executionRepositoryId && executionRepositoryId !== repository.id) {
+          return {
+            repositoryId: repository.id,
+            executions: { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } },
+            performance: { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
+            trend: [] as ExecutionOutcomeTrend[],
+            executionFailed: false,
+            performanceFailed: false,
+            trendFailed: false,
+          }
+        }
+        const [executionResult, performanceResult, trendResult] = await Promise.allSettled([
+          api.testExecutions(repository.id, executionFilter),
+          api.executionPerformance(repository.id, executionFilter),
+          api.executionTrend(repository.id, executionFilter),
+        ])
+        return {
+          repositoryId: repository.id,
+          executions: executionResult.status === 'fulfilled'
+            ? normalizeHistoryPage(executionResult.value)
+            : { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } },
+          performance: performanceResult.status === 'fulfilled'
+            ? normalizeHistoryPage(performanceResult.value)
+            : { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
+          trend: trendResult.status === 'fulfilled' ? trendResult.value : [],
+          executionFailed: executionResult.status === 'rejected',
+          performanceFailed: performanceResult.status === 'rejected',
+          trendFailed: trendResult.status === 'rejected',
+        }
+      })
     )
       .then(groups => {
         if (active) {
@@ -3648,6 +3670,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               ? [[group.repositoryId, group.performance.page.nextCursor]]
               : [])
           ))
+          setExecutionHistoryFailures(groups.filter(group => group.executionFailed).map(group => group.repositoryId))
+          setExecutionPerformanceFailures(groups.filter(group => group.performanceFailed).map(group => group.repositoryId))
+          setExecutionTrendFailures(groups.filter(group => group.trendFailed).map(group => group.repositoryId))
         }
       })
       .catch(() => {
@@ -3657,6 +3682,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setExecutionPerformance([])
           setExecutionTrends([])
           setPerformanceNextCursors({})
+          setExecutionHistoryFailures(data.repositories.map(repository => repository.id))
+          setExecutionPerformanceFailures(data.repositories.map(repository => repository.id))
+          setExecutionTrendFailures(data.repositories.map(repository => repository.id))
         }
       })
     return () => {
@@ -4564,6 +4592,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </button>
             )}
           </div>
+          {executionTrendFailures.length > 0 && (
+            <p className="form-error" role="alert">
+              Execution outcome trend is temporarily unavailable for {executionTrendFailures.length}{' '}
+              {executionTrendFailures.length === 1 ? 'repository' : 'repositories'}. Loaded execution evidence remains visible.
+            </p>
+          )}
           <div className="execution-trend" aria-label="Execution outcome trend">
             {outcomeTrend.map(day => (
               <div key={day.date}>
@@ -4578,6 +4612,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               <span>No timestamped outcomes for this filter.</span>
             )}
           </div>
+          {executionHistoryFailures.length > 0 && (
+            <p className="form-error" role="alert">
+              Execution history is temporarily unavailable for {executionHistoryFailures.length}{' '}
+              {executionHistoryFailures.length === 1 ? 'repository' : 'repositories'}. Available trend and policy-gate evidence remains visible.
+            </p>
+          )}
           <div className="catalog-list">
             {executions.map(execution => (
               <article className="catalog-row" key={execution.id}>
@@ -4658,6 +4698,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             </div>
           </header>
           <div className="catalog-list">
+            {executionPerformanceFailures.length > 0 && (
+              <p className="form-error" role="alert">
+                Policy-gate performance is temporarily unavailable for {executionPerformanceFailures.length}{' '}
+                {executionPerformanceFailures.length === 1 ? 'repository' : 'repositories'}. Available execution evidence remains visible.
+              </p>
+            )}
             {executionPerformance.map(pair => (
               <article
                 className="catalog-row"

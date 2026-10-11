@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.15.0
+  version: 0.16.0
   license:
     name: UNLICENSED
 servers:
@@ -267,7 +267,7 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
         - name: cursor
           in: query
-          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          description: Opaque cursor returned by the preceding page; it pins implicit current-revision reads to the first page's analyzed revision.
           schema: { type: string, maxLength: 2000 }
       responses:
         '200':
