@@ -41,6 +41,7 @@ import type {
   OrganizationQualitySummary,
   QualityArtifact,
   PolicyGateEvaluation,
+  PolicyGateReviewHistoryEntry,
   RepositoryFlowCandidate,
   RepositoryFlowReviewHistoryEntry,
   Repository,
@@ -2713,14 +2714,25 @@ function FlowReviewHistory({
   const [history, setHistory] = useState<RepositoryFlowReviewHistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
 
-  const loadHistory = async () => {
+  useEffect(() => {
+    setHistory([])
+    setNextCursor(null)
+    setError(undefined)
+  }, [flow.id])
+
+  const loadHistory = async (cursor?: string) => {
     setLoading(true)
     setError(undefined)
     try {
-      setHistory(
-        await api.repositoryFlowReviewHistory(flow.repositoryId, flow.id)
+      const page = normalizeHistoryPage(
+        await api.repositoryFlowReviewHistory(flow.repositoryId, flow.id, cursor)
       )
+      setHistory(current => cursor
+        ? [...new Map([...current, ...page.items].map(entry => [entry.id, entry])).values()]
+        : page.items)
+      setNextCursor(page.page.nextCursor)
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'Unable to load review history'
@@ -2734,7 +2746,8 @@ function FlowReviewHistory({
     <details
       className="policy-review-history"
       onToggle={event => {
-        if (event.currentTarget.open) void loadHistory()
+        if (event.currentTarget.open && !history.length && !loading)
+          void loadHistory()
       }}
     >
       <summary>UX flow review history</summary>
@@ -2744,9 +2757,10 @@ function FlowReviewHistory({
       ) : error ? (
         <small className="policy-review-error">{error}</small>
       ) : history.length ? (
-        <ol>
-          {history.map((entry, index) => (
-            <li key={`${entry.createdAt}:${entry.reviewedBy}:${index}`}>
+        <>
+          <ol>
+          {history.map(entry => (
+            <li key={entry.id}>
               <span
                 className={`status-pill severity-${entry.status === 'confirmed' ? 'low' : 'medium'}`}
               >
@@ -2759,7 +2773,17 @@ function FlowReviewHistory({
               {entry.reason && <p>{entry.reason}</p>}
             </li>
           ))}
-        </ol>
+          </ol>
+          {nextCursor && (
+            <QualityAction
+              intent="quiet"
+              disabled={loading}
+              onClick={() => void loadHistory(nextCursor)}
+            >
+              <ChevronRight size={14} /> Load more UX flow decisions
+            </QualityAction>
+          )}
+        </>
       ) : (
         <small>No review decisions recorded.</small>
       )}
@@ -2872,27 +2896,32 @@ function PolicyGateReviewHistory({
 }: {
   evaluation: PolicyGateEvaluation
 }) {
-  const [history, setHistory] = useState<
-    Array<{
-      status: 'accepted' | 'dismissed'
-      reviewedBy: string
-      reason?: string
-      createdAt: string
-    }>
-  >([])
+  const [history, setHistory] = useState<PolicyGateReviewHistoryEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
 
-  const loadHistory = async () => {
+  useEffect(() => {
+    setHistory([])
+    setNextCursor(null)
+    setError(undefined)
+  }, [evaluation.id])
+
+  const loadHistory = async (cursor?: string) => {
     setLoading(true)
     setError(undefined)
     try {
-      setHistory(
+      const page = normalizeHistoryPage(
         await api.policyGateReviewHistory(
           evaluation.repositoryId,
-          evaluation.id
+          evaluation.id,
+          cursor
         )
       )
+      setHistory(current => cursor
+        ? [...new Map([...current, ...page.items].map(entry => [entry.id, entry])).values()]
+        : page.items)
+      setNextCursor(page.page.nextCursor)
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'Unable to load review history'
@@ -2906,7 +2935,8 @@ function PolicyGateReviewHistory({
     <details
       className="policy-review-history"
       onToggle={event => {
-        if (event.currentTarget.open) void loadHistory()
+        if (event.currentTarget.open && !history.length && !loading)
+          void loadHistory()
       }}
     >
       <summary>Review history</summary>
@@ -2915,9 +2945,10 @@ function PolicyGateReviewHistory({
       ) : error ? (
         <small className="policy-review-error">{error}</small>
       ) : history.length ? (
-        <ol>
-          {history.map((entry, index) => (
-            <li key={`${entry.createdAt}:${entry.reviewedBy}:${index}`}>
+        <>
+          <ol>
+          {history.map(entry => (
+            <li key={entry.id}>
               <span
                 className={`status-pill severity-${entry.status === 'accepted' ? 'low' : 'medium'}`}
               >
@@ -2930,7 +2961,17 @@ function PolicyGateReviewHistory({
               {entry.reason && <p>{entry.reason}</p>}
             </li>
           ))}
-        </ol>
+          </ol>
+          {nextCursor && (
+            <QualityAction
+              intent="quiet"
+              disabled={loading}
+              onClick={() => void loadHistory(nextCursor)}
+            >
+              <ChevronRight size={14} /> Load more governance decisions
+            </QualityAction>
+          )}
+        </>
       ) : (
         <small>No review decisions recorded.</small>
       )}

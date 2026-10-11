@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.7.0
+  version: 0.8.0
   license:
     name: UNLICENSED
 servers:
@@ -318,14 +318,29 @@ paths:
       summary: List immutable human review decisions for a UX-flow candidate
       tags: [flow-candidates]
       security: [{ platformBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned by the preceding review-history page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: Newest-first review history for the tenant-owned candidate.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/RepositoryFlowReviewHistoryEntry' }
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/RepositoryFlowReviewHistoryEntry' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -469,14 +484,29 @@ paths:
       summary: List the immutable review history for a policy/gate evaluation
       tags: [policy-gates]
       security: [{ platformBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned by the preceding review-history page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: Review events in reverse chronological order.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/PolicyGateReviewHistoryEntry' }
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PolicyGateReviewHistoryEntry' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -762,8 +792,9 @@ components:
     RepositoryFlowReviewHistoryEntry:
       type: object
       additionalProperties: false
-      required: [candidateId, tenantId, status, reviewedBy, createdAt]
+      required: [id, candidateId, tenantId, status, reviewedBy, createdAt]
       properties:
+        id: { type: string }
         candidateId: { type: string }
         tenantId: { type: string }
         status: { type: string, enum: [confirmed, rejected] }
@@ -890,8 +921,9 @@ components:
         hasMore: { type: boolean }
     PolicyGateReviewHistoryEntry:
       type: object
-      required: [evaluationId, tenantId, status, reviewedBy, createdAt]
+      required: [id, evaluationId, tenantId, status, reviewedBy, createdAt]
       properties:
+        id: { type: string }
         evaluationId: { type: string }
         tenantId: { type: string }
         status: { type: string, enum: [accepted, dismissed] }

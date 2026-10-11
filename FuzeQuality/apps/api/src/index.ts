@@ -48,7 +48,7 @@ import { repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateReviewConflict } from './policy-gate-review'
-import { decodeHistoryCursor, historyPage } from './history-pagination'
+import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -526,9 +526,17 @@ app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayRead
   const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const candidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  const filter = historyPageQuerySchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const candidate = (await store.repositoryFlowCandidates(repositoryId, tenantId, { id: candidateId, limit: 1 }))[0]
   if (!candidate) return response.status(404).json({ error: 'Flow candidate not found' })
-  response.json(await store.repositoryFlowReviewHistory(candidateId, tenantId))
+  const history = await store.repositoryFlowReviewHistory(candidateId, tenantId, {
+    after: cursor.data,
+    limit: filter.data.limit + 1,
+  })
+  response.json(historyPage(history, filter.data.limit))
 })
 app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayReviewSuggestions, async (request, response) => {
   const parsed = repositoryFlowReviewSchema.safeParse(request.body)
@@ -581,9 +589,17 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history'
   const evaluationId = Array.isArray(request.params.evaluationId) ? request.params.evaluationId[0] : request.params.evaluationId
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const evaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  const filter = historyPageQuerySchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const evaluation = (await store.policyGateEvaluations(repositoryId, tenantId, { id: evaluationId, limit: 1 }))[0]
   if (!evaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
-  response.json(await store.policyGateReviewHistory(evaluationId, tenantId))
+  const history = await store.policyGateReviewHistory(evaluationId, tenantId, {
+    after: cursor.data,
+    limit: filter.data.limit + 1,
+  })
+  response.json(historyPage(history, filter.data.limit))
 })
 app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review', mayReviewSuggestions, async (request, response) => {
   const parsed = policyGateReviewSchema.safeParse(request.body)

@@ -98,6 +98,9 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
   let suggestionConfirmed = false
   let flowCandidates = repositoryFlowCandidates
   let flowReviewHistory = [{
+    id: 'flow-review-initial',
+    candidateId: 'candidate-1',
+    tenantId: 'tenant-1',
     status: 'rejected' as const,
     reviewedBy: 'platform-owner',
     reason: 'The first analysis missed the administrator boundary.',
@@ -140,13 +143,13 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
         reviewedBy: 'quality-reviewer',
         reviewReason: payload.reason,
       } : flow)
-      flowReviewHistory = [{ status: payload.status, reviewedBy: 'quality-reviewer', reason: payload.reason, createdAt: reviewedAt }, ...flowReviewHistory]
+      flowReviewHistory = [{ id: 'flow-review-latest', candidateId: 'candidate-1', tenantId: 'tenant-1', status: payload.status, reviewedBy: 'quality-reviewer', reason: payload.reason, createdAt: reviewedAt }, ...flowReviewHistory]
       return respond(flowCandidates[0])
     }
     if (url.pathname.endsWith('/policy-gate-evaluations')) return respond(policyGateEvaluations)
     if (url.pathname.endsWith('/policy-gate-evaluations/evaluation-1/history')) return respond([
-      { status: 'accepted', reviewedBy: 'quality-owner', reason: 'Required for every production release.', createdAt: '2026-10-08T10:00:00.000Z' },
-      { status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
+      { id: 'policy-review-2', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'accepted', reviewedBy: 'quality-owner', reason: 'Required for every production release.', createdAt: '2026-10-08T10:00:00.000Z' },
+      { id: 'policy-review-1', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
     ])
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
     if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
@@ -439,6 +442,47 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText(olderFlow.title, { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
     await expect(page.getByText(olderEvaluation.title, { exact: true })).toBeVisible()
+  })
+
+  test('continues immutable UX-flow and governance review audit pages', async ({ page }) => {
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates/candidate-1/history',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [{ id: 'flow-review-1', candidateId: 'candidate-1', tenantId: 'tenant-1', status: 'confirmed', reviewedBy: 'flow-reviewer-1', createdAt: '2026-10-08T08:00:00.000Z' }], page: { nextCursor: null, hasMore: false } }
+            : { items: [{ id: 'flow-review-2', candidateId: 'candidate-1', tenantId: 'tenant-1', status: 'rejected', reviewedBy: 'flow-reviewer-2', createdAt: '2026-10-08T09:00:00.000Z' }], page: { nextCursor: 'flow-review-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations/evaluation-1/history',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [{ id: 'policy-review-1', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'accepted', reviewedBy: 'governance-reviewer-1', createdAt: '2026-10-08T08:00:00.000Z' }], page: { nextCursor: null, hasMore: false } }
+            : { items: [{ id: 'policy-review-2', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'dismissed', reviewedBy: 'governance-reviewer-2', createdAt: '2026-10-08T09:00:00.000Z' }], page: { nextCursor: 'policy-review-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const flowCard = page.getByText('Suspend an application', { exact: true }).locator('..')
+    await flowCard.getByText('UX flow review history', { exact: true }).click()
+    await expect(page.getByText('flow-reviewer-2', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Load more UX flow decisions' }).click()
+    await expect(page.getByText('flow-reviewer-1', { exact: true })).toBeVisible()
+
+    await page.getByText('Review history', { exact: true }).click()
+    await expect(page.getByText('governance-reviewer-2', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Load more governance decisions' }).click()
+    await expect(page.getByText('governance-reviewer-1', { exact: true })).toBeVisible()
   })
 
   test('bounds historical UX-flow evidence prefetch while keeping older flows visible', async ({ page }) => {

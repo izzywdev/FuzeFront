@@ -162,6 +162,7 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'executionPerformance').mockResolvedValue([])
   vi.spyOn(api, 'repositoryFlowReviewHistory').mockResolvedValue([])
+  vi.spyOn(api, 'policyGateReviewHistory').mockResolvedValue([])
 }
 
 afterEach(() => {
@@ -170,6 +171,45 @@ afterEach(() => {
 })
 
 describe('RepositoryIntelligence flow inventory', () => {
+  it('continues immutable flow and governance review audit pages', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([governanceEvaluation])
+    const flowHistory = vi.mocked(api.repositoryFlowReviewHistory)
+      .mockResolvedValueOnce({
+        items: [{ id: 'flow-review-2', candidateId: candidate.id, tenantId: candidate.tenantId, status: 'rejected', reviewedBy: 'reviewer-2', createdAt: '2026-10-10T02:00:00.000Z' }],
+        page: { nextCursor: 'flow-review-page-2', hasMore: true },
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: 'flow-review-1', candidateId: candidate.id, tenantId: candidate.tenantId, status: 'confirmed', reviewedBy: 'reviewer-1', createdAt: '2026-10-10T01:00:00.000Z' }],
+        page: { nextCursor: null, hasMore: false },
+      })
+    const policyHistory = vi.mocked(api.policyGateReviewHistory)
+      .mockResolvedValueOnce({
+        items: [{ id: 'policy-review-2', evaluationId: governanceEvaluation.id, tenantId: governanceEvaluation.tenantId, status: 'dismissed', reviewedBy: 'governance-2', createdAt: '2026-10-10T02:00:00.000Z' }],
+        page: { nextCursor: 'policy-review-page-2', hasMore: true },
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: 'policy-review-1', evaluationId: governanceEvaluation.id, tenantId: governanceEvaluation.tenantId, status: 'accepted', reviewedBy: 'governance-1', createdAt: '2026-10-10T01:00:00.000Z' }],
+        page: { nextCursor: null, hasMore: false },
+      })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+
+    fireEvent.click(screen.getByText('UX flow review history'))
+    expect(await screen.findByText('reviewer-2')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more UX flow decisions' }))
+    expect(await screen.findByText('reviewer-1')).toBeVisible()
+    expect(flowHistory).toHaveBeenLastCalledWith(repository.id, candidate.id, 'flow-review-page-2')
+
+    fireEvent.click(screen.getByText('Review history'))
+    expect(await screen.findByText('governance-2')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more governance decisions' }))
+    expect(await screen.findByText('governance-1')).toBeVisible()
+    expect(policyHistory).toHaveBeenLastCalledWith(repository.id, governanceEvaluation.id, 'policy-review-page-2')
+  })
+
   it('continues UX-flow and policy history from opaque repository cursors', async () => {
     mockEvidenceApis()
     const olderFlow = {

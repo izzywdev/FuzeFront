@@ -455,12 +455,18 @@ export type RepositoryFlowCandidate = {
 }
 
 export type RepositoryFlowReviewHistoryEntry = {
+  id: string
   candidateId: string
   tenantId: string
   status: 'confirmed' | 'rejected'
   reviewedBy: string
   reason?: string
   createdAt: string
+}
+
+export type RepositoryFlowReviewHistoryPage = {
+  items: RepositoryFlowReviewHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type RepositoryFlowCandidatePage = {
@@ -502,6 +508,21 @@ export type PolicyGateEvaluation = {
 
 export type PolicyGateEvaluationPage = {
   items: PolicyGateEvaluation[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
+export type PolicyGateReviewHistoryEntry = {
+  id: string
+  evaluationId: string
+  tenantId: string
+  status: 'accepted' | 'dismissed'
+  reviewedBy: string
+  reason?: string
+  createdAt: string
+}
+
+export type PolicyGateReviewHistoryPage = {
+  items: PolicyGateReviewHistoryEntry[]
   page: { nextCursor: string | null; hasMore: boolean }
 }
 

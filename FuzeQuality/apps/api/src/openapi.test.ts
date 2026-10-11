@@ -170,6 +170,19 @@ describe('contract discovery', () => {
         ].schema.$ref
       ).toBe('#/components/schemas/RepositoryFlowCandidate')
       expect(document.components.parameters.CandidateId.schema.maxLength).toBe(500)
+      for (const path of [
+        '/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history',
+        '/api/v1/repositories/{repositoryId}/policy-gate-evaluations/{evaluationId}/history',
+      ]) {
+        expect(
+          document.paths[path].get.parameters.map((parameter: { name: string }) => parameter.name)
+        ).toEqual(['limit', 'cursor'])
+        expect(
+          document.paths[path].get.responses['200'].content['application/json'].schema
+        ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      }
+      expect(schemas.RepositoryFlowReviewHistoryEntry.required).toContain('id')
+      expect(schemas.PolicyGateReviewHistoryEntry.required).toContain('id')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['409'].content[
           'application/json'

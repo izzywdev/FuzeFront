@@ -10,6 +10,8 @@ export const historyPageQueryFields = {
   cursor: z.string().trim().min(1).max(2000).optional(),
 }
 
+export const historyPageQuerySchema = z.object(historyPageQueryFields).strict()
+
 export function encodeHistoryCursor(value: { createdAt: string; id: string }) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
 }
