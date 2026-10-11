@@ -2,8 +2,8 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
-import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
+import { Button, Center, IconTile, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -247,20 +247,24 @@ export const AboutPage: React.FC = () => {
             Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <a
+            <Button
               href="https://app.fuzefront.com/signup"
-              className="btn-primary flex items-center justify-center gap-2 text-base"
+              variant="primary"
+              size="lg"
+              withArrow
               onClick={() => trackEvent('cta_click', { button: 'about_start', location: 'about_cta' })}
             >
-              Start building for free <ArrowRight size={18} />
-            </a>
-            <Link
+              Start building for free
+            </Button>
+            <Button
+              as={Link}
               to="/careers"
-              className="btn-secondary flex items-center justify-center gap-2 text-base"
+              variant="secondary"
+              size="lg"
               onClick={() => trackEvent('cta_click', { button: 'about_careers', location: 'about_cta' })}
             >
               View open roles
-            </Link>
+            </Button>
           </div>
         </div>
       </section>

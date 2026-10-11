@@ -17,7 +17,7 @@ import {
   Cpu,
   ChevronRight,
 } from 'lucide-react'
-import { Caption, Center, Container } from '@fuzefront/design-system'
+import { Button, Caption, Center, Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import { useNewsletter } from '../hooks/useApi'
 
@@ -489,20 +489,24 @@ export const HomePage: React.FC = () => {
                 Join hundreds of builders who've replaced weeks of infrastructure work with one platform.
               </p>
               <div className="flex flex-col sm:flex-row justify-center gap-4">
-                <a
+                <Button
                   href="https://app.fuzefront.com/signup"
-                  className="btn-primary flex items-center justify-center gap-2 text-base"
+                  variant="primary"
+                  size="lg"
+                  withArrow
                   onClick={() => trackEvent('cta_click', { button: 'footer_start', location: 'final_cta' })}
                 >
-                  Start building for free <ArrowRight size={18} />
-                </a>
-                <Link
+                  Start building for free
+                </Button>
+                <Button
+                  as={Link}
                   to="/contact"
-                  className="btn-secondary flex items-center justify-center gap-2 text-base"
+                  variant="secondary"
+                  size="lg"
                   onClick={() => trackEvent('cta_click', { button: 'footer_sales', location: 'final_cta' })}
                 >
                   Talk to sales
-                </Link>
+                </Button>
               </div>
               <Caption space="lg" tone="primary">
                 No credit card required &middot; Free for 14 days &middot; Scales as you grow
