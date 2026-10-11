@@ -69,10 +69,11 @@ describe('FuzeQuality Helm registration assets', () => {
       installMode: string
       organizationInstallMode: string
       integration: { remoteEntry: string; scope: string }
-      routing: { path: string }
+      routing: { path: string; host: string }
     }
     const production = parse(read('values-prod.yaml')) as {
       registration: { enabled: boolean }
+      ingress: { enabled: boolean; host: string }
       federatedMount: { enabled: boolean; host: string; slug: string }
     }
     const vite = read('../../../apps/web/vite.config.ts')
@@ -82,6 +83,11 @@ describe('FuzeQuality Helm registration assets', () => {
       host: 'app.fuzefront.com',
       slug: manifest.slug,
     })
+    expect(production.ingress).toMatchObject({
+      enabled: true,
+      host: 'fuzequality.fuzefront.com',
+    })
+    expect(manifest.routing.host).toBe(production.ingress.host)
     expect(manifest.routing.path).toBe(`/app/${manifest.slug}`)
     expect(manifest.integration).toMatchObject({
       scope: manifest.slug,
@@ -94,5 +100,32 @@ describe('FuzeQuality Helm registration assets', () => {
     })
     expect(vite).toContain(`base: '/apps/${manifest.slug}/'`)
     expect(vite).toContain(`name: '${manifest.slug}'`)
+  })
+
+  it('keeps the standalone PWA, TWA, Digital Asset Links, and health route aligned', () => {
+    const registration = JSON.parse(read('../../../registration/manifest.json'))
+    const twa = JSON.parse(read('../../../android/twa-manifest.json'))
+    const pwa = JSON.parse(read('../../../apps/web/public/manifest.webmanifest'))
+    const assetlinks = JSON.parse(
+      read('../../../apps/web/public/.well-known/assetlinks.json')
+    )
+    const nginx = read('../../../docker/nginx.conf')
+
+    expect(registration.modes).toContain('standalone')
+    expect(twa).toMatchObject({
+      packageId: 'com.fuzefront.fuzequality',
+      host: registration.routing.host,
+      startUrl: '/',
+      fullScopeUrl: `https://${registration.routing.host}/`,
+      minSdkVersion: 24,
+    })
+    expect(pwa).toMatchObject({ name: 'FuzeQuality', display: 'standalone' })
+    expect(assetlinks[0].target).toMatchObject({
+      namespace: 'android_app',
+      package_name: twa.packageId,
+      sha256_cert_fingerprints: [twa.fingerprints[0].value],
+    })
+    expect(nginx).toContain('location = /api/health')
+    expect(nginx).toContain('proxy_pass http://fuzequality-backend:4180/health')
   })
 })

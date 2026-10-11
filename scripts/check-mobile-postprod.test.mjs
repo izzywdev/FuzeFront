@@ -58,3 +58,32 @@ test('uses the Mendys manifest path exception', async () => {
   await inspectProduct({ repo: 'MendysRobotics', frontendUrl: 'https://live.mendysrobotics.com/', manifestPath: '/manifest.json' }, request)
   assert.equal(seen, true)
 })
+
+test('uses product-specific workflow and APK identity for monorepo products', async () => {
+  const nested = {
+    product: 'FuzeQuality',
+    repo: 'FuzeFront',
+    frontendUrl: 'https://fuzequality.fuzefront.com/',
+    workflowPath: '.github/workflows/fuzequality-android-apk.yml',
+    apkAssetPrefix: 'fuzequality-android-',
+  }
+  const request = fixture({
+    'https://api.github.com/repos/izzywdev/FuzeFront': json({ default_branch: 'master' }),
+    'https://api.github.com/repos/izzywdev/FuzeFront/actions/workflows?per_page=100': json({ workflows: [{ path: nested.workflowPath, state: 'active' }] }),
+    'https://api.github.com/repos/izzywdev/FuzeFront/releases?per_page=30': json([
+      { draft: false, tag_name: 'android-v1', target_commitish: 'master', assets: [{ name: 'com-fuzefront-app-android-1.apk', size: 42 }] },
+      { draft: false, tag_name: 'fuzequality-android-v1', target_commitish: 'master', assets: [{ name: 'fuzequality-android-1.apk', size: 84 }] },
+    ]),
+    'https://fuzequality.fuzefront.com/': new Response('<html><body>FuzeQuality</body></html>', { headers: { 'Content-Type': 'text/html' } }),
+    'https://fuzequality.fuzefront.com/api/health': json({ status: 'ok' }),
+    'https://fuzequality.fuzefront.com/.well-known/assetlinks.json': json([{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: 'com.fuzefront.fuzequality', sha256_cert_fingerprints: ['AA:BB'] } }]),
+    'https://fuzequality.fuzefront.com/manifest.webmanifest': json({ name: 'FuzeQuality', display: 'standalone' }),
+  })
+
+  const result = await inspectProduct(nested, request)
+
+  assert.equal(result.ok, true)
+  assert.equal(result.product, 'FuzeQuality')
+  assert.equal(result.repository, 'FuzeFront')
+  assert.match(result.checks.apk.detail, /fuzequality-android-1\.apk/)
+})

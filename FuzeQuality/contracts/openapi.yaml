@@ -25,7 +25,7 @@ info:
 servers:
   - url: http://localhost:4180
     description: Local development
-  - url: https://quality.prod.fuzefront.com
+  - url: https://fuzequality.fuzefront.com
     description: Production (the host deploy/helm/fuzequality/values-prod.yaml pins)
 
 paths:

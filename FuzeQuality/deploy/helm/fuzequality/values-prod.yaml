@@ -19,11 +19,11 @@ registration:
 ingress:
   enabled: true
   className: traefik
-  host: quality.prod.fuzefront.com
+  host: fuzequality.fuzefront.com
 
-# The path the host shell actually loads the remote from. quality.prod.fuzefront.com
-# above stays for direct/admin access, but it sits behind the *.prod Cloudflare
-# Access wall, so it can never serve remoteEntry.js to a browser.
+# The path the host shell actually loads the remote from. The standalone host
+# above serves the installable PWA/TWA at `/`, while portal federation remains
+# same-origin under app.fuzefront.com.
 federatedMount:
   enabled: true
   className: traefik

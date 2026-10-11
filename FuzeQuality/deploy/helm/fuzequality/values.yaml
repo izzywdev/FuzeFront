@@ -127,7 +127,7 @@ registration:
 ingress:
   enabled: false
   className: nginx
-  host: quality.fuzefront.com
+  host: fuzequality.fuzefront.com
   tlsSecret: fuzequality-tls
   clusterIssuer: letsencrypt-prod
 
