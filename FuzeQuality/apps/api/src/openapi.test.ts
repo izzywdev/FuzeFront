@@ -133,6 +133,16 @@ describe('contract discovery', () => {
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.TestExecutionPage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-performance'].get.parameters
+          .filter((parameter: { name?: string }) => parameter.name)
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-performance'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

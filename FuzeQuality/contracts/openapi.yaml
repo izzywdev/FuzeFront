@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.9.0
+  version: 0.10.0
   license:
     name: UNLICENSED
 servers:
@@ -592,14 +592,28 @@ paths:
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
+        - name: limit
+          in: query
+          description: Maximum number of policy-gate aggregate rows to return in this page.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque aggregate cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: Policy/gate outcome aggregates for the filtered evidence.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/PolicyGatePerformance' }
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PolicyGatePerformance' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }

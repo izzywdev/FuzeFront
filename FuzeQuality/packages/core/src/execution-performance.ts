@@ -35,6 +35,11 @@ export type PolicyGatePerformance = {
   latestCompletedAt?: string
 }
 
+export type PolicyGatePerformancePage = {
+  items: PolicyGatePerformance[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
 export type ExecutionFilter = Partial<Pick<TestExecution, 'kind' | 'status' | 'provider' | 'revision' | 'workflowPath'>> & { from?: string; until?: string }
 
 /** Filters only the caller's already tenant-scoped execution evidence. */
@@ -105,5 +110,10 @@ export function executionPerformance(executions: TestExecution[], artifacts: Qua
       results.set(key, current)
     }
   }
-  return [...results.values()].sort((left, right) => right.failed - left.failed || right.passed - left.passed || left.gateArtifactId.localeCompare(right.gateArtifactId))
+  return [...results.values()].sort((left, right) =>
+    right.failed - left.failed ||
+    right.passed - left.passed ||
+    left.gateArtifactId.localeCompare(right.gateArtifactId) ||
+    left.policyArtifactId.localeCompare(right.policyArtifactId)
+  )
 }

@@ -274,6 +274,39 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('continues policy-gate performance from its aggregate cursor', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const latest = {
+      repositoryId: repository.id,
+      policyArtifactId: 'policy-latest',
+      gateArtifactId: 'gate-latest',
+      failed: 3,
+      passed: 1,
+      cancelled: 0,
+      running: 0,
+    }
+    const older = {
+      ...latest,
+      policyArtifactId: 'policy-older',
+      gateArtifactId: 'gate-older',
+      failed: 1,
+      passed: 4,
+    }
+    vi.mocked(api.executionPerformance)
+      .mockResolvedValueOnce({ items: [latest], page: { nextCursor: 'performance-page-2', hasMore: true } })
+      .mockResolvedValueOnce({ items: [older], page: { nextCursor: null, hasMore: false } })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText('policy-latest → gate-latest')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more policy-gate performance' }))
+    expect(await screen.findByText('policy-older → gate-older')).toBeVisible()
+    expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {
+      cursor: 'performance-page-2',
+    })
+  })
+
   it('surfaces repository evidence scan failures to reviewers', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

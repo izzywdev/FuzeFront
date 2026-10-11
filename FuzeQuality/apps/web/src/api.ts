@@ -97,7 +97,7 @@ export const api = {
   policyGateReviewHistory: (repositoryId: string, evaluationId: string, cursor?: string) => request<import('@fuzequality/contracts').PolicyGateReviewHistoryPage | import('@fuzequality/contracts').PolicyGateReviewHistoryEntry[]>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
   testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecutionPage | import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
-  executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
+  executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformancePage | import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
   runPerformanceTest: (repositoryId: string, artifactId: string) => request<{
     status: 'dispatched'
     artifactId: string

@@ -44,3 +44,5 @@ export const executionPageFilterSchema = z.object({
     message: 'until must be greater than or equal to from',
   })
 })
+
+export const executionPerformanceFilterSchema = executionPageFilterSchema

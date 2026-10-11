@@ -3194,6 +3194,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [executionPerformance, setExecutionPerformance] = useState<
     PolicyGatePerformance[]
   >([])
+  const [performanceNextCursors, setPerformanceNextCursors] = useState<Record<string, string>>({})
+  const [loadingMorePerformance, setLoadingMorePerformance] = useState(false)
+  const [performancePaginationError, setPerformancePaginationError] = useState<string>()
   const [executionRepositoryId, setExecutionRepositoryId] = useState('')
   const [executionKind, setExecutionKind] = useState<
     TestExecution['kind'] | ''
@@ -3579,6 +3582,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     setExecutionNextCursors({})
     setExecutionPaginationError(undefined)
+    setPerformanceNextCursors({})
+    setPerformancePaginationError(undefined)
     if (invalidExecutionRange) {
       setExecutions([])
       setExecutionPerformance([])
@@ -3595,8 +3600,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             : normalizeHistoryPage(await api.testExecutions(repository.id, executionFilter)),
         performance:
           executionRepositoryId && executionRepositoryId !== repository.id
-            ? []
-            : await api.executionPerformance(repository.id, executionFilter),
+            ? { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } }
+            : normalizeHistoryPage(await api.executionPerformance(repository.id, executionFilter)),
       }))
     )
       .then(groups => {
@@ -3607,7 +3612,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               ? [[group.repositoryId, group.executions.page.nextCursor]]
               : [])
           ))
-          setExecutionPerformance(groups.flatMap(group => group.performance))
+          setExecutionPerformance(groups.flatMap(group => group.performance.items))
+          setPerformanceNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.performance.page.nextCursor
+              ? [[group.repositoryId, group.performance.page.nextCursor]]
+              : [])
+          ))
         }
       })
       .catch(() => {
@@ -3615,6 +3625,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setExecutions([])
           setExecutionNextCursors({})
           setExecutionPerformance([])
+          setPerformanceNextCursors({})
         }
       })
     return () => {
@@ -3651,6 +3662,36 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       setExecutionPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution evidence.')
     } finally {
       setLoadingMoreExecutions(false)
+    }
+  }
+  const loadMorePerformance = async () => {
+    const cursors = Object.entries(performanceNextCursors)
+    if (!cursors.length) return
+    setLoadingMorePerformance(true)
+    setPerformancePaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.executionPerformance(repositoryId, {
+          ...executionFilter,
+          cursor,
+        })),
+      })))
+      setExecutionPerformance(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [
+          `${item.repositoryId}:${item.policyArtifactId}:${item.gateArtifactId}`,
+          item,
+        ])
+      ).values()])
+      setPerformanceNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor
+          ? [[group.repositoryId, group.page.page.nextCursor]]
+          : [])
+      ))
+    } catch (cause) {
+      setPerformancePaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy-gate performance.')
+    } finally {
+      setLoadingMorePerformance(false)
     }
   }
   const loadMoreFlows = async () => {
@@ -4633,6 +4674,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   matches a policy-backed gate.
                 </span>
               </div>
+            )}
+            {Object.keys(performanceNextCursors).length > 0 && (
+              <QualityAction
+                intent="quiet"
+                onClick={() => void loadMorePerformance()}
+                disabled={loadingMorePerformance}
+              >
+                {loadingMorePerformance ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                Load more policy-gate performance
+              </QualityAction>
+            )}
+            {performancePaginationError && (
+              <p className="form-error" role="alert">{performancePaginationError}</p>
             )}
           </div>
         </section>

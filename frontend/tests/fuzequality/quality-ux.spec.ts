@@ -471,6 +471,28 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText(olderExecution.name, { exact: true })).toBeVisible()
   })
 
+  test('continues bounded policy-gate performance aggregates', async ({ page }) => {
+    const currentPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-current', gateArtifactId: 'gate-current', failed: 3, passed: 1, cancelled: 0, running: 0 }
+    const olderPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-historical', gateArtifactId: 'gate-historical', failed: 1, passed: 4, cancelled: 0, running: 0 }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/execution-performance',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [olderPair], page: { nextCursor: null, hasMore: false } }
+            : { items: [currentPair], page: { nextCursor: 'performance-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more policy-gate performance' }).click()
+    await expect(page.getByText('policy-historical → gate-historical', { exact: true })).toBeVisible()
+  })
+
   test('continues immutable UX-flow and governance review audit pages', async ({ page }) => {
     await page.route(
       url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates/candidate-1/history',
