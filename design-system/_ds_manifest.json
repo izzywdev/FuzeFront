@@ -186,6 +186,10 @@
       "sourcePath": "components/layout/Container.jsx"
     },
     {
+      "name": "CtaBand",
+      "sourcePath": "components/layout/CtaBand.jsx"
+    },
+    {
       "name": "Eyebrow",
       "sourcePath": "components/layout/Eyebrow.jsx"
     },
@@ -1179,6 +1183,12 @@
     {
       "name": "--space-16",
       "value": "4rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-20",
+      "value": "5rem",
       "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },

@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { CtaBand } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -210,24 +211,22 @@ export const ProductsPage: React.FC = () => {
       </section>
 
       {/* CTA */}
-      <section className="py-20 bg-white border-t border-gray-100">
-        <div className="max-w-3xl mx-auto px-4 text-center">
-          <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
-            Not sure where to start?
-          </h2>
-          <p className="text-gray-600 mb-8">
-            Talk to our team. We'll map your use case to the right products and set you up with a custom trial.
-          </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
-            <Link to="/contact" className="btn-primary">
-              Talk to sales
-            </Link>
-            <Link to="/pricing" className="btn-secondary">
-              Compare plans
-            </Link>
-          </div>
+      <CtaBand>
+        <h2 className="text-3xl font-heading font-bold text-gray-900 mb-4">
+          Not sure where to start?
+        </h2>
+        <p className="text-gray-600 mb-8">
+          Talk to our team. We'll map your use case to the right products and set you up with a custom trial.
+        </p>
+        <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <Link to="/contact" className="btn-primary">
+            Talk to sales
+          </Link>
+          <Link to="/pricing" className="btn-secondary">
+            Compare plans
+          </Link>
         </div>
-      </section>
+      </CtaBand>
     </div>
   )
 }
