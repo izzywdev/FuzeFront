@@ -394,6 +394,48 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
   })
 
+  test('bounds historical UX-flow evidence prefetch while keeping older flows visible', async ({ page }) => {
+    const historicalCandidates = Array.from({ length: 22 }, (_, index) => ({
+      ...repositoryFlowCandidates[0],
+      id: `historical-candidate-${index}`,
+      revision: `historical-revision-${String(index).padStart(2, '0')}`,
+      title: `Historical flow ${index}`,
+      createdAt: new Date(Date.UTC(2026, 9, 10) - index * 86_400_000).toISOString(),
+    }))
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates',
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(historicalCandidates),
+      })
+    )
+    const requestedHistoricalRevisions: string[] = []
+    page.on('request', request => {
+      const url = new URL(request.url())
+      if (url.pathname.endsWith('/quality-artifacts') && url.searchParams.has('revision')) {
+        requestedHistoricalRevisions.push(url.searchParams.get('revision')!)
+      }
+    })
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const historyLimit = page.getByRole('status').filter({
+      hasText: 'Historical evidence is prefetched for the 20 newest revisions',
+    })
+    await expect(historyLimit).toContainText(
+      'Historical evidence is prefetched for the 20 newest revisions'
+    )
+    await expect(historyLimit).toContainText('2 older revisions remain visible')
+    await expect(page.getByText('Historical flow 21', { exact: true })).toBeVisible()
+    await expect.poll(() => requestedHistoricalRevisions.length).toBe(20)
+    expect(requestedHistoricalRevisions).toEqual(
+      Array.from({ length: 20 }, (_, index) =>
+        `historical-revision-${String(index).padStart(2, '0')}`
+      )
+    )
+  })
+
   test('keeps discovered tests and governance visible when execution history is unavailable', async ({ page }) => {
     await page.route(
       url => url.pathname.endsWith('/test-executions'),

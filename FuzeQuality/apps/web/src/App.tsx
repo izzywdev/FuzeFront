@@ -73,6 +73,7 @@ import {
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector } from './components/flowInspector'
+import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
 
 export type View =
   | 'overview'
@@ -3110,6 +3111,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [omittedFlowEvidenceRevisions, setOmittedFlowEvidenceRevisions] = useState(0)
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
   >([])
@@ -3469,19 +3471,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     if (!flowResultsAreCurrent || flowRevisionScope !== 'all') {
       setFlowEvidenceArtifacts([])
+      setOmittedFlowEvidenceRevisions(0)
       return () => { active = false }
     }
-    const currentRevisions = new Map(
-      data.repositories.map(repository => [repository.id, repository.lastScanRevision])
+    const selection = historicalFlowEvidenceSelection(
+      flowCandidates,
+      data.repositories,
     )
-    const requested = new Set<string>()
-    const requests = flowCandidates.flatMap(candidate => {
-      if (candidate.revision === currentRevisions.get(candidate.repositoryId)) return []
-      const key = `${candidate.repositoryId}:${candidate.revision}`
-      if (requested.has(key)) return []
-      requested.add(key)
-      return [api.qualityArtifacts(candidate.repositoryId, candidate.revision)]
-    })
+    setOmittedFlowEvidenceRevisions(selection.omitted)
+    const requests = selection.selected.map(({ repositoryId, revision }) =>
+      api.qualityArtifacts(repositoryId, revision).catch(() => [])
+    )
     void Promise.all(requests).then(
       groups => { if (active) setFlowEvidenceArtifacts(groups.flat()) },
       () => { if (active) setFlowEvidenceArtifacts([]) },
@@ -3808,6 +3808,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         <RefreshCw className="spin" />
                         <span>Loading UX flows…</span>
                       </div>
+                    )}
+                    {kind === 'route' && omittedFlowEvidenceRevisions > 0 && (
+                      <p className="performance-inventory-only" role="status">
+                        Historical evidence is prefetched for the {MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS} newest revisions.{' '}
+                        {omittedFlowEvidenceRevisions}{' '}
+                        {omittedFlowEvidenceRevisions === 1 ? 'older revision remains' : 'older revisions remain'}{' '}
+                        visible with stored evidence identifiers and can be inspected without an unbounded repository request fan-out.
+                      </p>
                     )}
                     {kind === 'route' &&
                       visibleFlowCandidates.map(flow => (
