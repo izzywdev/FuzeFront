@@ -55,6 +55,34 @@ on:
         description: 'Target base URL'
         required: false
         default: 'https://app.fuzefront.com'
+  workflow_call:
+    inputs:
+      release_sha:
+        description: 'The released commit SHA (for traceability in the run log)'
+        required: false
+        type: string
+        default: ''
+      reason:
+        description: 'Why this verification run was started'
+        required: false
+        type: string
+        default: 'automated post-deploy verification'
+      base_url:
+        description: 'Target base URL'
+        required: false
+        type: string
+        default: 'https://app.fuzefront.com'
+    secrets:
+      POST_PROD_EMAIL:
+        required: false
+      POST_PROD_PASSWORD:
+        required: false
+      INTERNAL_PROVISION_SECRET:
+        required: false
+      POST_PROD_ADMIN_EMAIL:
+        required: false
+      POST_PROD_ADMIN_PASSWORD:
+        required: false
 
 permissions:
   contents: read

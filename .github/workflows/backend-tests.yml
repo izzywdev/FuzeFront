@@ -60,6 +60,15 @@ jobs:
         # ignores them and pulls @types/express@5, breaking the build.
         run: npm ci
 
+      - name: Build backend workspace SDK dependencies
+        # Workspace links resolve the package exports in dist. Build these
+        # before Jest compiles backend imports; service-auth types depend on
+        # the Security client, so keep that dependency first.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+          npm run -w @fuzefront/custom-hostname-client build
+
       - name: Set up test database
         working-directory: ./backend
         env:
@@ -243,6 +252,15 @@ jobs:
 
       - name: Install dependencies (workspace root)
         run: npm ci
+
+      - name: Build backend workspace SDK dependencies
+        # Workspace links resolve the package exports in dist. Build these
+        # before Jest compiles backend imports; service-auth types depend on
+        # the Security client, so keep that dependency first.
+        run: |
+          npm run -w @fuzefront/security-client build
+          npm run -w @fuzefront/service-auth build
+          npm run -w @fuzefront/custom-hostname-client build
 
       - name: Set up test database
         working-directory: ./backend
