@@ -6,6 +6,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ChevronRight
 } from 'lucide-react'
+import { Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface Product {
@@ -179,7 +180,7 @@ export const ProductsPage: React.FC = () => {
             <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-8">
               10 products that work standalone and compose seamlessly. Auth, AI, social, finance, security, analytics — everything your business needs.
             </p>
-            <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Wrap gap={4} justify="center">
               <a
                 href="https://app.fuzefront.com/signup"
                 className="btn-primary flex items-center justify-center gap-2"
@@ -193,7 +194,7 @@ export const ProductsPage: React.FC = () => {
               >
                 View pricing
               </Link>
-            </div>
+            </Wrap>
           </motion.div>
         </div>
       </section>
@@ -218,14 +219,14 @@ export const ProductsPage: React.FC = () => {
           <p className="text-gray-600 mb-8">
             Talk to our team. We'll map your use case to the right products and set you up with a custom trial.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <Wrap gap={4} justify="center">
             <Link to="/contact" className="btn-primary">
               Talk to sales
             </Link>
             <Link to="/pricing" className="btn-secondary">
               Compare plans
             </Link>
-          </div>
+          </Wrap>
         </div>
       </section>
     </div>

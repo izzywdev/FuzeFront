@@ -6,7 +6,7 @@ import {
   Monitor, Activity, Rocket, Users, Bell, LayoutDashboard,
   ArrowRight, CheckCircle2, Shield, Zap
 } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, Wrap } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 const features = [
@@ -94,7 +94,7 @@ export const FuzeHubPage: React.FC = () => {
             <p className="text-lg text-secondary-300 max-w-2xl mx-auto mb-10">
               Real-time monitoring, deployment dashboards, team activity feeds, and integrated alerting — across every Fuze product and your own services. No more tab-switching.
             </p>
-            <div className="flex flex-col sm:flex-row justify-center gap-4">
+            <Wrap gap={4} justify="center">
               <a
                 href="https://app.fuzefront.com/signup"
                 className="btn-primary flex items-center justify-center gap-2 text-base"
@@ -108,7 +108,7 @@ export const FuzeHubPage: React.FC = () => {
               >
                 Talk to sales
               </Link>
-            </div>
+            </Wrap>
           </motion.div>
         </Container>
       </section>
@@ -215,7 +215,7 @@ export const FuzeHubPage: React.FC = () => {
           <p className="text-secondary-400 mb-8">
             FuzeHub is included in Growth and Enterprise plans. Start your 14-day trial.
           </p>
-          <div className="flex flex-col sm:flex-row justify-center gap-4">
+          <Wrap gap={4} justify="center">
             <a
               href="https://app.fuzefront.com/signup"
               className="btn-primary flex items-center justify-center gap-2"
@@ -226,7 +226,7 @@ export const FuzeHubPage: React.FC = () => {
             <Link to="/pricing" className="btn-ghost">
               Compare plans
             </Link>
-          </div>
+          </Wrap>
         </motion.div>
       </section>
     </div>
