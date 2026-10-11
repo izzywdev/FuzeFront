@@ -30,12 +30,12 @@
 # explicit so a source move requires deliberate review rather than silently
 # broadening the exception.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
-src FuzeQuality/apps/api/src/index.ts:427                   # FuzeQuality test-execution entity
-src FuzeQuality/packages/core/src/store.ts:441              # FuzeQuality repository entity
-src FuzeQuality/packages/core/src/store.ts:510              # FuzeQuality repository-scan revision entity
-src FuzeQuality/packages/core/src/store.ts:526              # FuzeQuality suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:537              # FuzeQuality suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:623              # FuzeQuality admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:697              # FuzeQuality identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:708              # FuzeQuality design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:1566             # FuzeQuality admin-context audit entity
+src FuzeQuality/apps/api/src/index.ts:428                   # FuzeQuality test-execution entity
+src FuzeQuality/packages/core/src/store.ts:449              # FuzeQuality repository entity
+src FuzeQuality/packages/core/src/store.ts:518              # FuzeQuality repository-scan revision entity
+src FuzeQuality/packages/core/src/store.ts:534              # FuzeQuality suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:545              # FuzeQuality suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:631              # FuzeQuality admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:705              # FuzeQuality identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:716              # FuzeQuality design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1587             # FuzeQuality admin-context audit entity

@@ -588,6 +588,38 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
   })
 
+  test('loads every bounded repository evidence page before presenting reviewed analysis', async ({ page }) => {
+    const cursors: Array<string | null> = []
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      route => {
+        const url = new URL(route.request().url())
+        const cursor = url.searchParams.get('cursor')
+        cursors.push(cursor)
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? {
+                items: [{ ...qualityArtifacts[2], id: 'documentation-page-2', title: 'Continuation evidence' }],
+                page: { nextCursor: null, hasMore: false },
+              }
+            : {
+                items: [{ ...qualityArtifacts[2], id: 'documentation-page-1', title: 'Initial evidence' }],
+                page: { nextCursor: 'artifact-page-2', hasMore: true },
+              }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    await expect(page.getByText('Initial evidence', { exact: true })).toBeVisible()
+    await expect(page.getByText('Continuation evidence', { exact: true })).toBeVisible()
+    expect(cursors[0]).toBeNull()
+    expect(cursors).toContain('artifact-page-2')
+  })
+
   test('keeps discovered tests and governance visible when execution history is unavailable', async ({ page }) => {
     await page.route(
       url => url.pathname.endsWith('/test-executions'),

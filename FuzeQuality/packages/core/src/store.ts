@@ -143,7 +143,7 @@ export interface CatalogStore {
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
   repositoryScanHistory(id: string, tenantId: string, query?: RepositoryScanHistoryQuery): Promise<RepositoryScanHistoryEntry[]>
   catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string): Promise<string | undefined>
-  qualityArtifacts(repositoryId: string, tenantId: string, revision?: string): Promise<QualityArtifact[]>
+  qualityArtifacts(repositoryId: string, tenantId: string, revision?: string, query?: QualityArtifactQuery): Promise<QualityArtifact[]>
   repositoryFlowCandidates(repositoryId: string, tenantId: string, query?: RepositoryFlowCandidateQuery): Promise<RepositoryFlowCandidate[]>
   saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void>
   reviewRepositoryFlowCandidate(id: string, tenantId: string, review: { status: 'confirmed' | 'rejected'; reviewedBy: string; reason?: string }, expectedRevision?: string): Promise<RepositoryFlowCandidate | undefined>
@@ -191,6 +191,11 @@ export interface CatalogStore {
 
 export type RepositoryScanHistoryQuery = {
   after?: { scannedAt: string | null; id: string }
+  limit?: number
+}
+
+export type QualityArtifactQuery = {
+  afterId?: string
   limit?: number
 }
 
@@ -296,13 +301,16 @@ export class MemoryCatalogStore implements CatalogStore {
     return this.sourceCatalogRevisions.get(`${repositoryId}:${sourceRevision}`)
   }
 
-  async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string) {
+  async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string, query?: QualityArtifactQuery) {
     const repository = await this.repository(repositoryId, tenantId)
     if (!repository) return []
     const selectedRevision = revision ?? repository.lastScanRevision
-    return this.artifacts
+    const items = this.artifacts
       .filter(item => item.repositoryId === repositoryId && (!selectedRevision || item.revision === selectedRevision))
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .filter(item => !query?.afterId || item.id > query.afterId)
       .map(({ revision: _revision, ...item }) => item)
+    return query?.limit === undefined ? items : items.slice(0, query.limit)
   }
 
   async repositoryFlowCandidates(repositoryId: string, tenantId: string, query: RepositoryFlowCandidateQuery = {}) {
@@ -849,11 +857,24 @@ export class PostgresCatalogStore implements CatalogStore {
     return result.rows[0]?.catalog_revision
   }
 
-  async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string): Promise<QualityArtifact[]> {
+  async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string, query?: QualityArtifactQuery): Promise<QualityArtifact[]> {
     if (!await this.repository(repositoryId, tenantId)) return []
-    const result = revision
-      ? await this.pool.query(revisionQualityArtifactsSql, [repositoryId, revision])
-      : await this.pool.query(currentQualityArtifactsSql, [repositoryId])
+    const result = query
+      ? await this.pool.query(
+          `SELECT id, repository_id, kind, title, source_path, summary, evidence, execution_target
+           FROM fuzequality.repository_quality_artifacts
+           WHERE repository_id=$1
+             AND revision=${revision ? '$2' : '(SELECT last_scan_revision FROM fuzequality.repositories WHERE id=$1)'}
+             AND id > $${revision ? 3 : 2}
+           ORDER BY id
+           LIMIT $${revision ? 4 : 3}`,
+          revision
+            ? [repositoryId, revision, query.afterId ?? '', query.limit ?? 100]
+            : [repositoryId, query.afterId ?? '', query.limit ?? 100],
+        )
+      : revision
+        ? await this.pool.query(revisionQualityArtifactsSql, [repositoryId, revision])
+        : await this.pool.query(currentQualityArtifactsSql, [repositoryId])
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, kind: row.kind, title: row.title, sourcePath: row.source_path, summary: row.summary, evidence: row.evidence, execution: row.execution_target ?? undefined }))
   }
 

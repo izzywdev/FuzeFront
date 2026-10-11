@@ -2,6 +2,8 @@ import type {
   AdminTenantContext,
   OrganizationQualitySummary,
   Portfolio,
+  QualityArtifact,
+  QualityArtifactPage,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
 import type { Identity } from '@fuzefront/security-client'
@@ -82,13 +84,35 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+async function allQualityArtifacts(id: string, revision?: string): Promise<QualityArtifact[]> {
+  const items: QualityArtifact[] = []
+  const seenCursors = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const query = new URLSearchParams()
+    if (revision) query.set('revision', revision)
+    if (cursor) query.set('cursor', cursor)
+    const response = await request<QualityArtifactPage | QualityArtifact[]>(
+      `/api/v1/repositories/${id}/quality-artifacts${query.size ? `?${query}` : ''}`
+    )
+    if (Array.isArray(response)) return [...items, ...response]
+    items.push(...response.items)
+    const next = response.page.nextCursor ?? undefined
+    if (!response.page.hasMore || !next) return items
+    if (seenCursors.has(next)) throw new Error('Quality artifact pagination returned a repeated cursor')
+    seenCursors.add(next)
+    cursor = next
+  } while (cursor)
+  return items
+}
+
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
   requirementFreshness: () => request<{ freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'; lastSuccessAt?: string }>('/api/v1/requirements/freshness'),
   addRepository: (value: Record<string, unknown>) =>
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryPage | import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
-  qualityArtifacts: (id: string, revision?: string) => request<import('@fuzequality/contracts').QualityArtifact[]>(`/api/v1/repositories/${id}/quality-artifacts${revision ? `?${new URLSearchParams({ revision })}` : ''}`),
+  qualityArtifacts: allQualityArtifacts,
   repositoryFlowCandidates: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').RepositoryFlowCandidatePage | import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates?${new URLSearchParams(filter)}`),
   repositoryFlowCandidate: (repositoryId: string, candidateId: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}`),
   reviewRepositoryFlowCandidate: (repositoryId: string, candidateId: string, status: 'confirmed' | 'rejected', reason?: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.12.0
+  version: 0.13.0
   license:
     name: UNLICENSED
 servers:
@@ -232,6 +232,56 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/RepositoryScanHistoryEntry' }
+                  page:
+                    type: object
+                    additionalProperties: false
+                    required: [nextCursor, hasMore]
+                    properties:
+                      nextCursor: { type: string, nullable: true }
+                      hasMore: { type: boolean }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/repositories/{repositoryId}/quality-artifacts:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listRepositoryQualityArtifacts
+      summary: List repository evidence for reviewed analysis
+      description: >-
+        Returns a bounded, exact-revision evidence inventory. The portal follows
+        continuation cursors before presenting reviewed UX-flow and policy/gate
+        evidence; the internal repository-analysis worker retains its full,
+        service-authenticated exact-revision endpoint.
+      tags: [repository-analysis]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - name: revision
+          in: query
+          description: Exact catalog revision; defaults to the repository's current analyzed revision.
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: A bounded page of repository evidence.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/QualityArtifact' }
                   page:
                     type: object
                     additionalProperties: false
@@ -824,6 +874,34 @@ components:
                 type: object
                 additionalProperties: true
   schemas:
+    QualityArtifactExecutionTarget:
+      type: object
+      additionalProperties: false
+      required: [provider, workflowPath, trigger]
+      properties:
+        provider: { type: string, enum: [github-actions] }
+        workflowPath: { type: string, minLength: 1 }
+        trigger: { type: string, enum: [workflow_dispatch] }
+        requiredInputs:
+          type: array
+          items: { type: string }
+    QualityArtifact:
+      type: object
+      additionalProperties: false
+      required: [id, repositoryId, kind, title, sourcePath, summary, evidence]
+      properties:
+        id: { type: string, minLength: 1 }
+        repositoryId: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [route, story, documentation, policy, gate, test-plan, load-test, stress-test]
+        title: { type: string }
+        sourcePath: { type: string }
+        summary: { type: string }
+        evidence:
+          type: array
+          items: { type: string }
+        execution: { $ref: '#/components/schemas/QualityArtifactExecutionTarget' }
     RepositoryScanCounts:
       type: object
       additionalProperties: false

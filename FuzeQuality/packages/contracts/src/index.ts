@@ -429,6 +429,11 @@ export type QualityArtifact = {
   }
 }
 
+export type QualityArtifactPage = {
+  items: QualityArtifact[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
 export type RepositoryQualitySnapshot = {
   repositoryId: string
   revision: string
