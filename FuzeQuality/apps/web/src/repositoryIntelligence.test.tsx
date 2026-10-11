@@ -160,6 +160,7 @@ function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
+  vi.spyOn(api, 'executionTrend').mockResolvedValue([])
   vi.spyOn(api, 'executionPerformance').mockResolvedValue([])
   vi.spyOn(api, 'repositoryFlowReviewHistory').mockResolvedValue([])
   vi.spyOn(api, 'policyGateReviewHistory').mockResolvedValue([])
@@ -272,6 +273,26 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
       cursor: 'execution-page-2',
     })
+  })
+
+  it('renders complete server-aggregated outcome history independently of loaded execution rows', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.testExecutions).mockResolvedValue({
+      items: [loadExecution],
+      page: { nextCursor: 'older-executions', hasMore: true },
+    })
+    vi.mocked(api.executionTrend).mockResolvedValue([
+      { date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0 },
+    ])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const trend = await screen.findByLabelText('Execution outcome trend')
+    expect(trend).toHaveTextContent('2026-10-01')
+    expect(trend).toHaveTextContent('7 passed')
+    expect(trend).toHaveTextContent('2 failed')
+    expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
   })
 
   it('continues policy-gate performance from its aggregate cursor', async () => {

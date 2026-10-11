@@ -68,6 +68,24 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('aggregates complete tenant-scoped outcome history by UTC day in Postgres', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0 }] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    await expect(store.executionOutcomeTrend('repo-1', 'org-1', {
+      kind: 'integration', beforeDate: '2026-10-11', limit: 51,
+    })).resolves.toEqual([
+      { date: '2026-10-10', passed: 2, failed: 1, cancelled: 0, running: 0 },
+    ])
+
+    const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
+    expect(String(sql)).toContain("AT TIME ZONE 'UTC'")
+    expect(String(sql)).toContain("count(*) FILTER (WHERE status='failed')")
+    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, null, '2026-10-11', 51])
+  })
+
   it('does not erase detailed evidence when a later lifecycle delivery is sparse', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '900', attempt: 1, revision: 'abc', kind: 'load' as const, status: 'failed' as const, name: 'Load', workflowPath: '.github/workflows/load.yml' }

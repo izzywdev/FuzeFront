@@ -69,7 +69,6 @@ describe('execution performance', () => {
     ])
   })
 })
-
 it('filters and trends only timestamped execution evidence', () => {
   const executions = [
     { id: 'one', repositoryId: 'repo', tenantId: 'org', provider: 'external' as const, externalRunId: 'one', attempt: 1, revision: 'a', kind: 'ci' as const, status: 'passed' as const, name: 'CI', completedAt: '2026-10-07T12:00:00.000Z', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [] },

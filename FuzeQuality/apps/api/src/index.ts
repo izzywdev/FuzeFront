@@ -41,6 +41,7 @@ import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import { executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
+import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
 import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
@@ -681,6 +682,22 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
     items: page.items.map(({ createdAt: _createdAt, ...execution }) => execution),
     page: page.page,
   })
+})
+app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const filter = executionPageFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeExecutionTrendCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { cursor: _cursor, limit, ...query } = filter.data
+  const items = await store.executionOutcomeTrend(repositoryId, tenantId, {
+    ...query,
+    beforeDate: cursor.data?.date,
+    limit: limit + 1,
+  })
+  response.json(executionTrendPage(items, limit))
 })
 app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

@@ -51,7 +51,7 @@ import type {
   TestExecution,
   TestImplementationRequest,
 } from '@fuzequality/contracts'
-import type { PolicyGatePerformance } from '@fuzequality/core'
+import type { ExecutionOutcomeTrend, PolicyGatePerformance } from '@fuzequality/core'
 import {
   api,
   CatalogApiError,
@@ -172,34 +172,17 @@ function usePortalContextKey() {
   return contextKey
 }
 
-function executionOutcomeTrend(executions: TestExecution[]) {
-  const results = new Map<
-    string,
-    {
-      date: string
-      passed: number
-      failed: number
-      cancelled: number
-      running: number
-    }
-  >()
-  for (const execution of executions) {
-    const timestamp = execution.completedAt ?? execution.startedAt
-    if (!timestamp || Number.isNaN(Date.parse(timestamp))) continue
-    const date = timestamp.slice(0, 10)
-    const current = results.get(date) ?? {
-      date,
-      passed: 0,
-      failed: 0,
-      cancelled: 0,
-      running: 0,
-    }
-    current[execution.status]++
-    results.set(date, current)
+function mergeExecutionOutcomeTrends(groups: ExecutionOutcomeTrend[][]): ExecutionOutcomeTrend[] {
+  const merged = new Map<string, ExecutionOutcomeTrend>()
+  for (const item of groups.flat()) {
+    const current = merged.get(item.date) ?? { date: item.date, passed: 0, failed: 0, cancelled: 0, running: 0 }
+    current.passed += item.passed
+    current.failed += item.failed
+    current.cancelled += item.cancelled
+    current.running += item.running
+    merged.set(item.date, current)
   }
-  return [...results.values()].sort((left, right) =>
-    left.date.localeCompare(right.date)
-  )
+  return [...merged.values()].sort((left, right) => left.date.localeCompare(right.date))
 }
 
 function isView(value: unknown): value is View {
@@ -3226,6 +3209,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [loadingMorePolicyGates, setLoadingMorePolicyGates] = useState(false)
   const [historyPaginationError, setHistoryPaginationError] = useState<string>()
   const [executions, setExecutions] = useState<TestExecution[]>([])
+  const [executionTrends, setExecutionTrends] = useState<ExecutionOutcomeTrend[][]>([])
   const [executionNextCursors, setExecutionNextCursors] = useState<Record<string, string>>({})
   const [loadingMoreExecutions, setLoadingMoreExecutions] = useState(false)
   const [executionPaginationError, setExecutionPaginationError] = useState<string>()
@@ -3627,6 +3611,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     if (invalidExecutionRange) {
       setExecutions([])
       setExecutionPerformance([])
+      setExecutionTrends([])
       return () => {
         active = false
       }
@@ -3642,6 +3627,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           executionRepositoryId && executionRepositoryId !== repository.id
             ? { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } }
             : normalizeHistoryPage(await api.executionPerformance(repository.id, executionFilter)),
+        trend:
+          executionRepositoryId && executionRepositoryId !== repository.id
+            ? []
+            : await api.executionTrend(repository.id, executionFilter),
       }))
     )
       .then(groups => {
@@ -3653,6 +3642,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               : [])
           ))
           setExecutionPerformance(groups.flatMap(group => group.performance.items))
+          setExecutionTrends(groups.map(group => group.trend))
           setPerformanceNextCursors(Object.fromEntries(
             groups.flatMap(group => group.performance.page.nextCursor
               ? [[group.repositoryId, group.performance.page.nextCursor]]
@@ -3665,6 +3655,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setExecutions([])
           setExecutionNextCursors({})
           setExecutionPerformance([])
+          setExecutionTrends([])
           setPerformanceNextCursors({})
         }
       })
@@ -3801,8 +3792,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     }
   }
   const outcomeTrend = useMemo(
-    () => executionOutcomeTrend(executions),
-    [executions]
+    () => mergeExecutionOutcomeTrends(executionTrends),
+    [executionTrends]
   )
   const repositoryLabels = useMemo(
     () =>

@@ -163,6 +163,13 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       { id: 'policy-review-2', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'accepted', reviewedBy: 'quality-owner', reason: 'Required for every production release.', createdAt: '2026-10-08T10:00:00.000Z' },
       { id: 'policy-review-1', evaluationId: 'evaluation-1', tenantId: 'tenant-1', status: 'dismissed', reviewedBy: 'platform-owner', reason: 'Initial evidence was incomplete.', createdAt: '2026-10-08T09:45:00.000Z' },
     ])
+    if (url.pathname.endsWith('/execution-trend')) return respond({
+      items: [
+        { date: '2026-10-09', passed: 0, failed: 1, cancelled: 0, running: 0 },
+        { date: '2026-10-08', passed: 0, failed: 1, cancelled: 0, running: 0 },
+      ],
+      page: { nextCursor: null, hasMore: false },
+    })
     if (url.pathname.endsWith('/test-executions')) return respond(testExecutions)
     if (url.pathname.endsWith('/execution-performance')) return respond([{ repositoryId: 'repo-1', policyArtifactId: 'policy-artifact', policyTitle: 'Administrative suspension policy', policySourcePath: 'docs/policies/apps.md', gateArtifactId: 'gate-artifact', gateTitle: 'Admin authorization gate', gateSourcePath: '.github/workflows/authorization.yml', passed: 2, failed: 1, cancelled: 0, running: 0, latestCompletedAt: '2026-10-08T11:02:00.000Z' }])
     if (url.pathname.endsWith('/performance-tests/load-artifact/execute') && method === 'POST') return respond({
@@ -170,6 +177,7 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       artifactId: 'load-artifact',
       workflowPath: '.github/workflows/load.yml',
       ref: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      sourceRevision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     }, 202)
     if (url.pathname.endsWith('/admin/organizations')) return respond([{ organizationId: 'tenant-1', repositories: 1, apiOperations: 1, frontendSurfaces: 1, tests: 0, expectations: 2, coveredExpectations: 0, gaps: 2, coveragePercent: 0, openFindings: 1, failedScans: 0, staleScans: 0 }])
     if (url.pathname.endsWith('/admin/organizations/tenant-1/context') && method === 'POST') return respond({ organizationId: 'tenant-1', mode: 'read-only', auditId: 'audit-12345678', enteredAt: '2026-09-10T00:00:00.000Z', portfolio })
@@ -483,6 +491,36 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText(olderExecution.name, { exact: true })).toBeVisible()
   })
 
+  test('renders the complete paginated execution outcome trend', async ({ page }) => {
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      async route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? {
+                items: [{ date: '2026-09-01', passed: 4, failed: 2, cancelled: 0, running: 0 }],
+                page: { nextCursor: null, hasMore: false },
+              }
+            : {
+                items: [{ date: '2026-10-01', passed: 8, failed: 1, cancelled: 0, running: 0 }],
+                page: { nextCursor: 'older-days', hasMore: true },
+              }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+
+    const trend = page.getByLabel('Execution outcome trend')
+    await expect(trend).toContainText('2026-10-01')
+    await expect(trend).toContainText('8 passed')
+    await expect(trend).toContainText('2026-09-01')
+    await expect(trend).toContainText('2 failed')
+  })
+
   test('continues bounded policy-gate performance aggregates', async ({ page }) => {
     const currentPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-current', gateArtifactId: 'gate-current', failed: 3, passed: 1, cancelled: 0, running: 0 }
     const olderPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-historical', gateArtifactId: 'gate-historical', failed: 1, passed: 4, cancelled: 0, running: 0 }
@@ -680,7 +718,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
 
     expect((await dispatchRequest).method()).toBe('POST')
     await expect(page.getByRole('status')).toContainText(
-      'Dispatched .github/workflows/load.yml at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+      'Dispatched .github/workflows/load.yml from aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa at analyzed commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     )
     await expect(page.getByRole('status')).toContainText(
       'GitHub Actions will report the run as execution evidence.'

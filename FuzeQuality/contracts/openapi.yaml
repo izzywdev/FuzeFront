@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.13.0
+  version: 0.14.0
   license:
     name: UNLICENSED
 servers:
@@ -743,6 +743,50 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/repositories/{repositoryId}/execution-trend:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listExecutionOutcomeTrend
+      summary: Aggregate filtered execution outcomes by UTC day
+      description: Returns immutable daily aggregates across the complete filtered execution history, independently of execution-row pagination.
+      tags: [executions]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ExecutionKind'
+        - $ref: '#/components/parameters/ExecutionStatus'
+        - $ref: '#/components/parameters/ExecutionProvider'
+        - $ref: '#/components/parameters/ExecutionRevision'
+        - $ref: '#/components/parameters/ExecutionWorkflowPath'
+        - $ref: '#/components/parameters/ExecutionFrom'
+        - $ref: '#/components/parameters/ExecutionUntil'
+        - name: limit
+          in: query
+          description: Maximum number of UTC-day aggregates to return in this page.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque day cursor returned by the preceding page.
+          schema: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: Daily outcomes ordered from newest to oldest.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ExecutionOutcomeTrend' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
@@ -1352,6 +1396,16 @@ components:
         cancelled: { type: integer, minimum: 0 }
         running: { type: integer, minimum: 0 }
         latestCompletedAt: { type: string, format: date-time }
+    ExecutionOutcomeTrend:
+      type: object
+      additionalProperties: false
+      required: [date, passed, failed, cancelled, running]
+      properties:
+        date: { type: string, format: date }
+        passed: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        cancelled: { type: integer, minimum: 0 }
+        running: { type: integer, minimum: 0 }
     PerformanceDispatch:
       type: object
       required: [status, artifactId, workflowPath, ref, sourceRevision]

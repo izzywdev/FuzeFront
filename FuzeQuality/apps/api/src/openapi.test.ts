@@ -143,6 +143,19 @@ describe('contract discovery', () => {
           'application/json'
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-trend'].get.parameters
+          .filter((parameter: { name?: string }) => parameter.name)
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/execution-trend'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(schemas.ExecutionOutcomeTrend.required).toEqual(
+        ['date', 'passed', 'failed', 'cancelled', 'running']
+      )
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

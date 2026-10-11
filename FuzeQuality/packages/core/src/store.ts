@@ -29,6 +29,7 @@ import { buildApiExpectations, buildFindings, buildFrontendExpectations } from '
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
 import { REQUIREMENT_REVIEW_POLICY_VERSION } from './requirement-analysis'
+import { executionOutcomeTrend, filterTestExecutions, type ExecutionOutcomeTrend } from './execution-performance'
 
 export const currentQualityArtifactsSql = `SELECT id, repository_id, kind, title, source_path, summary, evidence, execution_target
        FROM fuzequality.repository_quality_artifacts
@@ -71,6 +72,9 @@ export type TestExecutionQuery = {
   until?: string
   after?: HistoryCursor
   limit?: number
+}
+export type ExecutionOutcomeTrendQuery = Omit<TestExecutionQuery, 'after'> & {
+  beforeDate?: string
 }
 
 export function testExecutionOccurredAt(execution: TestExecution) {
@@ -153,6 +157,7 @@ export interface CatalogStore {
   reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
   policyGateReviewHistory(evaluationId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<PolicyGateReviewHistoryEntry[]>
   testExecutions(repositoryId: string, tenantId: string, query?: TestExecutionQuery): Promise<TestExecution[]>
+  executionOutcomeTrend(repositoryId: string, tenantId: string, query?: ExecutionOutcomeTrendQuery): Promise<ExecutionOutcomeTrend[]>
   saveTestExecution(execution: TestExecution): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
@@ -424,6 +429,16 @@ export class MemoryCatalogStore implements CatalogStore {
       )
       .sort((left, right) => testExecutionOccurredAt(right).localeCompare(testExecutionOccurredAt(left)) || right.id.localeCompare(left.id))
       .filter(item => !query.after || testExecutionOccurredAt(item) < query.after.createdAt || (testExecutionOccurredAt(item) === query.after.createdAt && item.id < query.after.id))
+    return query.limit === undefined ? items : items.slice(0, query.limit)
+  }
+
+  async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}) {
+    const items = executionOutcomeTrend(filterTestExecutions(
+      this.executions.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId),
+      query,
+    ))
+      .sort((left, right) => right.date.localeCompare(left.date))
+      .filter(item => !query.beforeDate || item.date < query.beforeDate)
     return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
@@ -1041,6 +1056,31 @@ export class PostgresCatalogStore implements CatalogStore {
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
+  }
+
+  async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}): Promise<ExecutionOutcomeTrend[]> {
+    const result = await this.pool.query(
+      `SELECT to_char((COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
+              count(*) FILTER (WHERE status='passed')::integer AS passed,
+              count(*) FILTER (WHERE status='failed')::integer AS failed,
+              count(*) FILTER (WHERE status='cancelled')::integer AS cancelled,
+              count(*) FILTER (WHERE status='running')::integer AS running
+       FROM fuzequality.test_executions
+       WHERE repository_id=$1 AND tenant_id=$2
+         AND ($3::text IS NULL OR kind=$3)
+         AND ($4::text IS NULL OR status=$4)
+         AND ($5::text IS NULL OR provider=$5)
+         AND ($6::text IS NULL OR revision=$6)
+         AND ($7::text IS NULL OR workflow_path=$7)
+         AND ($8::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) >= $8)
+         AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) <= $9)
+         AND ($10::date IS NULL OR (COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date < $10)
+       GROUP BY (COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date
+       ORDER BY (COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date DESC
+       LIMIT COALESCE($11::integer, 2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.limit ?? null],
+    )
+    return result.rows.map(row => ({ date: row.date, passed: row.passed, failed: row.failed, cancelled: row.cancelled, running: row.running }))
   }
 
   async saveTestExecution(item: TestExecution): Promise<void> {
