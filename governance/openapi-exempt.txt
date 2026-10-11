@@ -37,6 +37,7 @@ GET /api/v1/test-implementations/{}  # FuzeQuality: test impl detail; service la
 GET /api/v1/repositories  # FuzeQuality: repository list; service lacks openapi.yaml
 GET /api/v1/repositories/{}  # FuzeQuality: repository detail; service lacks openapi.yaml
 GET /api/v1/repositories/{}/catalog-status  # FuzeQuality: catalog status; service lacks openapi.yaml
+GET /api/v1/repositories/{}/quality-artifacts  # FuzeQuality: tenant-authorized repository analysis evidence; service lacks public OpenAPI surface
 POST /api/v1/internal/coverage/rebuild  # FuzeQuality: internal trigger; not consumer-facing
 POST /api/v1/internal/intelligence/results  # FuzeQuality: internal ingest; not consumer-facing
 POST /api/v1/internal/scans/results  # FuzeQuality: internal ingest; not consumer-facing
@@ -220,6 +221,8 @@ POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint;
 GET /api/v1/requirements/freshness  # fuzequality: tenant-authorized Jira freshness evidence; not public contract surface
 POST /api/v1/internal/intelligence/failure  # fuzequality: S2S worker failure signal; bounded/redacted and not consumer-facing
 GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review audit history; not public contract surface
+GET /api/v1/internal/repositories/{}/quality-artifacts  # fuzequality: S2S worker evidence retrieval; not consumer-facing
+POST /api/v1/internal/identity-lifecycle  # fuzequality: S2S FuzeFront identity projection; not consumer-facing
 #
 # --- O1: applications-service Kubernetes readiness probe (#1137) ---
 # NOT a debt in the sense this file's header warns about (a spec gap to close):
@@ -239,6 +242,14 @@ DELETE /api/v1/connectors/google-gmail  # authenticated connector lifecycle faca
 POST /api/v1/connectors/google-gmail/connect  # browser OAuth initiation facade; intentionally not MCP
 GET /api/v1/connectors/google-gmail/oauth/callback  # Google browser redirect; encrypted short-lived continuation state, not a generated client operation
 GET /api/v1/connectors/google-gmail/messages/recent  # chat-only summary source; raw credential lease remains private S2S
+GET /api/v1/connectors/{}/oauth/callback  # provider browser OAuth redirect, not a generated client operation
+GET /api/v1/connectors/catalog  # authenticated browser connector catalog; backend has no OpenAPI spec
+POST /api/v1/connectors/{}/connect  # authenticated browser OAuth initiation, not an MCP operation
+POST /api/v1/connectors/{}/credential  # authenticated browser secret onboarding; must never be projected into generated clients or MCP tools
+GET /api/v1/connectors/{}/actions/{}  # authenticated per-user read facade; provider operations require separate contracts before MCP projection
+GET /api/v1/connectors/{}  # authenticated browser connector metadata facade
+PATCH /api/v1/connectors/{}  # authenticated browser configuration facade
+DELETE /api/v1/connectors/{}  # authenticated browser disconnect facade
 #
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not
