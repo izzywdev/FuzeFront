@@ -1,5 +1,12 @@
 # Changelog — @fuzefront/security-client
 
+## 0.10.0 — Trusted membership bootstrap (unreleased)
+
+- Adds operator membership proof and explicit session tenant verification.
+- Requires active SQL membership and active organization for scoped FuzeKeys owner grants.
+- Adds verified Security workload callers without weakening existing caller gates.
+
+
 ## 0.9.1 — AuthZ: human callers are authorized per tenant on grant/revoke, member/role management and cross-subject reads (security fix, unreleased)
 
 **Behavior tightening, no shape change.** `info.version` 0.9.0 -> 0.9.1,
