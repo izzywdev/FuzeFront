@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.10.0
+  version: 0.11.0
   license:
     name: UNLICENSED
 servers:
@@ -353,14 +353,43 @@ paths:
       summary: Read policy/gate findings for a repository analysis worker
       tags: [worker-intelligence]
       security: [{ serviceToken: [] }]
+      parameters:
+        - name: kind
+          in: query
+          schema: { $ref: '#/components/schemas/PolicyGateFindingKind' }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [high, medium, low] }
+        - name: reviewStatus
+          in: query
+          schema: { type: string, enum: [proposed, accepted, dismissed] }
+        - name: revision
+          in: query
+          description: Exact reviewed repository-analysis revision.
+          schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: limit
+          in: query
+          description: Maximum number of worker-visible evaluations to return in this page.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding worker page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: Policy/gate evaluations for the repository.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 

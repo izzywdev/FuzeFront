@@ -232,6 +232,18 @@ describe('contract discovery', () => {
       expect(schemas.HistoryCursorPage.required).toEqual(['nextCursor', 'hasMore'])
       expect(schemas.HistoryCursorPage.properties.nextCursor.nullable).toBe(true)
       expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.parameters
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['kind', 'severity', 'reviewStatus', 'revision', 'limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(
+        document.paths['/api/v1/internal/repositories/{repositoryId}/policy-gate-evaluations'].get.responses
+      ).toHaveProperty('400')
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/performance-tests/{artifactId}/execute'].post.summary
       ).toContain('immutable analyzed commit')
       expect(

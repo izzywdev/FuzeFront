@@ -386,7 +386,20 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const repository = await store.repository(repositoryId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy'))
+  const filter = policyGateFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const limit = filter.data.limit
+  const evaluations = await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy', {
+    kind: filter.data.kind,
+    severity: filter.data.severity,
+    reviewStatus: filter.data.reviewStatus,
+    revision: filter.data.revision,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  response.json(historyPage(evaluations, limit))
 })
 app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) => {
   const parsed = policyGateEvaluationIngestionSchema.safeParse(request.body)
