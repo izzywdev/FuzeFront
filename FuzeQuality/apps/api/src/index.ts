@@ -18,15 +18,12 @@ import {
   coverageSummary,
   createCatalogStore,
   createEventBus,
-  executionPerformance,
-  filterTestExecutions,
   performanceDispatchRevision,
   performanceWorkflowTarget,
   relayOutboxBatch,
   repositoryCatalogStatus,
   testExecutionOccurredAt,
 } from '@fuzequality/core'
-import { artifactsForExecutionRevisions } from './execution-performance-artifacts'
 import { scanRepository } from '@fuzequality/scanner'
 import {
   githubWebhookHeadersSchema,
@@ -707,22 +704,29 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   const cursor = decodePerformanceCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
-  const executions = filterTestExecutions(
-    await store.testExecutions(repositoryId, tenantId),
-    filter.data,
+  const { cursor: _cursor, limit, ...query } = filter.data
+  const snapshotAt = cursor.data?.snapshotAt ?? new Date().toISOString()
+  const until = query.until && Date.parse(query.until) < Date.parse(snapshotAt) ? query.until : snapshotAt
+  const items = await store.policyGatePerformance(repositoryId, tenantId, {
+    ...query,
+    until,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  const artifactIds = [...new Set(items.flatMap(item => [item.policyArtifactId, item.gateArtifactId]))]
+  const artifacts = new Map(
+    (await store.qualityArtifactsByIds(repositoryId, tenantId, artifactIds))
+      .map(artifact => [artifact.id, artifact]),
   )
-  const artifacts = await artifactsForExecutionRevisions(
-    repositoryId,
-    executions,
-    tenantId,
-    (id, tenant, sourceRevision) => store.catalogRevisionForSource(id, tenant, sourceRevision),
-    (id, tenant, catalogRevision) => store.qualityArtifacts(id, tenant, catalogRevision),
-  )
-  response.json(performancePage(
-    executionPerformance(executions, artifacts),
-    filter.data.limit,
-    cursor.data,
-  ))
+  response.json(performancePage(items.map(item => {
+    const policy = artifacts.get(item.policyArtifactId)
+    const gate = artifacts.get(item.gateArtifactId)
+    return {
+      ...item,
+      ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
+      ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
+    }
+  }), limit, undefined, snapshotAt))
 })
 app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })

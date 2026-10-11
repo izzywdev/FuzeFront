@@ -28,6 +28,8 @@ export type PolicyGatePerformance = {
   gateSourcePath?: string
   /** Source commits represented by this aggregate; omitted by legacy APIs. */
   revisions?: string[]
+  revisionCount?: number
+  latestRevision?: string
   passed: number
   failed: number
   cancelled: number

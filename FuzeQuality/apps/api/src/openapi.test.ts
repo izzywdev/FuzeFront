@@ -143,6 +143,8 @@ describe('contract discovery', () => {
           'application/json'
         ].schema
       ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(schemas.PolicyGatePerformance.properties.revisionCount.minimum).toBe(0)
+      expect(schemas.PolicyGatePerformance.properties.latestRevision.type).toBe('string')
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/execution-trend'].get.parameters
           .filter((parameter: { name?: string }) => parameter.name)

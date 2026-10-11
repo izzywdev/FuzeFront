@@ -9,15 +9,15 @@ const pair = (policyArtifactId: string, gateArtifactId: string, failed: number, 
 describe('policy-gate performance pagination', () => {
   it('continues after an exact aggregate sort tuple without duplicates', () => {
     const items = [
+      pair('policy-c', 'gate-c', 2, 4),
       pair('policy-a', 'gate-a', 3, 1),
       pair('policy-b', 'gate-b', 2, 5),
-      pair('policy-c', 'gate-c', 2, 4),
     ]
-    const first = performancePage(items, 2)
+    const first = performancePage(items, 2, undefined, '2026-10-11T00:00:00.000Z')
     expect(first.items.map(item => item.policyArtifactId)).toEqual(['policy-a', 'policy-b'])
     expect(first.page.hasMore).toBe(true)
     const cursor = decodePerformanceCursor(first.page.nextCursor ?? undefined)
-    expect(cursor.success).toBe(true)
+    expect(cursor).toMatchObject({ success: true, data: { snapshotAt: '2026-10-11T00:00:00.000Z' } })
     if (!cursor.success) return
     expect(performancePage(items, 2, cursor.data).items.map(item => item.policyArtifactId)).toEqual(['policy-c'])
   })
