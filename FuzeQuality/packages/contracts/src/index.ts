@@ -545,6 +545,12 @@ export type TestExecutionGateEvaluation = {
   detail?: string
 }
 
+/** GitHub qualifies workflow_run.path with @ref; catalog artifacts use the repository path. */
+export function normalizeWorkflowPath(path?: string) {
+  if (!path) return undefined
+  return path.match(/^(.+\.ya?ml)@.+$/i)?.[1] ?? path
+}
+
 export const testExecutionGateEvaluationSchema = z.object({
   policyArtifactId: z.string().trim().min(1).max(500),
   gateArtifactId: z.string().trim().min(1).max(500),

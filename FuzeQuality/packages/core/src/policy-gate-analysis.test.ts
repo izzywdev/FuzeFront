@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluatePolicyGates } from './policy-gate-analysis'
+import { evaluatePolicyGates, linkExecutionArtifacts } from './policy-gate-analysis'
 
 const repository = { id: 'repo-1', tenantId: 'org-1', owner: 'fuze', name: 'front', canonicalUrl: 'https://example.test/front', defaultBranch: 'main', kind: 'application' as const, includeGlobs: [], excludeGlobs: [], jiraProjects: [], jiraBindings: [], enabled: true, lastScanStatus: 'complete' as const }
 
@@ -78,5 +78,17 @@ describe('policy gate evaluation', () => {
     ])
 
     expect(results.some(item => item.kind === 'contradictory-policy')).toBe(false)
+  })
+
+  it('links a ref-qualified GitHub workflow path to its catalog gate', () => {
+    const artifacts = [
+      { id: 'policy-ci', repositoryId: 'repo-1', kind: 'policy' as const, title: 'CI policy', sourcePath: 'governance/ci.md', summary: 'Builds must pass CI.', evidence: ['build required'] },
+      { id: 'gate-ci', repositoryId: 'repo-1', kind: 'gate' as const, title: 'CI', sourcePath: '.github/workflows/ci.yml', summary: 'Build required check.', evidence: ['build required'] },
+    ]
+
+    expect(linkExecutionArtifacts('Quality checks', artifacts, '.github/workflows/ci.yml@main')).toEqual({
+      policyArtifactIds: ['policy-ci'],
+      gateArtifactIds: ['gate-ci'],
+    })
   })
 })

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
+import { normalizeWorkflowPath } from '@fuzequality/contracts'
 
 export const GITHUB_APP_PERMISSIONS = {
   metadata: 'read',
@@ -146,7 +147,8 @@ export function webhookWorkflowExecutions(event: string, payload: unknown, repos
   const parsed = workflowRunSchema.safeParse(payload)
   if (!parsed.success || parsed.data.workflow_run.head_branch !== parsed.data.repository.default_branch) return []
   const run = parsed.data.workflow_run
-  const kind = workflowExecutionKind(run.name, run.path)
+  const workflowPath = normalizeWorkflowPath(run.path)
+  const kind = workflowExecutionKind(run.name, workflowPath)
   const status = run.status !== 'completed' ? 'running' : run.conclusion === 'success' ? 'passed' : run.conclusion === 'cancelled' || run.conclusion === 'skipped' ? 'cancelled' : 'failed'
   return findRepositories(repositories, parsed.data.repository).map(repository => ({
     repositoryId: repository.id,
@@ -157,7 +159,7 @@ export function webhookWorkflowExecutions(event: string, payload: unknown, repos
     kind,
     status,
     name: run.name,
-    workflowPath: run.path,
+    workflowPath,
     sourceUrl: run.html_url,
     startedAt: run.run_started_at ?? undefined,
     completedAt: run.status === 'completed' ? run.updated_at : undefined,

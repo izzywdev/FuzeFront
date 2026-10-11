@@ -159,6 +159,21 @@ describe('ExecutionThresholdEvidence', () => {
     )
   })
 
+  it('renders only the latest label for a stable evidence link', () => {
+    const report = execution.evidenceLinks.find(link => link.kind === 'report')!
+    const { container } = render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [
+        { ...report, name: 'Pending report' },
+        { ...report, name: 'Final Playwright report' },
+      ],
+    }} />)
+
+    expect(screen.queryByRole('link', { name: 'Open Pending report' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open Final Playwright report' })).toHaveAttribute('href', report.url)
+    expect(container.querySelectorAll('a')).toHaveLength(1)
+  })
+
   it('summarizes detailed evidence and flags a lifecycle-only performance run', () => {
     const { rerender } = render(<ExecutionEvidenceCoverage execution={execution} />)
 

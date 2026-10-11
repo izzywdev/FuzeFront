@@ -80,6 +80,24 @@ describe('FuzeQuality GitHub App contract', () => {
     })
   })
 
+  it('strips GitHub workflow refs before classifying and persisting a run', () => {
+    const payload = {
+      action: 'completed',
+      repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'production' },
+      workflow_run: {
+        id: 103, run_attempt: 1, head_branch: 'production', head_sha: 'e'.repeat(40), name: 'Quality checks',
+        path: '.github/workflows/ci.yml@production', status: 'completed', conclusion: 'success',
+        run_started_at: null, updated_at: '2026-01-01T00:01:00.000Z',
+      },
+    }
+    const productionRepository = [{ ...repositories[0], defaultBranch: 'production' }]
+
+    expect(webhookWorkflowExecutions('workflow_run', payload, productionRepository)[0]).toMatchObject({
+      kind: 'ci',
+      workflowPath: '.github/workflows/ci.yml',
+    })
+  })
+
   it('keeps one run attempt identity while its lifecycle advances', () => {
     const base = {
       repository: { full_name: 'izzywdev/FuzeOne', default_branch: 'main' },

@@ -12,16 +12,27 @@ type WorkflowExecutionIdentity = Pick<
 export async function linkExecutionToRevisionArtifacts(
   execution: WorkflowExecutionIdentity,
   tenantId: string,
+  resolveCatalogRevision: (
+    repositoryId: string,
+    tenantId: string,
+    sourceRevision: string
+  ) => Promise<string | undefined>,
   loadArtifacts: (
     repositoryId: string,
     tenantId: string,
     revision: string
   ) => Promise<QualityArtifact[]>
 ) {
+  const catalogRevision = await resolveCatalogRevision(
+    execution.repositoryId,
+    tenantId,
+    execution.revision,
+  )
+  if (!catalogRevision) return { policyArtifactIds: [], gateArtifactIds: [] }
   const artifacts = await loadArtifacts(
     execution.repositoryId,
     tenantId,
-    execution.revision
+    catalogRevision
   )
   return linkExecutionArtifacts(
     execution.name,

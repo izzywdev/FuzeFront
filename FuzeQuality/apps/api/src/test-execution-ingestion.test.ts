@@ -5,6 +5,7 @@ import { executionRecord, linkExecutionToRevisionArtifacts } from './test-execut
 describe('internal execution ingestion compatibility', () => {
   it('links workflow evidence from the execution source revision only', async () => {
     const loadArtifacts = vi.fn().mockResolvedValue([])
+    const resolveCatalogRevision = vi.fn().mockResolvedValue('catalog-revision-a')
     const workflow = {
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',
       revision: 'run-commit-a',
@@ -13,13 +14,42 @@ describe('internal execution ingestion compatibility', () => {
     }
 
     await expect(
-      linkExecutionToRevisionArtifacts(workflow, 'org-1', loadArtifacts)
+      linkExecutionToRevisionArtifacts(
+        workflow,
+        'org-1',
+        resolveCatalogRevision,
+        loadArtifacts,
+      )
     ).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [] })
+    expect(resolveCatalogRevision).toHaveBeenCalledWith(
+      workflow.repositoryId,
+      'org-1',
+      'run-commit-a',
+    )
     expect(loadArtifacts).toHaveBeenCalledWith(
       workflow.repositoryId,
       'org-1',
-      'run-commit-a'
+      'catalog-revision-a'
     )
+  })
+
+  it('does not link current artifacts when the source commit has no analyzed revision', async () => {
+    const resolveCatalogRevision = vi.fn().mockResolvedValue(undefined)
+    const loadArtifacts = vi.fn()
+    const workflow = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      revision: 'unscanned-commit',
+      name: 'CI',
+      workflowPath: '.github/workflows/ci.yml',
+    }
+
+    await expect(linkExecutionToRevisionArtifacts(
+      workflow,
+      'org-1',
+      resolveCatalogRevision,
+      loadArtifacts,
+    )).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [] })
+    expect(loadArtifacts).not.toHaveBeenCalled()
   })
 
   it('uses the generated id when a legacy producer omits provider run identity', () => {

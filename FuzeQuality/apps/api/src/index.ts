@@ -956,6 +956,8 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     const links = await linkExecutionToRevisionArtifacts(
       execution,
       repository.tenantId,
+      (repositoryId, tenantId, sourceRevision) =>
+        store.catalogRevisionForSource(repositoryId, tenantId, sourceRevision),
       (repositoryId, tenantId, revision) =>
         store.qualityArtifacts(repositoryId, tenantId, revision)
     )

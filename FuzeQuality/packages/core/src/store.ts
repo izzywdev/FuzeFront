@@ -71,6 +71,13 @@ export function mergeTestExecutionEvidence(
   const richerSummary = (incoming.summary?.length ?? 0) > (existing.summary?.length ?? 0)
     ? incoming.summary
     : existing.summary
+  const gateEvaluations = incoming.gateEvaluations.length
+    ? incoming.gateEvaluations
+    : incoming.status === 'running'
+      ? existing.gateEvaluations
+      : existing.gateEvaluations.map(evaluation => evaluation.status === 'running'
+        ? { ...evaluation, status: incoming.status }
+        : evaluation)
   return {
     ...existing,
     ...incoming,
@@ -85,9 +92,7 @@ export function mergeTestExecutionEvidence(
     gateArtifactIds: incoming.gateArtifactIds.length
       ? incoming.gateArtifactIds
       : existing.gateArtifactIds,
-    gateEvaluations: incoming.gateEvaluations.length
-      ? incoming.gateEvaluations
-      : existing.gateEvaluations,
+    gateEvaluations,
     thresholds: incoming.thresholds.length
       ? incoming.thresholds
       : existing.thresholds,
@@ -100,6 +105,7 @@ export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
   repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]>
+  catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string): Promise<string | undefined>
   qualityArtifacts(repositoryId: string, tenantId: string, revision?: string): Promise<QualityArtifact[]>
   repositoryFlowCandidates(repositoryId: string, tenantId: string): Promise<RepositoryFlowCandidate[]>
   saveRepositoryFlowCandidates(candidates: RepositoryFlowCandidate[]): Promise<void>
@@ -182,6 +188,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private adminContextAudits: AdminContextAudit[] = []
   private syncCursors: SyncCursor[] = []
   private scanHistory: Array<{ repositoryId: string; item: RepositoryScanHistoryEntry }> = []
+  private sourceCatalogRevisions = new Map<string, string>()
   private exclusions = new Map<string, ExpectationExclusionInput>()
   private artifacts: Array<QualityArtifact & { revision: string }> = []
   private flowCandidates: RepositoryFlowCandidate[] = []
@@ -235,6 +242,11 @@ export class MemoryCatalogStore implements CatalogStore {
   async repositoryScanHistory(id: string, tenantId: string) {
     if (!await this.repository(id, tenantId)) return []
     return this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
+  }
+
+  async catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string) {
+    if (!await this.repository(repositoryId, tenantId)) return undefined
+    return this.sourceCatalogRevisions.get(`${repositoryId}:${sourceRevision}`)
   }
 
   async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string) {
@@ -363,6 +375,12 @@ export class MemoryCatalogStore implements CatalogStore {
         lastScanStatus: 'complete',
         lastScanDetails: result.scanDetails,
       })
+    }
+    if (result.scanDetails.sourceRevision) {
+      this.sourceCatalogRevisions.set(
+        `${result.repository.id}:${result.scanDetails.sourceRevision}`,
+        result.revision,
+      )
     }
     const rejectRepo = <T extends { repositoryId: string }>(items: T[]) =>
       items.filter(item => item.repositoryId !== result.repository.id)
@@ -702,6 +720,19 @@ export class PostgresCatalogStore implements CatalogStore {
     return result.rows.map(row => ({ revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
   }
 
+  async catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string) {
+    if (!await this.repository(repositoryId, tenantId)) return undefined
+    const result = await this.pool.query(
+      `SELECT catalog_revision
+       FROM fuzequality.repository_revision_sources
+       WHERE repository_id=$1 AND source_revision=$2
+       ORDER BY scanned_at DESC NULLS LAST
+       LIMIT 1`,
+      [repositoryId, sourceRevision],
+    )
+    return result.rows[0]?.catalog_revision
+  }
+
   async qualityArtifacts(repositoryId: string, tenantId: string, revision?: string): Promise<QualityArtifact[]> {
     if (!await this.repository(repositoryId, tenantId)) return []
     const result = revision
@@ -804,7 +835,7 @@ export class PostgresCatalogStore implements CatalogStore {
     await this.pool.query(
       `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations ELSE fuzequality.test_executions.gate_evaluations END,thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,evidence_links=(SELECT COALESCE(jsonb_agg(link),'[]'::jsonb) FROM (SELECT DISTINCT link FROM jsonb_array_elements(fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links) AS evidence(link)) AS unique_links),summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
+       ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations WHEN EXCLUDED.status<>'running' THEN (SELECT COALESCE(jsonb_agg(CASE WHEN evaluation->>'status'='running' THEN jsonb_set(evaluation,'{status}',to_jsonb(EXCLUDED.status)) ELSE evaluation END),'[]'::jsonb) FROM jsonb_array_elements(fuzequality.test_executions.gate_evaluations) AS gate(evaluation)) ELSE fuzequality.test_executions.gate_evaluations END,thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,evidence_links=(SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb) FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal FROM jsonb_array_elements(fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links) WITH ORDINALITY AS evidence(link,ordinal) ORDER BY link->>'kind',link->>'url',ordinal DESC) AS unique_links),summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
        WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'`,
       [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.summary ?? null],
     )
@@ -1091,7 +1122,13 @@ export class PostgresCatalogStore implements CatalogStore {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      const revision = await client.query(`INSERT INTO fuzequality.repository_revisions (repository_id,commit_sha,branch,scanner_version,config_version,status,scanned_at) VALUES ($1,$2,$3,'v1','v1','complete',$4) ON CONFLICT (repository_id,commit_sha,scanner_version,config_version) DO UPDATE SET status='complete', scanned_at=EXCLUDED.scanned_at RETURNING id`, [result.repository.id, result.revision, result.repository.defaultBranch, result.scannedAt])
+      const revision = await client.query(`INSERT INTO fuzequality.repository_revisions (repository_id,commit_sha,branch,scanner_version,config_version,status,scanned_at) VALUES ($1,$2,$3,'v1','v1','complete',$4) ON CONFLICT (repository_id,commit_sha,scanner_version,config_version) DO UPDATE SET status='complete',scanned_at=EXCLUDED.scanned_at RETURNING id`, [result.repository.id, result.revision, result.repository.defaultBranch, result.scannedAt])
+      if (result.scanDetails.sourceRevision) await client.query(
+        `INSERT INTO fuzequality.repository_revision_sources (repository_id,source_revision,catalog_revision,scanned_at)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (repository_id,source_revision) DO UPDATE SET catalog_revision=EXCLUDED.catalog_revision,scanned_at=EXCLUDED.scanned_at`,
+        [result.repository.id, result.scanDetails.sourceRevision, result.revision, result.scannedAt],
+      )
       await client.query(`INSERT INTO fuzequality.scan_runs (repository_id,revision_id,trigger,status,counts,finished_at) VALUES ($1,$2,'manual','complete',$3,now())`, [result.repository.id, revision.rows[0].id, JSON.stringify({ operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length })])
       await client.query(
         `UPDATE fuzequality.test_expectations

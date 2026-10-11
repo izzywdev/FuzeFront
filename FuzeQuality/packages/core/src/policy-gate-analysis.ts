@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { PolicyGateEvaluation, QualityArtifact, Repository } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, type PolicyGateEvaluation, type QualityArtifact, type Repository } from '@fuzequality/contracts'
 
 const generatedScannerSummary = /^(?:policy|gate) evidence discovered during repository analysis$/i
 
@@ -18,10 +18,11 @@ const sharedTerms = (left: QualityArtifact, right: QualityArtifact) =>
  */
 export function linkExecutionArtifacts(workflowName: string, artifacts: QualityArtifact[], workflowPath?: string) {
   const workflow = new Set(workflowName.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g)?.filter(word => !new Set(['workflow', 'test', 'tests', 'check', 'suite', 'post', 'production']).has(word)) ?? [])
-  const exactGates = workflowPath
-    ? artifacts.filter(item => item.kind === 'gate' && item.sourcePath === workflowPath)
+  const normalizedPath = normalizeWorkflowPath(workflowPath)
+  const exactGates = normalizedPath
+    ? artifacts.filter(item => item.kind === 'gate' && item.sourcePath === normalizedPath)
     : []
-  const gates = workflowPath
+  const gates = normalizedPath
     ? exactGates
     : artifacts.filter(item => item.kind === 'gate' && [...keyTerms(item)].some(term => workflow.has(term)))
   const gateTerms = new Set(gates.flatMap(item => [...keyTerms(item)]))

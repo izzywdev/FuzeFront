@@ -48,6 +48,34 @@ describe('test execution evidence', () => {
     ])
   })
 
+  it('promotes retained running gate outcomes when a sparse terminal update arrives', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '901', attempt: 1, revision: 'abc', kind: 'ci' as const, name: 'CI', policyArtifactIds: ['policy-ci'], gateArtifactIds: ['gate-ci'], thresholds: [], evidenceLinks: [] }
+    await store.saveTestExecution({ id: 'running', ...base, status: 'running', gateEvaluations: [{ policyArtifactId: 'policy-ci', gateArtifactId: 'gate-ci', status: 'running', detail: 'Waiting for checks.' }] })
+    await store.saveTestExecution({ id: 'terminal', ...base, status: 'failed', completedAt: '2026-01-01T00:01:00.000Z', gateEvaluations: [] })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        gateEvaluations: [expect.objectContaining({ status: 'failed', detail: 'Waiting for checks.' })],
+      }),
+    ])
+  })
+
+  it('replaces evidence-link labels by stable kind and URL', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '902', attempt: 1, revision: 'abc', kind: 'post-production' as const, name: 'Post-production', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [] }
+    const url = 'https://evidence.example/run-902/report'
+    await store.saveTestExecution({ id: 'first', ...base, status: 'running', evidenceLinks: [{ kind: 'report', name: 'Pending report', url }] })
+    await store.saveTestExecution({ id: 'second', ...base, status: 'passed', evidenceLinks: [{ kind: 'report', name: 'Final Playwright report', url }] })
+
+    await expect(store.testExecutions('repo-1', 'org-1')).resolves.toEqual([
+      expect.objectContaining({
+        evidenceLinks: [{ kind: 'report', name: 'Final Playwright report', url }],
+      }),
+    ])
+  })
+
   it('does not regress terminal evidence when a running delivery arrives late', async () => {
     const store = new MemoryCatalogStore()
     const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, externalRunId: '789', attempt: 1, revision: 'abc', kind: 'post-production' as const, name: 'Post-production', policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'], thresholds: [], evidenceLinks: [] }
@@ -77,8 +105,21 @@ describe('test execution evidence', () => {
     expect(sql).toContain("WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'")
     expect(sql).toContain('workflow_path')
     expect(sql).toContain('jsonb_array_length(EXCLUDED.thresholds)>0')
-    expect(sql).toContain('test_executions.evidence_links || EXCLUDED.evidence_links')
+    expect(sql).toContain("evaluation->>'status'='running'")
+    expect(sql).toContain("DISTINCT ON (link->>'kind',link->>'url')")
     expect(sql).toContain("length(COALESCE(EXCLUDED.summary,''))")
     expect(query.mock.calls[0][1][10]).toBe('.github/workflows/ci.yml')
+  })
+
+  it('resolves a source commit to its scanner catalog revision', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ catalog_revision: 'catalog-revision' }] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+    vi.spyOn(store, 'repository').mockResolvedValue({ id: 'repo-1' } as never)
+
+    await expect(store.catalogRevisionForSource('repo-1', 'org-1', 'a'.repeat(40)))
+      .resolves.toBe('catalog-revision')
+    expect(String(query.mock.calls[0][0])).toContain('source_revision=$2')
+    expect(query.mock.calls[0][1]).toEqual(['repo-1', 'a'.repeat(40)])
   })
 })

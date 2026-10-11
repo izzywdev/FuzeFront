@@ -195,7 +195,9 @@ export function ExecutionEvidenceLinks({
 }: {
   execution: TestExecution
 }) {
-  const evidenceLinks = execution.evidenceLinks ?? []
+  const evidenceLinks = [...new Map(
+    (execution.evidenceLinks ?? []).map(link => [`${link.kind}:${link.url}`, link])
+  ).values()]
   if (!evidenceLinks.length) return null
 
   return (
