@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
-import { historicalFlowEvidenceSelection } from './flowEvidence'
+import { historicalEvidenceSelection, historicalFlowEvidenceSelection } from './flowEvidence'
 
 const candidate = (
   revision: string,
@@ -53,5 +53,16 @@ describe('historical flow evidence selection', () => {
       { repositoryId: 'repo-1', revision: 'a' },
       { repositoryId: 'repo-2', revision: 'b' },
     ])
+  })
+
+  it('selects revisions from structurally compatible governance results', () => {
+    expect(historicalEvidenceSelection([
+      { repositoryId: 'repo-1', revision: 'current', createdAt: '2026-10-11T12:00:00.000Z' },
+      { repositoryId: 'repo-1', revision: 'historical', createdAt: '2026-10-10T12:00:00.000Z' },
+    ], [{ id: 'repo-1', lastScanRevision: 'current' }])).toEqual({
+      selected: [{ repositoryId: 'repo-1', revision: 'historical' }],
+      omitted: 0,
+      total: 1,
+    })
   })
 })

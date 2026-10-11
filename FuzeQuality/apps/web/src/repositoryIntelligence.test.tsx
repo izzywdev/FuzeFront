@@ -251,6 +251,53 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('loads bounded artifact context for governance revisions introduced by continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const historicalEvaluation: PolicyGateEvaluation = {
+      ...governanceEvaluation,
+      id: 'evaluation-historical',
+      revision: 'revision-historical',
+      title: 'Historical authentication finding',
+      policyArtifactIds: ['policy-historical'],
+      createdAt: '2026-10-08T00:00:00.000Z',
+    }
+    const historicalArtifact: QualityArtifact = {
+      id: 'policy-historical',
+      repositoryId: repository.id,
+      kind: 'policy',
+      title: 'Historical authentication policy',
+      sourcePath: 'governance/historical-auth.md',
+      summary: 'Authentication policy at the reviewed revision.',
+      evidence: ['Authentication is required.'],
+    }
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, query = {}) => {
+      if (query.revision) return [governanceEvaluation]
+      return query.cursor
+        ? { items: [historicalEvaluation], page: { nextCursor: null, hasMore: false } }
+        : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
+    })
+    vi.mocked(api.qualityArtifacts).mockImplementation(async (_repositoryId, revision) =>
+      revision === historicalEvaluation.revision ? [historicalArtifact] : []
+    )
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    fireEvent.change(await screen.findByLabelText('Governance revision'), {
+      target: { value: 'all' },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+
+    expect(await screen.findByText(historicalEvaluation.title)).toBeVisible()
+    const evidence = screen.getByLabelText(`${historicalEvaluation.title} evidence`)
+    expect(within(evidence).getByText(historicalArtifact.title)).toBeVisible()
+    expect(within(evidence).queryByText(historicalArtifact.id)).not.toBeInTheDocument()
+    expect(api.qualityArtifacts).toHaveBeenCalledWith(
+      repository.id,
+      historicalEvaluation.revision,
+    )
+  })
+
   it('continues immutable execution evidence from an opaque repository cursor', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

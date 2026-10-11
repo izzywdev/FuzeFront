@@ -7,12 +7,11 @@ export type HistoricalFlowEvidenceRevision = {
   revision: string
 }
 
-/**
- * Selects the newest distinct historical revisions whose expanded artifacts
- * are prefetched. Candidates themselves remain visible beyond this bound.
- */
-export function historicalFlowEvidenceSelection(
-  candidates: RepositoryFlowCandidate[],
+type RevisionedEvidence = HistoricalFlowEvidenceRevision & { createdAt: string }
+
+/** Selects bounded historical revisions for any reviewed analysis result. */
+export function historicalEvidenceSelection(
+  items: RevisionedEvidence[],
   repositories: Pick<Repository, 'id' | 'lastScanRevision'>[],
   limit = MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS,
 ) {
@@ -20,16 +19,16 @@ export function historicalFlowEvidenceSelection(
     repositories.map(repository => [repository.id, repository.lastScanRevision])
   )
   const revisions = new Map<string, HistoricalFlowEvidenceRevision & { createdAt: number }>()
-  for (const candidate of candidates) {
-    if (candidate.revision === currentRevisions.get(candidate.repositoryId)) continue
-    const key = `${candidate.repositoryId}\u0000${candidate.revision}`
-    const createdAt = Date.parse(candidate.createdAt)
+  for (const item of items) {
+    if (item.revision === currentRevisions.get(item.repositoryId)) continue
+    const key = `${item.repositoryId}\u0000${item.revision}`
+    const createdAt = Date.parse(item.createdAt)
     const comparableCreatedAt = Number.isFinite(createdAt) ? createdAt : -Infinity
     const existing = revisions.get(key)
     if (!existing || comparableCreatedAt > existing.createdAt) {
       revisions.set(key, {
-        repositoryId: candidate.repositoryId,
-        revision: candidate.revision,
+        repositoryId: item.repositoryId,
+        revision: item.revision,
         createdAt: comparableCreatedAt,
       })
     }
@@ -43,4 +42,16 @@ export function historicalFlowEvidenceSelection(
     ({ repositoryId, revision }) => ({ repositoryId, revision })
   )
   return { selected, omitted: Math.max(0, ordered.length - selected.length), total: ordered.length }
+}
+
+/**
+ * Selects the newest distinct historical revisions whose expanded artifacts
+ * are prefetched. Candidates themselves remain visible beyond this bound.
+ */
+export function historicalFlowEvidenceSelection(
+  candidates: RepositoryFlowCandidate[],
+  repositories: Pick<Repository, 'id' | 'lastScanRevision'>[],
+  limit = MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS,
+) {
+  return historicalEvidenceSelection(candidates, repositories, limit)
 }

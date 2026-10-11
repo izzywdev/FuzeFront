@@ -84,6 +84,11 @@ export type PolicyGatePerformanceQuery = Omit<TestExecutionQuery, 'after'> & {
 export function testExecutionOccurredAt(execution: TestExecution) {
   return execution.completedAt ?? execution.startedAt ?? '1970-01-01T00:00:00.000Z'
 }
+
+function testExecutionOccurredAtMillis(execution: TestExecution) {
+  const occurredAt = Date.parse(testExecutionOccurredAt(execution))
+  return Number.isFinite(occurredAt) ? occurredAt : 0
+}
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
   | { type: 'organization.deleted'; tenantId: string }
@@ -430,6 +435,9 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async testExecutions(repositoryId: string, tenantId: string, query: TestExecutionQuery = {}) {
+    const from = query.from ? Date.parse(query.from) : undefined
+    const until = query.until ? Date.parse(query.until) : undefined
+    const after = query.after ? Date.parse(query.after.createdAt) : undefined
     const items = this.executions
       .filter(item =>
         item.repositoryId === repositoryId && item.tenantId === tenantId &&
@@ -438,11 +446,11 @@ export class MemoryCatalogStore implements CatalogStore {
         (!query.provider || item.provider === query.provider) &&
         (!query.revision || item.revision === query.revision) &&
         (!query.workflowPath || item.workflowPath === query.workflowPath) &&
-        (!query.from || testExecutionOccurredAt(item) >= query.from) &&
-        (!query.until || testExecutionOccurredAt(item) <= query.until)
+        (from === undefined || testExecutionOccurredAtMillis(item) >= from) &&
+        (until === undefined || testExecutionOccurredAtMillis(item) <= until)
       )
-      .sort((left, right) => testExecutionOccurredAt(right).localeCompare(testExecutionOccurredAt(left)) || right.id.localeCompare(left.id))
-      .filter(item => !query.after || testExecutionOccurredAt(item) < query.after.createdAt || (testExecutionOccurredAt(item) === query.after.createdAt && item.id < query.after.id))
+      .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || testExecutionOccurredAtMillis(item) < after! || (testExecutionOccurredAtMillis(item) === after && item.id < query.after.id))
     return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
@@ -460,7 +468,7 @@ export class MemoryCatalogStore implements CatalogStore {
     const items = executionPerformance(filterTestExecutions(
       this.executions
         .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
-        .sort((left, right) => testExecutionOccurredAt(right).localeCompare(testExecutionOccurredAt(left)) || right.id.localeCompare(left.id)),
+        .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id)),
       query,
     ))
       .map(item => ({

@@ -74,7 +74,7 @@ import {
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector } from './components/flowInspector'
-import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
+import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalEvidenceSelection, historicalFlowEvidenceSelection } from './flowEvidence'
 
 export type View =
   | 'overview'
@@ -3268,6 +3268,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }
   const policyGateSelectionRef = useRef(policyGateSelection)
   policyGateSelectionRef.current = policyGateSelection
+  const policyGateHistoryQuery = JSON.stringify([
+    data.repositories.map(repository => [repository.id, repository.lastScanRevision ?? '']),
+    policyGateSelection,
+  ])
+  const policyGateHistoryQueryRef = useRef(policyGateHistoryQuery)
+  policyGateHistoryQueryRef.current = policyGateHistoryQuery
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
   const [performanceDispatch, setPerformanceDispatch] = useState<{
     artifactId: string
@@ -3894,6 +3900,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const loadMorePolicyGates = async () => {
     const cursors = Object.entries(policyGateNextCursors)
     if (!cursors.length) return
+    const selectionQuery = policyGateHistoryQueryRef.current
     setLoadingMorePolicyGates(true)
     setHistoryPaginationError(undefined)
     try {
@@ -3911,9 +3918,30 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         ))
         return { repositoryId, page }
       }))
-      setPolicyGateEvaluations(current => [...new Map(
-        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
-      ).values()])
+      if (policyGateHistoryQueryRef.current !== selectionQuery) return
+      const evaluations = [...new Map(
+        [...policyGateEvaluations, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+      ).values()]
+      let historicalArtifacts: QualityArtifact[] = []
+      let omittedHistoricalRevisions = 0
+      if (policyGateRevisionScope === 'all') {
+        const evidenceSelection = historicalEvidenceSelection(
+          evaluations,
+          data.repositories,
+        )
+        omittedHistoricalRevisions = evidenceSelection.omitted
+        historicalArtifacts = (await Promise.all(
+          evidenceSelection.selected.map(({ repositoryId, revision }) =>
+            api.qualityArtifacts(repositoryId, revision)
+              .then(response => normalizeHistoryPage(response).items)
+              .catch(() => [])
+          )
+        )).flat()
+        if (policyGateHistoryQueryRef.current !== selectionQuery) return
+      }
+      setPolicyGateEvaluations(evaluations)
+      setGovernanceEvidenceArtifacts(historicalArtifacts)
+      setOmittedGovernanceEvidenceRevisions(omittedHistoricalRevisions)
       setPolicyGateNextCursors(Object.fromEntries(
         groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
       ))

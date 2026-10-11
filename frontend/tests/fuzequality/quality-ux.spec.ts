@@ -671,6 +671,60 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
   })
 
+  test('loads artifact context for governance revisions introduced by continuation', async ({ page }) => {
+    const historicalEvaluation = {
+      ...policyGateEvaluations[0],
+      id: 'evaluation-historical',
+      revision: 'historical-governance-revision',
+      title: 'Historical suspension policy finding',
+      policyArtifactIds: ['historical-policy-artifact'],
+      createdAt: '2026-10-07T09:30:00.000Z',
+    }
+    const historicalArtifact = {
+      ...qualityArtifacts[5],
+      id: 'historical-policy-artifact',
+      title: 'Historical administrative suspension policy',
+      sourcePath: 'docs/policies/historical-apps.md',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(url.searchParams.get('revision')
+            ? policyGateEvaluations
+            : url.searchParams.get('cursor')
+              ? { items: [historicalEvaluation], page: { nextCursor: null, hasMore: false } }
+              : { items: policyGateEvaluations, page: { nextCursor: 'policy-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(url.searchParams.get('revision') === historicalEvaluation.revision
+            ? [historicalArtifact]
+            : qualityArtifacts),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByLabel('Governance revision').selectOption('all')
+    await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
+
+    const evidence = page.getByLabel(`${historicalEvaluation.title} evidence`)
+    await expect(evidence.getByText(historicalArtifact.title, { exact: true })).toBeVisible()
+    await expect(evidence.getByText(`policy · ${historicalArtifact.sourcePath}`, { exact: true })).toBeVisible()
+    await expect(evidence.getByText(historicalArtifact.id, { exact: true })).toHaveCount(0)
+  })
+
   test('continues bounded repository evidence only after explicit review', async ({ page }) => {
     const cursors: Array<string | null> = []
     await page.route(
