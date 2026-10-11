@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-${{ github.workflow }}-${{ github.ref }}
+  group: android-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -69,7 +69,6 @@ jobs:
           test -n "$KEYSTORE_B64" || { echo "ANDROID_KEYSTORE_B64 is required for release builds" >&2; exit 1; }
           mkdir -p android/keystore
           printf '%s' "$KEYSTORE_B64" | base64 -d > android/keystore/product-release.keystore
-
       - name: Create ephemeral keystore for test build
         if: env.RELEASE_BUILD != 'true'
         run: |

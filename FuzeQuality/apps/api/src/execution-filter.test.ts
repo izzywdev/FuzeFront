@@ -1,0 +1,22 @@
+import { describe, expect, it } from 'vitest'
+import { executionFilterSchema } from './execution-filter'
+
+describe('execution evidence filter', () => {
+  it('accepts a chronological ISO-8601 range', () => {
+    expect(executionFilterSchema.safeParse({
+      kind: 'post-production',
+      status: 'failed',
+      from: '2026-10-01T00:00:00.000Z',
+      until: '2026-10-08T00:00:00.000Z',
+    }).success).toBe(true)
+  })
+
+  it('rejects an inverted time range instead of returning misleading empty evidence', () => {
+    const result = executionFilterSchema.safeParse({
+      from: '2026-10-08T00:00:00.000Z',
+      until: '2026-10-01T00:00:00.000Z',
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error.flatten().fieldErrors.until).toContain('until must be greater than or equal to from')
+  })
+})
