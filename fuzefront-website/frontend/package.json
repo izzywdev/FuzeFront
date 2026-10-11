@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@fuzefront/design-system": "file:./vendor-design-system",
-    "axios": "^1.19.0",
+    "axios": "^1.20.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.468.0",
