@@ -54,6 +54,10 @@
       "sourcePath": "components/core/IconTile.jsx"
     },
     {
+      "name": "InlineLink",
+      "sourcePath": "components/core/InlineLink.jsx"
+    },
+    {
       "name": "Text",
       "sourcePath": "components/core/Text.jsx"
     },

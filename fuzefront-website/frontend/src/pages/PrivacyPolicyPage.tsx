@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Shield } from 'lucide-react'
-import { IconTile, Container } from '@fuzefront/design-system'
+import { IconTile, Container, InlineLink } from '@fuzefront/design-system'
 
 export const PrivacyPolicyPage: React.FC = () => {
   return (
@@ -18,9 +18,9 @@ export const PrivacyPolicyPage: React.FC = () => {
           <p className="text-gray-600">Last updated: September 2026</p>
           <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull;{' '}
-            <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">
+            <InlineLink href="mailto:privacy@fuzefront.com">
               privacy@fuzefront.com
-            </a>
+            </InlineLink>
           </p>
         </div>
 
@@ -122,7 +122,7 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <li>Opt out of the sale of personal information (we do not sell personal information)</li>
                 <li>Non-discrimination for exercising your rights</li>
               </ul>
-              <p className="mt-3">To exercise any of these rights, contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">privacy@fuzefront.com</a>.</p>
+              <p className="mt-3">To exercise any of these rights, contact us at <InlineLink href="mailto:privacy@fuzefront.com">privacy@fuzefront.com</InlineLink>.</p>
             </section>
 
             <section>
@@ -164,7 +164,7 @@ export const PrivacyPolicyPage: React.FC = () => {
             <section>
               <h2 className="text-xl font-bold text-gray-900 mb-4">10. Children's Privacy</h2>
               <p>
-                Our services are not directed to individuals under 16 years of age. We do not knowingly collect personal information from children under 16. If you become aware that a child has provided us with personal information, please contact us at <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">privacy@fuzefront.com</a> and we will take steps to delete such information.
+                Our services are not directed to individuals under 16 years of age. We do not knowingly collect personal information from children under 16. If you become aware that a child has provided us with personal information, please contact us at <InlineLink href="mailto:privacy@fuzefront.com">privacy@fuzefront.com</InlineLink> and we will take steps to delete such information.
               </p>
             </section>
 
@@ -182,9 +182,9 @@ export const PrivacyPolicyPage: React.FC = () => {
                 <p className="font-semibold text-gray-900">FuzeOne, Inc.</p>
                 <p className="text-gray-600 mt-1">Attention: Privacy Team</p>
                 <p className="mt-2">
-                  <a href="mailto:privacy@fuzefront.com" className="text-primary-700 hover:underline">
+                  <InlineLink href="mailto:privacy@fuzefront.com">
                     privacy@fuzefront.com
-                  </a>
+                  </InlineLink>
                 </p>
               </div>
             </section>
