@@ -81,6 +81,8 @@ describe('test execution evidence', () => {
 
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
+    expect(String(sql)).toContain('COALESCE(completed_at,started_at) IS NOT NULL')
+    expect(String(sql)).not.toContain("COALESCE(completed_at,started_at,'epoch'::timestamptz)")
     expect(String(sql)).toContain("AT TIME ZONE 'UTC'")
     expect(String(sql)).toContain("count(*) FILTER (WHERE status='failed')")
     expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, null, '2026-10-11', 51])

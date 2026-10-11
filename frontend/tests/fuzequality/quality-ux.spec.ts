@@ -671,7 +671,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
   })
 
-  test('loads every bounded repository evidence page before presenting reviewed analysis', async ({ page }) => {
+  test('continues bounded repository evidence only after explicit review', async ({ page }) => {
     const cursors: Array<string | null> = []
     await page.route(
       url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
@@ -698,6 +698,10 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
 
     await expect(page.getByText('Initial evidence', { exact: true })).toBeVisible()
+    await expect(page.getByText('Continuation evidence', { exact: true })).toHaveCount(0)
+    expect(cursors.length).toBeGreaterThan(0)
+    expect(cursors.every(cursor => cursor === null)).toBe(true)
+    await page.getByRole('button', { name: 'Load more repository evidence' }).click()
     await expect(page.getByText('Continuation evidence', { exact: true })).toBeVisible()
     expect(cursors[0]).toBeNull()
     expect(cursors).toContain('artifact-page-2')

@@ -1109,23 +1109,24 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}): Promise<ExecutionOutcomeTrend[]> {
     const result = await this.pool.query(
-      `SELECT to_char((COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
+      `SELECT to_char((COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
               count(*) FILTER (WHERE status='passed')::integer AS passed,
               count(*) FILTER (WHERE status='failed')::integer AS failed,
               count(*) FILTER (WHERE status='cancelled')::integer AS cancelled,
               count(*) FILTER (WHERE status='running')::integer AS running
        FROM fuzequality.test_executions
        WHERE repository_id=$1 AND tenant_id=$2
+         AND COALESCE(completed_at,started_at) IS NOT NULL
          AND ($3::text IS NULL OR kind=$3)
          AND ($4::text IS NULL OR status=$4)
          AND ($5::text IS NULL OR provider=$5)
          AND ($6::text IS NULL OR revision=$6)
          AND ($7::text IS NULL OR workflow_path=$7)
-         AND ($8::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) >= $8)
-         AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) <= $9)
-         AND ($10::date IS NULL OR (COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date < $10)
-       GROUP BY (COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date
-       ORDER BY (COALESCE(completed_at,started_at,'epoch'::timestamptz) AT TIME ZONE 'UTC')::date DESC
+         AND ($8::timestamptz IS NULL OR COALESCE(completed_at,started_at) >= $8)
+         AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at) <= $9)
+         AND ($10::date IS NULL OR (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date < $10)
+       GROUP BY (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date
+       ORDER BY (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date DESC
        LIMIT COALESCE($11::integer, 2147483647)`,
       [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.limit ?? null],
     )

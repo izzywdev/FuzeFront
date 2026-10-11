@@ -747,6 +747,28 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText(testPlanArtifact.title)).toBeVisible()
   })
 
+  it('loads only the first repository evidence page until explicit continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.qualityArtifacts)
+      .mockResolvedValueOnce({
+        items: [{ ...documentationArtifact, id: 'documentation-page-1', title: 'Initial evidence' }],
+        page: { nextCursor: 'artifact-page-2', hasMore: true },
+      })
+      .mockResolvedValueOnce({
+        items: [{ ...documentationArtifact, id: 'documentation-page-2', title: 'Continuation evidence' }],
+        page: { nextCursor: null, hasMore: false },
+      })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText('Initial evidence', { exact: true })).toBeVisible()
+    expect(screen.queryByText('Continuation evidence', { exact: true })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more repository evidence' }))
+    expect(await screen.findByText('Continuation evidence', { exact: true })).toBeVisible()
+    expect(api.qualityArtifacts).toHaveBeenLastCalledWith(repository.id, undefined, 'artifact-page-2')
+  })
+
   it('renders repeated test titles as separate evidence plans', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([

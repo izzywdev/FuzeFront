@@ -3181,6 +3181,9 @@ export function flowCandidateMatchesInventory(
 
 export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
+  const [artifactNextCursors, setArtifactNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreArtifacts, setLoadingMoreArtifacts] = useState(false)
+  const [artifactPaginationError, setArtifactPaginationError] = useState<string>()
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
@@ -3430,13 +3433,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   ])
   const executionTrendQueryRef = useRef(executionTrendQuery)
   executionTrendQueryRef.current = executionTrendQuery
+  const artifactQuery = JSON.stringify(data.repositories.map(repository => [
+    repository.id,
+    repository.lastScanRevision ?? '',
+  ]))
+  const artifactQueryRef = useRef(artifactQuery)
+  artifactQueryRef.current = artifactQuery
   useEffect(() => {
     let active = true
+    setArtifactNextCursors({})
+    setArtifactPaginationError(undefined)
+    setLoadingMoreArtifacts(false)
     setPolicyGateNextCursors({})
     setHistoryPaginationError(undefined)
     void Promise.all(
       data.repositories.map(async repository => {
-        const [repositoryArtifacts, evaluationResponse] = await Promise.all([
+        const [repositoryArtifactsResponse, evaluationResponse] = await Promise.all([
           api.qualityArtifacts(repository.id),
           policyGateRevisionScope === 'current' &&
           !repository.lastScanRevision
@@ -3456,6 +3468,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 )
               ),
         ])
+        const repositoryArtifacts = normalizeHistoryPage(repositoryArtifactsResponse)
         const evaluations = normalizeHistoryPage(evaluationResponse)
         const historicalGovernanceRevisions = policyGateRevisionScope === 'all'
           ? [...new Set(evaluations.items.map(evaluation => evaluation.revision))]
@@ -3464,13 +3477,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         const historicalGovernanceArtifacts = (await Promise.all(
           historicalGovernanceRevisions
             .slice(0, MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS)
-            .map(revision => api.qualityArtifacts(repository.id, revision).catch(() => []))
+            .map(revision => api.qualityArtifacts(repository.id, revision)
+              .then(response => normalizeHistoryPage(response).items)
+              .catch(() => []))
         )).flat()
-        const hasPerformanceDefinitions = repositoryArtifacts.some(artifact =>
-          ['load-test', 'stress-test'].includes(artifact.kind)
-        )
         return {
-          artifacts: repositoryArtifacts,
+          artifacts: repositoryArtifacts.items,
+          artifactNextCursor: repositoryArtifacts.page.nextCursor,
           historicalGovernanceArtifacts,
           omittedGovernanceEvidenceRevisions: Math.max(
             0,
@@ -3478,12 +3491,6 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           ),
           evaluations: evaluations.items,
           nextCursor: evaluations.page.nextCursor,
-          performanceExecutions: hasPerformanceDefinitions
-            ? await api.testExecutions(repository.id).then(
-                response => ({ executions: normalizeHistoryPage(response).items, failed: false }),
-                () => ({ executions: [], failed: true })
-              )
-            : { executions: [], failed: false },
           repositoryId: repository.id,
         }
       })
@@ -3491,6 +3498,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       .then(groups => {
         if (active) {
           setArtifacts(groups.flatMap(group => group.artifacts))
+          setArtifactNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.artifactNextCursor
+              ? [[group.repositoryId, group.artifactNextCursor]]
+              : [])
+          ))
           setGovernanceEvidenceArtifacts(groups.flatMap(group => group.historicalGovernanceArtifacts))
           setOmittedGovernanceEvidenceRevisions(groups.reduce(
             (total, group) => total + group.omittedGovernanceEvidenceRevisions,
@@ -3500,23 +3512,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setPolicyGateNextCursors(Object.fromEntries(
             groups.flatMap(group => group.nextCursor ? [[group.repositoryId, group.nextCursor]] : [])
           ))
-          setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions.executions))
-          setPerformanceEvidenceFailures(
-            groups
-              .filter(group => group.performanceExecutions.failed)
-              .map(group => group.repositoryId)
-          )
         }
       })
       .catch(() => {
         if (active) {
           setArtifacts([])
+          setArtifactNextCursors({})
           setGovernanceEvidenceArtifacts([])
           setOmittedGovernanceEvidenceRevisions(0)
           setPolicyGateEvaluations([])
           setPolicyGateNextCursors({})
-          setPerformanceExecutions([])
-          setPerformanceEvidenceFailures([])
         }
       })
       .finally(() => {
@@ -3532,6 +3537,34 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     policyGateReviewStatus,
     policyGateSeverity,
   ])
+  const loadMoreArtifacts = async () => {
+    const cursors = Object.entries(artifactNextCursors)
+    if (!cursors.length) return
+    const query = artifactQueryRef.current
+    setLoadingMoreArtifacts(true)
+    setArtifactPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.qualityArtifacts(repositoryId, undefined, cursor)),
+      })))
+      if (artifactQueryRef.current !== query) return
+      setArtifacts(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+      ).values()])
+      setArtifactNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor
+          ? [[group.repositoryId, group.page.page.nextCursor]]
+          : [])
+      ))
+    } catch (cause) {
+      if (artifactQueryRef.current === query) {
+        setArtifactPaginationError(cause instanceof Error ? cause.message : 'Unable to load more repository evidence.')
+      }
+    } finally {
+      if (artifactQueryRef.current === query) setLoadingMoreArtifacts(false)
+    }
+  }
   useEffect(() => {
     let active = true
     setLoadingFlows(true)
@@ -3608,7 +3641,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
     setOmittedFlowEvidenceRevisions(selection.omitted)
     const requests = selection.selected.map(({ repositoryId, revision }) =>
-      api.qualityArtifacts(repositoryId, revision).catch(() => [])
+      api.qualityArtifacts(repositoryId, revision)
+        .then(response => normalizeHistoryPage(response).items)
+        .catch(() => [])
     )
     void Promise.all(requests).then(
       groups => { if (active) setFlowEvidenceArtifacts(groups.flat()) },
@@ -3630,6 +3665,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setExecutionPerformanceFailures([])
     if (invalidExecutionRange) {
       setExecutions([])
+      setPerformanceExecutions([])
+      setPerformanceEvidenceFailures([])
       setExecutionPerformance([])
       setExecutionTrends([])
       return () => {
@@ -3673,7 +3710,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
       .then(groups => {
         if (active) {
-          setExecutions(groups.flatMap(group => group.executions.items))
+          const loadedExecutions = groups.flatMap(group => group.executions.items)
+          setExecutions(loadedExecutions)
+          setPerformanceExecutions(loadedExecutions.filter(execution =>
+            execution.kind === 'load' || execution.kind === 'stress'
+          ))
+          setPerformanceEvidenceFailures(groups
+            .filter(group => group.executionFailed)
+            .map(group => group.repositoryId))
           setExecutionNextCursors(Object.fromEntries(
             groups.flatMap(group => group.executions.page.nextCursor
               ? [[group.repositoryId, group.executions.page.nextCursor]]
@@ -3699,6 +3743,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       .catch(() => {
         if (active) {
           setExecutions([])
+          setPerformanceExecutions([])
+          setPerformanceEvidenceFailures(data.repositories.map(repository => repository.id))
           setExecutionNextCursors({})
           setExecutionPerformance([])
           setExecutionTrends([])
@@ -3760,8 +3806,15 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           cursor,
         })),
       })))
+      const continuedExecutions = groups.flatMap(group => group.page.items)
       setExecutions(current => [...new Map(
-        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+        [...current, ...continuedExecutions].map(item => [item.id, item])
+      ).values()])
+      setPerformanceExecutions(current => [...new Map(
+        [
+          ...current,
+          ...continuedExecutions.filter(execution => execution.kind === 'load' || execution.kind === 'stress'),
+        ].map(item => [item.id, item])
       ).values()])
       setExecutionNextCursors(Object.fromEntries(
         groups.flatMap(group => group.page.page.nextCursor
@@ -4016,6 +4069,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             onPromptVersionChange={setFlowPromptVersion}
             onSchemaVersionChange={setFlowSchemaVersion}
           />
+          {Object.keys(artifactNextCursors).length > 0 && (
+            <QualityAction
+              intent="quiet"
+              onClick={() => void loadMoreArtifacts()}
+              disabled={loadingMoreArtifacts}
+            >
+              {loadingMoreArtifacts ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+              Load more repository evidence
+            </QualityAction>
+          )}
+          {artifactPaginationError && (
+            <p className="form-error" role="alert">{artifactPaginationError}</p>
+          )}
           <div
             className="catalog-filters"
             aria-label="Policy and gate finding filters"
