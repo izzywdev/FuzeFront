@@ -4,6 +4,7 @@ import type { QualityArtifact, Repository, TestExecution } from '@fuzequality/co
 export function performanceWorkflowTarget(artifact: QualityArtifact): string | undefined {
   if (!['load-test', 'stress-test'].includes(artifact.kind)) return undefined
   if (artifact.execution?.provider !== 'github-actions' || artifact.execution.trigger !== 'workflow_dispatch') return undefined
+  if (artifact.execution.requiredInputs?.length) return undefined
   if (artifact.execution.workflowPath !== artifact.sourcePath) return undefined
   if (!artifact.sourcePath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(artifact.sourcePath)) return undefined
   return artifact.sourcePath

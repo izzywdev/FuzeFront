@@ -59,7 +59,7 @@ const OPENAPI_CONFIG_GLOBS = [
   '**/*swagger*.{ts,js,mjs,cjs}',
 ]
 
-export const SCANNER_VERSION = '1.8.0'
+export const SCANNER_VERSION = '1.9.0'
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -102,9 +102,32 @@ function performanceWorkflowMetadata(
     const dispatchable = triggers === 'workflow_dispatch' ||
       (Array.isArray(triggers) && triggers.includes('workflow_dispatch')) ||
       (typeof triggers === 'object' && triggers !== null && 'workflow_dispatch' in triggers)
+    const dispatchConfiguration = typeof triggers === 'object' && triggers !== null && !Array.isArray(triggers)
+      ? (triggers as Record<string, unknown>).workflow_dispatch
+      : undefined
+    const dispatchInputs = typeof dispatchConfiguration === 'object' && dispatchConfiguration !== null && !Array.isArray(dispatchConfiguration)
+      ? (dispatchConfiguration as Record<string, unknown>).inputs
+      : undefined
+    const requiredInputs = typeof dispatchInputs === 'object' && dispatchInputs !== null && !Array.isArray(dispatchInputs)
+      ? Object.entries(dispatchInputs as Record<string, unknown>)
+          .filter(([, value]) => {
+            if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+            const input = value as Record<string, unknown>
+            return input.required === true && !Object.hasOwn(input, 'default')
+          })
+          .map(([name]) => name)
+          .sort()
+      : []
     return {
       kind: reviewedKind === 'load' ? 'load-test' : 'stress-test',
-      ...(dispatchable ? { execution: { provider: 'github-actions', workflowPath: sourcePath, trigger: 'workflow_dispatch' } as const } : {}),
+      ...(dispatchable ? {
+        execution: {
+          provider: 'github-actions',
+          workflowPath: sourcePath,
+          trigger: 'workflow_dispatch',
+          ...(requiredInputs.length ? { requiredInputs } : {}),
+        } as const,
+      } : {}),
     }
   } catch {
     return undefined

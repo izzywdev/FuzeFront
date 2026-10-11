@@ -110,8 +110,9 @@ describe('controlled performance workflow dispatch', () => {
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
     await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).resolves.toEqual({ ref: 'main', sourceRevision })
     expect(fetcher).toHaveBeenNthCalledWith(1, expect.stringContaining('/branches/main'), expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer secret' }) }))
-    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('/actions/workflows/.github%2Fworkflows%2Fload-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'main' }) }))
+    expect(fetcher).toHaveBeenNthCalledWith(2, expect.stringContaining('/actions/workflows/load-test.yml/dispatches'), expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: 'main' }) }))
     await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '../workflow.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
+    await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision, sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/nested/load.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('Only a scanned')
     await expect(dispatchPerformanceWorkflow({ owner: 'fuze', name: 'sample', sourceRevision: 'main', sourceRef: 'main', installationId: '1234', workflowPath: '.github/workflows/load-test.yml', tokenProvider: async () => 'secret', fetcher })).rejects.toThrow('exact analyzed commit')
   })
 

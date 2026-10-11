@@ -417,6 +417,8 @@ export type QualityArtifact = {
     provider: 'github-actions'
     workflowPath: string
     trigger: 'workflow_dispatch'
+    /** Required workflow inputs that have no repository-defined default. */
+    requiredInputs?: string[]
   }
 }
 

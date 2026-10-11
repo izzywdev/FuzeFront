@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { importPKCS8, SignJWT } from 'jose'
 import { GITHUB_APP_PERMISSIONS } from '@fuzequality/github-app'
@@ -150,7 +150,7 @@ export async function dispatchPerformanceWorkflow(input: {
   if (!isGithubBranchName(input.sourceRef)) {
     throw new Error('A valid analyzed branch is required for performance dispatch')
   }
-  if (!input.workflowPath.startsWith('.github/workflows/') || !/\.ya?ml$/i.test(input.workflowPath) || input.workflowPath.includes('..')) {
+  if (!/^\.github\/workflows\/[^/]+\.ya?ml$/i.test(input.workflowPath)) {
     throw new Error('Only a scanned .github/workflows YAML performance workflow may be dispatched')
   }
   const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
@@ -166,7 +166,7 @@ export async function dispatchPerformanceWorkflow(input: {
     throw new Error('Analyzed branch has advanced; rescan the repository before dispatch')
   }
   const response = await fetchGithub(
-    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(input.workflowPath)}/dispatches`,
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/workflows/${encodeURIComponent(basename(input.workflowPath))}/dispatches`,
     {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },

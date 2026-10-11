@@ -64,6 +64,7 @@ describe('repository scanner', () => {
     await writeFile(join(root, '.github', 'workflows', 'load-test.yml'), 'name: Invalid legacy marker\nx-fuzequality-performance: load\non: workflow_dispatch\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh')
     await writeFile(join(root, '.github', 'workflows', 'stress.yml'), 'name: Stress test\nenv:\n  FUZEQUALITY_PERFORMANCE: stress\non: [workflow_dispatch]\njobs:\n  stress:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:stress')
     await writeFile(join(root, '.github', 'workflows', 'nightly-benchmark.yml'), 'name: Nightly benchmark\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non: workflow_dispatch\njobs:\n  benchmark:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run benchmark')
+    await writeFile(join(root, '.github', 'workflows', 'parameterized-load.yml'), 'name: Parameterized load\nenv:\n  FUZEQUALITY_PERFORMANCE: load\non:\n  workflow_dispatch:\n    inputs:\n      environment:\n        required: true\n        type: string\n      duration:\n        required: true\n        default: 5m\n        type: string\njobs:\n  load:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm run test:load')
     await writeFile(join(root, 'src', 'loader.ts'), 'export const loader = () => "production"')
     await writeFile(join(root, 'src', 'performanceConfig.js'), 'export const budget = 100')
     await writeFile(join(root, 'app', 'loading.ts'), 'export default function Loading() {}')
@@ -108,6 +109,16 @@ describe('repository scanner', () => {
         },
       }),
       expect.objectContaining({ kind: 'gate', sourcePath: '.github/workflows/nightly-benchmark.yml' }),
+      expect.objectContaining({
+        kind: 'load-test',
+        sourcePath: '.github/workflows/parameterized-load.yml',
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/parameterized-load.yml',
+          trigger: 'workflow_dispatch',
+          requiredInputs: ['environment'],
+        },
+      }),
       expect.objectContaining({ kind: 'story', sourcePath: 'stories/Checkout.stories.tsx' }),
       expect.objectContaining({ kind: 'test-plan', sourcePath: 'tests/checkout.spec.ts' }),
     ]))
@@ -207,7 +218,7 @@ paths:
     expect(result.expectations.find(item => item.kind === 'response-200')?.coverage).toBe('gap')
     expect(result.scanDetails).toMatchObject({
       sourceRevision: 'a'.repeat(40),
-      scannerVersion: '1.8.0',
+      scannerVersion: '1.9.0',
       partial: false,
       counts: {
         operations: 1,

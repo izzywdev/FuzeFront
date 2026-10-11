@@ -518,6 +518,25 @@ describe('RepositoryIntelligence flow inventory', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('keeps workflows with unresolved required inputs inventory-only', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([{
+      ...loadArtifact,
+      execution: {
+        ...loadArtifact.execution!,
+        requiredInputs: ['environment', 'duration'],
+      },
+    }])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(/required workflow inputs/)).toHaveTextContent(
+      'environment, duration',
+    )
+    expect(screen.queryByRole('button', { name: /Run analyzed revision/ })).not.toBeInTheDocument()
+  })
+
   it('does not offer dispatch without an immutable analyzed source revision', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([loadArtifact])

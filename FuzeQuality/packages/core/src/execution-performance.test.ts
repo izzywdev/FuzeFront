@@ -29,6 +29,7 @@ describe('execution performance', () => {
     expect(performanceWorkflowTarget(artifact)).toBe('.github/workflows/load.yml')
     expect(performanceWorkflowTarget({ ...artifact, execution: undefined })).toBeUndefined()
     expect(performanceWorkflowTarget({ ...artifact, execution: { ...artifact.execution, workflowPath: '.github/workflows/other.yml' } })).toBeUndefined()
+    expect(performanceWorkflowTarget({ ...artifact, execution: { ...artifact.execution, requiredInputs: ['environment'] } })).toBeUndefined()
   })
 
   it('aggregates only explicit policy-gate execution pairs', () => {

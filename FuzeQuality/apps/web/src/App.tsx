@@ -3943,6 +3943,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                           )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
                             item.execution?.trigger === 'workflow_dispatch' &&
+                            !item.execution.requiredInputs?.length &&
                             analyzedRevision && (
                               <div className="row-actions">
                                 <button
@@ -3958,6 +3959,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </div>
                             )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
+                            item.execution?.requiredInputs?.length ? (
+                              <small className="performance-inventory-only">
+                                Inventory only · required workflow inputs need
+                                repository defaults before controlled dispatch:{' '}
+                                {item.execution.requiredInputs.join(', ')}.
+                              </small>
+                            ) : null}
+                          {['load-test', 'stress-test'].includes(item.kind) &&
                             !item.execution && (
                               <small className="performance-inventory-only">
                                 Inventory only · a repository-owned
@@ -3969,6 +3978,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             )}
                           {['load-test', 'stress-test'].includes(item.kind) &&
                             item.execution &&
+                            !item.execution.requiredInputs?.length &&
                             !analyzedRevision && (
                               <small className="performance-inventory-only">
                                 Inventory only · run repository analysis at an

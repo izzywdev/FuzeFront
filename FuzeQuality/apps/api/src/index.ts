@@ -588,6 +588,11 @@ app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRu
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   const artifact = (await store.qualityArtifacts(repositoryId, tenantId, repository.lastScanRevision)).find(item => item.id === parsed.data.artifactId)
   if (!artifact || !['load-test', 'stress-test'].includes(artifact.kind)) return response.status(404).json({ error: 'Performance test not found' })
+  if (artifact.execution?.requiredInputs?.length) return response.status(422).json({
+    error: `Workflow requires repository defaults for: ${artifact.execution.requiredInputs.join(', ')}`,
+    code: 'PERFORMANCE_WORKFLOW_INPUTS_REQUIRED',
+    requiredInputs: artifact.execution.requiredInputs,
+  })
   const workflowPath = performanceWorkflowTarget(artifact)
   if (!workflowPath) return response.status(422).json({ error: 'Performance definition is not a scanner-verified workflow_dispatch workflow', code: 'PERFORMANCE_WORKFLOW_NOT_DISPATCHABLE' })
   const sourceRevision = performanceDispatchRevision(repository)
