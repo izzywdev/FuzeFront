@@ -614,6 +614,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         gateArtifactId: 'gate-auth',
         gateTitle: 'Authentication gate',
         gateSourcePath: '.github/workflows/auth.yml',
+        revisions: ['historical-source-revision'],
         passed: 3,
         failed: 1,
         cancelled: 0,
@@ -626,6 +627,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByText('Authentication policy → Authentication gate')).toBeVisible()
     expect(screen.getByLabelText('Evidence repository')).toHaveTextContent('fuze/front')
     expect(screen.getByText('governance/auth.md → .github/workflows/auth.yml')).toBeVisible()
+    expect(screen.getByText('Source revision historical-s')).toHaveAttribute('title', 'historical-source-revision')
     expect(screen.getByText(/3 passed · 1 failed/)).toBeVisible()
   })
 

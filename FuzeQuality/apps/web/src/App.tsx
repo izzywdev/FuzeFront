@@ -4273,6 +4273,13 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       ? `Last completed ${new Date(pair.latestCompletedAt).toLocaleString()}`
                       : 'No completed run yet'}
                   </small>
+                  {pair.revisions?.length ? (
+                    <small title={pair.revisions.join(', ')}>
+                      {pair.revisions.length === 1
+                        ? `Source revision ${pair.revisions[0].slice(0, 12)}`
+                        : `Observed across ${pair.revisions.length} source revisions`}
+                    </small>
+                  ) : null}
                   {(pair.policySourcePath || pair.gateSourcePath) && (
                     <small>
                       {pair.policySourcePath ?? pair.policyArtifactId} →{' '}

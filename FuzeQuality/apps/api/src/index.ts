@@ -25,6 +25,7 @@ import {
   relayOutboxBatch,
   repositoryCatalogStatus,
 } from '@fuzequality/core'
+import { artifactsForExecutionRevisions } from './execution-performance-artifacts'
 import { scanRepository } from '@fuzequality/scanner'
 import {
   githubWebhookHeadersSchema,
@@ -565,11 +566,18 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   const filter = executionFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  const [executions, artifacts] = await Promise.all([
-    store.testExecutions(repositoryId, tenantId),
-    store.qualityArtifacts(repositoryId, tenantId),
-  ])
-  response.json(executionPerformance(filterTestExecutions(executions, filter.data), artifacts))
+  const executions = filterTestExecutions(
+    await store.testExecutions(repositoryId, tenantId),
+    filter.data,
+  )
+  const artifacts = await artifactsForExecutionRevisions(
+    repositoryId,
+    executions,
+    tenantId,
+    (id, tenant, sourceRevision) => store.catalogRevisionForSource(id, tenant, sourceRevision),
+    (id, tenant, catalogRevision) => store.qualityArtifacts(id, tenant, catalogRevision),
+  )
+  response.json(executionPerformance(executions, artifacts))
 })
 app.post('/api/v1/repositories/:id/performance-tests/:artifactId/execute', mayRunExecution, async (request, response) => {
   const parsed = performanceTestRequestSchema.safeParse({ artifactId: request.params.artifactId })

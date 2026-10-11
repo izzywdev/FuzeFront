@@ -25,6 +25,8 @@ export type PolicyGatePerformance = {
   gateArtifactId: string
   gateTitle?: string
   gateSourcePath?: string
+  /** Source commits represented by this aggregate; omitted by legacy APIs. */
+  revisions?: string[]
   passed: number
   failed: number
   cancelled: number
@@ -89,11 +91,14 @@ export function executionPerformance(executions: TestExecution[], artifacts: Qua
         ...(policy?.kind === 'policy' ? { policyTitle: policy.title, policySourcePath: policy.sourcePath } : {}),
         gateArtifactId: evaluation.gateArtifactId,
         ...(gate?.kind === 'gate' ? { gateTitle: gate.title, gateSourcePath: gate.sourcePath } : {}),
+        revisions: [],
         passed: 0,
         failed: 0,
         cancelled: 0,
         running: 0,
       }
+      current.revisions ??= []
+      if (!current.revisions.includes(execution.revision)) current.revisions.push(execution.revision)
       current[evaluation.status]++
       if (execution.completedAt && (!current.latestCompletedAt || execution.completedAt > current.latestCompletedAt)) current.latestCompletedAt = execution.completedAt
       results.set(key, current)
