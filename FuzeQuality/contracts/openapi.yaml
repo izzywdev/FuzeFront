@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.5.0
+  version: 0.6.0
   license:
     name: UNLICENSED
 servers:
@@ -469,6 +469,11 @@ paths:
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: Policy/gate references cannot be proven against the execution's exact analyzed revision.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionEvidenceConflict' }
 
   /api/v1/repositories/{repositoryId}/test-executions:
     parameters:
@@ -928,6 +933,22 @@ components:
           default: []
           items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         summary: { type: string, maxLength: 5000 }
+    ExecutionEvidenceConflict:
+      type: object
+      additionalProperties: false
+      required: [ok, code, error]
+      properties:
+        ok: { type: boolean, enum: [false] }
+        code:
+          type: string
+          enum: [EXECUTION_EVIDENCE_REVISION_UNANALYZED, EXECUTION_EVIDENCE_REFERENCE_INVALID]
+        error: { type: string }
+        invalidPolicyArtifactIds:
+          type: array
+          items: { type: string }
+        invalidGateArtifactIds:
+          type: array
+          items: { type: string }
     TestExecution:
       type: object
       required: [id, repositoryId, tenantId, provider, externalRunId, attempt, revision, kind, status, name, policyArtifactIds, gateArtifactIds, gateEvaluations, thresholds, evidenceLinks]

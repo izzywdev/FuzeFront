@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { testExecutionInputSchema } from '@fuzequality/contracts'
-import { executionRecord, linkExecutionToRevisionArtifacts } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
   it('links workflow evidence from the execution source revision only', async () => {
@@ -50,6 +50,130 @@ describe('internal execution ingestion compatibility', () => {
       loadArtifacts,
     )).resolves.toEqual({ policyArtifactIds: [], gateArtifactIds: [] })
     expect(loadArtifacts).not.toHaveBeenCalled()
+  })
+
+  it('rejects explicit evidence when the execution revision was not analyzed', async () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'unscanned-commit',
+      kind: 'post-production',
+      status: 'failed',
+      name: 'Production smoke tests',
+      policyArtifactIds: ['policy-auth'],
+    })
+
+    await expect(prepareExecutionEvidence(
+      input,
+      vi.fn().mockResolvedValue(undefined),
+      vi.fn(),
+    )).resolves.toMatchObject({
+      ok: false,
+      code: 'EXECUTION_EVIDENCE_REVISION_UNANALYZED',
+    })
+  })
+
+  it('rejects missing and wrong-kind evidence references from the exact revision', async () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'ci',
+      status: 'failed',
+      name: 'CI',
+      gateEvaluations: [{
+        policyArtifactId: 'gate-not-policy',
+        gateArtifactId: 'missing-gate',
+        status: 'failed',
+      }],
+    })
+
+    await expect(prepareExecutionEvidence(
+      input,
+      vi.fn().mockResolvedValue('catalog-abc123'),
+      vi.fn().mockResolvedValue([{
+        id: 'gate-not-policy',
+        repositoryId: input.repositoryId,
+        kind: 'gate',
+        title: 'CI gate',
+        sourcePath: '.github/workflows/ci.yml',
+        summary: 'CI gate',
+        evidence: [],
+      }]),
+    )).resolves.toEqual({
+      ok: false,
+      code: 'EXECUTION_EVIDENCE_REFERENCE_INVALID',
+      error: 'Policy/gate evidence does not belong to the execution revision',
+      invalidPolicyArtifactIds: ['gate-not-policy'],
+      invalidGateArtifactIds: ['missing-gate'],
+    })
+  })
+
+  it('auto-links unclaimed execution evidence from the exact analyzed revision', async () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'post-production',
+      status: 'passed',
+      name: 'Production smoke tests',
+      workflowPath: '.github/workflows/post-prod.yml',
+    })
+    const artifacts = [
+      {
+        id: 'policy-auth', repositoryId: input.repositoryId, kind: 'policy' as const,
+        title: 'Authentication policy', sourcePath: 'POLICIES.md',
+        summary: 'Authentication policy', evidence: ['Production smoke tests'],
+      },
+      {
+        id: 'gate-auth', repositoryId: input.repositoryId, kind: 'gate' as const,
+        title: 'Production smoke tests', sourcePath: '.github/workflows/post-prod.yml',
+        summary: 'Production smoke tests', evidence: ['Production smoke tests'],
+      },
+    ]
+
+    await expect(prepareExecutionEvidence(
+      input,
+      vi.fn().mockResolvedValue('catalog-abc123'),
+      vi.fn().mockResolvedValue(artifacts),
+    )).resolves.toMatchObject({
+      ok: true,
+      execution: {
+        policyArtifactIds: ['policy-auth'],
+        gateArtifactIds: ['gate-auth'],
+        gateEvaluations: [{
+          policyArtifactId: 'policy-auth',
+          gateArtifactId: 'gate-auth',
+          status: 'passed',
+        }],
+      },
+    })
+  })
+
+  it('does not infer a policy-gate pair when exact-revision linkage is ambiguous', async () => {
+    const input = testExecutionInputSchema.parse({
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      revision: 'abc123',
+      kind: 'ci', status: 'passed', name: 'CI',
+      workflowPath: '.github/workflows/ci.yml',
+    })
+    const shared = {
+      repositoryId: input.repositoryId,
+      sourcePath: '.github/workflows/ci.yml',
+      summary: 'CI', evidence: ['CI'],
+    }
+    const result = await prepareExecutionEvidence(
+      input,
+      vi.fn().mockResolvedValue('catalog-abc123'),
+      vi.fn().mockResolvedValue([
+        { ...shared, id: 'policy-1', kind: 'policy', title: 'Policy one' },
+        { ...shared, id: 'policy-2', kind: 'policy', title: 'Policy two' },
+        { ...shared, id: 'gate-1', kind: 'gate', title: 'CI' },
+      ]),
+    )
+
+    expect(result).toMatchObject({ ok: true, execution: { gateEvaluations: [] } })
   })
 
   it('uses the generated id when a legacy producer omits provider run identity', () => {

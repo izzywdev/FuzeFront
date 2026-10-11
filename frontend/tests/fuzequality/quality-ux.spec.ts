@@ -341,6 +341,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(executionMetadata.locator('[data-field="attempt"]')).toContainText('2')
     await expect(executionMetadata.locator('[data-field="workflow-path"]')).toContainText('.github/workflows/post-prod.yml')
     await expect(executionMetadata.locator('[data-field="duration"]')).toContainText('2m 0s')
+    await expect(productionExecution.getByLabel('Policy gate linkage quality')).toContainText(
+      'Explicit outcome linkage'
+    )
     const gateEvidence = page.getByLabel('Policy gate evidence')
     await expect(gateEvidence.getByText('Administrative suspension policy')).toBeVisible()
     await expect(gateEvidence.getByText('Suspension authorization gate')).toBeVisible()
@@ -351,6 +354,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(latestLoad).toContainText('p95 latency exceeded the release threshold.')
     await expect(latestLoad.getByLabel('Execution evidence coverage')).toContainText(
       '1 thresholds · 0 artifacts · 0 policy–gate outcomes'
+    )
+    await expect(latestLoad.getByLabel('Policy gate linkage quality')).toContainText(
+      'No policy–gate linkage'
     )
     await expect(latestLoad.getByLabel('Execution threshold evidence')).toContainText('640 ms ≤ 500 ms')
     await expect(latestLoad.getByText('Failed', { exact: true })).toBeVisible()

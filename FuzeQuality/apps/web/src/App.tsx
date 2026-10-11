@@ -65,6 +65,7 @@ import {
   ExecutionEvidenceMetadata,
   ExecutionEvidenceLinks,
   ExecutionEvidenceCoverage,
+  ExecutionLinkageEvidence,
   ExecutionGateEvidence,
   ExecutionThresholdEvidence,
   latestPerformanceExecution,
@@ -4071,6 +4072,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   <p>{latestExecution.summary ?? 'No execution summary supplied.'}</p>
                                   <ExecutionEvidenceMetadata execution={latestExecution} />
                                   <ExecutionEvidenceCoverage execution={latestExecution} />
+                                  <ExecutionLinkageEvidence execution={latestExecution} />
                                   <ExecutionThresholdEvidence execution={latestExecution} />
                                   <ExecutionEvidenceLinks execution={latestExecution} />
                                   {latestExecution.sourceUrl && (
@@ -4290,6 +4292,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
                   <ExecutionEvidenceCoverage execution={execution} />
+                  <ExecutionLinkageEvidence execution={execution} />
                   <ExecutionEvidenceLinks execution={execution} />
                   <ExecutionGateEvidence
                     execution={execution}

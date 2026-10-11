@@ -40,7 +40,7 @@ import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
-import { executionRecord, linkExecutionToRevisionArtifacts } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
@@ -394,11 +394,21 @@ app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) =
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/test-executions', async (request, response) => {
-  const execution = testExecutionInputSchema.parse(request.body)
+  const parsed = testExecutionInputSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const execution = parsed.data
   const repository = await store.repository(execution.repositoryId, execution.tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
+  const evidence = await prepareExecutionEvidence(
+    execution,
+    (repositoryId, tenantId, sourceRevision) =>
+      store.catalogRevisionForSource(repositoryId, tenantId, sourceRevision),
+    (repositoryId, tenantId, revision) =>
+      store.qualityArtifacts(repositoryId, tenantId, revision),
+  )
+  if (!evidence.ok) return response.status(422).json(evidence)
   const id = randomUUID()
-  await store.saveTestExecution(executionRecord(execution, id))
+  await store.saveTestExecution(executionRecord(evidence.execution, id))
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {

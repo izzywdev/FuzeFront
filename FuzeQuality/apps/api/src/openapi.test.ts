@@ -109,6 +109,15 @@ describe('contract discovery', () => {
       expect(schemas.TestExecutionInput.properties.workflowPath.maxLength).toBe(1000)
       expect(schemas.TestExecution.properties.workflowPath.type).toBe('string')
       expect(
+        document.paths['/api/v1/internal/test-executions'].post.responses['422'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/ExecutionEvidenceConflict')
+      expect(schemas.ExecutionEvidenceConflict.properties.code.enum).toEqual([
+        'EXECUTION_EVIDENCE_REVISION_UNANALYZED',
+        'EXECUTION_EVIDENCE_REFERENCE_INVALID',
+      ])
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
           .map((parameter: { $ref?: string }) => parameter.$ref)
       ).toContain('#/components/parameters/ExecutionWorkflowPath')

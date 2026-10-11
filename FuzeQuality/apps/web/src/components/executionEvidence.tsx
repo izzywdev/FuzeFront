@@ -240,3 +240,43 @@ export function ExecutionEvidenceCoverage({
     </section>
   )
 }
+
+/** Distinguishes evaluated policy/gate pairs from inventory-only associations. */
+export function ExecutionLinkageEvidence({
+  execution,
+}: {
+  execution: TestExecution
+}) {
+  const gatePairs = execution.gateEvaluations?.length ?? 0
+  const policies = execution.policyArtifactIds?.length ?? 0
+  const gates = execution.gateArtifactIds?.length ?? 0
+
+  let label: string
+  let detail: string
+  let state: 'passed' | 'running' | 'failed'
+  if (gatePairs) {
+    label = 'Explicit outcome linkage'
+    detail = `${gatePairs} policy–gate ${gatePairs === 1 ? 'pair' : 'pairs'} evaluated for this run`
+    state = 'passed'
+  } else if (policies === 1 && gates === 1) {
+    label = 'Legacy one-to-one linkage'
+    detail = 'Outcome is derived from this execution status; no explicit pair result was ingested'
+    state = 'running'
+  } else if (policies || gates) {
+    label = 'Inventory linkage only'
+    detail = `${policies} ${policies === 1 ? 'policy' : 'policies'} and ${gates} ${gates === 1 ? 'gate' : 'gates'} are associated, but no unambiguous pair outcome exists`
+    state = 'running'
+  } else {
+    label = 'No policy–gate linkage'
+    detail = 'This execution has no exact-revision policy or gate evidence'
+    state = 'failed'
+  }
+
+  return (
+    <section className="execution-linkage-evidence" aria-label="Policy gate linkage quality">
+      <strong>Linkage quality</strong>
+      <span className={`status-pill status-${state}`}>{label}</span>
+      <small>{detail}</small>
+    </section>
+  )
+}

@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -188,6 +188,37 @@ describe('ExecutionThresholdEvidence', () => {
       />
     )
     expect(screen.getByText('No performance threshold observations ingested')).toBeVisible()
+  })
+
+  it('distinguishes explicit outcomes from legacy, ambiguous, and missing linkage', () => {
+    const { rerender } = render(<ExecutionLinkageEvidence execution={execution} />)
+    expect(screen.getByText('Explicit outcome linkage')).toBeVisible()
+    expect(screen.getByText('1 policy–gate pair evaluated for this run')).toBeVisible()
+
+    rerender(<ExecutionLinkageEvidence execution={{
+      ...execution,
+      policyArtifactIds: ['policy-performance'],
+      gateArtifactIds: ['gate-load-budget'],
+      gateEvaluations: [],
+    }} />)
+    expect(screen.getByText('Legacy one-to-one linkage')).toBeVisible()
+
+    rerender(<ExecutionLinkageEvidence execution={{
+      ...execution,
+      policyArtifactIds: ['policy-1', 'policy-2'],
+      gateArtifactIds: ['gate-1'],
+      gateEvaluations: [],
+    }} />)
+    expect(screen.getByText('Inventory linkage only')).toBeVisible()
+    expect(screen.getByText(/no unambiguous pair outcome exists/i)).toBeVisible()
+
+    rerender(<ExecutionLinkageEvidence execution={{
+      ...execution,
+      policyArtifactIds: [],
+      gateArtifactIds: [],
+      gateEvaluations: [],
+    }} />)
+    expect(screen.getByText('No policy–gate linkage')).toBeVisible()
   })
 
   it('renders legacy executions without optional evidence collections safely', () => {
