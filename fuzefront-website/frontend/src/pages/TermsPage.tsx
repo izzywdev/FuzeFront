@@ -1,20 +1,23 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { FileText } from 'lucide-react'
-import { IconTile } from '@fuzefront/design-system'
+import { IconTile, SectionIntro } from '@fuzefront/design-system'
 
 export const TermsPage: React.FC = () => {
   return (
     <div className="pt-24 pb-20 bg-white">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-12">
-          <IconTile tone="accent" size="lg" className="mb-5">
-            <FileText size={28} />
-          </IconTile>
-          <h1 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-3">
-            Terms of Service
-          </h1>
+        <SectionIntro
+          heading="h1"
+          titleGap={3}
+          icon={
+            <IconTile tone="accent" size="lg" className="mb-5">
+              <FileText size={28} />
+            </IconTile>
+          }
+          title="Terms of Service"
+        >
           <p className="text-gray-600">Last updated: September 2026</p>
           <p className="text-gray-600 text-sm mt-1">
             FuzeOne, Inc. &bull; A Delaware Corporation &bull;{' '}
@@ -22,7 +25,7 @@ export const TermsPage: React.FC = () => {
               legal@fuzefront.com
             </a>
           </p>
-        </div>
+        </SectionIntro>
 
         <div className="space-y-10 text-gray-700 leading-relaxed">
 

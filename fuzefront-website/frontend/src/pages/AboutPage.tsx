@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, SectionIntro } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -143,17 +143,14 @@ export const AboutPage: React.FC = () => {
       {/* Leadership */}
       <section className="py-24 bg-white border-t border-secondary-100">
         <Container size="4xl">
-          <motion.div
+          <SectionIntro
+            as={motion.div}
             ref={leadershipRef}
             initial={{ opacity: 0, y: 20 }}
             animate={leadershipInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
-            className="text-center mb-12"
-          >
-            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-              Leadership
-            </h2>
-          </motion.div>
+            title="Leadership"
+          />
 
           <motion.div
             variants={stagger}
@@ -197,20 +194,15 @@ export const AboutPage: React.FC = () => {
       {/* What we offer */}
       <section className="py-24 bg-secondary-50">
         <Container size="5xl">
-          <motion.div
+          <SectionIntro
+            as={motion.div}
             ref={offerRef}
             initial={{ opacity: 0, y: 20 }}
             animate={offerInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
-            className="text-center mb-12"
-          >
-            <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
-              What we offer
-            </h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Everything a growing SaaS product needs, bundled into one platform.
-            </p>
-          </motion.div>
+            title="What we offer"
+            description="Everything a growing SaaS product needs, bundled into one platform."
+          />
 
           <motion.div
             variants={stagger}

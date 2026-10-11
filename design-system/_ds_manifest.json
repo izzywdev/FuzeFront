@@ -210,6 +210,10 @@
       "sourcePath": "components/layout/SectionHead.jsx"
     },
     {
+      "name": "SectionIntro",
+      "sourcePath": "components/layout/SectionIntro.jsx"
+    },
+    {
       "name": "Stack",
       "sourcePath": "components/layout/Stack.jsx"
     },
@@ -1173,6 +1177,12 @@
     {
       "name": "--space-12",
       "value": "3rem",
+      "kind": "spacing",
+      "definedIn": "tokens/spacing.css"
+    },
+    {
+      "name": "--space-14",
+      "value": "3.5rem",
       "kind": "spacing",
       "definedIn": "tokens/spacing.css"
     },
