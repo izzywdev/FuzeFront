@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { PolicyGateEvaluation } from '@fuzequality/contracts'
+import { historyPageQueryFields } from './history-pagination'
 
 export const policyGateFilterSchema = z
   .object({
@@ -14,6 +15,7 @@ export const policyGateFilterSchema = z
     severity: z.enum(['high', 'medium', 'low']).optional(),
     reviewStatus: z.enum(['proposed', 'accepted', 'dismissed']).optional(),
     revision: z.string().trim().min(1).max(500).optional(),
+    ...historyPageQueryFields,
   })
   .strict()
 

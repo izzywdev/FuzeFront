@@ -42,12 +42,13 @@ import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
 import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
-import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
+import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
 import { repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
-import { filterPolicyGateEvaluations, policyGateFilterSchema } from './policy-gate-filter'
+import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateReviewConflict } from './policy-gate-review'
+import { decodeHistoryCursor, historyPage } from './history-pagination'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -499,7 +500,15 @@ app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (reque
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   const filter = repositoryFlowFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  response.json(filterRepositoryFlowCandidates(await store.repositoryFlowCandidates(repositoryId, tenantId), filter.data))
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { limit, cursor: _cursor, ...query } = filter.data
+  const candidates = await store.repositoryFlowCandidates(repositoryId, tenantId, {
+    ...query,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  response.json(historyPage(candidates, limit))
 })
 app.get('/api/v1/repositories/:id/flow-candidates/:candidateId', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
@@ -557,7 +566,15 @@ app.get('/api/v1/repositories/:id/policy-gate-evaluations', mayReadCatalog, asyn
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
   const filter = policyGateFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  response.json(filterPolicyGateEvaluations(await store.policyGateEvaluations(repositoryId, tenantId), filter.data))
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const { limit, cursor: _cursor, ...query } = filter.data
+  const evaluations = await store.policyGateEvaluations(repositoryId, tenantId, {
+    ...query,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  response.json(historyPage(evaluations, limit))
 })
 app.get('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

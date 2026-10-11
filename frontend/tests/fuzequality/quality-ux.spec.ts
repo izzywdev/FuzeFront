@@ -394,6 +394,53 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('Suspend app route', { exact: true })).toBeVisible()
   })
 
+  test('continues bounded UX-flow and policy history pages', async ({ page }) => {
+    const olderFlow = {
+      ...repositoryFlowCandidates[0],
+      id: 'candidate-older',
+      title: 'Historical suspension flow',
+      createdAt: '2026-10-07T09:00:00.000Z',
+    }
+    const olderEvaluation = {
+      ...policyGateEvaluations[0],
+      id: 'evaluation-older',
+      title: 'Historical suspension policy finding',
+      createdAt: '2026-10-07T09:30:00.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(url.searchParams.get('cursor')
+            ? { items: [olderFlow], page: { nextCursor: null, hasMore: false } }
+            : { items: [repositoryFlowCandidates[0]], page: { nextCursor: 'flow-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      route => {
+        const url = new URL(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(url.searchParams.get('cursor')
+            ? { items: [olderEvaluation], page: { nextCursor: null, hasMore: false } }
+            : { items: [policyGateEvaluations[0]], page: { nextCursor: 'policy-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more UX-flow history' }).click()
+    await expect(page.getByText(olderFlow.title, { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
+    await expect(page.getByText(olderEvaluation.title, { exact: true })).toBeVisible()
+  })
+
   test('bounds historical UX-flow evidence prefetch while keeping older flows visible', async ({ page }) => {
     const historicalCandidates = Array.from({ length: 22 }, (_, index) => ({
       ...repositoryFlowCandidates[0],

@@ -170,6 +170,46 @@ afterEach(() => {
 })
 
 describe('RepositoryIntelligence flow inventory', () => {
+  it('continues UX-flow and policy history from opaque repository cursors', async () => {
+    mockEvidenceApis()
+    const olderFlow = {
+      ...candidate,
+      id: 'flow-older',
+      title: 'Older checkout flow',
+      createdAt: '2026-10-08T00:00:00.000Z',
+    }
+    const olderEvaluation = {
+      ...governanceEvaluation,
+      id: 'evaluation-older',
+      title: 'Older authentication policy finding',
+      createdAt: '2026-10-08T00:00:00.000Z',
+    }
+    const flowRequest = vi.spyOn(api, 'repositoryFlowCandidates')
+      .mockResolvedValueOnce({ items: [candidate], page: { nextCursor: 'flow-page-2', hasMore: true } })
+      .mockResolvedValueOnce({ items: [olderFlow], page: { nextCursor: null, hasMore: false } })
+    vi.mocked(api.policyGateEvaluations)
+      .mockResolvedValueOnce({ items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } })
+      .mockResolvedValueOnce({ items: [olderEvaluation], page: { nextCursor: null, hasMore: false } })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more UX-flow history' }))
+    expect(await screen.findByText(olderFlow.title)).toBeVisible()
+    expect(flowRequest).toHaveBeenLastCalledWith(repository.id, expect.objectContaining({
+      cursor: 'flow-page-2',
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more policy and gate history' }))
+    expect(await screen.findByText(olderEvaluation.title)).toBeVisible()
+    expect(api.policyGateEvaluations).toHaveBeenLastCalledWith(
+      repository.id,
+      expect.objectContaining({
+        cursor: 'policy-page-2',
+        revision: repository.lastScanRevision,
+      })
+    )
+  })
+
   it('surfaces repository evidence scan failures to reviewers', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

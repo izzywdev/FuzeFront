@@ -463,6 +463,11 @@ export type RepositoryFlowReviewHistoryEntry = {
   createdAt: string
 }
 
+export type RepositoryFlowCandidatePage = {
+  items: RepositoryFlowCandidate[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
 /** A reviewable relationship between a detected repository policy and CI gate. */
 export type PolicyGateEvaluation = {
   id: string
@@ -493,6 +498,11 @@ export type PolicyGateEvaluation = {
   reviewedBy?: string
   reviewReason?: string
   createdAt: string
+}
+
+export type PolicyGateEvaluationPage = {
+  items: PolicyGateEvaluation[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type TestExecution = {

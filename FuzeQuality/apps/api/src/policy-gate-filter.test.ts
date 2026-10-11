@@ -70,5 +70,13 @@ describe('policy-gate inventory filter', () => {
     expect(
       policyGateFilterSchema.safeParse({ unexpected: 'value' }).success
     ).toBe(false)
+    expect(policyGateFilterSchema.parse({ limit: 101 }).limit).toBe(100)
+  })
+
+  it('defaults bounded pagination and accepts an opaque continuation cursor', () => {
+    expect(policyGateFilterSchema.parse({ cursor: 'opaque' })).toMatchObject({
+      cursor: 'opaque',
+      limit: 50,
+    })
   })
 })

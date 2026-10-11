@@ -67,11 +67,11 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 # own and namespace under its own repo (identifier-standard.md §2), so they are
 # not this registry's to mint. Tracked against FuzeQuality's own adoption.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
-src FuzeQuality/apps/api/src/index.ts:410                   # FuzeQuality-owned test-execution entity
-src FuzeQuality/packages/core/src/store.ts:347              # FuzeQuality-owned repository entity
-src FuzeQuality/packages/core/src/store.ts:432              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:443              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:529              # FuzeQuality-owned admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:603              # FuzeQuality-owned identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:614              # FuzeQuality-owned design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:1408             # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/apps/api/src/index.ts:411                   # FuzeQuality-owned test-execution entity
+src FuzeQuality/packages/core/src/store.ts:388              # FuzeQuality-owned repository entity
+src FuzeQuality/packages/core/src/store.ts:473              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:484              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:570              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:644              # FuzeQuality-owned identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:655              # FuzeQuality-owned design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1466             # FuzeQuality-owned admin-context audit entity

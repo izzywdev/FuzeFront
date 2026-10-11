@@ -3052,6 +3052,14 @@ type PolicyGateInventorySelection = {
   revisionScope: FlowRevisionScope
 }
 
+type HistoryPage<T> = { items: T[]; page: { nextCursor: string | null; hasMore: boolean } }
+
+export function normalizeHistoryPage<T>(value: T[] | HistoryPage<T>): HistoryPage<T> {
+  return Array.isArray(value)
+    ? { items: value, page: { nextCursor: null, hasMore: false } }
+    : value
+}
+
 export function policyGateEvaluationMatchesInventory(
   evaluation: PolicyGateEvaluation,
   repositories: Repository[],
@@ -3115,6 +3123,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
   >([])
+  const [flowNextCursors, setFlowNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreFlows, setLoadingMoreFlows] = useState(false)
   const [flowRepositoryId, setFlowRepositoryId] = useState('')
   const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
   const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
@@ -3130,6 +3140,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
+  const [policyGateNextCursors, setPolicyGateNextCursors] = useState<Record<string, string>>({})
+  const [loadingMorePolicyGates, setLoadingMorePolicyGates] = useState(false)
+  const [historyPaginationError, setHistoryPaginationError] = useState<string>()
   const [executions, setExecutions] = useState<TestExecution[]>([])
   const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
   const [performanceEvidenceFailures, setPerformanceEvidenceFailures] = useState<string[]>([])
@@ -3333,9 +3346,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }, [executionKind, executionStatus, executionProvider, executionRevision, executionWorkflowPath, executionFrom, executionUntil])
   useEffect(() => {
     let active = true
+    setPolicyGateNextCursors({})
+    setHistoryPaginationError(undefined)
     void Promise.all(
       data.repositories.map(async repository => {
-        const [repositoryArtifacts, evaluations] = await Promise.all([
+        const [repositoryArtifacts, evaluationResponse] = await Promise.all([
           api.qualityArtifacts(repository.id),
           policyGateRevisionScope === 'current' &&
           !repository.lastScanRevision
@@ -3355,9 +3370,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 )
               ),
         ])
+        const evaluations = normalizeHistoryPage(evaluationResponse)
         const historicalGovernanceArtifacts = policyGateRevisionScope === 'all'
           ? (await Promise.all(
-              [...new Set(evaluations.map(evaluation => evaluation.revision))]
+              [...new Set(evaluations.items.map(evaluation => evaluation.revision))]
                 .filter(revision => revision !== repository.lastScanRevision)
                 .map(revision => api.qualityArtifacts(repository.id, revision).catch(() => []))
             )).flat()
@@ -3368,7 +3384,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         return {
           artifacts: repositoryArtifacts,
           historicalGovernanceArtifacts,
-          evaluations,
+          evaluations: evaluations.items,
+          nextCursor: evaluations.page.nextCursor,
           performanceExecutions: hasPerformanceDefinitions
             ? await api.testExecutions(repository.id).then(
                 executions => ({ executions, failed: false }),
@@ -3384,6 +3401,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setArtifacts(groups.flatMap(group => group.artifacts))
           setGovernanceEvidenceArtifacts(groups.flatMap(group => group.historicalGovernanceArtifacts))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
+          setPolicyGateNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.nextCursor ? [[group.repositoryId, group.nextCursor]] : [])
+          ))
           setPerformanceExecutions(groups.flatMap(group => group.performanceExecutions.executions))
           setPerformanceEvidenceFailures(
             groups
@@ -3397,6 +3417,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setArtifacts([])
           setGovernanceEvidenceArtifacts([])
           setPolicyGateEvaluations([])
+          setPolicyGateNextCursors({})
           setPerformanceExecutions([])
           setPerformanceEvidenceFailures([])
         }
@@ -3417,12 +3438,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   useEffect(() => {
     let active = true
     setLoadingFlows(true)
+    setFlowNextCursors({})
+    setHistoryPaginationError(undefined)
     void Promise.all(
       data.repositories.map(repository =>
         flowRepositoryId && flowRepositoryId !== repository.id
-          ? Promise.resolve([])
+          ? Promise.resolve({ repositoryId: repository.id, page: { items: [] as RepositoryFlowCandidate[], page: { nextCursor: null, hasMore: false } } })
           : flowRevisionScope === 'current' && !repository.lastScanRevision
-            ? Promise.resolve([])
+            ? Promise.resolve({ repositoryId: repository.id, page: { items: [] as RepositoryFlowCandidate[], page: { nextCursor: null, hasMore: false } } })
             : api.repositoryFlowCandidates(
                 repository.id,
                 Object.fromEntries(
@@ -3438,14 +3461,22 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     schemaVersion: flowSchemaVersion.trim(),
                   }).filter(([, value]) => Boolean(value))
                 )
-              )
+              ).then(response => ({ repositoryId: repository.id, page: normalizeHistoryPage(response) }))
       )
     )
       .then(groups => {
-        if (active) setFlowCandidates(groups.flat())
+        if (active) {
+          setFlowCandidates(groups.flatMap(group => group.page.items))
+          setFlowNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
+          ))
+        }
       })
       .catch(() => {
-        if (active) setFlowCandidates([])
+        if (active) {
+          setFlowCandidates([])
+          setFlowNextCursors({})
+        }
       })
       .finally(() => {
         if (active) {
@@ -3530,6 +3561,72 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionRepositoryId,
     invalidExecutionRange,
   ])
+  const loadMoreFlows = async () => {
+    const cursors = Object.entries(flowNextCursors)
+    if (!cursors.length) return
+    setLoadingMoreFlows(true)
+    setHistoryPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => {
+        const repository = data.repositories.find(item => item.id === repositoryId)
+        const page = normalizeHistoryPage(await api.repositoryFlowCandidates(
+          repositoryId,
+          Object.fromEntries(Object.entries({
+            source: flowSource,
+            status: flowStatus,
+            revision: flowRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            model: flowModel.trim(),
+            promptVersion: flowPromptVersion.trim(),
+            schemaVersion: flowSchemaVersion.trim(),
+            cursor,
+          }).filter(([, value]) => Boolean(value)))
+        ))
+        return { repositoryId, page }
+      }))
+      setFlowCandidates(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+      ).values()])
+      setFlowNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
+      ))
+    } catch (cause) {
+      setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more UX-flow history.')
+    } finally {
+      setLoadingMoreFlows(false)
+    }
+  }
+  const loadMorePolicyGates = async () => {
+    const cursors = Object.entries(policyGateNextCursors)
+    if (!cursors.length) return
+    setLoadingMorePolicyGates(true)
+    setHistoryPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => {
+        const repository = data.repositories.find(item => item.id === repositoryId)
+        const page = normalizeHistoryPage(await api.policyGateEvaluations(
+          repositoryId,
+          Object.fromEntries(Object.entries({
+            kind: policyGateKind,
+            severity: policyGateSeverity,
+            reviewStatus: policyGateReviewStatus,
+            revision: policyGateRevisionScope === 'current' ? repository?.lastScanRevision ?? '' : '',
+            cursor,
+          }).filter(([, value]) => Boolean(value)))
+        ))
+        return { repositoryId, page }
+      }))
+      setPolicyGateEvaluations(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+      ).values()])
+      setPolicyGateNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
+      ))
+    } catch (cause) {
+      setHistoryPaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy and gate history.')
+    } finally {
+      setLoadingMorePolicyGates(false)
+    }
+  }
   const outcomeTrend = useMemo(
     () => executionOutcomeTrend(executions),
     [executions]
@@ -3755,6 +3852,36 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               </select>
             </label>
           </div>
+          {(Object.keys(flowNextCursors).length > 0 ||
+            Object.keys(policyGateNextCursors).length > 0) && (
+            <div className="row-actions" aria-label="Analysis history pagination">
+              {Object.keys(flowNextCursors).length > 0 && (
+                <QualityAction
+                  intent="quiet"
+                  disabled={loadingMoreFlows}
+                  onClick={() => void loadMoreFlows()}
+                >
+                  {loadingMoreFlows ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                  Load more UX-flow history
+                </QualityAction>
+              )}
+              {Object.keys(policyGateNextCursors).length > 0 && (
+                <QualityAction
+                  intent="quiet"
+                  disabled={loadingMorePolicyGates}
+                  onClick={() => void loadMorePolicyGates()}
+                >
+                  {loadingMorePolicyGates ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                  Load more policy and gate history
+                </QualityAction>
+              )}
+            </div>
+          )}
+          {historyPaginationError && (
+            <p className="performance-evidence-warning" role="alert">
+              {historyPaginationError}
+            </p>
+          )}
           <div className="catalog-grid">
             {groups.map(([kind, title, detail]) => {
               const items = artifacts.filter(item => item.kind === kind)

@@ -30,5 +30,13 @@ describe('repository flow inventory filter', () => {
     expect(repositoryFlowFilterSchema.safeParse({ status: 'published' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ model: '' }).success).toBe(false)
     expect(repositoryFlowFilterSchema.safeParse({ unexpected: 'value' }).success).toBe(false)
+    expect(repositoryFlowFilterSchema.parse({ limit: 101 }).limit).toBe(100)
+  })
+
+  it('defaults bounded pagination and accepts an opaque continuation cursor', () => {
+    expect(repositoryFlowFilterSchema.parse({ cursor: 'opaque' })).toMatchObject({
+      cursor: 'opaque',
+      limit: 50,
+    })
   })
 })

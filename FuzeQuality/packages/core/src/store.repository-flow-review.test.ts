@@ -18,6 +18,24 @@ const candidate: RepositoryFlowCandidate = {
 }
 
 describe('repository flow review lifecycle', () => {
+  it('paginates newest-first history with a stable timestamp and id cursor', async () => {
+    const store = new MemoryCatalogStore()
+    const sameTime = '2026-10-09T00:00:00.000Z'
+    await store.saveRepositoryFlowCandidates([
+      { ...candidate, id: 'flow-c', title: 'Flow C', createdAt: sameTime },
+      { ...candidate, id: 'flow-b', title: 'Flow B', createdAt: sameTime },
+      { ...candidate, id: 'flow-a', title: 'Flow A', createdAt: '2026-10-08T00:00:00.000Z' },
+      { ...candidate, id: 'other-tenant', title: 'Other tenant', tenantId: 'tenant-2', createdAt: '2026-10-10T00:00:00.000Z' },
+    ])
+
+    const first = await store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, { limit: 2 })
+    expect(first.map(item => item.id)).toEqual(['flow-c', 'flow-b'])
+    await expect(store.repositoryFlowCandidates(candidate.repositoryId, candidate.tenantId, {
+      after: { createdAt: first[1].createdAt, id: first[1].id },
+      limit: 2,
+    })).resolves.toEqual([expect.objectContaining({ id: 'flow-a' })])
+  })
+
   it('persists FuzeInfra LiteLLM analysis provenance', async () => {
     const store = new MemoryCatalogStore()
     const analysis = {

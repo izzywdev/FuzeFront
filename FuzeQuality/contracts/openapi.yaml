@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.6.0
+  version: 0.7.0
   license:
     name: UNLICENSED
 servers:
@@ -229,14 +229,28 @@ paths:
           in: query
           description: Exact structured-output schema version.
           schema: { type: string, minLength: 1, maxLength: 100 }
+        - name: limit
+          in: query
+          description: Maximum number of candidates to return in this page.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: UX-flow candidates discovered for the repository.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -383,14 +397,28 @@ paths:
           in: query
           description: Exact repository analysis revision that produced the finding.
           schema: { type: string, minLength: 1, maxLength: 500 }
+        - name: limit
+          in: query
+          description: Maximum number of evaluations to return in this page.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: Policy/gate evaluations for the repository.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -713,6 +741,15 @@ components:
         analysis: { $ref: '#/components/schemas/RepositoryFlowAnalysisProvenance' }
         source: { type: string, enum: [deterministic, litellm] }
         createdAt: { type: string, format: date-time }
+    RepositoryFlowCandidatePage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+        page: { $ref: '#/components/schemas/HistoryCursorPage' }
     RepositoryFlowAnalysisProvenance:
       type: object
       additionalProperties: false
@@ -832,6 +869,25 @@ components:
         reviewedBy: { type: string }
         reviewReason: { type: string }
         createdAt: { type: string, format: date-time }
+    PolicyGateEvaluationPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/PolicyGateEvaluation' }
+        page: { $ref: '#/components/schemas/HistoryCursorPage' }
+    HistoryCursorPage:
+      type: object
+      additionalProperties: false
+      required: [nextCursor, hasMore]
+      properties:
+        nextCursor:
+          type: string
+          nullable: true
+          description: Opaque continuation cursor; null when no later page exists.
+        hasMore: { type: boolean }
     PolicyGateReviewHistoryEntry:
       type: object
       required: [evaluationId, tenantId, status, reviewedBy, createdAt]

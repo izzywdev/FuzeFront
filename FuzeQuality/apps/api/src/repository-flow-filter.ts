@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { RepositoryFlowCandidate } from '@fuzequality/contracts'
+import { historyPageQueryFields } from './history-pagination'
 
 export const repositoryFlowFilterSchema = z.object({
   source: z.enum(['deterministic', 'litellm']).optional(),
@@ -8,6 +9,7 @@ export const repositoryFlowFilterSchema = z.object({
   model: z.string().trim().min(1).max(200).optional(),
   promptVersion: z.string().trim().min(1).max(100).optional(),
   schemaVersion: z.string().trim().min(1).max(100).optional(),
+  ...historyPageQueryFields,
 }).strict()
 
 export function filterRepositoryFlowCandidates(
