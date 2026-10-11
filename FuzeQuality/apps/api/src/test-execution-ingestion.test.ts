@@ -52,6 +52,35 @@ describe('internal execution ingestion compatibility', () => {
     expect(loadArtifacts).not.toHaveBeenCalled()
   })
 
+  it('classifies a neutral workflow from reviewed performance metadata at its exact revision', async () => {
+    const workflow = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      revision: 'run-commit-a',
+      name: 'Benchmark',
+      workflowPath: '.github/workflows/benchmark.yml',
+    }
+
+    await expect(linkExecutionToRevisionArtifacts(
+      workflow,
+      'org-1',
+      vi.fn().mockResolvedValue('catalog-revision-a'),
+      vi.fn().mockResolvedValue([{
+        id: 'stress-benchmark',
+        repositoryId: workflow.repositoryId,
+        kind: 'stress-test',
+        title: 'Benchmark',
+        sourcePath: '.github/workflows/benchmark.yml',
+        summary: 'Reviewed stress workflow',
+        evidence: ['FUZEQUALITY_PERFORMANCE: stress'],
+        execution: {
+          provider: 'github-actions',
+          workflowPath: '.github/workflows/benchmark.yml',
+          trigger: 'workflow_dispatch',
+        },
+      }]),
+    )).resolves.toMatchObject({ kind: 'stress' })
+  })
+
   it('rejects explicit evidence when the execution revision was not analyzed', async () => {
     const input = testExecutionInputSchema.parse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

@@ -3422,6 +3422,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       }).filter(([, value]) => Boolean(value))
     ) as Record<string, string>
   }, [executionKind, executionStatus, executionProvider, executionRevision, executionWorkflowPath, executionFrom, executionUntil])
+  const executionTrendQuery = JSON.stringify([
+    data.repositories.map(repository => repository.id),
+    executionRepositoryId,
+    executionFilter,
+    invalidExecutionRange,
+  ])
+  const executionTrendQueryRef = useRef(executionTrendQuery)
+  executionTrendQueryRef.current = executionTrendQuery
   useEffect(() => {
     let active = true
     setPolicyGateNextCursors({})
@@ -3614,6 +3622,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     setExecutionPaginationError(undefined)
     setExecutionTrendNextCursors({})
     setExecutionTrendPaginationError(undefined)
+    setLoadingMoreExecutionTrend(false)
     setPerformanceNextCursors({})
     setPerformancePaginationError(undefined)
     setExecutionHistoryFailures([])
@@ -3712,6 +3721,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const loadMoreExecutionTrend = async () => {
     const cursors = Object.entries(executionTrendNextCursors)
     if (!cursors.length) return
+    const query = executionTrendQueryRef.current
     setLoadingMoreExecutionTrend(true)
     setExecutionTrendPaginationError(undefined)
     try {
@@ -3722,6 +3732,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           cursor,
         })),
       })))
+      if (executionTrendQueryRef.current !== query) return
       setExecutionTrends(current => [...current, ...groups.map(group => group.page.items)])
       setExecutionTrendNextCursors(Object.fromEntries(
         groups.flatMap(group => group.page.page.nextCursor
@@ -3729,9 +3740,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           : [])
       ))
     } catch (cause) {
-      setExecutionTrendPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution trend history.')
+      if (executionTrendQueryRef.current === query) {
+        setExecutionTrendPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution trend history.')
+      }
     } finally {
-      setLoadingMoreExecutionTrend(false)
+      if (executionTrendQueryRef.current === query) setLoadingMoreExecutionTrend(false)
     }
   }
   const loadMoreExecutions = async () => {

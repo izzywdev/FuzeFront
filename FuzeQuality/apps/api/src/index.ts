@@ -1133,7 +1133,7 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
       ? [{ policyArtifactId: links.policyArtifactIds[0], gateArtifactId: links.gateArtifactIds[0], status: execution.status }]
       : []
-    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, thresholds: [], gateEvaluations, ...links, ...execution })
+    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, thresholds: [], gateEvaluations, ...execution, ...links })
   }
   for (const command of commands) {
     let commitSha = command.commitSha

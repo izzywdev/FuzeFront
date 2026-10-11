@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type {
   Portfolio,
   QualityArtifact,
@@ -316,6 +316,43 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load more outcome trend' }))
     await waitFor(() => expect(trend).toHaveTextContent('2026-09-01'))
     expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { cursor: 'older-days' })
+  })
+
+  it('discards an older trend continuation when the execution filter changes', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    let resolveOlder: (value: Awaited<ReturnType<typeof api.executionTrend>>) => void = () => undefined
+    const olderPage = new Promise<Awaited<ReturnType<typeof api.executionTrend>>>(resolve => {
+      resolveOlder = resolve
+    })
+    vi.mocked(api.executionTrend)
+      .mockResolvedValueOnce({
+        items: [{ date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0 }],
+        page: { nextCursor: 'older-days', hasMore: true },
+      })
+      .mockImplementationOnce(() => olderPage)
+      .mockResolvedValueOnce({
+        items: [{ date: '2026-10-11', passed: 3, failed: 0, cancelled: 0, running: 0 }],
+        page: { nextCursor: null, hasMore: false },
+      })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const trend = await screen.findByLabelText('Execution outcome trend')
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more outcome trend' }))
+    await waitFor(() => expect(api.executionTrend).toHaveBeenCalledWith(repository.id, { cursor: 'older-days' }))
+    fireEvent.change(screen.getByLabelText('Outcome'), { target: { value: 'passed' } })
+    await waitFor(() => expect(api.executionTrend).toHaveBeenCalledWith(repository.id, { status: 'passed' }))
+    await act(async () => {
+      resolveOlder({
+        items: [{ date: '2026-09-01', passed: 4, failed: 1, cancelled: 0, running: 0 }],
+        page: { nextCursor: null, hasMore: false },
+      })
+      await olderPage
+    })
+
+    await waitFor(() => expect(trend).toHaveTextContent('2026-10-11'))
+    expect(trend).not.toHaveTextContent('2026-09-01')
   })
 
   it('retains execution and policy-gate evidence when the optional trend request fails', async () => {

@@ -1,4 +1,4 @@
-import { testExecutionInputSchema, type QualityArtifact, type TestExecution } from '@fuzequality/contracts'
+import { normalizeWorkflowPath, testExecutionInputSchema, type QualityArtifact, type TestExecution } from '@fuzequality/contracts'
 import { linkExecutionArtifacts } from '@fuzequality/core'
 
 type ThresholdInput = ReturnType<typeof testExecutionInputSchema.parse>['thresholds'][number]
@@ -35,11 +35,25 @@ export async function linkExecutionToRevisionArtifacts(
     tenantId,
     catalogRevision
   )
-  return linkExecutionArtifacts(
+  const links = linkExecutionArtifacts(
     execution.name,
     artifacts,
     execution.workflowPath
   )
+  const workflowPath = normalizeWorkflowPath(execution.workflowPath)
+  const performanceArtifact = workflowPath
+    ? artifacts.find(artifact =>
+        (artifact.kind === 'load-test' || artifact.kind === 'stress-test') &&
+        artifact.execution?.provider === 'github-actions' &&
+        normalizeWorkflowPath(artifact.execution.workflowPath) === workflowPath
+      )
+    : undefined
+  return {
+    ...links,
+    ...(performanceArtifact
+      ? { kind: performanceArtifact.kind === 'stress-test' ? 'stress' as const : 'load' as const }
+      : {}),
+  }
 }
 
 export type ExecutionEvidencePreparation =

@@ -524,6 +524,48 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(trend).toContainText('2 failed')
   })
 
+  test('discards an obsolete outcome-trend page after the filter changes', async ({ page }) => {
+    let releaseOlderPage: () => void = () => undefined
+    const olderPageRequested = new Promise<void>(resolve => {
+      releaseOlderPage = resolve
+    })
+    await page.route(
+      url => url.pathname.endsWith('/execution-trend'),
+      async route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('cursor')) {
+          await olderPageRequested
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              items: [{ date: '2026-09-01', passed: 4, failed: 2, cancelled: 0, running: 0 }],
+              page: { nextCursor: null, hasMore: false },
+            }),
+          })
+        }
+        const filtered = url.searchParams.get('status') === 'passed'
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [{ date: filtered ? '2026-10-11' : '2026-10-01', passed: filtered ? 3 : 8, failed: filtered ? 0 : 1, cancelled: 0, running: 0 }],
+            page: { nextCursor: filtered ? null : 'older-days', hasMore: !filtered },
+          }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    const trend = page.getByLabel('Execution outcome trend')
+    await expect(trend).toContainText('2026-10-01')
+    await page.getByRole('button', { name: 'Load more outcome trend' }).click()
+    await page.getByRole('combobox', { name: /^Outcome/ }).selectOption('passed')
+    await expect(trend).toContainText('2026-10-11')
+    releaseOlderPage()
+    await expect(trend).not.toContainText('2026-09-01')
+  })
+
   test('continues bounded policy-gate performance aggregates', async ({ page }) => {
     const currentPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-current', gateArtifactId: 'gate-current', failed: 3, passed: 1, cancelled: 0, running: 0 }
     const olderPair = { repositoryId: 'repo-1', policyArtifactId: 'policy-historical', gateArtifactId: 'gate-historical', failed: 1, passed: 4, cancelled: 0, running: 0 }
