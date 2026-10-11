@@ -45,7 +45,7 @@ import type {
   RepositoryFlowCandidate,
   RepositoryFlowReviewHistoryEntry,
   Repository,
-  RepositoryScanHistoryEntry,
+  RepositoryScanHistoryPage,
   StorybookStory,
   TestExpectation,
   TestExecution,
@@ -865,7 +865,10 @@ function Repositories({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [history, setHistory] = useState<
-    Record<string, RepositoryScanHistoryEntry[]>
+    Record<string, RepositoryScanHistoryPage>
+  >({})
+  const [historyLoading, setHistoryLoading] = useState<
+    Record<string, boolean>
   >({})
   const [form, setForm] = useState({
     owner: 'izzywdev',
@@ -908,17 +911,28 @@ function Repositories({
       setBusy(false)
     }
   }
-  async function loadHistory(id: string) {
-    if (history[id]) return
+  async function loadHistory(id: string, cursor?: string) {
+    if ((!cursor && history[id]) || historyLoading[id]) return
+    setHistoryLoading(current => ({ ...current, [id]: true }))
     try {
-      const entries = await api.repositoryScanHistory(id)
-      setHistory(current => ({ ...current, [id]: entries }))
+      const response = await api.repositoryScanHistory(id, cursor)
+      const page = Array.isArray(response)
+        ? { items: response, page: { nextCursor: null, hasMore: false } }
+        : response
+      setHistory(current => ({
+        ...current,
+        [id]: cursor && current[id]
+          ? { items: [...current[id].items, ...page.items], page: page.page }
+          : page,
+      }))
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
           : 'Scan history could not be loaded'
       )
+    } finally {
+      setHistoryLoading(current => ({ ...current, [id]: false }))
     }
   }
   return (
@@ -1010,32 +1024,58 @@ function Repositories({
                 </summary>
                 <div>
                   {history[repository.id] ? (
-                    history[repository.id].length ? (
-                      history[repository.id].map(entry => (
-                        <article key={`${entry.revision}:${entry.scannedAt}`}>
-                          <span className={`scan-status scan-${entry.status}`}>
-                            {entry.status}
-                          </span>
-                          <code>
-                            {entry.revision.slice(0, 12)} · {entry.branch}
-                          </code>
-                          <strong>
-                            {entry.counts.operations} API ·{' '}
-                            {entry.counts.surfaces} surfaces ·{' '}
-                            {entry.counts.tests} tests
-                          </strong>
-                          <p>
-                            {entry.scannedAt
-                              ? new Date(entry.scannedAt).toLocaleString()
-                              : 'Scan queued'}
-                          </p>
-                        </article>
-                      ))
+                    history[repository.id].items.length ? (
+                      <>
+                        {history[repository.id].items.map(entry => (
+                          <article key={entry.id}>
+                            <span
+                              className={`scan-status scan-${entry.status}`}
+                            >
+                              {entry.status}
+                            </span>
+                            <code>
+                              {entry.revision.slice(0, 12)} · {entry.branch}
+                            </code>
+                            <strong>
+                              {entry.counts.operations} API ·{' '}
+                              {entry.counts.surfaces} surfaces ·{' '}
+                              {entry.counts.tests} tests
+                            </strong>
+                            <p>
+                              {entry.scannedAt
+                                ? new Date(entry.scannedAt).toLocaleString()
+                                : 'Scan queued'}
+                            </p>
+                          </article>
+                        ))}
+                        {history[repository.id].page.hasMore &&
+                          history[repository.id].page.nextCursor && (
+                            <QualityAction
+                              intent="secondary"
+                              disabled={historyLoading[repository.id]}
+                              onClick={() =>
+                                void loadHistory(
+                                  repository.id,
+                                  history[repository.id].page.nextCursor ??
+                                    undefined
+                                )
+                              }
+                            >
+                              {historyLoading[repository.id]
+                                ? 'Loading…'
+                                : 'Load more scan history'}
+                            </QualityAction>
+                          )}
+                      </>
                     ) : (
                       <p>No scan runs recorded yet.</p>
                     )
                   ) : (
-                    <p>Loading scan history…</p>
+                    <p>
+                      {historyLoading[repository.id]
+                        ? 'Loading scan history…'
+                        : 'Scan history is not loaded.'}
+                    </p>
                   )}
                 </div>
               </details>

@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.11.0
+  version: 0.12.0
   license:
     name: UNLICENSED
 servers:
@@ -198,6 +198,51 @@ paths:
               schema: { $ref: '#/components/schemas/InternalAcceptedChange' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/repositories/{repositoryId}/scan-history:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: listRepositoryScanHistory
+      summary: List tenant-scoped repository analysis runs
+      description: >-
+        Returns immutable repository-analysis revisions in newest-first order.
+        Continuation uses the stored scan timestamp and stable revision-row ID,
+        so concurrent scans cannot make an existing page grow without bound.
+      tags: [repository-analysis]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding page.
+          schema: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: A bounded page of repository analysis history.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/RepositoryScanHistoryEntry' }
+                  page:
+                    type: object
+                    additionalProperties: false
+                    required: [nextCursor, hasMore]
+                    properties:
+                      nextCursor: { type: string, nullable: true }
+                      hasMore: { type: boolean }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/v1/repositories/{repositoryId}/flow-candidates:
     parameters:
@@ -779,6 +824,36 @@ components:
                 type: object
                 additionalProperties: true
   schemas:
+    RepositoryScanCounts:
+      type: object
+      additionalProperties: false
+      required: [operations, surfaces, tests, diagnostics]
+      properties:
+        operations: { type: integer, minimum: 0 }
+        surfaces: { type: integer, minimum: 0 }
+        tests: { type: integer, minimum: 0 }
+        diagnostics: { type: integer, minimum: 0 }
+    RepositoryScanHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [id, revision, branch, status, trigger, counts]
+      properties:
+        id: { type: string, format: uuid }
+        revision: { type: string, minLength: 1 }
+        branch: { type: string, minLength: 1 }
+        status: { type: string, enum: [never, queued, scanning, complete, failed] }
+        scannedAt: { type: string, format: date-time }
+        trigger: { type: string, enum: [manual, push, reconcile] }
+        counts: { $ref: '#/components/schemas/RepositoryScanCounts' }
+    RepositoryScanHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RepositoryScanHistoryEntry' }
+        page: { $ref: '#/components/schemas/HistoryCursorPage' }
     FlowStep:
       type: object
       required: [actor, action, expectedOutcome, targetIds]

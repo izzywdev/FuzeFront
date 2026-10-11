@@ -51,6 +51,7 @@ import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from '.
 import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateReviewConflict } from './policy-gate-review'
 import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
+import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -499,7 +500,15 @@ app.get('/api/v1/repositories/:id/scan-history', mayReadRepositories, async (req
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.repositoryScanHistory(repositoryId, tenantId))
+  const query = scanHistoryPageQuerySchema.safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
+  const cursor = decodeScanHistoryCursor(query.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const history = await store.repositoryScanHistory(repositoryId, tenantId, {
+    after: cursor.data,
+    limit: query.data.limit + 1,
+  })
+  response.json(scanHistoryPage(history, query.data.limit))
 })
 app.get('/api/v1/repositories/:id/quality-artifacts', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

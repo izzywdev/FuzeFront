@@ -77,12 +77,19 @@ export type QualityMembership = {
 }
 
 export type RepositoryScanHistoryEntry = {
+  /** Stable revision-row identity used for audit links and keyset pagination. */
+  id: string
   revision: string
   branch: string
   status: Repository['lastScanStatus']
   scannedAt?: string
   trigger: 'manual' | 'push' | 'reconcile'
   counts: { operations: number; surfaces: number; tests: number; diagnostics: number }
+}
+
+export type RepositoryScanHistoryPage = {
+  items: RepositoryScanHistoryEntry[]
+  page: { nextCursor: string | null; hasMore: boolean }
 }
 
 export type RepositoryScanCandidate = {

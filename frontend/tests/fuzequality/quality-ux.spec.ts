@@ -117,6 +117,18 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       suggestions: suggestionConfirmed ? [] : fixture.suggestions,
     })
     if (url.pathname.endsWith('/requirements/freshness')) return respond({ freshnessStatus: 'fresh', lastSuccessAt: '2026-09-14T00:00:00.000Z' })
+    if (url.pathname.endsWith('/scan-history')) {
+      const cursor = url.searchParams.get('cursor')
+      return respond(cursor
+        ? {
+            items: [{ id: '00000000-0000-4000-8000-000000000001', revision: 'older123456789', branch: 'main', status: 'complete', scannedAt: '2026-10-09T09:00:00.000Z', trigger: 'push', counts: { operations: 1, surfaces: 1, tests: 2, diagnostics: 0 } }],
+            page: { nextCursor: null, hasMore: false },
+          }
+        : {
+            items: [{ id: '00000000-0000-4000-8000-000000000002', revision: 'latest12345678', branch: 'main', status: 'complete', scannedAt: '2026-10-10T10:00:00.000Z', trigger: 'manual', counts: { operations: 2, surfaces: 3, tests: 4, diagnostics: 0 } }],
+            page: { nextCursor: 'scan-page-2', hasMore: true },
+          })
+    }
     if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
     if (url.pathname.endsWith('/flow-candidates')) {
       const filtered = flowCandidates.filter(flow =>
@@ -859,6 +871,22 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const scan = page.waitForRequest(request => request.url().endsWith('/api/v1/repositories/repo-1/scans') && request.method() === 'POST')
     await page.getByRole('button', { name: 'Scan now' }).click()
     await expect((await scan).postDataJSON()).toEqual({})
+  })
+
+  test('continues bounded repository analysis history', async ({ page }) => {
+    await page.getByRole('button', { name: 'Repositories' }).click()
+    await page.getByText('Scan history', { exact: true }).click()
+    await expect(page.getByText(/latest123456/)).toBeVisible()
+
+    const continuation = page.waitForRequest(request => {
+      const url = new URL(request.url())
+      return url.pathname.endsWith('/scan-history') && url.searchParams.get('cursor') === 'scan-page-2'
+    })
+    await page.getByRole('button', { name: 'Load more scan history' }).click()
+    await continuation
+
+    await expect(page.getByText(/older123456/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Load more scan history' })).toHaveCount(0)
   })
 
   test('shows the frontend visual-reference gap and supports review decisions', async ({ page }) => {

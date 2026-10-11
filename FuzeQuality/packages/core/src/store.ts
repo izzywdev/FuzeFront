@@ -141,7 +141,7 @@ export function mergeTestExecutionEvidence(
 export interface CatalogStore {
   portfolio(tenantId?: string): Promise<Portfolio>
   repository(id: string, tenantId?: string): Promise<Repository | undefined>
-  repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]>
+  repositoryScanHistory(id: string, tenantId: string, query?: RepositoryScanHistoryQuery): Promise<RepositoryScanHistoryEntry[]>
   catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string): Promise<string | undefined>
   qualityArtifacts(repositoryId: string, tenantId: string, revision?: string): Promise<QualityArtifact[]>
   repositoryFlowCandidates(repositoryId: string, tenantId: string, query?: RepositoryFlowCandidateQuery): Promise<RepositoryFlowCandidate[]>
@@ -187,6 +187,11 @@ export interface CatalogStore {
   claimOutboxEvents(limit?: number, leaseMs?: number): Promise<OutboxEvent[]>
   markOutboxPublished(id: string): Promise<void>
   releaseOutboxEvent(id: string, error: string): Promise<void>
+}
+
+export type RepositoryScanHistoryQuery = {
+  after?: { scannedAt: string | null; id: string }
+  limit?: number
 }
 
 const emptyPortfolio = (): Portfolio => ({
@@ -276,9 +281,14 @@ export class MemoryCatalogStore implements CatalogStore {
     return this.data.repositories.find(repository => repository.id === id && (!tenantId || repository.tenantId === tenantId))
   }
 
-  async repositoryScanHistory(id: string, tenantId: string) {
+  async repositoryScanHistory(id: string, tenantId: string, query: RepositoryScanHistoryQuery = {}) {
     if (!await this.repository(id, tenantId)) return []
-    return this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
+    let items = this.scanHistory.filter(item => item.repositoryId === id).map(item => item.item)
+    if (query.after) {
+      const cursorIndex = items.findIndex(item => item.id === query.after!.id && (item.scannedAt ?? null) === query.after!.scannedAt)
+      items = cursorIndex >= 0 ? items.slice(cursorIndex + 1) : []
+    }
+    return items.slice(0, query.limit)
   }
 
   async catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string) {
@@ -497,7 +507,7 @@ export class MemoryCatalogStore implements CatalogStore {
       ),
       ...(result.qualityArtifacts ?? []).map(item => ({ ...item, revision: result.revision })),
     ]
-    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
+    this.scanHistory.unshift({ repositoryId: result.repository.id, item: { id: randomUUID(), revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
   }
 
   async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
@@ -802,10 +812,28 @@ export class PostgresCatalogStore implements CatalogStore {
     return (await this.portfolio(tenantId)).repositories.find(item => item.id === id)
   }
 
-  async repositoryScanHistory(id: string, tenantId: string): Promise<RepositoryScanHistoryEntry[]> {
+  async repositoryScanHistory(id: string, tenantId: string, query: RepositoryScanHistoryQuery = {}): Promise<RepositoryScanHistoryEntry[]> {
     if (!await this.repository(id, tenantId)) return []
-    const result = await this.pool.query(`SELECT r.commit_sha, r.branch, r.status AS revision_status, r.scanned_at, s.trigger, s.counts FROM fuzequality.repository_revisions r LEFT JOIN LATERAL (SELECT * FROM fuzequality.scan_runs WHERE revision_id=r.id ORDER BY started_at DESC LIMIT 1) s ON true WHERE r.repository_id=$1 ORDER BY r.scanned_at DESC NULLS LAST LIMIT 25`, [id])
-    return result.rows.map(row => ({ revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
+    const values: unknown[] = [id]
+    const after = query.after?.scannedAt
+      ? `AND (r.scanned_at < $2::timestamptz OR (r.scanned_at = $2::timestamptz AND r.id < $3::uuid) OR r.scanned_at IS NULL)`
+      : query.after
+        ? `AND r.scanned_at IS NULL AND r.id < $2::uuid`
+        : ''
+    if (query.after?.scannedAt) values.push(query.after.scannedAt, query.after.id)
+    else if (query.after) values.push(query.after.id)
+    values.push(query.limit ?? 25)
+    const limitParameter = values.length
+    const result = await this.pool.query(
+      `SELECT r.id, r.commit_sha, r.branch, r.status AS revision_status, r.scanned_at, s.trigger, s.counts
+       FROM fuzequality.repository_revisions r
+       LEFT JOIN LATERAL (SELECT * FROM fuzequality.scan_runs WHERE revision_id=r.id ORDER BY started_at DESC LIMIT 1) s ON true
+       WHERE r.repository_id=$1 ${after}
+       ORDER BY r.scanned_at DESC NULLS LAST, r.id DESC
+       LIMIT $${limitParameter}`,
+      values,
+    )
+    return result.rows.map(row => ({ id: row.id, revision: row.commit_sha, branch: row.branch, status: row.revision_status, scannedAt: row.scanned_at?.toISOString(), trigger: row.trigger ?? 'manual', counts: row.counts ?? { operations: 0, surfaces: 0, tests: 0, diagnostics: 0 } }))
   }
 
   async catalogRevisionForSource(repositoryId: string, tenantId: string, sourceRevision: string) {
