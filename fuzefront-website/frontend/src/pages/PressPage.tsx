@@ -131,14 +131,14 @@ export const PressPage: React.FC = () => {
 
       {/* Contact */}
       <section className="py-16 bg-white border-t border-secondary-100">
-        <div className="max-w-2xl mx-auto px-4 text-center">
+        <Container size="2xl" className="text-center">
           <p className="text-gray-600">
             For all press inquiries, contact{' '}
             <a href="mailto:press@fuzefront.com" className="text-primary-700 hover:underline font-medium">
               press@fuzefront.com
             </a>
           </p>
-        </div>
+        </Container>
       </section>
     </div>
   )

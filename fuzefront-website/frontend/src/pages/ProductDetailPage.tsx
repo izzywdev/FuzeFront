@@ -5,6 +5,7 @@ import {
   Layers, Bot, Globe, CreditCard, Key, TrendingUp,
   CheckCircle2, BarChart3, Palette, Monitor, ArrowRight, ArrowLeft
 } from 'lucide-react'
+import { Container } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 
 interface ProductData {
@@ -370,7 +371,7 @@ export const ProductDetailPage: React.FC = () => {
 
       {/* CTA */}
       <section className="py-20 bg-white border-t border-gray-100">
-        <div className="max-w-2xl mx-auto px-4 text-center">
+        <Container size="2xl" className="text-center">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-gray-900 mb-4">
             Ready to get started with {product.name}?
           </h2>
@@ -389,7 +390,7 @@ export const ProductDetailPage: React.FC = () => {
               Compare plans
             </Link>
           </div>
-        </div>
+        </Container>
       </section>
     </div>
   )
