@@ -160,6 +160,12 @@
     },
     {
       "path": ".github/workflows/release.yml"
+    },
+    {
+      "path": "scripts/publish-release-gitops.sh"
+    },
+    {
+      "path": "scripts/__tests__/test_release_gitops.py"
     }
   ]
 }

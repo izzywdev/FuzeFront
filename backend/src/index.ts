@@ -10,8 +10,23 @@ import authRoutes from './routes/auth'
 import appsRoutes from './routes/apps'
 import notificationProxyRoutes from './routes/notifications'
 import connectorRoutes from './routes/connectors'
+import fuzexRoutes from './routes/fuzex'
+import { createConnectorPlatformRouter } from './connector-platform'
+import { googleProviders } from './connector-providers/google'
+import { microsoftProviders } from './connector-providers/microsoft'
+import { workspaceProviders } from './connector-providers/workspace'
+import { developerProviders } from './connector-providers/developer'
+import { googleProductivityProviders } from './connector-providers/google-productivity'
+import { googleTasksSlidesProviders } from './connector-providers/google-tasks-slides'
+import { microsoftProductivityProviders } from './connector-providers/microsoft-productivity'
+import { atlassianProviders } from './connector-providers/atlassian'
+import { projectToolProviders } from './connector-providers/project-tools'
+import { aiModelProviders } from './connector-providers/ai-models'
+import { aiBuilderProviders } from './connector-providers/ai-builders'
+import { deployBuilderProviders } from './connector-providers/deploy-builders'
 import organizationsRoutes from './routes/organizations'
 import invitationsRoutes from './routes/invitations'
+import fuzepickerRoutes from './routes/fuzepicker'
 import usersRoutes from './routes/users'
 import internalRoutes from './routes/internal'
 import billingRoutes, { billingWebhookRouter } from './routes/billing'
@@ -111,6 +126,8 @@ app.use(
 // its own express.raw() parser. (See routes/billing.ts.)
 app.use('/api/v1/billing/webhooks/stripe', billingWebhookRouter)
 
+// Frame/import payloads can exceed the host's default 100 KB JSON limit.
+app.use('/api/v1/fuzex', express.json({ limit: '20mb' }))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
@@ -323,6 +340,7 @@ app.use('/api/apps', appsRoutes)
 app.use('/api/organizations', organizationsRoutes)
 // FF-EPIC-11-S3 — public token-based invitation resolve/accept (routes/invitations.ts).
 app.use('/api/invitations', invitationsRoutes)
+app.use('/api/fuzepicker', fuzepickerRoutes)
 app.use('/api/users', usersRoutes)
 // Browser-facing flag reads, evaluated server-side against the AUTHENTICATED
 // session so the `developers` segment cannot be self-assigned by a client.
@@ -342,7 +360,14 @@ app.use('/api/v1/billing', billingRoutes)
 // /api/v1/notifications/*; this forwards it in-cluster. The service's
 // /internal/* publish surface is blocked here — see routes/notifications.ts.
 app.use('/api/v1/notifications', notificationProxyRoutes)
+app.use('/api/v1/connectors', createConnectorPlatformRouter([
+  ...googleProviders, ...microsoftProviders, ...workspaceProviders, ...developerProviders,
+  ...googleProductivityProviders, ...googleTasksSlidesProviders, ...microsoftProductivityProviders,
+  ...atlassianProviders, ...projectToolProviders,
+  ...aiModelProviders, ...aiBuilderProviders, ...deployBuilderProviders,
+]))
 app.use('/api/v1/connectors', connectorRoutes)
+app.use('/api/v1/fuzex', fuzexRoutes)
 
 app.use('/api/v1/app-registry', appRegistryRoutes)
 // App-registry proxy: browser -> backend -> fuzefront-applications:3003. The

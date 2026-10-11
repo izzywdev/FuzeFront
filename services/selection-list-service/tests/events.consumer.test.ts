@@ -91,6 +91,40 @@ it('an invalid payload is dead-lettered to identity.org.deleted.dlq and the hand
   expect(dlqSend.mock.calls[0][0].topic).toBe('identity.org.deleted.dlq');
 });
 
+it('rejects an envelope that claims a different topic before it reaches the handler', async () => {
+  await startLifecycleConsumers();
+  await runners['identity.org.deleted'](
+    msg({
+      ...envelope({ organizationId: ORG, slug: 'acme', ownerId: null, cascade: 'hard' }),
+      topic: 'identity.user.deleted',
+    }),
+  );
+  expect(mockHandleOrg).not.toHaveBeenCalled();
+  expect(dlqSend).toHaveBeenCalledTimes(1);
+  const body = JSON.parse(dlqSend.mock.calls[0][0].messages[0].value);
+  expect(body.reason).toBe('Envelope topic does not match Kafka topic');
+});
+
+it('redacts direct-identifying data before writing a malformed lifecycle event to the DLQ', async () => {
+  await startLifecycleConsumers();
+  await runners['identity.user.deleted']({
+    topic: 'identity.user.deleted',
+    message: {
+      value: Buffer.from(JSON.stringify({
+        version: '1.0',
+        topic: 'identity.user.deleted',
+        correlationId: 'corr-sensitive',
+        occurredAt: '2026-10-04T00:00:00.000Z',
+        payload: { userId: ORG, email: 'person@example.com', cascade: 'invalid' },
+      })),
+    },
+  });
+  expect(mockHandleUser).not.toHaveBeenCalled();
+  const body = JSON.parse(dlqSend.mock.calls[0][0].messages[0].value);
+  expect(body.raw).toContain('[REDACTED]');
+  expect(body.raw).not.toContain('person@example.com');
+});
+
 it('a non-JSON message is dead-lettered', async () => {
   await startLifecycleConsumers();
   await runners['identity.org.deleted'](msg('{not json'));
