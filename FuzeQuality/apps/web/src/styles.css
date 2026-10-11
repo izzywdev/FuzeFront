@@ -145,6 +145,8 @@ button:disabled { cursor: wait; opacity: .55; }
 .governance-passages li { display: grid; grid-template-columns: auto minmax(180px, 1fr) auto; align-items: start; gap: 8px; padding: 8px; border-left: 2px solid var(--line); background: #0d1d2b; }
 .governance-passages q { color: var(--text); font-size: 11px; }
 .governance-passages code { color: var(--muted); font: 9px var(--font-mono); overflow-wrap: anywhere; }
+.governance-passage-source { display: grid; gap: 3px; min-width: 140px; }
+.governance-passage-source strong { color: var(--text); font-size: 10px; }
 .governance-signal-obligation { color: var(--cyan); }.governance-signal-prohibition { color: var(--coral); }.governance-signal-ambiguous { color: var(--amber); }
 .execution-source { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; color: var(--cyan); font-size: 11px; }
 .execution-metadata { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0 0; }

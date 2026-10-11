@@ -71,6 +71,42 @@ describe('policy gate evaluation', () => {
     ]))
   })
 
+  it('determines contradiction polarity from passages about the shared subject', () => {
+    const results = evaluatePolicyGates(repository, 'abc', [
+      {
+        id: 'policy-mixed', repositoryId: 'repo-1', kind: 'policy', title: 'Deployment and credential policy',
+        sourcePath: 'governance/mixed.md', summary: 'Deployment approval and credential handling.',
+        evidence: ['Deployments must require approval.', 'Credentials must not be logged.'],
+      },
+      {
+        id: 'policy-deploy-exception', repositoryId: 'repo-1', kind: 'policy', title: 'Deployment approval exception',
+        sourcePath: 'governance/deploy-exception.md', summary: 'Deployments must not require approval.',
+        evidence: ['Emergency deployments must not require approval.'],
+      },
+    ])
+
+    expect(results).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'contradictory-policy',
+        evidencePassages: [
+          expect.objectContaining({ artifactId: 'policy-mixed', signal: 'obligation', text: 'Deployments must require approval.' }),
+          expect.objectContaining({ artifactId: 'policy-deploy-exception', signal: 'prohibition', text: 'Emergency deployments must not require approval.' }),
+        ],
+      }),
+    ]))
+  })
+
+  it('bounds decisive passages to the ingestion contract limit', () => {
+    const longRule = `Authentication must be verified. ${'evidence '.repeat(400)}`
+    const results = evaluatePolicyGates(repository, 'abc', [
+      { id: 'policy-long', repositoryId: 'repo-1', kind: 'policy', title: 'Authentication policy', sourcePath: 'governance/auth.md', summary: 'Authentication required.', evidence: [longRule] },
+    ])
+    const passage = results.find(item => item.kind === 'unguarded-policy')?.evidencePassages?.[0]
+
+    expect(passage?.text).toHaveLength(2000)
+    expect(passage?.text.endsWith('…')).toBe(true)
+  })
+
   it('does not call two prohibitions contradictory merely because must not contains must', () => {
     const results = evaluatePolicyGates(repository, 'abc', [
       { id: 'policy-one', repositoryId: 'repo-1', kind: 'policy', title: 'Production secret policy', sourcePath: 'governance/secrets.md', summary: 'Production secrets must not be logged.', evidence: [] },

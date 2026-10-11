@@ -44,11 +44,38 @@ const policyPassages = (artifact: QualityArtifact) => [
   ...artifact.evidence,
 ].map(text => text.trim()).filter(Boolean)
 
+const MAX_EVIDENCE_PASSAGE_LENGTH = 2000
+const passageTerms = (text: string) => new Set(
+  text.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) ?? [],
+)
+const boundedPassage = (text: string) => text.length <= MAX_EVIDENCE_PASSAGE_LENGTH
+  ? text
+  : `${text.slice(0, MAX_EVIDENCE_PASSAGE_LENGTH - 1)}…`
+
 const prohibitionPattern = /\b(?:must not|shall not|may not|cannot|can't|prohibit(?:ed|s)?|forbid(?:den|s)?|never)\b/i
 const obligationPattern = /\b(?:must|required|shall|always)\b/i
 const ambiguousPattern = /\b(?:should|appropriate|reasonable|where possible|as needed|when practical)\b/i
 
-function passageWithSignal(artifact: QualityArtifact, signal: EvidenceSignal) {
+function subjectPassages(artifact: QualityArtifact, subjects: string[] = []) {
+  const passages = policyPassages(artifact)
+  if (!subjects.length) return passages
+  return passages
+    .map((text, index) => ({
+      text,
+      index,
+      score: subjects.filter(subject => passageTerms(text).has(subject)).length,
+    }))
+    .filter(item => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map(item => item.text)
+}
+
+function passageWithSignal(
+  artifact: QualityArtifact,
+  signal: EvidenceSignal,
+  subjects: string[] = [],
+  selectedText?: string,
+) {
   const pattern = signal === 'prohibition'
     ? prohibitionPattern
     : signal === 'obligation'
@@ -56,19 +83,21 @@ function passageWithSignal(artifact: QualityArtifact, signal: EvidenceSignal) {
       : signal === 'ambiguous'
         ? ambiguousPattern
         : undefined
-  const passages = policyPassages(artifact)
-  const text = pattern
+  const passages = subjectPassages(artifact, subjects)
+  const text = selectedText ?? (pattern
     ? passages.find(candidate => pattern.test(
         signal === 'obligation' ? candidate.replace(prohibitionPattern, '') : candidate
       ))
-    : passages[0]
-  return text ? { artifactId: artifact.id, sourcePath: artifact.sourcePath, text, signal } : undefined
+    : passages[0])
+  return text ? { artifactId: artifact.id, sourcePath: artifact.sourcePath, text: boundedPassage(text), signal } : undefined
 }
 
-function policyPolarity(artifact: QualityArtifact): 'obligation' | 'prohibition' | undefined {
-  const text = policyPassages(artifact).join(' ')
-  if (prohibitionPattern.test(text)) return 'prohibition'
-  return obligationPattern.test(text) ? 'obligation' : undefined
+function policyPolarity(artifact: QualityArtifact, subjects: string[] = []) {
+  for (const text of subjectPassages(artifact, subjects)) {
+    if (prohibitionPattern.test(text)) return { polarity: 'prohibition' as const, text }
+    if (obligationPattern.test(text)) return { polarity: 'obligation' as const, text }
+  }
+  return undefined
 }
 
 /** Conservative deterministic detector; recommendations are never applied automatically. */
@@ -85,8 +114,9 @@ export function evaluatePolicyGates(repository: Repository, revision: string, ar
     }
     const matching = gates.filter(gate => sharedTerms(policy, gate).length > 0)
     if (!matching.length) {
+      const decision = policyPolarity(policy)
       const title = `Policy has no detected gate: ${policy.title}`
-      result.push({ id: id(repository.id, revision, 'unguarded-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'unguarded-policy', severity: 'high', title, detail: `No gate evidence shares an enforceable subject with ${policy.sourcePath}.`, policyArtifactIds: [policy.id], gateArtifactIds: [], confidence: 0.75, scope: scope([policy]), evidencePassages: [passageWithSignal(policy, policyPolarity(policy) ?? 'policy')].filter(item => item !== undefined), recommendation: 'Define a named CI or post-production gate that verifies this policy and cite the policy in its configuration.', reviewStatus: 'proposed', createdAt })
+      result.push({ id: id(repository.id, revision, 'unguarded-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'unguarded-policy', severity: 'high', title, detail: `No gate evidence shares an enforceable subject with ${policy.sourcePath}.`, policyArtifactIds: [policy.id], gateArtifactIds: [], confidence: 0.75, scope: scope([policy]), evidencePassages: [passageWithSignal(policy, decision?.polarity ?? 'policy', [], decision?.text)].filter(item => item !== undefined), recommendation: 'Define a named CI or post-production gate that verifies this policy and cite the policy in its configuration.', reviewStatus: 'proposed', createdAt })
     }
   }
   for (const gate of gates) {
@@ -99,10 +129,10 @@ export function evaluatePolicyGates(repository: Repository, revision: string, ar
   for (let index = 0; index < policies.length; index++) for (let other = index + 1; other < policies.length; other++) {
     const left = policies[index], right = policies[other]
     const subject = sharedTerms(left, right)
-    const leftPolarity = policyPolarity(left), rightPolarity = policyPolarity(right)
-    if (subject.length && leftPolarity && rightPolarity && leftPolarity !== rightPolarity) {
+    const leftDecision = policyPolarity(left, subject), rightDecision = policyPolarity(right, subject)
+    if (subject.length && leftDecision && rightDecision && leftDecision.polarity !== rightDecision.polarity) {
       const title = `Potentially contradictory policies: ${left.title} / ${right.title}`
-      result.push({ id: id(repository.id, revision, 'contradictory-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'contradictory-policy', severity: 'high', title, detail: `The policies share ${subject.slice(0, 3).join(', ')} while containing opposing obligation and prohibition language.`, policyArtifactIds: [left.id, right.id], gateArtifactIds: [], confidence: Math.min(0.95, 0.8 + subject.length * 0.05), scope: scope([left, right], subject), evidencePassages: [passageWithSignal(left, leftPolarity), passageWithSignal(right, rightPolarity)].filter(item => item !== undefined), recommendation: 'Clarify precedence, scope, and exceptions in one authoritative policy before changing gates.', reviewStatus: 'proposed', createdAt })
+      result.push({ id: id(repository.id, revision, 'contradictory-policy', title), repositoryId: repository.id, tenantId, revision, kind: 'contradictory-policy', severity: 'high', title, detail: `The policies share ${subject.slice(0, 3).join(', ')} while containing opposing obligation and prohibition language.`, policyArtifactIds: [left.id, right.id], gateArtifactIds: [], confidence: Math.min(0.95, 0.8 + subject.length * 0.05), scope: scope([left, right], subject), evidencePassages: [passageWithSignal(left, leftDecision.polarity, subject, leftDecision.text), passageWithSignal(right, rightDecision.polarity, subject, rightDecision.text)].filter(item => item !== undefined), recommendation: 'Clarify precedence, scope, and exceptions in one authoritative policy before changing gates.', reviewStatus: 'proposed', createdAt })
     }
   }
   return result
