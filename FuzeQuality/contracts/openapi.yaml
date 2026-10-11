@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.4.0
+  version: 0.5.0
   license:
     name: UNLICENSED
 servers:
@@ -241,13 +241,28 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+      - $ref: '#/components/parameters/CandidateId'
+    get:
+      operationId: getRepositoryFlowCandidate
+      summary: Inspect one tenant-scoped UX-flow candidate and its wireframe
+      tags: [flow-candidates]
+      security: [{ platformBearer: [] }]
+      responses:
+        '200':
+          description: The exact revisioned flow candidate requested by the caller.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RepositoryFlowCandidate' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
-      - name: candidateId
-        in: path
-        required: true
-        schema: { type: string, minLength: 1 }
+      - $ref: '#/components/parameters/CandidateId'
     post:
       operationId: reviewRepositoryFlowCandidate
       summary: Confirm or reject a detected UX-flow candidate
@@ -283,10 +298,7 @@ paths:
   /api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/history:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'
-      - name: candidateId
-        in: path
-        required: true
-        schema: { type: string, minLength: 1 }
+      - $ref: '#/components/parameters/CandidateId'
     get:
       operationId: listRepositoryFlowReviewHistory
       summary: List immutable human review decisions for a UX-flow candidate
@@ -566,6 +578,11 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    CandidateId:
+      name: candidateId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 500 }
     EvaluationId:
       name: evaluationId
       in: path

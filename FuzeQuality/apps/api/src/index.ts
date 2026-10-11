@@ -44,6 +44,7 @@ import { executionRecord, linkExecutionToRevisionArtifacts } from './test-execut
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
+import { repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { filterPolicyGateEvaluations, policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateReviewConflict } from './policy-gate-review'
@@ -489,6 +490,17 @@ app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (reque
   const filter = repositoryFlowFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
   response.json(filterRepositoryFlowCandidates(await store.repositoryFlowCandidates(repositoryId, tenantId), filter.data))
+})
+app.get('/api/v1/repositories/:id/flow-candidates/:candidateId', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const candidateId = Array.isArray(request.params.candidateId) ? request.params.candidateId[0] : request.params.candidateId
+  const tenantId = requestIdentity(request)!.tenantId
+  const result = await repositoryFlowDetail(repositoryId, tenantId, candidateId, {
+    repository: (id, tenant) => store.repository(id, tenant),
+    candidates: (id, tenant) => store.repositoryFlowCandidates(id, tenant),
+  })
+  if (result.status === 404) return response.status(404).json({ error: result.error })
+  response.json(result.candidate)
 })
 app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

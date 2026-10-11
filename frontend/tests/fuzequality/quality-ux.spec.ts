@@ -126,6 +126,9 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
       )
       return respond(filtered)
     }
+    if (url.pathname.endsWith('/flow-candidates/candidate-1') && method === 'GET') {
+      return respond(flowCandidates.find(flow => flow.id === 'candidate-1'))
+    }
     if (url.pathname.endsWith('/flow-candidates/candidate-1/history')) return respond(flowReviewHistory)
     if (url.pathname.endsWith('/flow-candidates/candidate-1/review') && method === 'POST') {
       const payload = route.request().postDataJSON() as { status: 'confirmed' | 'rejected', reason?: string }
@@ -264,6 +267,18 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('test:suspension', { exact: true })).toBeVisible()
     await expect(page.getByText('test:suspension:retry', { exact: true })).toBeVisible()
     await expect(page.getByLabel('Suspend an application wireframe')).toContainText('App settings')
+    const detailRequest = page.waitForRequest(request =>
+      request.url().endsWith('/flow-candidates/candidate-1')
+    )
+    await flowCard.getByRole('button', { name: 'Inspect flow and wireframe' }).click()
+    await detailRequest
+    const flowInspector = page.getByRole('dialog', { name: 'Suspend an application' })
+    await expect(flowInspector.getByLabel('Flow wireframe')).toContainText('Confirm suspension')
+    await expect(flowInspector.getByLabel('Flow steps')).toContainText('the application is suspended')
+    await expect(flowInspector.getByLabel('Flow provenance')).toContainText('fuzeinfra-litellm')
+    await expect(flowInspector.getByLabel('Flow provenance')).toContainText('src/routes/apps.ts')
+    await page.keyboard.press('Escape')
+    await expect(flowInspector).toBeHidden()
     const modelRequest = page.waitForRequest(request =>
       new URL(request.url()).searchParams.get('model') === 'quality-analysis'
     )

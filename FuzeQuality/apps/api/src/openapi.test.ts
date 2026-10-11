@@ -146,6 +146,12 @@ describe('contract discovery', () => {
         'schemaVersion',
       ])
       expect(
+        document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}'].get.responses['200'].content[
+          'application/json'
+        ].schema.$ref
+      ).toBe('#/components/schemas/RepositoryFlowCandidate')
+      expect(document.components.parameters.CandidateId.schema.maxLength).toBe(500)
+      expect(
         document.paths['/api/v1/repositories/{repositoryId}/flow-candidates/{candidateId}/review'].post.responses['409'].content[
           'application/json'
         ].schema.$ref

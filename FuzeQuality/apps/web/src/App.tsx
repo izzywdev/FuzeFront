@@ -71,6 +71,7 @@ import {
 } from './components/executionEvidence'
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
+import { FlowInspector } from './components/flowInspector'
 
 export type View =
   | 'overview'
@@ -3118,6 +3119,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [flowModel, setFlowModel] = useState('')
   const [flowPromptVersion, setFlowPromptVersion] = useState('')
   const [flowSchemaVersion, setFlowSchemaVersion] = useState('')
+  const [flowInspectorOpen, setFlowInspectorOpen] = useState(false)
+  const [inspectedFlow, setInspectedFlow] = useState<RepositoryFlowCandidate>()
+  const [flowInspectorLoading, setFlowInspectorLoading] = useState(false)
+  const [flowInspectorError, setFlowInspectorError] = useState<string>()
+  const flowInspectorRequest = useRef(0)
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
@@ -3200,6 +3206,32 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   ])
   const flowResultsAreCurrent =
     !loadingFlows && loadedFlowQuery === flowQuery
+  const inspectFlow = async (flow: RepositoryFlowCandidate) => {
+    const request = ++flowInspectorRequest.current
+    setFlowInspectorOpen(true)
+    setInspectedFlow(undefined)
+    setFlowInspectorError(undefined)
+    setFlowInspectorLoading(true)
+    try {
+      const detail = await api.repositoryFlowCandidate(flow.repositoryId, flow.id)
+      if (request === flowInspectorRequest.current) setInspectedFlow(detail)
+    } catch (cause) {
+      if (request === flowInspectorRequest.current) {
+        setFlowInspectorError(
+          cause instanceof Error ? cause.message : 'Unable to load UX flow detail'
+        )
+      }
+    } finally {
+      if (request === flowInspectorRequest.current) setFlowInspectorLoading(false)
+    }
+  }
+  const closeFlowInspector = () => {
+    flowInspectorRequest.current++
+    setFlowInspectorOpen(false)
+    setInspectedFlow(undefined)
+    setFlowInspectorError(undefined)
+    setFlowInspectorLoading(false)
+  }
   const reviewFlow = async (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -3220,6 +3252,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         ? current.map(item => (item.id === reviewed.id ? reviewed : item))
         : current.filter(item => item.id !== reviewed.id)
     )
+    setInspectedFlow(current => current?.id === reviewed.id ? reviewed : current)
   }
   const reviewPolicyGate = async (
     evaluation: PolicyGateEvaluation,
@@ -3586,6 +3619,17 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         title="Quality intelligence"
         detail="Deterministic repository evidence is stored by revision. LiteLLM proposals remain reviewable suggestions before they affect flows or policy governance."
       />
+      <FlowInspector
+        open={flowInspectorOpen}
+        flow={inspectedFlow}
+        repositoryLabel={inspectedFlow
+          ? repositoryLabels.get(inspectedFlow.repositoryId)
+          : undefined}
+        artifacts={evidenceArtifacts}
+        loading={flowInspectorLoading}
+        error={flowInspectorError}
+        onClose={closeFlowInspector}
+      />
       {data.diagnostics.filter(item => item.category === 'repository').length > 0 && (
         <details className="scan-diagnostics" open>
           <summary>
@@ -3814,6 +3858,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                               </small>
                             ) : null}
                             <p>{flow.steps[0]?.action}</p>
+                            <QualityAction
+                              intent="quiet"
+                              onClick={() => void inspectFlow(flow)}
+                            >
+                              <Eye size={14} /> Inspect flow and wireframe
+                            </QualityAction>
                             <ol
                               className="flow-wireframe"
                               aria-label={`${flow.title} wireframe`}

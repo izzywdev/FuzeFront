@@ -370,6 +370,35 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('loads the tenant-scoped flow detail before opening the wireframe inspector', async () => {
+    mockEvidenceApis()
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([storyArtifact])
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([
+      { ...candidate, evidence: [storyArtifact.id] },
+    ])
+    const detailRequest = vi.spyOn(api, 'repositoryFlowCandidate').mockResolvedValue({
+      ...candidate,
+      evidence: [storyArtifact.id],
+      analysis: {
+        provider: 'fuzeinfra-litellm',
+        model: 'quality-analysis',
+        promptVersion: 'flow-v2',
+        schemaVersion: '2.0',
+      },
+    })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    await screen.findByText(candidate.title)
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect flow and wireframe' }))
+
+    expect(await screen.findByRole('dialog', { name: candidate.title })).toBeVisible()
+    expect(detailRequest).toHaveBeenCalledWith(repository.id, candidate.id)
+    expect(screen.getByRole('region', { name: 'Flow wireframe' })).toHaveTextContent('Checkout')
+    const provenance = screen.getByRole('region', { name: 'Flow provenance' })
+    expect(provenance).toHaveTextContent('flow-v2')
+    expect(within(provenance).getByText(storyArtifact.sourcePath)).toBeVisible()
+  })
+
   it('resolves flow evidence identifiers to repository source paths', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([storyArtifact])
