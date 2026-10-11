@@ -106,27 +106,6 @@ async function allQualityArtifacts(id: string, revision?: string): Promise<Quali
   return items
 }
 
-async function allExecutionTrend(id: string, filter: Record<string, string> = {}) {
-  const items: import('@fuzequality/core').ExecutionOutcomeTrend[] = []
-  const seenCursors = new Set<string>()
-  let cursor: string | undefined
-  do {
-    const query = new URLSearchParams(filter)
-    if (cursor) query.set('cursor', cursor)
-    const response = await request<{
-      items: import('@fuzequality/core').ExecutionOutcomeTrend[]
-      page: { nextCursor: string | null; hasMore: boolean }
-    }>(`/api/v1/repositories/${id}/execution-trend?${query}`)
-    items.push(...response.items)
-    const next = response.page.nextCursor ?? undefined
-    if (!response.page.hasMore || !next) return items
-    if (seenCursors.has(next)) throw new Error('Execution trend pagination returned a repeated cursor')
-    seenCursors.add(next)
-    cursor = next
-  } while (cursor)
-  return items
-}
-
 export const api = {
   portfolio: () => request<Portfolio>('/api/v1/portfolio'),
   requirementFreshness: () => request<{ freshnessStatus: 'unknown' | 'fresh' | 'stale' | 'failed'; lastSuccessAt?: string }>('/api/v1/requirements/freshness'),
@@ -142,7 +121,10 @@ export const api = {
   policyGateReviewHistory: (repositoryId: string, evaluationId: string, cursor?: string) => request<import('@fuzequality/contracts').PolicyGateReviewHistoryPage | import('@fuzequality/contracts').PolicyGateReviewHistoryEntry[]>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   reviewPolicyGateEvaluation: (repositoryId: string, evaluationId: string, status: 'accepted' | 'dismissed', reason?: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation>(`/api/v1/repositories/${repositoryId}/policy-gate-evaluations/${evaluationId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
   testExecutions: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').TestExecutionPage | import('@fuzequality/contracts').TestExecution[]>(`/api/v1/repositories/${id}/test-executions?${new URLSearchParams(filter)}`),
-  executionTrend: allExecutionTrend,
+  executionTrend: (id: string, filter: Record<string, string> = {}) => request<{
+    items: import('@fuzequality/core').ExecutionOutcomeTrend[]
+    page: { nextCursor: string | null; hasMore: boolean }
+  } | import('@fuzequality/core').ExecutionOutcomeTrend[]>(`/api/v1/repositories/${id}/execution-trend?${new URLSearchParams(filter)}`),
   executionPerformance: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/core').PolicyGatePerformancePage | import('@fuzequality/core').PolicyGatePerformance[]>(`/api/v1/repositories/${id}/execution-performance?${new URLSearchParams(filter)}`),
   runPerformanceTest: (repositoryId: string, artifactId: string) => request<{
     status: 'dispatched'

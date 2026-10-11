@@ -3210,6 +3210,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [historyPaginationError, setHistoryPaginationError] = useState<string>()
   const [executions, setExecutions] = useState<TestExecution[]>([])
   const [executionTrends, setExecutionTrends] = useState<ExecutionOutcomeTrend[][]>([])
+  const [executionTrendNextCursors, setExecutionTrendNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreExecutionTrend, setLoadingMoreExecutionTrend] = useState(false)
+  const [executionTrendPaginationError, setExecutionTrendPaginationError] = useState<string>()
   const [executionNextCursors, setExecutionNextCursors] = useState<Record<string, string>>({})
   const [loadingMoreExecutions, setLoadingMoreExecutions] = useState(false)
   const [executionPaginationError, setExecutionPaginationError] = useState<string>()
@@ -3609,6 +3612,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     setExecutionNextCursors({})
     setExecutionPaginationError(undefined)
+    setExecutionTrendNextCursors({})
+    setExecutionTrendPaginationError(undefined)
     setPerformanceNextCursors({})
     setPerformancePaginationError(undefined)
     setExecutionHistoryFailures([])
@@ -3629,7 +3634,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             repositoryId: repository.id,
             executions: { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } },
             performance: { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
-            trend: [] as ExecutionOutcomeTrend[],
+            trend: { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
             executionFailed: false,
             performanceFailed: false,
             trendFailed: false,
@@ -3648,7 +3653,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           performance: performanceResult.status === 'fulfilled'
             ? normalizeHistoryPage(performanceResult.value)
             : { items: [] as PolicyGatePerformance[], page: { nextCursor: null, hasMore: false } },
-          trend: trendResult.status === 'fulfilled' ? trendResult.value : [],
+          trend: trendResult.status === 'fulfilled'
+            ? normalizeHistoryPage(trendResult.value)
+            : { items: [] as ExecutionOutcomeTrend[], page: { nextCursor: null, hasMore: false } },
           executionFailed: executionResult.status === 'rejected',
           performanceFailed: performanceResult.status === 'rejected',
           trendFailed: trendResult.status === 'rejected',
@@ -3664,7 +3671,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               : [])
           ))
           setExecutionPerformance(groups.flatMap(group => group.performance.items))
-          setExecutionTrends(groups.map(group => group.trend))
+          setExecutionTrends(groups.map(group => group.trend.items))
+          setExecutionTrendNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.trend.page.nextCursor
+              ? [[group.repositoryId, group.trend.page.nextCursor]]
+              : [])
+          ))
           setPerformanceNextCursors(Object.fromEntries(
             groups.flatMap(group => group.performance.page.nextCursor
               ? [[group.repositoryId, group.performance.page.nextCursor]]
@@ -3681,6 +3693,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setExecutionNextCursors({})
           setExecutionPerformance([])
           setExecutionTrends([])
+          setExecutionTrendNextCursors({})
           setPerformanceNextCursors({})
           setExecutionHistoryFailures(data.repositories.map(repository => repository.id))
           setExecutionPerformanceFailures(data.repositories.map(repository => repository.id))
@@ -3696,6 +3709,31 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionRepositoryId,
     invalidExecutionRange,
   ])
+  const loadMoreExecutionTrend = async () => {
+    const cursors = Object.entries(executionTrendNextCursors)
+    if (!cursors.length) return
+    setLoadingMoreExecutionTrend(true)
+    setExecutionTrendPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.executionTrend(repositoryId, {
+          ...executionFilter,
+          cursor,
+        })),
+      })))
+      setExecutionTrends(current => [...current, ...groups.map(group => group.page.items)])
+      setExecutionTrendNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor
+          ? [[group.repositoryId, group.page.page.nextCursor]]
+          : [])
+      ))
+    } catch (cause) {
+      setExecutionTrendPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution trend history.')
+    } finally {
+      setLoadingMoreExecutionTrend(false)
+    }
+  }
   const loadMoreExecutions = async () => {
     const cursors = Object.entries(executionNextCursors)
     if (!cursors.length) return
@@ -4612,6 +4650,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               <span>No timestamped outcomes for this filter.</span>
             )}
           </div>
+          {Object.keys(executionTrendNextCursors).length > 0 && (
+            <QualityAction
+              intent="quiet"
+              onClick={() => void loadMoreExecutionTrend()}
+              disabled={loadingMoreExecutionTrend}
+            >
+              {loadingMoreExecutionTrend ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+              Load more outcome trend
+            </QualityAction>
+          )}
+          {executionTrendPaginationError && (
+            <p className="form-error" role="alert">{executionTrendPaginationError}</p>
+          )}
           {executionHistoryFailures.length > 0 && (
             <p className="form-error" role="alert">
               Execution history is temporarily unavailable for {executionHistoryFailures.length}{' '}

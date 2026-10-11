@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { PolicyGateEvaluation, Repository } from '@fuzequality/contracts'
-import { policyGateReviewConflict } from './policy-gate-review'
+import { policyGateEvaluationForReview, policyGateReviewConflict } from './policy-gate-review'
 
 const repository = {
   id: 'repo-1',
@@ -40,6 +40,21 @@ const evaluation = {
 } satisfies PolicyGateEvaluation
 
 describe('policy-gate review revision guard', () => {
+  it('loads the reviewed evaluation through a bounded point query', async () => {
+    const policyGateEvaluations = vi.fn().mockResolvedValue([evaluation])
+
+    await expect(policyGateEvaluationForReview(
+      { policyGateEvaluations },
+      repository.id,
+      'tenant-1',
+      evaluation.id,
+    )).resolves.toEqual(evaluation)
+    expect(policyGateEvaluations).toHaveBeenCalledWith(repository.id, 'tenant-1', {
+      id: evaluation.id,
+      limit: 1,
+    })
+  })
+
   it('allows review only for the repository current analyzed revision', () => {
     expect(policyGateReviewConflict(repository, evaluation)).toBeUndefined()
     expect(

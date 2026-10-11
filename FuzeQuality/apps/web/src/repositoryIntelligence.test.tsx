@@ -295,6 +295,29 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(api.executionTrend).toHaveBeenCalledWith(repository.id, {})
   })
 
+  it('loads older outcome trend pages only after an explicit continuation', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.executionTrend)
+      .mockResolvedValueOnce({
+        items: [{ date: '2026-10-01', passed: 7, failed: 2, cancelled: 1, running: 0 }],
+        page: { nextCursor: 'older-days', hasMore: true },
+      })
+      .mockResolvedValueOnce({
+        items: [{ date: '2026-09-01', passed: 4, failed: 1, cancelled: 0, running: 0 }],
+        page: { nextCursor: null, hasMore: false },
+      })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const trend = await screen.findByLabelText('Execution outcome trend')
+    expect(trend).toHaveTextContent('2026-10-01')
+    expect(trend).not.toHaveTextContent('2026-09-01')
+    fireEvent.click(screen.getByRole('button', { name: 'Load more outcome trend' }))
+    await waitFor(() => expect(trend).toHaveTextContent('2026-09-01'))
+    expect(api.executionTrend).toHaveBeenLastCalledWith(repository.id, { cursor: 'older-days' })
+  })
+
   it('retains execution and policy-gate evidence when the optional trend request fails', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

@@ -47,7 +47,7 @@ import { repositoryFlowReviewConflict } from './repository-flow-review'
 import { repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
-import { policyGateReviewConflict } from './policy-gate-review'
+import { policyGateEvaluationForReview, policyGateReviewConflict } from './policy-gate-review'
 import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
 import { decodeQualityArtifactCursor, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
@@ -645,14 +645,14 @@ app.post('/api/v1/repositories/:id/policy-gate-evaluations/:evaluationId/review'
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  const existingEvaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+  const existingEvaluation = await policyGateEvaluationForReview(store, repositoryId, tenantId, evaluationId)
   if (!existingEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
   const conflict = policyGateReviewConflict(repository, existingEvaluation)
   if (conflict) return response.status(409).json(conflict)
   const evaluation = await store.reviewPolicyGateEvaluation(evaluationId, tenantId, { status: parsed.data.status, reviewedBy: requestIdentity(request)!.userId, reason: parsed.data.reason }, existingEvaluation.revision)
   if (!evaluation) {
     const latestRepository = await store.repository(repositoryId, tenantId)
-    const latestEvaluation = (await store.policyGateEvaluations(repositoryId, tenantId)).find(item => item.id === evaluationId)
+    const latestEvaluation = await policyGateEvaluationForReview(store, repositoryId, tenantId, evaluationId)
     if (!latestRepository || !latestEvaluation) return response.status(404).json({ error: 'Policy-gate evaluation not found' })
     return response.status(409).json(policyGateReviewConflict(latestRepository, latestEvaluation) ?? {
       error: 'The policy-gate evaluation changed while it was being reviewed. Refresh before deciding.',

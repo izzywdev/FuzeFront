@@ -518,6 +518,8 @@ test.describe('FuzeQuality implemented UX flows', () => {
     const trend = page.getByLabel('Execution outcome trend')
     await expect(trend).toContainText('2026-10-01')
     await expect(trend).toContainText('8 passed')
+    await expect(trend).not.toContainText('2026-09-01')
+    await page.getByRole('button', { name: 'Load more outcome trend' }).click()
     await expect(trend).toContainText('2026-09-01')
     await expect(trend).toContainText('2 failed')
   })
