@@ -122,6 +122,17 @@ describe('contract discovery', () => {
           .map((parameter: { $ref?: string }) => parameter.$ref)
       ).toContain('#/components/parameters/ExecutionWorkflowPath')
       expect(document.components.parameters.ExecutionWorkflowPath.schema.maxLength).toBe(1000)
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.parameters
+          .filter((parameter: { name?: string }) => parameter.name)
+          .map((parameter: { name: string }) => parameter.name)
+      ).toEqual(['limit', 'cursor'])
+      expect(
+        document.paths['/api/v1/repositories/{repositoryId}/test-executions'].get.responses['200'].content[
+          'application/json'
+        ].schema
+      ).toMatchObject({ type: 'object', required: ['items', 'page'] })
+      expect(schemas.TestExecutionPage.properties.page.$ref).toBe('#/components/schemas/HistoryCursorPage')
       expect(schemas.PolicyGateEvaluation.required).toEqual(
         expect.arrayContaining(['confidence', 'scope'])
       )

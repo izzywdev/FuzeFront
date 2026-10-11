@@ -556,6 +556,11 @@ export type TestExecution = {
   summary?: string
 }
 
+export type TestExecutionPage = {
+  items: TestExecution[]
+  page: { nextCursor: string | null; hasMore: boolean }
+}
+
 export type TestExecutionEvidenceLink = {
   kind: 'video' | 'report' | 'trace' | 'screenshot' | 'log' | 'other'
   name: string

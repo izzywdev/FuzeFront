@@ -250,6 +250,30 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('continues immutable execution evidence from an opaque repository cursor', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const olderExecution: TestExecution = {
+      ...loadExecution,
+      id: 'execution-load-older',
+      externalRunId: '12344',
+      name: 'Older load test',
+      completedAt: '2026-10-08T12:00:00.000Z',
+    }
+    vi.mocked(api.testExecutions)
+      .mockResolvedValueOnce({ items: [loadExecution], page: { nextCursor: 'execution-page-2', hasMore: true } })
+      .mockResolvedValueOnce({ items: [olderExecution], page: { nextCursor: null, hasMore: false } })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText(loadExecution.name)).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more execution evidence' }))
+    expect(await screen.findByText(olderExecution.name)).toBeVisible()
+    expect(api.testExecutions).toHaveBeenLastCalledWith(repository.id, {
+      cursor: 'execution-page-2',
+    })
+  })
+
   it('surfaces repository evidence scan failures to reviewers', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

@@ -3186,6 +3186,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [loadingMorePolicyGates, setLoadingMorePolicyGates] = useState(false)
   const [historyPaginationError, setHistoryPaginationError] = useState<string>()
   const [executions, setExecutions] = useState<TestExecution[]>([])
+  const [executionNextCursors, setExecutionNextCursors] = useState<Record<string, string>>({})
+  const [loadingMoreExecutions, setLoadingMoreExecutions] = useState(false)
+  const [executionPaginationError, setExecutionPaginationError] = useState<string>()
   const [performanceExecutions, setPerformanceExecutions] = useState<TestExecution[]>([])
   const [performanceEvidenceFailures, setPerformanceEvidenceFailures] = useState<string[]>([])
   const [executionPerformance, setExecutionPerformance] = useState<
@@ -3436,7 +3439,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           nextCursor: evaluations.page.nextCursor,
           performanceExecutions: hasPerformanceDefinitions
             ? await api.testExecutions(repository.id).then(
-                executions => ({ executions, failed: false }),
+                response => ({ executions: normalizeHistoryPage(response).items, failed: false }),
                 () => ({ executions: [], failed: true })
               )
             : { executions: [], failed: false },
@@ -3574,6 +3577,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   }, [data.repositories, flowCandidates, flowResultsAreCurrent, flowRevisionScope])
   useEffect(() => {
     let active = true
+    setExecutionNextCursors({})
+    setExecutionPaginationError(undefined)
     if (invalidExecutionRange) {
       setExecutions([])
       setExecutionPerformance([])
@@ -3583,10 +3588,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     }
     void Promise.all(
       data.repositories.map(async repository => ({
+        repositoryId: repository.id,
         executions:
           executionRepositoryId && executionRepositoryId !== repository.id
-            ? []
-            : await api.testExecutions(repository.id, executionFilter),
+            ? { items: [] as TestExecution[], page: { nextCursor: null, hasMore: false } }
+            : normalizeHistoryPage(await api.testExecutions(repository.id, executionFilter)),
         performance:
           executionRepositoryId && executionRepositoryId !== repository.id
             ? []
@@ -3595,13 +3601,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
       .then(groups => {
         if (active) {
-          setExecutions(groups.flatMap(group => group.executions))
+          setExecutions(groups.flatMap(group => group.executions.items))
+          setExecutionNextCursors(Object.fromEntries(
+            groups.flatMap(group => group.executions.page.nextCursor
+              ? [[group.repositoryId, group.executions.page.nextCursor]]
+              : [])
+          ))
           setExecutionPerformance(groups.flatMap(group => group.performance))
         }
       })
       .catch(() => {
         if (active) {
           setExecutions([])
+          setExecutionNextCursors({})
           setExecutionPerformance([])
         }
       })
@@ -3614,6 +3626,33 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     executionRepositoryId,
     invalidExecutionRange,
   ])
+  const loadMoreExecutions = async () => {
+    const cursors = Object.entries(executionNextCursors)
+    if (!cursors.length) return
+    setLoadingMoreExecutions(true)
+    setExecutionPaginationError(undefined)
+    try {
+      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+        repositoryId,
+        page: normalizeHistoryPage(await api.testExecutions(repositoryId, {
+          ...executionFilter,
+          cursor,
+        })),
+      })))
+      setExecutions(current => [...new Map(
+        [...current, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
+      ).values()])
+      setExecutionNextCursors(Object.fromEntries(
+        groups.flatMap(group => group.page.page.nextCursor
+          ? [[group.repositoryId, group.page.page.nextCursor]]
+          : [])
+      ))
+    } catch (cause) {
+      setExecutionPaginationError(cause instanceof Error ? cause.message : 'Unable to load more execution evidence.')
+    } finally {
+      setLoadingMoreExecutions(false)
+    }
+  }
   const loadMoreFlows = async () => {
     const cursors = Object.entries(flowNextCursors)
     if (!cursors.length) return
@@ -4468,7 +4507,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
             )}
           </div>
           <div className="catalog-list">
-            {executions.slice(0, 25).map(execution => (
+            {executions.map(execution => (
               <article className="catalog-row" key={execution.id}>
                 <div>
                   <strong>{execution.name}</strong>
@@ -4517,6 +4556,19 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                   onboarded repository.
                 </span>
               </div>
+            )}
+            {executionNextCursors && Object.keys(executionNextCursors).length > 0 && (
+              <QualityAction
+                intent="quiet"
+                onClick={() => void loadMoreExecutions()}
+                disabled={loadingMoreExecutions}
+              >
+                {loadingMoreExecutions ? <RefreshCw className="spin" size={14} /> : <ChevronRight size={14} />}
+                Load more execution evidence
+              </QualityAction>
+            )}
+            {executionPaginationError && (
+              <p className="form-error" role="alert">{executionPaginationError}</p>
             )}
           </div>
         </section>

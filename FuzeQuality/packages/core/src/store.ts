@@ -61,6 +61,21 @@ export type PolicyGateEvaluationQuery = {
   after?: HistoryCursor
   limit?: number
 }
+export type TestExecutionQuery = {
+  kind?: TestExecution['kind']
+  status?: TestExecution['status']
+  provider?: TestExecution['provider']
+  revision?: string
+  workflowPath?: string
+  from?: string
+  until?: string
+  after?: HistoryCursor
+  limit?: number
+}
+
+export function testExecutionOccurredAt(execution: TestExecution) {
+  return execution.completedAt ?? execution.startedAt ?? '1970-01-01T00:00:00.000Z'
+}
 export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
   | { type: 'organization.deleted'; tenantId: string }
@@ -137,7 +152,7 @@ export interface CatalogStore {
   savePolicyGateEvaluations(evaluations: PolicyGateEvaluation[]): Promise<void>
   reviewPolicyGateEvaluation(id: string, tenantId: string, review: { status: 'accepted' | 'dismissed'; reviewedBy: string; reason?: string }, expectedRevision?: string): Promise<PolicyGateEvaluation | undefined>
   policyGateReviewHistory(evaluationId: string, tenantId: string, query?: ReviewHistoryQuery): Promise<PolicyGateReviewHistoryEntry[]>
-  testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]>
+  testExecutions(repositoryId: string, tenantId: string, query?: TestExecutionQuery): Promise<TestExecution[]>
   saveTestExecution(execution: TestExecution): Promise<void>
   addRepository(input: RepositoryInput, tenantId?: string): Promise<Repository>
   updateRepositoryAdministration(
@@ -377,8 +392,21 @@ export class MemoryCatalogStore implements CatalogStore {
     return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
-  async testExecutions(repositoryId: string, tenantId: string) {
-    return this.executions.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+  async testExecutions(repositoryId: string, tenantId: string, query: TestExecutionQuery = {}) {
+    const items = this.executions
+      .filter(item =>
+        item.repositoryId === repositoryId && item.tenantId === tenantId &&
+        (!query.kind || item.kind === query.kind) &&
+        (!query.status || item.status === query.status) &&
+        (!query.provider || item.provider === query.provider) &&
+        (!query.revision || item.revision === query.revision) &&
+        (!query.workflowPath || item.workflowPath === query.workflowPath) &&
+        (!query.from || testExecutionOccurredAt(item) >= query.from) &&
+        (!query.until || testExecutionOccurredAt(item) <= query.until)
+      )
+      .sort((left, right) => testExecutionOccurredAt(right).localeCompare(testExecutionOccurredAt(left)) || right.id.localeCompare(left.id))
+      .filter(item => !query.after || testExecutionOccurredAt(item) < query.after.createdAt || (testExecutionOccurredAt(item) === query.after.createdAt && item.id < query.after.id))
+    return query.limit === undefined ? items : items.slice(0, query.limit)
   }
 
   async saveTestExecution(execution: TestExecution) {
@@ -947,8 +975,22 @@ export class PostgresCatalogStore implements CatalogStore {
     return result.rows.map(row => ({ id: row.id, evaluationId: row.evaluation_id, tenantId: row.tenant_id, status: row.status, reviewedBy: row.reviewed_by, reason: row.reason ?? undefined, createdAt: row.created_at.toISOString() }))
   }
 
-  async testExecutions(repositoryId: string, tenantId: string): Promise<TestExecution[]> {
-    const result = await this.pool.query('SELECT * FROM fuzequality.test_executions WHERE repository_id=$1 AND tenant_id=$2 ORDER BY completed_at DESC NULLS LAST, created_at DESC', [repositoryId, tenantId])
+  async testExecutions(repositoryId: string, tenantId: string, query: TestExecutionQuery = {}): Promise<TestExecution[]> {
+    const result = await this.pool.query(
+      `SELECT * FROM fuzequality.test_executions
+       WHERE repository_id=$1 AND tenant_id=$2
+         AND ($3::text IS NULL OR kind=$3)
+         AND ($4::text IS NULL OR status=$4)
+         AND ($5::text IS NULL OR provider=$5)
+         AND ($6::text IS NULL OR revision=$6)
+         AND ($7::text IS NULL OR workflow_path=$7)
+         AND ($8::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) >= $8)
+         AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) <= $9)
+         AND ($10::timestamptz IS NULL OR (COALESCE(completed_at,started_at,'epoch'::timestamptz),id) < ($10::timestamptz,$11::text))
+       ORDER BY COALESCE(completed_at,started_at,'epoch'::timestamptz) DESC,id DESC
+       LIMIT COALESCE($12::integer, 2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.after?.createdAt ?? null, query.after?.id ?? null, query.limit ?? null],
+    )
     return result.rows.map(row => ({ id: row.id, repositoryId: row.repository_id, tenantId: row.tenant_id, provider: row.provider, externalRunId: row.external_run_id, attempt: row.attempt, revision: row.revision, kind: row.kind, status: row.status, name: row.name, workflowPath: row.workflow_path ?? undefined, sourceUrl: row.source_url ?? undefined, startedAt: row.started_at?.toISOString(), completedAt: row.completed_at?.toISOString(), policyArtifactIds: row.policy_artifact_ids, gateArtifactIds: row.gate_artifact_ids, gateEvaluations: row.gate_evaluations ?? [], thresholds: row.thresholds ?? [], evidenceLinks: row.evidence_links ?? [], summary: row.summary ?? undefined }))
   }
 

@@ -18,10 +18,54 @@ describe('test execution evidence', () => {
 
     const executions = await store.testExecutions('repo-1', 'org-1')
     expect(executions).toEqual([
-      expect.objectContaining({ id: 'delivery-1', attempt: 1, status: 'failed' }),
       expect.objectContaining({ id: 'delivery-3', attempt: 2, status: 'passed' }),
+      expect.objectContaining({ id: 'delivery-1', attempt: 1, status: 'failed' }),
     ])
     expect(executions.every(execution => execution.sourceUrl === undefined)).toBe(true)
+  })
+
+  it('continues tenant-scoped execution evidence with a stable timestamp and id cursor', async () => {
+    const store = new MemoryCatalogStore()
+    const base = { repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const, revision: 'abc', kind: 'integration' as const, status: 'passed' as const, name: 'Integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [], thresholds: [], evidenceLinks: [], completedAt: '2026-01-01T00:01:00.000Z' }
+    await store.saveTestExecution({ id: 'run-a', ...base, externalRunId: 'a', attempt: 1 })
+    await store.saveTestExecution({ id: 'run-c', ...base, externalRunId: 'c', attempt: 1 })
+    await store.saveTestExecution({ id: 'run-b', ...base, externalRunId: 'b', attempt: 1 })
+
+    await expect(store.testExecutions('repo-1', 'org-1', { limit: 2 })).resolves.toEqual([
+      expect.objectContaining({ id: 'run-c' }),
+      expect.objectContaining({ id: 'run-b' }),
+    ])
+    await expect(store.testExecutions('repo-1', 'org-1', {
+      after: { createdAt: base.completedAt, id: 'run-b' },
+      limit: 2,
+    })).resolves.toEqual([expect.objectContaining({ id: 'run-a' })])
+  })
+
+  it('pushes execution filters and continuation into the tenant-scoped Postgres query', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    await store.testExecutions('repo-1', 'org-1', {
+      kind: 'post-production',
+      status: 'failed',
+      provider: 'github-actions',
+      revision: 'abc',
+      workflowPath: '.github/workflows/post-prod.yml',
+      from: '2026-01-01T00:00:00.000Z',
+      until: '2026-01-31T00:00:00.000Z',
+      after: { createdAt: '2026-01-15T00:00:00.000Z', id: 'run-2' },
+      limit: 51,
+    })
+
+    const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
+    expect(String(sql)).toContain("COALESCE(completed_at,started_at,'epoch'::timestamptz),id")
+    expect(parameters).toEqual([
+      'repo-1', 'org-1', 'post-production', 'failed', 'github-actions', 'abc',
+      '.github/workflows/post-prod.yml', '2026-01-01T00:00:00.000Z',
+      '2026-01-31T00:00:00.000Z', '2026-01-15T00:00:00.000Z', 'run-2', 51,
+    ])
   })
 
   it('does not erase detailed evidence when a later lifecycle delivery is sparse', async () => {

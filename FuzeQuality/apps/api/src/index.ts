@@ -24,6 +24,7 @@ import {
   performanceWorkflowTarget,
   relayOutboxBatch,
   repositoryCatalogStatus,
+  testExecutionOccurredAt,
 } from '@fuzequality/core'
 import { artifactsForExecutionRevisions } from './execution-performance-artifacts'
 import { scanRepository } from '@fuzequality/scanner'
@@ -39,7 +40,7 @@ import { requestIdentity, requirePlatformAdminPermission, requirePlatformPermiss
 import { qualityResources } from './platform-permissions'
 import { isPlatformAuthenticatedRequest, isPublicRequest } from './authentication'
 import { createOpenApiSurface } from './openapi'
-import { executionFilterSchema } from './execution-filter'
+import { executionFilterSchema, executionPageFilterSchema } from './execution-filter'
 import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
@@ -631,9 +632,25 @@ app.get('/api/v1/repositories/:id/test-executions', mayReadCatalog, async (reque
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  const filter = executionFilterSchema.safeParse(request.query)
+  const filter = executionPageFilterSchema.safeParse(request.query)
   if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
-  response.json(filterTestExecutions(await store.testExecutions(repositoryId, tenantId), filter.data))
+  const cursor = decodeHistoryCursor(filter.data.cursor)
+  if (!cursor.success) return response.status(400).json({ error: cursor.error })
+  const limit = filter.data.limit
+  const executions = await store.testExecutions(repositoryId, tenantId, {
+    ...filter.data,
+    after: cursor.data,
+    limit: limit + 1,
+  })
+  const cursorItems = executions.map(execution => ({
+    ...execution,
+    createdAt: testExecutionOccurredAt(execution),
+  }))
+  const page = historyPage(cursorItems, limit)
+  response.json({
+    items: page.items.map(({ createdAt: _createdAt, ...execution }) => execution),
+    page: page.page,
+  })
 })
 app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

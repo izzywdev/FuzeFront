@@ -444,6 +444,33 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText(olderEvaluation.title, { exact: true })).toBeVisible()
   })
 
+  test('continues immutable CI and post-production execution evidence', async ({ page }) => {
+    const olderExecution = {
+      ...testExecutions[0],
+      id: 'execution-older',
+      externalRunId: '654320',
+      name: 'Historical production suspension journey',
+      completedAt: '2026-10-07T09:00:00.000Z',
+    }
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/test-executions',
+      route => {
+        const cursor = new URL(route.request().url()).searchParams.get('cursor')
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(cursor
+            ? { items: [olderExecution], page: { nextCursor: null, hasMore: false } }
+            : { items: [testExecutions[0]], page: { nextCursor: 'execution-page-2', hasMore: true } }),
+        })
+      }
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more execution evidence' }).click()
+    await expect(page.getByText(olderExecution.name, { exact: true })).toBeVisible()
+  })
+
   test('continues immutable UX-flow and governance review audit pages', async ({ page }) => {
     await page.route(
       url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates/candidate-1/history',

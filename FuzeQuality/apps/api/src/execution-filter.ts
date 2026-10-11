@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { historyPageQueryFields } from './history-pagination'
 
 /**
  * Query contract shared by execution evidence and policy–gate performance.
@@ -15,6 +16,25 @@ export const executionFilterSchema = z.object({
   workflowPath: z.string().trim().min(1).max(1000).optional(),
   from: z.string().datetime().optional(),
   until: z.string().datetime().optional(),
+}).strict().superRefine((value, context) => {
+  if (!value.from || !value.until) return
+  if (Date.parse(value.from) <= Date.parse(value.until)) return
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ['until'],
+    message: 'until must be greater than or equal to from',
+  })
+})
+
+export const executionPageFilterSchema = z.object({
+  kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']).optional(),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']).optional(),
+  provider: z.enum(['github-actions', 'external']).optional(),
+  revision: z.string().trim().min(1).max(200).optional(),
+  workflowPath: z.string().trim().min(1).max(1000).optional(),
+  from: z.string().datetime().optional(),
+  until: z.string().datetime().optional(),
+  ...historyPageQueryFields,
 }).strict().superRefine((value, context) => {
   if (!value.from || !value.until) return
   if (Date.parse(value.from) <= Date.parse(value.until)) return

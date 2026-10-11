@@ -19,7 +19,7 @@ info:
     automated tests and Jira requirements. This document currently covers the
     platform operational surface and the reviewed repository-intelligence API:
     UX-flow candidates, policy/gate governance, and execution evidence.
-  version: 0.8.0
+  version: 0.9.0
   license:
     name: UNLICENSED
 servers:
@@ -549,14 +549,28 @@ paths:
         - $ref: '#/components/parameters/ExecutionWorkflowPath'
         - $ref: '#/components/parameters/ExecutionFrom'
         - $ref: '#/components/parameters/ExecutionUntil'
+        - name: limit
+          in: query
+          description: Maximum number of immutable execution records to return in this page.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor returned as `nextCursor` by the preceding execution page.
+          schema: { type: string, maxLength: 2000 }
       responses:
         '200':
           description: Matching execution evidence.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/TestExecution' }
+                type: object
+                additionalProperties: false
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TestExecution' }
+                  page: { $ref: '#/components/schemas/HistoryCursorPage' }
         '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1071,6 +1085,15 @@ components:
           type: array
           items: { $ref: '#/components/schemas/TestExecutionEvidenceLink' }
         summary: { type: string }
+    TestExecutionPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TestExecution' }
+        page: { $ref: '#/components/schemas/HistoryCursorPage' }
     DesignTestLinkTargetKind:
       type: string
       enum: [flow-step, frame, component]
