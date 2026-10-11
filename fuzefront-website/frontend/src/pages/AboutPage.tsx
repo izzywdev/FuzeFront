@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container } from '@fuzefront/design-system'
+import { Center, IconTile, Container, ResponsiveGrid } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -212,27 +212,24 @@ export const AboutPage: React.FC = () => {
             </p>
           </motion.div>
 
-          <motion.div
-            variants={stagger}
-            initial="hidden"
-            animate={offerInView ? 'visible' : 'hidden'}
-            className="grid grid-cols-1 sm:grid-cols-2 gap-5"
-          >
-            {offerings.map((item) => {
-              const Icon = item.icon
-              return (
-                <motion.div
-                  key={item.text}
-                  variants={fadeUp}
-                  className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-soft"
-                >
-                  <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
-                    <Icon size={18} />
-                  </IconTile>
-                  <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
-                </motion.div>
-              )
-            })}
+          <motion.div variants={stagger} initial="hidden" animate={offerInView ? 'visible' : 'hidden'}>
+            <ResponsiveGrid columns={2} gap="md">
+              {offerings.map((item) => {
+                const Icon = item.icon
+                return (
+                  <motion.div
+                    key={item.text}
+                    variants={fadeUp}
+                    className="flex items-start gap-4 bg-white rounded-2xl border border-gray-100 p-5 shadow-soft"
+                  >
+                    <IconTile tone="accent" size="sm" style={{ flexShrink: 0 }}>
+                      <Icon size={18} />
+                    </IconTile>
+                    <p className="text-gray-700 text-sm leading-relaxed pt-1.5">{item.text}</p>
+                  </motion.div>
+                )
+              })}
+            </ResponsiveGrid>
           </motion.div>
         </Container>
       </section>
