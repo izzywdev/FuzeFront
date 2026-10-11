@@ -130,6 +130,14 @@ printf 'const fallback = "<body>temporary error</body>"; const remote = "__feder
 set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
 check "HTML strings inside JavaScript do not reject the federation asset" "$RC" "0"
 
+# SKIP_ACTIVATE only stages inactive rows. Refreshing an already-active row changes
+# the live portal immediately, so a broken replacement must be rejected before PUT.
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/missing-active-remoteEntry.js" "true"; RC=$?; set -e
+if [ "$RC" -ne 0 ]; then ok "staged refresh of active app probes federation asset"; else notok "staged refresh of active app probes federation asset (got 0)"; fi
+ACTIVE_STAGED_WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
+check "broken staged refresh causes no registry writes" "$ACTIVE_STAGED_WRITES" "0"
+
 printf '<!doctype html><html><body>ingress fallback</body></html>\n' > "${WORK}/remoteEntry.js"
 : > "${WORK}/calls.txt"
 set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e

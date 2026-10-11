@@ -725,6 +725,66 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(evidence.getByText(historicalArtifact.id, { exact: true })).toHaveCount(0)
   })
 
+  test('preserves a completed governance review while history continuation resolves', async ({ page }) => {
+    const proposed = {
+      ...policyGateEvaluations[0],
+      reviewStatus: 'proposed',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+      reviewReason: undefined,
+    }
+    const continued = {
+      ...proposed,
+      id: 'evaluation-page-2',
+      title: 'Continued governance finding',
+    }
+    let releaseContinuation = () => undefined
+    const continuation = new Promise<void>(resolve => {
+      releaseContinuation = resolve
+    })
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations',
+      async route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('cursor')) {
+          await continuation
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ items: [proposed, continued], page: { nextCursor: null, hasMore: false } }),
+          })
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [proposed], page: { nextCursor: 'policy-page-2', hasMore: true } }),
+        })
+      }
+    )
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/policy-gate-evaluations/evaluation-1/review',
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...proposed,
+          reviewStatus: 'accepted',
+          reviewedAt: '2026-10-11T12:00:00.000Z',
+          reviewedBy: 'quality-reviewer',
+        }),
+      })
+    )
+
+    await page.getByRole('button', { name: 'Quality intelligence' }).click()
+    await page.getByRole('button', { name: 'Load more policy and gate history' }).click()
+    await page.getByRole('button', { name: 'Accept recommendation' }).click()
+    await expect(page.getByText('high · unguarded-policy · accepted', { exact: true })).toBeVisible()
+    releaseContinuation()
+
+    await expect(page.getByText(continued.title, { exact: true })).toBeVisible()
+    await expect(page.getByText('high · unguarded-policy · accepted', { exact: true })).toBeVisible()
+  })
+
   test('continues bounded repository evidence only after explicit review', async ({ page }) => {
     const cursors: Array<string | null> = []
     await page.route(

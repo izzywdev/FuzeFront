@@ -13,6 +13,7 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   flowCandidateMatchesInventory,
+  mergePolicyGateContinuation,
   policyGateEvaluationMatchesInventory,
   RepositoryIntelligence,
 } from './App'
@@ -172,6 +173,64 @@ afterEach(() => {
 })
 
 describe('RepositoryIntelligence flow inventory', () => {
+  it('keeps completed policy reviews authoritative when a stale page arrives', () => {
+    const accepted = { ...governanceEvaluation, reviewStatus: 'accepted' as const }
+    const stale = { ...governanceEvaluation, reviewStatus: 'proposed' as const }
+    const continued = { ...governanceEvaluation, id: 'evaluation-page-2' }
+    const visibleAtRequestStart = new Set([governanceEvaluation.id])
+
+    expect(mergePolicyGateContinuation(
+      [accepted],
+      [stale, continued],
+      visibleAtRequestStart,
+    )).toEqual([accepted, continued])
+    expect(mergePolicyGateContinuation(
+      [],
+      [stale, continued],
+      visibleAtRequestStart,
+    )).toEqual([continued])
+  })
+
+  it('does not revert a policy review completed while continuation is in flight', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    let resolveContinuation: (value: Awaited<ReturnType<typeof api.policyGateEvaluations>>) => void = () => undefined
+    const continuation = new Promise<Awaited<ReturnType<typeof api.policyGateEvaluations>>>(resolve => {
+      resolveContinuation = resolve
+    })
+    vi.mocked(api.policyGateEvaluations)
+      .mockResolvedValueOnce({ items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } })
+      .mockImplementationOnce(() => continuation)
+    vi.spyOn(api, 'reviewPolicyGateEvaluation').mockResolvedValue({
+      ...governanceEvaluation,
+      reviewStatus: 'accepted',
+      reviewedAt: '2026-10-11T12:00:00.000Z',
+      reviewedBy: 'quality-reviewer',
+    })
+    const continuedEvaluation = {
+      ...governanceEvaluation,
+      id: 'evaluation-page-2',
+      title: 'Continued governance finding',
+    }
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more policy and gate history' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accept recommendation' }))
+    await screen.findByText('high · unguarded-policy · accepted')
+
+    await act(async () => {
+      resolveContinuation({
+        items: [governanceEvaluation, continuedEvaluation],
+        page: { nextCursor: null, hasMore: false },
+      })
+      await continuation
+    })
+
+    expect(await screen.findByText(continuedEvaluation.title)).toBeVisible()
+    expect(screen.getByText('high · unguarded-policy · accepted')).toBeVisible()
+  })
+
   it('continues immutable flow and governance review audit pages', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([candidate])

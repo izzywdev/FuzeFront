@@ -3149,6 +3149,22 @@ export function policyGateEvaluationMatchesInventory(
   return true
 }
 
+export function mergePolicyGateContinuation(
+  current: PolicyGateEvaluation[],
+  continued: PolicyGateEvaluation[],
+  visibleAtRequestStart: ReadonlySet<string>,
+) {
+  const merged = new Map(current.map(evaluation => [evaluation.id, evaluation]))
+  for (const evaluation of continued) {
+    if (merged.has(evaluation.id)) continue
+    // A row visible when pagination started but absent now was reviewed out of
+    // the active filter. Do not resurrect its stale pre-review representation.
+    if (visibleAtRequestStart.has(evaluation.id)) continue
+    merged.set(evaluation.id, evaluation)
+  }
+  return [...merged.values()]
+}
+
 export function flowCandidateMatchesInventory(
   flow: RepositoryFlowCandidate,
   repositories: Repository[],
@@ -3208,6 +3224,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
+  const policyGateEvaluationsRef = useRef(policyGateEvaluations)
+  policyGateEvaluationsRef.current = policyGateEvaluations
   const [policyGateNextCursors, setPolicyGateNextCursors] = useState<Record<string, string>>({})
   const [loadingMorePolicyGates, setLoadingMorePolicyGates] = useState(false)
   const [historyPaginationError, setHistoryPaginationError] = useState<string>()
@@ -3901,6 +3919,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     const cursors = Object.entries(policyGateNextCursors)
     if (!cursors.length) return
     const selectionQuery = policyGateHistoryQueryRef.current
+    const visibleAtRequestStart = new Set(
+      policyGateEvaluationsRef.current.map(evaluation => evaluation.id)
+    )
     setLoadingMorePolicyGates(true)
     setHistoryPaginationError(undefined)
     try {
@@ -3919,9 +3940,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         return { repositoryId, page }
       }))
       if (policyGateHistoryQueryRef.current !== selectionQuery) return
-      const evaluations = [...new Map(
-        [...policyGateEvaluations, ...groups.flatMap(group => group.page.items)].map(item => [item.id, item])
-      ).values()]
+      const continuedEvaluations = groups.flatMap(group => group.page.items)
+      const evaluations = mergePolicyGateContinuation(
+        policyGateEvaluationsRef.current,
+        continuedEvaluations,
+        visibleAtRequestStart,
+      )
       let historicalArtifacts: QualityArtifact[] = []
       let omittedHistoricalRevisions = 0
       if (policyGateRevisionScope === 'all') {
@@ -3939,7 +3963,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         )).flat()
         if (policyGateHistoryQueryRef.current !== selectionQuery) return
       }
-      setPolicyGateEvaluations(evaluations)
+      setPolicyGateEvaluations(current => mergePolicyGateContinuation(
+        current,
+        continuedEvaluations,
+        visibleAtRequestStart,
+      ))
       setGovernanceEvidenceArtifacts(historicalArtifacts)
       setOmittedGovernanceEvidenceRevisions(omittedHistoricalRevisions)
       setPolicyGateNextCursors(Object.fromEntries(
