@@ -23,7 +23,9 @@ export type { AuthMethods, SessionResult, SocialProvider }
 // VITE_API_URL still overrides for cross-origin setups.
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
-  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001')
+  (typeof window !== 'undefined'
+    ? window.location.origin
+    : 'http://localhost:3001')
 const API_URL = `${API_BASE_URL}/api`
 
 // Verbose API diagnostics (config dump, per-request console groups, module-load
@@ -233,7 +235,8 @@ api.interceptors.response.use(
       const duration = (response.config as any).metadata
         ? Date.now() - (response.config as any).metadata.startTime
         : 0
-      const requestId = (response.config as any).metadata?.requestId || 'unknown'
+      const requestId =
+        (response.config as any).metadata?.requestId || 'unknown'
 
       console.group(`✅ API Response [${requestId}] - ${duration}ms`)
       console.log('Response Details:', {
@@ -451,7 +454,8 @@ export const authAPI = {
       }
     } catch (err: any) {
       // A cancelled request is not a failure — propagate so the caller ignores it.
-      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') throw err
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError')
+        throw err
       // Fail open: unknown availability, never block the user.
       return { email, available: null }
     }
@@ -513,7 +517,11 @@ export const authAPI = {
           persistSession(result.token, result.sessionId)
         }
         // Strip the opaque code from the URL so a reload can't re-exchange it.
-        window.history.replaceState({}, document.title, window.location.pathname)
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        )
         return { result }
       } catch (err: any) {
         const failMessage =
@@ -534,7 +542,7 @@ export const appsAPI = {
   },
 }
 
-// Organizations API  
+// Organizations API
 export const organizationsAPI = {
   async getOrganizations() {
     const response = await api.get('/organizations')
@@ -629,7 +637,9 @@ export const checkOrganizationSlugAvailable = async (
   slug: string
 ): Promise<{ available: boolean; reason?: 'taken' | 'invalid' }> => {
   try {
-    const res = await api.get('/organizations/slug-available', { params: { slug } })
+    const res = await api.get('/organizations/slug-available', {
+      params: { slug },
+    })
     return { available: !!res.data?.available, reason: res.data?.reason }
   } catch {
     return { available: true }
@@ -699,7 +709,6 @@ export const getUserRoles = async (
   }
 }
 
-
 // ── Invitation types ───────────────────────────────────────────────────────
 export interface OrganizationInvitation {
   id: string
@@ -728,20 +737,36 @@ export const acceptInvitation = async (token: string) => {
 }
 
 /** Create a single invitation for an org. */
-export const createInvitation = async (orgId: string, email: string, role: string) => {
-  const res = await api.post(`/organizations/${orgId}/invitations`, { email, role })
+export const createInvitation = async (
+  orgId: string,
+  email: string,
+  role: string
+) => {
+  const res = await api.post(`/organizations/${orgId}/invitations`, {
+    email,
+    role,
+  })
   return res.data
 }
 
 /** Bulk invite up to 50 emails to an org. */
-export const bulkInvite = async (orgId: string, emails: string[], role: string) => {
-  const res = await api.post(`/organizations/${orgId}/invitations/bulk`, { emails, role })
+export const bulkInvite = async (
+  orgId: string,
+  emails: string[],
+  role: string
+) => {
+  const res = await api.post(`/organizations/${orgId}/invitations/bulk`, {
+    emails,
+    role,
+  })
   return res.data
 }
 
 /** Revoke an invitation. */
 export const revokeInvitation = async (orgId: string, invitationId: string) => {
-  const res = await api.delete(`/organizations/${orgId}/invitations/${invitationId}`)
+  const res = await api.delete(
+    `/organizations/${orgId}/invitations/${invitationId}`
+  )
   return res.data
 }
 
@@ -784,6 +809,7 @@ export interface AppInstallationsResponse {
   scopeLevel: AppScopeLevel
   orgLevelOnly?: boolean
   installMode?: 'self' | 'everyone' | 'both'
+  organizationInstallMode?: 'self' | 'everyone' | 'both'
   installations: AppInstallation[]
 }
 
@@ -846,4 +872,3 @@ export const getInstalledApps = async (organizationId?: string) => {
 }
 
 export default api
-
