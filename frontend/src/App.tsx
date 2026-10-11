@@ -56,6 +56,7 @@ import ConfigKeyDefinitionPage from './pages/ConfigKeyDefinitionPage'
 import ConfigAuditHistoryPage from './pages/ConfigAuditHistoryPage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import { PortalShell, PortalLoginFlow, isMultiTenantPortalsEnabled } from '@fuzefront/portal-branding-ui'
+import FuzePickerMentionsPage from './pages/FuzePickerMentionsPage'
 import {
   SelectionListManagementFlow,
   TranslationWorkbenchFlow,
@@ -374,6 +375,7 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/fuzepicker/mentions" element={<FuzePickerMentionsPage />} />
             <Route path="/applications" element={<ApplicationsPage />} />
             <Route path="/applications/new" element={<AddApplicationPage />} />
             <Route path="/organizations" element={<OrganizationsRoute />} />
