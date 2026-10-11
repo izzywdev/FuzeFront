@@ -72,6 +72,8 @@ export interface FuzeFrontBridge {
     add(appId: string, items: BridgeMenuItem[]): void
     remove(appId: string): void
   }
+  /** Navigate through the host router so federated in-app links update portal state. */
+  navigate(path: string): void
   socket: BridgeSocket
 }
 
@@ -95,6 +97,7 @@ function newId(prefix: string): string {
 export interface BridgeHandlers {
   onMenuAdd: (appId: string, items: BridgeMenuItem[]) => void
   onMenuRemove: (appId: string) => void
+  onNavigate: (path: string) => void
   socket: BridgeSocket
 }
 
@@ -115,6 +118,7 @@ class PlatformBridge implements FuzeFrontBridge {
   private handlers: BridgeHandlers = {
     onMenuAdd: () => {},
     onMenuRemove: () => {},
+    onNavigate: () => {},
     socket: {
       on: () => {},
       off: () => {},
@@ -241,6 +245,10 @@ class PlatformBridge implements FuzeFrontBridge {
     add: (appId: string, items: BridgeMenuItem[]) =>
       this.handlers.onMenuAdd(appId, items),
     remove: (appId: string) => this.handlers.onMenuRemove(appId),
+  }
+
+  navigate(path: string) {
+    this.handlers.onNavigate(path)
   }
 
   socket: BridgeSocket = {

@@ -127,6 +127,7 @@ export type FuzeFrontRuntimeBridge = {
     add: (appId: string, items: typeof portalMenuItems) => void
     remove: (appId: string) => void
   }
+  navigate?: (path: string) => void
 }
 
 function runtimeBridge() {
@@ -214,6 +215,17 @@ export function viewFromPathname(pathname: string): View | undefined {
 export function pathForView(view: View, embedded: boolean) {
   const suffix = view === 'overview' ? '' : `/${view}`
   return embedded ? `/app/fuzequality${suffix}` : suffix || '/'
+}
+
+export function navigatePortalView(
+  view: View,
+  embedded: boolean,
+  bridge: FuzeFrontRuntimeBridge | undefined = runtimeBridge(),
+  history: Pick<History, 'pushState'> = window.history
+) {
+  const path = pathForView(view, embedded)
+  if (embedded && bridge?.navigate) bridge.navigate(path)
+  else history.pushState({}, '', path)
 }
 
 /** Connect host menu events and browser history to the app's active view. */
@@ -4321,9 +4333,7 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
   const embedded = Boolean(runtimeBridge()?.menu)
   usePortalMenu(setView)
   const navigateToView = (nextView: View) => {
-    if (!embedded) {
-      window.history.pushState({}, '', pathForView(nextView, false))
-    }
+    navigatePortalView(nextView, embedded)
     setView(nextView)
   }
   // The portal owns the active account vault. A federated remote receives its

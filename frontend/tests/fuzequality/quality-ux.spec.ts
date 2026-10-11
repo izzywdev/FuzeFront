@@ -203,6 +203,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
       const menuItems: unknown[] = []
       ;(window as any).__QUALITY_PORTAL_MENU__ = menuItems
       ;(window as any).__FUZEFRONT__ = {
+        navigate: (path: string) => window.history.pushState({}, '', path),
         menu: {
           add: (_appId: string, items: unknown[]) => menuItems.push(...items),
           remove: () => undefined,
@@ -210,6 +211,9 @@ test.describe('FuzeQuality implemented UX flows', () => {
       }
     })
     await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Manage' }).click()
+    await expect(page).toHaveURL(/\/app\/fuzequality\/repositories$/)
+    await expect(page.getByRole('heading', { name: 'Repository inventory' })).toBeVisible()
     await page.evaluate(() => {
       window.history.pushState({}, '', '/app/fuzequality/operations')
       window.dispatchEvent(new PopStateEvent('popstate'))

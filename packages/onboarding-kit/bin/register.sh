@@ -17,7 +17,8 @@
 # Optional env:
 #   REGISTRATION_DIR   directory holding manifest.json (default: /registration)
 #   SKIP_ACTIVATE      "true" to register but not activate (staged rollout)
-#   FUZEFRONT_REMOTE_HEALTH_URL  deployed federation asset to verify before registry writes
+#   FUZEFRONT_REMOTE_HEALTH_URL  primary deployed federation asset override
+#   FUZEFRONT_REMOTE_HEALTH_URLS JSON object mapping surface slugs to health URLs
 #
 # Exit codes: 0 = registered/activated (or already was). 1 = anything else.
 
@@ -48,28 +49,6 @@ jq empty "$MANIFEST" 2>/dev/null || die "$MANIFEST is not valid JSON"
 SLUG="$(jq -r '.slug // empty' "$MANIFEST")"
 [ -n "$SLUG" ] || die "manifest has no .slug"
 
-# An activated registry row is harmful when its remoteEntry is a 404 or an HTML
-# ingress fallback. Product charts can provide their in-cluster asset URL so a
-# rollout fails before publishing a broken application to the portal menu.
-if [ -n "${FUZEFRONT_REMOTE_HEALTH_URL:-}" ]; then
-  REMOTE_BODY="$(mktemp)"
-  if ! curl -fsS --retry 4 --retry-all-errors --retry-delay 2 \
-    -o "$REMOTE_BODY" "$FUZEFRONT_REMOTE_HEALTH_URL"; then
-    rm -f "$REMOTE_BODY"
-    die "federation asset is unreachable at ${FUZEFRONT_REMOTE_HEALTH_URL}"
-  fi
-  if [ ! -s "$REMOTE_BODY" ] || grep -Eiq '<(html|head|body)([[:space:]>])' "$REMOTE_BODY"; then
-    rm -f "$REMOTE_BODY"
-    die "federation asset is empty or HTML at ${FUZEFRONT_REMOTE_HEALTH_URL}"
-  fi
-  if ! grep -Eq '(__federation|(^|[;[:space:]])(const|let|var|function|import|export)[[:space:]])' "$REMOTE_BODY"; then
-    rm -f "$REMOTE_BODY"
-    die "federation asset does not look like JavaScript at ${FUZEFRONT_REMOTE_HEALTH_URL}"
-  fi
-  rm -f "$REMOTE_BODY"
-  log "federation asset healthy at ${FUZEFRONT_REMOTE_HEALTH_URL}"
-fi
-
 # ---- suite surfaces ----------------------------------------------------------
 # A repo may ship SEVERAL independently-mountable surfaces of one product — e.g.
 # FuzeHub's talent / recruiter / ventures / marketplace remotes. Each needs its own
@@ -89,6 +68,58 @@ if [ -d "$APPS_DIR" ]; then
   for _extra in $(find "$APPS_DIR" -maxdepth 1 -name '*.json' | sort); do
     MANIFESTS="${MANIFESTS} ${_extra}"
   done
+fi
+
+# An activated registry row is harmful when any suite surface points at a 404 or
+# an HTML ingress fallback. Validate the complete suite before the first registry
+# write so a healthy primary cannot publish broken siblings. Staged registration
+# deliberately skips these checks because no portal tile is activated yet.
+probe_federation_asset() {
+  _url="$1"; _slug="$2"
+  REMOTE_BODY="$(mktemp)"
+  if ! curl -L -fsS --retry 4 --retry-all-errors --retry-delay 2 \
+    --connect-timeout 10 --max-time 30 -o "$REMOTE_BODY" "$_url"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} is unreachable at ${_url}"
+  fi
+  # Only an HTML document prefix is invalid. JavaScript bundles may legitimately
+  # contain strings or templates with <html>, <head>, or <body> later in the file.
+  if [ ! -s "$REMOTE_BODY" ] || head -c 512 "$REMOTE_BODY" | \
+    grep -Eiq '^[[:space:]]*(<!doctype[[:space:]]+html|<(html|head|body)([[:space:]>]))'; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} is empty or HTML at ${_url}"
+  fi
+  if ! grep -Eq '(__federation|(^|[;[:space:]])(const|let|var|function|import|export)[[:space:]])' "$REMOTE_BODY"; then
+    rm -f "$REMOTE_BODY"
+    die "federation asset for ${_slug} does not look like JavaScript at ${_url}"
+  fi
+  rm -f "$REMOTE_BODY"
+  log "federation asset healthy for ${_slug} at ${_url}"
+}
+
+if [ "${SKIP_ACTIVATE:-false}" != "true" ]; then
+  if [ -n "${FUZEFRONT_REMOTE_HEALTH_URLS:-}" ]; then
+    printf '%s' "$FUZEFRONT_REMOTE_HEALTH_URLS" | jq -e 'type == "object"' >/dev/null 2>&1 \
+      || die "FUZEFRONT_REMOTE_HEALTH_URLS must be a JSON object"
+  fi
+  for _manifest in $MANIFESTS; do
+    jq empty "$_manifest" 2>/dev/null || die "$_manifest is not valid JSON"
+    _slug="$(jq -r '.slug // empty' "$_manifest")"
+    [ -n "$_slug" ] || die "$_manifest has no .slug"
+    _remote=""
+    if [ -n "${FUZEFRONT_REMOTE_HEALTH_URLS:-}" ]; then
+      _remote="$(printf '%s' "$FUZEFRONT_REMOTE_HEALTH_URLS" | jq -r --arg slug "$_slug" '.[$slug] // empty')"
+    fi
+    if [ -z "$_remote" ] && [ "$_manifest" = "$MANIFEST" ] && [ -n "${FUZEFRONT_REMOTE_HEALTH_URL:-}" ]; then
+      _remote="$FUZEFRONT_REMOTE_HEALTH_URL"
+    fi
+    if [ -z "$_remote" ] && [ "$(jq -r '.integration.type // empty' "$_manifest")" = "module-federation" ]; then
+      _remote="$(jq -r '.integration.remoteEntry // empty' "$_manifest")"
+    fi
+    [ -z "$_remote" ] || probe_federation_asset "$_remote" "$_slug"
+  done
+else
+  log "SKIP_ACTIVATE=true — federation health checks deferred until activation"
 fi
 
 API="${FUZEFRONT_API_URL%/}/api/v1/app-registry"

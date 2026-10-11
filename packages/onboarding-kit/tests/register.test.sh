@@ -77,6 +77,7 @@ run_register() {
   FUZEFRONT_API_URL="$FUZEFRONT_API_URL" \
   FUZEFRONT_REGISTRATION_TOKEN="${1:-test-token}" \
   FUZEFRONT_REMOTE_HEALTH_URL="${2:-}" \
+  SKIP_ACTIVATE="${3:-false}" \
     sh "$SCRIPT" > "${WORK}/run.out" 2>&1
 }
 
@@ -124,14 +125,30 @@ start_server
 set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
 check "healthy federation asset permits registration" "$RC" "0"
 
+printf 'const fallback = "<body>temporary error</body>"; const remote = "__federation_method_ensure";\n' > "${WORK}/remoteEntry.js"
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
+check "HTML strings inside JavaScript do not reject the federation asset" "$RC" "0"
+
 printf '<!doctype html><html><body>ingress fallback</body></html>\n' > "${WORK}/remoteEntry.js"
 : > "${WORK}/calls.txt"
 set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
 if [ "$RC" -ne 0 ]; then ok "HTML federation fallback exits NON-ZERO"; else notok "HTML federation fallback exits NON-ZERO (got 0)"; fi
-grep -q 'federation asset is empty or HTML' "${WORK}/run.out" \
+grep -q 'federation asset for testapp is empty or HTML' "${WORK}/run.out" \
   && ok "reports the broken federation asset clearly" || notok "reports the broken federation asset clearly"
 WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
 check "broken federation asset causes no registry writes" "$WRITES" "0"
+cleanup; SERVER_PID=""
+
+# A staged registration cannot expose a broken remote, so it must not require the
+# deployment asset to exist before recording the manifest.
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "file://${WORK}/missing-remoteEntry.js" "true"; RC=$?; set -e
+check "staged registration skips federation health" "$RC" "0"
+STAGED_CALLS="$(cat "${WORK}/calls.txt")"
+STAGED_ACTIVATE="$(echo "$STAGED_CALLS" | grep -c '/activate$' || true)"
+check "staged registration does not activate" "$STAGED_ACTIVATE" "0"
 cleanup; SERVER_PID=""
 
 # ---- 7. suite: apps/*.json siblings each register and activate ----------------
@@ -139,7 +156,9 @@ cleanup; SERVER_PID=""
 # several surfaces registered only the primary and the rest simply never appeared in
 # the portal — no error, no log line, just a product missing four of its five entries.
 mkdir -p "${REG}/apps"
-cat > "${REG}/apps/talent.json" <<'JSON'
+printf 'const talent = "__federation_method_ensure";\n' > "${WORK}/talent-remoteEntry.js"
+printf 'const recruiter = "__federation_method_ensure";\n' > "${WORK}/recruiter-remoteEntry.js"
+cat > "${REG}/apps/talent.json" <<JSON
 {
   "manifestVersion": "1",
   "slug": "testapp-talent",
@@ -147,23 +166,34 @@ cat > "${REG}/apps/talent.json" <<'JSON'
   "menuLabel": "Talent",
   "mode": "portal",
   "modes": ["portal", "standalone"],
-  "integration": { "type": "module-federation", "remoteEntry": "https://testapp.example.com/talent/remoteEntry.js", "scope": "testappTalent", "module": "./App" },
+  "integration": { "type": "module-federation", "remoteEntry": "file://${WORK}/talent-remoteEntry.js", "scope": "testappTalent", "module": "./App" },
   "nav": { "section": "build", "order": 10, "suite": { "id": "testapp", "label": "TestApp", "order": 5 } },
   "visibility": "organization"
 }
 JSON
-cat > "${REG}/apps/recruiter.json" <<'JSON'
+cat > "${REG}/apps/recruiter.json" <<JSON
 {
   "manifestVersion": "1",
   "slug": "testapp-recruiter",
   "name": "TestApp Recruiter",
   "menuLabel": "Recruiter",
   "mode": "portal",
-  "integration": { "type": "module-federation", "remoteEntry": "https://testapp.example.com/recruiter/remoteEntry.js", "scope": "testappRecruiter", "module": "./App" },
+  "integration": { "type": "module-federation", "remoteEntry": "file://${WORK}/recruiter-remoteEntry.js", "scope": "testappRecruiter", "module": "./App" },
   "nav": { "section": "build", "order": 20, "suite": { "id": "testapp", "label": "TestApp", "order": 5 } },
   "visibility": "organization"
 }
 JSON
+
+# Every federated sibling is checked before any surface is registered.
+printf '<html><body>broken sibling</body></html>\n' > "${WORK}/recruiter-remoteEntry.js"
+start_server
+: > "${WORK}/calls.txt"
+set +e; run_register; RC=$?; set -e
+if [ "$RC" -ne 0 ]; then ok "broken sibling federation asset exits NON-ZERO"; else notok "broken sibling federation asset exits NON-ZERO (got 0)"; fi
+WRITES="$(grep -Ec '^(POST|PUT|DELETE) ' "${WORK}/calls.txt" || true)"
+check "broken sibling prevents every registry write" "$WRITES" "0"
+cleanup; SERVER_PID=""
+printf 'const recruiter = "__federation_method_ensure";\n' > "${WORK}/recruiter-remoteEntry.js"
 
 start_server
 : > "${WORK}/calls.txt"

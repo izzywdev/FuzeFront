@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   connectPortalNavigation,
+  navigatePortalView,
   pathForView,
   portalMenuItems,
   viewFromPathname,
@@ -33,6 +34,19 @@ describe('FuzeFront portal navigation bridge', () => {
     expect(viewFromPathname('/')).toBe('overview')
     expect(pathForView('operations', true)).toBe('/app/fuzequality/operations')
     expect(pathForView('operations', false)).toBe('/operations')
+  })
+
+  it('routes embedded app actions through the host and preserves standalone history', () => {
+    const navigate = vi.fn()
+    const pushState = vi.fn()
+    const bridge = { navigate } as FuzeFrontRuntimeBridge
+
+    navigatePortalView('repositories', true, bridge, { pushState })
+    expect(navigate).toHaveBeenCalledWith('/app/fuzequality/repositories')
+    expect(pushState).not.toHaveBeenCalled()
+
+    navigatePortalView('operations', false, undefined, { pushState })
+    expect(pushState).toHaveBeenCalledWith({}, '', '/operations')
   })
 
   it('syncs initial links, host submenu events, and browser history, then cleans up', () => {
