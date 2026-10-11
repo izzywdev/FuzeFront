@@ -3118,6 +3118,7 @@ export function flowCandidateMatchesInventory(
 export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
+  const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [omittedFlowEvidenceRevisions, setOmittedFlowEvidenceRevisions] = useState(0)
   const [flowCandidates, setFlowCandidates] = useState<
@@ -3371,19 +3372,25 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               ),
         ])
         const evaluations = normalizeHistoryPage(evaluationResponse)
-        const historicalGovernanceArtifacts = policyGateRevisionScope === 'all'
-          ? (await Promise.all(
-              [...new Set(evaluations.items.map(evaluation => evaluation.revision))]
-                .filter(revision => revision !== repository.lastScanRevision)
-                .map(revision => api.qualityArtifacts(repository.id, revision).catch(() => []))
-            )).flat()
+        const historicalGovernanceRevisions = policyGateRevisionScope === 'all'
+          ? [...new Set(evaluations.items.map(evaluation => evaluation.revision))]
+              .filter(revision => revision !== repository.lastScanRevision)
           : []
+        const historicalGovernanceArtifacts = (await Promise.all(
+          historicalGovernanceRevisions
+            .slice(0, MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS)
+            .map(revision => api.qualityArtifacts(repository.id, revision).catch(() => []))
+        )).flat()
         const hasPerformanceDefinitions = repositoryArtifacts.some(artifact =>
           ['load-test', 'stress-test'].includes(artifact.kind)
         )
         return {
           artifacts: repositoryArtifacts,
           historicalGovernanceArtifacts,
+          omittedGovernanceEvidenceRevisions: Math.max(
+            0,
+            historicalGovernanceRevisions.length - MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS
+          ),
           evaluations: evaluations.items,
           nextCursor: evaluations.page.nextCursor,
           performanceExecutions: hasPerformanceDefinitions
@@ -3400,6 +3407,10 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         if (active) {
           setArtifacts(groups.flatMap(group => group.artifacts))
           setGovernanceEvidenceArtifacts(groups.flatMap(group => group.historicalGovernanceArtifacts))
+          setOmittedGovernanceEvidenceRevisions(groups.reduce(
+            (total, group) => total + group.omittedGovernanceEvidenceRevisions,
+            0
+          ))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
           setPolicyGateNextCursors(Object.fromEntries(
             groups.flatMap(group => group.nextCursor ? [[group.repositoryId, group.nextCursor]] : [])
@@ -3416,6 +3427,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         if (active) {
           setArtifacts([])
           setGovernanceEvidenceArtifacts([])
+          setOmittedGovernanceEvidenceRevisions(0)
           setPolicyGateEvaluations([])
           setPolicyGateNextCursors({})
           setPerformanceExecutions([])
@@ -3880,6 +3892,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           {historyPaginationError && (
             <p className="performance-evidence-warning" role="alert">
               {historyPaginationError}
+            </p>
+          )}
+          {omittedGovernanceEvidenceRevisions > 0 && (
+            <p className="performance-inventory-only" role="status">
+              Historical policy and gate evidence is expanded for the {MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS} newest revisions.{' '}
+              {omittedGovernanceEvidenceRevisions}{' '}
+              {omittedGovernanceEvidenceRevisions === 1 ? 'older revision remains' : 'older revisions remain'}{' '}
+              visible with stored evidence passages without an unbounded repository request fan-out.
             </p>
           )}
           <div className="catalog-grid">

@@ -714,6 +714,35 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(screen.getByText('policy · governance/auth-v1.md')).toBeVisible()
   })
 
+  it('bounds historical governance evidence expansion to the newest 20 revisions', async () => {
+    mockEvidenceApis()
+    const historicalEvaluations = Array.from({ length: 22 }, (_, index) => ({
+      ...governanceEvaluation,
+      id: `evaluation-historical-${index}`,
+      revision: `historical-revision-${String(index).padStart(2, '0')}`,
+      title: `Historical governance finding ${index}`,
+    }))
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
+      filter?.revision ? [] : historicalEvaluations
+    )
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+
+    render(<RepositoryIntelligence data={portfolio} />)
+    fireEvent.change(await screen.findByLabelText('Governance revision'), {
+      target: { value: 'all' },
+    })
+
+    expect(await screen.findByText(/Historical policy and gate evidence is expanded for the 20 newest revisions/)).toHaveTextContent(
+      '2 older revisions remain'
+    )
+    const revisionRequests = vi.mocked(api.qualityArtifacts).mock.calls
+      .map(([, revision]) => revision)
+      .filter(Boolean)
+    expect(revisionRequests).toHaveLength(20)
+    expect(revisionRequests).not.toContain('historical-revision-20')
+    expect(revisionRequests).not.toContain('historical-revision-21')
+  })
+
   it('shows policy and gate names with their source paths in observed outcomes', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
