@@ -737,12 +737,9 @@ jobs:
           FLAGS_FORCE_ON: fuzefront.selection-lists.service
           SECURITY_SERVICE_URL: http://localhost:3002
           FUZEFRONT_SELECTION_LIST_AUTHZ_ENABLED: 'true'
-          # Machine identity for Security API grant/revoke (lib/machineIdentity.ts).
-          # CI-only FIXTURE values the stand-in Security API recognises
-          # (helpers/fake-security-api.mjs); not credentials for anything real. The
-          # stand-in answers 403 to any grant written with a user token.
-          SELECTION_LIST_SERVICE_CLIENT_ID: selection-list-service-ci
-          SELECTION_LIST_SERVICE_CLIENT_SECRET: ci-only-fixture-client-secret
+          # CI-only projected token fixture exchanges for owner-bootstrap scope.
+          # Human mutations still require exact-instance manager policy.
+          SELECTION_LIST_SERVICE_TOKEN_FILE: /tmp/selection-list-ci-workload-token
           DB_SSL: 'false'
           DB_HOST: localhost
           DB_PORT: '5432'
@@ -754,6 +751,7 @@ jobs:
           TEST_QUOTA_ORG_LISTS: '3'
           TEST_QUOTA_LIST_ITEMS: '5'
         run: |
+          echo "selection-list-service-ci-projected-token" > /tmp/selection-list-ci-workload-token
           node services/selection-list-service/dist/index.js >/tmp/sls.log 2>&1 &
           echo "SLS_PID=$!" >> "$GITHUB_ENV"
       - name: Wait for selection-list-service health
