@@ -43,7 +43,9 @@ function builder(table: string): any {
       return rows.length;
     }
     if (mode === 'count') return { count: String(rows.length) };
-    if (mode === 'first') return rows[0];
+    // A COPY, like a real driver: handing out the live row would let a later in-place update change what an
+    // earlier read "saw".
+    if (mode === 'first') return rows[0] ? { ...rows[0] } : undefined;
     return rows;
   };
 
@@ -129,6 +131,7 @@ import { AuthzClient, AuthzError } from '@fuzefront/auth';
 import accessRouter from '../src/routes/access';
 import { _setAuthzClientForTesting, makeNoOpProxy } from '../src/middleware/authz';
 import { _setGrantTokenProviderForTesting } from '../src/lib/machineIdentity';
+import { emitAccessGranted, emitAccessRevoked } from '../src/events/emitters';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 // Test-only signing secret (never a production credential); overridable via
@@ -140,12 +143,14 @@ const LIST_ID = 'front_sl_testlist01'; // contract shape (^front_sl_[0-9a-z]+$) 
 const USER_ID = 'usr_alice';
 const ACTOR_ID = 'usr_admin';
 const ORG_ID = 'org_corp';
-const MACHINE_TOKEN = 'machine-token-authz-admin';
+// The workload token must never reach a human-initiated grant/revoke/compensation.
+const MACHINE_TOKEN = 'workload-token-must-not-be-used';
 const machineGetToken = jest.fn();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function makeToken(overrides: Record<string, unknown> = {}): string {
-  return jwt.sign({ userId: ACTOR_ID, orgId: ORG_ID, ...overrides }, JWT_SECRET);
+  // Fixed iat: the same actor always yields the same compact token, so assertions can compare it.
+  return jwt.sign({ userId: ACTOR_ID, orgId: ORG_ID, iat: 1_700_000_000, ...overrides }, JWT_SECRET);
 }
 const auth = () => ({ Authorization: `Bearer ${makeToken()}` });
 
@@ -161,7 +166,8 @@ function makeApp(): express.Application {
 function makeAuthzClient(overrides: Partial<AuthzClient> = {}): AuthzClient {
   return {
     check: jest.fn().mockResolvedValue({ allow: true }),
-    bulkCheck: jest.fn().mockResolvedValue([]),
+    // Allow-all by default: every owner candidate the last-owner guard probes is confirmed by the authority.
+    bulkCheck: jest.fn(async (checks: unknown[]) => checks.map(() => ({ allow: true }))),
     grant: jest.fn(async () => {
       callLog.push('authz:grant');
       return { id: 'g1', subject: USER_ID, tenant: ORG_ID, role: 'list-viewer' };
@@ -198,7 +204,7 @@ beforeEach(() => {
   tables.selection_list_access = [];
   callLog.length = 0;
   _setAuthzClientForTesting(makeAuthzClient());
-  // Grant/revoke writes use the service's MACHINE token (never the caller's).
+  // Grant/revoke/compensation writes use the CALLER's token; the workload token must stay unused.
   machineGetToken.mockReset().mockResolvedValue(MACHINE_TOKEN);
   _setGrantTokenProviderForTesting({ getToken: machineGetToken });
 });
@@ -726,5 +732,283 @@ describe('caller identity for instance grant/revoke writes', () => {
     expect(res2.status).toBe(400);
     expect(res2.body.code).toBe('VALIDATION_ERROR');
     expect(check).not.toHaveBeenCalled();
+  });
+});
+
+// ─── D) Review M-2: the last-owner guard asks the AUTHORITY, and a failed change is compensated ──────────────
+describe('last-owner guard is decided by the Security API, not the mirror count (review M-2)', () => {
+  const put = (body: unknown, userId = USER_ID) =>
+    request(makeApp()).put(`/lists/${LIST_ID}/access/${userId}`).set(auth()).send(body as object);
+  const del = (userId = USER_ID) => request(makeApp()).delete(`/lists/${LIST_ID}/access/${userId}`).set(auth());
+
+  it('PUT demotion is refused 409 when the only OTHER mirror owner is not confirmed by the authority (stale mirror row)', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    seedAccess('usr_ghost_owner', 'list-owner'); // the mirror says owner; the authority no longer agrees
+    const bulkCheck = jest.fn(async (checks: unknown[]) => checks.map(() => ({ allow: false })));
+    const grant = jest.fn();
+    const revoke = jest.fn();
+    _setAuthzClientForTesting(makeAuthzClient({ bulkCheck, grant, revoke }));
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('CONFLICT');
+    // asked the authority about the OTHER owner only, for manage_access on THIS instance, with the caller's token
+    expect(bulkCheck).toHaveBeenCalledWith(
+      [{ subject: 'usr_ghost_owner', tenant: ORG_ID, resource: { type: 'SelectionList', key: LIST_ID }, action: 'manage_access' }],
+      expect.any(String),
+    );
+    expect(grant).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+    expect(accessRow(USER_ID)!.role).toBe('list-owner');
+  });
+
+  it('DELETE of an owner is refused 409 on the same evidence', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    seedAccess('usr_ghost_owner', 'list-owner');
+    const revoke = jest.fn();
+    _setAuthzClientForTesting(
+      makeAuthzClient({ bulkCheck: jest.fn(async (c: unknown[]) => c.map(() => ({ allow: false }))), revoke }),
+    );
+
+    const res = await del();
+
+    expect(res.status).toBe(409);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(accessRow(USER_ID)!.revoked_at).toBeNull();
+  });
+
+  it('PUT demotion is allowed when at least one other owner is confirmed (one confirmed of several)', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    seedAccess('usr_a_ghost', 'list-owner');
+    seedAccess('usr_b_real', 'list-owner');
+    _setAuthzClientForTesting(
+      makeAuthzClient({
+        bulkCheck: jest.fn(async (checks: Array<{ subject: string }>) =>
+          checks.map((c) => ({ allow: c.subject === 'usr_b_real' })),
+        ),
+      }),
+    );
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(200);
+    expect(accessRow(USER_ID)!.role).toBe('list-editor');
+  });
+
+  it('never counts the user being demoted as "another owner" (their own confirmation proves nothing)', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    const bulkCheck = jest.fn(async (checks: unknown[]) => checks.map(() => ({ allow: true })));
+    _setAuthzClientForTesting(makeAuthzClient({ bulkCheck }));
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(409);
+    expect(bulkCheck).not.toHaveBeenCalled(); // no candidates -> nothing to ask
+  });
+
+  it('a revoked mirror row is not a candidate', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    seedAccess('usr_revoked_owner', 'list-owner', { revoked_at: new Date() });
+    const bulkCheck = jest.fn(async (checks: unknown[]) => checks.map(() => ({ allow: true })));
+    _setAuthzClientForTesting(makeAuthzClient({ bulkCheck }));
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(409);
+    expect(bulkCheck).not.toHaveBeenCalled();
+  });
+
+  it('fails closed (500, nothing written) when the Security API cannot answer the guard question', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    seedAccess('usr_other_owner', 'list-owner');
+    const grant = jest.fn();
+    const revoke = jest.fn();
+    _setAuthzClientForTesting(
+      makeAuthzClient({
+        bulkCheck: jest.fn().mockRejectedValue(new AuthzError('DECISION_UNAVAILABLE', 'down')),
+        grant,
+        revoke,
+      }),
+    );
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(500);
+    expect(grant).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+    expect(accessRow(USER_ID)!.role).toBe('list-owner');
+  });
+
+  it('a non-owner change never consults the guard', async () => {
+    seedAccess(USER_ID, 'list-viewer');
+    const bulkCheck = jest.fn();
+    _setAuthzClientForTesting(makeAuthzClient({ bulkCheck }));
+
+    expect((await put({ role: 'list-editor' })).status).toBe(200);
+    expect((await del()).status).toBe(204);
+    expect(bulkCheck).not.toHaveBeenCalled();
+  });
+});
+
+describe('a failed access change is compensated in the Security API (review M-2)', () => {
+  const put = (body: unknown, userId = USER_ID) =>
+    request(makeApp()).put(`/lists/${LIST_ID}/access/${userId}`).set(auth()).send(body as object);
+  const del = (userId = USER_ID) => request(makeApp()).delete(`/lists/${LIST_ID}/access/${userId}`).set(auth());
+  const resource = { type: 'SelectionList', key: LIST_ID };
+
+  beforeEach(() => {
+    (emitAccessGranted as jest.Mock).mockReset();
+    (emitAccessRevoked as jest.Mock).mockReset();
+  });
+
+  it('PUT role change: when the new grant fails after the old role was revoked, the OLD role is re-granted', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    seedAccess('usr_other_owner', 'list-owner');
+    const grant = jest
+      .fn()
+      .mockRejectedValueOnce(new AuthzError('PROVIDER_ERROR', '502')) // the new role
+      .mockResolvedValue({ id: 'g' }); // the compensation
+    const revoke = jest.fn().mockResolvedValue(undefined);
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(500);
+    expect(accessRow(USER_ID)!.role).toBe('list-owner'); // mirror rolled back...
+    // ...and the authority is put back in step with it: new role dropped (idempotent), old role restored,
+    // both with the ACTING HUMAN's token (the workload identity may not repair a role).
+    expect(revoke).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-editor', resource }, makeToken());
+    expect(grant).toHaveBeenLastCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-owner', resource }, makeToken());
+    expect(machineGetToken).not.toHaveBeenCalled();
+  });
+
+  it('PUT self-demotion (grant the weaker role FIRST, revoke owner last): a failed revoke drops the new role and re-asserts owner, with the caller token', async () => {
+    seedAccess(ACTOR_ID, 'list-owner');
+    seedAccess('usr_other_owner', 'list-owner');
+    const calls: string[] = [];
+    const grant = jest.fn(async (a: any) => { calls.push(`grant:${a.role}`); return { id: 'g' }; });
+    const revoke = jest
+      .fn()
+      .mockImplementationOnce(async (a: any) => { calls.push(`revoke:${a.role}`); throw new AuthzError('PROVIDER_ERROR', '502'); })
+      .mockImplementation(async (a: any) => { calls.push(`revoke:${a.role}`); });
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await put({ role: 'list-editor' }, ACTOR_ID);
+
+    expect(res.status).toBe(500);
+    // weaker role granted first, then the owner revoke fails, then compensation: drop the new role, restore owner
+    expect(calls).toEqual(['grant:list-editor', 'revoke:list-owner', 'revoke:list-editor', 'grant:list-owner']);
+    for (const [, token] of [...grant.mock.calls, ...revoke.mock.calls] as unknown as Array<[unknown, string]>) {
+      expect(token).toBe(makeToken());
+    }
+    expect(accessRow(ACTOR_ID)!.role).toBe('list-owner');
+    expect(machineGetToken).not.toHaveBeenCalled();
+  });
+
+  it('PUT: a failure AFTER both Security API writes (outbox) restores the old role and drops the new one', async () => {
+    seedAccess(USER_ID, 'list-viewer');
+    (emitAccessGranted as jest.Mock).mockRejectedValueOnce(new Error('outbox payload invalid'));
+    const grant = jest.fn().mockResolvedValue({ id: 'g' });
+    const revoke = jest.fn().mockResolvedValue(undefined);
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(500);
+    expect(accessRow(USER_ID)!.role).toBe('list-viewer');
+    // order: drop the new role first (never more access than the user started with), then restore the old one
+    expect(revoke).toHaveBeenNthCalledWith(2, { subject: USER_ID, tenant: ORG_ID, role: 'list-editor', resource }, makeToken());
+    expect(grant).toHaveBeenLastCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+  });
+
+  it('PUT of a brand-new grant that fails afterwards removes the grant it made (nothing to restore)', async () => {
+    (emitAccessGranted as jest.Mock).mockRejectedValueOnce(new Error('boom'));
+    const grant = jest.fn().mockResolvedValue({ id: 'g' });
+    const revoke = jest.fn().mockResolvedValue(undefined);
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await put({ role: 'list-viewer' });
+
+    expect(res.status).toBe(500);
+    expect(revoke).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+    expect(grant).toHaveBeenCalledTimes(1); // no "prior" role to re-grant
+    expect(accessRow(USER_ID)).toBeUndefined();
+  });
+
+  it('PUT of the role the user already holds that fails does NOT revoke it (re-asserting is not a change)', async () => {
+    seedAccess(USER_ID, 'list-viewer');
+    const grant = jest.fn().mockRejectedValue(new AuthzError('PROVIDER_ERROR', '502'));
+    const revoke = jest.fn();
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await put({ role: 'list-viewer' });
+
+    expect(res.status).toBe(500);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(grant).toHaveBeenCalledTimes(1);
+  });
+
+  it('a validation / 409 outcome never triggers compensation (no authority write was attempted)', async () => {
+    seedAccess(USER_ID, 'list-owner');
+    const grant = jest.fn();
+    const revoke = jest.fn();
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    expect((await put({ role: 'list-editor' })).status).toBe(409);
+    expect((await put({ role: 'nope' })).status).toBe(400);
+    expect(grant).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+  });
+
+  it('DELETE: when the revoke call fails (it may have been applied server-side) the role is re-granted', async () => {
+    seedAccess(USER_ID, 'list-viewer');
+    const revoke = jest.fn().mockRejectedValue(new AuthzError('PROVIDER_ERROR', 'timeout'));
+    const grant = jest.fn().mockResolvedValue({ id: 'g' });
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await del();
+
+    expect(res.status).toBe(500);
+    expect(accessRow(USER_ID)!.revoked_at).toBeNull();
+    expect(grant).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+  });
+
+  it('DELETE: a failure after the revoke landed (outbox) re-grants the role the mirror still shows', async () => {
+    seedAccess(USER_ID, 'list-viewer');
+    (emitAccessRevoked as jest.Mock).mockRejectedValueOnce(new Error('outbox down'));
+    const revoke = jest.fn().mockResolvedValue(undefined);
+    const grant = jest.fn().mockResolvedValue({ id: 'g' });
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await del();
+
+    expect(res.status).toBe(500);
+    expect(accessRow(USER_ID)!.revoked_at).toBeNull(); // mirror rolled back
+    expect(grant).toHaveBeenCalledWith({ subject: USER_ID, tenant: ORG_ID, role: 'list-viewer', resource }, makeToken());
+  });
+
+  it('a compensation that itself fails never masks the original error and never throws (still a clean 500)', async () => {
+    seedAccess(USER_ID, 'list-viewer');
+    const grant = jest.fn().mockRejectedValue(new AuthzError('PROVIDER_ERROR', '502'));
+    const revoke = jest.fn().mockResolvedValue(undefined);
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    const res = await put({ role: 'list-editor' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe('INTERNAL_ERROR');
+    expect(accessRow(USER_ID)!.role).toBe('list-viewer');
+  });
+
+  it('a successful change performs NO compensation', async () => {
+    seedAccess(USER_ID, 'list-viewer');
+    const grant = jest.fn().mockResolvedValue({ id: 'g' });
+    const revoke = jest.fn().mockResolvedValue(undefined);
+    _setAuthzClientForTesting(makeAuthzClient({ grant, revoke }));
+
+    expect((await put({ role: 'list-editor' })).status).toBe(200);
+    expect(revoke).toHaveBeenCalledTimes(1); // the old role only
+    expect(grant).toHaveBeenCalledTimes(1); // the new role only
   });
 });

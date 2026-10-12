@@ -125,7 +125,17 @@ export async function startLifecycleConsumers(): Promise<LifecycleConsumers> {
   await userDeletedConsumer.connect();
   await userDeletedConsumer.subscribe(TOPICS.IDENTITY_USER_DELETED);
   await userDeletedConsumer.run<IdentityUserDeletedPayloadV1>(
-    (event: FuzeEvent<IdentityUserDeletedPayloadV1>) => handleUserDeleted(event),
+    (event: FuzeEvent<IdentityUserDeletedPayloadV1>) =>
+      handleUserDeleted(event, {
+        // The grant cleanup retries (a throw) until its budget is spent, then parks the
+        // event here with the same envelope TypedConsumer's own dead-letter uses.
+        deadLetter: async (topic, envelope, reason) => {
+          await dlqProducer.raw.send({
+            topic: dlqTopic(topic),
+            messages: [{ value: JSON.stringify({ raw: JSON.stringify(envelope), reason, sourceTopic: topic }) }],
+          });
+        },
+      }),
     identityUserDeletedSchemaV1,
     dlqProducer,
   );

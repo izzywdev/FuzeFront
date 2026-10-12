@@ -315,6 +315,17 @@ Assign roles and manage org membership through the same live API used in Step 4.
 > readable. A service that grants on behalf of an end user (e.g. creator
 > becomes owner) must use a machine identity with `authz:admin`, not the
 > end user's token.
+>
+> **Dedicated workload scopes (not `authz:admin`).** `SelectionList` instance
+> grants have two narrower machine paths for the `service:selection-list-service`
+> workload identity (a Kubernetes-projected ServiceAccount token exchanged at
+> `POST /tokens/workload`; scopes come from the chart's workload ConfigMap):
+> `selection-list:owner-grant` may `POST` a `list-owner` grant to an active member,
+> and `selection-list:grant-cleanup` may `DELETE` (revoke) a `SelectionList`
+> instance role, only for a principal that SQL shows is gone (user row missing or
+> deactivated, or no active membership of that tenant; otherwise `403`). Neither
+> can do anything else, and neither is a way around `authz:admin` for other
+> resources.
 
 ```ts
 // make a user a seller in a tenant (tenant-wide RBAC grant)
@@ -336,6 +347,9 @@ await fetch('/api/v1/security/authz/grants', {
 ```
 
 - Tenants: `GET`/`POST /api/v1/security/tenants`, `GET /tenants/{tenantId}`.
+  `GET` lists only the tenants you belong to; `POST` (create a tenant) is a
+  platform act — it needs `Organization:manage` on the platform root tenant or
+  an `authz:admin` machine token, otherwise `403`.
 - Members: `GET`/`POST /tenants/{tenantId}/members`,
   `DELETE /tenants/{tenantId}/members/{userId}`,
   `PUT /tenants/{tenantId}/members/{userId}/roles`.

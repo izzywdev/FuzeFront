@@ -68,13 +68,20 @@ describe('shipped platform packs (S8)', () => {
     const packs = loadPlatformPacks();
     expect(packs.length).toBeGreaterThanOrEqual(1);
     for (const { pack, file } of packs) {
-      expect(selectionListSeedPackSchemaV1.safeParse(JSON.parse(fs.readFileSync(file, 'utf8'))).success).toBe(true);
+      // the shared schema is strict; `translationProvenance` is the loader's own key (see seed/packs.ts)
+      const { translationProvenance, ...raw } = JSON.parse(fs.readFileSync(file, 'utf8'));
+      expect(translationProvenance === undefined || translationProvenance === 'human' || translationProvenance === 'machine').toBe(true);
+      expect(selectionListSeedPackSchemaV1.safeParse(raw).success).toBe(true);
       expect(path.basename(file)).toBe(`${pack.packKey}.v${pack.version}.json`);
     }
   });
 
-  it('platform-defaults v1 is the plan catalogue: yes-no, priority, work-status - 3 lists, 10 items, all 11 locales, human (not machine) text', () => {
+  it('platform-defaults v1 is the plan catalogue: yes-no, priority, work-status - 3 lists, 10 items, all 11 locales, declared MACHINE-translated (no native review yet)', () => {
     const pack = loadPlatformPack('platform-defaults', 1);
+    // Provenance must stay honest: these strings were AI-written. Flipping this to 'human' is only correct once
+    // every locale has been reviewed by a native speaker (docs/runbooks/selection-lists-seeding-operations.md
+    // section 2.5) - and since an applied version is immutable, that ships as platform-defaults.v2.json.
+    expect(pack.translationProvenance).toBe('machine');
     expect(pack.appliesTo).toEqual(['organization', 'personal']); // never the root `platform` org by default
     expect(pack.lists.map((l) => [l.key, l.items.map((i) => i.code)])).toEqual([
       ['yes-no', ['YES', 'NO']],
@@ -128,6 +135,20 @@ describe('platform pack loader refusals (the service refuses to start on a bad p
     expect(() => loadPlatformPacks(dir)).toThrow(/source locale/);
     write(dir, 'mini.v1.json', minimalPack({ lists: [{ key: 'mini-list', sourceLocale: 'en', name: 'M', items: [{ code: 'A', label: 'a' }, { code: 'A', label: 'b' }] }] }));
     expect(() => loadPlatformPacks(dir)).toThrow(/duplicate item code/);
+  });
+
+  it('translationProvenance: defaults to human, accepts machine, refuses anything else, and the rest of the file still goes through the strict schema', () => {
+    const dir = tmp();
+    write(dir, 'mini.v1.json', minimalPack());
+    expect(loadPlatformPack('mini', 1, dir).translationProvenance).toBe('human');
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'machine' }));
+    expect(loadPlatformPack('mini', 1, dir).translationProvenance).toBe('machine');
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'human' }));
+    expect(loadPlatformPack('mini', 1, dir).translationProvenance).toBe('human');
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'ai' }));
+    expect(() => loadPlatformPacks(dir)).toThrow(/translationProvenance/);
+    write(dir, 'mini.v1.json', minimalPack({ translationProvenance: 'machine', surprise: true }));
+    expect(() => loadPlatformPacks(dir)).toThrow(SeedPackError); // other unknown keys are still refused
   });
 
   it('refuses a file whose name disagrees with its content, a bad file name, unparseable JSON, and an unreadable directory', () => {
