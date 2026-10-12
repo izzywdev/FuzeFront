@@ -1,0 +1,383 @@
+{
+  "name": "App Builder & Ownership — approval frames",
+  "feature": "app-builder",
+  "description": "Contract-freeze UX artifacts for docs/planning/app-builder-and-ownership.md (rollout item F-2). Four flows: (1) a 'Build your application' card beside the dashed 'Add application' card on /applications; (2) the build session — form (where/name/brief), progress (launching → building → deploying → deployed), FuzeAgent deep link, cancel, and every terminal/refusal state; (3) the org-held, user-originated ownership block in app detail (org as owner, creator name+contact while a member, 'former member' after); (4) the marketplace publish request and the platform-admin review queue. Each flow ships dark behind its own default-OFF release flag. Approving a flow approves its visual + interaction model AND its component/package/contract build inventory. Flows bind to the REAL @fuzefront/app-registry-client (app-registry 1.2.0, #1261); two additive contract amendments are commissioned by approval (see commissionedByApproval).",
+  "designSystem": "fuse-seam (@fuzefront/design-system)",
+  "plan": "docs/planning/app-builder-and-ownership.md",
+  "implementation": {
+    "paths": [
+      "packages/app-builder-ui/**"
+    ]
+  },
+  "entry": "index.html",
+  "contract": {
+    "openapi": "services/app-registry-service/openapi.yaml",
+    "client": "@fuzefront/app-registry-client",
+    "schemas": [
+      "CreateBuildSessionRequest",
+      "BuildSession",
+      "BuildStatus",
+      "BuildContext",
+      "App",
+      "AppCreator",
+      "PublicationRequest",
+      "PublicationApproval",
+      "PublicationRejection",
+      "AppPublication",
+      "Error"
+    ],
+    "endpoints": [
+      "POST /build-sessions",
+      "GET /build-sessions",
+      "GET /build-sessions/{id}",
+      "POST /build-sessions/{id}/cancel",
+      "GET /apps/{slug}",
+      "GET /apps/{slug}/publication",
+      "POST /apps/{slug}/publication-requests",
+      "POST /apps/{slug}/publication-requests/approve",
+      "POST /apps/{slug}/publication-requests/reject"
+    ],
+    "component": "@fuzefront/app-builder-ui → BuildEntryFlow, BuildSessionFlow, AppOwnershipCard, MarketplacePublishFlow"
+  },
+  "coordination": {
+    "frontend/src/pages/ApplicationsPage.tsx": "Also claimed by design/frames/app-management (feature-level implementation.paths; flows unapproved). build-entry claims it too, so gate-frames-first passes the card mount once build-entry is approved (one approved claiming flow suffices). The page change is limited to importing and mounting <BuildAppCard /> after the Add-application card; the card's markup/logic live in packages/app-builder-ui/src/entry/**. Any other change to ApplicationsPage remains app-management's to approve.",
+    "app detail (/apps/:appId)": "Owned by app-management/app-detail (AppDetailFlow, packages/app-management-ui). Flows creator-ownership and marketplace-publish ship self-contained components (AppOwnershipCard, PublicationPanel) from packages/app-builder-ui that AppDetailFlow mounts; they claim only their own package paths, so they never block or are blocked by app-detail's approval.",
+    "routes (/applications/build[/:sessionId], /admin/marketplace-requests)": "Registered in frontend/src/App.tsx as one-line mounts of BuildSessionFlow and PublicationReviewQueue from @fuzefront/app-builder-ui. App.tsx is shell plumbing (governance/frames-first-policy.json nonFeaturePaths), so it is deliberately not claimed here; all feature UI lives under packages/app-builder-ui/**."
+  },
+  "commissionedByApproval": [
+    "AppCreator.contactEmail (string, optional) — returned under the same rule as displayName: only while isCurrentMember is true. app-registry 1.2.0 has no contact channel on AppCreator; frame (e1)'s Contact row needs it. Until contract-designer lands it (1.3.0, additive/minor) the UI renders the creator's name and omits the Contact row — never a guessed address.",
+    "GET /publication-requests?status=pending (platform admin only, cursor-paginated, flag fuzefront.apps.marketplace-publishing) returning AppPublication plus app displayName/icon/organizationId — app-registry 1.2.0 can approve/reject per app but cannot list what is pending. Flow 4's review queue (frame g) cannot be implemented until it lands; the frames deliberately do not invent a client-side scan of GET /apps.",
+    "Polling cadence for in-flight build sessions (no push channel in the contract): 5 s for the first minute, backing off to 30 s, paused while hidden, stopped at a terminal status (frame c)."
+  ],
+  "build": {
+    "flows": [
+      {
+        "id": "build-entry",
+        "orchestrator": "BuildEntryFlow",
+        "route": "/applications",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "packages/app-builder-ui/src/entry/**",
+            "frontend/src/pages/ApplicationsPage.tsx"
+          ]
+        },
+        "contract": {
+          "client": "@fuzefront/app-registry-client",
+          "status": "real",
+          "openapi": "services/app-registry-service/openapi.yaml",
+          "endpoints": [
+            "GET /build-sessions"
+          ],
+          "component": "@fuzefront/app-builder-ui → BuildEntryFlow (BuildAppCard)",
+          "featureFlag": "fuzefront.apps.build-with-agent"
+        },
+        "frames": [
+          "01-build-entry"
+        ]
+      },
+      {
+        "id": "build-session",
+        "orchestrator": "BuildSessionFlow",
+        "route": "/applications/build",
+        "routes": [
+          "/applications/build",
+          "/applications/build/:sessionId"
+        ],
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "packages/app-builder-ui/src/session/**"
+          ]
+        },
+        "contract": {
+          "client": "@fuzefront/app-registry-client",
+          "status": "real",
+          "openapi": "services/app-registry-service/openapi.yaml",
+          "endpoints": [
+            "POST /build-sessions",
+            "GET /build-sessions/{id}",
+            "POST /build-sessions/{id}/cancel"
+          ],
+          "component": "@fuzefront/app-builder-ui → BuildSessionFlow",
+          "featureFlag": "fuzefront.apps.build-with-agent"
+        },
+        "frames": [
+          "02-build-form",
+          "03-build-progress",
+          "04-build-outcomes"
+        ]
+      },
+      {
+        "id": "creator-ownership",
+        "orchestrator": "AppOwnershipCard",
+        "route": "/apps/:appId",
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "packages/app-builder-ui/src/ownership/**"
+          ]
+        },
+        "contract": {
+          "client": "@fuzefront/app-registry-client",
+          "status": "real (AppCreator.contactEmail anticipated)",
+          "openapi": "services/app-registry-service/openapi.yaml",
+          "endpoints": [
+            "GET /apps/{slug}"
+          ],
+          "component": "@fuzefront/app-builder-ui → AppOwnershipCard",
+          "featureFlag": "fuzefront.apps.creator-ownership"
+        },
+        "frames": [
+          "05-creator-ownership"
+        ]
+      },
+      {
+        "id": "marketplace-publish",
+        "orchestrator": "MarketplacePublishFlow",
+        "route": "/apps/:appId",
+        "routes": [
+          "/apps/:appId",
+          "/admin/marketplace-requests"
+        ],
+        "approved": false,
+        "approvedBy": null,
+        "approvedAt": null,
+        "implementation": {
+          "paths": [
+            "packages/app-builder-ui/src/publishing/**"
+          ]
+        },
+        "contract": {
+          "client": "@fuzefront/app-registry-client",
+          "status": "real (queue listing anticipated)",
+          "openapi": "services/app-registry-service/openapi.yaml",
+          "endpoints": [
+            "GET /apps/{slug}/publication",
+            "POST /apps/{slug}/publication-requests",
+            "POST /apps/{slug}/publication-requests/approve",
+            "POST /apps/{slug}/publication-requests/reject"
+          ],
+          "anticipatedEndpoints": [
+            "GET /publication-requests"
+          ],
+          "component": "@fuzefront/app-builder-ui → MarketplacePublishFlow (PublicationPanel, PublicationReviewQueue)",
+          "featureFlag": "fuzefront.apps.marketplace-publishing"
+        },
+        "frames": [
+          "06-publish-request",
+          "07-review-queue"
+        ]
+      }
+    ],
+    "components": [
+      "BuildAppCard",
+      "ResumeBuildCard",
+      "BuildAppForm",
+      "BuildTargetPicker",
+      "BriefField",
+      "BuildSessionView",
+      "BuildProgressStepper",
+      "BuildStatusPill",
+      "AgentSessionLink",
+      "CancelBuildDialog",
+      "BuildOutcomeBanner",
+      "BuildErrorBanner",
+      "AppOwnershipCard",
+      "OwnerRow",
+      "CreatorRow",
+      "FormerMemberNotice",
+      "PublicationPanel",
+      "PublicationTierBadge",
+      "PublicationRequestDialog",
+      "PublicationStatusBanner",
+      "PublicationReviewQueue",
+      "ReviewQueueRow",
+      "ApprovePublicationDialog",
+      "RejectPublicationDialog"
+    ],
+    "packages": [
+      "@fuzefront/app-builder-ui"
+    ],
+    "designSystemAdditions": [
+      "Stepper — ordered progress with done/current/failed/cancelled step states (build progress)",
+      "RadioCardGroup — keyboard-navigable choice cards, role=radiogroup (build target)",
+      "TextareaWithCounter — length-limited textarea with live counter and over-limit state (brief ≤4000, notes/reason ≤2000)",
+      "StatusPill, Dialog, DataTable — already requested by app-management (dsPrimitivesNeeded); reuse, do not duplicate"
+    ]
+  },
+  "frames": [
+    {
+      "id": "01-build-entry",
+      "file": "01-build-entry.html",
+      "label": "(a) Build your application card",
+      "route": "/applications",
+      "flow": "build-entry",
+      "summary": "The Applications grid with the new solid, seam-topped 'Build your application' card immediately after the dashed 'Add application' card. Flag OFF, flag-resolving and in-flight-session (resume shortcut) variants.",
+      "acceptanceNotes": "With fuzefront.apps.build-with-agent ON the grid renders [data-card='build-application'] directly after [data-action='add-application']; it is role=button, tabIndex 0, activated by click/Enter/Space, and routes to /applications/build. With the flag OFF the element is NOT in the DOM (not disabled, not CSS-hidden), and no /build-sessions request is made. While the flag is resolving it is treated as OFF — no flash-in. When GET /build-sessions?limit=1 returns a non-terminal session, the card becomes [data-action='resume-build-session'] linking to /applications/build/:sessionId.",
+      "testHooks": [
+        "[data-frame='01-build-entry']",
+        "[data-panel='applications-grid']",
+        "[data-action='add-application']",
+        "[data-card='build-application']",
+        "[data-action='build-application']",
+        "[data-flag-state='off']",
+        "[data-flag-state='loading']",
+        "[data-action='resume-build-session']"
+      ]
+    },
+    {
+      "id": "02-build-form",
+      "file": "02-build-form.html",
+      "label": "(b) Describe the app",
+      "route": "/applications/build",
+      "flow": "build-session",
+      "summary": "The build form: where (personal workspace / active org as radio cards, defaulting to current context), name (1–120), brief (1–4000 with live counter). Personal-only, validation and submitting states.",
+      "acceptanceNotes": "Target defaults to the current context; the organization option is rendered only when the caller has an active membership in the active org. Submit sends POST /build-sessions with CreateBuildSessionRequest {context, organizationId?, name, brief}: organizationId present iff context=organization; never an id. Name empty or brief >4000 disables [data-action='start-build'] and shows inline errors; a 400 VALIDATION from the server renders the same way, inline. While submitting, inputs lock and exactly one request is in flight. 201 navigates to /applications/build/:id. Any refusal keeps the form values (frame d).",
+      "testHooks": [
+        "[data-frame='02-build-form']",
+        "[data-panel='build-form']",
+        "[data-input='target']",
+        "[data-target='personal']",
+        "[data-target='organization']",
+        "[data-input='name']",
+        "[data-input='brief']",
+        "[data-counter='brief']",
+        "[data-action='start-build']",
+        "[data-state='invalid']",
+        "[data-state='submitting']"
+      ]
+    },
+    {
+      "id": "03-build-progress",
+      "file": "03-build-progress.html",
+      "label": "(c) Session in progress",
+      "route": "/applications/build/:sessionId",
+      "flow": "build-session",
+      "summary": "Reload-safe session page: 4-step stepper (launching/building/deploying/deployed; requested folds into launching), status pill, FuzeAgent deep link, session meta and brief, cancel with confirm dialog, loading skeleton.",
+      "acceptanceNotes": "Renders from GET /build-sessions/{id}; polls while status is requested/launching/building/deploying (5 s for the first minute, then 30 s; paused when hidden; stops at terminal). Exactly one step has data-step-state='current'. [data-action='open-agent-session'] renders only when agentSessionUrl is non-null AND resolves to the shell's own origin; otherwise [data-state='agent-link-pending'] (null) or nothing (cross-origin) — never a dead or off-site link. [data-action='cancel-build'] shows for requester/org managers while in-flight and opens a confirm; [data-action='confirm-cancel-build'] calls POST /build-sessions/{id}/cancel. A 409 on cancel means the session went terminal first: refetch and render it, no error toast.",
+      "testHooks": [
+        "[data-frame='03-build-progress']",
+        "[data-panel='build-session']",
+        "[data-panel='build-stepper']",
+        "[data-session-status='building']",
+        "[data-session-status='launching']",
+        "[data-session-status='deploying']",
+        "[data-step-state='current']",
+        "[data-action='open-agent-session']",
+        "[data-state='agent-link-pending']",
+        "[data-action='cancel-build']",
+        "[data-action='confirm-cancel-build']",
+        "[data-state='loading']"
+      ]
+    },
+    {
+      "id": "04-build-outcomes",
+      "file": "04-build-outcomes.html",
+      "label": "(d) Outcomes, failures & refusals",
+      "route": "/applications/build/:sessionId",
+      "flow": "build-session",
+      "summary": "Terminal states (deployed with the new app tile on Applications, failed with errorCode/errorMessage, cancelled) and every refusal: 502 launch_failed, 503 builder_unavailable, 503 feature_disabled, 403 not a member, 409 no_personal_org, 429, 404 session not found, and a transient polling error.",
+      "acceptanceNotes": "deployed: success banner with [data-action='open-app'] for appSlug; the Applications list query is invalidated so the app tile appears via the normal GET /apps (no special-casing). failed: show errorMessage (as text) and errorCode, offer [data-action='start-new-build']; no app added. cancelled: terminal notice + start-new-build. 502 → launch_failed with retry, form kept. 503 builder_unavailable → nothing created, offer Add application. 503 feature_disabled → not-available page. 403 → in place (never a sign-in redirect), offer building in the personal workspace. 409 no_personal_org → choose an org. 429 → wait, form kept. 404 (unknown or not entitled) → 'not found', never distinguishing forbidden. A failed poll keeps the last known state ([data-state='stale']) and retries — it is not a failed build.",
+      "testHooks": [
+        "[data-frame='04-build-outcomes']",
+        "[data-session-status='deployed']",
+        "[data-app='expense-tracker']",
+        "[data-action='open-app']",
+        "[data-session-status='failed']",
+        "[data-session-status='cancelled']",
+        "[data-action='start-new-build']",
+        "[data-error-code='launch_failed']",
+        "[data-error-code='builder_unavailable']",
+        "[data-error-code='feature_disabled']",
+        "[data-error-code='FORBIDDEN']",
+        "[data-error-code='no_personal_org']",
+        "[data-http='429']",
+        "[data-http='404']",
+        "[data-state='stale']"
+      ]
+    },
+    {
+      "id": "05-creator-ownership",
+      "file": "05-creator-ownership.html",
+      "label": "(e) Owner & creator",
+      "route": "/apps/:appId",
+      "flow": "creator-ownership",
+      "summary": "Ownership block in app detail: the owning org first; creator name + contact while a current member; 'Former member' with no name or contact after they leave; personal app (you are owner and creator); creator not recorded; flag OFF (block absent); loading.",
+      "acceptanceNotes": "Owner always renders from App.organizationId (personal org → 'Your personal workspace'). creator.isCurrentMember=true → displayName ([data-field='creator-name']) and, once AppCreator.contactEmail exists, [data-action='contact-creator']; until then the Contact row is omitted. creator.isCurrentMember=false → [data-field='creator-former'] 'Former member' and the UI renders NO name or contact even if present in the payload. creator=null → 'Not recorded'. If the response lacks the creator key (fuzefront.apps.creator-ownership OFF) the block is not rendered at all. The block shows no roles and no authority controls.",
+      "testHooks": [
+        "[data-frame='05-creator-ownership']",
+        "[data-panel='app-ownership']",
+        "[data-field='owner']",
+        "[data-creator-state='current-member']",
+        "[data-field='creator-name']",
+        "[data-action='contact-creator']",
+        "[data-creator-state='former-member']",
+        "[data-field='creator-former']",
+        "[data-creator-state='self']",
+        "[data-creator-state='none']",
+        "[data-flag-state='off']",
+        "[data-state='loading']"
+      ]
+    },
+    {
+      "id": "06-publish-request",
+      "file": "06-publish-request.html",
+      "label": "(f) Publish to marketplace",
+      "route": "/apps/:appId",
+      "flow": "marketplace-publish",
+      "summary": "Publishing panel in app detail: tier badge + review state. none → 'Publish to marketplace' + request dialog with optional notes; pending; approved (marketplace tier); rejected with reason + resubmit; 409 ALREADY_PENDING / ALREADY_PUBLISHED; read-only (panel absent); 403 on submit.",
+      "acceptanceNotes": "Panel renders only when fuzefront.apps.marketplace-publishing is ON and GET /apps/{slug}/publication returns 200 (a 404 means the caller can't manage the app → no panel, no control). status none or rejected shows [data-action='request-publication']; submit is POST /apps/{slug}/publication-requests {target:'marketplace', notes?} (notes ≤2000). pending shows no request control. approved shows tier marketplace. rejected shows rejection.reason verbatim as text. A 409 (ALREADY_PENDING / ALREADY_PUBLISHED) is a race: refetch and render the current state. A 403 on submit is shown in place and the control is removed.",
+      "testHooks": [
+        "[data-frame='06-publish-request']",
+        "[data-panel='app-publication']",
+        "[data-publication-status='none']",
+        "[data-action='request-publication']",
+        "[data-panel='publication-request-dialog']",
+        "[data-input='publication-notes']",
+        "[data-action='submit-publication-request']",
+        "[data-publication-status='pending']",
+        "[data-publication-status='approved']",
+        "[data-publication-status='rejected']",
+        "[data-field='rejection-reason']",
+        "[data-error-code='ALREADY_PENDING']",
+        "[data-error-code='ALREADY_PUBLISHED']",
+        "[data-state='read-only']",
+        "[data-http='403']"
+      ]
+    },
+    {
+      "id": "07-review-queue",
+      "file": "07-review-queue.html",
+      "label": "(g) Admin review queue",
+      "route": "/admin/marketplace-requests",
+      "flow": "marketplace-publish",
+      "summary": "Platform-admin queue of pending requests (app, publisher org, creator contact per the frame-e rule, notes, submitted), approve dialog with optional note, reject dialog with required reason, 409 NOT_PENDING race, empty, loading, error, 403.",
+      "acceptanceNotes": "Rows come from the ANTICIPATED GET /publication-requests?status=pending (commissioned; not in 1.2.0), oldest first, cursor-paginated. [data-action='confirm-approve-publication'] calls POST /apps/{slug}/publication-requests/approve {notes?}. [data-action='confirm-reject-publication'] is disabled until a 1–2000 char reason is entered, then calls …/reject {reason}. Both remove the row optimistically and restore it on non-2xx, except 409 NOT_PENDING which removes it with a notice. A former-member creator is never named. Non-platform-admins get 403 in place and no nav entry.",
+      "testHooks": [
+        "[data-frame='07-review-queue']",
+        "[data-panel='publication-queue']",
+        "[data-queue-item='expense-tracker']",
+        "[data-action='approve-publication']",
+        "[data-action='reject-publication']",
+        "[data-panel='approve-publication-dialog']",
+        "[data-action='confirm-approve-publication']",
+        "[data-panel='reject-publication-dialog']",
+        "[data-input='rejection-reason']",
+        "[data-action='confirm-reject-publication']",
+        "[data-error-code='NOT_PENDING']",
+        "[data-state='empty']",
+        "[data-state='loading']",
+        "[data-state='error']",
+        "[data-state='forbidden']"
+      ]
+    }
+  ],
+  "stamp": "5e7510ac80081053ceb4071e08aa2e91af5076d5e4910b34d761ddb7ecdbb83a"
+}
