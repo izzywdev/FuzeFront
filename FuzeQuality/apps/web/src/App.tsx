@@ -4930,7 +4930,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               <h2>Observed outcomes</h2>
               <p>
                 Only explicitly linked execution evidence is included; an absent
-                pair is never treated as passing.
+                pair is never treated as passing. Continuation pages retain the
+                execution state captured when this view loaded.
               </p>
             </div>
           </header>

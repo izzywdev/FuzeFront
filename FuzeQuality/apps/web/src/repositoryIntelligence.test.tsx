@@ -613,6 +613,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     expect(await screen.findByText('policy-latest → gate-latest')).toBeVisible()
+    expect(screen.getByText(/Continuation pages retain the execution state captured/)).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Load more policy-gate performance' }))
     expect(await screen.findByText('policy-older → gate-older')).toBeVisible()
     expect(api.executionPerformance).toHaveBeenLastCalledWith(repository.id, {

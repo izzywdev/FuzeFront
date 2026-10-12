@@ -68,11 +68,11 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 # not this registry's to mint. Tracked against FuzeQuality's own adoption.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
 src FuzeQuality/apps/api/src/index.ts:426                   # FuzeQuality-owned test-execution entity
-src FuzeQuality/packages/core/src/store.ts:508              # FuzeQuality-owned repository entity
-src FuzeQuality/packages/core/src/store.ts:577              # FuzeQuality-owned repository-scan revision entity
-src FuzeQuality/packages/core/src/store.ts:593              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:604              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:690              # FuzeQuality-owned admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:764              # FuzeQuality-owned identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:775              # FuzeQuality-owned design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:1757             # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:527              # FuzeQuality-owned repository entity
+src FuzeQuality/packages/core/src/store.ts:596              # FuzeQuality-owned repository-scan revision entity
+src FuzeQuality/packages/core/src/store.ts:612              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:623              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:709              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:783              # FuzeQuality-owned identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:794              # FuzeQuality-owned design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1793             # FuzeQuality-owned admin-context audit entity

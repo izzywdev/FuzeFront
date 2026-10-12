@@ -129,7 +129,9 @@ describe('test execution evidence', () => {
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
     expect(String(sql)).toContain('jsonb_array_elements')
-    expect(String(sql)).toContain('created_at <= $10')
+    expect(String(sql)).toContain('FROM fuzequality.test_execution_versions')
+    expect(String(sql)).toContain('versioned_at <= $10')
+    expect(String(sql)).toContain('versioned_at DESC,version_id DESC')
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
@@ -138,7 +140,7 @@ describe('test execution evidence', () => {
     ])
   })
 
-  it('keeps an execution in a performance snapshot after it completes', async () => {
+  it('freezes an execution lifecycle state in a performance snapshot after it completes', async () => {
     vi.useFakeTimers()
     try {
       vi.setSystemTime(new Date('2026-10-10T12:00:00.000Z'))
@@ -168,11 +170,34 @@ describe('test execution evidence', () => {
       })
 
       await expect(store.policyGatePerformance('repo-1', 'org-1', { snapshotAt })).resolves.toEqual([
-        expect.objectContaining({ policyArtifactId: 'policy-1', passed: 1, failed: 0, running: 0 }),
+        expect.objectContaining({ policyArtifactId: 'policy-1', passed: 0, failed: 0, running: 1 }),
+      ])
+      await expect(store.policyGatePerformance('repo-1', 'org-1')).resolves.toEqual([
+        expect.objectContaining({ policyArtifactId: 'policy-1', passed: 1, failed: 1, running: 0 }),
       ])
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('appends the merged execution state to the Postgres snapshot history', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const store = new PostgresCatalogStore('postgres://unused')
+    ;(store as unknown as { pool: unknown }).pool = { query }
+
+    await store.saveTestExecution({
+      id: 'run-1', repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions',
+      externalRunId: '123', attempt: 1, revision: 'abc', kind: 'integration', status: 'running',
+      name: 'Integration', workflowPath: '.github/workflows/integration.yml',
+      policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'],
+      gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'running' }],
+      thresholds: [], evidenceLinks: [],
+    })
+
+    const sql = String(query.mock.calls[0][0])
+    expect(sql).toContain('WITH upserted AS')
+    expect(sql).toContain('INSERT INTO fuzequality.test_execution_versions')
+    expect(sql).toContain('FROM upserted')
   })
 
   it('bounds in-memory policy-gate aggregates without returning an unbounded revision list', async () => {

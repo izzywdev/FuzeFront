@@ -261,7 +261,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private policyGateResults: PolicyGateEvaluation[] = []
   private policyGateReviewAudits: PolicyGateReviewHistoryEntry[] = []
   private executions: TestExecution[] = []
-  private executionIngestedAt = new Map<string, number>()
+  private executionVersions: Array<{ execution: TestExecution; versionedAt: number }> = []
   private tenants = new Map<string, QualityTenant>()
   private principals = new Map<string, QualityPrincipal>()
   private memberships = new Map<string, QualityMembership>()
@@ -468,14 +468,21 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}) {
+    const snapshotAt = query.snapshotAt ? Date.parse(query.snapshotAt) : undefined
+    const snapshotExecutions = snapshotAt === undefined ? this.executions : []
+    if (snapshotAt !== undefined) {
+      const versionsByExecution = new Map<string, TestExecution>()
+      for (const version of this.executionVersions) {
+        if (version.versionedAt > snapshotAt) continue
+        const execution = version.execution
+        const key = `${execution.repositoryId}\u0000${execution.provider}\u0000${execution.externalRunId}\u0000${execution.attempt}`
+        versionsByExecution.set(key, execution)
+      }
+      snapshotExecutions.push(...versionsByExecution.values())
+    }
     const items = executionPerformance(filterTestExecutions(
-      this.executions
-        .filter(item => {
-          if (item.repositoryId !== repositoryId || item.tenantId !== tenantId) return false
-          if (!query.snapshotAt) return true
-          const key = `${item.repositoryId}\u0000${item.provider}\u0000${item.externalRunId}\u0000${item.attempt}`
-          return (this.executionIngestedAt.get(key) ?? 0) <= Date.parse(query.snapshotAt)
-        })
+      snapshotExecutions
+        .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
         .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id)),
       query,
     ))
@@ -500,11 +507,11 @@ export class MemoryCatalogStore implements CatalogStore {
     // in-progress event must not erase a terminal result for this attempt.
     if (index >= 0 && this.executions[index].status !== 'running' && execution.status === 'running') return
     if (index >= 0) this.executions[index] = mergeTestExecutionEvidence(this.executions[index], execution)
-    else {
-      this.executions.push(execution)
-      const key = `${execution.repositoryId}\u0000${execution.provider}\u0000${execution.externalRunId}\u0000${execution.attempt}`
-      this.executionIngestedAt.set(key, Date.now())
-    }
+    else this.executions.push(execution)
+    this.executionVersions.push({
+      execution: structuredClone(this.executions[index >= 0 ? index : this.executions.length - 1]),
+      versionedAt: Date.now(),
+    })
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -1155,20 +1162,26 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}): Promise<PolicyGatePerformance[]> {
     const result = await this.pool.query(
-      `WITH filtered_executions AS (
+      `WITH snapshot_executions AS (
+         SELECT DISTINCT ON (repository_id,provider,external_run_id,attempt)
+                repository_id,provider,external_run_id,attempt,revision,kind,status,workflow_path,started_at,completed_at,
+                policy_artifact_ids,gate_artifact_ids,gate_evaluations
+         FROM fuzequality.test_execution_versions
+         WHERE repository_id=$1 AND tenant_id=$2
+           AND ($10::timestamptz IS NULL OR versioned_at <= $10)
+         ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
+       ), filtered_executions AS (
          SELECT repository_id,revision,status,completed_at,
                 COALESCE(completed_at,started_at,'epoch'::timestamptz) AS occurred_at,
                 gate_evaluations,policy_artifact_ids,gate_artifact_ids
-         FROM fuzequality.test_executions
-         WHERE repository_id=$1 AND tenant_id=$2
-           AND ($3::text IS NULL OR kind=$3)
+         FROM snapshot_executions
+         WHERE ($3::text IS NULL OR kind=$3)
            AND ($4::text IS NULL OR status=$4)
            AND ($5::text IS NULL OR provider=$5)
            AND ($6::text IS NULL OR revision=$6)
            AND ($7::text IS NULL OR workflow_path=$7)
            AND ($8::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) >= $8)
            AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) <= $9)
-           AND ($10::timestamptz IS NULL OR created_at <= $10)
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
                 pair.value->>'policyArtifactId' AS policy_artifact_id,
@@ -1228,10 +1241,20 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async saveTestExecution(item: TestExecution): Promise<void> {
     await this.pool.query(
-      `INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
+      `WITH upserted AS (
+       INSERT INTO fuzequality.test_executions (id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,name,workflow_path,source_url,started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations,thresholds,evidence_links,summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        ON CONFLICT (repository_id,provider,external_run_id,attempt) DO UPDATE SET revision=EXCLUDED.revision,kind=EXCLUDED.kind,status=EXCLUDED.status,name=EXCLUDED.name,workflow_path=COALESCE(EXCLUDED.workflow_path,fuzequality.test_executions.workflow_path),source_url=COALESCE(EXCLUDED.source_url,fuzequality.test_executions.source_url),started_at=COALESCE(EXCLUDED.started_at,fuzequality.test_executions.started_at),completed_at=COALESCE(EXCLUDED.completed_at,fuzequality.test_executions.completed_at),policy_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.policy_artifact_ids)>0 THEN EXCLUDED.policy_artifact_ids ELSE fuzequality.test_executions.policy_artifact_ids END,gate_artifact_ids=CASE WHEN jsonb_array_length(EXCLUDED.gate_artifact_ids)>0 THEN EXCLUDED.gate_artifact_ids ELSE fuzequality.test_executions.gate_artifact_ids END,gate_evaluations=CASE WHEN jsonb_array_length(EXCLUDED.gate_evaluations)>0 THEN EXCLUDED.gate_evaluations WHEN EXCLUDED.status<>'running' THEN (SELECT COALESCE(jsonb_agg(CASE WHEN evaluation->>'status'='running' THEN jsonb_set(evaluation,'{status}',to_jsonb(EXCLUDED.status)) ELSE evaluation END),'[]'::jsonb) FROM jsonb_array_elements(fuzequality.test_executions.gate_evaluations) AS gate(evaluation)) ELSE fuzequality.test_executions.gate_evaluations END,thresholds=CASE WHEN jsonb_array_length(EXCLUDED.thresholds)>0 THEN EXCLUDED.thresholds ELSE fuzequality.test_executions.thresholds END,evidence_links=(SELECT COALESCE(jsonb_agg(link ORDER BY ordinal),'[]'::jsonb) FROM (SELECT DISTINCT ON (link->>'kind',link->>'url') link,ordinal FROM jsonb_array_elements(fuzequality.test_executions.evidence_links || EXCLUDED.evidence_links) WITH ORDINALITY AS evidence(link,ordinal) ORDER BY link->>'kind',link->>'url',ordinal DESC) AS unique_links),summary=CASE WHEN length(COALESCE(EXCLUDED.summary,''))>length(COALESCE(fuzequality.test_executions.summary,'')) THEN EXCLUDED.summary ELSE fuzequality.test_executions.summary END
-       WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'`,
+       WHERE fuzequality.test_executions.status = 'running' OR EXCLUDED.status <> 'running'
+       RETURNING id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,workflow_path,
+                 started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations
+       )
+       INSERT INTO fuzequality.test_execution_versions
+         (execution_id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,workflow_path,
+          started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations)
+       SELECT id,repository_id,tenant_id,provider,external_run_id,attempt,revision,kind,status,workflow_path,
+              started_at,completed_at,policy_artifact_ids,gate_artifact_ids,gate_evaluations
+       FROM upserted`,
       [item.id,item.repositoryId,item.tenantId,item.provider,item.externalRunId,item.attempt,item.revision,item.kind,item.status,item.name,item.workflowPath ?? null,item.sourceUrl ?? null,item.startedAt ?? null,item.completedAt ?? null,JSON.stringify(item.policyArtifactIds),JSON.stringify(item.gateArtifactIds),JSON.stringify(item.gateEvaluations),JSON.stringify(item.thresholds),JSON.stringify(item.evidenceLinks),item.summary ?? null],
     )
   }
