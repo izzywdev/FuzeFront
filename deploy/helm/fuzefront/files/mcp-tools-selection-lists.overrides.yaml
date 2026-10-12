@@ -40,6 +40,21 @@ tools:
       Sets item status=archived; data is retained. The sibling DELETE supports
       purge=true which is irreversible — this endpoint does not.
 
+  # --- POST-AS-READ (body-as-query) ------------------------------------------
+
+  # POST /v1/resolve — bulk-resolves item ids to labels. POST because the id
+  # batch does not fit a URL; the operation is read-only, side-effect-free and
+  # cacheable. Recognized as a read by the gateway because the path ends in
+  # `/resolve` (READ_ONLY_POST_SUFFIXES in classify.ts).
+  resolveSelectionListItems:
+    mutates: false
+    reversibility: reversible
+    reason: >-
+      POST because the id batch does not fit a URL — the operation is
+      read-only, side-effect-free and cacheable (spec design decision §"The hot
+      path"). The /resolve suffix is on the gateway allowlist; this entry
+      documents the reasoning without overriding the derived classification.
+
   # --- IRREVERSIBLE REVOKE ---------------------------------------------------
 
   # DELETE /v1/selection-lists/{listId}/access/{grantId} — permanently removes
