@@ -241,4 +241,56 @@ describe('revokeInstanceGrants', () => {
     expect(revoke).toHaveBeenCalledTimes(3);
     expect(await counter(grantCleanupFailedTotal, { cause: 'purge' })).toBe(before + 1);
   });
+
+  it('without a fallbackToken a refused grant is simply failed (no second attempt)', async () => {
+    const revoke = jest.fn().mockRejectedValue(new Error('403'));
+    _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
+    const out = await revokeInstanceGrants({ ...q, grants: [grants[0]] });
+    expect(out.failed).toHaveLength(1);
+    expect(revoke).toHaveBeenCalledTimes(1);
+  });
+
+  describe('fallbackToken (gone-principal workload path)', () => {
+    it('is never resolved when the primary token succeeds', async () => {
+      const revoke = jest.fn().mockResolvedValue(undefined);
+      const fallbackToken = jest.fn().mockResolvedValue('w');
+      _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
+      expect(await revokeInstanceGrants({ ...q, fallbackToken })).toEqual({ revoked: 3, failed: [] });
+      expect(fallbackToken).not.toHaveBeenCalled();
+    });
+
+    it('retries ONLY the refused grant, once, with the fallback token; a success there is not a failure', async () => {
+      const revoke = jest.fn(async (r: any, token: string) => {
+        if (r.subject === 'usr_b' && token === 'm') throw new Error('403');
+      });
+      const fallbackToken = jest.fn().mockResolvedValue('w');
+      _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
+      const before = await counter(grantCleanupFailedTotal, { cause: 'purge' });
+      expect(await revokeInstanceGrants({ ...q, fallbackToken })).toEqual({ revoked: 3, failed: [] });
+      expect(revoke).toHaveBeenCalledTimes(4);
+      expect(revoke).toHaveBeenNthCalledWith(3, expect.objectContaining({ subject: 'usr_b' }), 'w');
+      expect(await counter(grantCleanupFailedTotal, { cause: 'purge' })).toBe(before);
+    });
+
+    it('a grant refused under BOTH tokens is returned and counted exactly once', async () => {
+      const revoke = jest.fn(async (r: any) => {
+        if (r.subject === 'usr_b') throw new Error('403');
+      });
+      _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
+      const before = await counter(grantCleanupFailedTotal, { cause: 'purge' });
+      const out = await revokeInstanceGrants({ ...q, fallbackToken: async () => 'w' });
+      expect(out.failed).toEqual([{ user_id: 'usr_b', role: 'list-viewer' }]);
+      expect(await counter(grantCleanupFailedTotal, { cause: 'purge' })).toBe(before + 1);
+    });
+
+    it('a fallback that cannot be resolved fails that grant only and never throws', async () => {
+      const revoke = jest.fn(async (r: any) => {
+        if (r.subject === 'usr_b') throw new Error('403');
+      });
+      _setAuthzClientForTesting({ ...makeNoOpProxy(), revoke } as any);
+      const out = await revokeInstanceGrants({ ...q, fallbackToken: async () => { throw new Error('no workload identity'); } });
+      expect(out.revoked).toBe(2);
+      expect(out.failed).toEqual([{ user_id: 'usr_b', role: 'list-viewer' }]);
+    });
+  });
 });

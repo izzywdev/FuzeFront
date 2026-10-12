@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exhaustive check of fuze-code-action's rung `if:` gates.
 
 These four invariants are the whole safety argument for the fallover chain. Each
@@ -17,6 +16,12 @@ combination rather than spot-checked.
      review finding or build break against another vendor is the core defect.
   3. A SUCCESS (code=0) never reaches rung 2 or 3.
   4. A rung is never attempted without its own credential.
+  5. The subscription rung's ABSENCE is announced. Rung 1a is the only rung whose
+     omission changes the billing model rather than merely removing an option, and
+     it used to skip in total silence: with no token every run quietly went metered,
+     and the first metered provider to exhaust its prepaid balance reported a
+     generic "vendor credit/quota exhausted" outage that pointed at the wrong thing.
+     So the skip-notice step must fire EXACTLY when the rung does not.
 
 Run: python3 .github/actions/fuze-code-action/__tests__/test_rung_gating.py
 """
@@ -188,6 +193,59 @@ class TestRungGating(unittest.TestCase):
         # Mention mode depends on this: a required input cannot be left empty.
         self.assertFalse(self.inputs["task-prompt"].get("required", False))
 
+    def test_subscription_rung_skip_is_announced(self):
+        """Rung 1a and its skip-notice must be exact complements.
+
+        Not "a notice exists somewhere" — the two gates have to partition the input
+        space, so that for every token value exactly one of {run the rung, say we
+        did not} happens. An overlap would warn on a run that WAS billed to the
+        subscription; a gap is the original silent-skip bug.
+        """
+        rung = self.steps["claude-oauth"]
+        notice = self.steps["Rung 1a skipped — no claude-code-oauth-token"]
+
+        for token in ["", "sk-ant-oat-xxxx"]:
+            ctx = {"inputs.claude-code-oauth-token": token}
+            ran = _evaluate(rung["if"], ctx)
+            announced = _evaluate(notice["if"], ctx)
+            self.assertNotEqual(
+                ran,
+                announced,
+                f"token={token!r}: rung ran={ran} and skip-announced={announced} — "
+                "these must be exact complements, never both and never neither",
+            )
+
+        # And the direction, so a future edit cannot satisfy the complement above
+        # by inverting both gates.
+        self.assertTrue(_evaluate(rung["if"], {"inputs.claude-code-oauth-token": "sk-ant-oat-xxxx"}))
+        self.assertTrue(_evaluate(notice["if"], {"inputs.claude-code-oauth-token": ""}))
+
+    def test_subscription_skip_notice_is_a_warning_naming_the_secret(self):
+        """The notice has to be actionable, not merely present.
+
+        A reader hitting a credit outage needs the SECRET NAME and the fix. This
+        asserts the three things that make it useful rather than decorative: it is a
+        ::warning (not a ::notice — the openai/gemini skips are notices because
+        their absence costs nothing), it names CLAUDE_CODE_OAUTH_TOKEN, and it names
+        the command that mints one.
+        """
+        body = self.steps["Rung 1a skipped — no claude-code-oauth-token"]["run"]
+        self.assertIn("::warning", body)
+        self.assertNotIn("::notice", body)
+        self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", body)
+        self.assertIn("claude setup-token", body)
+
+    def test_subscription_rung_output_is_declared(self):
+        # The output is how a CALLER distinguishes "a vendor ran out of credits"
+        # from "we never tried the subscription", which is the whole point.
+        with open(ACTION, encoding="utf-8") as fh:
+            doc = yaml.safe_load(fh)
+        self.assertIn("subscription-rung", doc["outputs"])
+        self.assertIn(
+            "steps.finish.outputs.subscription-rung",
+            _norm(doc["outputs"]["subscription-rung"]["value"]),
+        )
+
     def test_gate_invariants_over_every_combination(self):
         # "3" = declined: the rung ran and did no work. Like success and like a
         # task failure, it must NOT reach rungs 2 or 3 — there is nothing for
@@ -205,6 +263,7 @@ class TestRungGating(unittest.TestCase):
             ctx = {
                 "steps.classify-claude.outputs.code": code,
                 "inputs.task-prompt": prompt,
+                "inputs.codex-auth-json": "",
                 "inputs.openai-api-key": okey,
                 "inputs.gemini-api-key": gkey,
                 "steps.codex.outcome": cout,
@@ -239,7 +298,8 @@ class TestRungGating(unittest.TestCase):
         base = {
             "steps.classify-claude.outputs.code": "1",
             "inputs.task-prompt": "do the thing",
-            "inputs.openai-api-key": "sk-openai",
+            "inputs.codex-auth-json": "",
+                "inputs.openai-api-key": "sk-openai",
             "inputs.gemini-api-key": "sk-gemini",
             "steps.codex.outcome": "failure",
         }

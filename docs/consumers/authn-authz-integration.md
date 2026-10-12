@@ -260,6 +260,11 @@ Fail-closed: any provider/transport error returns `{ allow: false }`.
   role) to `POST`/`DELETE`; listing another subject needs tenant admin (own is
   always allowed). Denied → `403 FORBIDDEN`; provider unreachable → `502`
   (fail-closed). Machine callers need the `authz:admin` scope.
+  The one exception is the `service:selection-list-service` workload identity,
+  which holds `selection-list:owner-grant` (grant `list-owner` to an active member)
+  and `selection-list:grant-cleanup` (revoke a `SelectionList` instance role of a
+  principal that is gone: user missing/deactivated, or no active membership of the
+  tenant) instead of `authz:admin`.
 
 ### 4.4 Tenants, members, roles — `/api/v1/security/tenants/*`
 

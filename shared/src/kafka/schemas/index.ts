@@ -18,6 +18,7 @@ export * from './identity.org.updated';
 export * from './identity.org.deleted';
 export * from './identity.membership.added';
 export * from './identity.membership.removed';
+export * from './identity.authorization.changed';
 export * from './identity.session.issued';
 export * from './identity.session.revoked';
 export * from './notify.email.requested';

@@ -40,7 +40,7 @@ class DelegationClient:
         self._timeout = timeout
         self._http_post = http_post or default_http_post
 
-    def exchange(self, subject_token: str, audience: str, scopes: list[str]) -> DelegationToken:
+    def exchange(self, subject_token: str, audience: str, scopes: list[str], *, tenant: str | None = None) -> DelegationToken:
         if not subject_token or not audience.startswith("service:") or not scopes:
             raise TokenRequestError("subject_token, service audience and scopes are required", status=400)
         actor = self._service_auth.get_token()
@@ -49,6 +49,8 @@ class DelegationClient:
             "audience": audience,
             "scope": " ".join(dict.fromkeys(scopes)),
         }
+        if tenant is not None:
+            payload["tenant"] = tenant
         status, body = self._http_post(
             f"{self._base_url}/api/v1/security/tokens/exchange",
             payload,

@@ -472,7 +472,9 @@ How the two meet:
   list** by `SelectionList:read`: a caller sees only lists it holds an instance role on. A caller
   with none gets an empty page, not a `403`.
 - **Creating** needs `SelectionListCatalog:create`. The service then grants the creator
-  `list-owner` on the new list **with its own machine identity**.
+  `list-owner` on the new list **with its own workload identity** (a projected Kubernetes
+  ServiceAccount token exchanged for scope `selection-list:owner-grant`, which the Security API
+  accepts only to bootstrap the verified creator as owner).
 - Two actions are stricter than the table suggests: **purging an item**
   (`DELETE .../items/{itemId}?purge=true`) additionally needs `delete` on the list, so only a
   `list-owner` can purge (a `list-editor` can archive an item but gets `403` on purge); and
@@ -491,9 +493,23 @@ How the two meet:
   transaction, so when `PUT`/`DELETE .../access/{userId}` fails after it revoked/granted something,
   the service puts the authority back to the user's prior role before answering `500`
   (`selection_list_authz_compensation_total{outcome="failed"}` means that compensation itself failed).
+  Compensation runs **with the acting human's own token**: the Security API re-checks their
+  `manage_access` on the instance exactly as for the original write; the workload identity never
+  repairs a role.
+- **Which credential does what.** Human access changes (role change, revoke, compensation, purge
+  cleanup) always carry the caller's token and are authorized per list instance. The service's own
+  workload token holds exactly two scopes, both enforced by the Security API
+  (`backend/security/src/routes/authz.ts`), neither of which is `authz:admin`:
+  `selection-list:owner-grant` (grant `list-owner` to an active member, nothing else) and
+  `selection-list:grant-cleanup` (**revoke only**, only `SelectionList` instance roles, and only for
+  a principal SQL proves is gone: the user row is missing or deactivated, or the user has no active
+  membership of that tenant; a live member's grant is refused `403`).
 - **Cascades keep the authority clean.** Purging a list revokes its instance's Security API grants
-  after the purge commits (best-effort, idempotent, never fails the purge;
-  `selection_list_grant_cleanup_failed_total{cause="purge"}`). `identity.user.deleted` revokes every
+  after the purge commits, with the purging owner's token, their own grant last (best-effort,
+  idempotent, never fails the purge; `selection_list_grant_cleanup_failed_total{cause="purge"}`).
+  A grant that token is refused (typically a grantee who has since left the tenant) is retried once
+  through the cleanup scope, which accepts exactly that case. `identity.user.deleted` has no human,
+  so it uses the cleanup scope: it revokes every
   grant the deleted user holds on any list and removes their mirror rows (retried; dead-lettered
   after 5 attempts). If the deleted user was a list's **last** owner the grant is still revoked, the
   list is flagged (`selection_list_ownerless_lists_total{cause="user_deleted"}` and an ERROR log with

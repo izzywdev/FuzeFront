@@ -10,17 +10,19 @@
  * assignments).
  *
  * Both are observed end to end: the service under test talks to the stand-in Security API
- * (helpers/fake-security-api.mjs); this suite reaches the SAME stand-in directly, with its machine
- * identity, to create the divergence an operator or a half-failed change would, and to read the grants
- * back.
+ * (helpers/fake-security-api.mjs); this suite reaches the SAME stand-in through its operator fixture
+ * surface (`/__fixture/*`: the service's own workload identity cannot grant or revoke arbitrary
+ * assignments, by design) to create the divergence an operator or a half-failed change would, and
+ * reads the grants back.
+ *
+ * Credentials observed: a human's role change / purge is revoked with THAT human's token; the purge
+ * fallback for a departed grantee, and `identity.user.deleted`, use the narrow cleanup workload scope.
  */
 
 import { rawFetch } from '../helpers/client';
 import { mintTestToken } from '../helpers/auth';
 
 const FAKE_URL = process.env['SECURITY_SERVICE_URL'] ?? 'http://localhost:3002';
-const FAKE_CLIENT_ID = process.env['FAKE_SEC_CLIENT_ID'] ?? 'selection-list-service-ci';
-const FAKE_CLIENT_SECRET = process.env['FAKE_SEC_CLIENT_SECRET'] ?? 'ci-only-fixture-client-secret';
 
 const ORG_ID = 'org_01test00000000authorit0000';
 const OWNER = 'usr_01test00000000authora00000';
@@ -31,24 +33,24 @@ type Resp = { status: number; body: any };
 const api = (userId: string, method: string, path: string, body?: unknown): Promise<Resp> =>
   rawFetch(path, { method, token: tokenFor(userId)(), body: body === undefined ? undefined : JSON.stringify(body) }) as Promise<Resp>;
 
-/** The stand-in's machine token (what an operator / the service itself holds). */
-async function machineToken(): Promise<string> {
-  const res = await fetch(`${FAKE_URL}/api/v1/security/tokens`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ clientId: FAKE_CLIENT_ID, clientSecret: FAKE_CLIENT_SECRET, scope: 'authz:admin' }),
-  });
-  expect(res.status).toBe(200);
-  return ((await res.json()) as { accessToken: string }).accessToken;
-}
-
+/** Operator action on the stand-in, behind the service's back. */
 async function direct(method: 'POST' | 'DELETE', subject: string, role: string, listId: string): Promise<number> {
-  const res = await fetch(`${FAKE_URL}/api/v1/security/authz/grants`, {
+  const res = await fetch(`${FAKE_URL}/__fixture/grants`, {
     method,
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${await machineToken()}` },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ subject, tenant: ORG_ID, role, resource: { type: 'SelectionList', key: listId } }),
   });
   return res.status;
+}
+
+/** Mark a principal gone in the stand-in (deactivated user, or a member who left the tenant). */
+async function markGone(subject: string, kind: 'deactivated' | 'departed'): Promise<void> {
+  const res = await fetch(`${FAKE_URL}/__fixture/gone`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tenant: ORG_ID, subject, kind }),
+  });
+  expect(res.status).toBe(204);
 }
 
 async function grantsOf(userId: string): Promise<Array<{ role: string; resource?: { type: string; key: string } }>> {
@@ -130,6 +132,19 @@ describe('L-5: purging a list revokes its grants in the Security API', () => {
 
     expect((await grantsOf(OWNER)).some((g) => g.resource?.key === id)).toBe(false);
     expect((await grantsOf(PEER)).some((g) => g.resource?.key === id)).toBe(false);
+  });
+
+  it('a grantee who has left the tenant (the human gate refuses them) is still cleaned up, via the narrow cleanup scope', async () => {
+    const id = await newList('purge-departed');
+    const LEAVER = 'usr_01test00000000authorc00000';
+    expect((await api(OWNER, 'PUT', `/v1/selection-lists/${id}/access/${LEAVER}`, { role: 'list-editor' })).status).toBe(200);
+    expect((await grantsOf(LEAVER)).some((g) => g.resource?.key === id)).toBe(true);
+
+    await markGone(LEAVER, 'departed');
+    expect((await api(OWNER, 'DELETE', `/v1/selection-lists/${id}?purge=true`)).status).toBe(204);
+
+    expect((await grantsOf(LEAVER)).some((g) => g.resource?.key === id)).toBe(false);
+    expect((await grantsOf(OWNER)).some((g) => g.resource?.key === id)).toBe(false);
   });
 
   it('archiving does NOT revoke: the owner keeps their grant on an archived list', async () => {

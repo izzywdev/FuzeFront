@@ -37,8 +37,10 @@ function userIdForms(userId: string): string[] {
  *
  * ALSO revokes the deleted user's own list grants (review M-2): for every
  * `selection_list_access` row of the user, the Security API assignment on
- * `SelectionList:<id>` is revoked with this service's machine identity (the
- * authority first), then the mirror row is deleted and `access.revoked` is
+ * `SelectionList:<id>` is revoked (the authority first) with this service's
+ * workload token — scope `selection-list:grant-cleanup`, which the Security API
+ * honours only because the user row shows the principal deleted/deactivated and
+ * only for revoking, never for a live member (see lib/machineIdentity.ts) — then the mirror row is deleted and `access.revoked` is
  * written through the outbox, all in one transaction per list. See
  * `revokeDeletedUserGrants` for the ownerless-list fallback and the retry rules.
  *
@@ -153,7 +155,7 @@ export async function revokeDeletedUserGrants(
   const rows = found?.rows ?? [];
   if (rows.length === 0) return 0;
 
-  // Without the machine identity nothing can be revoked: throw (retry / DLQ),
+  // Without the workload identity nothing can be revoked: throw (retry / DLQ),
   // never silently skip — a deleted user must not keep list access.
   const token = await getGrantToken();
 

@@ -50,32 +50,35 @@
  *     "outsider" (contract/access.test.ts USER_OUTSIDER, "NOT in ORG_ID") is
  *     encoded, deliberately explicit rather than guessed from id shapes.
  *
- * MACHINE IDENTITY (review C-1). The real Security API is being fixed so that a
- * non-admin HUMAN session is denied grant/revoke; only a machine caller whose
- * token carries the `authz:admin` scope may write grants
- * (backend/security/src/routes/authz.ts AUTHZ_ADMIN_SCOPE). The stand-in models
- * that: POST /api/v1/security/tokens issues a machine token for the one CI
- * client below, and POST/DELETE /authz/grants answer 403 to anything else —
- * including any user JWT. That makes this suite fail if the service ever goes
- * back to writing grants with the END USER's token.
+ * Workload bootstrap accepts one CI-only projected token and mints the two narrow
+ * scopes the real Security API registers for this service:
+ *   selection-list:owner-grant    may bootstrap list-owner only (POST)
+ *   selection-list:grant-cleanup  may REVOKE (DELETE) only for a principal the
+ *                                 fixture below marks gone; a live member's grant
+ *                                 is refused (backend/security `principalIsGone`)
+ * All human grant/revoke writes require manage_access on the exact list instance;
+ * like the real gate, a human cannot revoke for a DEPARTED member (no active
+ * membership), which is what the cleanup scope's fallback path exists for.
  *
- * The caller's bearer token is decoded WITHOUT verification: the service has
- * already verified it, and this process only runs on localhost in CI.
- *
- * Usage:  node tests/selection-list-service/helpers/fake-security-api.mjs
- *         PORT (default 3002)
+ * FIXTURE ENDPOINTS (`/__fixture/*`, unauthenticated, CI-localhost only, never
+ * product behaviour): let a suite act as the operator who changes the authority
+ * behind the service's back (direct grant/revoke) and who deactivates a user or
+ * removes a member (`gone`). The real Security API has no such surface.
  */
 import http from 'node:http';
 
 const PORT = Number(process.env.PORT ?? 3002);
 
 /** The one OAuth client this stand-in knows (CI-only fixture values, not real credentials). */
-const MACHINE_CLIENT_ID = process.env.FAKE_SEC_CLIENT_ID ?? 'selection-list-service-ci';
-const MACHINE_CLIENT_SECRET = process.env.FAKE_SEC_CLIENT_SECRET ?? 'ci-only-fixture-client-secret';
-const AUTHZ_ADMIN_SCOPE = 'authz:admin';
+const MACHINE_CLIENT_ID = 'selection-list-service-ci';
+const OWNER_GRANT_SCOPE = 'selection-list:owner-grant';
+const GRANT_CLEANUP_SCOPE = 'selection-list:grant-cleanup';
 const MACHINE_TOKEN_PREFIX = 'fake-machine-token:';
 
 /** `${tenant}|${userId}` pairs that are NOT members of that tenant. */
+/** `${tenant}|${userId}` -> 'deactivated' | 'departed' (set through /__fixture/gone). */
+const gone = new Map();
+
 const NON_MEMBERS = new Set([
   'org_01test00000000access000000|usr_01test00000000accessout000',
 ]);
@@ -198,29 +201,28 @@ const server = http.createServer(async (req, res) => {
 
   if (path === '/health') return send(res, 200, { status: 'ok', service: 'fake-security-api' });
 
-  // POST /tokens — client_credentials issuance (no bearer; the credentials ARE the auth).
-  if (req.method === 'POST' && path === '/api/v1/security/tokens') {
+  // Model TokenReview bootstrap with a fixture-only projected token.
+  if (req.method === 'POST' && path === '/api/v1/security/tokens/workload') {
     const b = await readBody(req);
-    if (!b || b.clientId !== MACHINE_CLIENT_ID || b.clientSecret !== MACHINE_CLIENT_SECRET) {
-      return send(res, 401, { error: 'invalid client credentials', code: 'AUTH_REQUIRED' });
-    }
-    const scope = String(b.scope ?? '').split(' ').filter(Boolean);
-    return send(res, 200, {
-      accessToken: `${MACHINE_TOKEN_PREFIX}${scope.join('+')}`,
-      tokenType: 'Bearer',
-      expiresIn: 300,
-      scope: scope.join(' '),
-    });
+    if (b?.serviceAccountToken !== 'selection-list-service-ci-projected-token') return send(res, 401, { code: 'AUTH_REQUIRED' });
+    return send(res, 200, { accessToken: `${MACHINE_TOKEN_PREFIX}${OWNER_GRANT_SCOPE}+${GRANT_CLEANUP_SCOPE}`, tokenType: 'Bearer', expiresIn: 300 });
   }
 
-  // Grant/revoke WRITES: machine callers holding authz:admin only. A human
-  // session — even a valid one — is denied (what the fixed Security API does).
-  if (path === '/api/v1/security/authz/grants' && (req.method === 'POST' || req.method === 'DELETE')) {
-    const scopes = machineScopesOf(req);
-    if (!scopes) return send(res, 403, { error: 'grant/revoke require a machine caller with the authz:admin scope', code: 'FORBIDDEN' });
-    if (!scopes.includes(AUTHZ_ADMIN_SCOPE)) {
-      return send(res, 403, { error: `machine caller is missing the required '${AUTHZ_ADMIN_SCOPE}' scope`, code: 'FORBIDDEN' });
-    }
+  // Operator fixture surface (see header). Declared before authentication on purpose.
+  if (path === '/__fixture/gone' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!b?.tenant || !b?.subject) return send(res, 400, { code: 'MALFORMED' });
+    gone.set(`${b.tenant}|${b.subject}`, b.kind === 'departed' ? 'departed' : 'deactivated');
+    return send(res, 204);
+  }
+  if (path === '/__fixture/grants' && (req.method === 'POST' || req.method === 'DELETE')) {
+    const b = await readBody(req);
+    if (!b?.tenant || !b?.subject || !b?.role || !b?.resource) return send(res, 400, { code: 'MALFORMED' });
+    const k = grantKey(b.tenant, b.resource, b.subject);
+    const roles = grants.get(k) ?? new Set();
+    if (req.method === 'POST') roles.add(b.role); else roles.delete(b.role);
+    if (roles.size === 0) grants.delete(k); else grants.set(k, roles);
+    return send(res, req.method === 'POST' ? 201 : 204);
   }
 
   // Everything below authenticates a HUMAN session token (decoded, not verified).
@@ -252,6 +254,11 @@ const server = http.createServer(async (req, res) => {
   if (path === '/api/v1/security/authz/grants') {
     if (req.method === 'POST') {
       const b = await readBody(req);
+      const scopes = machineScopesOf(req);
+      const bootstrap = scopes?.includes(OWNER_GRANT_SCOPE) && b?.role === 'list-owner';
+      const manager = !scopes && b?.resource && decide({ subject: claims.sub, tenant: b.tenant, resource: b.resource, action: 'manage_access' }, claims);
+      if (!bootstrap && !manager) return send(res, 403, { code: 'FORBIDDEN' });
+
       if (!b || !b.subject || !b.tenant || !b.role) {
         return send(res, 400, { error: 'subject, tenant and role are required', code: 'MALFORMED' });
       }
@@ -277,6 +284,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'DELETE') {
       const b = await readBody(req);
+      const scopes = machineScopesOf(req);
+      // Cleanup workload: revoke-only, and only for a principal that is gone.
+      const cleanup = scopes?.includes(GRANT_CLEANUP_SCOPE) && gone.has(`${b?.tenant}|${b?.subject}`);
+      // Human: exact-instance manage_access, and (like the real gate) no revoke for a departed member.
+      const manager = !scopes && b?.resource && gone.get(`${b.tenant}|${b.subject}`) !== 'departed' &&
+        decide({ subject: claims.sub, tenant: b.tenant, resource: b.resource, action: 'manage_access' }, claims);
+      if (!cleanup && !manager) return send(res, 403, { code: 'FORBIDDEN' });
+
       if (!b || !(b.subject && b.tenant && b.role)) {
         return send(res, 400, { error: 'subject+tenant+role required', code: 'MALFORMED' });
       }

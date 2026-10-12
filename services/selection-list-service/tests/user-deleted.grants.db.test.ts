@@ -1,6 +1,6 @@
 // user-deleted.grants.db.test.ts - identity.user.deleted must also take the deleted
 // user's LIST GRANTS away (review M-2): revoke each in the Security API (the
-// authority, with the service's machine identity), delete the mirror rows, announce
+// authority, with the service's workload token, scope selection-list:grant-cleanup), delete the mirror rows, announce
 // access.revoked through the outbox, and flag a list that is left without an owner.
 // Real Postgres (real migrations, real outbox); the Security API client and the
 // machine-token provider are the only doubles.
@@ -28,7 +28,7 @@ const ORG_B = fromUuid('organization', '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7a02');
 const GONE_UUID = '0195a8f2-aaaa-7a11-8b2d-3f4e5a6b7a01';
 const GONE = fromUuid('user', GONE_UUID);
 const PEER = fromUuid('user', '0195a8f2-bbbb-7a11-8b2d-3f4e5a6b7a02');
-const MACHINE = 'machine-token-authz-admin';
+const MACHINE = 'workload-token-grant-cleanup';
 
 const event = (userId = GONE_UUID) =>
   ({ correlationId: 'corr-ud', payload: { userId, email: 'gone@example.com', cascade: 'soft' } }) as any;
@@ -101,7 +101,7 @@ dbDescribe('identity.user.deleted -> list grants (real Postgres)', () => {
   const outbox = async (topic: string) => db('event_outbox').where({ topic }).orderBy('seq');
   const res = (listId: string) => ({ type: 'SelectionList', key: listId });
 
-  it('revokes every grant the user holds, in every org, with the machine token and the instance scope; removes the mirror rows; leaves other users alone', async () => {
+  it('revokes every grant the user holds, in every org, with the cleanup workload token and the instance scope; removes the mirror rows; leaves other users alone', async () => {
     const a = await list(ORG_A, [[GONE, 'list-viewer'], [PEER, 'list-owner']]);
     const b = await list(ORG_B, [[GONE, 'list-editor'], [PEER, 'list-owner']]);
     const before = (await outbox(TOPICS.SELECTION_LISTS_ACCESS_REVOKED)).length;

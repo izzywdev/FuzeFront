@@ -11,6 +11,19 @@
 //   revokeInstanceGrants    best-effort, idempotent revocation of grants on one
 //                           list instance (purge, deleted user).
 //
+// WHICH CREDENTIAL. The workload identity (lib/machineIdentity.ts) is NOT a
+// grant administrator: the Security API lets it bootstrap an owner and revoke the
+// grants of a principal that is provably gone, nothing else. So:
+//   - role-change compensation and purge cleanup run inside a request a human
+//     made: they use THAT human's token and the Security API re-checks the
+//     exact-instance policy (`manage_access`) on every write;
+//   - `identity.user.deleted` has no human: it uses the workload token, which the
+//     Security API accepts only because the subject's user row / membership shows
+//     the principal is gone;
+//   - a purge grant the human token cannot remove (the grantee left the tenant,
+//     which the Security API will not revoke for a human) falls back to that same
+//     gone-principal workload path. A live member's grant is never removable with it.
+//
 // WHY THE GUARD ASKS THE AUTHORITY. Counting mirror rows answers "how many rows
 // say list-owner", not "how many people can still administer this list". They
 // disagree after a failed role change, a deleted user, a purge, or a direct
@@ -54,7 +67,7 @@ export interface OtherOwnerQuery {
   orgId: string;
   /** Every stored rendering of the user being demoted/removed (excluded from the candidates). */
   excludeUserIds: string[];
-  /** Bearer for the decision calls (the caller's, or this service's machine token). */
+  /** Bearer for the decision calls (the caller's, or the workload token when there is no caller). */
   token: string;
   log: Logger;
 }
@@ -134,7 +147,11 @@ export interface RestoreQuery {
   /** The role this request tried to grant; null for DELETE. */
   target: string | null;
   writes: AuthorityWrites;
-  /** Machine token (grant/revoke are machine-only). */
+  /**
+   * The acting human's token. Compensation re-applies what that human just changed,
+   * so the Security API re-checks their `manage_access` on the instance; this
+   * service holds no standing to repair a role by itself.
+   */
   token: string;
   log: Logger;
 }
@@ -203,7 +220,14 @@ export interface RevokeInstanceQuery {
   orgId: string;
   listId: string;
   grants: InstanceGrant[];
+  /** Primary credential: the acting human's (purge) or the cleanup workload's (user deleted). */
   token: string;
+  /**
+   * Optional second attempt for a grant the primary token was refused: resolves the
+   * workload token, which the Security API honours only for a gone principal. Never
+   * throws into the loop — a failure to resolve it leaves the grant in `failed`.
+   */
+  fallbackToken?: () => Promise<string>;
   cause: 'purge' | 'user_deleted';
   log: Logger;
 }
@@ -218,16 +242,24 @@ export async function revokeInstanceGrants(q: RevokeInstanceQuery): Promise<{ re
   let revoked = 0;
   const failed: InstanceGrant[] = [];
   for (const g of q.grants) {
-    try {
-      await getAuthzClient().revoke(
+    const revokeWith = (token: string) =>
+      getAuthzClient().revoke(
         {
           subject: g.user_id,
           tenant: q.orgId,
           role: g.role,
           resource: { type: SELECTION_LIST_RESOURCE, key: q.listId },
         },
-        q.token,
+        token,
       );
+    try {
+      try {
+        await revokeWith(q.token);
+      } catch (primaryErr) {
+        if (!q.fallbackToken) throw primaryErr;
+        q.log.debug({ err: primaryErr, listId: q.listId, userId: g.user_id }, 'cleanup: primary revoke refused — trying the gone-principal workload path');
+        await revokeWith(await q.fallbackToken());
+      }
       revoked++;
     } catch (err) {
       failed.push(g);

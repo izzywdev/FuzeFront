@@ -44,7 +44,7 @@ import {
 import { revokeInstanceGrants, type InstanceGrant } from '../services/authority';
 import { getGrantToken } from '../lib/machineIdentity';
 import { grantCleanupFailedTotal } from '../lib/metrics';
-import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled } from '../middleware/authz';
+import { requireAuthzCheck, requireAuthzCheckWhen, requireCatalogCheck, grantListOwner, filterReadable, isAuthzEnabled, bearer } from '../middleware/authz';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
 import { refreshListUserModified } from '../seed/content';
 import {
@@ -907,19 +907,40 @@ router.patch('/:listId', requireAuthzCheck('SelectionList', 'update'), requireAr
 
 /**
  * Revoke the Security API assignments of a purged list (review L-5). Never
- * throws: the purge has committed. No machine identity -> nothing can be
- * revoked; that is logged and counted, not raised.
+ * throws: the purge has committed.
+ *
+ * Credential: the purging human's own token. They are a `list-owner` (`delete`
+ * and `manage_access` are held by that role alone), the Security API re-checks
+ * `manage_access` on the exact instance for every revoke, and this service holds
+ * no broader standing to do it for them (lib/machineIdentity.ts). The actor's
+ * OWN assignment is revoked LAST, since it is what authorizes the others. A grant
+ * the human token is refused (typically a grantee who has since left the tenant)
+ * is retried once through the workload token, which the Security API honours only
+ * for a gone principal — never for a live member.
+ *
+ * Whatever neither path removes is logged with list/user/role, counted
+ * (`selection_list_grant_cleanup_failed_total{cause="purge"}`) and left for the
+ * reconciler; the list itself no longer exists, so a leftover assignment on it
+ * confers nothing.
  */
 async function cleanupPurgedGrants(req: Request, listId: string, grants: InstanceGrant[]): Promise<void> {
   if (grants.length === 0) return;
   const log = getLog(req);
+  const token = bearer(req);
+  if (!token) {
+    grantCleanupFailedTotal.inc({ cause: 'purge' }, grants.length);
+    log.warn({ listId, orgId: req.orgId, grants: grants.length }, 'purge: no caller token to revoke Security API grants with — orphan role assignments left for reconciliation');
+    return;
+  }
   try {
-    const token = await getGrantToken();
+    const actor = req.userId;
+    const ordered = [...grants].sort((x, y) => Number(x.user_id === actor) - Number(y.user_id === actor));
     const { revoked, failed } = await revokeInstanceGrants({
       orgId: req.orgId as string,
       listId,
-      grants,
+      grants: ordered,
       token,
+      fallbackToken: getGrantToken,
       cause: 'purge',
       log,
     });
@@ -928,7 +949,7 @@ async function cleanupPurgedGrants(req: Request, listId: string, grants: Instanc
     grantCleanupFailedTotal.inc({ cause: 'purge' }, grants.length);
     log.warn(
       { err, listId, orgId: req.orgId, grants: grants.length },
-      'purge: could not revoke Security API grants (machine identity unavailable) — orphan role assignments left for reconciliation',
+      'purge: could not revoke Security API grants — orphan role assignments left for reconciliation',
     );
   }
 }
