@@ -76,11 +76,12 @@ describe('shipped platform packs (S8)', () => {
     }
   });
 
-  it('platform-defaults v1 is the plan catalogue: yes-no, priority, work-status - 3 lists, 10 items, all 11 locales, declared MACHINE-translated (no native review yet)', () => {
+  it('platform-defaults v1 is the plan catalogue: yes-no, priority, work-status - 3 lists, 10 items, all 11 locales, declared MACHINE-translated (LLM-reviewed, not native-reviewed)', () => {
     const pack = loadPlatformPack('platform-defaults', 1);
-    // Provenance must stay honest: these strings were AI-written. Flipping this to 'human' is only correct once
-    // every locale has been reviewed by a native speaker (docs/runbooks/selection-lists-seeding-operations.md
-    // section 2.5) - and since an applied version is immutable, that ships as platform-defaults.v2.json.
+    // Provenance must stay honest: these strings were AI-written and then LLM-reviewed (2026-10-05, owner-approved
+    // in place of native review; docs/runbooks/selection-lists-seeding-operations.md section 2.5). That is still
+    // machine output. Flipping this to 'human' is only correct once a human has reviewed every locale - and since
+    // an applied version is immutable, that ships as platform-defaults.v2.json.
     expect(pack.translationProvenance).toBe('machine');
     expect(pack.appliesTo).toEqual(['organization', 'personal']); // never the root `platform` org by default
     expect(pack.lists.map((l) => [l.key, l.items.map((i) => i.code)])).toEqual([
@@ -98,6 +99,63 @@ describe('shipped platform packs (S8)', () => {
     // within the contract limits
     expect(pack.lists.length).toBeLessThanOrEqual(SELECTION_LIST_LIMITS.MAX_LISTS_PER_SEED);
     expect(pack.lists.every((l) => l.items.length <= SELECTION_LIST_LIMITS.MAX_ITEMS_PER_LIST)).toBe(true);
+  });
+
+  describe('platform-defaults v1 locale review (2026-10-05, two-pass LLM review; still machine provenance)', () => {
+    const pack = loadPlatformPack('platform-defaults', 1);
+    const strings = (loc: string): Record<string, string> => {
+      const out: Record<string, string> = {};
+      for (const l of pack.lists) {
+        out[`${l.key}`] = (l.translations ?? []).find((t) => t.locale === loc)!.name;
+        for (const i of l.items) out[`${l.key}.${i.code}`] = (i.translations ?? []).find((t) => t.locale === loc)!.label;
+      }
+      return out;
+    };
+
+    it('every string is NFC, has no directional/format control characters, no trailing punctuation, and stays dropdown-short', () => {
+      const all: string[] = [];
+      for (const l of pack.lists) {
+        all.push(l.name, ...(l.translations ?? []).map((t) => t.name));
+        for (const i of l.items) all.push(i.label, ...(i.translations ?? []).map((t) => t.label));
+      }
+      expect(all.length).toBe(3 * 11 + 10 * 11);
+      for (const s of all) {
+        expect(s.normalize('NFC')).toBe(s);
+        expect(s).toBe(s.trim());
+        expect(s).not.toMatch(/[​-‏‪-‮⁦-⁩؜﻿]/); // ZW*, LRM/RLM, embeddings/isolates, ALM, BOM
+        expect(s).not.toMatch(/[.:;!?،。]$/);
+        expect(s.length).toBeLessThanOrEqual(24);
+      }
+      // the RTL locales carry no Latin letters (a stray LTR run is the classic bidi defect)
+      for (const loc of ['ar', 'he']) for (const s of Object.values(strings(loc))) expect(s).not.toMatch(/[A-Za-z]/);
+    });
+
+    it('pins the review decisions so a regression to the earlier flagged wording is caught', () => {
+      // ar: "blocked" in the status sense (not "محظور" = forbidden); DONE not the terse "تم"
+      expect(strings('ar')['work-status.BLOCKED']).toBe('متوقف');
+      expect(strings('ar')['work-status.DONE']).toBe('مكتمل');
+      // hi: one register (formal) for the priority scale; URGENT is the short "तत्काल"
+      expect(strings('hi')['priority.LOW']).toBe('निम्न');
+      expect(strings('hi')['priority.URGENT']).toBe('तत्काल');
+      // zh: 受阻 (plain-business) rather than the technical calque 已阻塞
+      expect(strings('zh')['work-status.BLOCKED']).toBe('受阻');
+      // de: "Arbeitsstatus" reads as employment/work-permit status
+      expect(strings('de')['work-status']).toBe('Bearbeitungsstatus');
+      // es: DONE parallels the other formal participles
+      expect(strings('es')['work-status.DONE']).toBe('Completado');
+      // pt: ONE variety (pt-BR-neutral, natural in pt-PT) - no European-leaning "Estado do trabalho"
+      expect(strings('pt')['work-status']).toBe('Situação do trabalho');
+      expect(strings('pt')['work-status.IN_PROGRESS']).toBe('Em andamento');
+    });
+
+    it('priority labels agree with the grammatical gender of the list name (feminine fr/es/ar)', () => {
+      const fr = strings('fr');
+      expect(['priority.LOW', 'priority.MEDIUM', 'priority.HIGH', 'priority.URGENT'].map((k) => fr[k])).toEqual(['Basse', 'Moyenne', 'Haute', 'Urgente']);
+      const es = strings('es');
+      expect(['priority.LOW', 'priority.MEDIUM', 'priority.HIGH', 'priority.URGENT'].map((k) => es[k])).toEqual(['Baja', 'Media', 'Alta', 'Urgente']);
+      const ar = strings('ar');
+      expect(['priority.LOW', 'priority.MEDIUM', 'priority.HIGH', 'priority.URGENT'].map((k) => ar[k])).toEqual(['منخفضة', 'متوسطة', 'عالية', 'عاجلة']);
+    });
   });
 
   it('the default loader resolves the highest version; currentPlatformPacks yields one pack per key', () => {
