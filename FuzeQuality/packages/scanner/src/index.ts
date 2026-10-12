@@ -60,6 +60,54 @@ const OPENAPI_CONFIG_GLOBS = [
 ]
 
 export const SCANNER_VERSION = '1.9.0'
+const MAX_SCAN_RESULT_BYTES = 4_500_000
+const TRANSPORT_DIAGNOSTIC_RESERVE_BYTES = 2_048
+
+const serializedBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8')
+
+function boundQualityArtifactsForTransport(
+  result: Omit<ScanResult, 'qualityArtifacts'>,
+  artifacts: QualityArtifact[],
+): ScanResult {
+  const unbounded = { ...result, qualityArtifacts: artifacts }
+  if (serializedBytes(unbounded) <= MAX_SCAN_RESULT_BYTES) return unbounded
+
+  const emptyPayloadBytes = serializedBytes({ ...result, qualityArtifacts: [] })
+  let remainingBytes = Math.max(
+    0,
+    MAX_SCAN_RESULT_BYTES - emptyPayloadBytes - TRANSPORT_DIAGNOSTIC_RESERVE_BYTES,
+  )
+  const retainedIds = new Set<string>()
+  // Preserve unique repository evidence before the generated test-plan mirror.
+  // Test cases remain complete in result.tests; these artifacts are a navigational
+  // projection and can be regenerated from the same exact revision.
+  const ordered = [
+    ...artifacts.filter(item => item.kind !== 'test-plan'),
+    ...artifacts.filter(item => item.kind === 'test-plan'),
+  ]
+  for (const artifact of ordered) {
+    const bytes = serializedBytes(artifact) + 1
+    if (bytes > remainingBytes) continue
+    retainedIds.add(artifact.id)
+    remainingBytes -= bytes
+  }
+  const qualityArtifacts = artifacts.filter(item => retainedIds.has(item.id))
+  const omitted = artifacts.length - qualityArtifacts.length
+  return {
+    ...result,
+    diagnostics: [
+      ...result.diagnostics,
+      {
+        sourcePath: '.',
+        category: 'repository',
+        severity: 'warning',
+        code: 'quality-artifact-transport-bound',
+        message: `Omitted ${omitted} generated quality artifacts to keep the scan result within the API transport limit; canonical tests remain in the test inventory.`,
+      },
+    ],
+    qualityArtifacts,
+  }
+}
 
 const TEST_GLOBS = [
   '**/*.{test,spec}.{ts,tsx,js,jsx,mjs,cjs,py}',
@@ -699,7 +747,7 @@ export async function scanRepository(
     kind: repository.kind,
   }))
 
-  return {
+  const result: Omit<ScanResult, 'qualityArtifacts'> = {
     repository,
     revision,
     operations,
@@ -708,7 +756,6 @@ export async function scanRepository(
     expectations,
     findings,
     diagnostics,
-    qualityArtifacts,
     scanDetails: {
       sourceRevision: options.sourceRevision,
       catalogRevision: revision,
@@ -726,6 +773,7 @@ export async function scanRepository(
     },
     scannedAt: new Date().toISOString(),
   }
+  return boundQualityArtifactsForTransport(result, qualityArtifacts)
 }
 
 export function isCredentialFreeRepositoryUrl(value: string) {

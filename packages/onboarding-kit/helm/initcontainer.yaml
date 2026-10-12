@@ -34,6 +34,10 @@ initContainers:
         # init container has no reason to leave the cluster, and the public host
         # may not resolve before ingress is ready.
         value: 'http://fuzefront-applications.fuzefront.svc.cluster.local:3003'
+      - name: FUZEFRONT_PORTAL_URL
+        # Used only to resolve a preferred same-origin remoteEntry such as
+        # /apps/myapp/assets/remoteEntry.js for the pre-activation health probe.
+        value: 'https://app.fuzefront.com'
       - name: FUZEFRONT_REGISTRATION_TOKEN
         valueFrom:
           secretKeyRef:

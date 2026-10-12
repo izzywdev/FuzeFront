@@ -77,6 +77,12 @@ diagnose than a pod that refuses to start with a clear reason in its logs.
 Transient failures (connection refused, 5xx) are retried five times with backoff, so
 a platform that is still starting up does not trip this.
 
+For a module-federation manifest whose `remoteEntry` is a same-origin `/apps/...`
+path, set `FUZEFRONT_PORTAL_URL` to the absolute portal origin. The registration
+preflight resolves the path against that origin before probing it. An absolute
+`FUZEFRONT_REMOTE_HEALTH_URL` remains the preferred override when the asset has a
+cluster-internal health address.
+
 ## Idempotence
 
 Safe to run on every pod start, every restart, and concurrently across replicas:

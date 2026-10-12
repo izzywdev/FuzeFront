@@ -78,6 +78,7 @@ run_register() {
   FUZEFRONT_REGISTRATION_TOKEN="${1:-test-token}" \
   FUZEFRONT_REMOTE_HEALTH_URL="${2:-}" \
   SKIP_ACTIVATE="${3:-false}" \
+  FUZEFRONT_PORTAL_URL="${4:-}" \
     sh "$SCRIPT" > "${WORK}/run.out" 2>&1
 }
 
@@ -124,6 +125,12 @@ start_server
 : > "${WORK}/calls.txt"
 set +e; run_register "test-token" "file://${WORK}/remoteEntry.js"; RC=$?; set -e
 check "healthy federation asset permits registration" "$RC" "0"
+
+: > "${WORK}/calls.txt"
+set +e; run_register "test-token" "/apps/testapp/assets/remoteEntry.js" "false" "$FUZEFRONT_API_URL"; RC=$?; set -e
+check "same-origin federation path resolves against portal origin" "$RC" "0"
+grep -q '^GET /apps/testapp/assets/remoteEntry.js$' "${WORK}/calls.txt" \
+  && ok "probes the resolved same-origin federation URL" || notok "probes the resolved same-origin federation URL"
 
 printf 'const fallback = "<body>temporary error</body>"; const remote = "__federation_method_ensure";\n' > "${WORK}/remoteEntry.js"
 : > "${WORK}/calls.txt"

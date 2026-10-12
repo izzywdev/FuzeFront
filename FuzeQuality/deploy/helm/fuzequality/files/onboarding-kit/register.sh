@@ -19,6 +19,7 @@
 #   SKIP_ACTIVATE      "true" to register but not activate (staged rollout)
 #   FUZEFRONT_REMOTE_HEALTH_URL  primary deployed federation asset override
 #   FUZEFRONT_REMOTE_HEALTH_URLS JSON object mapping surface slugs to health URLs
+#   FUZEFRONT_PORTAL_URL          public portal origin used to resolve /apps/... probes
 #
 # Exit codes: 0 = registered/activated (or already was). 1 = anything else.
 
@@ -133,6 +134,23 @@ probe_federation_asset() {
   log "federation asset healthy for ${_slug} at ${_url}"
 }
 
+resolve_federation_probe_url() {
+  _candidate="$1"
+  case "$_candidate" in
+    /*)
+      _portal_base="${FUZEFRONT_PORTAL_URL:-${FUZEFRONT_API_URL}}"
+      case "$_portal_base" in
+        http://*|https://*) ;;
+        *) die "FUZEFRONT_PORTAL_URL must be an absolute http(s) URL when probing ${_candidate}" ;;
+      esac
+      _portal_origin="$(printf '%s' "$_portal_base" | sed -E 's#^(https?://[^/]+).*$#\1#')"
+      printf '%s%s\n' "${_portal_origin%/}" "$_candidate"
+      ;;
+    http://*|https://*|file://*) printf '%s\n' "$_candidate" ;;
+    *) die "federation health URL must be absolute or a same-origin /path: ${_candidate}" ;;
+  esac
+}
+
 if [ -n "${FUZEFRONT_REMOTE_HEALTH_URLS:-}" ]; then
   printf '%s' "$FUZEFRONT_REMOTE_HEALTH_URLS" | jq -e 'type == "object"' >/dev/null 2>&1 \
     || die "FUZEFRONT_REMOTE_HEALTH_URLS must be a JSON object"
@@ -151,6 +169,9 @@ for _manifest in $MANIFESTS; do
   fi
   if [ -z "$_remote" ] && [ "$(jq -r '.integration.type // empty' "$_manifest")" = "module-federation" ]; then
     _remote="$(jq -r '.integration.remoteEntry // empty' "$_manifest")"
+  fi
+  if [ -n "$_remote" ]; then
+    _remote="$(resolve_federation_probe_url "$_remote")"
   fi
 
   _probe="false"

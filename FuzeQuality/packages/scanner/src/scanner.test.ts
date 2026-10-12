@@ -21,6 +21,26 @@ const repository: Repository = {
 }
 
 describe('repository scanner', () => {
+  it('bounds generated test-plan evidence below the scan transport limit', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-large-test-inventory-'))
+    await mkdir(join(root, 'tests'), { recursive: true })
+    const testCount = 7_000
+    const tests = Array.from({ length: testCount }, (_, index) =>
+      `test('repository behavior ${index} ${'x'.repeat(180)}', async () => {})`
+    ).join('\n')
+    await writeFile(join(root, 'tests', 'inventory.test.ts'), tests)
+
+    const result = await scanRepository(repository, root)
+
+    expect(result.tests).toHaveLength(testCount)
+    expect(result.qualityArtifacts?.filter(item => item.kind === 'test-plan').length).toBeLessThan(testCount)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'quality-artifact-transport-bound',
+      severity: 'warning',
+    }))
+    expect(Buffer.byteLength(JSON.stringify(result), 'utf8')).toBeLessThanOrEqual(4_500_000)
+  }, 30_000)
+
   it('reports and omits repository evidence that exceeds the safe read limit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-oversized-evidence-'))
     await writeFile(join(root, 'journey.md'), `# Oversized journey\n${'x'.repeat(5_000_001)}`)
