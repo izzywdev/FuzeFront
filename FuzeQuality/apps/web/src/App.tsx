@@ -3203,6 +3203,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifactPaginationError, setArtifactPaginationError] = useState<string>()
   const [repositoryArtifactFailures, setRepositoryArtifactFailures] = useState<string[]>([])
   const [repositoryGovernanceFailures, setRepositoryGovernanceFailures] = useState<string[]>([])
+  const [repositoryFlowFailures, setRepositoryFlowFailures] = useState<string[]>([])
   const [governanceEvidenceFailures, setGovernanceEvidenceFailures] = useState<string[]>([])
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
@@ -3483,7 +3484,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           policyGateRevisionScope === 'current' &&
           !repository.lastScanRevision
             ? []
-            : await api.policyGateEvaluations(
+            : api.policyGateEvaluations(
                 repository.id,
                 Object.fromEntries(
                   Object.entries({
@@ -3618,8 +3619,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     setLoadingFlows(true)
     setFlowNextCursors({})
+    setRepositoryFlowFailures([])
     setHistoryPaginationError(undefined)
-    void Promise.all(
+    void Promise.allSettled(
       data.repositories.map(repository =>
         flowRepositoryId && flowRepositoryId !== repository.id
           ? Promise.resolve({ repositoryId: repository.id, page: { items: [] as RepositoryFlowCandidate[], page: { nextCursor: null, hasMore: false } } })
@@ -3643,18 +3645,16 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               ).then(response => ({ repositoryId: repository.id, page: normalizeHistoryPage(response) }))
       )
     )
-      .then(groups => {
+      .then(results => {
         if (active) {
+          const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
           setFlowCandidates(groups.flatMap(group => group.page.items))
           setFlowNextCursors(Object.fromEntries(
             groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
           ))
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setFlowCandidates([])
-          setFlowNextCursors({})
+          setRepositoryFlowFailures(results.flatMap((result, index) =>
+            result.status === 'rejected' ? [data.repositories[index].id] : []
+          ))
         }
       })
       .finally(() => {
@@ -4157,7 +4157,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           {artifactPaginationError && (
             <p className="form-error" role="alert">{artifactPaginationError}</p>
           )}
-          {(repositoryArtifactFailures.length > 0 || repositoryGovernanceFailures.length > 0) && (
+          {(repositoryArtifactFailures.length > 0 ||
+            repositoryGovernanceFailures.length > 0 ||
+            repositoryFlowFailures.length > 0) && (
             <p className="form-error" role="alert">
               Some repository intelligence is temporarily unavailable. Evidence from successful repositories remains visible.
             </p>

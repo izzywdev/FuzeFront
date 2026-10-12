@@ -375,7 +375,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     render(<RepositoryIntelligence data={portfolio} />)
 
     const evidence = await screen.findByLabelText(`${governanceEvaluation.title} evidence`)
-    expect(within(evidence).getByText(exactArtifact.title)).toBeVisible()
+    expect(await within(evidence).findByText(exactArtifact.title)).toBeVisible()
     expect(within(evidence).queryByText(exactArtifact.id)).not.toBeInTheDocument()
     expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id])
   })
@@ -930,6 +930,42 @@ describe('RepositoryIntelligence flow inventory', () => {
     )
   })
 
+  it('retains repository evidence when another governance channel fails', async () => {
+    mockEvidenceApis()
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.qualityArtifacts).mockImplementation(async repositoryId =>
+      repositoryId === repository.id ? [storyArtifact] : []
+    )
+    vi.mocked(api.policyGateEvaluations).mockImplementation(async repositoryId => {
+      if (repositoryId === secondRepository.id) throw new Error('temporary governance failure')
+      return []
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    expect(await screen.findByText(storyArtifact.title)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Evidence from successful repositories remains visible.'
+    )
+  })
+
+  it('retains successful repository flows when another repository request fails', async () => {
+    mockEvidenceApis()
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockImplementation(async repositoryId => {
+      if (repositoryId === secondRepository.id) throw new Error('temporary flow failure')
+      return [candidate]
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    expect(await screen.findByText(candidate.title)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Evidence from successful repositories remains visible.'
+    )
+  })
+
   it('renders repeated test titles as separate evidence plans', async () => {
     mockEvidenceApis()
     vi.mocked(api.qualityArtifacts).mockResolvedValue([
@@ -1111,7 +1147,7 @@ describe('RepositoryIntelligence flow inventory', () => {
 
     expect(await screen.findByText(governanceEvaluation.title)).toBeVisible()
     expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id])
-    expect(screen.getByText('Historical authentication policy')).toBeVisible()
+    expect(await screen.findByText('Historical authentication policy')).toBeVisible()
     expect(screen.getByText('policy · governance/auth-v1.md')).toBeVisible()
   })
 
