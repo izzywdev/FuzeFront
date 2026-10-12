@@ -123,8 +123,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         }>, "many">;
         visibility: z.ZodOptional<z.ZodEnum<["private", "org", "platform"]>>;
     }, "strict", z.ZodTypeAny, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -144,8 +144,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         }[] | undefined;
         visibility?: "platform" | "private" | "org" | undefined;
     }, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -172,8 +172,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -212,8 +212,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -252,8 +252,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -292,8 +292,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;

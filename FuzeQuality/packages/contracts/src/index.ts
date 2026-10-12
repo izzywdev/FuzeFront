@@ -51,6 +51,31 @@ export type Repository = RepositoryInput & {
   lastScanDetails?: RepositoryScanDetails
 }
 
+/** Local, event-carried projection of the FuzeFront identity hierarchy. */
+export type QualityTenant = {
+  id: string
+  slug: string
+  name: string
+  type: 'platform' | 'organization' | 'personal'
+  ownerId?: string
+  active: boolean
+}
+
+export type QualityPrincipal = {
+  id: string
+  email: string
+  firstName?: string
+  lastName?: string
+  active: boolean
+}
+
+export type QualityMembership = {
+  tenantId: string
+  principalId: string
+  role: string
+  active: boolean
+}
+
 export type RepositoryScanHistoryEntry = {
   revision: string
   branch: string
@@ -373,9 +398,190 @@ export type ScanResult = {
   expectations: TestExpectation[]
   findings: CatalogFinding[]
   diagnostics: ScanDiagnostic[]
+  qualityArtifacts?: QualityArtifact[]
   scanDetails: RepositoryScanDetails
   scannedAt: string
 }
+
+/** Deterministic repository evidence used as input to reviewed quality analysis. */
+export type QualityArtifact = {
+  id: string
+  repositoryId: string
+  kind: 'route' | 'policy' | 'gate' | 'test-plan' | 'load-test' | 'stress-test'
+  title: string
+  sourcePath: string
+  summary: string
+  evidence: string[]
+}
+
+export type RepositoryQualitySnapshot = {
+  repositoryId: string
+  revision: string
+  artifacts: QualityArtifact[]
+  generatedAt: string
+}
+
+export type RepositoryFlowCandidate = {
+  id: string
+  repositoryId: string
+  tenantId: string
+  revision: string
+  title: string
+  confidence: number
+  evidence: string[]
+  steps: Array<{ actor: string; action: string; expectedOutcome: string; targetIds: string[] }>
+  /** A source-derived review wireframe is mandatory for every UX-flow candidate. */
+  wireframe: { kind: 'sequence'; nodes: Array<{ label: string; targetIds: string[] }> }
+  status: 'proposed' | 'confirmed' | 'rejected'
+  reviewedAt?: string
+  reviewedBy?: string
+  reviewReason?: string
+  analysis?: {
+    provider: 'fuzeinfra-litellm'
+    model: string
+    promptVersion: string
+    schemaVersion: string
+  }
+  source: 'deterministic' | 'litellm'
+  createdAt: string
+}
+
+export type RepositoryFlowReviewHistoryEntry = {
+  candidateId: string
+  tenantId: string
+  status: 'confirmed' | 'rejected'
+  reviewedBy: string
+  reason?: string
+  createdAt: string
+}
+
+/** A reviewable relationship between a detected repository policy and CI gate. */
+export type PolicyGateEvaluation = {
+  id: string
+  repositoryId: string
+  tenantId: string
+  revision: string
+  kind: 'unguarded-policy' | 'guard-without-policy' | 'contradictory-policy' | 'ambiguous-policy'
+  severity: 'high' | 'medium' | 'low'
+  title: string
+  detail: string
+  policyArtifactIds: string[]
+  gateArtifactIds: string[]
+  /** Detector confidence, not a claim that the policy itself is correct. */
+  confidence: number
+  /** Repository locations and matched subjects that bounded this finding. */
+  scope: { sourcePaths: string[]; subjects: string[] }
+  recommendation: string
+  /** Human review is required before a remediation recommendation is acted on. */
+  reviewStatus: 'proposed' | 'accepted' | 'dismissed'
+  reviewedAt?: string
+  reviewedBy?: string
+  reviewReason?: string
+  createdAt: string
+}
+
+export type TestExecution = {
+  id: string
+  repositoryId: string
+  tenantId: string
+  /** System that owns the stable execution identity. */
+  provider: 'github-actions' | 'external'
+  /** Provider-owned run identifier. Status changes keep this value stable. */
+  externalRunId: string
+  /** Provider retry/rerun attempt; a new attempt is retained as new evidence. */
+  attempt: number
+  revision: string
+  kind: 'ci' | 'integration' | 'post-production' | 'load' | 'stress'
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  name: string
+  sourceUrl?: string
+  startedAt?: string
+  completedAt?: string
+  policyArtifactIds: string[]
+  gateArtifactIds: string[]
+  /** Explicit per-pair outcomes; never inferred from unrelated policy/gate lists. */
+  gateEvaluations: TestExecutionGateEvaluation[]
+  /** Measured pass/fail evidence retained exactly with this run attempt. */
+  thresholds: TestExecutionThreshold[]
+  /** Durable or provider-hosted evidence produced by this exact run attempt. */
+  evidenceLinks: TestExecutionEvidenceLink[]
+  summary?: string
+}
+
+export type TestExecutionEvidenceLink = {
+  kind: 'video' | 'report' | 'trace' | 'screenshot' | 'log' | 'other'
+  name: string
+  url: string
+}
+
+export const testExecutionEvidenceLinkSchema = z.object({
+  kind: z.enum(['video', 'report', 'trace', 'screenshot', 'log', 'other']),
+  name: z.string().trim().min(1).max(200),
+  url: z.string().url().max(2000).refine(
+    value => value.startsWith('https://'),
+    'Evidence URL must use HTTPS',
+  ),
+}).strict()
+
+export type TestExecutionGateEvaluation = {
+  policyArtifactId: string
+  gateArtifactId: string
+  status: 'passed' | 'failed' | 'cancelled' | 'running'
+  detail?: string
+}
+
+export const testExecutionGateEvaluationSchema = z.object({
+  policyArtifactId: z.string().trim().min(1).max(500),
+  gateArtifactId: z.string().trim().min(1).max(500),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']),
+  detail: z.string().trim().min(1).max(1000).optional(),
+}).strict()
+
+export type TestExecutionThreshold = {
+  metric: string
+  observed: number
+  unit?: string
+  operator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq'
+  target: number
+  /** Derived by FuzeQuality from observed/operator/target, never trusted from a producer. */
+  passed: boolean
+}
+
+export const testExecutionThresholdInputSchema = z.object({
+  metric: z.string().trim().min(1).max(200),
+  observed: z.number().finite(),
+  unit: z.string().trim().min(1).max(50).optional(),
+  operator: z.enum(['lt', 'lte', 'gt', 'gte', 'eq']),
+  target: z.number().finite(),
+}).strict()
+
+export const testExecutionInputSchema = z.object({
+  repositoryId: z.string().uuid(), tenantId: z.string().min(1), revision: z.string().min(1).max(200),
+  provider: z.enum(['github-actions', 'external']).default('external'),
+  externalRunId: z.string().trim().min(1).max(500).optional(),
+  attempt: z.number().int().positive().default(1),
+  kind: z.enum(['ci', 'integration', 'post-production', 'load', 'stress']),
+  status: z.enum(['passed', 'failed', 'cancelled', 'running']), name: z.string().min(1).max(500),
+  sourceUrl: z.string().url().optional(), startedAt: z.string().datetime().optional(), completedAt: z.string().datetime().optional(),
+  policyArtifactIds: z.array(z.string()).max(100).default([]), gateArtifactIds: z.array(z.string()).max(100).default([]),
+  gateEvaluations: z.array(testExecutionGateEvaluationSchema).max(100).default([]),
+  thresholds: z.array(testExecutionThresholdInputSchema).max(100).default([]),
+  evidenceLinks: z.array(testExecutionEvidenceLinkSchema).max(100).default([]),
+  summary: z.string().max(5000).optional(),
+}).strict().superRefine((execution, context) => {
+  const pairs = new Set<string>()
+  for (const [index, evaluation] of execution.gateEvaluations.entries()) {
+    const pair = `${evaluation.policyArtifactId}\u0000${evaluation.gateArtifactId}`
+    if (pairs.has(pair)) context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Duplicate policy/gate evaluation pair',
+      path: ['gateEvaluations', index],
+    })
+    pairs.add(pair)
+  }
+})
+
+export const performanceTestRequestSchema = z.object({ artifactId: z.string().min(1).max(500) }).strict()
 
 export type Portfolio = {
   repositories: Repository[]
@@ -488,7 +694,25 @@ export const expectationExclusionSchema = z.object({
   expiresAt: z.string().datetime().refine(value => new Date(value).getTime() > Date.now(), 'Expiry must be in the future'),
 })
 
+/** Relationship-only contract emitted by FuzeX for QA traceability. */
+export const designTestLinkEventSchema = z.object({
+  tenantId: z.string().uuid(),
+  traceLinkId: z.string().trim().min(1).max(200),
+  fuzexProjectId: z.string().trim().min(1).max(200),
+  targetKind: z.enum(['flow-step', 'frame', 'component']),
+  targetRef: z.string().trim().min(1).max(1_000),
+  testCaseId: z.string().trim().min(1).max(500),
+}).strict()
+export type DesignTestLinkEvent = z.infer<typeof designTestLinkEventSchema>
+
 export const TOPICS = {
+  TENANT_SEEDED: 'fuzequality.tenant.seeded',
+  TENANT_DELETED: 'fuzequality.tenant.deleted',
+  PRINCIPAL_SEEDED: 'fuzequality.principal.seeded',
+  PRINCIPAL_DELETED: 'fuzequality.principal.deleted',
+  ORGANIZATION_MEMBERSHIP_CHANGED: 'fuzequality.organization-membership.changed',
+  DESIGN_TEST_LINK_VERIFIED: 'fuzequality.design.test-link.verified',
+  DESIGN_TEST_LINK_REVOKED: 'fuzequality.design.test-link.revoked',
   REPOSITORY_SCAN_REQUESTED: 'fuzequality.repository.scan.requested',
   REPOSITORY_INVENTORY_CHANGED: 'fuzequality.repository.inventory.changed',
   REQUIREMENT_SYNC_REQUESTED: 'fuzequality.requirement.sync.requested',
