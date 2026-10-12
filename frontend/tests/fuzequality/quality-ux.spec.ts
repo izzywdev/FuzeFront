@@ -722,15 +722,17 @@ test.describe('FuzeQuality implemented UX flows', () => {
       }
     )
     await page.route(
-      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts',
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts/by-ids',
       route => {
         const url = new URL(route.request().url())
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(url.searchParams.get('revision') === historicalEvaluation.revision
-            ? [historicalArtifact]
-            : qualityArtifacts),
+          body: JSON.stringify({
+            items: url.searchParams.getAll('id').includes(historicalArtifact.id)
+              ? [historicalArtifact]
+              : qualityArtifacts.filter(artifact => url.searchParams.getAll('id').includes(artifact.id)),
+          }),
         })
       }
     )

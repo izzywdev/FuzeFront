@@ -337,9 +337,7 @@ describe('RepositoryIntelligence flow inventory', () => {
         ? { items: [historicalEvaluation], page: { nextCursor: null, hasMore: false } }
         : { items: [governanceEvaluation], page: { nextCursor: 'policy-page-2', hasMore: true } }
     })
-    vi.mocked(api.qualityArtifacts).mockImplementation(async (_repositoryId, revision) =>
-      revision === historicalEvaluation.revision ? [historicalArtifact] : []
-    )
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
 
     render(<RepositoryIntelligence data={portfolio} />)
 
@@ -352,10 +350,34 @@ describe('RepositoryIntelligence flow inventory', () => {
     const evidence = screen.getByLabelText(`${historicalEvaluation.title} evidence`)
     expect(within(evidence).getByText(historicalArtifact.title)).toBeVisible()
     expect(within(evidence).queryByText(historicalArtifact.id)).not.toBeInTheDocument()
-    expect(api.qualityArtifacts).toHaveBeenCalledWith(
+    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(
       repository.id,
-      historicalEvaluation.revision,
+      expect.arrayContaining([historicalArtifact.id]),
     )
+  })
+
+  it('resolves exact evidence for current policy findings outside the artifact first page', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const exactArtifact: QualityArtifact = {
+      id: 'policy-auth',
+      repositoryId: repository.id,
+      kind: 'policy',
+      title: 'Exact authentication policy',
+      sourcePath: 'governance/auth.md',
+      summary: 'Authentication is required.',
+      evidence: ['Authentication is required.'],
+    }
+    vi.mocked(api.policyGateEvaluations).mockResolvedValue([governanceEvaluation])
+    vi.mocked(api.qualityArtifacts).mockResolvedValue([])
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [exactArtifact] })
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    const evidence = await screen.findByLabelText(`${governanceEvaluation.title} evidence`)
+    expect(within(evidence).getByText(exactArtifact.title)).toBeVisible()
+    expect(within(evidence).queryByText(exactArtifact.id)).not.toBeInTheDocument()
+    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [exactArtifact.id])
   })
 
   it('continues immutable execution evidence from an opaque repository cursor', async () => {
@@ -1079,9 +1101,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
       filter?.revision ? [] : [historicalEvaluation]
     )
-    vi.mocked(api.qualityArtifacts).mockImplementation(async (_repositoryId, revision) =>
-      revision === 'historical-revision' ? [historicalArtifact] : []
-    )
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
 
     render(<RepositoryIntelligence data={portfolio} />)
@@ -1090,7 +1110,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
 
     expect(await screen.findByText(governanceEvaluation.title)).toBeVisible()
-    expect(api.qualityArtifacts).toHaveBeenCalledWith(repository.id, 'historical-revision')
+    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id])
     expect(screen.getByText('Historical authentication policy')).toBeVisible()
     expect(screen.getByText('policy · governance/auth-v1.md')).toBeVisible()
   })
@@ -1102,6 +1122,7 @@ describe('RepositoryIntelligence flow inventory', () => {
       id: `evaluation-historical-${index}`,
       revision: `historical-revision-${String(index).padStart(2, '0')}`,
       title: `Historical governance finding ${index}`,
+      policyArtifactIds: [`policy-historical-${String(index).padStart(2, '0')}`],
     }))
     vi.mocked(api.policyGateEvaluations).mockImplementation(async (_repositoryId, filter) =>
       filter?.revision ? [] : historicalEvaluations
@@ -1116,12 +1137,10 @@ describe('RepositoryIntelligence flow inventory', () => {
     expect(await screen.findByText(/Historical policy and gate evidence is expanded for the 20 newest revisions/)).toHaveTextContent(
       '2 older revisions remain'
     )
-    const revisionRequests = vi.mocked(api.qualityArtifacts).mock.calls
-      .map(([, revision]) => revision)
-      .filter(Boolean)
-    expect(revisionRequests).toHaveLength(20)
-    expect(revisionRequests).not.toContain('historical-revision-20')
-    expect(revisionRequests).not.toContain('historical-revision-21')
+    const requestedArtifactIds = vi.mocked(api.qualityArtifactsByIds).mock.calls.flatMap(([, ids]) => ids)
+    expect(requestedArtifactIds).toHaveLength(20)
+    expect(requestedArtifactIds).not.toContain('policy-historical-20')
+    expect(requestedArtifactIds).not.toContain('policy-historical-21')
   })
 
   it('shows policy and gate names with their source paths in observed outcomes', async () => {

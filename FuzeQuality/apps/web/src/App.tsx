@@ -74,7 +74,8 @@ import {
 import { PolicyGateEvidence } from './components/governanceEvidence'
 import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 import { FlowInspector } from './components/flowInspector'
-import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalEvidenceSelection, historicalFlowEvidenceSelection } from './flowEvidence'
+import { MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS, historicalFlowEvidenceSelection } from './flowEvidence'
+import { governanceEvidenceSelection } from './governanceEvidence'
 
 export type View =
   | 'overview'
@@ -3202,6 +3203,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifactPaginationError, setArtifactPaginationError] = useState<string>()
   const [repositoryArtifactFailures, setRepositoryArtifactFailures] = useState<string[]>([])
   const [repositoryGovernanceFailures, setRepositoryGovernanceFailures] = useState<string[]>([])
+  const [governanceEvidenceFailures, setGovernanceEvidenceFailures] = useState<string[]>([])
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
@@ -3502,25 +3504,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         const evaluations = evaluationResult.status === 'fulfilled'
           ? normalizeHistoryPage(evaluationResult.value)
           : { items: [] as PolicyGateEvaluation[], page: { nextCursor: null, hasMore: false } }
-        const historicalGovernanceRevisions = policyGateRevisionScope === 'all'
-          ? [...new Set(evaluations.items.map(evaluation => evaluation.revision))]
-              .filter(revision => revision !== repository.lastScanRevision)
-          : []
-        const historicalGovernanceArtifacts = (await Promise.all(
-          historicalGovernanceRevisions
-            .slice(0, MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS)
-            .map(revision => api.qualityArtifacts(repository.id, revision)
-              .then(response => normalizeHistoryPage(response).items)
-              .catch(() => []))
-        )).flat()
         return {
           artifacts: repositoryArtifacts.items,
           artifactNextCursor: repositoryArtifacts.page.nextCursor,
-          historicalGovernanceArtifacts,
-          omittedGovernanceEvidenceRevisions: Math.max(
-            0,
-            historicalGovernanceRevisions.length - MAX_HISTORICAL_FLOW_EVIDENCE_REVISIONS
-          ),
           evaluations: evaluations.items,
           nextCursor: evaluations.page.nextCursor,
           repositoryId: repository.id,
@@ -3537,11 +3523,6 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               ? [[group.repositoryId, group.artifactNextCursor]]
               : [])
           ))
-          setGovernanceEvidenceArtifacts(groups.flatMap(group => group.historicalGovernanceArtifacts))
-          setOmittedGovernanceEvidenceRevisions(groups.reduce(
-            (total, group) => total + group.omittedGovernanceEvidenceRevisions,
-            0
-          ))
           setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
           setPolicyGateNextCursors(Object.fromEntries(
             groups.flatMap(group => group.nextCursor ? [[group.repositoryId, group.nextCursor]] : [])
@@ -3554,8 +3535,6 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
         if (active) {
           setArtifacts([])
           setArtifactNextCursors({})
-          setGovernanceEvidenceArtifacts([])
-          setOmittedGovernanceEvidenceRevisions(0)
           setPolicyGateEvaluations([])
           setPolicyGateNextCursors({})
           setRepositoryArtifactFailures(data.repositories.map(repository => repository.id))
@@ -3575,6 +3554,38 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     policyGateReviewStatus,
     policyGateSeverity,
   ])
+  useEffect(() => {
+    let active = true
+    const selection = governanceEvidenceSelection(
+      policyGateEvaluations,
+      data.repositories,
+      policyGateRevisionScope,
+    )
+    setOmittedGovernanceEvidenceRevisions(selection.omittedHistoricalRevisions)
+    const batches = selection.requests.flatMap(({ repositoryId, artifactIds }) =>
+      Array.from({ length: Math.ceil(artifactIds.length / 100) }, (_, index) => ({
+        repositoryId,
+        artifactIds: artifactIds.slice(index * 100, (index + 1) * 100),
+      }))
+    )
+    if (!batches.length) {
+      setGovernanceEvidenceArtifacts([])
+      setGovernanceEvidenceFailures([])
+      return () => { active = false }
+    }
+    void Promise.allSettled(
+      batches.map(batch => api.qualityArtifactsByIds(batch.repositoryId, batch.artifactIds))
+    ).then(results => {
+      if (!active) return
+      setGovernanceEvidenceArtifacts(results.flatMap(result =>
+        result.status === 'fulfilled' ? result.value.items : []
+      ))
+      setGovernanceEvidenceFailures([...new Set(results.flatMap((result, index) =>
+        result.status === 'rejected' ? [batches[index].repositoryId] : []
+      ))])
+    })
+    return () => { active = false }
+  }, [data.repositories, policyGateEvaluations, policyGateRevisionScope])
   const loadMoreArtifacts = async () => {
     const cursors = Object.entries(artifactNextCursors)
     if (!cursors.length) return
@@ -3973,35 +3984,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       }))
       if (policyGateHistoryQueryRef.current !== selectionQuery) return
       const continuedEvaluations = groups.flatMap(group => group.page.items)
-      const evaluations = mergePolicyGateContinuation(
-        policyGateEvaluationsRef.current,
-        continuedEvaluations,
-        visibleAtRequestStart,
-      )
-      let historicalArtifacts: QualityArtifact[] = []
-      let omittedHistoricalRevisions = 0
-      if (policyGateRevisionScope === 'all') {
-        const evidenceSelection = historicalEvidenceSelection(
-          evaluations,
-          data.repositories,
-        )
-        omittedHistoricalRevisions = evidenceSelection.omitted
-        historicalArtifacts = (await Promise.all(
-          evidenceSelection.selected.map(({ repositoryId, revision }) =>
-            api.qualityArtifacts(repositoryId, revision)
-              .then(response => normalizeHistoryPage(response).items)
-              .catch(() => [])
-          )
-        )).flat()
-        if (policyGateHistoryQueryRef.current !== selectionQuery) return
-      }
       setPolicyGateEvaluations(current => mergePolicyGateContinuation(
         current,
         continuedEvaluations,
         visibleAtRequestStart,
       ))
-      setGovernanceEvidenceArtifacts(historicalArtifacts)
-      setOmittedGovernanceEvidenceRevisions(omittedHistoricalRevisions)
       setPolicyGateNextCursors(Object.fromEntries(
         groups.flatMap(group => group.page.page.nextCursor ? [[group.repositoryId, group.page.page.nextCursor]] : [])
       ))
@@ -4173,6 +4160,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           {(repositoryArtifactFailures.length > 0 || repositoryGovernanceFailures.length > 0) && (
             <p className="form-error" role="alert">
               Some repository intelligence is temporarily unavailable. Evidence from successful repositories remains visible.
+            </p>
+          )}
+          {governanceEvidenceFailures.length > 0 && (
+            <p className="form-error" role="alert">
+              Some exact policy and gate evidence could not be loaded. Evidence from successful repositories remains visible.
             </p>
           )}
           <div
