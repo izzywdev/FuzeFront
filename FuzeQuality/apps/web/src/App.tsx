@@ -4822,6 +4822,9 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
               {executionTrendFailures.length === 1 ? 'repository' : 'repositories'}. Loaded execution evidence remains visible.
             </p>
           )}
+          <p className="performance-inventory-only">
+            Outcome-trend continuation retains the execution lifecycle state captured when this view loaded.
+          </p>
           <div className="execution-trend" aria-label="Execution outcome trend">
             {outcomeTrend.map(day => (
               <div key={day.date}>

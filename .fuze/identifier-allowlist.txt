@@ -31,11 +31,11 @@
 # broadening the exception.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality test-implementation entity
 src FuzeQuality/apps/api/src/index.ts:426                   # FuzeQuality test-execution entity
-src FuzeQuality/packages/core/src/store.ts:527              # FuzeQuality repository entity
-src FuzeQuality/packages/core/src/store.ts:596              # FuzeQuality repository-scan revision entity
-src FuzeQuality/packages/core/src/store.ts:612              # FuzeQuality suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:623              # FuzeQuality suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:709              # FuzeQuality admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:783              # FuzeQuality identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:794              # FuzeQuality design-test-link outbox entity
-src FuzeQuality/packages/core/src/store.ts:1793             # FuzeQuality admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:532              # FuzeQuality repository entity
+src FuzeQuality/packages/core/src/store.ts:601              # FuzeQuality repository-scan revision entity
+src FuzeQuality/packages/core/src/store.ts:617              # FuzeQuality suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:628              # FuzeQuality suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:714              # FuzeQuality admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:788              # FuzeQuality identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:799              # FuzeQuality design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1805             # FuzeQuality admin-context audit entity

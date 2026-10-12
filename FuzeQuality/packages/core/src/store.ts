@@ -75,6 +75,8 @@ export type TestExecutionQuery = {
 }
 export type ExecutionOutcomeTrendQuery = Omit<TestExecutionQuery, 'after'> & {
   beforeDate?: string
+  /** Immutable lifecycle high-water mark shared by every page in one trend snapshot. */
+  snapshotAt?: string
 }
 export type PolicyGatePerformanceCursor = Pick<PolicyGatePerformance, 'failed' | 'passed' | 'gateArtifactId' | 'policyArtifactId'>
 export type PolicyGatePerformanceQuery = Omit<TestExecutionQuery, 'after'> & {
@@ -459,7 +461,8 @@ export class MemoryCatalogStore implements CatalogStore {
 
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}) {
     const items = executionOutcomeTrend(filterTestExecutions(
-      this.executions.filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId),
+      this.executionSnapshot(query.snapshotAt)
+        .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId),
       query,
     ))
       .sort((left, right) => right.date.localeCompare(left.date))
@@ -468,20 +471,8 @@ export class MemoryCatalogStore implements CatalogStore {
   }
 
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}) {
-    const snapshotAt = query.snapshotAt ? Date.parse(query.snapshotAt) : undefined
-    const snapshotExecutions = snapshotAt === undefined ? this.executions : []
-    if (snapshotAt !== undefined) {
-      const versionsByExecution = new Map<string, TestExecution>()
-      for (const version of this.executionVersions) {
-        if (version.versionedAt > snapshotAt) continue
-        const execution = version.execution
-        const key = `${execution.repositoryId}\u0000${execution.provider}\u0000${execution.externalRunId}\u0000${execution.attempt}`
-        versionsByExecution.set(key, execution)
-      }
-      snapshotExecutions.push(...versionsByExecution.values())
-    }
     const items = executionPerformance(filterTestExecutions(
-      snapshotExecutions
+      this.executionSnapshot(query.snapshotAt)
         .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
         .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id)),
       query,
@@ -499,6 +490,20 @@ export class MemoryCatalogStore implements CatalogStore {
         (item.failed === query.after.failed && item.passed === query.after.passed && item.gateArtifactId === query.after.gateArtifactId && item.policyArtifactId > query.after.policyArtifactId)
       )
     return query.limit === undefined ? items : items.slice(0, query.limit)
+  }
+
+  private executionSnapshot(snapshotAt?: string) {
+    if (!snapshotAt) return this.executions
+    const cutoff = Date.parse(snapshotAt)
+    if (!Number.isFinite(cutoff)) return []
+    const versionsByExecution = new Map<string, TestExecution>()
+    for (const version of this.executionVersions) {
+      if (version.versionedAt > cutoff) continue
+      const execution = version.execution
+      const key = `${execution.repositoryId}\u0000${execution.provider}\u0000${execution.externalRunId}\u0000${execution.attempt}`
+      versionsByExecution.set(key, execution)
+    }
+    return [...versionsByExecution.values()]
   }
 
   async saveTestExecution(execution: TestExecution) {
@@ -1136,14 +1141,21 @@ export class PostgresCatalogStore implements CatalogStore {
 
   async executionOutcomeTrend(repositoryId: string, tenantId: string, query: ExecutionOutcomeTrendQuery = {}): Promise<ExecutionOutcomeTrend[]> {
     const result = await this.pool.query(
-      `SELECT to_char((COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
+      `WITH snapshot_executions AS (
+         SELECT DISTINCT ON (repository_id,provider,external_run_id,attempt)
+                repository_id,provider,external_run_id,attempt,revision,kind,status,workflow_path,started_at,completed_at
+         FROM fuzequality.test_execution_versions
+         WHERE repository_id=$1 AND tenant_id=$2
+           AND ($11::timestamptz IS NULL OR versioned_at <= $11)
+         ORDER BY repository_id,provider,external_run_id,attempt,versioned_at DESC,version_id DESC
+       )
+       SELECT to_char((COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS date,
               count(*) FILTER (WHERE status='passed')::integer AS passed,
               count(*) FILTER (WHERE status='failed')::integer AS failed,
               count(*) FILTER (WHERE status='cancelled')::integer AS cancelled,
               count(*) FILTER (WHERE status='running')::integer AS running
-       FROM fuzequality.test_executions
-       WHERE repository_id=$1 AND tenant_id=$2
-         AND COALESCE(completed_at,started_at) IS NOT NULL
+       FROM snapshot_executions
+       WHERE COALESCE(completed_at,started_at) IS NOT NULL
          AND ($3::text IS NULL OR kind=$3)
          AND ($4::text IS NULL OR status=$4)
          AND ($5::text IS NULL OR provider=$5)
@@ -1154,8 +1166,8 @@ export class PostgresCatalogStore implements CatalogStore {
          AND ($10::date IS NULL OR (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date < $10)
        GROUP BY (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date
        ORDER BY (COALESCE(completed_at,started_at) AT TIME ZONE 'UTC')::date DESC
-       LIMIT COALESCE($11::integer, 2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.limit ?? null],
+       LIMIT COALESCE($12::integer, 2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.beforeDate ?? null, query.snapshotAt ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({ date: row.date, passed: row.passed, failed: row.failed, cancelled: row.cancelled, running: row.running }))
   }

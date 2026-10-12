@@ -8,12 +8,12 @@ describe('execution outcome trend pagination', () => {
       { date: '2026-10-10', passed: 1, failed: 1, cancelled: 0, running: 0 },
       { date: '2026-10-09', passed: 0, failed: 2, cancelled: 0, running: 0 },
     ]
-    const page = executionTrendPage(items, 2)
+    const page = executionTrendPage(items, 2, '2026-10-11T12:00:00.000Z')
     expect(page.items.map(item => item.date)).toEqual(['2026-10-11', '2026-10-10'])
     expect(page.page.hasMore).toBe(true)
     expect(decodeExecutionTrendCursor(page.page.nextCursor ?? undefined)).toEqual({
       success: true,
-      data: { date: '2026-10-10' },
+      data: { date: '2026-10-10', snapshotAt: '2026-10-11T12:00:00.000Z' },
     })
   })
 

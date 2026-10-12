@@ -716,12 +716,14 @@ app.get('/api/v1/repositories/:id/execution-trend', mayReadCatalog, async (reque
   const cursor = decodeExecutionTrendCursor(filter.data.cursor)
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
   const { cursor: _cursor, limit, ...query } = filter.data
+  const snapshotAt = cursor.data?.snapshotAt ?? new Date().toISOString()
   const items = await store.executionOutcomeTrend(repositoryId, tenantId, {
     ...query,
     beforeDate: cursor.data?.date,
+    snapshotAt,
     limit: limit + 1,
   })
-  response.json(executionTrendPage(items, limit))
+  response.json(executionTrendPage(items, limit, snapshotAt))
 })
 app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

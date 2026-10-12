@@ -98,12 +98,14 @@ describe('test execution evidence', () => {
     ])
 
     const [sql, parameters] = query.mock.calls[0]
+    expect(String(sql)).toContain('FROM fuzequality.test_execution_versions')
     expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
+    expect(String(sql)).toContain('versioned_at <= $11')
     expect(String(sql)).toContain('COALESCE(completed_at,started_at) IS NOT NULL')
     expect(String(sql)).not.toContain("COALESCE(completed_at,started_at,'epoch'::timestamptz)")
     expect(String(sql)).toContain("AT TIME ZONE 'UTC'")
     expect(String(sql)).toContain("count(*) FILTER (WHERE status='failed')")
-    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, null, '2026-10-11', 51])
+    expect(parameters).toEqual(['repo-1', 'org-1', 'integration', null, null, null, null, null, null, '2026-10-11', null, 51])
   })
 
   it('pushes filtered policy-gate aggregation and its stable cursor into Postgres', async () => {
@@ -174,6 +176,36 @@ describe('test execution evidence', () => {
       ])
       await expect(store.policyGatePerformance('repo-1', 'org-1')).resolves.toEqual([
         expect.objectContaining({ policyArtifactId: 'policy-1', passed: 1, failed: 1, running: 0 }),
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('freezes outcome-trend buckets across lifecycle updates', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-10T23:59:00.000Z'))
+      const store = new MemoryCatalogStore()
+      const base = {
+        repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const,
+        externalRunId: 'trend-snapshot-run', attempt: 1, revision: 'revision-a', kind: 'integration' as const,
+        name: 'Integration', policyArtifactIds: [], gateArtifactIds: [], gateEvaluations: [],
+        thresholds: [], evidenceLinks: [], startedAt: '2026-10-10T23:58:00.000Z',
+      }
+      await store.saveTestExecution({ id: 'run-started', ...base, status: 'running' })
+      const snapshotAt = '2026-10-10T23:59:30.000Z'
+
+      vi.setSystemTime(new Date('2026-10-11T00:05:00.000Z'))
+      await store.saveTestExecution({
+        id: 'run-completed', ...base, status: 'passed', completedAt: '2026-10-11T00:05:00.000Z',
+      })
+
+      await expect(store.executionOutcomeTrend('repo-1', 'org-1', { snapshotAt })).resolves.toEqual([
+        { date: '2026-10-10', passed: 0, failed: 0, cancelled: 0, running: 1 },
+      ])
+      await expect(store.executionOutcomeTrend('repo-1', 'org-1')).resolves.toEqual([
+        { date: '2026-10-11', passed: 1, failed: 0, cancelled: 0, running: 0 },
       ])
     } finally {
       vi.useRealTimers()
