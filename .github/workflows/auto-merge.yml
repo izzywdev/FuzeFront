@@ -73,7 +73,7 @@ jobs:
         if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
         run: |
           gh pr review ${{ github.event.pull_request.number }} --approve \
-            --body "Auto-approved via GITHUB_TOKEN: all required CI gates pass. The gate set is the production guard for this repo."
+            --body "Auto-approved via GITHUB_TOKEN at PR-open time. Auto-merge is armed; the merge occurs only when all required checks pass. This approval does not itself assert that any gate has passed. The gate set is the production guard for this repo."
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
