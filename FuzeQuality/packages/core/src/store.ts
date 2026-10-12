@@ -97,7 +97,7 @@ export type IdentityLifecycleProjection =
   | { type: 'organization.upsert'; tenant: QualityTenant }
   | { type: 'organization.deleted'; tenantId: string }
   | { type: 'user.upsert'; principal: QualityPrincipal }
-  | { type: 'user.deleted'; principalId: string }
+  | { type: 'user.deleted'; principalId: string; cascade?: 'soft' | 'hard' }
   | { type: 'membership.changed'; membership: QualityMembership }
 export type OutboxEventInput = { topic: string; key?: string; payload: unknown }
 export type OutboxEvent = OutboxEventInput & { id: string; attempts: number; createdAt: string }
@@ -200,7 +200,7 @@ export interface CatalogStore {
   upsertTenant(tenant: QualityTenant): Promise<boolean>
   deactivateTenant(tenantId: string): Promise<boolean>
   upsertPrincipal(principal: QualityPrincipal): Promise<boolean>
-  deactivatePrincipal(principalId: string): Promise<boolean>
+  deactivatePrincipal(principalId: string, cascade?: 'soft' | 'hard'): Promise<boolean>
   setOrganizationMembership(membership: QualityMembership): Promise<boolean>
   projectDesignTestLink(projection: DesignTestLinkProjection, outbound: OutboxEventInput): Promise<boolean>
   projectIdentityLifecycle(projection: IdentityLifecycleProjection, outbound: OutboxEventInput): Promise<boolean>
@@ -740,10 +740,24 @@ export class MemoryCatalogStore implements CatalogStore {
     return changed
   }
 
-  async deactivatePrincipal(principalId: string) {
+  async deactivatePrincipal(principalId: string, cascade: 'soft' | 'hard' = 'soft') {
     const principal = this.principals.get(principalId)
-    if (!principal || !principal.active) return false
-    principal.active = false
+    if (!principal) return false
+    const redactedEmail = `deleted+${principalId}@redacted.invalid`
+    const changed = principal.active || (
+      cascade === 'hard' && (
+        principal.email !== redactedEmail ||
+        principal.firstName !== undefined ||
+        principal.lastName !== undefined
+      )
+    )
+    if (!changed) return false
+    Object.assign(principal, {
+      active: false,
+      ...(cascade === 'hard'
+        ? { email: redactedEmail, firstName: undefined, lastName: undefined }
+        : {}),
+    })
     for (const membership of this.memberships.values()) {
       if (membership.principalId === principalId) membership.active = false
     }
@@ -774,7 +788,7 @@ export class MemoryCatalogStore implements CatalogStore {
       }
       case 'user.upsert': changed = await this.upsertPrincipal(projection.principal); break
       case 'user.deleted': {
-        changed = await this.deactivatePrincipal(projection.principalId)
+        changed = await this.deactivatePrincipal(projection.principalId, projection.cascade)
         for (const membership of this.memberships.values()) {
           if (membership.principalId === projection.principalId && membership.active) {
             membership.active = false
@@ -1309,11 +1323,20 @@ export class PostgresCatalogStore implements CatalogStore {
     return Boolean(result.rowCount)
   }
 
-  async deactivatePrincipal(principalId: string): Promise<boolean> {
-    const result = await this.pool.query(
-      'UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
-      [principalId],
-    )
+  async deactivatePrincipal(principalId: string, cascade: 'soft' | 'hard' = 'soft'): Promise<boolean> {
+    const redactedEmail = `deleted+${principalId}@redacted.invalid`
+    const result = cascade === 'hard'
+      ? await this.pool.query(
+          `UPDATE fuzequality.principals
+           SET email=$2,first_name=NULL,last_name=NULL,active=false,deleted_at=COALESCE(deleted_at,now()),updated_at=now()
+           WHERE id=$1 AND (active=true OR email IS DISTINCT FROM $2 OR first_name IS NOT NULL OR last_name IS NOT NULL)
+           RETURNING id`,
+          [principalId, redactedEmail],
+        )
+      : await this.pool.query(
+          'UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now() WHERE id=$1 AND active=true RETURNING id',
+          [principalId],
+        )
     return Boolean(result.rowCount)
   }
 
@@ -1381,15 +1404,21 @@ export class PostgresCatalogStore implements CatalogStore {
         case 'user.deleted':
           result = await client.query(
             `WITH deactivated_principal AS (
-               UPDATE fuzequality.principals SET active=false, deleted_at=now(), updated_at=now()
-               WHERE id=$1 AND active=true RETURNING id
+               UPDATE fuzequality.principals
+               SET email=CASE WHEN $2='hard' THEN $3 ELSE email END,
+                   first_name=CASE WHEN $2='hard' THEN NULL ELSE first_name END,
+                   last_name=CASE WHEN $2='hard' THEN NULL ELSE last_name END,
+                   active=false, deleted_at=COALESCE(deleted_at,now()), updated_at=now()
+               WHERE id=$1 AND (
+                 active=true OR ($2='hard' AND (email IS DISTINCT FROM $3 OR first_name IS NOT NULL OR last_name IS NOT NULL))
+               ) RETURNING id
              ), deactivated_memberships AS (
                UPDATE fuzequality.organization_memberships SET active=false, updated_at=now()
                WHERE principal_id=$1 AND active=true RETURNING principal_id
              )
              SELECT EXISTS (SELECT 1 FROM deactivated_principal)
                  OR EXISTS (SELECT 1 FROM deactivated_memberships) AS changed`,
-            [projection.principalId],
+            [projection.principalId, projection.cascade ?? 'soft', `deleted+${projection.principalId}@redacted.invalid`],
           )
           break
         case 'membership.changed': {
