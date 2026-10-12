@@ -11,13 +11,13 @@ export declare const appHeartbeatSchemaV1: z.ZodObject<{
     metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     seenAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    slug: string;
     status: "online" | "degraded";
+    slug: string;
     seenAt: string;
     metadata?: Record<string, unknown> | undefined;
 }, {
-    slug: string;
     status: "online" | "degraded";
+    slug: string;
     seenAt: string;
     metadata?: Record<string, unknown> | undefined;
 }>;

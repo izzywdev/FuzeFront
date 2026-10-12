@@ -18,11 +18,9 @@
 //
 // Who authenticates what. Decisions about the CALLER (and the membership probe
 // on the target user) use the end user's bearer token. Grant/revoke WRITES use
-// this service's machine identity (lib/machineIdentity.ts, client_credentials,
-// scope `authz:admin`) — never the end user's token: the Security API denies
-// non-admin human grant calls (review C-1), and the user must not authorize
-// their own role. The route-level `manage_access` check above is what decides
-// whether the human may ask for the change at all.
+// the caller's credential and exact instance manage_access authorization.
+// Security repeats the exact-instance policy check on each write; the read
+// mirror is never used to authorize a grant.
 //
 // Write ordering (a thrown Security API call must never leave the mirror
 // claiming a change that did not happen): every handler runs inside ONE
@@ -42,7 +40,6 @@ import { parseLimitParam, registerIdParams } from '../middleware/validateInput';
 import { getLog } from '../lib/logger';
 import { db } from '../db';
 import { requireAuthzCheck, getAuthzClient, bearer } from '../middleware/authz';
-import { getGrantToken } from '../lib/machineIdentity';
 import { authMiddleware } from '../middleware/auth';
 import { lockOrgOutbox } from '../events/outbox';
 import { eventContextFromRequest, emitAccessGranted, emitAccessRevoked } from '../events/emitters';
@@ -253,9 +250,9 @@ router.put(
         return;
       }
 
-      // Resolved BEFORE the transaction opens: a missing/failed machine identity
-      // fails closed (-> 500 below) without taking a row lock first.
-      const machineToken = await getGrantToken();
+      // Authenticate the exact list manager at the Security API; do not impersonate a broad grant administrator.
+      const callerToken = bearer(req);
+      if (!callerToken) { res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' }); return; }
 
       const row = await db.transaction(async (trx) => {
         // Lock order is ALWAYS org outbox lock first (events/outbox.ts): a list
@@ -284,9 +281,19 @@ router.put(
           }
         }
 
-        // Roles do not stack: drop the old role in the Security API before
-        // granting the new one. Revoke-first fails safe — a failure between the
-        // two leaves the user with LESS access, never more.
+        const assignment = {
+          subject: userId,
+          tenant: orgId,
+          role,
+          resource: { type: 'SelectionList', key: listId },
+        };
+        // An owner demoting themselves must retain manage_access until the
+        // final revoke. The replacement is strictly weaker than list-owner;
+        // a failed revoke retains existing authority rather than adding any.
+        const selfDemotion = userId === actorId && existing?.['role'] === 'list-owner' && role !== 'list-owner';
+        if (selfDemotion) await getAuthzClient().grant(assignment, callerToken);
+
+        // Other role changes revoke first, leaving less access on failure.
         if (existing && existing['role'] !== role) {
           await getAuthzClient().revoke(
             {
@@ -295,7 +302,7 @@ router.put(
               role: existing['role'],
               resource: { type: 'SelectionList', key: listId },
             },
-            machineToken,
+            callerToken,
           );
         }
 
@@ -303,15 +310,7 @@ router.put(
         // resource is REQUIRED: it scopes this grant to this one list rather
         // than tenant-wide. grant() THROWS on a Security API failure, which
         // rolls this transaction back before the mirror is touched.
-        await getAuthzClient().grant(
-          {
-            subject: userId,
-            tenant: orgId,
-            role,
-            resource: { type: 'SelectionList', key: listId },
-          },
-          machineToken,
-        );
+        if (!selfDemotion) await getAuthzClient().grant(assignment, callerToken);
 
         // Mirror upsert. A previously revoked row is a NEW grant (granted_at
         // restarts); a live row keeps its original granted_at (the contract:
@@ -382,8 +381,9 @@ router.delete(
         return;
       }
 
-      // Machine identity resolved BEFORE the transaction opens (fail closed).
-      const machineToken = await getGrantToken();
+      // Keep the authenticated caller identity for every instance grant mutation.
+      const callerToken = bearer(req);
+      if (!callerToken) { res.status(401).json({ code: 'UNAUTHENTICATED', message: 'User token required.' }); return; }
 
       await db.transaction(async (trx) => {
         // Org outbox lock first (see PUT above), then serialise every access
@@ -426,7 +426,7 @@ router.delete(
             role: existing['role'],
             resource: { type: 'SelectionList', key: listId },
           },
-          machineToken,
+          callerToken,
         );
 
         await trx('selection_list_access')

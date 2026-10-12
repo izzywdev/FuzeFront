@@ -172,6 +172,27 @@ describe('authentication (authz review I-1b)', () => {
     expect(headersOf(lastCall())['Authorization']).toBeUndefined()
   })
 
+  describe('legacy setSelectionListAuthTokenProvider (still exported)', () => {
+    afterEach(() => api.setSelectionListAuthTokenProvider(() => null))
+
+    it('is the fallback bearer while no org-aware hook is configured', async () => {
+      api.setSelectionListAuthTokenProvider(() => 'legacy.tok')
+      fetchMock.mockResolvedValue(json({}))
+      await api.getQuota()
+      expect(headersOf(lastCall())['Authorization']).toBe('Bearer legacy.tok')
+    })
+
+    it('never overrides a configured org hook, even when that hook yields nothing', async () => {
+      // A host on the org-aware flow must not silently degrade to a session token
+      // that names no organization.
+      api.setSelectionListAuthTokenProvider(() => 'legacy.tok')
+      api.configureSelectionListsAuth({ getOrgToken: async () => null })
+      fetchMock.mockResolvedValue(json({}))
+      await api.getQuota()
+      expect(headersOf(lastCall())['Authorization']).toBeUndefined()
+    })
+  })
+
   it('stays same-origin: configuring auth never changes the request URL', async () => {
     api.configureSelectionListsAuth({ getOrgToken: async () => 'org.tok' })
     fetchMock.mockResolvedValue(json({}))

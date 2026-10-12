@@ -195,14 +195,42 @@ Authorization: Bearer <session token>
 200 { "token": "<jwt>", "tokenType": "Bearer", "expiresIn": 900, "organizationId": "<bare uuid>" }
 ```
 
-The Security API mints it **only after checking the caller's active membership of `{orgId}`** (`organizationId` may be the
-bare UUID or the `org_…` TypeID; `403` for a non-member and for a nonexistent org alike, `401` for a revoked/expired
-session, a foreign-tenant token, or a token that is not a plain session token). The result is
+The Security API mints it **only after proving the caller's active membership of `{orgId}`** with the same helper
+the rest of Security uses (`proveSessionTenant`, `backend/security/src/services/session-tenant.ts`: an `active`
+membership row **and** `organizations.is_active = true`; a NULL or false flag matches nothing). `organizationId` may be
+the bare UUID or the `org_…` TypeID; `403` for a non-member, a deactivated org and a nonexistent org alike, `503` if the
+membership proof itself cannot be completed (never a token), `401` for a revoked/expired session, a foreign-tenant
+token, or a token that is not a plain session token. The result is
 `{ userId, sessionId, tid, orgId, kind: "fuze-org-session" }`, lifetime at most 15 minutes and never beyond the session's
 own expiry. Re-exchange when it lapses: the exchange re-checks the session and the membership, which is how a removed
 member or a deactivated org stops being served (the service verifies statelessly and cannot see a later logout, so the
 short lifetime is the revocation bound). The shell does this for the UI (`frontend/src/lib/selectionListsAuth.ts`:
 cached per session+org, refreshed a minute before expiry, never persisted).
+
+**Why this endpoint exists alongside `POST /api/v1/security/tokens/exchange`.** The exchange added with the
+scoped-ownership bootstrap (Security 0.10.0) is a different mechanism for a different caller, so it does not replace
+this endpoint; the two share the membership proof and nothing else.
+
+| | `POST /api/organizations/{orgId}/session-token` (this) | `POST /api/v1/security/tokens/exchange` |
+|---|---|---|
+| Caller | the **end user's browser**, with its own session token | a **service**, authenticated by a Kubernetes workload token (`fuze-workload`, `TokenReview`) holding the requested scopes |
+| Input | session token + org in the path | `subjectToken` + `audience: service:<name>` + `scope` + canonical `tenant` selector |
+| Output | `{ userId, sessionId, tid, orgId, kind: 'fuze-org-session' }`, 15 min, a bearer the service verifies **statelessly** | `{ sub, aud, scope, tenantId, act, kind: 'fuze-delegation' }`, 5 min, audience-bound, verified by **introspection** behind `x-fuze-delegation` |
+| Shared | `proveSessionTenant` for the membership proof | `proveSessionTenant` for the membership proof |
+
+A browser cannot call the delegation exchange (it holds no workload token), and its token names `tenantId`, not an
+`orgId` claim this service's stateless bearer check reads. Serving the UI from it would mean routing every
+selection-list call through a host-backend proxy that holds a workload identity (the pattern `fuzex-proxy.ts` uses for
+FuzeX) and switching this service to introspection-based delegation verification, which is an architecture and
+workload-identity (FuzeWorkloadIdentity / Helm) change, not a token swap. Until that is chosen, the end-user path above
+is the supported one. The machine path is unaffected and unchanged: the service's own owner bootstrap uses a projected
+Kubernetes ServiceAccount token exchanged for a workload token with scope `selection-list:owner-grant`
+(`src/lib/machineIdentity.ts`), never a user token.
+
+Both Fuze-minted kinds stay out of each other's lane: this service accepts only a kind-less session or
+`fuze-org-session`; `fuze-workload` and `fuze-delegation` are `401` here. The Security API's account routes, and the
+delegation exchange's own subject-session check, refuse `fuze-org-session` (it is accepted only by the authz decision
+API, which org-scoped services call with it).
 
 What the service accepts (`src/middleware/auth.ts`):
 

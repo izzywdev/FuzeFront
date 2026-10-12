@@ -49,12 +49,26 @@ export function configureSelectionListsAuth(next?: SelectionListsAuth): void {
   auth = next ?? {}
 }
 
+// Supplied by older hosts so switching accounts changes the bearer token on the
+// next request. Superseded by configureSelectionListsAuth; kept so an existing
+// host keeps working. The package must not inspect localStorage itself.
+let legacyAuthTokenProvider: (() => string | null) | undefined
+export function setSelectionListAuthTokenProvider(provider: () => string | null): void {
+  legacyAuthTokenProvider = provider
+}
+
 type TokenKind = 'org' | 'session'
 
 async function bearerFor(kind: TokenKind): Promise<string | null> {
   try {
     const token = kind === 'org' ? await auth.getOrgToken?.() : auth.getSessionToken?.()
-    return token || null
+    if (token) return token
+    // Legacy hook (setSelectionListAuthTokenProvider): one plain bearer for
+    // every call. Only consulted when the matching org-aware hook is not
+    // configured at all, so a host that configured configureSelectionListsAuth
+    // never falls back to a session token that names no organization.
+    const configured = kind === 'org' ? auth.getOrgToken : auth.getSessionToken
+    return configured ? null : legacyAuthTokenProvider?.() || null
   } catch {
     // A failed token resolution must not throw into render: send no credential
     // and let the service's 401 surface through the normal error state.

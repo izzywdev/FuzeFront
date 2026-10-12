@@ -44,13 +44,13 @@ This includes:
 - **Documentation**: Wiki pages, README files, and other project documentation
 - **Communication channels**: Any official communication platforms
 - **Events**: Conferences, meetups, and other community gatherings
-- **Social media**: When representing the FrontFuse project
+- **Social media**: When representing the FuzeFront project
 
 ## Community Guidelines
 
 ### Technical Discussions
 
-- **Stay on topic**: Keep discussions relevant to FrontFuse and microfrontend development
+- **Stay on topic**: Keep discussions relevant to FuzeFront and microfrontend development
 - **Be specific**: Provide detailed information when reporting bugs or requesting features
 - **Search first**: Check existing issues and documentation before creating new ones
 - **Use proper formatting**: Format code snippets and provide clear reproduction steps
@@ -178,4 +178,4 @@ If you have questions about this Code of Conduct, please:
 - **Open an issue**: Create a GitHub issue for public discussion
 - **Contact maintainers**: Reach out directly for private concerns
 
-**Thank you for helping make FrontFuse a welcoming and inclusive community!** 🤝
+**Thank you for helping make FuzeFront a welcoming and inclusive community!** 🤝

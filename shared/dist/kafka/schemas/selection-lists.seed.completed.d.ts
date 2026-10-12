@@ -38,11 +38,11 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
         key: z.ZodString;
         version: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
-        key: string;
         version: number;
+        key: string;
     }, {
-        key: string;
         version: number;
+        key: string;
     }>;
     trigger: z.ZodEnum<["org-created", "app-installed", "app-upgraded", "backfill", "manual"]>;
     outcome: z.ZodEnum<["applied", "upgraded", "already-applied", "superseded"]>;
@@ -58,16 +58,16 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
         /** Items left alone because a human edited or deleted them after seeding. */
         itemsSkipped: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
-        listId: string | null;
         key: string;
+        listId: string | null;
         action: "archived" | "created" | "updated" | "unchanged" | "skipped-user-edited" | "skipped-user-deleted";
         itemsCreated: number;
         itemsUpdated: number;
         itemsArchived: number;
         itemsSkipped: number;
     }, {
-        listId: string | null;
         key: string;
+        listId: string | null;
         action: "archived" | "created" | "updated" | "unchanged" | "skipped-user-edited" | "skipped-user-deleted";
         itemsCreated: number;
         itemsUpdated: number;
@@ -82,8 +82,8 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
     };
     eventId: string;
     lists: {
-        listId: string | null;
         key: string;
+        listId: string | null;
         action: "archived" | "created" | "updated" | "unchanged" | "skipped-user-edited" | "skipped-user-deleted";
         itemsCreated: number;
         itemsUpdated: number;
@@ -93,8 +93,8 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        key: string;
         version: number;
+        key: string;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     outcome: "applied" | "upgraded" | "already-applied" | "superseded";
@@ -108,8 +108,8 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
     };
     eventId: string;
     lists: {
-        listId: string | null;
         key: string;
+        listId: string | null;
         action: "archived" | "created" | "updated" | "unchanged" | "skipped-user-edited" | "skipped-user-deleted";
         itemsCreated: number;
         itemsUpdated: number;
@@ -119,8 +119,8 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        key: string;
         version: number;
+        key: string;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     outcome: "applied" | "upgraded" | "already-applied" | "superseded";

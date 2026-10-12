@@ -54,8 +54,8 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        status: "active" | "archived";
         code: string;
+        status: "active" | "archived";
         description: string | null;
         seed: {
             source: string;
@@ -69,8 +69,8 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         label: string;
         sortOrder: number;
     }, {
-        status: "active" | "archived";
         code: string;
+        status: "active" | "archived";
         description: string | null;
         seed: {
             source: string;
@@ -99,8 +99,8 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     item: {
-        status: "active" | "archived";
         code: string;
+        status: "active" | "archived";
         description: string | null;
         seed: {
             source: string;
@@ -129,8 +129,8 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     item: {
-        status: "active" | "archived";
         code: string;
+        status: "active" | "archived";
         description: string | null;
         seed: {
             source: string;
@@ -159,8 +159,8 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     item: {
-        status: "active" | "archived";
         code: string;
+        status: "active" | "archived";
         description: string | null;
         seed: {
             source: string;
@@ -189,8 +189,8 @@ export declare const selectionListsItemArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     item: {
-        status: "active" | "archived";
         code: string;
+        status: "active" | "archived";
         description: string | null;
         seed: {
             source: string;

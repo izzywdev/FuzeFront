@@ -50,11 +50,11 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         /** Monotonic content version. A version's content is immutable once applied. */
         version: z.ZodNumber;
     }, "strict", z.ZodTypeAny, {
-        key: string;
         version: number;
+        key: string;
     }, {
-        key: string;
         version: number;
+        key: string;
     }>;
     trigger: z.ZodEnum<["org-created", "app-installed", "app-upgraded", "backfill", "manual"]>;
     attestation: z.ZodObject<{
@@ -122,8 +122,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             }[] | undefined;
         }>, "many">;
     }, "strict", z.ZodTypeAny, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -142,8 +142,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
             description?: string | undefined;
         }[] | undefined;
     }, {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -169,8 +169,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -192,8 +192,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        key: string;
         version: number;
+        key: string;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {
@@ -208,8 +208,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -231,8 +231,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        key: string;
         version: number;
+        key: string;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {
@@ -247,8 +247,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -270,8 +270,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        key: string;
         version: number;
+        key: string;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {
@@ -286,8 +286,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         service: string;
     };
     lists: {
-        name: string;
         key: string;
+        name: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         items: {
             code: string;
@@ -309,8 +309,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        key: string;
         version: number;
+        key: string;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {

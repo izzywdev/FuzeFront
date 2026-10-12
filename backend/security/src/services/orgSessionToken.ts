@@ -10,13 +10,25 @@
  *
  * This module is that source. Given a valid session token and an organization id
  * the caller CLAIMS to act in, it checks the caller's ACTIVE membership of that
- * organization in the identity DB (the single writer of
- * `organization_memberships`) and only then signs
+ * organization with `proveSessionTenant` (services/session-tenant.ts, the one
+ * canonical membership proof Security already uses for `GET /session?tenant=` and
+ * `POST /tokens/exchange`; this module deliberately carries no membership SQL of
+ * its own) and only then signs
  *
  *     { userId, sessionId, tid, orgId, kind: 'fuze-org-session' }
  *
  * so the org in the token is the output of a membership check, never an input a
  * downstream service has to trust from a header or body.
+ *
+ * Why this is not `POST /v1/security/tokens/exchange`: that exchange is a
+ * service-to-service delegation (RFC 8693). Its caller must hold a Kubernetes
+ * workload token, which a browser never has, and what it mints is an
+ * audience-bound `fuze-delegation` token (`sub`/`aud`/`act`/`tenantId`, 5 min)
+ * that the receiver verifies by introspection behind `x-fuze-delegation`. This
+ * module is the END-USER counterpart: the browser's own session token in, an
+ * `orgId`-bearing bearer out, verified statelessly by selection-list-service.
+ * It shares the membership proof with that exchange; it does not duplicate or
+ * widen it. See docs/guides/SELECTION_LIST_SERVICE.md.
  *
  * Design choices, all fail-closed:
  *  - Only a plain session token can be exchanged. A token that already carries a
@@ -30,15 +42,16 @@
  *    Consumers such as selection-list-service verify statelessly and cannot see
  *    a later logout, so the short TTL is the revocation bound; the browser
  *    re-exchanges (which re-checks session + membership) when it expires.
- *  - Membership and the org being `is_active` are re-checked on every exchange,
- *    so removing a member or deactivating an org takes effect within one TTL.
+ *  - Membership and the org being `is_active` are re-checked on every exchange
+ *    (inside `proveSessionTenant`, where `is_active = true` is part of the query:
+ *    a NULL or false flag matches no row), so removing a member or deactivating
+ *    an org takes effect within one TTL.
  *  - Non-member and nonexistent org are the SAME answer (403), so the endpoint
  *    is not an existence oracle.
  */
 import jwt from 'jsonwebtoken'
-import type { Knex } from 'knex'
-import { isUuid, tryParseId, toUuid } from '@izzywdev/fuzefront-identity'
-import { db as defaultDb } from '../config/database'
+import { db } from '../config/database'
+import { canonicalSessionTenant, proveSessionTenant } from './session-tenant'
 
 export const ORG_SESSION_KIND = 'fuze-org-session'
 export const ORG_SESSION_MAX_TTL_SECONDS = 15 * 60
@@ -47,11 +60,12 @@ export type OrgSessionErrorCode =
   | 'INVALID_ORGANIZATION_ID'
   | 'INVALID_SESSION'
   | 'NOT_A_MEMBER'
+  | 'MEMBERSHIP_UNAVAILABLE'
   | 'INTERNAL'
 
 export class OrgSessionError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 500,
+    readonly status: 400 | 401 | 403 | 500 | 503,
     readonly code: OrgSessionErrorCode,
     message: string
   ) {
@@ -71,7 +85,6 @@ export interface OrgSessionTokenInput {
   tenantAccepts: (tokenTid: string | undefined) => boolean
   /** The tenant id to stamp into the minted token's `tid`. */
   tenantId: string
-  db?: Knex
   now?: () => number
 }
 
@@ -83,16 +96,6 @@ export interface OrgSessionToken {
   organizationId: string
 }
 
-/** Bare UUID (lower-cased) or `org_…` TypeID -> the bare UUID `organizations.id` uses. */
-export function normaliseOrganizationId(raw: unknown): string {
-  if (typeof raw === 'string') {
-    if (isUuid(raw)) return raw.toLowerCase()
-    const typed = tryParseId('organization', raw)
-    if (typed) return toUuid(typed).toLowerCase()
-  }
-  throw new OrgSessionError(400, 'INVALID_ORGANIZATION_ID', 'Invalid organization id')
-}
-
 function jwtSecret(): string {
   const s = process.env.JWT_SECRET
   if (!s) throw new OrgSessionError(500, 'INTERNAL', 'Server misconfiguration')
@@ -100,10 +103,16 @@ function jwtSecret(): string {
 }
 
 export async function mintOrgSessionToken(input: OrgSessionTokenInput): Promise<OrgSessionToken> {
-  const db = input.db ?? defaultDb
   const now = input.now ?? Date.now
-  const orgUuid = normaliseOrganizationId(input.organizationId)
   const secret = jwtSecret()
+  // Bare UUID or `org_...` TypeID -> the bare UUID `organizations.id` uses.
+  // canonicalSessionTenant throws on anything else (length-capped, no coercion).
+  let orgUuid: string
+  try {
+    orgUuid = canonicalSessionTenant(input.organizationId)
+  } catch {
+    throw new OrgSessionError(400, 'INVALID_ORGANIZATION_ID', 'Invalid organization id')
+  }
 
   let claims: { userId?: unknown; sessionId?: unknown; tid?: unknown; kind?: unknown }
   try {
@@ -131,16 +140,17 @@ export async function mintOrgSessionToken(input: OrgSessionTokenInput): Promise<
   if (!session) throw new OrgSessionError(401, 'INVALID_SESSION', 'Session revoked')
   const sessionExpiresMs = session.expires_at ? new Date(session.expires_at).getTime() : Infinity
 
-  const membership = await db('organization_memberships as m')
-    .join('organizations as o', 'o.id', 'm.organization_id')
-    .where({ 'm.user_id': input.userId, 'm.organization_id': orgUuid, 'm.status': 'active' })
-    .first('o.is_active as org_is_active')
-  // Fail closed: only an org whose is_active is EXACTLY true can be entered.
-  // The column is nullable (default true); a NULL, or anything a driver might
-  // return other than boolean true, is "not proven active" and is refused.
-  if (!membership || membership.org_is_active !== true) {
-    throw new OrgSessionError(403, 'NOT_A_MEMBER', 'Insufficient permissions')
+  // Membership is the canonical proof Security uses everywhere else. A throw
+  // (DB down, malformed user id) is "not proven", never "allowed".
+  let verifiedOrg: string | null
+  try {
+    verifiedOrg = await proveSessionTenant(input.userId, orgUuid)
+  } catch {
+    throw new OrgSessionError(503, 'MEMBERSHIP_UNAVAILABLE', 'Membership verification unavailable')
   }
+  // Non-member, inactive membership, deactivated org and nonexistent org are all
+  // the same 403: the endpoint is not an existence oracle.
+  if (!verifiedOrg) throw new OrgSessionError(403, 'NOT_A_MEMBER', 'Insufficient permissions')
 
   const remainingSeconds = Math.floor((sessionExpiresMs - now()) / 1000)
   const expiresIn = Math.min(ORG_SESSION_MAX_TTL_SECONDS, remainingSeconds)
@@ -154,11 +164,11 @@ export async function mintOrgSessionToken(input: OrgSessionTokenInput): Promise<
       userId: input.userId,
       sessionId: claims.sessionId,
       tid: input.tenantId,
-      orgId: orgUuid,
+      orgId: verifiedOrg,
       kind: ORG_SESSION_KIND,
     },
     secret,
     { algorithm: 'HS256', expiresIn }
   )
-  return { token, tokenType: 'Bearer', expiresIn, organizationId: orgUuid }
+  return { token, tokenType: 'Bearer', expiresIn, organizationId: verifiedOrg }
 }

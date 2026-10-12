@@ -6,15 +6,15 @@ export declare const billingUsageRecordedSchemaV1: z.ZodObject<{
     quantity: z.ZodNumber;
     occurredAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
+    occurredAt: string;
     entityType: "user" | "organization";
     entityId: string;
-    occurredAt: string;
     meterEventName: string;
     quantity: number;
 }, {
+    occurredAt: string;
     entityType: "user" | "organization";
     entityId: string;
-    occurredAt: string;
     meterEventName: string;
     quantity: number;
 }>;

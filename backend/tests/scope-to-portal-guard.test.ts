@@ -16,6 +16,8 @@ import path from 'path'
  *     row from a verified token/credential (never another user's).
  *   - routes/auth.ts: login/signup/OIDC — a caller resolving their OWN
  *     identity by the credential they just presented, not a directory read.
+ *   - routes/fuzepicker.ts: resolve a mention sender's email only after the
+ *     mention is found by ID and the authenticated recipient's email.
  *   - services/*.ts: internal provisioning/administrative machinery (e.g.
  *     rootOrgAdmin granting Permit roles, organizationProvisioning resolving
  *     an owner) — not an HTTP listing/search/profile response.
@@ -30,6 +32,7 @@ const SRC_ROUTES_DIR = path.join(__dirname, '..', 'src', 'routes')
 
 const ALLOWLIST = new Set<string>([
   'auth.ts', // self-lookup by verified credential/token, not a directory read
+  'fuzepicker.ts', // sender email lookup follows recipient-owned mention lookup
 ])
 
 function readRouteFiles(): string[] {

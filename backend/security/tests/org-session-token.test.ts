@@ -66,6 +66,14 @@ jest.mock('../src/utils/memberDirectoryFlag', () => ({
   MEMBER_DIRECTORY_FLAG: 'x',
   isMemberDirectoryEnabled: jest.fn().mockResolvedValue(false),
 }))
+// The membership proof is Security's canonical helper (session-tenant.ts); its SQL
+// (active membership AND organizations.is_active = true) is pinned in
+// session-tenant.test.ts. Here it is a seam: canonicalisation stays REAL, only the
+// DB-backed proof is faked, so these tests cover the exchange's own rules.
+jest.mock('../src/services/session-tenant', () => ({
+  ...jest.requireActual('../src/services/session-tenant'),
+  proveSessionTenant: jest.fn(),
+}))
 jest.mock('../src/middleware/tenant-context', () => ({
   sessionTenantId: () => 'fuzefront',
   assertTenantMatches: (_req: any, tid: string | undefined) =>
@@ -74,9 +82,9 @@ jest.mock('../src/middleware/tenant-context', () => ({
 
 import { db } from '../src/config/database'
 import organizationsRouter from '../src/routes/organizations'
+import { proveSessionTenant } from '../src/services/session-tenant'
 import {
   mintOrgSessionToken,
-  normaliseOrganizationId,
   ORG_SESSION_KIND,
   ORG_SESSION_MAX_TTL_SECONDS,
 } from '../src/services/orgSessionToken'
@@ -84,6 +92,7 @@ import {
 // The host's identity tenant (the mocked tenant-context above accepts only this `tid`).
 const TENANT_ID = 'fuzefront'
 const dbMock = db as unknown as jest.Mock
+const proveMock = proveSessionTenant as jest.Mock
 
 // Random per run: nothing depends on the value, and no literal reads as a secret.
 const SECRET = crypto.randomBytes(32).toString('hex')
@@ -93,14 +102,17 @@ const SESSION_ID = '11111111-2222-4333-8444-555555555555'
 
 interface Fixture {
   session?: { expires_at: Date | null } | undefined
-  membership?: { org_is_active: unknown } | undefined
+  /** true -> proveSessionTenant resolves the (canonical) requested org; false -> null. */
+  member?: boolean
 }
 
-/** db(table) -> chain whose terminal `.first()` resolves the fixture row. */
+/** db('sessions') -> chain whose `.first()` resolves the session row; membership via the helper seam. */
 function installDb(f: Fixture): { calls: Record<string, any[][]> } {
   const calls: Record<string, any[][]> = {}
+  proveMock.mockReset()
+  proveMock.mockImplementation(async (_user: string, org: string) => (f.member ? org : null))
   dbMock.mockImplementation((table: string) => {
-    const row = table === 'sessions' ? f.session : f.membership
+    const row = f.session
     const chain: any = {}
     for (const m of ['where', 'join']) {
       chain[m] = jest.fn((...args: any[]) => {
@@ -144,7 +156,7 @@ afterEach(() => {
 
 describe('POST /api/organizations/:id/session-token', () => {
   it('mints an org-scoped token for an active member', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     const t = sessionToken()
     const res = await request(app())
       .post(`/api/organizations/${ORG_UUID}/session-token`)
@@ -167,7 +179,7 @@ describe('POST /api/organizations/:id/session-token', () => {
   })
 
   it('accepts the org_ TypeID form and binds the token to the bare UUID', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     const typeId = fromUuid('organization', ORG_UUID)
     const res = await request(app())
       .post(`/api/organizations/${typeId}/session-token`)
@@ -177,20 +189,17 @@ describe('POST /api/organizations/:id/session-token', () => {
     expect((jwt.decode(res.body.token) as any).orgId).toBe(ORG_UUID)
   })
 
-  it('queries membership for the CALLER (req.user), the requested org, status active', async () => {
-    const { calls } = installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+  it('proves membership for the CALLER (req.user) and the CANONICAL requested org', async () => {
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     await request(app())
-      .post(`/api/organizations/${ORG_UUID}/session-token`)
+      .post(`/api/organizations/${ORG_UUID.toUpperCase()}/session-token`)
       .set('Authorization', `Bearer ${sessionToken()}`)
-    expect(calls['organization_memberships as m.where'][0][0]).toEqual({
-      'm.user_id': USER_ID,
-      'm.organization_id': ORG_UUID,
-      'm.status': 'active',
-    })
+    expect(proveMock).toHaveBeenCalledTimes(1)
+    expect(proveMock).toHaveBeenCalledWith(USER_ID, ORG_UUID)
   })
 
   it('403 for a non-member, and the body does not distinguish nonexistent from forbidden', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: undefined })
+    installDb({ session: { expires_at: FUTURE() }, member: false })
     const res = await request(app())
       .post(`/api/organizations/${ORG_UUID}/session-token`)
       .set('Authorization', `Bearer ${sessionToken()}`)
@@ -199,26 +208,29 @@ describe('POST /api/organizations/:id/session-token', () => {
     expect(res.body.token).toBeUndefined()
   })
 
-  it('403 when the org is deactivated even if a membership row is active', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: false } })
+  it('403 when the proof returns null (inactive membership, deactivated org, NULL is_active): fail closed', async () => {
+    // is_active = true is part of proveSessionTenant's query (pinned in
+    // session-tenant.test.ts), so a false/NULL flag never reaches this layer as a row.
+    installDb({ session: { expires_at: FUTURE() }, member: false })
     const res = await request(app())
       .post(`/api/organizations/${ORG_UUID}/session-token`)
       .set('Authorization', `Bearer ${sessionToken()}`)
     expect(res.status).toBe(403)
+    expect(res.body.code).toBe('NOT_A_MEMBER')
+    expect(res.body.token).toBeUndefined()
   })
 
-  it.each([null, undefined, 'true', 1])(
-    '403 when the org is_active is not exactly true (%p): fail closed',
-    async isActive => {
-      installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: isActive } })
-      const res = await request(app())
-        .post(`/api/organizations/${ORG_UUID}/session-token`)
-        .set('Authorization', `Bearer ${sessionToken()}`)
-      expect(res.status).toBe(403)
-      expect(res.body.code).toBe('NOT_A_MEMBER')
-      expect(res.body.token).toBeUndefined()
-    }
-  )
+  it('503 (never a token) when the membership proof itself fails', async () => {
+    installDb({ session: { expires_at: FUTURE() }, member: true })
+    proveMock.mockRejectedValue(new Error('private SQL'))
+    const res = await request(app())
+      .post(`/api/organizations/${ORG_UUID}/session-token`)
+      .set('Authorization', `Bearer ${sessionToken()}`)
+    expect(res.status).toBe(503)
+    expect(res.body.code).toBe('MEMBERSHIP_UNAVAILABLE')
+    expect(res.body.token).toBeUndefined()
+    expect(JSON.stringify(res.body)).not.toContain('private SQL')
+  })
 
   it('400 on a malformed org id, before any DB access', async () => {
     installDb({})
@@ -228,6 +240,7 @@ describe('POST /api/organizations/:id/session-token', () => {
     expect(res.status).toBe(400)
     expect(res.body.code).toBe('INVALID_ORGANIZATION_ID')
     expect(dbMock).not.toHaveBeenCalled()
+    expect(proveMock).not.toHaveBeenCalled()
   })
 
   it('400 on an id of the wrong entity type', async () => {
@@ -249,7 +262,7 @@ describe('session-token exchange — refusals (fail closed)', () => {
   }
 
   it('refuses a token that already carries a kind (no chaining org -> org)', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     await expect(
       mintOrgSessionToken({ ...base, sessionToken: sessionToken({ kind: ORG_SESSION_KIND, orgId: ORG_UUID }) })
     ).rejects.toMatchObject({ status: 401 })
@@ -259,20 +272,20 @@ describe('session-token exchange — refusals (fail closed)', () => {
   })
 
   it('refuses a token whose userId is not the authenticated user', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     await expect(
       mintOrgSessionToken({ ...base, sessionToken: sessionToken({ userId: 'someone-else' }) })
     ).rejects.toMatchObject({ status: 401 })
   })
 
   it('refuses a pre-rollout token with no sessionId (revocation unprovable)', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     const t = jwt.sign({ userId: USER_ID, tid: TENANT_ID }, SECRET, { expiresIn: '1h' })
     await expect(mintOrgSessionToken({ ...base, sessionToken: t })).rejects.toMatchObject({ status: 401 })
   })
 
   it('refuses a revoked session (no sessions row)', async () => {
-    installDb({ session: undefined, membership: { org_is_active: true } })
+    installDb({ session: undefined, member: true })
     await expect(mintOrgSessionToken({ ...base, sessionToken: sessionToken() })).rejects.toMatchObject({
       status: 401,
       message: 'Session revoked',
@@ -280,34 +293,34 @@ describe('session-token exchange — refusals (fail closed)', () => {
   })
 
   it('refuses an already-expired session row', async () => {
-    installDb({ session: { expires_at: new Date(Date.now() - 1000) }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: new Date(Date.now() - 1000) }, member: true })
     await expect(mintOrgSessionToken({ ...base, sessionToken: sessionToken() })).rejects.toMatchObject({
       status: 401,
     })
   })
 
   it('refuses a token from another identity tenant', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     await expect(
       mintOrgSessionToken({ ...base, sessionToken: sessionToken({ tid: 'other-directory' }) })
     ).rejects.toMatchObject({ status: 401 })
   })
 
   it('refuses a token signed with a different secret', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     const t = jwt.sign({ userId: USER_ID, sessionId: SESSION_ID }, crypto.randomBytes(32).toString('hex'))
     await expect(mintOrgSessionToken({ ...base, sessionToken: t })).rejects.toMatchObject({ status: 401 })
   })
 
   it('refuses an alg=none token (algorithm is pinned to HS256)', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url')
     const forged = `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ userId: USER_ID, sessionId: SESSION_ID })}.`
     await expect(mintOrgSessionToken({ ...base, sessionToken: forged })).rejects.toMatchObject({ status: 401 })
   })
 
   it('refuses a non-HS256 HMAC token (HS512) signed with the right secret', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     const t = jwt.sign({ userId: USER_ID, sessionId: SESSION_ID }, SECRET, { algorithm: 'HS512' })
     await expect(mintOrgSessionToken({ ...base, sessionToken: t })).rejects.toMatchObject({ status: 401 })
   })
@@ -315,7 +328,7 @@ describe('session-token exchange — refusals (fail closed)', () => {
   it('never mints for an org the caller is not a member of, whatever the token says', async () => {
     // A token that already names an orgId is a kind-less forgery attempt only
     // if signed by us; even then the exchange ignores it and checks membership.
-    installDb({ session: { expires_at: FUTURE() }, membership: undefined })
+    installDb({ session: { expires_at: FUTURE() }, member: false })
     await expect(
       mintOrgSessionToken({ ...base, sessionToken: sessionToken({ orgId: ORG_UUID }) })
     ).rejects.toMatchObject({ status: 403 })
@@ -331,27 +344,17 @@ describe('session-token exchange — lifetime', () => {
   }
 
   it('caps the TTL at 15 minutes', async () => {
-    installDb({ session: { expires_at: FUTURE() }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: FUTURE() }, member: true })
     const r = await mintOrgSessionToken({ ...base, sessionToken: sessionToken() })
     expect(r.expiresIn).toBe(900)
   })
 
   it('never outlives the session: TTL is the session time left when that is shorter', async () => {
     const now = Date.now()
-    installDb({ session: { expires_at: new Date(now + 120_000) }, membership: { org_is_active: true } })
+    installDb({ session: { expires_at: new Date(now + 120_000) }, member: true })
     const r = await mintOrgSessionToken({ ...base, sessionToken: sessionToken(), now: () => now })
     expect(r.expiresIn).toBe(120)
     const claims = jwt.decode(r.token) as any
     expect(claims.exp - claims.iat).toBe(120)
-  })
-})
-
-describe('normaliseOrganizationId', () => {
-  it('lower-cases a bare UUID, converts an org_ TypeID, and rejects everything else', () => {
-    expect(normaliseOrganizationId(ORG_UUID.toUpperCase())).toBe(ORG_UUID)
-    expect(normaliseOrganizationId(fromUuid('organization', ORG_UUID))).toBe(ORG_UUID)
-    for (const bad of [undefined, null, 42, '', 'org_', "x' OR 1=1 --", fromUuid('user', ORG_UUID)]) {
-      expect(() => normaliseOrganizationId(bad)).toThrow(/Invalid organization id/)
-    }
   })
 })
