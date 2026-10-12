@@ -1,4 +1,4 @@
-# FrontFuse Module Federation Implementation Summary
+# FuzeFront Module Federation Implementation Summary
 
 > **Historical snapshot.** This document describes the original
 > `task-manager-app` implementation and npm scripts (`install:all`, `demo`,
