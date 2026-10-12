@@ -12,6 +12,8 @@ export interface DelegationRequest {
   subjectToken: string;
   audience: `service:${string}`;
   scopes: string[];
+  /** Resource organization selector; Security verifies active membership. */
+  tenant?: string;
 }
 
 export interface DelegationToken {
@@ -51,6 +53,7 @@ export function createDelegationClient(options: DelegationExchangeOptions): Dele
           body: JSON.stringify({
             subjectToken: request.subjectToken,
             audience: request.audience,
+            ...(request.tenant !== undefined ? { tenant: request.tenant } : {}),
             scope: [...new Set(request.scopes)].join(' '),
           }),
           signal: controller.signal,

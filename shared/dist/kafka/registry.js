@@ -30,6 +30,7 @@ exports.SCHEMA_BY_TOPIC = {
     [types_1.TOPICS.IDENTITY_ORG_DELETED]: schemas_1.identityOrgDeletedSchemaV1,
     [types_1.TOPICS.IDENTITY_MEMBERSHIP_ADDED]: schemas_1.identityMembershipAddedSchemaV1,
     [types_1.TOPICS.IDENTITY_MEMBERSHIP_REMOVED]: schemas_1.identityMembershipRemovedSchemaV1,
+    [types_1.TOPICS.IDENTITY_AUTHORIZATION_CHANGED]: schemas_1.identityAuthorizationChangedSchemaV1,
     [types_1.TOPICS.NOTIFY_EMAIL_REQUESTED]: schemas_1.notifyEmailRequestedSchemaV1,
     [types_1.TOPICS.NOTIFY_EMAIL_STATUS]: schemas_1.notifyEmailStatusSchemaV1,
     [types_1.TOPICS.PORTAL_CREATED]: schemas_1.portalCreatedSchemaV1,
