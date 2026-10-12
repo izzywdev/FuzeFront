@@ -60,9 +60,9 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -75,9 +75,9 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
         createdAt: string;
         updatedAt: string;
     }, {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -105,9 +105,9 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -135,9 +135,9 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -165,9 +165,9 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -195,9 +195,9 @@ export declare const selectionListsListArchivedSchemaV1: z.ZodEffects<z.ZodObjec
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;

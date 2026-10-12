@@ -30,7 +30,6 @@ export declare const billingPaymentCompletedSchemaV1: z.ZodObject<{
     /** ISO-8601 timestamp of the underlying Stripe event. */
     occurredAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    occurredAt: string;
     status: "paid" | "failed" | "expired";
     productKey: string;
     externalOrderId: string;
@@ -40,8 +39,8 @@ export declare const billingPaymentCompletedSchemaV1: z.ZodObject<{
     stripePaymentIntentId: string | null;
     amountTotalCents: number;
     currency: string;
+    occurredAt: string;
 }, {
-    occurredAt: string;
     status: "paid" | "failed" | "expired";
     productKey: string;
     externalOrderId: string;
@@ -51,5 +50,6 @@ export declare const billingPaymentCompletedSchemaV1: z.ZodObject<{
     stripePaymentIntentId: string | null;
     amountTotalCents: number;
     currency: string;
+    occurredAt: string;
 }>;
 export type BillingPaymentCompletedPayloadV1 = z.infer<typeof billingPaymentCompletedSchemaV1>;

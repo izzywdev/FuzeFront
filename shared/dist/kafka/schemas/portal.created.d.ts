@@ -15,14 +15,14 @@ export declare const portalCreatedSchemaV1: z.ZodObject<{
     ownerEmail: z.ZodString;
     status: z.ZodEnum<["provisioning", "provisioned-pending-invite", "active", "suspended"]>;
 }, "strip", z.ZodTypeAny, {
-    status: "provisioning" | "provisioned-pending-invite" | "active" | "suspended";
     slug: string;
+    status: "provisioning" | "provisioned-pending-invite" | "active" | "suspended";
     organizationId: string;
     portalId: string;
     ownerEmail: string;
 }, {
-    status: "provisioning" | "provisioned-pending-invite" | "active" | "suspended";
     slug: string;
+    status: "provisioning" | "provisioned-pending-invite" | "active" | "suspended";
     organizationId: string;
     portalId: string;
     ownerEmail: string;

@@ -50,11 +50,11 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
         /** Monotonic content version. A version's content is immutable once applied. */
         version: z.ZodNumber;
     }, "strict", z.ZodTypeAny, {
-        version: number;
         key: string;
+        version: number;
     }, {
-        version: number;
         key: string;
+        version: number;
     }>;
     trigger: z.ZodEnum<["org-created", "app-installed", "app-upgraded", "backfill", "manual"]>;
     attestation: z.ZodObject<{
@@ -192,8 +192,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {
@@ -231,8 +231,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {
@@ -270,8 +270,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {
@@ -309,8 +309,8 @@ export declare const selectionListsSeedRequestedSchemaV1: z.ZodEffects<z.ZodObje
     requestId: string;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     attestation: {

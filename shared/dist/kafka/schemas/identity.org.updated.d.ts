@@ -12,21 +12,27 @@ export declare const identityOrgUpdatedSchemaV1: z.ZodObject<{
     parentId: z.ZodNullable<z.ZodString>;
     ownerId: z.ZodNullable<z.ZodString>;
     isActive: z.ZodBoolean;
+    settings: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
+    metadata: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
 }, "strip", z.ZodTypeAny, {
-    type: "organization" | "platform" | "personal";
     slug: string;
     name: string;
+    type: "organization" | "platform" | "personal";
     organizationId: string;
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
+    settings?: Record<string, any> | undefined;
+    metadata?: Record<string, any> | undefined;
 }, {
-    type: "organization" | "platform" | "personal";
     slug: string;
     name: string;
+    type: "organization" | "platform" | "personal";
     organizationId: string;
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
+    settings?: Record<string, any> | undefined;
+    metadata?: Record<string, any> | undefined;
 }>;
 export type IdentityOrgUpdatedPayloadV1 = z.infer<typeof identityOrgUpdatedSchemaV1>;

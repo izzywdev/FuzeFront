@@ -137,9 +137,9 @@ export declare const slListSnapshotV1: z.ZodObject<{
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    status: "active" | "archived";
     key: string;
     name: string;
+    status: "active" | "archived";
     listId: string;
     sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     description: string | null;
@@ -152,9 +152,9 @@ export declare const slListSnapshotV1: z.ZodObject<{
     createdAt: string;
     updatedAt: string;
 }, {
-    status: "active" | "archived";
     key: string;
     name: string;
+    status: "active" | "archived";
     listId: string;
     sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
     description: string | null;
@@ -196,8 +196,8 @@ export declare const slItemSnapshotV1: z.ZodObject<{
     createdAt: z.ZodString;
     updatedAt: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    code: string;
     status: "active" | "archived";
+    code: string;
     description: string | null;
     seed: {
         source: string;
@@ -211,8 +211,8 @@ export declare const slItemSnapshotV1: z.ZodObject<{
     label: string;
     sortOrder: number;
 }, {
-    code: string;
     status: "active" | "archived";
+    code: string;
     description: string | null;
     seed: {
         source: string;
@@ -568,7 +568,6 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
         }[] | undefined;
     }>, "many">;
 }, "strict", z.ZodTypeAny, {
-    version: number;
     packKey: string;
     lists: {
         key: string;
@@ -591,9 +590,9 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             description?: string | undefined;
         }[] | undefined;
     }[];
+    version: number;
     appliesTo: ("organization" | "platform" | "personal")[];
 }, {
-    version: number;
     packKey: string;
     lists: {
         key: string;
@@ -616,9 +615,9 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             description?: string | undefined;
         }[] | undefined;
     }[];
+    version: number;
     appliesTo: ("organization" | "platform" | "personal")[];
 }>, {
-    version: number;
     packKey: string;
     lists: {
         key: string;
@@ -641,9 +640,9 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             description?: string | undefined;
         }[] | undefined;
     }[];
+    version: number;
     appliesTo: ("organization" | "platform" | "personal")[];
 }, {
-    version: number;
     packKey: string;
     lists: {
         key: string;
@@ -666,6 +665,7 @@ export declare const selectionListSeedPackSchemaV1: z.ZodEffects<z.ZodObject<{
             description?: string | undefined;
         }[] | undefined;
     }[];
+    version: number;
     appliesTo: ("organization" | "platform" | "personal")[];
 }>;
 export type SelectionListSeedPackV1 = z.infer<typeof selectionListSeedPackSchemaV1>;
@@ -686,11 +686,11 @@ export declare const slSeedPackRefV1: z.ZodObject<{
     key: z.ZodString;
     version: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
-    version: number;
     key: string;
+    version: number;
 }, {
-    version: number;
     key: string;
+    version: number;
 }>;
 /** Fields shared by seed.completed and seed.failed. */
 export declare const slSeedOutcomeBaseV1: z.ZodObject<{
@@ -715,11 +715,11 @@ export declare const slSeedOutcomeBaseV1: z.ZodObject<{
         key: z.ZodString;
         version: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
-        version: number;
         key: string;
+        version: number;
     }, {
-        version: number;
         key: string;
+        version: number;
     }>;
     trigger: z.ZodEnum<["org-created", "app-installed", "app-upgraded", "backfill", "manual"]>;
 }, "strip", z.ZodTypeAny, {
@@ -732,8 +732,8 @@ export declare const slSeedOutcomeBaseV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     userId?: string | undefined;
@@ -747,8 +747,8 @@ export declare const slSeedOutcomeBaseV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     userId?: string | undefined;

@@ -38,11 +38,11 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
         key: z.ZodString;
         version: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
-        version: number;
         key: string;
+        version: number;
     }, {
-        version: number;
         key: string;
+        version: number;
     }>;
     trigger: z.ZodEnum<["org-created", "app-installed", "app-upgraded", "backfill", "manual"]>;
     outcome: z.ZodEnum<["applied", "upgraded", "already-applied", "superseded"]>;
@@ -93,8 +93,8 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     outcome: "applied" | "upgraded" | "already-applied" | "superseded";
@@ -119,8 +119,8 @@ export declare const selectionListsSeedCompletedSchemaV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     outcome: "applied" | "upgraded" | "already-applied" | "superseded";

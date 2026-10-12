@@ -7,16 +7,16 @@ export declare const notifyEmailRequestedSchemaV1: z.ZodObject<{
     orgId: z.ZodOptional<z.ZodString>;
     correlationId: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    correlationId: string;
     to: string;
     template: "org-invite" | "welcome" | "membership-change" | "fuzepicker-mention" | "fuzepicker-reply";
     vars: Record<string, unknown>;
+    correlationId: string;
     orgId?: string | undefined;
 }, {
-    correlationId: string;
     to: string;
     template: "org-invite" | "welcome" | "membership-change" | "fuzepicker-mention" | "fuzepicker-reply";
     vars: Record<string, unknown>;
+    correlationId: string;
     orgId?: string | undefined;
 }>;
 export type NotifyEmailRequestedPayloadV1 = z.infer<typeof notifyEmailRequestedSchemaV1>;

@@ -41,11 +41,11 @@ export declare const selectionListsSeedFailedSchemaV1: z.ZodObject<{
         key: z.ZodString;
         version: z.ZodNumber;
     }, "strip", z.ZodTypeAny, {
-        version: number;
         key: string;
+        version: number;
     }, {
-        version: number;
         key: string;
+        version: number;
     }>;
     trigger: z.ZodEnum<["org-created", "app-installed", "app-upgraded", "backfill", "manual"]>;
     reason: z.ZodEnum<["SCOPE_UNSUPPORTED", "SEEDING_DISABLED", "ATTESTATION_INVALID", "SOURCE_NOT_ALLOWED", "NAMESPACE_VIOLATION", "LIMIT_EXCEEDED", "QUOTA_EXCEEDED", "KEY_CONFLICT", "PACK_CONTENT_MISMATCH", "ORG_UNKNOWN", "ORG_INACTIVE", "VALIDATION_ERROR", "INTERNAL_ERROR"]>;
@@ -90,8 +90,8 @@ export declare const selectionListsSeedFailedSchemaV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     retryable: boolean;
@@ -117,8 +117,8 @@ export declare const selectionListsSeedFailedSchemaV1: z.ZodObject<{
     requestId: string | null;
     scope: "user" | "org";
     pack: {
-        version: number;
         key: string;
+        version: number;
     };
     trigger: "org-created" | "app-installed" | "app-upgraded" | "backfill" | "manual";
     retryable: boolean;

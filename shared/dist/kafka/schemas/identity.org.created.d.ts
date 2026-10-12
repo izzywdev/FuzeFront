@@ -5,9 +5,7 @@ import { z } from 'zod';
  * from the event alone, without calling back to the source service.
  *
  * `ownerId` / `parentId` are nullable because the seeded root/platform org has
- * no owner and no parent.  Arbitrary `settings` and `metadata` are deliberately
- * excluded: they are not an event contract, may contain tenant-private values,
- * and must be read through FuzeFront's authorized API when needed.
+ * no owner and no parent.
  */
 export declare const organizationSnapshotV1: z.ZodObject<{
     organizationId: z.ZodString;
@@ -18,17 +16,17 @@ export declare const organizationSnapshotV1: z.ZodObject<{
     ownerId: z.ZodNullable<z.ZodString>;
     isActive: z.ZodBoolean;
 }, "strip", z.ZodTypeAny, {
-    type: "organization" | "platform" | "personal";
     slug: string;
     name: string;
+    type: "organization" | "platform" | "personal";
     organizationId: string;
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
 }, {
-    type: "organization" | "platform" | "personal";
     slug: string;
     name: string;
+    type: "organization" | "platform" | "personal";
     organizationId: string;
     parentId: string | null;
     ownerId: string | null;
@@ -43,17 +41,17 @@ export declare const identityOrgCreatedSchemaV1: z.ZodObject<{
     ownerId: z.ZodNullable<z.ZodString>;
     isActive: z.ZodBoolean;
 }, "strip", z.ZodTypeAny, {
-    type: "organization" | "platform" | "personal";
     slug: string;
     name: string;
+    type: "organization" | "platform" | "personal";
     organizationId: string;
     parentId: string | null;
     ownerId: string | null;
     isActive: boolean;
 }, {
-    type: "organization" | "platform" | "personal";
     slug: string;
     name: string;
+    type: "organization" | "platform" | "personal";
     organizationId: string;
     parentId: string | null;
     ownerId: string | null;

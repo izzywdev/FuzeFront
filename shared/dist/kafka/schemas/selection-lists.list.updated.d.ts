@@ -61,9 +61,9 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -76,9 +76,9 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
         createdAt: string;
         updatedAt: string;
     }, {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -108,9 +108,9 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -123,7 +123,7 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
         createdAt: string;
         updatedAt: string;
     };
-    changedFields: ("status" | "key" | "name" | "sourceLocale" | "description")[];
+    changedFields: ("key" | "name" | "status" | "sourceLocale" | "description")[];
     previousKey: string | null;
 }, {
     organizationId: string;
@@ -140,9 +140,9 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -155,7 +155,7 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
         createdAt: string;
         updatedAt: string;
     };
-    changedFields: ("status" | "key" | "name" | "sourceLocale" | "description")[];
+    changedFields: ("key" | "name" | "status" | "sourceLocale" | "description")[];
     previousKey: string | null;
 }>, {
     organizationId: string;
@@ -172,9 +172,9 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -187,7 +187,7 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
         createdAt: string;
         updatedAt: string;
     };
-    changedFields: ("status" | "key" | "name" | "sourceLocale" | "description")[];
+    changedFields: ("key" | "name" | "status" | "sourceLocale" | "description")[];
     previousKey: string | null;
 }, {
     organizationId: string;
@@ -204,9 +204,9 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -219,7 +219,7 @@ export declare const selectionListsListUpdatedSchemaV1: z.ZodEffects<z.ZodObject
         createdAt: string;
         updatedAt: string;
     };
-    changedFields: ("status" | "key" | "name" | "sourceLocale" | "description")[];
+    changedFields: ("key" | "name" | "status" | "sourceLocale" | "description")[];
     previousKey: string | null;
 }>;
 export type SelectionListsListUpdatedPayloadV1 = z.infer<typeof selectionListsListUpdatedSchemaV1>;

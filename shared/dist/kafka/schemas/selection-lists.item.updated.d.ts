@@ -60,8 +60,8 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        code: string;
         status: "active" | "archived";
+        code: string;
         description: string | null;
         seed: {
             source: string;
@@ -75,8 +75,8 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
         label: string;
         sortOrder: number;
     }, {
-        code: string;
         status: "active" | "archived";
+        code: string;
         description: string | null;
         seed: {
             source: string;
@@ -107,8 +107,8 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
     listRevision: number;
     changedFields: ("status" | "description" | "label" | "sortOrder")[];
     item: {
-        code: string;
         status: "active" | "archived";
+        code: string;
         description: string | null;
         seed: {
             source: string;
@@ -138,8 +138,8 @@ export declare const selectionListsItemUpdatedSchemaV1: z.ZodObject<{
     listRevision: number;
     changedFields: ("status" | "description" | "label" | "sortOrder")[];
     item: {
-        code: string;
         status: "active" | "archived";
+        code: string;
         description: string | null;
         seed: {
             source: string;

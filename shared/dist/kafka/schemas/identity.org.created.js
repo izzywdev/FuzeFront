@@ -8,9 +8,7 @@ const zod_1 = require("zod");
  * from the event alone, without calling back to the source service.
  *
  * `ownerId` / `parentId` are nullable because the seeded root/platform org has
- * no owner and no parent.  Arbitrary `settings` and `metadata` are deliberately
- * excluded: they are not an event contract, may contain tenant-private values,
- * and must be read through FuzeFront's authorized API when needed.
+ * no owner and no parent.
  */
 exports.organizationSnapshotV1 = zod_1.z.object({
     organizationId: zod_1.z.string().uuid(),

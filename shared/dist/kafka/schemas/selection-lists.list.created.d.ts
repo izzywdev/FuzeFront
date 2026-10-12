@@ -59,9 +59,9 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         createdAt: z.ZodString;
         updatedAt: z.ZodString;
     }, "strip", z.ZodTypeAny, {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -74,9 +74,9 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
         createdAt: string;
         updatedAt: string;
     }, {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -104,9 +104,9 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;
@@ -134,9 +134,9 @@ export declare const selectionListsListCreatedSchemaV1: z.ZodObject<{
     listKey: string;
     listRevision: number;
     list: {
-        status: "active" | "archived";
         key: string;
         name: string;
+        status: "active" | "archived";
         listId: string;
         sourceLocale: "en" | "es" | "fr" | "de" | "pt" | "ru" | "zh" | "ja" | "hi" | "ar" | "he";
         description: string | null;

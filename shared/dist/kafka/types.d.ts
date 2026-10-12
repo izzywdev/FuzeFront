@@ -12,10 +12,6 @@ export declare const TOPICS: {
     readonly IDENTITY_ORG_DELETED: "identity.org.deleted";
     readonly IDENTITY_MEMBERSHIP_ADDED: "identity.membership.added";
     readonly IDENTITY_MEMBERSHIP_REMOVED: "identity.membership.removed";
-    /**
-     * A tenant authorization decision changed. Consumers use this to invalidate
-     * derived grants/caches; it intentionally never carries a policy document.
-     */
     readonly IDENTITY_AUTHORIZATION_CHANGED: "identity.authorization.changed";
     readonly NOTIFY_EMAIL_REQUESTED: "notify.email.requested";
     readonly NOTIFY_EMAIL_STATUS: "notify.email.status";
