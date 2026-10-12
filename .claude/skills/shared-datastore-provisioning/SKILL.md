@@ -1,13 +1,13 @@
 ---
 name: shared-datastore-provisioning
-description: Use whenever a Fuze service needs a production database, missing database credentials, or a sealed credential handoff. Discovers FuzeInfra's Postgres/Mongo provisioning and sealing workflows, selects the engine from the service contract, preserves the two-namespace password invariant, drives the reviewed GitOps change and credential handoff, and verifies the running service. Missing local kubeconfig or secret-admin access is a delegation step, not a reason to ask the user to provision it manually.
+description: Use whenever a Fuze service needs a production database, S3/MinIO/object-store allocation, missing runtime credentials, or a sealed credential handoff. Discovers FuzeInfra's Postgres/Mongo/object-storage provisioning and sealing workflows, selects the backing service from the contract, preserves the two-namespace password invariant where applicable, drives the reviewed GitOps change and credential handoff, and verifies the running service. Missing local kubeconfig or secret-admin access is a delegation step, not a reason to ask the user to provision it manually.
 ---
 
 # Shared datastore provisioning
 
-FuzeInfra owns the shared database engines and provisioning. A consumer owns its
-schema, migrations, connection configuration, and deployment. When hosting exposes
-a missing role, database, or credential, include provisioning in the implementation
+FuzeInfra owns the shared database engines, object storage, and provisioning. A consumer owns its
+schema, migrations, connection configuration, bucket/prefix usage, and deployment. When hosting exposes
+a missing role, database, bucket/prefix, or credential, include provisioning in the implementation
 and drive it through FuzeInfra's existing workflows. Do not finish with an infra
 handoff document when the authorized workflows can complete that handoff.
 
@@ -16,13 +16,15 @@ handoff document when the authorized workflows can complete that handoff.
 Consult `fuzeinfra-expert` and read the current default branch of
 [`izzywdev/FuzeInfra`](https://github.com/izzywdev/FuzeInfra):
 
-- `docs/consuming-repos/POSTGRES_PROVISIONING.md` and
-  `docs/consuming-repos/MONGODB_PROVISIONING.md` for connection details.
+- `docs/consuming-repos/POSTGRES_PROVISIONING.md`,
+  `docs/consuming-repos/MONGODB_PROVISIONING.md`, and the current object-storage
+  consumer guide/allocation registry for connection and tenancy details.
 - `helm/fuzeinfra/templates/service-db-provisioning.yaml` and
   `service-mongo-provisioning.yaml`, plus `values-contabo.yaml`, for the actual
   provisioning contract. Postgres uses `serviceDatabases`; MongoDB uses
   `serviceMongoDatabases`. Both have idempotent PostSync Jobs.
-- `governance/datastore-allocations.md`, `governance/credential-handoff.json`,
+- `governance/datastore-allocations.md`, object-storage allocation registry,
+  `governance/credential-handoff.json`,
   and `docs/CREDENTIAL_HANDOFF.md` for existing allocations and authorized
   source-to-consumer mappings.
 - `.github/workflows/`, `docs/SECRETS_MANAGEMENT.md`,
@@ -36,15 +38,19 @@ examples are not a complete catalog. Where older prose describes imperative
 workflow. A local credential failure does not establish that FuzeInfra's runner
 lacks the capability.
 
-## 2. Choose the engine from the data requirements
+## 2. Choose the backing service from the data requirements
 
-Use the engine already required by the service's frozen contract and migrations.
+Use the backing service already required by the service's frozen contract and migrations.
 For a new model, use Postgres for relational entities, constraints, transactions,
 approval state, and revision metadata; JSONB can hold flexible frame/flow documents
 without a second engine. Choose MongoDB when access patterns require document
-aggregates and the implementation already uses MongoDB. Record the choice in the
-service plan. Provision both only for distinct justified workloads. Never add a
-private database server to a consumer chart because its shared allocation is missing.
+aggregates and the implementation already uses MongoDB. Use the shared S3/MinIO
+service for immutable artifacts, UX bundles, uploads, and rendered evidence;
+isolate tenants with a service/tenant-scoped bucket or prefix, least-privilege
+policy, and a runtime allocation rather than an app-managed bucket credential.
+Record the choice in the service plan. Provision multiple backing services only
+for distinct justified workloads. Never add a private database or object-store
+server to a consumer chart because its shared allocation is missing.
 
 ## 3. Preserve the two-namespace credential invariant
 
@@ -119,8 +125,10 @@ Known operations to inspect and reuse:
   older `seed-service-db.sh` versions print the password and must not be used as an
   automated handoff channel.
 
-If an operation or consumer grant is absent, have the owner implement the guarded
-workflow or reviewed registry entry as part of the task. Use existing secure
+If an operation or consumer grant is absent, have the owner implement the guarded,
+consumer-agnostic workflow or reviewed registry entry as part of the task, then
+drive its PR to the authorized merge and dispatch it for the original allocation.
+Do not add product-name branches to FuzeInfra workflow code. Use existing secure
 handover channels when cross-repo secret writes are unavailable. Do not transfer
 plaintext, widen permissions without review, or bypass protected-branch checks.
 Drive owner/consumer PRs through required checks and the authorized merge path,
