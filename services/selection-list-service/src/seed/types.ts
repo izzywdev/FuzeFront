@@ -66,6 +66,14 @@ export interface SeedApplyRequest {
   requestId: string | null;
   lists: SelectionListSeedListSpecV1[];
   /**
+   * Who wrote the non-source translations in `lists`. 'human' (default, and always the case for
+   * `seed.requested`): written with `is_machine = false`. 'machine': the pack's translations are
+   * machine/AI output with no native review - written with `is_machine = true`, kept out of the
+   * "was this edited by a human" hash, and replaced by reviewed text when a later pack version
+   * ships it. Only platform packs can say 'machine' (platform.ts); the Kafka contract has no such field.
+   */
+  translationProvenance?: 'human' | 'machine';
+  /**
    * The introspected token `subject` (plan section 8), set by the consumer AFTER it
    * verified the attestation (active, scope `selection-lists:seed`). Required for an
    * app source (missing = ATTESTATION_INVALID); ignored for `platform`. The token

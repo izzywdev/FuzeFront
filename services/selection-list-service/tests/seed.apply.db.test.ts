@@ -4,7 +4,7 @@
 // message, R6 token introspection) belong to the consumer stream.
 
 import type { Knex } from 'knex';
-import { TOPICS } from '@fuzefront/shared/kafka';
+import { PLATFORM_SEED_SOURCE, SELECTION_LIST_SERVICE_PRINCIPAL, TOPICS } from '@fuzefront/shared/kafka';
 import { createTestDb, dbDescribe, TestDb } from './helpers/testDb';
 import { allowSource, appRequest, countBy, eventsAfter, FUZECRM_SUBJECT, maxSeq, orgId, projectOrg, spec } from './helpers/seedFixtures';
 import {
@@ -12,6 +12,7 @@ import {
   applySeedRequest,
   loadPlatformPack,
   SEED_PRINCIPAL,
+  type SeedApplyRequest,
   type SeedFailed,
   type SeedCompleted,
 } from '../src/seed';
@@ -92,10 +93,20 @@ dbDescribe('seed algorithm (real Postgres)', () => {
         ['URGENT', 400, SEED_PRINCIPAL, 'platform'],
       ]);
       expect(items[0].id).toMatch(/^front_sli_[0-9a-z]+$/);
-      // all 11 locales: the source row + 10 translations, per list and per item, none machine
+      // all 11 locales: the source row + 10 translations, per list and per item. The pack declares its
+      // translations machine-produced (no native review yet), so the 10 non-source rows are is_machine=true
+      // and only the English source row is not.
       expect(await db('selection_list_translations').where({ list_id: prio.id })).toHaveLength(11);
       expect(await db('selection_list_item_translations').where({ item_id: items[0].id })).toHaveLength(11);
-      expect(await db('selection_list_translations').where({ list_id: prio.id, is_machine: true })).toHaveLength(0);
+      expect(loadPlatformPack().translationProvenance).toBe('machine');
+      for (const l of lists) {
+        expect(await db('selection_list_translations').where({ list_id: l.id, is_machine: true })).toHaveLength(10);
+        expect((await db('selection_list_translations').where({ list_id: l.id, is_machine: false })).map((r) => r.locale)).toEqual(['en']);
+      }
+      for (const i of items) {
+        expect(await db('selection_list_item_translations').where({ item_id: i.id, is_machine: true })).toHaveLength(10);
+        expect((await db('selection_list_item_translations').where({ item_id: i.id, is_machine: false })).map((r) => r.locale)).toEqual(['en']);
+      }
 
       // the stored seed_hash IS the hash of what is in the database (so a fresh seed reads as unmodified)
       const contents = await readListContents(db, lists.map((l) => l.id));
@@ -115,7 +126,7 @@ dbDescribe('seed algorithm (real Postgres)', () => {
         applied_by: SEED_PRINCIPAL,
         attested_subject: null,
       });
-      expect(led.content_hash).toBe(hashCanonical(loadPlatformPack().lists));
+      expect(led.content_hash).toBe(hashCanonical({ translationProvenance: 'machine', lists: loadPlatformPack().lists }));
       expect(led.manifest).toEqual({ 'yes-no': ['YES', 'NO'], priority: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], 'work-status': ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE'] });
       expect(led.result).toEqual(res.lists);
 
@@ -625,6 +636,114 @@ dbDescribe('seed algorithm (real Postgres)', () => {
       expect(countBy(evs, TOPICS.SELECTION_LISTS_ITEM_UPDATED)).toBe(0);
       // and the list is still unmodified afterwards
       expect((await db('selection_lists').where({ id: list.id }).first())!.seed_user_modified).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  describe('translation provenance: a machine pack writes is_machine=true and still reads as unedited', () => {
+    const PLATFORM = { app: PLATFORM_SEED_SOURCE, service: SELECTION_LIST_SERVICE_PRINCIPAL };
+    const platformReq = (org: string, over: Partial<SeedApplyRequest> = {}): SeedApplyRequest => ({
+      organizationId: org,
+      scope: 'org',
+      source: PLATFORM,
+      pack: { key: 'mini-defaults', version: 1 },
+      trigger: 'org-created',
+      requestId: null,
+      lists: [spec('mini-list', ['A', 'B'])],
+      translationProvenance: 'machine',
+      ...over,
+    });
+    /** The same request as a human-provenance one (the default: the field absent). */
+    const asHuman = (req: SeedApplyRequest): SeedApplyRequest => {
+      const { translationProvenance: _omit, ...rest } = req;
+      return rest;
+    };
+    const listRow = async (org: string) => (await db('selection_lists').where({ organization_id: org, seed_list_key: 'mini-list' }).first())!;
+    const tr = async (listId: string) =>
+      Object.fromEntries((await db('selection_list_translations').where({ list_id: listId })).map((x) => [x.locale, { name: x.name, machine: x.is_machine }]));
+    const itemTr = async (org: string, code: string) => {
+      const item = (await db('selection_list_items').where({ list_id: (await listRow(org)).id, code }).first())!;
+      return Object.fromEntries((await db('selection_list_item_translations').where({ item_id: item.id })).map((x) => [x.locale, { label: x.label, machine: x.is_machine }]));
+    };
+
+    it('writes the non-source rows machine, the source row human; the seed hash matches what is read back; events say isMachine', async () => {
+      const org = nextOrg();
+      await projectOrg(db, org);
+      const before = await maxSeq(db);
+      completed(await applySeedRequest(db, platformReq(org)));
+      const list = await listRow(org);
+      expect(await tr(list.id)).toEqual({ en: { name: 'List mini-list', machine: false }, es: { name: 'Lista mini-list', machine: true } });
+      expect(await itemTr(org, 'A')).toEqual({ en: { label: 'a', machine: false }, es: { label: 'a-es', machine: true } });
+      expect(list.seed_user_modified).toBe(false);
+      expect(hashListContent((await readListContents(db, [list.id])).get(list.id)!)).toBe(list.seed_hash);
+      const ups = (await eventsAfter(db, before)).filter((e) => e.topic === TOPICS.SELECTION_LISTS_TRANSLATION_UPSERTED);
+      expect(ups).toHaveLength(3); // list es + 2 item es
+      expect(ups.every((e) => e.payload.isMachine === true)).toBe(true);
+    });
+
+    it('a duplicate delivery is already-applied; the same version re-sent as human is PACK_CONTENT_MISMATCH and rewrites nothing', async () => {
+      const org = nextOrg();
+      await projectOrg(db, org);
+      completed(await applySeedRequest(db, platformReq(org)));
+      expect(completed(await applySeedRequest(db, platformReq(org))).outcome).toBe('already-applied');
+      expect(failed(await applySeedRequest(db, asHuman(platformReq(org)))).reason).toBe('PACK_CONTENT_MISMATCH');
+      expect((await tr((await listRow(org)).id)).es.machine).toBe(true);
+    });
+
+    it('v2 (still machine) that only changes machine text refreshes the machine rows: translation events only, no list/item.updated, hash and flags untouched', async () => {
+      const org = nextOrg();
+      await projectOrg(db, org);
+      completed(await applySeedRequest(db, platformReq(org)));
+      const before0 = await listRow(org);
+      const before = await maxSeq(db);
+      const fixed = spec('mini-list', ['A', 'B'], { translations: [{ locale: 'es', name: 'Lista corregida' }] });
+      fixed.items[0] = { ...fixed.items[0], translations: [{ locale: 'es', label: 'a-corregido' }] };
+      const r = completed(await applySeedRequest(db, platformReq(org, { pack: { key: 'mini-defaults', version: 2 }, lists: [fixed] })));
+      expect(r.outcome).toBe('upgraded');
+      expect(r.lists[0]).toMatchObject({ action: 'updated', itemsUpdated: 1 });
+      expect(await tr(before0.id)).toMatchObject({ es: { name: 'Lista corregida', machine: true } });
+      expect(await itemTr(org, 'A')).toMatchObject({ es: { label: 'a-corregido', machine: true } });
+      expect(await itemTr(org, 'B')).toMatchObject({ es: { label: 'b-es', machine: true } });
+      const evs = await eventsAfter(db, before);
+      expect(countBy(evs, TOPICS.SELECTION_LISTS_TRANSLATION_UPSERTED)).toBe(2);
+      expect(countBy(evs, TOPICS.SELECTION_LISTS_LIST_UPDATED)).toBe(0);
+      expect(countBy(evs, TOPICS.SELECTION_LISTS_ITEM_UPDATED)).toBe(0);
+      const after = await listRow(org);
+      expect(after.seed_hash).toBe(before0.seed_hash);
+      expect(after.seed_user_modified).toBe(false);
+      // an identical v3 now changes nothing at all
+      const again = completed(await applySeedRequest(db, platformReq(org, { pack: { key: 'mini-defaults', version: 3 }, lists: [fixed] })));
+      expect(again.lists[0].action).toBe('unchanged');
+    });
+
+    it('v2 as HUMAN (native review done) replaces the machine rows with is_machine=false text, and the list stays unmodified', async () => {
+      const org = nextOrg();
+      await projectOrg(db, org);
+      completed(await applySeedRequest(db, platformReq(org)));
+      const reviewed = spec('mini-list', ['A', 'B'], { translations: [{ locale: 'es', name: 'Lista revisada' }] });
+      const r = completed(await applySeedRequest(db, asHuman(platformReq(org, { pack: { key: 'mini-defaults', version: 2 }, lists: [reviewed] }))));
+      expect(r.lists[0].action).toBe('updated');
+      const list = await listRow(org);
+      expect(await tr(list.id)).toMatchObject({ es: { name: 'Lista revisada', machine: false } });
+      expect(await itemTr(org, 'B')).toMatchObject({ es: { label: 'b-es', machine: false } });
+      expect(list.seed_user_modified).toBe(false);
+      expect(hashListContent((await readListContents(db, [list.id])).get(list.id)!)).toBe(list.seed_hash);
+      // from here on it is an ordinary human-provenance seed: v3 with the same text changes nothing
+      const v3 = completed(await applySeedRequest(db, asHuman(platformReq(org, { pack: { key: 'mini-defaults', version: 3 }, lists: [reviewed] }))));
+      expect(v3.lists[0].action).toBe('unchanged');
+    });
+
+    it('a human who rewrote a machine-seeded translation owns the list: the next version skips it', async () => {
+      const org = nextOrg();
+      await projectOrg(db, org);
+      completed(await applySeedRequest(db, platformReq(org)));
+      const list = await listRow(org);
+      // what PUT /translations/{locale} does: human text, is_machine=false
+      await db('selection_list_translations').where({ list_id: list.id, locale: 'es' }).update({ name: 'Mi lista', is_machine: false });
+      const fixed = spec('mini-list', ['A', 'B'], { translations: [{ locale: 'es', name: 'Lista corregida' }] });
+      const r = completed(await applySeedRequest(db, platformReq(org, { pack: { key: 'mini-defaults', version: 2 }, lists: [fixed] })));
+      expect(r.lists[0].action).toBe('skipped-user-edited');
+      expect(await tr(list.id)).toMatchObject({ es: { name: 'Mi lista', machine: false } });
     });
   });
 });

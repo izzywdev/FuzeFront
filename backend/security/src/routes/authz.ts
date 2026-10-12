@@ -50,17 +50,19 @@
  */
 import jwt from 'jsonwebtoken'
 import { createHash } from 'node:crypto'
-import { findMembershipByUserAndOrg, findOrgById } from '../repositories/organizationRepository'
+import { findMembershipByUserAndOrg, findOrgById, findUserActiveState } from '../repositories/organizationRepository'
 import { parseId, fromUuid, type EntityType } from '@izzywdev/fuzefront-identity'
 import express, { Request, Response } from 'express'
 import { getIdentityProvider } from '../providers/factory'
 import { getAuthorizationProvider } from '../providers/authzFactory'
+import { InvalidCursorError } from '../providers/AuthorizationProvider'
 import type { AttributeValue, AuthzQuery, SubjectType } from '../providers/AuthorizationProvider'
 import { withReqId } from '../lib/logger'
 import { introspectMachineToken } from '../services/machine-identity'
 import {
   AUTHZ_ADMIN_SCOPE,
   authorizeGrantMutation,
+  authorizePlatformAdmin,
   authorizeSubjectRead,
   authorizeTenantAction,
   authorizeTenantAdmin,
@@ -108,6 +110,15 @@ function parseMembershipRef<T extends EntityType>(type: T, raw: unknown) {
 /** Scope a machine caller must hold to create/revoke grants (see file header). */
 export { AUTHZ_ADMIN_SCOPE }
 export const SELECTION_LIST_OWNER_GRANT_SCOPE = 'selection-list:owner-grant'
+/**
+ * Revoke-only counterpart of the owner-grant scope, for event-driven cleanup with
+ * no human to act (`identity.user.deleted`, and the purge fallback for principals
+ * that have since left). It can ONLY remove authority, only list-instance roles,
+ * only from a principal that is provably gone (see `principalIsGone`) — so it can
+ * neither add access nor take access from a live member.
+ */
+export const SELECTION_LIST_GRANT_CLEANUP_SCOPE = 'selection-list:grant-cleanup'
+const SELECTION_LIST_SERVICE_ID = 'service:selection-list-service'
 
 const selectionListRoles = new Set([
   'list-owner', 'list-editor', 'list-contributor', 'list-translator', 'list-viewer',
@@ -124,7 +135,26 @@ function validateListMemberRefs(subject: unknown, tenant: unknown, res: Response
   }
 }
 
-/** List grants are constrained to the caller's list and an active org member. */
+/**
+ * True iff the SQL source of truth proves `subject` no longer holds standing in
+ * `tenant`: the user row is missing or deactivated (`DELETE /api/me` is a soft
+ * delete and leaves memberships `active`, so the user row must be consulted), or
+ * the user has no active membership of the tenant. Re-read per request, never
+ * cached: this is what scopes the cleanup credential to stale principals.
+ */
+async function principalIsGone(subject: unknown, tenant: unknown): Promise<boolean> {
+  const user = parseMembershipRef('user', subject)
+  const organization = parseMembershipRef('organization', tenant)
+  const state = await findUserActiveState(user)
+  if (!state || state.is_active === false) return true
+  const membership = await findMembershipByUserAndOrg(user, organization)
+  return membership?.status !== 'active'
+}
+
+/**
+ * List grants are constrained to the caller's list and an active org member.
+ * The one exception is the dedicated cleanup workload revoking a gone principal.
+ */
 async function authorizeSelectionListGrant(
   c: ResolvedCaller,
   body: any,
@@ -132,6 +162,16 @@ async function authorizeSelectionListGrant(
 ): Promise<boolean> {
   if (body?.resource?.type !== 'SelectionList') return false
   if (!body.resource.key || !selectionListRoles.has(body.role) || !body.subject || !body.tenant) return false
+
+  // Cleanup path: revoke-only, the dedicated workload identity, and only for a
+  // principal SQL proves is gone. Evaluated BEFORE the active-membership
+  // requirement below, which a deleted/departed principal can never satisfy.
+  // Any other caller (another service, a token without the scope, a human) falls
+  // through to the unchanged rules.
+  if (revoke && c.kind === 'machine' && !(c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE) &&
+      c.id === SELECTION_LIST_SERVICE_ID && (c.scopes ?? []).includes(SELECTION_LIST_GRANT_CLEANUP_SCOPE)) {
+    return principalIsGone(body.subject, body.tenant)
+  }
 
   const membership = await findMembershipByUserAndOrg(
     parseMembershipRef('user', body.subject),
@@ -141,7 +181,7 @@ async function authorizeSelectionListGrant(
 
   if (c.kind === 'machine') {
     if ((c.scopes ?? []).includes(AUTHZ_ADMIN_SCOPE)) return true
-    return !revoke && c.id === 'service:selection-list-service' && body.role === 'list-owner' &&
+    return !revoke && c.id === SELECTION_LIST_SERVICE_ID && body.role === 'list-owner' &&
       (c.scopes ?? []).includes(SELECTION_LIST_OWNER_GRANT_SCOPE)
   }
   const gate = await authorizeGrantMutation(getAuthorizationProvider(), c, {
@@ -505,7 +545,9 @@ router.delete('/authz/grants', async (req: Request, res: Response) => {
   const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  if (!requireAuthzAdmin(c, res)) return
+  // The authz:admin requirement for machine callers is enforced below, per branch:
+  // a SelectionList revoke has its own narrowly-scoped machine path (cleanup scope),
+  // exactly as POST /authz/grants does for the owner-grant scope.
   const b = req.body || {}
   if (!b.grantId && !(b.subject && b.tenant && b.role)) {
     return res.status(400).json({ error: 'grantId or subject+tenant+role required', code: 'MALFORMED' })
@@ -541,6 +583,7 @@ router.delete('/authz/grants', async (req: Request, res: Response) => {
       gate = { allowed: false, status: 502, code: 'PROVIDER_UNAVAILABLE', error: 'Authorization provider unavailable' }
     }
   } else {
+    if (!requireAuthzAdmin(c, res)) return
     gate = await authorizeGrantMutation(provider, c, { tenant, role, resource })
   }
   if (!enforce(gate, res, log, c, 'revoke', { tenant, role, resourceType: resource?.type })) return
@@ -684,25 +727,70 @@ async function gateTenant(
   return enforce(gate, res, log, c, `tenant:${req.method} ${need === 'admin' ? 'admin' : need.action}`, { tenant: tenantId })
 }
 
+/**
+ * `GET /tenants` — tenants VISIBLE TO THE CALLER (contract: "List tenants visible
+ * to the caller"). A platform administrator (`Organization:manage` on the root
+ * tenant) or a machine caller holding `authz:admin` sees every tenant; anyone
+ * else sees only the tenants in which they hold a role. This used to return every
+ * tenant to every authenticated caller, which let any account enumerate the
+ * whole customer base. A provider failure while deciding is a 502, never a
+ * widening: the caller is NOT silently downgraded to the member view, because
+ * "I could not tell" is not "no".
+ */
 router.get('/tenants', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
-  const page = await getAuthorizationProvider().listTenants(c.id, {
-    limit: req.query.limit ? Number(req.query.limit) : undefined,
-    cursor: req.query.cursor ? String(req.query.cursor) : undefined,
-  })
-  res.status(200).json(page)
+  const provider = getAuthorizationProvider()
+  const platform = await authorizePlatformAdmin(provider, c)
+  if (!platform.allowed && platform.status === 502) {
+    log.warn({ callerId: c.id, callerKind: c.kind }, 'authz: tenant list — platform check unavailable')
+    return res.status(502).json({ error: platform.error, code: platform.code })
+  }
+  try {
+    const page = await provider.listTenants(
+      c.id,
+      {
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+        cursor: req.query.cursor ? String(req.query.cursor) : undefined,
+      },
+      platform.allowed ? 'all' : 'member'
+    )
+    log.info(
+      { callerId: c.id, callerKind: c.kind, scope: platform.allowed ? 'all' : 'member', returned: page.items.length },
+      'authz: tenants listed'
+    )
+    res.status(200).json(page)
+  } catch (err) {
+    if (err instanceof InvalidCursorError) {
+      return res.status(400).json({ error: 'invalid pagination cursor', code: 'MALFORMED' })
+    }
+    log.error({ callerId: c.id, err: (err as Error).message }, 'authz: listTenants failed')
+    res.status(502).json({ error: 'listTenants failed', code: 'PROVIDER_ERROR' })
+  }
 })
 
+/**
+ * `POST /tenants` — creating a tenant is a PLATFORM act (it mints a new
+ * authorization scope every grant is then made inside). It requires
+ * `Organization:manage` on the platform root tenant (FuzeFront staff) or, for a
+ * machine caller, `authz:admin`. Any other authenticated caller is 403, decided
+ * BEFORE the body is looked at. Customer organizations are created through the
+ * organization APIs, which provision their tenant themselves.
+ */
 router.post('/tenants', async (req: Request, res: Response) => {
+  const log = withReqId((req as any).requestId, req)
   const c = await caller(req)
   if (!c) return unauthorized(res)
+  const gate = await authorizePlatformAdmin(getAuthorizationProvider(), c)
+  if (!enforce(gate, res, log, c, 'tenant:create', {})) return
   if (!req.body?.name) return res.status(400).json({ error: 'name is required', code: 'MALFORMED' })
   try {
     const tenant = await getAuthorizationProvider().createTenant({
       name: String(req.body.name),
       slug: req.body.slug ? String(req.body.slug) : undefined,
     })
+    log.info({ callerId: c.id, callerKind: c.kind, tenantId: tenant.id }, 'authz: tenant created')
     res.status(201).json(tenant)
   } catch (err) {
     res.status(502).json({ error: 'createTenant failed', code: 'PROVIDER_ERROR' })
