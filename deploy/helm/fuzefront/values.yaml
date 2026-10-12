@@ -435,7 +435,7 @@ mcp:
     # GHCR (digest sha256:442078552b16112f007323085a28bdc17c1eb67b0c7eec37cd670f094352c3de).
     # `0.1.0` was NEVER published despite several charts referencing it — do not
     # reintroduce it.
-    tag: "1abe510f5981"
+    tag: "a92e0409802b"
     pullPolicy: IfNotPresent
   # Empty = derive from the in-cluster applications-service Service, INCLUDING
   # the /api/v1/app-registry prefix the contract's `servers` entry declares.
@@ -975,7 +975,7 @@ selectionListsMcp:
     repository: ghcr.io/izzywdev/fuze-mcp-gateway
     # Same image as the app-registry MCP gateway. Version must be kept in sync
     # with mcp.image.tag above whenever the gateway image is bumped.
-    tag: "12cb4f787248"
+    tag: "a92e0409802b"
     pullPolicy: IfNotPresent
   resources:
     requests:
