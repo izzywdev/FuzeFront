@@ -1,9 +1,9 @@
 # Changelog — @fuzefront/security-client
 
-## 0.9.2 — AuthZ: document the platform-admin gate on tenant creation and the caller-scoped tenant list (documentation fix, unreleased)
+## 0.10.1 — AuthZ: document the platform-admin gate on tenant creation and the caller-scoped tenant list (documentation fix, unreleased)
 
-**Documentation only, no shape change.** `info.version` 0.9.1 -> 0.9.2,
-`SECURITY_CONTRACT_VERSION` 0.9.1 -> 0.9.2. Request and response schemas are
+**Documentation only, no shape change.** `info.version` 0.10.0 -> 0.10.1,
+`SECURITY_CONTRACT_VERSION` 0.10.0 -> 0.10.1. Request and response schemas are
 unchanged; this release documents status codes and visibility rules the
 `/v1/security/tenants` collection enforces once the platform-scope authz
 hardening lands, so consumers can handle them from the generated types.
@@ -27,6 +27,13 @@ hardening lands, so consumers can handle them from the generated types.
 
 No code change is required. A UI that offers "create tenant" should hide or
 disable it for non-platform-admins and render the `403` in place.
+
+## 0.10.0 — Trusted membership bootstrap (unreleased)
+
+- Adds operator membership proof and explicit session tenant verification.
+- Requires active SQL membership and active organization for scoped FuzeKeys owner grants.
+- Adds verified Security workload callers without weakening existing caller gates.
+
 
 ## 0.9.1 — AuthZ: human callers are authorized per tenant on grant/revoke, member/role management and cross-subject reads (security fix, unreleased)
 

@@ -117,6 +117,8 @@ export interface App {
   description?: string
   /** Where this app MAY be installed. Defaults to 'both' server-side. */
   scopeLevel?: 'personal' | 'organization' | 'both'
+  /** Optional organization-specific mode; personal installs remain self-scoped. */
+  organizationInstallMode?: 'self' | 'everyone' | 'both'
 }
 
 export interface MenuItem {

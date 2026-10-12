@@ -394,7 +394,7 @@ export async function filterReadable<T extends { id: string }>(
  * succeeded, so a thrown grant can never leave a mirror row claiming success.
  *
  * AUTHENTICATION OF THE WRITE. The grant is made with this service's MACHINE
- * identity (`getGrantToken()`: OAuth client_credentials, scope `authz:admin`),
+ * identity (`getGrantToken()`: projected Kubernetes workload token, scope `selection-list:owner-grant`),
  * never the end user's token: the end user has no standing to write their own
  * role, and the Security API denies non-admin human grant calls (review C-1).
  * `grantedBy` is recorded on the mirror row as the acting user; the Security API
