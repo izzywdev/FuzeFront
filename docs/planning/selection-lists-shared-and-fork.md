@@ -313,7 +313,7 @@ subscriptions, which this feature does not alter (verified: the gate passes).
 Default `false` keeps the 4.0.0 result set byte-for-byte. A picker passes
 `true`. `visibility` filters to one value and disables shadowing. Pagination is
 unchanged (cursor, `limit` 1–200). Rows carry `visibility`, `forked_from`,
-`editable`.
+`editable` (optional at 4.1.0 until the service wave emits them — D14).
 
 `editable` is a **caller-relative hint**, not an authorization: `true` when the
 caller holds a write role on the list. By the role table every write role
@@ -329,9 +329,22 @@ holds no write action, so the service computes it with **one bulk check of
   all widened behaviour needs a new opt-in parameter, the new operation, or a
   list with non-`private` visibility, which cannot exist before 4.1.0.
 - Response objects gain properties (as `seed` did); `oasdiff breaking` reports
-  **0 breaking, 0 warnings** (292 info: 1 endpoint added, 2 optional params,
-  2 optional request properties, 11 non-success statuses added, 24 required
-  response properties added, 252 optional response properties added).
+  **0 breaking, 0 warnings** (293 info: 1 endpoint added, 2 optional params,
+  2 optional request properties, 11 non-success statuses added, 277 optional
+  response properties added, 0 required response properties added).
+- **The new response fields are optional at 4.1.0, not required.** The contract
+  freezes before the service wave (§9 step 2), so the running service still
+  answers with 4.0.0 shapes and omits `SelectionList.visibility`,
+  `forked_from`, `editable` and `SelectionListItem.origin_item_id`; declaring
+  them required made the frozen spec false for the live service (the
+  contract/acceptance suites validate real responses against it). Absent means
+  the 4.0.0 state: `visibility` = `private`, `forked_from` = `null`,
+  `origin_item_id` = `null`, `editable` = unknown (no hint — behave as at 4.0.0
+  and let each mutation's own authorization decide; never read absence as
+  `false`). Both clients encode exactly that. The service wave then always
+  emits them (§7: with the flag OFF it emits the `private`/`null` defaults), and
+  a **later MINOR** adds the four to `required` — adding a property to a
+  response's `required` is additive for readers.
 - Contrast with 4.0.0 (MAJOR): there, existing responses changed meaning
   (`created_by` stopped being always a user) and an existing role lost a
   permission. Nothing comparable happens here.

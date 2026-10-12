@@ -58,6 +58,13 @@ pickable by every org — read-only without an instance role. The service
 implements this in the wave after the contract (see
 `docs/planning/selection-lists-shared-and-fork.md`).
 
+All four fields are **optional** in the 4.1.0 types (`visibility?`,
+`forked_from?`, `editable?`, `origin_item_id?`) because the running service
+omits them until that wave ships behind `fuzefront.selection-lists.shared-lists`.
+Absent means the 4.0.0 state: `visibility` = `'private'`, `forked_from` /
+`origin_item_id` = `null`, `editable` = unknown (test `editable === false`, never
+`!editable`). A later contract MINOR tightens them to required.
+
 ```ts
 const list = await client.getEffectiveList('priority') // own org's list/fork first, else the common list
 try {

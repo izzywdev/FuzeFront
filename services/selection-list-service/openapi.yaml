@@ -321,10 +321,22 @@ info:
       forks (`docs/planning/selection-lists-shared-and-fork.md`; owner
       requirement "members can pick from the app's common lists without
       owning them; ACL with copy-on-write").
-      (1) `SelectionList` gains required, read-only `visibility`
+      (1) `SelectionList` gains read-only `visibility`
       (`private|org|platform`), `forked_from` (nullable
       `SelectionListForkProvenance`) and `editable` (caller-relative hint);
-      `SelectionListItem` gains required, nullable `origin_item_id`.
+      `SelectionListItem` gains read-only, nullable `origin_item_id`.
+      All four are **optional** (not in `required`) at 4.1.0: the
+      contract freezes ahead of the implementation, which ships behind the
+      default-OFF flag `fuzefront.selection-lists.shared-lists`, and a
+      service still running 4.0.0 behaviour omits them. Absent means
+      exactly the 4.0.0 state — `visibility` absent == `private`,
+      `forked_from` absent == `null` (not a fork), `origin_item_id`
+      absent == `null` (not a forked item), `editable` absent == unknown
+      (no hint; a client falls back to 4.0.0 behaviour and lets each
+      mutation's own authorization decide). The implementation PR makes
+      the service always emit them and a later MINOR tightens them to
+      required (adding a property to a response's `required` is additive
+      for readers).
       (2) `SelectionListCreate` accepts optional `visibility` (default
       `private`); `SelectionListUpdate` accepts `visibility` (owner-only;
       `platform` operator-only and one-way).
@@ -2086,9 +2098,6 @@ components:
         - resolved_locale
         - is_machine
         - seed
-        - visibility
-        - forked_from
-        - editable
         - created_by
         - created_at
         - updated_at
@@ -2144,11 +2153,24 @@ components:
             - type: 'null'
               description: Not a seeded list.
         visibility:
+          description: >-
+            **Read-only (4.1.0), optional until the implementation ships.**
+            Who may read this list without an instance grant. **Absent means
+            `private`** — a service still running 4.0.0 behaviour (the
+            implementation is behind the default-OFF flag
+            `fuzefront.selection-lists.shared-lists`) omits it, and every
+            such list is `private`. The implementation PR makes it always
+            present; a later MINOR adds it to `required`.
+          readOnly: true
           $ref: '#/components/schemas/SelectionListVisibility'
         forked_from:
           description: >-
-            **Read-only, always present.** Fork provenance when this list was
-            made by `forkSelectionList`; `null` otherwise.
+            **Read-only (4.1.0), optional until the implementation ships.**
+            Fork provenance when this list was made by `forkSelectionList`;
+            `null` otherwise. **Absent means `null`** (not a fork) — a
+            service still running 4.0.0 behaviour omits it. The
+            implementation PR makes it always present; a later MINOR adds it
+            to `required`.
           readOnly: true
           oneOf:
             - $ref: '#/components/schemas/SelectionListForkProvenance'
@@ -2165,7 +2187,15 @@ components:
             `SelectionList:translate`, which every such role holds). `false`
             for a list read only through visibility — a UI shows it read-only
             and, for a `platform` list, offers "fork to edit". Every mutation
-            is still authorized on its own.
+            is still authorized on its own. **Optional until the
+            implementation ships (4.1.0): absent means unknown** — no hint;
+            a service still running 4.0.0 behaviour (implementation behind
+            the default-OFF flag `fuzefront.selection-lists.shared-lists`)
+            omits it, and a client behaves exactly as at 4.0.0 (offers the
+            edit affordances its other signals allow and lets each
+            mutation's own authorization decide). Never infer `false` from
+            absence. The implementation PR makes it always present; a later
+            MINOR adds it to `required`.
           examples: [false]
         created_by:
           $ref: '#/components/schemas/AuthorPrincipal'
@@ -2263,7 +2293,6 @@ components:
         - resolved_locale
         - is_machine
         - seed
-        - origin_item_id
         - created_by
         - created_at
         - updated_at
@@ -2315,12 +2344,17 @@ components:
               description: Not a seeded item.
         origin_item_id:
           description: >-
-            **Read-only, always present (4.1.0).** On an item copied by
-            `forkSelectionList`, the id of the source item it was copied from
-            — the mapping that lets stored values pointing at the common list
-            be migrated to the fork (and that `POST /v1/resolve` follows).
-            `null` on every other item, including items added to a fork after
-            it was made. A provenance reference, not a capability.
+            **Read-only (4.1.0), optional until the implementation ships.**
+            On an item copied by `forkSelectionList`, the id of the source
+            item it was copied from — the mapping that lets stored values
+            pointing at the common list be migrated to the fork (and that
+            `POST /v1/resolve` follows). `null` on every other item,
+            including items added to a fork after it was made. **Absent
+            means `null`** (not a forked item) — a service still running
+            4.0.0 behaviour (implementation behind the default-OFF flag
+            `fuzefront.selection-lists.shared-lists`) omits it. The
+            implementation PR makes it always present; a later MINOR adds it
+            to `required`. A provenance reference, not a capability.
           readOnly: true
           oneOf:
             - $ref: '#/components/schemas/SelectionListItemId'

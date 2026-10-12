@@ -247,14 +247,24 @@ class SelectionList:
     seed: SeedProvenance | None = None
     """Seed provenance; ``None`` for a user-authored list."""
     visibility: SelectionListVisibility = SelectionListVisibility.PRIVATE
-    """Who may read it without a grant (4.1.0). ``private`` when talking to a pre-4.1 service."""
+    """
+    Who may read it without a grant (4.1.0). Optional on the wire until the
+    implementation ships behind ``fuzefront.selection-lists.shared-lists``;
+    absent means ``private``, which is what this field then holds.
+    """
     forked_from: ForkProvenance | None = None
-    """Fork provenance; ``None`` unless made by ``fork_list`` (4.1.0)."""
-    editable: bool = False
+    """
+    Fork provenance; ``None`` unless made by ``fork_list`` (4.1.0). Optional on
+    the wire until the implementation ships; absent means ``None``.
+    """
+    editable: bool | None = None
     """
     Caller-relative hint (4.1.0): ``True`` when the caller holds a write role on
     the list. ``False`` for a list read only through visibility. Not an
-    authorization -- every mutation is still checked.
+    authorization -- every mutation is still checked. ``None`` when the service
+    omitted it (optional on the wire until the implementation ships): unknown,
+    so behave as at 4.0.0 and let each mutation's own authorization decide --
+    never treat ``None`` as ``False``.
     """
 
 
@@ -304,7 +314,11 @@ class SelectionListItem:
     seed: SeedProvenance | None = None
     """Seed provenance; ``None`` for a user-authored item."""
     origin_item_id: str | None = None
-    """On a forked item, the source item it was copied from; ``None`` otherwise (4.1.0)."""
+    """
+    On a forked item, the source item it was copied from; ``None`` otherwise
+    (4.1.0). Optional on the wire until the implementation ships; absent means
+    ``None``.
+    """
 
 
 @dataclass

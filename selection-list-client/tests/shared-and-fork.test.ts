@@ -102,6 +102,18 @@ describe('contract 4.1.0 — shared lists and forks', () => {
     expect(e.forkUrl).toBe(`/v1/selection-lists/${COMMON}/fork`)
   })
 
+  it('a 4.0.0-shaped list (no visibility / forked_from / editable) is a valid SelectionList', async () => {
+    // At 4.1.0 these are optional on the wire until the implementation ships
+    // behind `fuzefront.selection-lists.shared-lists`; absence means the 4.0.0 state.
+    const { visibility: _v, forked_from: _f, editable: _e, ...legacy } = FORKED
+    const asOf400: SelectionList = legacy
+    const { c } = client(200, { items: [asOf400], page: { nextCursor: null, hasMore: false } })
+    const sl = (await c.getLists()).items[0]!
+    expect(sl.visibility ?? 'private').toBe('private')
+    expect(sl.forked_from ?? null).toBeNull()
+    expect(sl.editable).toBeUndefined()
+  })
+
   it('a plain conflict is not fork_required', async () => {
     const { c } = client(409, { code: 'CONFLICT', message: 'duplicate key' })
     const e = (await c.createList({ key: 'priority', name: 'P' }).catch((x: unknown) => x)) as SelectionListApiError

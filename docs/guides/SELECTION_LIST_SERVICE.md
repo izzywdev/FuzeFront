@@ -585,13 +585,23 @@ without an instance grant. It never confers a change.
 ```ts
 // The picker's key lookup: own org's readable list (e.g. its fork) first, else the common list.
 const list = await client.getEffectiveList('priority')   // GET ?key=priority&include_shared=true
-if (list && !list.editable) {
+if (list && list.editable === false) {
   // read-only for this caller; for list.visibility === 'platform' offer "fork to edit"
 }
+// `editable === undefined` means "no hint" (see the note below) — not read-only.
 
 // Everything readable — granted lists plus org/common lists (default is the 4.0.0 set).
 const page = await client.getLists({ include_shared: true })
 ```
+
+> **The four new response fields are optional at 4.1.0.** `SelectionList.visibility`,
+> `forked_from`, `editable` and `SelectionListItem.origin_item_id` are **not** in the spec's
+> `required` lists yet, because the running service (implementation behind the default-OFF flag
+> `fuzefront.selection-lists.shared-lists`) still omits them. Read absence as the 4.0.0 state:
+> `visibility` absent = `private`, `forked_from` / `origin_item_id` absent = `null`, `editable`
+> absent = **unknown** (no hint — behave as before and let the mutation's own authorization
+> answer; never treat it as `false`). The Python client maps them to `PRIVATE` / `None` / `None` /
+> `None`. Once the implementation always emits them, a later MINOR tightens them to required.
 
 **Forking.** Changing a common list you hold no role on answers `409 CONFLICT` with
 `reason: "fork_required"`, `source_list_id` and a same-origin-relative `fork_url` (or a plain

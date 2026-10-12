@@ -69,6 +69,47 @@ def test_get_lists_sends_include_shared_and_visibility_as_wire_values() -> None:
     assert sl.forked_from.revision == 3
 
 
+def test_absent_4_1_fields_parse_to_their_4_0_meaning() -> None:
+    # Optional on the wire at 4.1.0 until the implementation ships behind
+    # ``fuzefront.selection-lists.shared-lists``: a 4.0.0-shaped response omits them.
+    legacy_list = _list()
+    for field in ("visibility", "forked_from", "editable"):
+        del legacy_list[field]
+    legacy_item = {
+        "id": "front_sli_01h455vb4pex5vsknk084sn02q",
+        "list_id": _FORK,
+        "code": "P1",
+        "sort_order": 100,
+        "status": "active",
+        "label": "Urgent",
+        "resolved_locale": "en",
+        "is_machine": False,
+        "seed": None,
+        "created_by": "usr_01h455vb4pex5vsknk084sn02q",
+        "created_at": _NOW,
+        "updated_at": _NOW,
+    }
+
+    def lists(h: Any, parsed: Any, qs: dict, body: Any) -> None:
+        h.send_json({"items": [legacy_list], "page": {"nextCursor": None, "hasMore": False}})
+
+    def items(h: Any, parsed: Any, qs: dict, body: Any) -> None:
+        h.send_json({"items": [legacy_item], "page": {"nextCursor": None, "hasMore": False}})
+
+    routes = {
+        ("GET", "/v1/selection-lists"): lists,
+        ("GET", f"/v1/selection-lists/{_FORK}/items"): items,
+    }
+    with StubServer(routes) as srv:
+        client = SelectionListClient(srv.base_url, token="t")
+        sl = client.get_lists().items[0]
+        it = client.get_items(_FORK).items[0]
+    assert sl.visibility is SelectionListVisibility.PRIVATE
+    assert sl.forked_from is None
+    assert sl.editable is None  # unknown -- never coerced to False
+    assert it.origin_item_id is None
+
+
 def test_get_effective_list_is_one_key_lookup_with_include_shared() -> None:
     seen: dict[str, Any] = {}
 

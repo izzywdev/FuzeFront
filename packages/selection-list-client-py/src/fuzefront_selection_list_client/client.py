@@ -88,7 +88,7 @@ def _parse_seed(raw: object) -> SeedProvenance | None:
 
 
 def _parse_fork(raw: object) -> ForkProvenance | None:
-    """``forked_from`` is required-but-nullable on the wire (4.1.0); absence is ``None``."""
+    """``forked_from`` is optional and nullable on the wire (4.1.0); absence is ``None``."""
     if not isinstance(raw, dict):
         return None
     return ForkProvenance(
@@ -117,7 +117,8 @@ def _parse_selection_list(raw: dict) -> SelectionList:
         seed=_parse_seed(raw.get("seed")),
         visibility=SelectionListVisibility(raw.get("visibility", "private")),
         forked_from=_parse_fork(raw.get("forked_from")),
-        editable=bool(raw.get("editable", False)),
+        # Optional on the wire at 4.1.0: absent is "unknown" (None), never False.
+        editable=None if raw.get("editable") is None else bool(raw["editable"]),
     )
 
 

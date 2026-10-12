@@ -228,16 +228,27 @@ export interface SelectionList {
   item_count?: number
   /** Seed provenance; `null` for a user-authored list. Always present, read-only. */
   seed: SeedProvenance | null
-  /** Who may read it without a grant (4.1.0). */
-  visibility: SelectionListVisibility
-  /** Fork provenance; `null` unless made by `forkList` (4.1.0). */
-  forked_from: SelectionListForkProvenance | null
+  /**
+   * Who may read it without a grant (4.1.0). Optional until the implementation
+   * ships behind `fuzefront.selection-lists.shared-lists`: **absent means
+   * `private`** (a 4.0.0-behaviour service omits it). Tightened to required in
+   * a later contract MINOR.
+   */
+  visibility?: SelectionListVisibility
+  /**
+   * Fork provenance; `null` unless made by `forkList` (4.1.0). Optional until
+   * the implementation ships: **absent means `null`** (not a fork).
+   */
+  forked_from?: SelectionListForkProvenance | null
   /**
    * Caller-relative hint (4.1.0): `true` when the caller holds a write role on
    * the list. `false` for a list read only through visibility — show it
    * read-only (and, for `platform`, offer "fork to edit"). Not an authorization.
+   * Optional until the implementation ships: **absent means unknown** — behave
+   * as at 4.0.0 and let each mutation's own authorization decide; never read
+   * absence as `false`.
    */
-  editable: boolean
+  editable?: boolean
   /** Who created the list: a user, a system principal (seeding), or the deleted-user sentinel. */
   created_by: AuthorPrincipal
   /** RFC 3339 creation timestamp. */
@@ -333,9 +344,11 @@ export interface SelectionListItem {
   seed: SeedProvenance | null
   /**
    * On a forked item, the source item it was copied from; `null` otherwise
-   * (4.1.0). The mapping for migrating stored values to the fork.
+   * (4.1.0). The mapping for migrating stored values to the fork. Optional
+   * until the implementation ships behind `fuzefront.selection-lists.shared-lists`:
+   * **absent means `null`** (not a forked item).
    */
-  origin_item_id: SelectionListItemId | null
+  origin_item_id?: SelectionListItemId | null
   /** Who created the item: a user, a system principal (seeding), or the deleted-user sentinel. */
   created_by: AuthorPrincipal
   /** RFC 3339 creation timestamp. */

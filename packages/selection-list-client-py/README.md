@@ -66,7 +66,15 @@ Lists carry a `visibility` (`private` / `org` / `platform`): `org` lists are
 readable by every member of their org and `platform` lists are common lists
 readable by every org — read-only for anyone without an instance role
 (`editable` is `False`). Look a list up by key the way a picker should, and
-fork a common list before changing it:
+fork a common list before changing it.
+
+At contract 4.1.0 `visibility`, `forked_from`, `editable` and
+`origin_item_id` are **optional on the wire**: the service implementation
+ships later behind the default-OFF flag `fuzefront.selection-lists.shared-lists`
+and, until then, omits them. The parser maps absence to the 4.0.0 meaning —
+`visibility` → `PRIVATE`, `forked_from` / `origin_item_id` → `None`, and
+`editable` → `None` (unknown: behave as at 4.0.0 and let each mutation's own
+authorization decide; never read `None` as `False`).
 
 ```python
 sl = client.get_effective_list("priority")  # own org's list/fork first, else the common list
