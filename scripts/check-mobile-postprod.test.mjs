@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { inspectProduct } from './check-mobile-postprod.mjs'
+import { inspectProduct, selectProducts } from './check-mobile-postprod.mjs'
 
 const product = { repo: 'FuzeAgent', frontendUrl: 'https://fuzeagent.fuzefront.com/' }
 const json = (value) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
@@ -86,4 +86,14 @@ test('uses product-specific workflow and APK identity for monorepo products', as
   assert.equal(result.product, 'FuzeQuality')
   assert.equal(result.repository, 'FuzeFront')
   assert.match(result.checks.apk.detail, /fuzequality-android-1\.apk/)
+})
+
+test('selects a nested monorepo product by its public product identity', () => {
+  const products = [
+    { repo: 'FuzeFront', frontendUrl: 'https://app.fuzefront.com/' },
+    { product: 'FuzeQuality', repo: 'FuzeFront', frontendUrl: 'https://fuzequality.fuzefront.com/' },
+  ]
+
+  assert.deepEqual(selectProducts(products, 'FuzeQuality'), [products[1]])
+  assert.deepEqual(selectProducts(products, 'FuzeFront'), [products[0]])
 })

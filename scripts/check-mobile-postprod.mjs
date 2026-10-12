@@ -69,15 +69,21 @@ export async function inspectProduct(product, request = fetch, token = '') {
     detail: dalTargets.length ? dalTargets.map((target) => target?.package_name).join(', ') : failure(links) }
   checks.manifest = { ok: manifest.status === 200 && !!pwa?.name && pwa?.display === 'standalone',
     detail: pwa?.name || failure(manifest) }
-  return { product: product.product || product.repo, repository: product.repo, frontendUrl: product.frontendUrl, ok: Object.values(checks).every((check) => check.ok), checks }
+  return { product: product.product ?? product.repo, repository: product.repo, frontendUrl: product.frontendUrl, ok: Object.values(checks).every((check) => check.ok), checks }
+}
+
+export function selectProducts(products, productArg) {
+  return productArg
+    ? products.filter((product) => (product.product ?? product.repo) === productArg)
+    : products
 }
 
 export async function run(args = process.argv.slice(2), request = fetch) {
   const productArg = args.find((arg) => arg.startsWith('--product='))?.slice('--product='.length)
   const reportArg = args.find((arg) => arg.startsWith('--report='))?.slice('--report='.length)
-  const selected = productArg ? inventory.products.filter((product) => product.repo === productArg) : inventory.products
+  const selected = selectProducts(inventory.products, productArg)
   if (!selected.length || args.some((arg) => !arg.startsWith('--product=') && !arg.startsWith('--report='))) {
-    throw new Error('Usage: node scripts/check-mobile-postprod.mjs [--product=FuzeFront] [--report=path.json]')
+    throw new Error('Usage: node scripts/check-mobile-postprod.mjs [--product=FuzeQuality] [--report=path.json]')
   }
   const results = await Promise.all(selected.map((product) => inspectProduct(product, request, process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '')))
   const report = { checkedAt: new Date().toISOString(), architecture: inventory.architecture, products: results }

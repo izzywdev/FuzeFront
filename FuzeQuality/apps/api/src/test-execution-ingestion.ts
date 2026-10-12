@@ -1,5 +1,6 @@
 import { normalizeWorkflowPath, testExecutionInputSchema, type QualityArtifact, type TestExecution } from '@fuzequality/contracts'
 import { linkExecutionArtifacts } from '@fuzequality/core'
+import type { WorkflowExecutionCommand } from '@fuzequality/github-app'
 
 type ThresholdInput = ReturnType<typeof testExecutionInputSchema.parse>['thresholds'][number]
 type ExecutionInput = ReturnType<typeof testExecutionInputSchema.parse>
@@ -53,6 +54,37 @@ export async function linkExecutionToRevisionArtifacts(
     ...(performanceArtifact
       ? { kind: performanceArtifact.kind === 'stress-test' ? 'stress' as const : 'load' as const }
       : {}),
+  }
+}
+
+type RevisionArtifactLinks = Awaited<ReturnType<typeof linkExecutionToRevisionArtifacts>>
+
+/**
+ * Builds a GitHub webhook execution with exact-revision catalog evidence.
+ * Catalog-derived links and performance kind are authoritative over the
+ * workflow-name heuristic; all other execution identity remains provider-owned.
+ */
+export function webhookExecutionRecord(
+  execution: WorkflowExecutionCommand,
+  tenantId: string,
+  links: RevisionArtifactLinks,
+): TestExecution {
+  const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
+    ? [{
+        policyArtifactId: links.policyArtifactIds[0],
+        gateArtifactId: links.gateArtifactIds[0],
+        status: execution.status,
+      }]
+    : []
+  return {
+    ...execution,
+    id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`,
+    tenantId,
+    thresholds: [],
+    policyArtifactIds: links.policyArtifactIds,
+    gateArtifactIds: links.gateArtifactIds,
+    gateEvaluations,
+    kind: links.kind ?? execution.kind,
   }
 }
 

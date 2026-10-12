@@ -1,8 +1,42 @@
 import { describe, expect, it, vi } from 'vitest'
 import { testExecutionInputSchema } from '@fuzequality/contracts'
-import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 
 describe('internal execution ingestion compatibility', () => {
+  it('makes exact-revision links authoritative in webhook execution records', () => {
+    const execution = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      provider: 'github-actions' as const,
+      externalRunId: '98765',
+      attempt: 2,
+      revision: 'abc123',
+      kind: 'ci' as const,
+      status: 'failed' as const,
+      name: 'Benchmark',
+      workflowPath: '.github/workflows/benchmark.yml',
+      evidenceLinks: [{ kind: 'report' as const, name: 'Artifacts', url: 'https://example.test/run/98765' }],
+    }
+
+    expect(webhookExecutionRecord(execution, 'org-1', {
+      policyArtifactIds: ['policy-performance'],
+      gateArtifactIds: ['gate-performance'],
+      kind: 'stress',
+    })).toEqual({
+      ...execution,
+      id: 'github-actions:98765:2:123e4567-e89b-12d3-a456-426614174000',
+      tenantId: 'org-1',
+      thresholds: [],
+      policyArtifactIds: ['policy-performance'],
+      gateArtifactIds: ['gate-performance'],
+      gateEvaluations: [{
+        policyArtifactId: 'policy-performance',
+        gateArtifactId: 'gate-performance',
+        status: 'failed',
+      }],
+      kind: 'stress',
+    })
+  })
+
   it('links workflow evidence from the execution source revision only', async () => {
     const loadArtifacts = vi.fn().mockResolvedValue([])
     const resolveCatalogRevision = vi.fn().mockResolvedValue('catalog-revision-a')

@@ -40,7 +40,7 @@ import { createOpenApiSurface } from './openapi'
 import { executionPerformanceFilterSchema, executionPageFilterSchema } from './execution-filter'
 import { decodeExecutionTrendCursor, executionTrendPage } from './execution-trend-pagination'
 import { decodePerformanceCursor, performancePage } from './execution-performance-pagination'
-import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence } from './test-execution-ingestion'
+import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvidence, webhookExecutionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
@@ -1150,10 +1150,7 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
       (repositoryId, tenantId, revision) =>
         store.qualityArtifacts(repositoryId, tenantId, revision)
     )
-    const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
-      ? [{ policyArtifactId: links.policyArtifactIds[0], gateArtifactId: links.gateArtifactIds[0], status: execution.status }]
-      : []
-    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, thresholds: [], gateEvaluations, ...execution, ...links })
+    await store.saveTestExecution(webhookExecutionRecord(execution, repository.tenantId, links))
   }
   for (const command of commands) {
     let commitSha = command.commitSha
