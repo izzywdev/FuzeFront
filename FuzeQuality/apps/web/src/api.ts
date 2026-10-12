@@ -100,6 +100,13 @@ export const api = {
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string, cursor?: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryPage | import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history${cursor ? `?${new URLSearchParams({ cursor })}` : ''}`),
   qualityArtifacts,
+  qualityArtifactsByIds: (id: string, artifactIds: string[]) => {
+    const query = new URLSearchParams()
+    artifactIds.forEach(artifactId => query.append('id', artifactId))
+    return request<{ items: import('@fuzequality/contracts').QualityArtifact[] }>(
+      `/api/v1/repositories/${id}/quality-artifacts/by-ids?${query}`
+    )
+  },
   repositoryFlowCandidates: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').RepositoryFlowCandidatePage | import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates?${new URLSearchParams(filter)}`),
   repositoryFlowCandidate: (repositoryId: string, candidateId: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}`),
   reviewRepositoryFlowCandidate: (repositoryId: string, candidateId: string, status: 'confirmed' | 'rejected', reason?: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),

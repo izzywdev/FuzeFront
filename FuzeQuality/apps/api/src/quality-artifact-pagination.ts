@@ -12,6 +12,15 @@ export const qualityArtifactPageQuerySchema = z.object({
   cursor: z.string().trim().min(1).max(2000).optional(),
 }).strict()
 
+const qualityArtifactIdSchema = z.string().trim().min(1).max(500)
+
+export const qualityArtifactIdsQuerySchema = z.object({
+  id: z.union([
+    qualityArtifactIdSchema,
+    z.array(qualityArtifactIdSchema).min(1).max(100),
+  ]).transform(value => [...new Set(Array.isArray(value) ? value : [value])]),
+}).strict()
+
 export function encodeQualityArtifactCursor(id: string, revision?: string) {
   return Buffer.from(JSON.stringify({ id, ...(revision ? { revision } : {}) }), 'utf8').toString('base64url')
 }

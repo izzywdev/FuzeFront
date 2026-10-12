@@ -129,6 +129,10 @@ async function mockQualityApi(page: Page, fixture = portfolio) {
             page: { nextCursor: 'scan-page-2', hasMore: true },
           })
     }
+    if (url.pathname.endsWith('/quality-artifacts/by-ids')) {
+      const ids = new Set(url.searchParams.getAll('id'))
+      return respond({ items: qualityArtifacts.filter(artifact => ids.has(artifact.id)) })
+    }
     if (url.pathname.endsWith('/quality-artifacts')) return respond(qualityArtifacts)
     if (url.pathname.endsWith('/flow-candidates')) {
       const filtered = flowCandidates.filter(flow =>
@@ -629,12 +633,13 @@ test.describe('FuzeQuality implemented UX flows', () => {
     await expect(page.getByText('governance-reviewer-1', { exact: true })).toBeVisible()
   })
 
-  test('bounds historical UX-flow evidence prefetch while keeping older flows visible', async ({ page }) => {
+  test('bounds historical UX-flow evidence and resolves referenced artifact IDs', async ({ page }) => {
     const historicalCandidates = Array.from({ length: 22 }, (_, index) => ({
       ...repositoryFlowCandidates[0],
       id: `historical-candidate-${index}`,
       revision: `historical-revision-${String(index).padStart(2, '0')}`,
       title: `Historical flow ${index}`,
+      evidence: [`historical-artifact-${index}`],
       createdAt: new Date(Date.UTC(2026, 9, 10) - index * 86_400_000).toISOString(),
     }))
     await page.route(
@@ -645,13 +650,28 @@ test.describe('FuzeQuality implemented UX flows', () => {
         body: JSON.stringify(historicalCandidates),
       })
     )
-    const requestedHistoricalRevisions: string[] = []
-    page.on('request', request => {
-      const url = new URL(request.url())
-      if (url.pathname.endsWith('/quality-artifacts') && url.searchParams.has('revision')) {
-        requestedHistoricalRevisions.push(url.searchParams.get('revision')!)
+    const requestedArtifactIds: string[] = []
+    await page.route(
+      url => url.pathname === '/api/v1/repositories/repo-1/quality-artifacts/by-ids',
+      route => {
+        const url = new URL(route.request().url())
+        requestedArtifactIds.push(...url.searchParams.getAll('id'))
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: url.searchParams.getAll('id')
+              .filter(id => id.startsWith('historical-artifact-'))
+              .map(id => ({
+                ...qualityArtifacts[2],
+                id,
+                title: `Resolved ${id}`,
+                sourcePath: `docs/${id}.md`,
+              })),
+          }),
+        })
       }
-    })
+    )
 
     await page.getByRole('button', { name: 'Quality intelligence' }).click()
 
@@ -663,12 +683,12 @@ test.describe('FuzeQuality implemented UX flows', () => {
     )
     await expect(historyLimit).toContainText('2 older revisions remain visible')
     await expect(page.getByText('Historical flow 21', { exact: true })).toBeVisible()
-    await expect.poll(() => requestedHistoricalRevisions.length).toBe(20)
-    expect(requestedHistoricalRevisions).toEqual(
-      Array.from({ length: 20 }, (_, index) =>
-        `historical-revision-${String(index).padStart(2, '0')}`
-      )
-    )
+    await expect.poll(() => requestedArtifactIds.includes('historical-artifact-19')).toBe(true)
+    expect(requestedArtifactIds).not.toContain('historical-artifact-20')
+    expect(requestedArtifactIds).not.toContain('historical-artifact-21')
+    const flowCard = page.getByText('Historical flow 19', { exact: true }).locator('..')
+    await flowCard.getByText('Source evidence', { exact: true }).click()
+    await expect(flowCard.getByText('documentation · docs/historical-artifact-19.md')).toBeVisible()
   })
 
   test('loads artifact context for governance revisions introduced by continuation', async ({ page }) => {
@@ -802,7 +822,11 @@ test.describe('FuzeQuality implemented UX flows', () => {
                 page: { nextCursor: null, hasMore: false },
               }
             : {
-                items: [{ ...qualityArtifacts[2], id: 'documentation-page-1', title: 'Initial evidence' }],
+                items: Array.from({ length: 12 }, (_, index) => ({
+                  ...qualityArtifacts[2],
+                  id: `documentation-page-1-${index}`,
+                  title: index === 0 ? 'Initial evidence' : `Initial evidence ${index + 1}`,
+                })),
                 page: { nextCursor: 'artifact-page-2', hasMore: true },
               }),
         })

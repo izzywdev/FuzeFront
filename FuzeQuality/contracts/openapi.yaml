@@ -294,6 +294,47 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/repositories/{repositoryId}/quality-artifacts/by-ids:
+    parameters:
+      - $ref: '#/components/parameters/RepositoryId'
+    get:
+      operationId: resolveRepositoryQualityArtifacts
+      summary: Resolve exact repository evidence identifiers
+      description: >-
+        Resolves a bounded set of revision-scoped artifact identifiers through
+        the caller's tenant boundary without scanning complete artifact pages.
+      tags: [repository-analysis]
+      security: [{ platformBearer: [] }]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          style: form
+          explode: true
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            uniqueItems: true
+            items: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200':
+          description: Tenant-scoped evidence matching the requested identifiers.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/QualityArtifact' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/repositories/{repositoryId}/flow-candidates:
     parameters:
       - $ref: '#/components/parameters/RepositoryId'

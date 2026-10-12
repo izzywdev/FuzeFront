@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { QualityArtifact } from '@fuzequality/contracts'
 import {
   decodeQualityArtifactCursor,
+  qualityArtifactIdsQuerySchema,
   qualityArtifactPage,
   qualityArtifactPageQuerySchema,
   resolveQualityArtifactRevision,
@@ -49,5 +50,14 @@ describe('quality artifact pagination', () => {
       success: false,
       error: 'Quality artifact cursor is invalid',
     })
+  })
+
+  it('bounds and deduplicates exact artifact ID lookups', () => {
+    expect(qualityArtifactIdsQuerySchema.parse({ id: ['artifact-a', 'artifact-a', 'artifact-b'] })).toEqual({
+      id: ['artifact-a', 'artifact-b'],
+    })
+    expect(qualityArtifactIdsQuerySchema.safeParse({
+      id: Array.from({ length: 101 }, (_, index) => `artifact-${index}`),
+    }).success).toBe(false)
   })
 })

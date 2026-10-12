@@ -159,6 +159,7 @@ const loadExecution: TestExecution = {
 
 function mockEvidenceApis() {
   vi.spyOn(api, 'qualityArtifacts').mockResolvedValue([])
+  vi.spyOn(api, 'qualityArtifactsByIds').mockResolvedValue({ items: [] })
   vi.spyOn(api, 'policyGateEvaluations').mockResolvedValue([])
   vi.spyOn(api, 'testExecutions').mockResolvedValue([])
   vi.spyOn(api, 'executionTrend').mockResolvedValue([])
@@ -815,9 +816,7 @@ describe('RepositoryIntelligence flow inventory', () => {
   it('loads revision-specific artifacts for historical flow evidence', async () => {
     mockEvidenceApis()
     const historicalArtifact = { ...storyArtifact, id: 'artifact-story-historical' }
-    vi.mocked(api.qualityArtifacts).mockImplementation(async (_repositoryId, revision) =>
-      revision === 'historical-revision' ? [historicalArtifact] : []
-    )
+    vi.mocked(api.qualityArtifactsByIds).mockResolvedValue({ items: [historicalArtifact] })
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([{
       ...candidate,
       id: 'flow-historical',
@@ -829,7 +828,7 @@ describe('RepositoryIntelligence flow inventory', () => {
     await screen.findByText(candidate.title)
     fireEvent.click(screen.getByText('Source evidence'))
 
-    expect(api.qualityArtifacts).toHaveBeenCalledWith(repository.id, 'historical-revision')
+    expect(api.qualityArtifactsByIds).toHaveBeenCalledWith(repository.id, [historicalArtifact.id])
     expect(await screen.findByText('story · src/Checkout.stories.tsx')).toBeVisible()
     expect(screen.getByText('Artifact: Checkout / Complete')).toBeVisible()
   })
@@ -873,6 +872,40 @@ describe('RepositoryIntelligence flow inventory', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load more repository evidence' }))
     expect(await screen.findByText('Continuation evidence', { exact: true })).toBeVisible()
     expect(api.qualityArtifacts).toHaveBeenLastCalledWith(repository.id, undefined, 'artifact-page-2')
+  })
+
+  it('renders every repository evidence row loaded into a kind panel', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.qualityArtifacts).mockResolvedValue(Array.from(
+      { length: 13 },
+      (_, index) => ({
+        ...documentationArtifact,
+        id: `documentation-${index + 1}`,
+        title: `Documentation ${index + 1}`,
+      })
+    ))
+
+    render(<RepositoryIntelligence data={portfolio} />)
+
+    expect(await screen.findByText('Documentation 13')).toBeVisible()
+  })
+
+  it('retains successful repository evidence when another repository request fails', async () => {
+    mockEvidenceApis()
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    vi.mocked(api.qualityArtifacts).mockImplementation(async repositoryId => {
+      if (repositoryId === secondRepository.id) throw new Error('temporary repository failure')
+      return [storyArtifact]
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    expect(await screen.findByText(storyArtifact.title)).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Evidence from successful repositories remains visible.'
+    )
   })
 
   it('renders repeated test titles as separate evidence plans', async () => {

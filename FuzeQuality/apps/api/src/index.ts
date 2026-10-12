@@ -50,7 +50,7 @@ import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateEvaluationForReview, policyGateReviewConflict } from './policy-gate-review'
 import { decodeHistoryCursor, historyPage, historyPageQuerySchema } from './history-pagination'
 import { decodeScanHistoryCursor, scanHistoryPage, scanHistoryPageQuerySchema } from './scan-history-pagination'
-import { decodeQualityArtifactCursor, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
+import { decodeQualityArtifactCursor, qualityArtifactIdsQuerySchema, qualityArtifactPage, qualityArtifactPageQuerySchema, resolveQualityArtifactRevision } from './quality-artifact-pagination'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -529,6 +529,16 @@ app.get('/api/v1/repositories/:id/quality-artifacts', mayReadCatalog, async (req
     limit: query.data.limit + 1,
   })
   response.json(qualityArtifactPage(artifacts, query.data.limit, resolvedRevision.data))
+})
+app.get('/api/v1/repositories/:id/quality-artifacts/by-ids', mayReadCatalog, async (request, response) => {
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const tenantId = requestIdentity(request)!.tenantId
+  if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
+  const query = qualityArtifactIdsQuerySchema.safeParse(request.query)
+  if (!query.success) return response.status(400).json({ error: query.error.flatten() })
+  response.json({
+    items: await store.qualityArtifactsByIds(repositoryId, tenantId, query.data.id),
+  })
 })
 app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id

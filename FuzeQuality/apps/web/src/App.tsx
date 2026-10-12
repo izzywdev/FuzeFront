@@ -3200,6 +3200,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifactNextCursors, setArtifactNextCursors] = useState<Record<string, string>>({})
   const [loadingMoreArtifacts, setLoadingMoreArtifacts] = useState(false)
   const [artifactPaginationError, setArtifactPaginationError] = useState<string>()
+  const [repositoryArtifactFailures, setRepositoryArtifactFailures] = useState<string[]>([])
+  const [repositoryGovernanceFailures, setRepositoryGovernanceFailures] = useState<string[]>([])
   const [governanceEvidenceArtifacts, setGovernanceEvidenceArtifacts] = useState<QualityArtifact[]>([])
   const [omittedGovernanceEvidenceRevisions, setOmittedGovernanceEvidenceRevisions] = useState(0)
   const [flowEvidenceArtifacts, setFlowEvidenceArtifacts] = useState<QualityArtifact[]>([])
@@ -3467,12 +3469,14 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
     let active = true
     setArtifactNextCursors({})
     setArtifactPaginationError(undefined)
+    setRepositoryArtifactFailures([])
+    setRepositoryGovernanceFailures([])
     setLoadingMoreArtifacts(false)
     setPolicyGateNextCursors({})
     setHistoryPaginationError(undefined)
     void Promise.all(
       data.repositories.map(async repository => {
-        const [repositoryArtifactsResponse, evaluationResponse] = await Promise.all([
+        const [repositoryArtifactsResult, evaluationResult] = await Promise.allSettled([
           api.qualityArtifacts(repository.id),
           policyGateRevisionScope === 'current' &&
           !repository.lastScanRevision
@@ -3492,8 +3496,12 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                 )
               ),
         ])
-        const repositoryArtifacts = normalizeHistoryPage(repositoryArtifactsResponse)
-        const evaluations = normalizeHistoryPage(evaluationResponse)
+        const repositoryArtifacts = repositoryArtifactsResult.status === 'fulfilled'
+          ? normalizeHistoryPage(repositoryArtifactsResult.value)
+          : { items: [] as QualityArtifact[], page: { nextCursor: null, hasMore: false } }
+        const evaluations = evaluationResult.status === 'fulfilled'
+          ? normalizeHistoryPage(evaluationResult.value)
+          : { items: [] as PolicyGateEvaluation[], page: { nextCursor: null, hasMore: false } }
         const historicalGovernanceRevisions = policyGateRevisionScope === 'all'
           ? [...new Set(evaluations.items.map(evaluation => evaluation.revision))]
               .filter(revision => revision !== repository.lastScanRevision)
@@ -3516,6 +3524,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           evaluations: evaluations.items,
           nextCursor: evaluations.page.nextCursor,
           repositoryId: repository.id,
+          artifactsFailed: repositoryArtifactsResult.status === 'rejected',
+          governanceFailed: evaluationResult.status === 'rejected',
         }
       })
     )
@@ -3536,6 +3546,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setPolicyGateNextCursors(Object.fromEntries(
             groups.flatMap(group => group.nextCursor ? [[group.repositoryId, group.nextCursor]] : [])
           ))
+          setRepositoryArtifactFailures(groups.filter(group => group.artifactsFailed).map(group => group.repositoryId))
+          setRepositoryGovernanceFailures(groups.filter(group => group.governanceFailed).map(group => group.repositoryId))
         }
       })
       .catch(() => {
@@ -3546,6 +3558,8 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           setOmittedGovernanceEvidenceRevisions(0)
           setPolicyGateEvaluations([])
           setPolicyGateNextCursors({})
+          setRepositoryArtifactFailures(data.repositories.map(repository => repository.id))
+          setRepositoryGovernanceFailures(data.repositories.map(repository => repository.id))
         }
       })
       .finally(() => {
@@ -3664,11 +3678,29 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
       data.repositories,
     )
     setOmittedFlowEvidenceRevisions(selection.omitted)
-    const requests = selection.selected.map(({ repositoryId, revision }) =>
-      api.qualityArtifacts(repositoryId, revision)
-        .then(response => normalizeHistoryPage(response).items)
-        .catch(() => [])
+    const selectedRevisions = new Set(
+      selection.selected.map(({ repositoryId, revision }) => `${repositoryId}\u0000${revision}`)
     )
+    const evidenceIds = new Map<string, Set<string>>()
+    flowCandidates.forEach(candidate => {
+      if (!selectedRevisions.has(`${candidate.repositoryId}\u0000${candidate.revision}`)) return
+      const ids = evidenceIds.get(candidate.repositoryId) ?? new Set<string>()
+      const referencedIds = [
+        ...candidate.evidence,
+        ...candidate.steps.flatMap(step => step.targetIds),
+        ...candidate.wireframe.nodes.flatMap(node => node.targetIds),
+      ]
+      referencedIds.forEach(id => ids.add(id))
+      evidenceIds.set(candidate.repositoryId, ids)
+    })
+    const requests = [...evidenceIds].flatMap(([repositoryId, ids]) => {
+      const values = [...ids]
+      return Array.from({ length: Math.ceil(values.length / 100) }, (_, index) =>
+        api.qualityArtifactsByIds(repositoryId, values.slice(index * 100, (index + 1) * 100))
+          .then(response => response.items)
+          .catch(() => [])
+      )
+    })
     void Promise.all(requests).then(
       groups => { if (active) setFlowEvidenceArtifacts(groups.flat()) },
       () => { if (active) setFlowEvidenceArtifacts([]) },
@@ -4138,6 +4170,11 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
           {artifactPaginationError && (
             <p className="form-error" role="alert">{artifactPaginationError}</p>
           )}
+          {(repositoryArtifactFailures.length > 0 || repositoryGovernanceFailures.length > 0) && (
+            <p className="form-error" role="alert">
+              Some repository intelligence is temporarily unavailable. Evidence from successful repositories remains visible.
+            </p>
+          )}
           <div
             className="catalog-filters"
             aria-label="Policy and gate finding filters"
@@ -4492,7 +4529,7 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
                             </div>
                           </article>
                         ))}
-                    {items.slice(0, 12).map(item => {
+                    {items.map(item => {
                       const latestExecution = latestPerformanceExecution(item, performanceExecutions)
                       const repository = data.repositories.find(
                         candidate => candidate.id === item.repositoryId

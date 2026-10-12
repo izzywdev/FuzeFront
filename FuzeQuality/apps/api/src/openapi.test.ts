@@ -137,6 +137,16 @@ describe('contract discovery', () => {
         document.paths['/api/v1/repositories/{repositoryId}/quality-artifacts'].get.parameters
           .find((parameter: { name?: string }) => parameter.name === 'cursor').description
       ).toContain("first page's analyzed revision")
+      const artifactIds = document.paths[
+        '/api/v1/repositories/{repositoryId}/quality-artifacts/by-ids'
+      ].get.parameters.find((parameter: { name?: string }) => parameter.name === 'id')
+      expect(artifactIds).toMatchObject({ required: true, explode: true })
+      expect(artifactIds.schema).toMatchObject({
+        type: 'array',
+        minItems: 1,
+        maxItems: 100,
+        uniqueItems: true,
+      })
       expect(
         document.paths['/api/v1/repositories/{repositoryId}/execution-performance'].get.parameters
           .filter((parameter: { name?: string }) => parameter.name)
