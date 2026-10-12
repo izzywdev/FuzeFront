@@ -559,6 +559,42 @@ describe('RepositoryIntelligence flow inventory', () => {
     })
   })
 
+  it('retains successful performance continuation when another repository fails', async () => {
+    mockEvidenceApis()
+    vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])
+    const secondRepository = { ...repository, id: 'repo-2', name: 'agent' }
+    const first = {
+      repositoryId: repository.id,
+      policyArtifactId: 'policy-first',
+      gateArtifactId: 'gate-first',
+      failed: 2, passed: 1, cancelled: 0, running: 0,
+    }
+    const continued = {
+      ...first,
+      policyArtifactId: 'policy-continued',
+      gateArtifactId: 'gate-continued',
+      failed: 1,
+    }
+    vi.mocked(api.executionPerformance).mockImplementation(async (repositoryId, filter) => {
+      if (!filter?.cursor) return {
+        items: repositoryId === repository.id ? [first] : [],
+        page: { nextCursor: `cursor-${repositoryId}`, hasMore: true },
+      }
+      if (repositoryId === secondRepository.id) throw new Error('temporary continuation failure')
+      return { items: [continued], page: { nextCursor: null, hasMore: false } }
+    })
+
+    render(<RepositoryIntelligence data={{ ...portfolio, repositories: [repository, secondRepository] }} />)
+
+    expect(await screen.findByText('policy-first → gate-first')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more policy-gate performance' }))
+    expect(await screen.findByText('policy-continued → gate-continued')).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to load more policy-gate performance for 1 repository. Successful evidence remains visible.'
+    )
+    expect(screen.getByRole('button', { name: 'Load more policy-gate performance' })).toBeVisible()
+  })
+
   it('surfaces repository evidence scan failures to reviewers', async () => {
     mockEvidenceApis()
     vi.spyOn(api, 'repositoryFlowCandidates').mockResolvedValue([])

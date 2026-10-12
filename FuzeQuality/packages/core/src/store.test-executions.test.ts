@@ -129,12 +129,50 @@ describe('test execution evidence', () => {
     const [sql, parameters] = query.mock.calls[0]
     expect(String(sql)).toContain('WHERE repository_id=$1 AND tenant_id=$2')
     expect(String(sql)).toContain('jsonb_array_elements')
+    expect(String(sql)).toContain('created_at <= $10')
     expect(String(sql)).toContain('GROUP BY repository_id,policy_artifact_id,gate_artifact_id')
     expect(String(sql)).toContain('ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id')
     expect(parameters).toEqual([
-      'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, null, null,
+      'repo-1', 'org-1', 'post-production', null, 'github-actions', null, null, null, null, null,
       3, 5, 'gate-0', 'policy-0', 51,
     ])
+  })
+
+  it('keeps an execution in a performance snapshot after it completes', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-10T12:00:00.000Z'))
+      const store = new MemoryCatalogStore()
+      const base = {
+        repositoryId: 'repo-1', tenantId: 'org-1', provider: 'github-actions' as const,
+        externalRunId: 'snapshot-run', attempt: 1, revision: 'revision-a', kind: 'load' as const,
+        name: 'Load', policyArtifactIds: ['policy-1'], gateArtifactIds: ['gate-1'],
+        thresholds: [], evidenceLinks: [],
+      }
+      await store.saveTestExecution({
+        id: 'run-started', ...base, status: 'running', startedAt: '2026-10-10T11:59:00.000Z',
+        gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'running' }],
+      })
+      const snapshotAt = '2026-10-10T12:00:01.000Z'
+
+      vi.setSystemTime(new Date('2026-10-10T12:05:00.000Z'))
+      await store.saveTestExecution({
+        id: 'run-completed', ...base, status: 'passed', startedAt: '2026-10-10T11:59:00.000Z',
+        completedAt: '2026-10-10T12:05:00.000Z',
+        gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'passed' }],
+      })
+      await store.saveTestExecution({
+        id: 'run-created-after-snapshot', ...base, externalRunId: 'later-run', status: 'failed',
+        startedAt: '2026-10-10T12:04:00.000Z', completedAt: '2026-10-10T12:05:00.000Z',
+        gateEvaluations: [{ policyArtifactId: 'policy-1', gateArtifactId: 'gate-1', status: 'failed' }],
+      })
+
+      await expect(store.policyGatePerformance('repo-1', 'org-1', { snapshotAt })).resolves.toEqual([
+        expect.objectContaining({ policyArtifactId: 'policy-1', passed: 1, failed: 0, running: 0 }),
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('bounds in-memory policy-gate aggregates without returning an unbounded revision list', async () => {

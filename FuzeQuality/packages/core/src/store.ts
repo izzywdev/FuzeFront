@@ -79,6 +79,8 @@ export type ExecutionOutcomeTrendQuery = Omit<TestExecutionQuery, 'after'> & {
 export type PolicyGatePerformanceCursor = Pick<PolicyGatePerformance, 'failed' | 'passed' | 'gateArtifactId' | 'policyArtifactId'>
 export type PolicyGatePerformanceQuery = Omit<TestExecutionQuery, 'after'> & {
   after?: PolicyGatePerformanceCursor
+  /** Immutable ingestion high-water mark shared by every page in one snapshot. */
+  snapshotAt?: string
 }
 
 export function testExecutionOccurredAt(execution: TestExecution) {
@@ -259,6 +261,7 @@ export class MemoryCatalogStore implements CatalogStore {
   private policyGateResults: PolicyGateEvaluation[] = []
   private policyGateReviewAudits: PolicyGateReviewHistoryEntry[] = []
   private executions: TestExecution[] = []
+  private executionIngestedAt = new Map<string, number>()
   private tenants = new Map<string, QualityTenant>()
   private principals = new Map<string, QualityPrincipal>()
   private memberships = new Map<string, QualityMembership>()
@@ -467,7 +470,12 @@ export class MemoryCatalogStore implements CatalogStore {
   async policyGatePerformance(repositoryId: string, tenantId: string, query: PolicyGatePerformanceQuery = {}) {
     const items = executionPerformance(filterTestExecutions(
       this.executions
-        .filter(item => item.repositoryId === repositoryId && item.tenantId === tenantId)
+        .filter(item => {
+          if (item.repositoryId !== repositoryId || item.tenantId !== tenantId) return false
+          if (!query.snapshotAt) return true
+          const key = `${item.repositoryId}\u0000${item.provider}\u0000${item.externalRunId}\u0000${item.attempt}`
+          return (this.executionIngestedAt.get(key) ?? 0) <= Date.parse(query.snapshotAt)
+        })
         .sort((left, right) => testExecutionOccurredAtMillis(right) - testExecutionOccurredAtMillis(left) || right.id.localeCompare(left.id)),
       query,
     ))
@@ -492,7 +500,11 @@ export class MemoryCatalogStore implements CatalogStore {
     // in-progress event must not erase a terminal result for this attempt.
     if (index >= 0 && this.executions[index].status !== 'running' && execution.status === 'running') return
     if (index >= 0) this.executions[index] = mergeTestExecutionEvidence(this.executions[index], execution)
-    else this.executions.push(execution)
+    else {
+      this.executions.push(execution)
+      const key = `${execution.repositoryId}\u0000${execution.provider}\u0000${execution.externalRunId}\u0000${execution.attempt}`
+      this.executionIngestedAt.set(key, Date.now())
+    }
   }
 
   async addRepository(input: RepositoryInput, tenantId = 'legacy') {
@@ -1156,6 +1168,7 @@ export class PostgresCatalogStore implements CatalogStore {
            AND ($7::text IS NULL OR workflow_path=$7)
            AND ($8::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) >= $8)
            AND ($9::timestamptz IS NULL OR COALESCE(completed_at,started_at,'epoch'::timestamptz) <= $9)
+           AND ($10::timestamptz IS NULL OR created_at <= $10)
        ), explicit_pairs AS (
          SELECT execution.repository_id,execution.revision,execution.completed_at,execution.occurred_at,
                 pair.value->>'policyArtifactId' AS policy_artifact_id,
@@ -1190,14 +1203,14 @@ export class PostgresCatalogStore implements CatalogStore {
          GROUP BY repository_id,policy_artifact_id,gate_artifact_id
        )
        SELECT * FROM aggregates
-       WHERE $10::integer IS NULL
-          OR failed < $10
-          OR (failed=$10 AND passed < $11)
-          OR (failed=$10 AND passed=$11 AND gate_artifact_id > $12)
-          OR (failed=$10 AND passed=$11 AND gate_artifact_id=$12 AND policy_artifact_id > $13)
+       WHERE $11::integer IS NULL
+          OR failed < $11
+          OR (failed=$11 AND passed < $12)
+          OR (failed=$11 AND passed=$12 AND gate_artifact_id > $13)
+          OR (failed=$11 AND passed=$12 AND gate_artifact_id=$13 AND policy_artifact_id > $14)
        ORDER BY failed DESC,passed DESC,gate_artifact_id,policy_artifact_id
-       LIMIT COALESCE($14::integer,2147483647)`,
-      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null],
+       LIMIT COALESCE($15::integer,2147483647)`,
+      [repositoryId, tenantId, query.kind ?? null, query.status ?? null, query.provider ?? null, query.revision ?? null, query.workflowPath ?? null, query.from ?? null, query.until ?? null, query.snapshotAt ?? null, query.after?.failed ?? null, query.after?.passed ?? null, query.after?.gateArtifactId ?? null, query.after?.policyArtifactId ?? null, query.limit ?? null],
     )
     return result.rows.map(row => ({
       repositoryId: row.repository_id,

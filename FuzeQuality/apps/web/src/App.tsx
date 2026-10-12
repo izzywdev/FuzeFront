@@ -3897,31 +3897,45 @@ export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const loadMorePerformance = async () => {
     const cursors = Object.entries(performanceNextCursors)
     if (!cursors.length) return
+    const query = executionTrendQueryRef.current
     setLoadingMorePerformance(true)
     setPerformancePaginationError(undefined)
     try {
-      const groups = await Promise.all(cursors.map(async ([repositoryId, cursor]) => ({
+      const results = await Promise.allSettled(cursors.map(async ([repositoryId, cursor]) => ({
         repositoryId,
         page: normalizeHistoryPage(await api.executionPerformance(repositoryId, {
           ...executionFilter,
           cursor,
         })),
       })))
+      if (executionTrendQueryRef.current !== query) return
+      const groups = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
+      const failedRepositoryIds = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [cursors[index][0]] : []
+      )
       setExecutionPerformance(current => [...new Map(
         [...current, ...groups.flatMap(group => group.page.items)].map(item => [
           `${item.repositoryId}:${item.policyArtifactId}:${item.gateArtifactId}`,
           item,
         ])
       ).values()])
-      setPerformanceNextCursors(Object.fromEntries(
-        groups.flatMap(group => group.page.page.nextCursor
-          ? [[group.repositoryId, group.page.page.nextCursor]]
-          : [])
-      ))
+      setPerformanceNextCursors(current => {
+        const next = { ...current }
+        groups.forEach(group => {
+          if (group.page.page.nextCursor) next[group.repositoryId] = group.page.page.nextCursor
+          else delete next[group.repositoryId]
+        })
+        return next
+      })
+      if (failedRepositoryIds.length) {
+        setPerformancePaginationError(`Unable to load more policy-gate performance for ${failedRepositoryIds.length} ${failedRepositoryIds.length === 1 ? 'repository' : 'repositories'}. Successful evidence remains visible.`)
+      }
     } catch (cause) {
-      setPerformancePaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy-gate performance.')
+      if (executionTrendQueryRef.current === query) {
+        setPerformancePaginationError(cause instanceof Error ? cause.message : 'Unable to load more policy-gate performance.')
+      }
     } finally {
-      setLoadingMorePerformance(false)
+      if (executionTrendQueryRef.current === query) setLoadingMorePerformance(false)
     }
   }
   const loadMoreFlows = async () => {

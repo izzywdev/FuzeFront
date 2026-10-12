@@ -733,10 +733,9 @@ app.get('/api/v1/repositories/:id/execution-performance', mayReadCatalog, async 
   if (!cursor.success) return response.status(400).json({ error: cursor.error })
   const { cursor: _cursor, limit, ...query } = filter.data
   const snapshotAt = cursor.data?.snapshotAt ?? new Date().toISOString()
-  const until = query.until && Date.parse(query.until) < Date.parse(snapshotAt) ? query.until : snapshotAt
   const items = await store.policyGatePerformance(repositoryId, tenantId, {
     ...query,
-    until,
+    snapshotAt,
     after: cursor.data,
     limit: limit + 1,
   })
