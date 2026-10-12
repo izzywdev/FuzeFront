@@ -384,6 +384,30 @@ async def test_get_user_missing_id_returns_404(client):
     expect(second.revision).not.toBe(first.revision)
   })
 
+  it('changes the catalog revision when repository scan configuration changes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fuzequality-config-revision-'))
+    await writeFile(join(root, 'openapi.yaml'), `openapi: 3.0.0\ninfo: { title: Sample, version: 1.0.0 }\npaths: {}`)
+
+    const original = await scanRepository(repository, root)
+    const included = await scanRepository({
+      ...repository,
+      includeGlobs: ['openapi.yaml'],
+    }, root)
+    const excluded = await scanRepository({
+      ...repository,
+      excludeGlobs: ['docs/**'],
+    }, root)
+
+    expect(included.scanDetails.counts).toEqual(original.scanDetails.counts)
+    expect(excluded.scanDetails.counts).toEqual(original.scanDetails.counts)
+    expect(new Set([original.revision, included.revision, excluded.revision]).size).toBe(3)
+    expect(new Set([
+      original.scanDetails.configVersion,
+      included.scanDetails.configVersion,
+      excluded.scanDetails.configVersion,
+    ]).size).toBe(3)
+  })
+
   it('reports malformed OpenAPI documents without aborting the repository scan', async () => {
     const root = await mkdtemp(join(tmpdir(), 'fuzequality-diagnostic-'))
     await writeFile(join(root, 'openapi.yaml'), 'openapi: [not valid')

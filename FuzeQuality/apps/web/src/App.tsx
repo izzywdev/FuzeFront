@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -2739,14 +2739,9 @@ function FlowReviewHistory({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const detailsRef = useRef<HTMLDetailsElement>(null)
 
-  useEffect(() => {
-    setHistory([])
-    setNextCursor(null)
-    setError(undefined)
-  }, [flow.id])
-
-  const loadHistory = async (cursor?: string) => {
+  const loadHistory = useCallback(async (cursor?: string) => {
     setLoading(true)
     setError(undefined)
     try {
@@ -2764,10 +2759,18 @@ function FlowReviewHistory({
     } finally {
       setLoading(false)
     }
-  }
+  }, [flow.id, flow.repositoryId])
+
+  useEffect(() => {
+    setHistory([])
+    setNextCursor(null)
+    setError(undefined)
+    if (detailsRef.current?.open) void loadHistory()
+  }, [flow.id, flow.reviewedAt, loadHistory])
 
   return (
     <details
+      ref={detailsRef}
       className="policy-review-history"
       onToggle={event => {
         if (event.currentTarget.open && !history.length && !loading)
@@ -2924,14 +2927,9 @@ function PolicyGateReviewHistory({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const detailsRef = useRef<HTMLDetailsElement>(null)
 
-  useEffect(() => {
-    setHistory([])
-    setNextCursor(null)
-    setError(undefined)
-  }, [evaluation.id])
-
-  const loadHistory = async (cursor?: string) => {
+  const loadHistory = useCallback(async (cursor?: string) => {
     setLoading(true)
     setError(undefined)
     try {
@@ -2953,10 +2951,18 @@ function PolicyGateReviewHistory({
     } finally {
       setLoading(false)
     }
-  }
+  }, [evaluation.id, evaluation.repositoryId])
+
+  useEffect(() => {
+    setHistory([])
+    setNextCursor(null)
+    setError(undefined)
+    if (detailsRef.current?.open) void loadHistory()
+  }, [evaluation.id, evaluation.reviewedAt, loadHistory])
 
   return (
     <details
+      ref={detailsRef}
       className="policy-review-history"
       onToggle={event => {
         if (event.currentTarget.open && !history.length && !loading)

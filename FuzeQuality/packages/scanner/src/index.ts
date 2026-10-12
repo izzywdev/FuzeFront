@@ -658,9 +658,15 @@ export async function scanRepository(
   const discoveredQuality = await discoverQualityArtifacts(root, repository, ignore)
   contentFingerprints.push(...discoveredQuality.fingerprints)
   diagnostics.push(...discoveredQuality.diagnostics)
+  const configVersion = digest(JSON.stringify({
+    includeGlobs: repository.includeGlobs,
+    excludeGlobs: repository.excludeGlobs,
+    kind: repository.kind,
+  }))
   const revision = digest(
     repository.name,
     SCANNER_VERSION,
+    configVersion,
     ...contentFingerprints.sort()
   )
   const qualityArtifacts = [
@@ -741,12 +747,6 @@ export async function scanRepository(
     ...[...storyFiles].map(file => candidate(file, 'storybook')),
     ...frontend.packageFiles.map(file => candidate(file, 'package')),
   ].sort((left, right) => left.sourcePath.localeCompare(right.sourcePath) || left.kind.localeCompare(right.kind))
-  const configVersion = digest(JSON.stringify({
-    includeGlobs: repository.includeGlobs,
-    excludeGlobs: repository.excludeGlobs,
-    kind: repository.kind,
-  }))
-
   const result: Omit<ScanResult, 'qualityArtifacts'> = {
     repository,
     revision,
