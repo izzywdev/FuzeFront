@@ -41,6 +41,10 @@ export interface ProductResourceDecl {
   key: string
   name: string
   actions: Record<string, { name: string }>
+  // Instance-scoped roles; never promoted to tenant-wide roles.
+  roles?: Record<string, PermitResourceRoleDef>
+  // Bare target resource keys from this same product policy.
+  relations?: Record<string, string>
 }
 
 export interface ProductRoleDecl {
@@ -82,30 +86,93 @@ export function validateProductPolicy(policy: ProductPolicy): void {
     )
   }
   if (!Array.isArray(policy.resources) || !Array.isArray(policy.roles)) {
-    throw new ProductPolicyError('Product policy must declare resources[] and roles[]')
+    throw new ProductPolicyError(
+      'Product policy must declare resources[] and roles[]'
+    )
   }
 
   const resourceKeys = new Set<string>()
   for (const r of policy.resources) {
     if (!BARE_KEY_RE.test(r.key)) {
-      throw new ProductPolicyError(`Invalid resource key "${r.key}" in product "${policy.product}"`)
+      throw new ProductPolicyError(
+        `Invalid resource key "${r.key}" in product "${policy.product}"`
+      )
     }
     if (resourceKeys.has(r.key)) {
-      throw new ProductPolicyError(`Duplicate resource "${r.key}" in product "${policy.product}"`)
+      throw new ProductPolicyError(
+        `Duplicate resource "${r.key}" in product "${policy.product}"`
+      )
     }
     resourceKeys.add(r.key)
     if (!r.actions || Object.keys(r.actions).length === 0) {
-      throw new ProductPolicyError(`Resource "${r.key}" must declare at least one action`)
+      throw new ProductPolicyError(
+        `Resource "${r.key}" must declare at least one action`
+      )
+    }
+  }
+
+  for (const resource of policy.resources) {
+    for (const [relation, target] of Object.entries(resource.relations ?? {})) {
+      if (!BARE_KEY_RE.test(relation) || !resourceKeys.has(target)) {
+        throw new ProductPolicyError(
+          `Invalid relation "${relation}" on "${resource.key}"`
+        )
+      }
+    }
+    for (const [roleKey, role] of Object.entries(resource.roles ?? {})) {
+      if (
+        !BARE_KEY_RE.test(roleKey) ||
+        !role ||
+        typeof role.name !== 'string' ||
+        !Array.isArray(role.permissions) ||
+        role.permissions.some(
+          action =>
+            typeof action !== 'string' ||
+            !Object.prototype.hasOwnProperty.call(resource.actions, action)
+        )
+      ) {
+        throw new ProductPolicyError(
+          `Invalid instance role "${roleKey}" on "${resource.key}"`
+        )
+      }
+      if (role.granted_to && !Array.isArray(role.granted_to.users_with_role)) {
+        throw new ProductPolicyError(`Invalid derivation on "${resource.key}"`)
+      }
+      for (const grant of role.granted_to?.users_with_role ?? []) {
+        const target = policy.resources.find(
+          candidate => candidate.key === grant.on_resource
+        )
+        if (
+          !target ||
+          !Object.prototype.hasOwnProperty.call(
+            target.roles ?? {},
+            grant.role
+          ) ||
+          !Object.prototype.hasOwnProperty.call(
+            resource.relations ?? {},
+            grant.linked_by_relation
+          ) ||
+          resource.relations?.[grant.linked_by_relation] !== grant.on_resource
+        ) {
+          throw new ProductPolicyError(
+            `Invalid instance-role derivation on "${resource.key}"`
+          )
+        }
+      }
     }
   }
 
   const roleKeys = new Set<string>()
   for (const role of policy.roles) {
     if (!BARE_KEY_RE.test(role.key)) {
-      throw new ProductPolicyError(`Invalid role key "${role.key}" in product "${policy.product}"`)
+      throw new ProductPolicyError(
+        `Invalid role key "${role.key}" in product "${policy.product}"`
+      )
     }
     if (roleKeys.has(role.key)) {
-      throw new ProductPolicyError(`Duplicate role "${role.key}" in product "${policy.product}"`)
+      throw new ProductPolicyError(
+        `Duplicate role "${role.key}" in product "${policy.product}"`
+      )
     }
     roleKeys.add(role.key)
     for (const perm of role.permissions) {
@@ -139,6 +206,44 @@ export function namespaceProductPolicy(policy: ProductPolicy): PermitSchema {
     key: namespaceKey(policy.product, r.key),
     name: `${prefix} ${r.name}`,
     actions: r.actions,
+    ...(r.relations
+      ? {
+          relations: Object.fromEntries(
+            Object.entries(r.relations).map(([key, target]) => [
+              key,
+              namespaceKey(policy.product, target),
+            ])
+          ),
+        }
+      : {}),
+    ...(r.roles
+      ? {
+          roles: Object.fromEntries(
+            Object.entries(r.roles).map(([key, role]) => [
+              key,
+              {
+                name: role.name,
+                permissions: [...role.permissions],
+                ...(role.granted_to
+                  ? {
+                      granted_to: {
+                        users_with_role: role.granted_to.users_with_role.map(
+                          grant => ({
+                            ...grant,
+                            on_resource: namespaceKey(
+                              policy.product,
+                              grant.on_resource
+                            ),
+                          })
+                        ),
+                      },
+                    }
+                  : {}),
+              },
+            ])
+          ),
+        }
+      : {}),
   }))
 
   const roles: PermitRoleDef[] = policy.roles.map(role => ({
@@ -170,14 +275,18 @@ export function mergeProductPolicy(
     const ns = namespaceProductPolicy(policy)
     for (const r of ns.resources) {
       if (resourceKeys.has(r.key)) {
-        throw new ProductPolicyError(`Resource key collision on merge: "${r.key}"`)
+        throw new ProductPolicyError(
+          `Resource key collision on merge: "${r.key}"`
+        )
       }
       resourceKeys.add(r.key)
       resources.push(r)
     }
     for (const role of ns.roles) {
       if (roleKeys.has(role.key)) {
-        throw new ProductPolicyError(`Role key collision on merge: "${role.key}"`)
+        throw new ProductPolicyError(
+          `Role key collision on merge: "${role.key}"`
+        )
       }
       roleKeys.add(role.key)
       roles.push(role)
