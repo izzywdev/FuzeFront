@@ -5,6 +5,7 @@ import {
   connectPortalNavigation,
   navigatePortalView,
   pathForView,
+  portalContextKey,
   portalMenuItems,
   viewFromPathname,
   type FuzeFrontRuntimeBridge,
@@ -47,6 +48,15 @@ describe('FuzeFront portal navigation bridge', () => {
 
     navigatePortalView('operations', false, undefined, { pushState })
     expect(pushState).toHaveBeenCalledWith({}, '', '/operations')
+  })
+
+  it('invalidates tenant-scoped data when a delayed personal tenant resolves', () => {
+    expect(portalContextKey({ user: { id: 'user-1' }, tenantId: null, activeOrganization: null }))
+      .toBe('user-1:unresolved')
+    expect(portalContextKey({ user: { id: 'user-1' }, tenantId: 'personal-tenant-1', activeOrganization: null }))
+      .toBe('user-1:personal-tenant-1')
+    expect(portalContextKey({ user: { id: 'user-1' }, activeOrganization: { id: 'org-1' } }))
+      .toBe('user-1:org-1')
   })
 
   it('syncs initial links, host submenu events, and browser history, then cleans up', () => {

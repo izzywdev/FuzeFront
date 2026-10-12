@@ -142,8 +142,9 @@ function runtimeBridge() {
     .__FUZEFRONT__
 }
 
-function portalContextKey(context?: PortalContextSnapshot) {
-  return `${context?.user?.id ?? 'anonymous'}:${context?.activeOrganization?.id ?? 'personal'}`
+export function portalContextKey(context?: PortalContextSnapshot) {
+  const tenant = context?.tenantId ?? context?.activeOrganization?.id ?? 'unresolved'
+  return `${context?.user?.id ?? 'anonymous'}:${tenant}`
 }
 
 /** Refetch tenant-scoped data whenever the host changes account or organization. */

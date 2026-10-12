@@ -100,6 +100,46 @@ describe('FQ-69 platform authorization', () => {
     expect(response.json).toHaveBeenCalledWith({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
   })
 
+  it('preserves a failed selected-tenant membership proof as a forbidden response', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 403 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization'
+        ? 'Bearer caller-token'
+        : name === 'x-fuzefront-tenant-id' ? 'tenant-without-membership' : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(response.status).toHaveBeenCalledWith(403)
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'Active tenant membership required',
+      code: 'TENANT_FORBIDDEN',
+    })
+  })
+
+  it('reports tenant proof service outages without downgrading them to invalid authentication', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    const request = { header: vi.fn().mockReturnValue('Bearer caller-token') } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).not.toHaveBeenCalled()
+    expect(response.status).toHaveBeenCalledWith(503)
+    expect(response.json).toHaveBeenCalledWith({
+      error: 'Platform security is unavailable',
+      code: 'SECURITY_UNAVAILABLE',
+    })
+  })
+
   it('uses the tenant resolved by FuzeFront and never a caller-supplied tenant header', async () => {
     process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
     const fetchMock = vi.fn()

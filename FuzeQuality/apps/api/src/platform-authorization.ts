@@ -28,7 +28,18 @@ export function requirePlatformPermission(resource: string, action: string) {
       const sessionUrl = new URL(`${baseUrl}/api/v1/security/session`)
       if (tenantHint) sessionUrl.searchParams.set('tenant', tenantHint)
       const sessionResponse = await fetch(sessionUrl, { headers: identityHeaders })
-      if (!sessionResponse.ok) return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
+      if (!sessionResponse.ok) {
+        if (sessionResponse.status === 400) {
+          return response.status(400).json({ error: 'Invalid tenant selection', code: 'TENANT_INVALID' })
+        }
+        if (sessionResponse.status === 403) {
+          return response.status(403).json({ error: 'Active tenant membership required', code: 'TENANT_FORBIDDEN' })
+        }
+        if (sessionResponse.status >= 500) {
+          return response.status(503).json({ error: 'Platform security is unavailable', code: 'SECURITY_UNAVAILABLE' })
+        }
+        return response.status(401).json({ error: 'Authentication required', code: 'IDENTITY_INVALID' })
+      }
       const body = await sessionResponse.json() as { identity?: Partial<Identity> }
       if (!body.identity?.userId || !body.identity.tenantId) return response.status(403).json({ error: 'A tenant-scoped identity is required', code: 'TENANT_UNRESOLVED' })
       const identity = body.identity as PlatformIdentity

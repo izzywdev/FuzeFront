@@ -33,11 +33,18 @@ function portalToken(): string | null | undefined {
 }
 
 function portalTenant(): string | null {
-  const bridge = (window as Window & {
+  const hostWindow = window as Window & {
     __FUZEFRONT__?: { getContext?: () => { tenantId?: string | null; activeOrganization?: { id: string } | null } }
-  }).__FUZEFRONT__
-  const context = bridge?.getContext?.()
-  return context?.tenantId ?? context?.activeOrganization?.id ?? null
+    __FRONTFUSE_CONTEXT__?: { session?: { tenantId?: string | null } | null }
+  }
+  const context = hostWindow.__FUZEFRONT__?.getContext?.()
+  // The aggregate runtime bridge is canonical. The federation loader context
+  // is an equivalent host-owned fallback during the short interval before the
+  // bridge's React effect publishes its first organization snapshot.
+  return context?.tenantId
+    ?? context?.activeOrganization?.id
+    ?? hostWindow.__FRONTFUSE_CONTEXT__?.session?.tenantId
+    ?? null
 }
 
 /**

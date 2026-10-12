@@ -7,6 +7,7 @@ describe('FuzeQuality portal API identity context', () => {
   afterEach(() => {
     configurePlatformSecurity(undefined)
     delete (window as any).__FUZEFRONT__
+    delete (window as any).__FRONTFUSE_CONTEXT__
     vi.unstubAllGlobals()
   })
 
@@ -26,5 +27,23 @@ describe('FuzeQuality portal API identity context', () => {
     const headers = new Headers(fetchMock.mock.calls[0][1].headers)
     expect(headers.get('authorization')).toBe('Bearer portal-token')
     expect(headers.get('x-fuzefront-tenant-id')).toBe('tenant-1')
+  })
+
+  it('uses the host-owned federation session while the runtime bridge is initializing', async () => {
+    ;(window as any).__FRONTFUSE_CONTEXT__ = {
+      session: { tenantId: 'personal-tenant-1' },
+      getAccessToken: () => 'portal-token',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      repositories: [], apiOperations: [], frontendSurfaces: [], testCases: [],
+      requirements: [], expectations: [], coverage: [], findings: [], suggestions: [],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.portfolio()
+
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers)
+    expect(headers.get('authorization')).toBe('Bearer portal-token')
+    expect(headers.get('x-fuzefront-tenant-id')).toBe('personal-tenant-1')
   })
 })
