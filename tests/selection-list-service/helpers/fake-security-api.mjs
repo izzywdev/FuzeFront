@@ -237,7 +237,7 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req);
       const scopes = machineScopesOf(req);
       const bootstrap = req.method === 'POST' && scopes?.includes(OWNER_GRANT_SCOPE) && b?.role === 'list-owner';
-      const manager = !scopes && b?.resource && decide({ subject: claims.sub, tenant: b.tenant, resource: b.resource, action: 'manage_access' }, claims);
+      const manager = !scopes && b?.resource && decide({ subject: subjectOf(claims), tenant: b.tenant, resource: b.resource, action: 'manage_access' }, claims);
       if (!bootstrap && !manager) return send(res, 403, { code: 'FORBIDDEN' });
 
       if (!b || !b.subject || !b.tenant || !b.role) {
@@ -267,7 +267,7 @@ const server = http.createServer(async (req, res) => {
       const b = await readBody(req);
       const scopes = machineScopesOf(req);
       const bootstrap = req.method === 'POST' && scopes?.includes(OWNER_GRANT_SCOPE) && b?.role === 'list-owner';
-      const manager = !scopes && b?.resource && decide({ subject: claims.sub, tenant: b.tenant, resource: b.resource, action: 'manage_access' }, claims);
+      const manager = !scopes && b?.resource && decide({ subject: subjectOf(claims), tenant: b.tenant, resource: b.resource, action: 'manage_access' }, claims);
       if (!bootstrap && !manager) return send(res, 403, { code: 'FORBIDDEN' });
 
       if (!b || !(b.subject && b.tenant && b.role)) {
