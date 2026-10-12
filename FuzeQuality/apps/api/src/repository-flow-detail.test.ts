@@ -17,7 +17,10 @@ describe('repository flow detail', () => {
     await expect(repositoryFlowDetail('repo-1', 'tenant-1', 'flow-1', dependencies))
       .resolves.toEqual({ status: 200, candidate })
     expect(dependencies.repository).toHaveBeenCalledWith('repo-1', 'tenant-1')
-    expect(dependencies.candidates).toHaveBeenCalledWith('repo-1', 'tenant-1')
+    expect(dependencies.candidates).toHaveBeenCalledWith('repo-1', 'tenant-1', {
+      id: 'flow-1',
+      limit: 1,
+    })
   })
 
   it('does not query candidates when the tenant does not own the repository', async () => {

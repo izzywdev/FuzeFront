@@ -44,7 +44,7 @@ import { executionRecord, linkExecutionToRevisionArtifacts, prepareExecutionEvid
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
 import { repositoryFlowFilterSchema } from './repository-flow-filter'
 import { repositoryFlowReviewConflict } from './repository-flow-review'
-import { repositoryFlowDetail } from './repository-flow-detail'
+import { repositoryFlowCandidateById, repositoryFlowDetail } from './repository-flow-detail'
 import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import { policyGateFilterSchema } from './policy-gate-filter'
 import { policyGateEvaluationForReview, policyGateReviewConflict } from './policy-gate-review'
@@ -552,7 +552,7 @@ app.get('/api/v1/repositories/:id/flow-candidates/:candidateId', mayReadCatalog,
   const tenantId = requestIdentity(request)!.tenantId
   const result = await repositoryFlowDetail(repositoryId, tenantId, candidateId, {
     repository: (id, tenant) => store.repository(id, tenant),
-    candidates: (id, tenant) => store.repositoryFlowCandidates(id, tenant),
+    candidates: (id, tenant, query) => store.repositoryFlowCandidates(id, tenant, query),
   })
   if (result.status === 404) return response.status(404).json({ error: result.error })
   response.json(result.candidate)
@@ -582,7 +582,12 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   const tenantId = requestIdentity(request)!.tenantId
   const repository = await store.repository(repositoryId, tenantId)
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
-  const existingCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+  const existingCandidate = await repositoryFlowCandidateById(
+    repositoryId,
+    tenantId,
+    candidateId,
+    (id, tenant, query) => store.repositoryFlowCandidates(id, tenant, query),
+  )
   if (!existingCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
   const conflict = repositoryFlowReviewConflict(repository, existingCandidate)
   if (conflict) return response.status(409).json(conflict)
@@ -593,7 +598,12 @@ app.post('/api/v1/repositories/:id/flow-candidates/:candidateId/review', mayRevi
   }, existingCandidate.revision)
   if (!candidate) {
     const latestRepository = await store.repository(repositoryId, tenantId)
-    const latestCandidate = (await store.repositoryFlowCandidates(repositoryId, tenantId)).find(item => item.id === candidateId)
+    const latestCandidate = await repositoryFlowCandidateById(
+      repositoryId,
+      tenantId,
+      candidateId,
+      (id, tenant, query) => store.repositoryFlowCandidates(id, tenant, query),
+    )
     if (!latestRepository || !latestCandidate) return response.status(404).json({ error: 'Flow candidate not found' })
     return response.status(409).json(repositoryFlowReviewConflict(latestRepository, latestCandidate) ?? {
       error: 'The UX-flow candidate changed while it was being reviewed. Refresh before deciding.',
