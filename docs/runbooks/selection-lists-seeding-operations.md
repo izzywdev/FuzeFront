@@ -74,13 +74,14 @@ Tick each with evidence (command output, run URL, PR) in the issue that requests
 
 ### 2.3 Kafka topics actually exist, with the intended settings
 
-The chart declares the topics (`kafkaTopics.topics` in `values.yaml`), but the pre-creation Job is
-**DISABLED in production** (`kafkaTopics.enabled: false` in `values-prod.yaml`, because the hook
-wedged Argo syncs). So in prod the topics are **not created by the chart**, and anything not
-created explicitly relies on **broker auto-create**, which uses *broker defaults* for partitions
-and retention (not the values below). That matters most for one topic: `selection-lists.seed.requested`
-carries bearer tokens and its intended retention is **1 day**; an auto-created topic would keep
-them for the broker default.
+The chart declares the topics (`kafkaTopics.topics` in `values.yaml`) and the
+`fuzefront-kafka-topics-<hash>` Job (non-hook; see `docs/deployment/CONTABO_DEPLOYMENT.md` §6)
+creates the missing ones and converges retention/`cleanup.policy` on existing ones; it is
+**enabled in production** (`values-prod.yaml`). Before it was enabled, topics fell back to
+**broker auto-create** with *broker defaults*, which matters most for one topic:
+`selection-lists.seed.requested` carries bearer tokens and its intended retention is **1 day**.
+Confirm the Job completed (`cluster-query`: `-n fuzefront get jobs -l app.kubernetes.io/component=kafka-topics`)
+and that these values are what the broker reports.
 
 - [ ] Describe each topic on the broker (read-only; from a Kafka pod or client with access to
       `fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092`) and compare with the chart:
@@ -97,10 +98,8 @@ them for the broker default.
       kafka-topics.sh --bootstrap-server fuzeinfra-kafka.fuzeinfra.svc.cluster.local:9092 \
         --describe --topic selection-lists.seed.requested
       ```
-- [ ] Anything missing or mis-configured is created/fixed **by FuzeInfra** (delegate via `@fuze`
-      with the table above), or by first making the chart Job non-blocking (drop the Helm hook
-      annotations / bound it with `activeDeadlineSeconds`, per the comment in `values-prod.yaml`)
-      and re-enabling it — a `devops-engineer` change, not a docs one.
+- [ ] Anything missing or mis-configured should be fixed by the Job on the next sync; if the
+      Job failed, read its logs (it names the topic) rather than creating topics by hand.
 - [ ] Note the **change-event DLQs are not declared in the chart** (`<topic>.dlq` for the 13
       published change topics and the two outcome topics): the relay writes to them on a parked
       event, so they rely on auto-create (or must be created) too. Decide deliberately.
@@ -296,7 +295,7 @@ against the SL8 branch (`claude/sl8-fixes`) and stay in the table as a record, n
 | ~~**Org-id format in flag context**~~ **FIXED (SL8)** | `buildFlagContext` in `src/flags.ts` canonicalises `orgId` / `userId` to the wire TypeID (`org_…` / `usr_…`; a bare UUID claim is converted with the identity codec) for EVERY evaluation; test `flags.canonical-context.test.ts` | Write Unleash `orgId` constraints in the **`org_…`** form: it now matches the seeding paths and the HTTP paths alike. A constraint written with a bare UUID will match neither | done |
 | ~~**Request bodies looser than the spec; `limit=0` accepted; resolve accepted non-`front_sli_` ids**~~ **FIXED (SL8)** | `acceptOnlyBodyProps` / `parseLimitParam` in `src/middleware/validateInput.ts`; `POST /v1/resolve` validates `ids`; tests `routes.request-validation.db.test.ts` + the acceptance suite | Undeclared body properties, `limit<1`, cross-type/duplicate/empty resolve ids and an unsupported locale are `400 VALIDATION_ERROR`. **Behaviour change for callers:** `POST /v1/resolve` with `ids: []` is now `400` (spec `minItems: 1`), not an empty `200` | done |
 | ~~**Port mismatch (service default 3011 vs chart 3008)**~~ **FIXED service-side (SL8)** | `src/index.ts` default, `Dockerfile` `ENV PORT`/`EXPOSE` and the docs now say `3008` (the chart already set `PORT` from `selectionListService.port`, so the deployed pod was never affected) | Local runs / the image default agree with the chart. **Still `3011`:** the OpenAPI `servers` example (frozen contract; its Helm copy `deploy/helm/fuzefront/files/selection-list-service-openapi.yaml` must stay byte-identical, so amend both in a contract PR), the `fuzefront-selection-list-client` Python README/docstring base URL, and CI's explicit `PORT: '3011'` (harmless) | `contract-designer` (spec), `docs-maintainer` (py README) |
-| **Prod topic pre-creation is disabled** | `kafkaTopics.enabled: false` in `values-prod.yaml` | topics may be auto-created with broker defaults; token retention on `seed.requested`/`.dlq` not guaranteed to be 1 d; change-event DLQs undeclared | `devops-engineer` / FuzeInfra via `@fuze` |
+| ~~**Prod topic pre-creation is disabled**~~ **RESOLVED** | `kafkaTopics.enabled: true` in `values-prod.yaml` (non-hook Job) | verify the Job completed on the cluster; change-event DLQs remain undeclared (rely on auto-create) | `devops-engineer` |
 | **Service not deployed; secrets not sealed** | `selectionListService.enabled: false`; no `selection-list-secrets.yaml` under `deploy/contabo/sealed/` | nothing above can run in prod yet | `devops-engineer` |
 | **Allowlist has no app sources; no seed clients exist** | `seed-sources.json` lists only `platform`; seed-clients runbook is scaffolding | every app request is `SOURCE_NOT_ALLOWED` | per onboarding PR |
 | **Platform pack translations unreviewed (as far as the repo can show)** | `is_machine: false` is written for all of them | see §2.5 | owner / translators |

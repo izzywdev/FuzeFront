@@ -910,24 +910,28 @@ authentik:
   networkPolicy:
     enabled: true
 
-# Pre-create the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
-# overlay). Avoids relying on broker auto-create for the prefixed topics.
-# Re-enabled once the image was switched bitnami/kafka -> apache/kafka (the
-# bitnami tag was unpullable and froze the sync hook) and the broker
-# (fuzeinfra-kafka.fuzeinfra.svc:9092) was verified reachable.
+# Reconcile the prod Kafka topics (FuzeInfra Kafka is enabled in the Argo
+# overlay) so they carry their declared partitions / retention / cleanup.policy
+# instead of broker auto-create defaults. Without this, selection-lists.seed.requested
+# and its .dlq (messages carry bearer tokens) would keep the broker's default
+# retention instead of 1d.
 kafkaTopics:
-  # DISABLED: this Job is a helm post-upgrade hook with
-  # hook-delete-policy: before-hook-creation, so every Argo sync attempt
-  # deletes and recreates it, restarting it from zero. It creates topics at
-  # ~40s each against the shared Kafka, so it never finishes before the next
-  # attempt wipes it — and Argo blocks the WHOLE sync on it
-  # ('waiting for completion of hook batch/Job/fuzefront-kafka-topics').
-  # Net effect: no chart change could deploy at all. It blocked the Authentik
-  # sign-in fix (#320) from ever reaching the cluster.
-  # Topics fall back to broker auto-create meanwhile. Re-enable ONLY after the
-  # job is made non-blocking (drop the helm hook annotations, or bound it with
-  # activeDeadlineSeconds) so a slow Kafka can never wedge deploys again.
-  enabled: false
+  # ENABLED as an ordinary, NON-BLOCKING Job (templates/kafka-topics-job.yaml).
+  # History: it used to be a helm post-upgrade hook (hook-delete-policy:
+  # before-hook-creation) running one JVM per topic at ~40s each, so every Argo
+  # sync attempt deleted+recreated it, it never finished, and Argo blocked the
+  # WHOLE sync on it ('waiting for completion of hook batch/Job/fuzefront-kafka-topics').
+  # That is why it was disabled (it blocked the Authentik sign-in fix #320).
+  # Now: no helm.sh/hook annotations; named fuzefront-kafka-topics-<hash of the
+  # topic spec+script+image> so an unchanged render is a no-op and a changed topic
+  # list creates a fresh Job (the old one is pruned); no ttlSecondsAfterFinished
+  # (a TTL would make Argo see the Job vanish and recreate it forever); last Argo
+  # sync wave + activeDeadlineSeconds 600 so a slow broker fails the Job (app
+  # Degraded) instead of hanging the sync; it lists topics once, creates only the
+  # missing ones in parallel, and alters retention/cleanup.policy in place on
+  # existing topics that declare an explicit retention and drifted. It never
+  # deletes topics or reduces partitions.
+  enabled: true
 
 # --- Heavy stateless services → node-2 -------------------------------------
 # These are forward-looking placeholders (enabled flipped by Phase F). The
