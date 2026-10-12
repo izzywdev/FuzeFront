@@ -221,7 +221,7 @@ jobs:
             The app opens Chrome in standalone mode (no browser chrome) — backed by your live prod cluster.
 
             ### Requirements
-            - Android 5.0+ (API 21+)
+            - Android 7.0+ (API 24+)
             - Chrome 72+ installed on device
           files: ${{ steps.apk.outputs.path }}
           draft: false
