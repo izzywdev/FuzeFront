@@ -499,15 +499,49 @@ How the two meet:
   list** by `SelectionList:read`: a caller sees only lists it holds an instance role on. A caller
   with none gets an empty page, not a `403`.
 - **Creating** needs `SelectionListCatalog:create`. The service then grants the creator
-  `list-owner` on the new list **with its own machine identity**.
+  `list-owner` on the new list **with its own workload identity** (a projected Kubernetes
+  ServiceAccount token exchanged for scope `selection-list:owner-grant`, which the Security API
+  accepts only to bootstrap the verified creator as owner).
 - Two actions are stricter than the table suggests: **purging an item**
   (`DELETE .../items/{itemId}?purge=true`) additionally needs `delete` on the list, so only a
   `list-owner` can purge (a `list-editor` can archive an item but gets `403` on purge); and
   **archiving a list via `PATCH` `status: "archived"`** needs `update` **and** the same `delete` as
   `POST .../archive` — a `list-editor` can no longer archive through PATCH (4.0.0).
 - **`POST /v1/resolve`** needs only the catalog `resolve` action; it does **not** check
-  `SelectionList:read` on each id's list (accepted trade-off: it returns a label, a locale and a
-  status only).
+  `SelectionList:read` on each id's list (accepted trade-off, review L-4: it is org-scoped, it
+  returns a label, a locale and a status only, and a per-list check would turn one round trip
+  into N decisions on the hot path). Decided and recorded: this is not a gap to fix.
+- **The last-owner guard asks the Security API, not the mirror.** Demoting or removing a
+  `list-owner` is refused `409 CONFLICT` unless **another** owner is *confirmed by the authority*
+  (`manage_access` on that list, asked for each other mirror owner). A mirror row the authority does
+  not confirm (a failed role change, a deleted user, an operator's direct revoke) is not an owner.
+  If the Security API cannot answer, the change is refused (`500`/`409`), never allowed.
+- **A failed role change is compensated.** The Security API write is not part of the database
+  transaction, so when `PUT`/`DELETE .../access/{userId}` fails after it revoked/granted something,
+  the service puts the authority back to the user's prior role before answering `500`
+  (`selection_list_authz_compensation_total{outcome="failed"}` means that compensation itself failed).
+  Compensation runs **with the acting human's own token**: the Security API re-checks their
+  `manage_access` on the instance exactly as for the original write; the workload identity never
+  repairs a role.
+- **Which credential does what.** Human access changes (role change, revoke, compensation, purge
+  cleanup) always carry the caller's token and are authorized per list instance. The service's own
+  workload token holds exactly two scopes, both enforced by the Security API
+  (`backend/security/src/routes/authz.ts`), neither of which is `authz:admin`:
+  `selection-list:owner-grant` (grant `list-owner` to an active member, nothing else) and
+  `selection-list:grant-cleanup` (**revoke only**, only `SelectionList` instance roles, and only for
+  a principal SQL proves is gone: the user row is missing or deactivated, or the user has no active
+  membership of that tenant; a live member's grant is refused `403`).
+- **Cascades keep the authority clean.** Purging a list revokes its instance's Security API grants
+  after the purge commits, with the purging owner's token, their own grant last (best-effort,
+  idempotent, never fails the purge; `selection_list_grant_cleanup_failed_total{cause="purge"}`).
+  A grant that token is refused (typically a grantee who has since left the tenant) is retried once
+  through the cleanup scope, which accepts exactly that case. `identity.user.deleted` has no human,
+  so it uses the cleanup scope: it revokes every
+  grant the deleted user holds on any list and removes their mirror rows (retried; dead-lettered
+  after 5 attempts). If the deleted user was a list's **last** owner the grant is still revoked, the
+  list is flagged (`selection_list_ownerless_lists_total{cause="user_deleted"}` and an ERROR log with
+  `ownerless: true`), and a tenant admin recovers it by granting `list-owner` through the Security API
+  (below).
 
 ### No implicit admin ownership — and the support path
 
@@ -673,6 +707,33 @@ for (const q of quota.quotas) {
   }
 }
 ```
+
+What each scope is, and where it is enforced (all four are **enforced**, not just reported):
+
+| Scope | Default | Counts | Refused on |
+|---|---|---|---|
+| `org_lists` | 100 | active lists in the org | create a list; **un-archive** a list (`PATCH {status:"active"}`) |
+| `user_lists` | 20 | active lists the **caller** created in the org (seeded `system:*` lists and `[deleted-user]` lists are not a user's) | create a list; un-archive a list the user authored |
+| `list_items` | 500 | active items in the list | create an item; un-archive an item |
+| `list_locales` | 11 | distinct locales with a list-level translation, **source locale included** | `PUT .../translations/{locale}` or an autofill into a locale the list does not have yet; a `PATCH` that writes a new source-locale row. Updating a locale the list already has is never refused. |
+
+A per-org override row in `selection_list_org_quota` wins over the default. Creates are exact:
+the check runs inside the create transaction under an advisory lock, so N parallel creates at the
+ceiling admit exactly `ceiling - current`.
+
+**Archived rows count toward a hard storage ceiling.** Archiving is not deleting, so a loop of
+archive + create would otherwise grow the tables without bound while the active counts never move.
+Every stored row, archived or not, counts toward `active limit x SELECTION_LISTS_STORAGE_CEILING_FACTOR`
+(an env var on the service; a positive integer; **default 10**, so a default org may *store* 1000
+lists and a default list 5000 items; an invalid value falls back to 10 and never disables the
+ceiling). A refusal has the **same wire shape** as any other (`403 QUOTA_EXCEEDED`, `scope`
+`org_lists` or `list_items`, `limit` = the ceiling, `current` = rows stored) and its `message` says
+archived rows count; **purging** archived lists/items frees the space.
+
+There is also an **ingress rate limit** (per client IP) on `/api/v1/resolve` and on
+`/api/v1/selection-lists` (Helm `selectionListService.ingress.rateLimit.*`; defaults 100 rps and 30
+rps with a 4x burst; excess requests get `429` from the ingress, not from the service). It cannot
+tell reads from writes on the CRUD path, so it is an abuse bound, not a meter.
 
 When you do hit the ceiling:
 
