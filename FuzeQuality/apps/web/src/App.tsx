@@ -5144,19 +5144,24 @@ export function App({ getToken }: { getToken?: () => string | null } = {}) {
         </div>}
         <div className="content">
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="alert">
               <AlertTriangle />{' '}
               <div>
                 <strong>Catalog API unavailable</strong>
                 <span>{error}</span>
               </div>
+              <QualityAction intent="secondary" onClick={() => void reload()}>
+                Retry
+              </QualityAction>
             </div>
           )}
           {!data ? (
-            <div className="loading-screen">
-              <RefreshCw className="spin" />
-              <span>Loading evidence graph…</span>
-            </div>
+            loading ? (
+              <div className="loading-screen">
+                <RefreshCw className="spin" />
+                <span>Loading evidence graph…</span>
+              </div>
+            ) : null
           ) : (
             <>
               {view === 'overview' && (
