@@ -121,6 +121,7 @@ export const portalMenuItems = navigation
 
 type PortalContextSnapshot = {
   user: { id: string } | null
+  tenantId?: string | null
   activeOrganization?: { id: string } | null
 }
 

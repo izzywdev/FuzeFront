@@ -31,6 +31,8 @@ export interface PlatformSnapshot {
   user: { id: string; email: string; roles: string[] } | null
   apps: Array<{ id: string; name: string }>
   activeApp: { id: string; name: string } | null
+  /** Canonical organization backing the selected org or Personal workspace. */
+  tenantId?: string | null
   activeOrganization?: { id: string; name: string } | null
   isPlatformMode: boolean
 }

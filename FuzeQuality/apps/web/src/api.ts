@@ -32,6 +32,14 @@ function portalToken(): string | null | undefined {
   return context?.getAccessToken?.()
 }
 
+function portalTenant(): string | null {
+  const bridge = (window as Window & {
+    __FUZEFRONT__?: { getContext?: () => { tenantId?: string | null; activeOrganization?: { id: string } | null } }
+  }).__FUZEFRONT__
+  const context = bridge?.getContext?.()
+  return context?.tenantId ?? context?.activeOrganization?.id ?? null
+}
+
 /**
  * Receives the portal account-vault token from the Module Federation host.
  * A remote must never read the host's storage directly: the host remains the
@@ -56,12 +64,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
     const token = platformToken?.() ?? portalToken()
+    const tenant = portalTenant()
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
       signal: controller.signal,
       headers: {
         'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(tenant ? { 'x-fuzefront-tenant-id': tenant } : {}),
         ...init?.headers,
       },
     })

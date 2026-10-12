@@ -209,6 +209,12 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const activeOrg = state.organizations.find(o => o.id === state.activeOrganizationId)
+    // Personal is presented as `activeOrganizationId === null`, but it is
+    // persisted and authorized through the user's provisioned personal org.
+    // Federated products need that canonical tenant just as they need an
+    // explicitly selected organization.
+    const personalOrg = state.organizations.find(o => o.type === 'personal')
+    const tenantId = activeOrg?.id ?? personalOrg?.id ?? null
     bridge.setContext({
       user: state.user
         ? {
@@ -221,6 +227,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       activeApp: state.activeApp
         ? { id: state.activeApp.id, name: state.activeApp.name }
         : null,
+      tenantId,
       activeOrganization: activeOrg
         ? { id: activeOrg.id, name: activeOrg.name }
         : null,

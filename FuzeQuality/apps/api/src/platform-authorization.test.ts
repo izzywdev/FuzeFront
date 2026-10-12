@@ -36,6 +36,27 @@ describe('FQ-69 platform authorization', () => {
     })
   })
 
+  it('asks FuzeFront to prove the portal-selected tenant before authorizing', async () => {
+    process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ identity: { userId: 'user-1', tenantId: 'tenant-1' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ allow: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = {
+      header: vi.fn((name: string) => name === 'authorization'
+        ? 'Bearer caller-token'
+        : name === 'x-fuzefront-tenant-id' ? 'tenant-1' : undefined),
+    } as unknown as Request
+    const response = responseDouble()
+    const next = vi.fn() as NextFunction
+
+    await requirePlatformPermission('fuzequality_Repository', 'read')(request, response, next)
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0].toString()).toBe('https://security.example/api/v1/security/session?tenant=tenant-1')
+    expect(requestIdentity(request)?.tenantId).toBe('tenant-1')
+  })
+
   it('fails closed when the security service is unavailable', async () => {
     process.env.FUZEFRONT_SECURITY_URL = 'https://security.example'
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('contains sensitive upstream detail')))
