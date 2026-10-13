@@ -73,6 +73,7 @@ export async function applyPlatformDefaults(
       trigger: options.trigger ?? 'org-created',
       requestId: null,
       lists: pack.lists,
+      translationProvenance: pack.translationProvenance,
       correlationId: options.correlationId,
       internalErrors: options.internalErrors,
     });
