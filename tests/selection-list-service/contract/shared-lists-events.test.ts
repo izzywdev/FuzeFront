@@ -21,7 +21,7 @@
  */
 import { actor, call, createList, createPlatformList, forkList, L, newOrg, PLATFORM_ORG_ID, assertSharedListsOn, walkItems } from '../helpers/shared-lists';
 import { closeDb, dbQuery } from '../helpers/db';
-import { eventsFrom, eventsSince, maxSeq, payloadErrors, topicsOf, TOPICS, transactionIds, type OutboxRow } from '../helpers/outbox';
+import { assertOneTransaction, eventsFrom, eventsSince, maxSeq, payloadErrors, topicsOf, TOPICS, transactionIds, type OutboxRow } from '../helpers/outbox';
 
 const ORG_E = newOrg('evt');
 const owner = actor('own', ORG_E, 'admin');
@@ -107,12 +107,13 @@ describe('fork: one transaction, the documented topics, a complete itemMap', () 
     }
   });
 
-  it('all rows were written in ONE transaction (same writer xid), with strictly increasing listRevision (one per event)', async () => {
-    expect(await transactionIds(rows)).toHaveLength(1);
+  it('all rows were written in ONE request / transaction (same correlation id and writer xid), with strictly increasing listRevision (one per event)', async () => {
+    await assertOneTransaction(rows);
     // control: the xid really discriminates - the common list's own earlier events came from different requests
     const earlier = await dbQuery<{ id: string }>(`SELECT id FROM event_outbox WHERE organization_id = $1 AND payload->>'listId' = $2`, [PLATFORM_ORG_ID, p.list.id]);
     expect(earlier.length).toBeGreaterThan(3);
-    expect((await transactionIds(earlier)).length).toBeGreaterThan(1);
+    const earlierTx = await transactionIds(earlier);
+    if (earlierTx.untouched) expect(earlierTx.xids.length).toBeGreaterThan(1);
     const revs = rows.filter((r) => r.payload['listRevision'] !== undefined).map((r) => r.payload['listRevision'] as number);
     expect(revs.length).toBe(rows.length - 1); // access.granted carries none
     for (let i = 1; i < revs.length; i++) expect(revs[i]).toBeGreaterThan(revs[i - 1]);
@@ -251,7 +252,7 @@ describe('visibility changes emit selection-lists.visibility.changed', () => {
     const updated = events.find((e) => e.topic === TOPICS.SELECTION_LISTS_LIST_UPDATED)!;
     expect(updated.payload['changedFields']).toContain('name');
     expect(updated.payload['changedFields']).not.toContain('visibility');
-    expect(await transactionIds(events)).toHaveLength(1);
+    await assertOneTransaction(events);
     expect(new Set(events.map((e) => e.payload['listRevision'])).size).toBe(2);
   });
 

@@ -178,8 +178,10 @@ instances on the same database**, both started like the CI job does (`NODE_ENV=t
 * The suites mint per-run orgs/users, so re-running against the same database is safe; the only fixed orgs are the
   quota-override rows seeded by `helpers/global-setup.ts` (platform org, fork quota orgs). A fresh database per run
   (as CI has) is still the reference.
-* Run the outbox-observing suites without `KAFKA_BROKERS` (as above): `shared-lists-events` identifies one
-  transaction by the rows' `xmin`, which a live relay rewrites when it marks rows `sent`.
+* `shared-lists-events` proves "one request, one transaction" by the rows' shared correlation id and, while they are
+  still `pending`, their shared `xmin`. `contract/outbox-relay.test.ts` marks every org's rows `sent` in a parallel
+  worker (an UPDATE, which rewrites `xmin`), so the `xmin` half is asserted only for rows the relay has not touched.
+  Run the suites without `KAFKA_BROKERS`, as CI does.
 
 ## FFRNT-242 — mirror-not-authority
 

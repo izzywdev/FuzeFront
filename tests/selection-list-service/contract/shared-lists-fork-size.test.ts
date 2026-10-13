@@ -19,7 +19,7 @@
 import { actor, call, createPlatformList, expectError, forkList, L, rnd, assertSharedListsOn, walkLists } from '../helpers/shared-lists';
 import { FORK_BIG_ORG_ID } from '../helpers/sl9-constants';
 import { closeDb, dbQuery } from '../helpers/db';
-import { allEvents, payloadErrors, TOPICS } from '../helpers/outbox';
+import { payloadErrors, TOPICS } from '../helpers/outbox';
 
 const forker = actor('big', FORK_BIG_ORG_ID, 'admin');
 
@@ -27,8 +27,17 @@ beforeAll(async () => {
   await assertSharedListsOn();
 });
 afterAll(async () => {
+  await dropOutbox();
   await closeDb();
 });
+
+/**
+ * A 5000-item fork enqueues ~5000 outbox rows in this (dedicated) org. contract/outbox-relay.test.ts runs real relay
+ * passes over EVERY org's pending rows in a parallel worker; leaving thousands of freshly written rows (and a
+ * 5000-entry `list.forked`) for it to chew on makes its timing-sensitive assertions flaky (observed: O2/O3 failed in
+ * 2 of 6 full runs, 0 of 8 without this file). The events were already asserted, so drop this org's rows right after.
+ */
+const dropOutbox = (): Promise<unknown> => dbQuery('DELETE FROM event_outbox WHERE organization_id = $1', [FORK_BIG_ORG_ID]);
 
 async function bulkItems(listId: string, count: number, tag: string): Promise<void> {
   await dbQuery(
@@ -49,15 +58,21 @@ describe('D6 size: more than 5000 non-purged items is refused', () => {
     const tag = rnd();
     const p = await createPlatformList({ itemCodes: [] });
     await bulkItems(p.list.id, 5001, tag);
-    const before = (await allEvents(FORK_BIG_ORG_ID)).length;
-    const res = await forkList(forker, p.list.id);
-    expectError(res, 400, 'VALIDATION_ERROR');
-    expect((await walkLists(forker, 'status=all')).rows).toEqual([]);
-    expect((await allEvents(FORK_BIG_ORG_ID)).length).toBe(before);
-    // control: purging one item brings the source to exactly 5000 and the SAME call is now accepted (see the next test for its shape)
-    expect((await call(p.owner, 'DELETE', `${L(p.list.id)}/items/front_sli_bk${tag}00000001?purge=true`)).status).toBe(204);
-    const ok = await forkList(forker, p.list.id);
-    expect(ok.status).toBe(201);
+    const eventCount = async (): Promise<number> =>
+      Number((await dbQuery<{ n: string }>('SELECT count(*)::text AS n FROM event_outbox WHERE organization_id = $1', [FORK_BIG_ORG_ID]))[0].n);
+    try {
+      const before = await eventCount();
+      const res = await forkList(forker, p.list.id);
+      expectError(res, 400, 'VALIDATION_ERROR');
+      expect((await walkLists(forker, 'status=all')).rows).toEqual([]);
+      expect(await eventCount()).toBe(before);
+      // control: purging one item brings the source to exactly 5000 and the SAME call is now accepted (see the next test for its shape)
+      expect((await call(p.owner, 'DELETE', `${L(p.list.id)}/items/front_sli_bk${tag}00000001?purge=true`)).status).toBe(204);
+      const ok = await forkList(forker, p.list.id);
+      expect(ok.status).toBe(201);
+    } finally {
+      await dropOutbox();
+    }
   }, 180_000);
 
   it('exactly 5000 non-purged items -> 201; every item copied; list.forked.itemMap has 5000 entries and validates', async () => {
@@ -65,17 +80,24 @@ describe('D6 size: more than 5000 non-purged items is refused', () => {
     const p = await createPlatformList({ itemCodes: [] });
     await bulkItems(p.list.id, 5000, tag);
     const org = actor('big5k', FORK_BIG_ORG_ID, 'admin');
-    const res = await forkList(org, p.list.id);
-    expect(res.status).toBe(201);
-    const copied = await dbQuery<{ n: string; withOrigin: string }>(
-      'SELECT count(*)::text AS n, count(origin_item_id)::text AS "withOrigin" FROM selection_list_items WHERE list_id = $1',
-      [res.body.id],
-    );
-    expect(Number(copied[0].n)).toBe(5000);
-    expect(Number(copied[0].withOrigin)).toBe(5000);
-    const forked = (await allEvents(FORK_BIG_ORG_ID)).filter((r) => r.topic === TOPICS.SELECTION_LISTS_LIST_FORKED && r.payload['listId'] === res.body.id);
-    expect(forked).toHaveLength(1);
-    expect(payloadErrors(forked[0].topic, forked[0].payload)).toEqual([]);
-    expect(forked[0].payload['itemMap']).toHaveLength(5000);
+    try {
+      const res = await forkList(org, p.list.id);
+      expect(res.status).toBe(201);
+      const copied = await dbQuery<{ n: string; withOrigin: string }>(
+        'SELECT count(*)::text AS n, count(origin_item_id)::text AS "withOrigin" FROM selection_list_items WHERE list_id = $1',
+        [res.body.id],
+      );
+      expect(Number(copied[0].n)).toBe(5000);
+      expect(Number(copied[0].withOrigin)).toBe(5000);
+      const forked = await dbQuery<{ topic: string; payload: Record<string, any> }>(
+        `SELECT topic, payload FROM event_outbox WHERE organization_id = $1 AND topic = $2 AND payload->>'listId' = $3`,
+        [FORK_BIG_ORG_ID, TOPICS.SELECTION_LISTS_LIST_FORKED, res.body.id],
+      );
+      expect(forked).toHaveLength(1);
+      expect(payloadErrors(forked[0].topic, forked[0].payload)).toEqual([]);
+      expect(forked[0].payload['itemMap']).toHaveLength(5000);
+    } finally {
+      await dropOutbox();
+    }
   }, 180_000);
 });
