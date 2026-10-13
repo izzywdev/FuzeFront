@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Choose a factor — MFA step-up (mobile)</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { display: grid; place-items: center; background: var(--bg-primary); padding: var(--space-6) 0 96px; }
+  .phone { width: 375px; min-height: 720px; background: var(--bg-primary); border: 1px solid var(--border-color);
+    border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); margin-bottom: var(--space-8); }
+  .m-topbar { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary); position: relative; }
+  .m-topbar::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: var(--seam); opacity: .7; }
+  .m-topbar .back { width: 32px; height: 32px; display: grid; place-items: center; color: var(--text-secondary); }
+  .m-topbar .title { font-family: var(--font-display); font-weight: var(--weight-semibold); font-size: var(--text-md); }
+  .m-body { flex: 1; overflow: auto; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .m-sub { color: var(--text-secondary); font-size: var(--text-sm); margin: 0 0 18px; line-height: 1.5; }
+  .picker { display: grid; gap: 10px; }
+  .picker button { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
+    text-align: left; width: 100%; min-height: 56px; padding: 12px 14px; background: var(--bg-tertiary);
+    border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary);
+    cursor: pointer; font-family: var(--font-sans); }
+  .picker button:disabled { opacity: .5; cursor: not-allowed; }
+  .picker .ico { width: 36px; height: 36px; border-radius: var(--radius-sm); display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent-color); flex: none; font-size: 16px; }
+  .picker b { display: block; font-size: var(--text-md); }
+  .picker small { display: block; color: var(--text-tertiary); font-size: 12px; margin-top: 2px; }
+  .picker .chevron { color: var(--text-tertiary); }
+  .degrade-note { margin-top: 14px; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
+  .state-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: var(--tracking-wide);
+    text-transform: uppercase; color: var(--text-tertiary); margin: 28px 0 10px; text-align: center; }
+  /* loading skeleton rows */
+  .sk-row { display: flex; align-items: center; gap: 14px; min-height: 56px; padding: 12px 14px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+  .sk { border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--bg-quaternary), var(--border-color), var(--bg-quaternary));
+    background-size: 200% 100%; animation: sksh 1.3s ease-in-out infinite; }
+  @keyframes sksh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  @media (prefers-reduced-motion: reduce){ .sk{ animation:none; } }
+  .sk.ico { width: 36px; height: 36px; flex: none; border-radius: var(--radius-sm); }
+  .sk.line1 { height: 12px; width: 60%; margin-bottom: 6px; }
+  .sk.line2 { height: 10px; width: 40%; }
+  /* empty / error */
+  .notice { text-align: center; padding: 28px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-lg);
+    background: var(--bg-tertiary); }
+  .notice .ico { font-size: 28px; margin-bottom: 10px; }
+  .notice h3 { margin: 0 0 6px; font-size: var(--text-md); }
+  .notice p { margin: 0 0 16px; color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; }
+  .notice.err .ico { color: var(--error-color); }
+  .btn { font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-medium);
+    border-radius: var(--radius-md); padding: 12px 18px; min-height: 44px; cursor: pointer; border: 1px solid transparent;
+    width: 100%; }
+  .btn-primary { background: var(--accent-color); color: #0b0e15; }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border-color: var(--border-color); }
+  .caption { text-align:center; font-size: 11px; color: var(--text-tertiary); margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="state-label">Default · choose a factor (mfa_required.factors)</div>
+<div class="phone" data-frame="01-choose-factor" data-state="default" data-route="/login/mfa" data-viewport="375">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Verify it's you</span></header>
+  <main class="m-body" data-panel="choose-factor" data-state="loaded">
+    <p class="m-sub">Choose how you'd like to get your verification code.</p>
+    <div class="picker" data-component="factor-picker">
+      <button data-factor="totp" data-factor-id="fct_totp_1" data-action="challenge">
+        <span class="ico" aria-hidden="true">🔑</span>
+        <span><b>Authenticator app</b><small>Enter a code from your app</small></span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>
+      <button data-factor="email" data-factor-id="fct_email_1" data-action="challenge">
+        <span class="ico" aria-hidden="true">✉️</span>
+        <span><b>Email</b><small>Send a code to a•••@rowan.co</small></span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>
+      <button data-factor="sms" data-factor-id="fct_sms_1" data-action="challenge">
+        <span class="ico" aria-hidden="true">💬</span>
+        <span><b>Text message</b><small>Send a code to •••• •• 4471</small></span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>
+      <button data-factor="recovery" data-action="use-recovery">
+        <span class="ico" aria-hidden="true">🗝️</span>
+        <span><b>Recovery code</b><small>Use one of your saved backup codes</small></span>
+        <span class="chevron" aria-hidden="true">›</span>
+      </button>
+    </div>
+    <p class="degrade-note" data-honest-degrade>Only factors enrolled on this account are shown. Text message is offered
+      only when <code class="mono">mfa.types</code> includes <code class="mono">sms</code> — never a button that can't deliver.</p>
+  </main>
+</div>
+
+<div class="state-label">Loading · fetching the factor list</div>
+<div class="phone" data-frame="01-choose-factor" data-state="loading" data-route="/login/mfa">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Verify it's you</span></header>
+  <main class="m-body" data-panel="choose-factor" data-state="loading">
+    <p class="m-sub">Choose how you'd like to get your verification code.</p>
+    <div class="picker" aria-busy="true" aria-label="Loading factors">
+      <div class="sk-row"><div class="sk ico"></div><div style="flex:1"><div class="sk line1"></div><div class="sk line2"></div></div></div>
+      <div class="sk-row"><div class="sk ico"></div><div style="flex:1"><div class="sk line1"></div><div class="sk line2"></div></div></div>
+      <div class="sk-row"><div class="sk ico"></div><div style="flex:1"><div class="sk line1"></div><div class="sk line2"></div></div></div>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Error · couldn't load factors (fail-closed, retry only)</div>
+<div class="phone" data-frame="01-choose-factor" data-state="error">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Verify it's you</span></header>
+  <main class="m-body" data-panel="choose-factor" data-state="error">
+    <div class="notice err" data-state="load-error">
+      <div class="ico" aria-hidden="true">⚠</div>
+      <h3>Something went wrong</h3>
+      <p>We couldn't load your verification options. No factor was skipped or auto-selected — try again.</p>
+      <button class="btn btn-primary" data-action="retry">Try again</button>
+    </div>
+  </main>
+</div>
+
+<div class="state-label">Empty · zero factors returned (fail-closed, never a silent dead end)</div>
+<div class="phone" data-frame="01-choose-factor" data-state="empty">
+  <header class="m-topbar"><span class="back" aria-hidden="true">←</span><span class="title">Verify it's you</span></header>
+  <main class="m-body" data-panel="choose-factor" data-state="empty">
+    <div class="notice" data-state="no-factors">
+      <div class="ico" aria-hidden="true">🛟</div>
+      <h3>No verification method available</h3>
+      <p>Your account requires two-factor authentication but no working factor came back from the server. This is a
+        server-side data problem, not a dead end for you — contact support with the reference below rather than
+        guessing at a code.</p>
+      <button class="btn btn-ghost" data-action="contact-support">Contact support</button>
+    </div>
+  </main>
+</div>
+
+<p class="caption">Frame <b>01 / 04</b> · Choose a factor · <code class="mono">/login/mfa</code> — 375px (Android TWA)</p>
+</body>
+</html>

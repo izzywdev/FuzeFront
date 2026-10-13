@@ -108,6 +108,40 @@ spec:
                   key: {{ .Values.applicationsService.featureFlags.tokenSecretKey | quote }}
                   optional: true
             {{- end }}
+            {{- /* build-with-agent (app-builder) env. All optional: with buildApiUrl/token
+                   unset the endpoint answers 503 builder_unavailable; nothing renders
+                   unless the value is set. */}}
+            {{- with .Values.applicationsService.appBuilder.buildApiUrl }}
+            - name: FUZEAGENT_BUILD_API_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.applicationsService.appBuilder.tokenSecretName }}
+            # Bearer token for the FuzeAgent build endpoint (SECRET, sealed; see
+            # docs/runbooks/app-builder-secrets.md). optional: true -> pod starts
+            # without it and the launcher reports builder_unavailable.
+            - name: FUZEAGENT_BUILD_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.applicationsService.appBuilder.tokenSecretName | quote }}
+                  key: {{ .Values.applicationsService.appBuilder.tokenSecretKey | quote }}
+                  optional: true
+            {{- end }}
+            {{- with .Values.applicationsService.appBuilder.publicBaseUrl }}
+            - name: APP_REGISTRY_PUBLIC_BASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.applicationsService.appBuilder.readRateLimit }}
+            - name: APP_BUILD_READ_RATE_LIMIT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.applicationsService.appBuilder.writeRateLimit }}
+            - name: APP_BUILD_WRITE_RATE_LIMIT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.applicationsService.appBuilder.callbackRateLimit }}
+            - name: APP_BUILD_CALLBACK_RATE_LIMIT
+              value: {{ . | quote }}
+            {{- end }}
           readinessProbe:
             # /ready, not /health: readiness must reflect dependency state so a
             # degraded backend leaves the Service endpoints AND Argo's built-in

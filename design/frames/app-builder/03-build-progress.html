@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Build session progress — frame (c)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="03-build-progress">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Flow 2 · Build session · Frame (c) · route /applications/build/:sessionId</div>
+  <h1>Session in progress</h1>
+  <p class="lead">One page per session, addressable and reload-safe. The stepper maps the four
+    forward-only <code>BuildStatus</code> values a user can watch — <b>launching → building → deploying →
+    deployed</b> — with <code>requested</code> folded into launching. The real work happens in FuzeAgent, so
+    the primary action is the deep link there; the secondary is <b>Cancel</b>.</p>
+
+  <!-- c1: building -->
+  <div class="state-block">
+    <div class="state-label">(c1) Building — agent link present, cancel available</div>
+    <div class="panel panel--seam" data-panel="build-session" data-session-status="building" aria-live="polite">
+      <div class="panel-head">
+        <div><h2>Expense tracker</h2><p class="sub">Building into <b>Acme Corp</b> · started 4 min ago</p></div>
+        <span class="status status--accent" data-status-pill="building"><span class="spinner" aria-hidden="true"></span>Building</span>
+      </div>
+      <div class="panel-body">
+        <ol class="stepper" data-panel="build-stepper" aria-label="Build progress">
+          <li class="step" data-step="launching" data-step-state="done"><span class="bar"></span><span class="name">Launching</span></li>
+          <li class="step" data-step="building" data-step-state="current" aria-current="step"><span class="bar"></span><span class="name">Building</span></li>
+          <li class="step" data-step="deploying" data-step-state="todo"><span class="bar"></span><span class="name">Deploying</span></li>
+          <li class="step" data-step="deployed" data-step-state="todo"><span class="bar"></span><span class="name">Deployed</span></li>
+        </ol>
+
+        <div class="banner banner-info">
+          <span><b>FuzeAgent is building your app</b>
+            <p>Answer the agent's questions and review its work in FuzeAgent. This page updates by itself;
+              you can leave and come back from the Applications page.</p>
+            <span class="actions">
+              <a class="btn btn-accent" href="#" data-action="open-agent-session">Open in FuzeAgent ↗</a>
+            </span></span>
+        </div>
+
+        <dl class="defs">
+          <dt>Where</dt><dd>Acme Corp <span class="muted">(organization)</span></dd>
+          <dt>Session</dt><dd class="mono-sm">front_abs_01j9z3m7q8c4v2k6t0r5x1n8ya</dd>
+          <dt>Brief</dt><dd><p class="brief">Let team members log expenses with a receipt photo, amount, currency and category. Managers approve or reject with a comment…</p></dd>
+        </dl>
+      </div>
+      <div class="panel-foot">
+        <a class="btn btn-ghost" href="01-build-entry.html" data-action="back-to-applications">Back to Applications</a>
+        <button class="btn btn-danger" data-action="cancel-build">Cancel build</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- c2: launching, no agent link yet -->
+  <div class="state-block">
+    <div class="state-label">(c2) Launching — agentSessionUrl not yet known: no link rendered (never a dead button)</div>
+    <div class="panel" data-panel="build-session" data-session-status="launching">
+      <div class="panel-body">
+        <ol class="stepper" aria-label="Build progress">
+          <li class="step" data-step="launching" data-step-state="current" aria-current="step"><span class="bar"></span><span class="name">Launching</span></li>
+          <li class="step" data-step="building" data-step-state="todo"><span class="bar"></span><span class="name">Building</span></li>
+          <li class="step" data-step="deploying" data-step-state="todo"><span class="bar"></span><span class="name">Deploying</span></li>
+          <li class="step" data-step="deployed" data-step-state="todo"><span class="bar"></span><span class="name">Deployed</span></li>
+        </ol>
+        <div class="rowflex"><span class="spinner" aria-hidden="true"></span>
+          <span class="muted" data-state="agent-link-pending">Starting a FuzeAgent session… the link to follow it appears here once the agent provides one.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- c3: deploying -->
+  <div class="state-block">
+    <div class="state-label">(c3) Deploying — the agent registered the app and is rolling it out</div>
+    <div class="panel" data-panel="build-session" data-session-status="deploying">
+      <div class="panel-body">
+        <ol class="stepper" aria-label="Build progress">
+          <li class="step" data-step="launching" data-step-state="done"><span class="bar"></span><span class="name">Launching</span></li>
+          <li class="step" data-step="building" data-step-state="done"><span class="bar"></span><span class="name">Building</span></li>
+          <li class="step" data-step="deploying" data-step-state="current" aria-current="step"><span class="bar"></span><span class="name">Deploying</span></li>
+          <li class="step" data-step="deployed" data-step-state="todo"><span class="bar"></span><span class="name">Deployed</span></li>
+        </ol>
+        <p class="muted" style="margin: 0">Deploying to Acme Corp. Cancelling now stops tracking here but can't undo a rollout already in progress.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- c4: cancel confirm -->
+  <div class="state-block">
+    <div class="state-label">(c4) Cancel confirm — POST /build-sessions/{id}/cancel</div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cx-t" data-panel="cancel-build-dialog">
+      <div class="modal-head"><h2 id="cx-t">Cancel this build?</h2></div>
+      <div class="modal-body">
+        <p>“Expense tracker” will stop here and be marked <b>cancelled</b>. This can't be resumed —
+          start a new build to try again.</p>
+        <p>FuzeAgent isn't told to stop. If it reports later, that report is ignored and no app is
+          added from this session.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="keep-building">Keep building</button>
+        <button class="btn btn-danger" data-action="confirm-cancel-build">Cancel build</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- c5: loading -->
+  <div class="state-block">
+    <div class="state-label">(c5) Loading — first GET /build-sessions/{id}</div>
+    <div class="panel" data-panel="build-session" data-state="loading" aria-busy="true">
+      <div class="panel-body">
+        <div class="skel" style="width: 40%"></div>
+        <div class="skel" style="width: 100%"></div>
+        <div class="skel" style="width: 70%"></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    <b>Updates.</b> The contract has no push channel for sessions, so the flow polls
+    <code>GET /build-sessions/{id}</code> while the status is in-flight (<code>requested</code>,
+    <code>launching</code>, <code>building</code>, <code>deploying</code>): every 5 s for the first minute, then
+    backing off to 30 s, paused while the tab is hidden, stopped on a terminal status. The status pill and
+    stepper announce changes through <code>aria-live="polite"</code>.<br />
+    <b>Agent deep link.</b> Rendered only when <code>agentSessionUrl</code> is non-null <b>and</b> resolves to the
+    shell's own origin (<code>/app/fuzeagent/…</code>); it navigates in-shell. A cross-origin or malformed URL is
+    not rendered as a link — fail-closed against an open redirect.<br />
+    <b>Cancel.</b> Shown to the requester and org managers while in-flight. A <code>409</code> on cancel means the
+    session reached a terminal state first: refetch and render that state (frame d), no error toast.<br />
+    Test hooks: <code>[data-frame='03-build-progress']</code> · <code>[data-panel='build-session']</code> ·
+    <code>[data-panel='build-stepper']</code> · <code>[data-session-status='building']</code> ·
+    <code>[data-session-status='launching']</code> · <code>[data-session-status='deploying']</code> ·
+    <code>[data-step-state='current']</code> · <code>[data-action='open-agent-session']</code> ·
+    <code>[data-state='agent-link-pending']</code> · <code>[data-action='cancel-build']</code> ·
+    <code>[data-action='confirm-cancel-build']</code> · <code>[data-state='loading']</code>.
+  </p>
+
+  <div class="pager"><a href="02-build-form.html">← Build form</a><a href="04-build-outcomes.html">Outcomes &amp; errors →</a></div>
+</div>
+</body>
+</html>

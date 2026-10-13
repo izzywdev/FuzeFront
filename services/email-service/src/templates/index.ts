@@ -2,6 +2,8 @@ import { SUPPORTED_TEMPLATES } from '@fuzefront/shared/kafka';
 import { renderWelcome } from './welcome';
 import { renderOrgInvite } from './org-invite';
 import { renderMembershipChange } from './membership-change';
+import { renderFuzePickerMention } from './fuzepicker-mention';
+import { renderFuzePickerReply } from './fuzepicker-reply';
 
 export interface TemplateResult {
   subject: string;
@@ -15,6 +17,8 @@ const renderers: Record<SupportedTemplate, (vars: Record<string, unknown>) => Te
   welcome: renderWelcome,
   'org-invite': renderOrgInvite,
   'membership-change': renderMembershipChange,
+  'fuzepicker-mention': renderFuzePickerMention,
+  'fuzepicker-reply': renderFuzePickerReply,
 };
 
 export function renderTemplate(name: SupportedTemplate, vars: Record<string, unknown>): TemplateResult {

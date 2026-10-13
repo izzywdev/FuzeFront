@@ -57,17 +57,19 @@ Added to the `TOPICS` constant (`shared/src/kafka/types.ts`) **and** the Helm `k
 identity.org.created        identity.org.updated        identity.org.deleted
 identity.user.updated       identity.user.deleted
 identity.membership.added   identity.membership.removed
+identity.authorization.changed
 ```
 
 Envelope stays `FuzeEvent<T>` v `1.0`. New Zod schemas in `shared/src/kafka/schemas/`:
 
 | Topic | Payload (hybrid) |
 |---|---|
-| `identity.org.created` / `.updated` | `{ organizationId, slug, name, type, parentId, ownerId, isActive, settings?, metadata? }` |
+| `identity.org.created` / `.updated` | `{ organizationId, slug, name, type, parentId, ownerId, isActive }` — never arbitrary settings/metadata |
 | `identity.org.deleted` | `{ organizationId, slug, ownerId, cascade: 'soft'|'hard' }` |
 | `identity.user.updated` | `{ userId, email, firstName?, lastName?, homePortalId? }` |
 | `identity.user.deleted` | `{ userId, email, cascade: 'soft'|'hard' }` |
 | `identity.membership.added` / `.removed` | `{ organizationId, userId, role }` |
+| `identity.authorization.changed` | `{ organizationId, subjectId, change, role? }` — authorization cache invalidation only; never Permit/OPAL policy source or grants |
 
 ### Emit path — the outbox helper
 
@@ -75,7 +77,7 @@ A single `enqueueEvent(trx, topic, payload, correlationId)` that inserts an `eve
 
 - `backend/src/routes/organizations.ts` — `POST` (`identity.org.created`), `PUT` (`identity.org.updated`), `DELETE` (`identity.org.deleted`, `cascade:'soft'` — delete is `is_active=false`).
 - `backend/src/services/oidc.ts` — keep `identity.user.created`; add `identity.user.updated` / `identity.user.deleted`.
-- Membership add/remove sites → `identity.membership.*`.
+- Membership add/remove sites → `identity.membership.*` and paired `identity.authorization.changed`; membership-role changes emit the authorization event in the same transaction.
 - **Mirrored in the `backend/security/src/**` copies.**
 
 ### Publish path — the outbox relay (the critical new component)
@@ -102,6 +104,7 @@ Each service subscribes to what **it** owns; handlers are idempotent and DLQ on 
 | `identity.user.updated` | provisioning / security | Sync profile → Permit user, Authentik |
 | `identity.user.deleted` | security + billing | Permit user delete, revoke sessions; stop user-scoped billing |
 | `identity.membership.*` | security-service | Permit role assign / revoke |
+| `identity.authorization.changed` | authorized platform consumers | Invalidate tenant/subject authorization projections; re-read grants only through the Security API |
 
 **Delete semantics:** org delete is a **soft delete** (`is_active=false`), so `identity.org.deleted` fires with `cascade:'soft'`; consumers deactivate external state, local FKs already `ON DELETE CASCADE`. Preserve the existing fail-closed guards (no delete with active children; never demote/remove the last owner).
 
