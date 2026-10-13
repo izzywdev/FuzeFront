@@ -1,4 +1,5 @@
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
+import { ExternalLink } from 'lucide-react'
 
 const THRESHOLD_OPERATOR_LABELS = {
   lt: '<',
@@ -7,6 +8,27 @@ const THRESHOLD_OPERATOR_LABELS = {
   gte: '≥',
   eq: '=',
 } as const
+
+/** Defensive boundary for legacy rows written before the HTTPS ingestion contract. */
+export function safeExecutionHref(value?: string): string | undefined {
+  if (!value) return undefined
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? url.toString() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function ExecutionSourceLink({ execution }: { execution: TestExecution }) {
+  const href = safeExecutionHref(execution.sourceUrl)
+  if (!href) return null
+  return (
+    <a className="execution-source" href={href} target="_blank" rel="noreferrer">
+      Open CI run <ExternalLink size={13} />
+    </a>
+  )
+}
 
 /** Finds the newest ingested run matching one scanner-verified performance definition. */
 export function latestPerformanceExecution(
@@ -196,7 +218,9 @@ export function ExecutionEvidenceLinks({
   execution: TestExecution
 }) {
   const evidenceLinks = [...new Map(
-    (execution.evidenceLinks ?? []).map(link => [`${link.kind}:${link.url}`, link])
+    (execution.evidenceLinks ?? [])
+      .filter(link => safeExecutionHref(link.url))
+      .map(link => [`${link.kind}:${link.url}`, link])
   ).values()]
   if (!evidenceLinks.length) return null
 

@@ -102,6 +102,8 @@ describe('contract discovery', () => {
       )
       expect(schemas.TestExecution.required).toContain('evidenceLinks')
       expect(schemas.TestExecutionEvidenceLink.properties.url.pattern).toBe('^https://')
+      expect(schemas.TestExecutionInput.properties.sourceUrl.pattern).toBe('^https://')
+      expect(schemas.TestExecution.properties.sourceUrl.pattern).toBe('^https://')
       expect(schemas.PerformanceDispatch.required).toContain('sourceRevision')
       expect(schemas.PerformanceDispatch.properties.sourceRevision.pattern).toBe(
         '^[0-9a-fA-F]{40}$'

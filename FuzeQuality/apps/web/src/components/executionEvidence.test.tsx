@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import type { QualityArtifact, TestExecution } from '@fuzequality/contracts'
-import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
+import { ExecutionEvidenceCoverage, ExecutionEvidenceLinks, ExecutionEvidenceMetadata, ExecutionGateEvidence, ExecutionLinkageEvidence, ExecutionSourceLink, ExecutionThresholdEvidence, latestPerformanceExecution } from './executionEvidence'
 
 const execution: TestExecution = {
   id: 'execution-1',
@@ -172,6 +172,30 @@ describe('ExecutionThresholdEvidence', () => {
     expect(screen.queryByRole('link', { name: 'Open Pending report' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Final Playwright report' })).toHaveAttribute('href', report.url)
     expect(container.querySelectorAll('a')).toHaveLength(1)
+  })
+
+  it('does not render unsafe legacy evidence or provider URLs', () => {
+    const { container, rerender } = render(<ExecutionEvidenceLinks execution={{
+      ...execution,
+      evidenceLinks: [
+        { kind: 'video', name: 'Unsafe video', url: 'javascript:alert(1)' },
+        { kind: 'report', name: 'Insecure report', url: 'http://evidence.example/report' },
+      ],
+    }} />)
+
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<ExecutionSourceLink execution={{ ...execution, sourceUrl: 'javascript:alert(1)' }} />)
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<ExecutionSourceLink execution={{
+      ...execution,
+      sourceUrl: 'https://github.com/izzywdev/FuzeFront/actions/runs/42',
+    }} />)
+    expect(container.querySelector('a')).toHaveAttribute(
+      'href',
+      'https://github.com/izzywdev/FuzeFront/actions/runs/42'
+    )
   })
 
   it('summarizes detailed evidence and flags a lifecycle-only performance run', () => {
