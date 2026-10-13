@@ -116,8 +116,8 @@
                   service answers — a dialog that closes and then creates a list anyway is a surprise.</p>
               </div>
               <div class="sl-modal__foot">
-                <button class="btn btn-ghost" disabled>Cancel</button>
-                <button class="btn btn-primary" aria-disabled="true" data-action="confirm-fork"><span class="sl-spinner" aria-hidden="true"></span> Forking…</button>
+                <button class="btn btn-ghost" data-action="cancel" disabled>Cancel</button>
+                <button class="btn btn-primary" disabled aria-busy="true" data-action="confirm-fork"><span class="sl-spinner" aria-hidden="true"></span> Forking…</button>
               </div>
             </div>
           </div>
@@ -132,7 +132,8 @@
                 from <code>source_list_id</code> when the dialog was opened from a <code>409 fork_required</code>.</p>
             </div>
             <p class="sl-field__hint">Double-submit is harmless — the service is idempotent per (organization, source) and a repeat answers
-              <code class="sl-code">200</code> with the same fork — but the button is still disabled while in flight.</p>
+              <code class="sl-code">200</code> with the same fork — but both buttons carry native <code class="sl-code">disabled</code> while in flight
+              (not only <code class="sl-code">aria-disabled</code>), so a second activation cannot send a concurrent request.</p>
           </div>
         </div>
         <p class="sl-field__hint" style="margin-top: var(--space-5);">Flag OFF: the dialog is never mounted (no CTA leads to it), and the service
@@ -140,7 +141,7 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='05-fork-dialog']</code> · <code>[data-dialog='fork'][data-state='idle']</code> · <code>[data-presentation='modal']</code> · <code>[data-dialog='fork'][data-state='submitting']</code> · <code>[data-fork-summary]</code> · <code>[data-fork-key='priority']</code> · <code>[data-fork-copied]</code> · <code>[data-fork-shadows]</code> · <code>[data-control='fork-visibility']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='private']</code> · <code>[data-note='no-sync']</code> · <code>[data-quota-preview='org_lists']</code> · <code>[data-fork-request]</code> · <code>[data-action='confirm-fork']</code> · <code>[data-action='cancel']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='05-fork-dialog']</code> · <code>[data-dialog='fork'][data-state='idle']</code> · <code>[data-presentation='modal']</code> · <code>[data-dialog='fork'][data-state='submitting']</code> · <code>[data-dialog='fork'][data-state='submitting'] [data-action='confirm-fork'][disabled]</code> · <code>[data-fork-summary]</code> · <code>[data-fork-key='priority']</code> · <code>[data-fork-copied]</code> · <code>[data-fork-shadows]</code> · <code>[data-control='fork-visibility']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='private']</code> · <code>[data-note='no-sync']</code> · <code>[data-quota-preview='org_lists']</code> · <code>[data-fork-request]</code> · <code>[data-action='confirm-fork']</code> · <code>[data-action='cancel']</code><br />
         Contract: <code>POST /v1/selection-lists/{listId}/fork</code> with <code>SelectionListForkRequest {visibility: org|private}</code> (default <code>org</code>) ·
         <code>GET /v1/selection-lists/quota</code> (optional preview; absent on <code>403</code>). Copy counts come from the source list's items
         (<code>status=all</code>), already loaded by the detail page.<br />

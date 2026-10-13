@@ -195,7 +195,7 @@
               <thead><tr><th scope="col">Provenance state</th><th scope="col">Header action</th><th scope="col">Confirmation</th></tr></thead>
               <tbody>
                 <tr data-revert-gate="source-active"><td>behind · up to date · comparison unavailable <span class="sl-muted">(source read returned status active)</span></td><td>Revert to common list…</td><td>“Revert to the common list” (below, left)</td></tr>
-                <tr data-revert-gate="source-unavailable"><td>source archived · source gone (404)</td><td>Archive fork…</td><td>“No common list to go back to” (below, right) — never the revert promise</td></tr>
+                <tr data-revert-gate="source-unavailable"><td>source archived · source gone (404)</td><td>Archive fork…</td><td>archived: “No common list to go back to”; 404: the conditional confirm (below) — never the revert promise</td></tr>
                 <tr data-revert-gate="source-unknown"><td>checking · check failed</td><td>none until the read answers (Retry re-runs it)</td><td>—</td></tr>
               </tbody>
             </table>
@@ -222,8 +222,8 @@
             </div>
           </div>
           <div id="archive-no-common">
-            <p class="sl-case">Source archived or gone — “Archive fork…” confirm</p>
-            <div class="sl-confirm" data-confirm="archive-fork-no-common" data-case="revert-unavailable" role="alertdialog" aria-labelledby="an-t">
+            <p class="sl-case">Source archived — “Archive fork…” confirm</p>
+            <div class="sl-confirm" data-confirm="archive-fork-no-common" data-case="revert-unavailable" data-source-state="archived" role="alertdialog" aria-labelledby="an-t">
               <p class="sl-banner__title" id="an-t">Archive Acme Logistics' Priority list?</p>
               <ul class="sl-list sl-caption" style="margin-bottom: var(--space-4);">
                 <li data-consequence="no-effective-list"><b>There is no common list to go back to.</b> Every form that uses
@@ -236,10 +236,34 @@
                 <a class="btn sl-btn-danger sl-btn-sm" href="09-picker-effective.html#no-effective-list" data-action="confirm-archive-fork">Archive anyway</a>
               </div>
             </div>
-            <p class="sl-field__hint">Opened from <code class="sl-code">[data-action='archive-fork']</code>, the header action in the
-              source-archived / source-gone states. First line, source gone (404): “We can't find the common list this was copied from, so forms
-              that use <span class="sl-key">priority</span> will most likely show ‘List unavailable’ until you restore this list.” Cancel is the
-              safe default and holds initial focus.</p>
+            <p class="sl-field__hint">Only when the source read <b>returned</b> the list with <code class="sl-code">status: archived</code> — a fact,
+              so the consequence is stated outright. Cancel is the safe default and holds initial focus.</p>
+          </div>
+        </div>
+        <div class="sl-grid2" style="margin-top: var(--space-5);">
+          <div id="archive-source-unknown">
+            <p class="sl-case">Source gone (404) — “Archive fork…” confirm, conditional</p>
+            <div class="sl-confirm" data-confirm="archive-fork-source-unknown" data-case="revert-unavailable" data-source-state="gone" role="alertdialog" aria-labelledby="au-t">
+              <p class="sl-banner__title" id="au-t">Archive Acme Logistics' Priority list?</p>
+              <ul class="sl-list sl-caption" style="margin-bottom: var(--space-4);">
+                <li data-consequence="conditional-no-effective-list">We couldn't read the common list this was copied from — it may have been removed, or
+                  it may no longer be shared with you. <b>If no active common Priority list is available to your organization</b>, every form that
+                  uses <span class="sl-key">priority</span> will show “List unavailable” until you restore this list.</li>
+                <li>Values already saved keep showing (archived values still resolve).</li>
+                <li>Your fork is <b>archived</b>, not deleted — restore it later with its values and translations intact.</li>
+              </ul>
+              <div class="sl-head__actions">
+                <a class="btn btn-ghost sl-btn-sm" href="07-fork-detail.html" data-action="cancel">Keep using this list</a>
+                <a class="btn sl-btn-danger sl-btn-sm" href="09-picker-effective.html#no-effective-list" data-action="confirm-archive-fork">Archive anyway</a>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p class="sl-case">Why the 404 copy is conditional</p>
+            <p class="sl-field__hint" style="margin-top: 0;">A <code class="sl-code">404</code> on the source read means “purged <b>or</b> not readable by
+              you” — the contract makes the two indistinguishable on purpose. The common list may still be active and readable by other members
+              (for example if your own role lost shared read), so their forms would fall through to it. The UI therefore states the consequence
+              under its condition and never claims every form becomes unavailable. Cancel is the safe default and holds initial focus.</p>
           </div>
         </div>
         <div class="sl-grid2" style="margin-top: var(--space-5);">
@@ -271,7 +295,7 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='07-fork-detail']</code> · <code>[data-badge='fork']</code> · <code>[data-editable='true']</code> · <code>[data-panel='fork-provenance']</code> · <code>[data-forked-revision='7']</code> · <code>[data-source-revision='9']</code> · <code>[data-behind-state='behind']</code> · <code>[data-behind-state='up-to-date']</code> · <code>[data-behind-state='checking']</code> · <code>[data-behind-state='source-archived']</code> · <code>[data-behind-state='source-gone']</code> · <code>[data-behind-state='error']</code> · <code>[data-behind-state='unknown']</code> · <code>[data-origin-item]</code> · <code>[data-action='view-source']</code> · <code>[data-action='revert-to-common']</code> · <code>[data-confirm='revert-to-common']</code> · <code>[data-action='confirm-revert']</code> · <code>[data-panel='revert-gate']</code> · <code>[data-revert-gate='source-active']</code> · <code>[data-revert-gate='source-unavailable']</code> · <code>[data-revert-gate='source-unknown']</code> · <code>[data-action='archive-fork']</code> · <code>[data-confirm='archive-fork-no-common']</code> · <code>[data-case='revert-unavailable']</code> · <code>[data-consequence='no-effective-list']</code> · <code>[data-action='confirm-archive-fork']</code> · <code>[data-case='revert-not-owner']</code> · <code>[data-action='change-visibility']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='07-fork-detail']</code> · <code>[data-badge='fork']</code> · <code>[data-editable='true']</code> · <code>[data-panel='fork-provenance']</code> · <code>[data-forked-revision='7']</code> · <code>[data-source-revision='9']</code> · <code>[data-behind-state='behind']</code> · <code>[data-behind-state='up-to-date']</code> · <code>[data-behind-state='checking']</code> · <code>[data-behind-state='source-archived']</code> · <code>[data-behind-state='source-gone']</code> · <code>[data-behind-state='error']</code> · <code>[data-behind-state='unknown']</code> · <code>[data-origin-item]</code> · <code>[data-action='view-source']</code> · <code>[data-action='revert-to-common']</code> · <code>[data-confirm='revert-to-common']</code> · <code>[data-action='confirm-revert']</code> · <code>[data-panel='revert-gate']</code> · <code>[data-revert-gate='source-active']</code> · <code>[data-revert-gate='source-unavailable']</code> · <code>[data-revert-gate='source-unknown']</code> · <code>[data-action='archive-fork']</code> · <code>[data-confirm='archive-fork-no-common']</code> · <code>[data-confirm='archive-fork-source-unknown']</code> · <code>[data-source-state='archived']</code> · <code>[data-source-state='gone']</code> · <code>[data-consequence='conditional-no-effective-list']</code> · <code>[data-case='revert-unavailable']</code> · <code>[data-consequence='no-effective-list']</code> · <code>[data-action='confirm-archive-fork']</code> · <code>[data-case='revert-not-owner']</code> · <code>[data-action='change-visibility']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
         Contract: <code>GET /v1/selection-lists/{forkId}</code> (<code>forked_from</code>, <code>editable</code>, <code>visibility</code>) · <code>GET /v1/selection-lists/{forked_from.list_id}</code> + <code>…/items?status=all</code> (shared read; 404 → source-gone) ·
         <code>POST /v1/selection-lists/{forkId}/archive</code>. <b>Needs</b> <code>SelectionList.revision</code> (not in 4.1.0) for behind/up-to-date.<br />
         Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.

@@ -91,7 +91,53 @@
               </div>
             </div>
             <p class="sl-field__hint">“Restore” is <code class="sl-code">PATCH {"status":"active"}</code> and renders only when the fork's
-              <code class="sl-code">editable</code> is true; a <code class="sl-code">403</code> on it shows the 4.0.0 permission message.</p>
+              <code class="sl-code">editable</code> is true. Its answers are below — a <code class="sl-code">403</code> is branched on
+              <code class="sl-code">code</code>, never read as “no permission” by status alone.</p>
+          </div>
+        </div>
+
+        <div class="sl-grid2" id="restore-results" style="margin-top: var(--space-5);">
+          <div>
+            <p class="sl-case">Restoring — <code class="sl-code">PATCH {"status":"active"}</code> in flight</p>
+            <div class="sl-banner sl-banner--warn" data-result="existing-archived" data-state="restoring" role="status" aria-busy="true" style="margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⑂</span>
+              <div class="sl-banner__body">
+                <p class="sl-banner__title">Your organization's fork is archived</p>
+                <div class="sl-banner__actions">
+                  <button class="btn btn-primary sl-btn-sm" data-action="restore-fork" disabled aria-busy="true"><span class="sl-spinner" aria-hidden="true"></span> Restoring…</button>
+                </div>
+              </div>
+            </div>
+            <p class="sl-field__hint">Native <code class="sl-code">disabled</code> while in flight, so a second activation cannot send a second request.</p>
+          </div>
+          <div>
+            <p class="sl-case">Restore refused — 403 QUOTA_EXCEEDED · scope org_lists | user_lists</p>
+            <div class="sl-banner sl-banner--error" data-case="restore-quota" data-error="QUOTA_EXCEEDED" data-quota-scope="org_lists" role="alert" style="margin-bottom: var(--space-3);">
+              <span class="sl-banner__ico" aria-hidden="true">▣</span>
+              <div class="sl-banner__body">
+                <p class="sl-banner__title">Globex Freight has reached its list limit</p>
+                <p>100 of 100 organization lists are active. Restoring makes this fork active again, so it counts. Archive a list you no longer
+                  need, or ask an admin about the limit. The fork stays archived.</p>
+              </div>
+            </div>
+            <dl class="sl-facts" style="margin: 0;" data-case="restore-quota">
+              <dt>user_lists</dt><dd data-quota-scope="user_lists">“The person who created this fork already has the most active lists they may create (25 of 25). The fork stays archived.”</dd>
+              <dt>other scope</dt><dd>“A limit was reached. The fork stays archived.”</dd>
+            </dl>
+            <p class="sl-field__hint">Un-archiving rechecks <code class="sl-code">org_lists</code> and, for a list a user created, that creator's
+              <code class="sl-code">user_lists</code> — the same scope-driven copy as the fork refusal (<a href="#quota">quota</a>), with numbers from
+              <code class="sl-code">limit</code>/<code class="sl-code">current</code>. <code class="sl-code">user_lists</code> counts the fork's
+              <b>creator</b>, who may not be the person restoring it, so it never says “you”.</p>
+          </div>
+          <div>
+            <p class="sl-case">Restore refused — 403 FORBIDDEN</p>
+            <div class="sl-banner sl-banner--error" data-case="restore-forbidden" data-error="FORBIDDEN" role="alert" style="margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+              <div class="sl-banner__body"><p class="sl-banner__title">You don't have permission to restore this list</p>
+                <p>The approved 4.0.0 permission message. The fork stays archived.</p></div>
+            </div>
+            <p class="sl-field__hint">Only <code class="sl-code">code: FORBIDDEN</code> reaches this message; <code class="sl-code">QUOTA_EXCEEDED</code> shares the
+              403 status and renders the quota copy instead.</p>
           </div>
         </div>
       </div>
@@ -269,7 +315,7 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='06-fork-results']</code> · <code>[data-result='created']</code> · <code>[data-toast='forked']</code> · <code>[data-result='created-private']</code> · <code>[data-result='existing']</code> · <code>[data-result='existing-archived']</code> · <code>[data-action='restore-fork']</code> · <code>[data-reason='fork_exists']</code> · <code>[data-reason='fork_not_applicable']</code> · <code>[data-result='key-conflict']</code> · <code>[data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']</code> · <code>[data-quota-scope='user_lists']</code> · <code>[data-quota-scope='list_items']</code> · <code>[data-case='fork-size-cap']</code> · <code>[data-case='fork-no-create']</code> · <code>[data-result='not-found']</code> · <code>[data-error='network']</code> · <code>[data-action='retry']</code> · <code>[data-action='close']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='06-fork-results']</code> · <code>[data-result='created']</code> · <code>[data-toast='forked']</code> · <code>[data-result='created-private']</code> · <code>[data-result='existing']</code> · <code>[data-result='existing-archived']</code> · <code>[data-action='restore-fork']</code> · <code>[data-state='restoring'] [data-action='restore-fork'][disabled]</code> · <code>[data-case='restore-quota'][data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']</code> · <code>[data-case='restore-quota'] [data-quota-scope='user_lists']</code> · <code>[data-case='restore-forbidden'][data-error='FORBIDDEN']</code> · <code>[data-reason='fork_exists']</code> · <code>[data-reason='fork_not_applicable']</code> · <code>[data-result='key-conflict']</code> · <code>[data-error='QUOTA_EXCEEDED'][data-quota-scope='org_lists']</code> · <code>[data-quota-scope='user_lists']</code> · <code>[data-quota-scope='list_items']</code> · <code>[data-case='fork-size-cap']</code> · <code>[data-case='fork-no-create']</code> · <code>[data-result='not-found']</code> · <code>[data-error='network']</code> · <code>[data-action='retry']</code> · <code>[data-action='close']</code><br />
         Contract: <code>POST /v1/selection-lists/{listId}/fork</code> → <code>201</code> | <code>200</code> | <code>400</code> | <code>403</code> (<code>FORBIDDEN</code> / <code>QUOTA_EXCEEDED</code> with <code>scope</code>, <code>limit</code>, <code>current</code>) | <code>404</code> | <code>409</code> (<code>reason</code>: <code>fork_exists</code> | <code>fork_not_applicable</code> | absent). An unknown <code>reason</code> renders as the plain-conflict copy. <code>PATCH /v1/selection-lists/{listId} {status: active}</code> (restore).<br />
         Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
       </p>
