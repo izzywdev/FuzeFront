@@ -50,6 +50,25 @@
  *     "outsider" (contract/access.test.ts USER_OUTSIDER, "NOT in ORG_ID") is
  *     encoded, deliberately explicit rather than guessed from id shapes.
  *
+ *   - Contract 4.1.0 catalog actions (docs/planning/selection-lists-shared-and-fork.md D3/D5;
+ *     backend/src/permit/schema.ts is the source of truth):
+ *       * `read_shared`      admin | editor | viewer  (NOT developer). Evaluated in the tenant the
+ *                            caller asks about, from the caller's tenant role like every catalog
+ *                            action. Confers NO `SelectionList:*` action.
+ *       * `publish_platform` admin only, and EFFECTIVE ONLY IN THE PLATFORM ORGANIZATION'S TENANT.
+ *                            The platform org id is declared with `POST /__fixture/platform-org`
+ *                            {orgId} (or env FAKE_PLATFORM_ORG_ID at start-up). Until one is
+ *                            declared the action is effective nowhere (fail closed, like the
+ *                            service itself). A caller's tenant role is the one in the org its
+ *                            token acts in, so a customer-org admin asking about the platform
+ *                            tenant is not an admin there and is denied.
+ *                            `POST /__fixture/publish-anywhere` {tenant} switches ONE tenant to bare
+ *                            Permit behaviour (the schema grants tenant `admin` the action in the
+ *                            admin's own tenant), so a suite can prove the SERVICE ITSELF refuses a
+ *                            publish by an admin acting outside the platform org (D5) instead of
+ *                            relying on this stand-in having already denied it. Per-tenant, so
+ *                            suites running in parallel workers never see each other's setting.
+ *
  * Workload bootstrap accepts one CI-only projected token and mints the two narrow
  * scopes the real Security API registers for this service:
  *   selection-list:owner-grant    may bootstrap list-owner only (POST)
@@ -63,7 +82,9 @@
  * FIXTURE ENDPOINTS (`/__fixture/*`, unauthenticated, CI-localhost only, never
  * product behaviour): let a suite act as the operator who changes the authority
  * behind the service's back (direct grant/revoke) and who deactivates a user or
- * removes a member (`gone`). The real Security API has no such surface.
+ * removes a member (`gone`), and who declares the platform organization / a
+ * bare-Permit tenant for `publish_platform` (see above). The real Security API
+ * has no such surface.
  */
 import http from 'node:http';
 
@@ -78,6 +99,15 @@ const MACHINE_TOKEN_PREFIX = 'fake-machine-token:';
 /** `${tenant}|${userId}` pairs that are NOT members of that tenant. */
 /** `${tenant}|${userId}` -> 'deactivated' | 'departed' (set through /__fixture/gone). */
 const gone = new Map();
+
+/**
+ * The platform organization (FuzeFront's root org) — the only tenant in which
+ * `SelectionListCatalog:publish_platform` is effective (contract 4.1.0, D5).
+ * Declared by env or by the /__fixture/platform-org hook; null = declared nowhere.
+ */
+let platformOrgId = process.env.FAKE_PLATFORM_ORG_ID || null;
+/** Tenants switched to bare-Permit behaviour for publish_platform (/__fixture/publish-anywhere). */
+const publishAnywhere = new Set();
 
 const NON_MEMBERS = new Set([
   'org_01test00000000access000000|usr_01test00000000accessout000',
@@ -172,7 +202,10 @@ function decide(q, claims) {
   // Tenant level: keyless catalog resource, tenant roles, catalog actions only.
   if (resource.type === 'SelectionListCatalog') {
     if (resource.key) return false; // the catalog has no instances
-    return TENANT_ROLE_ACTIONS[tenantRoleOf(claims, subject, tenant)].includes(action);
+    if (!TENANT_ROLE_ACTIONS[tenantRoleOf(claims, subject, tenant)].includes(action)) return false;
+    // publish_platform is granted to tenant `admin` but only EFFECTIVE in the platform org's tenant (D5).
+    if (action === 'publish_platform') return tenant === platformOrgId || publishAnywhere.has(tenant);
+    return true;
   }
 
   // Instance level: per-list roles, per-list actions only.
@@ -228,6 +261,18 @@ const server = http.createServer(async (req, res) => {
     const b = await readBody(req);
     if (!b?.tenant || !b?.subject) return send(res, 400, { code: 'MALFORMED' });
     gone.set(`${b.tenant}|${b.subject}`, b.kind === 'departed' ? 'departed' : 'deactivated');
+    return send(res, 204);
+  }
+  if (path === '/__fixture/platform-org' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!b || typeof b.orgId !== 'string' || !/^org_[0-9a-z]+$/.test(b.orgId)) return send(res, 400, { code: 'MALFORMED' });
+    platformOrgId = b.orgId;
+    return send(res, 204);
+  }
+  if (path === '/__fixture/publish-anywhere' && req.method === 'POST') {
+    const b = await readBody(req);
+    if (!b || typeof b.tenant !== 'string') return send(res, 400, { code: 'MALFORMED' });
+    publishAnywhere.add(b.tenant);
     return send(res, 204);
   }
   if (path === '/__fixture/grants' && (req.method === 'POST' || req.method === 'DELETE')) {
