@@ -900,10 +900,10 @@ selectionListService:
   # selection-lists-shared-and-fork.md D2/D5). Common (`platform`) lists are
   # owned by this organization and only an operator acting in it may publish
   # one. OPTIONAL and EMPTY by default, declared here explicitly (never absorbed
-  # by a template default/cast): empty makes the service fall back to the
-  # selection_list_ref_index `platform` row and otherwise fail CLOSED on every
+  # by a template default/cast): empty makes the service fail CLOSED on every
   # platform feature (no common lists served or created), so shared lists stay
-  # dark. Shared lists are additionally gated by the release flag
+  # dark. There is deliberately NO fallback to an org typed `platform` in the
+  # org projection: that type is client-suppliable on org creation. Shared lists are additionally gated by the release flag
   # fuzefront.selection-lists.shared-lists (default OFF). To enable, set this to
   # the TypeID of the pinned root platform organization ROOT_ORG_ID
   # 00000000-0000-0000-0000-000000000010 (backend/src/migrations/

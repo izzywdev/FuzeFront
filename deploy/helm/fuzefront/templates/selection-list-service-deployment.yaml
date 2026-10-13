@@ -105,8 +105,8 @@ spec:
               value: {{ .Values.selectionListService.authzEnabled | quote }}
             # Platform organization (owner of common `platform` lists, the only
             # tenant in which `publish_platform` is effective). Explicit value in
-            # values.yaml, empty by default (shared lists dark); the service falls
-            # back to the ref-index `platform` row, else fails closed, if empty.
+            # values.yaml, empty by default (shared lists dark); the service fails
+            # closed on every platform feature if empty (no projection fallback).
             - name: SELECTION_LIST_PLATFORM_ORG_ID
               value: {{ .Values.selectionListService.platformOrgId | quote }}
             {{- if .Values.selectionListService.featureFlags.unleashUrl }}
