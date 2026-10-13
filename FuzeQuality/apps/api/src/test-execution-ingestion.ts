@@ -42,18 +42,24 @@ export async function linkExecutionToRevisionArtifacts(
     execution.workflowPath
   )
   const workflowPath = normalizeWorkflowPath(execution.workflowPath)
-  const performanceArtifact = workflowPath
+  const classifiedArtifact = workflowPath
     ? artifacts.find(artifact =>
-        (artifact.kind === 'load-test' || artifact.kind === 'stress-test') &&
-        artifact.execution?.provider === 'github-actions' &&
-        normalizeWorkflowPath(artifact.execution.workflowPath) === workflowPath
+        ['load-test', 'stress-test', 'post-production-test', 'integration-test'].includes(artifact.kind) &&
+        normalizeWorkflowPath(artifact.sourcePath) === workflowPath
       )
     : undefined
+  const kind = classifiedArtifact?.kind === 'stress-test'
+    ? 'stress' as const
+    : classifiedArtifact?.kind === 'load-test'
+      ? 'load' as const
+      : classifiedArtifact?.kind === 'post-production-test'
+        ? 'post-production' as const
+        : classifiedArtifact?.kind === 'integration-test'
+          ? 'integration' as const
+          : undefined
   return {
     ...links,
-    ...(performanceArtifact
-      ? { kind: performanceArtifact.kind === 'stress-test' ? 'stress' as const : 'load' as const }
-      : {}),
+    ...(kind ? { kind } : {}),
   }
 }
 

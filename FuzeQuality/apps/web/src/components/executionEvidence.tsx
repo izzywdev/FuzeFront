@@ -147,6 +147,10 @@ export function ExecutionEvidenceMetadata({
 
   return (
     <dl className="execution-metadata" aria-label="Execution provider metadata">
+      <div data-field="suite-kind">
+        <dt>Suite classification</dt>
+        <dd>{execution.kind}</dd>
+      </div>
       {execution.externalRunId !== undefined && (
         <div data-field="provider-run-id">
           <dt>Provider run ID</dt>

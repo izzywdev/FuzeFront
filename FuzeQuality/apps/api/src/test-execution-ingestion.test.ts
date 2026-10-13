@@ -128,6 +128,33 @@ describe('internal execution ingestion compatibility', () => {
     )).resolves.toMatchObject({ kind: 'stress' })
   })
 
+  it.each([
+    ['integration-test', 'integration'],
+    ['post-production-test', 'post-production'],
+  ] as const)('classifies a neutral workflow from exact %s inventory', async (artifactKind, executionKind) => {
+    const workflow = {
+      repositoryId: '123e4567-e89b-12d3-a456-426614174000',
+      revision: 'run-commit-a',
+      name: 'Quality checks',
+      workflowPath: '.github/workflows/quality.yml',
+    }
+
+    await expect(linkExecutionToRevisionArtifacts(
+      workflow,
+      'org-1',
+      vi.fn().mockResolvedValue('catalog-revision-a'),
+      vi.fn().mockResolvedValue([{
+        id: `${artifactKind}-quality`,
+        repositoryId: workflow.repositoryId,
+        kind: artifactKind,
+        title: 'Quality checks',
+        sourcePath: workflow.workflowPath,
+        summary: 'Scanner-reviewed workflow',
+        evidence: [],
+      }]),
+    )).resolves.toMatchObject({ kind: executionKind })
+  })
+
   it('rejects explicit evidence when the execution revision was not analyzed', async () => {
     const input = testExecutionInputSchema.parse({
       repositoryId: '123e4567-e89b-12d3-a456-426614174000',

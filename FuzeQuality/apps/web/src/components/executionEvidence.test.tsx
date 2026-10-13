@@ -124,6 +124,8 @@ describe('ExecutionThresholdEvidence', () => {
 
     expect(screen.getByText('.github/workflows/load-test.yml')).toBeInTheDocument()
     expect(screen.getByText('external · load-42')).toBeInTheDocument()
+    expect(screen.getByText('Suite classification')).toBeInTheDocument()
+    expect(screen.getByText('load')).toBeInTheDocument()
   })
 
   it('renders observed-versus-target values and evaluated outcomes', () => {
