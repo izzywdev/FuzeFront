@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useInView } from 'react-intersection-observer'
 import { ArrowRight, Target, Lightbulb, ShieldCheck, Users2, Rocket, Globe2, Linkedin } from 'lucide-react'
-import { Center, IconTile, Container, HeroPatternOverlay } from '@fuzefront/design-system'
+import { Center, IconTile, Container, HeroPatternOverlay, Section } from '@fuzefront/design-system'
 import { useAnalytics } from '../contexts/AnalyticsContext'
 import israelWeinbergPhoto from '../assets/team/israel-weinberg.webp'
 
@@ -138,7 +138,7 @@ export const AboutPage: React.FC = () => {
       </section>
 
       {/* Leadership */}
-      <section className="py-24 bg-white border-t border-secondary-100">
+      <Section padding="lg" divider>
         <Container size="4xl">
           <motion.div
             ref={leadershipRef}
@@ -189,7 +189,7 @@ export const AboutPage: React.FC = () => {
             ))}
           </motion.div>
         </Container>
-      </section>
+      </Section>
 
       {/* What we offer */}
       <section className="py-24 bg-secondary-50">
@@ -235,7 +235,7 @@ export const AboutPage: React.FC = () => {
       </section>
 
       {/* CTA */}
-      <section className="py-20 bg-white border-t border-secondary-100">
+      <Section padding="md" divider>
         <div className="max-w-3xl mx-auto px-4 text-center">
           <h2 className="text-3xl sm:text-4xl font-heading font-bold text-gray-900 mb-4">
             Want to build with us?
@@ -260,7 +260,7 @@ export const AboutPage: React.FC = () => {
             </Link>
           </div>
         </div>
-      </section>
+      </Section>
     </div>
   )
 }

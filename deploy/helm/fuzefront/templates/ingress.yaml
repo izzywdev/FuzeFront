@@ -338,6 +338,7 @@ spec:
           {{- end }}
 {{- end }}
 {{- if and .Values.selectionListService.enabled .Values.selectionListService.ingress.enabled }}
+{{- $slRl := .Values.selectionListService.ingress.rateLimit }}
 ---
 # Selection-list-service, same-origin under the app host. The UI
 # (packages/selection-lists-ui/src/api.ts) and the TS client call
@@ -346,10 +347,24 @@ spec:
 # prefix, so the /api segment is stripped here. Only these two route families are
 # published -- /health and /docs stay cluster-internal.
 #
-# A SEPARATE Ingress (not paths on the main one) so the prefix-strip is scoped to
-# these routes and never touches the /api catch-all to the thin backend. Both
-# nginx longest-prefix-match and Traefik rule-length priority rank these above
-# the main Ingress's shorter /api rule.
+# TWO Ingress objects (one per route family) so each can carry its OWN edge rate
+# limit (review M-4): /api/v1/resolve is the hot path and gets a far higher
+# ceiling than the CRUD family, and neither nginx-ingress annotations nor a
+# Traefik Middleware can tell paths apart inside one Ingress. They are SEPARATE
+# from the main Ingress so the prefix-strip is scoped to these routes and never
+# touches the /api catch-all to the thin backend. Both nginx longest-prefix-match
+# and Traefik rule-length priority rank these above the main Ingress's shorter
+# /api rule.
+#
+# Rate limit (selectionListService.ingress.rateLimit.*): per client IP, a
+# sustained requests/second plus a burst allowance.
+#   - nginx-ingress: limit-rps + limit-burst-multiplier annotations.
+#   - traefik:       the selection-list-service-ratelimit-{api,resolve} Middlewares below.
+# It cannot tell a read from a write on /api/v1/selection-lists (both are the
+# same path; only the HTTP method differs), so the CRUD ceiling is set high enough
+# for interactive use and exists to bound abuse, not to meter normal traffic. The
+# service additionally enforces its own quotas (org_lists, user_lists,
+# list_items, list_locales, storage ceiling) which are what bound DATA growth.
 #
 # NO auth bypass at the edge: the service enforces authentication itself
 # (src/middleware/auth.ts on /v1) and is additionally gated by the Unleash flag
@@ -366,8 +381,12 @@ metadata:
   annotations:
     {{- if eq .Values.ingress.className "nginx" }}
     nginx.ingress.kubernetes.io/rewrite-target: /$1$2
+    {{- if $slRl.enabled }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ required "selectionListService.ingress.rateLimit.api.rps is required" $slRl.api.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: {{ required "selectionListService.ingress.rateLimit.api.burstMultiplier is required" $slRl.api.burstMultiplier | quote }}
+    {{- end }}
     {{- else if eq .Values.ingress.className "traefik" }}
-    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-selection-list-service-stripprefix@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-selection-list-service-stripprefix@kubernetescrd{{ if $slRl.enabled }},{{ .Release.Namespace }}-selection-list-service-ratelimit-api@kubernetescrd{{ end }}
     {{- end }}
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
@@ -393,6 +412,51 @@ spec:
                 name: fuzefront-selection-list-service
                 port:
                   number: {{ .Values.selectionListService.port }}
+          {{- else }}
+          # traefik strips /api via the Middleware; route the prefix.
+          - path: /api/v1/selection-lists
+            pathType: Prefix
+            backend:
+              service:
+                name: fuzefront-selection-list-service
+                port:
+                  number: {{ .Values.selectionListService.port }}
+          {{- end }}
+---
+# The resolve hot path: its own Ingress and its own (higher) rate limit.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fuzefront-selection-list-resolve
+  labels:
+    {{- include "fuzefront.labels" . | nindent 4 }}
+    app.kubernetes.io/component: selection-list-service
+  annotations:
+    {{- if eq .Values.ingress.className "nginx" }}
+    nginx.ingress.kubernetes.io/rewrite-target: /$1$2
+    {{- if $slRl.enabled }}
+    nginx.ingress.kubernetes.io/limit-rps: {{ required "selectionListService.ingress.rateLimit.resolve.rps is required" $slRl.resolve.rps | quote }}
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: {{ required "selectionListService.ingress.rateLimit.resolve.burstMultiplier is required" $slRl.resolve.burstMultiplier | quote }}
+    {{- end }}
+    {{- else if eq .Values.ingress.className "traefik" }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-selection-list-service-stripprefix@kubernetescrd{{ if $slRl.enabled }},{{ .Release.Namespace }}-selection-list-service-ratelimit-resolve@kubernetescrd{{ end }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" .Values.ingress.host) }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- if eq .Values.ingress.className "nginx" }}
           - path: /api/(v1/resolve)(/.*|$)
             pathType: ImplementationSpecific
             backend:
@@ -401,14 +465,6 @@ spec:
                 port:
                   number: {{ .Values.selectionListService.port }}
           {{- else }}
-          # traefik strips /api via the Middleware; route the two prefixes.
-          - path: /api/v1/selection-lists
-            pathType: Prefix
-            backend:
-              service:
-                name: fuzefront-selection-list-service
-                port:
-                  number: {{ .Values.selectionListService.port }}
           - path: /api/v1/resolve
             pathType: Prefix
             backend:
@@ -433,6 +489,33 @@ spec:
   stripPrefix:
     prefixes:
       - /api
+{{- if $slRl.enabled }}
+{{- range $name, $rl := dict "api" $slRl.api "resolve" $slRl.resolve }}
+---
+# Edge rate limit for the {{ $name }} route family (review M-4). Traefik's rateLimit
+# is a token bucket per source: `average` requests per `period` sustained, `burst`
+# extra requests tolerated. burst = rps x burstMultiplier so the same two values
+# drive nginx (limit-rps / limit-burst-multiplier) and traefik.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: selection-list-service-ratelimit-{{ $name }}
+  labels:
+    {{- include "fuzefront.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: selection-list-service
+spec:
+  rateLimit:
+    average: {{ required (printf "selectionListService.ingress.rateLimit.%s.rps is required" $name) $rl.rps }}
+    period: 1s
+    burst: {{ mul (required (printf "selectionListService.ingress.rateLimit.%s.rps is required" $name) $rl.rps) (required (printf "selectionListService.ingress.rateLimit.%s.burstMultiplier is required" $name) $rl.burstMultiplier) }}
+    {{- with $slRl.clientIpHeader }}
+    # Group by the header the CDN sets to the real client IP instead of the TCP
+    # peer (which behind a CDN is a shared edge address).
+    sourceCriterion:
+      requestHeaderName: {{ . | quote }}
+    {{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- range .Values.federatedApps }}
