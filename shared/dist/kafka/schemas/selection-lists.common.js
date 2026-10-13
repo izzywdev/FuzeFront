@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.slSeedOutcomeBaseV1 = exports.slSeedPackRefV1 = exports.slSeedSourceV1 = exports.slSeedTriggerV1 = exports.slSeedScopeV1 = exports.selectionListSeedPackSchemaV1 = exports.slSeedPackOrgTypeV1 = exports.slSeedListSpecV1 = exports.slSeedItemSpecV1 = exports.slSeedItemTranslationV1 = exports.slSeedListTranslationV1 = exports.slListEventBaseV1 = exports.slItemSnapshotV1 = exports.slListSnapshotV1 = exports.slSeedProvenanceV1 = exports.slActorV1 = exports.slTimestampV1 = exports.slListRevisionV1 = exports.slDescriptionV1 = exports.slNameV1 = exports.slLifecycleStatusV1 = exports.slRoleV1 = exports.slLocaleV1 = exports.slSlugV1 = exports.slItemCodeV1 = exports.slListKeyV1 = exports.slItemIdV1 = exports.slListIdV1 = exports.slUserIdV1 = exports.slOrganizationIdV1 = exports.slEventIdV1 = exports.SELECTION_LIST_SERVICE_PRINCIPAL = exports.PLATFORM_SEED_SOURCE = exports.SELECTION_LIST_ROLES = exports.SELECTION_LIST_LOCALES = exports.SELECTION_LIST_LIMITS = exports.SELECTION_LIST_SEED_REQUEST_ID_PATTERN = exports.SELECTION_LIST_SLUG_PATTERN = exports.SELECTION_LIST_ITEM_CODE_PATTERN = exports.SELECTION_LIST_KEY_PATTERN = void 0;
+exports.slSeedOutcomeBaseV1 = exports.slSeedPackRefV1 = exports.slSeedSourceV1 = exports.slSeedTriggerV1 = exports.slSeedScopeV1 = exports.selectionListSeedPackSchemaV1 = exports.slSeedPackOrgTypeV1 = exports.slSeedListSpecV1 = exports.slSeedItemSpecV1 = exports.slSeedItemTranslationV1 = exports.slSeedListTranslationV1 = exports.slListEventBaseV1 = exports.slItemSnapshotV1 = exports.slListSnapshotV1 = exports.slForkProvenanceV1 = exports.slSeedProvenanceV1 = exports.slActorV1 = exports.slTimestampV1 = exports.slListRevisionV1 = exports.slDescriptionV1 = exports.slNameV1 = exports.slVisibilityV1 = exports.slLifecycleStatusV1 = exports.slRoleV1 = exports.slLocaleV1 = exports.slSlugV1 = exports.slItemCodeV1 = exports.slListKeyV1 = exports.slItemIdV1 = exports.slListIdV1 = exports.slUserIdV1 = exports.slOrganizationIdV1 = exports.slEventIdV1 = exports.SELECTION_LIST_SERVICE_PRINCIPAL = exports.PLATFORM_SEED_SOURCE = exports.SELECTION_LIST_MAX_FORK_ITEMS = exports.SELECTION_LIST_VISIBILITIES = exports.SELECTION_LIST_ROLES = exports.SELECTION_LIST_LOCALES = exports.SELECTION_LIST_LIMITS = exports.SELECTION_LIST_SEED_REQUEST_ID_PATTERN = exports.SELECTION_LIST_SLUG_PATTERN = exports.SELECTION_LIST_ITEM_CODE_PATTERN = exports.SELECTION_LIST_KEY_PATTERN = void 0;
 exports.refineSeedLists = refineSeedLists;
 const zod_1 = require("zod");
 /**
@@ -72,6 +72,15 @@ exports.SELECTION_LIST_ROLES = [
     'list-translator',
     'list-viewer',
 ];
+/**
+ * List visibility (HTTP contract 4.1.0, `SelectionListVisibility`): who may READ a
+ * list without an instance grant. `private` (default) — instance-role holders only;
+ * `org` — every member of the owning org; `platform` — a common list owned by the
+ * platform organization, readable by every org. Never confers a mutation.
+ */
+exports.SELECTION_LIST_VISIBILITIES = ['private', 'org', 'platform'];
+/** Upper bound of one fork's source→fork item map (mirrors the HTTP reorder/autofill item cap). */
+exports.SELECTION_LIST_MAX_FORK_ITEMS = 5000;
 /** Reserved seed source for the service's own platform default packs. Never allowlistable. */
 exports.PLATFORM_SEED_SOURCE = 'platform';
 /** The system principal that performs seeding and lifecycle cascades. */
@@ -90,6 +99,7 @@ exports.slSlugV1 = zod_1.z.string().min(2).max(64).regex(exports.SELECTION_LIST_
 exports.slLocaleV1 = zod_1.z.enum(exports.SELECTION_LIST_LOCALES);
 exports.slRoleV1 = zod_1.z.enum(exports.SELECTION_LIST_ROLES);
 exports.slLifecycleStatusV1 = zod_1.z.enum(['active', 'archived']);
+exports.slVisibilityV1 = zod_1.z.enum(exports.SELECTION_LIST_VISIBILITIES);
 exports.slNameV1 = zod_1.z.string().min(1).max(exports.SELECTION_LIST_LIMITS.NAME_MAX);
 exports.slDescriptionV1 = zod_1.z.string().max(exports.SELECTION_LIST_LIMITS.DESCRIPTION_MAX);
 /** Monotonic per-list revision; bumps on every change to the list or anything inside it. */
@@ -122,6 +132,17 @@ exports.slSeedProvenanceV1 = zod_1.z.object({
     /** True once a human has changed the seeded content; seeding never overwrites it again. */
     userModified: zod_1.z.boolean(),
 });
+/**
+ * Where a forked list was copied from (HTTP `SelectionListForkProvenance`, 4.1.0).
+ * Records the moment of copying; never updated. The source may since be purged.
+ */
+exports.slForkProvenanceV1 = zod_1.z.object({
+    listId: exports.slListIdV1,
+    organizationId: exports.slOrganizationIdV1,
+    /** The source's `listRevision` when copied. */
+    listRevision: exports.slListRevisionV1,
+    forkedAt: exports.slTimestampV1,
+});
 /** A list as of the event. `name`/`description` are in `sourceLocale`. */
 exports.slListSnapshotV1 = zod_1.z.object({
     listId: exports.slListIdV1,
@@ -131,6 +152,13 @@ exports.slListSnapshotV1 = zod_1.z.object({
     name: exports.slNameV1,
     description: exports.slDescriptionV1.nullable(),
     seed: exports.slSeedProvenanceV1.nullable(),
+    /**
+     * Additive (shared 1.3.0 / HTTP 4.1.0). Always set by a 4.1.0 producer; absent
+     * from events produced before it, which means `private`.
+     */
+    visibility: exports.slVisibilityV1.optional(),
+    /** Additive (1.3.0). Fork provenance; null (or absent, pre-1.3.0) when not a fork. */
+    forkedFrom: exports.slForkProvenanceV1.nullable().optional(),
     createdAt: exports.slTimestampV1,
     updatedAt: exports.slTimestampV1,
 });
@@ -143,6 +171,8 @@ exports.slItemSnapshotV1 = zod_1.z.object({
     sortOrder: zod_1.z.number().int().nonnegative(),
     status: exports.slLifecycleStatusV1,
     seed: exports.slSeedProvenanceV1.nullable(),
+    /** Additive (1.3.0). On a forked item, the source item it was copied from; null/absent otherwise. */
+    originItemId: exports.slItemIdV1.nullable().optional(),
     createdAt: exports.slTimestampV1,
     updatedAt: exports.slTimestampV1,
 });
@@ -187,6 +217,15 @@ exports.slSeedListSpecV1 = zod_1.z
     description: exports.slDescriptionV1.optional(),
     translations: zod_1.z.array(exports.slSeedListTranslationV1).max(exports.SELECTION_LIST_LOCALES.length - 1).optional(),
     items: zod_1.z.array(exports.slSeedItemSpecV1).max(exports.SELECTION_LIST_LIMITS.MAX_ITEMS_PER_LIST),
+    /**
+     * Additive (1.3.0, HTTP 4.1.0). Visibility of the seeded list; absent =
+     * `private` (the pre-1.3.0 behaviour). `org` makes the seeded list readable
+     * (pickable) by every member of the target org without a grant — the
+     * recommended value for app reference data. `platform` is only valid in a
+     * platform seed pack (one common instance, seeded into the platform
+     * organization, not per org); `seed.requested` refuses it.
+     */
+    visibility: exports.slVisibilityV1.optional(),
 })
     .strict();
 /**

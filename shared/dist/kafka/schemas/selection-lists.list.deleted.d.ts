@@ -36,6 +36,7 @@ export declare const selectionListsListDeletedSchemaV1: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -46,10 +47,10 @@ export declare const selectionListsListDeletedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
 }, {
     organizationId: string;
     listId: string;
+    listRevision: number;
     eventId: string;
     actor: {
         type: "user";
@@ -60,6 +61,5 @@ export declare const selectionListsListDeletedSchemaV1: z.ZodObject<{
         seedSource: string | null;
     };
     listKey: string;
-    listRevision: number;
 }>;
 export type SelectionListsListDeletedPayloadV1 = z.infer<typeof selectionListsListDeletedSchemaV1>;
