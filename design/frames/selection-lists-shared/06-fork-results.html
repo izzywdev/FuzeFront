@@ -110,15 +110,16 @@
                   <span class="sl-banner__ico" aria-hidden="true">⑂</span>
                   <div class="sl-banner__body">
                     <p class="sl-banner__title">Your organization already has a fork you can't see</p>
-                    <p>Someone in Globex Freight forked <b>Priority</b> as a private draft. A second fork isn't possible. Ask whoever is
-                      preparing it for a role, or an admin to set it to <b>Organization</b>.</p>
+                    <p>Someone in Globex Freight forked <b>Priority</b> as a private draft. A second fork isn't possible. Only that
+                      fork's owner can give you a role on it or share it with the organization — ask whoever is preparing it.</p>
                   </div>
                 </div>
               </div>
               <div class="sl-modal__foot"><a class="btn btn-ghost" href="02-common-detail.html" data-action="close">Close</a></div>
             </div>
             <p class="sl-field__hint">The 409 carries no fork id (you can't read it), so there is nothing to link to and the UI does not invent
-              one. Not retryable.</p>
+              one. Not retryable. No escalation to an organization admin: list permissions are instance-only, so a tenant
+              <code class="sl-code">admin</code> holds no <code class="sl-code">manage_access</code> on the fork either — only its owner can act.</p>
           </div>
 
           <div id="not-applicable">
@@ -201,8 +202,10 @@
               </div>
               <div class="sl-modal__foot"><a class="btn btn-ghost" href="02-common-detail.html" data-action="close">Close</a></div>
             </div>
-            <p class="sl-field__hint">The dialog also pre-empts it: when the loaded source has more than 5,000 non-purged values, the confirm button is
-              disabled with this text <b>before</b> any request. The 400 path stays for a source that grew meanwhile.</p>
+            <p class="sl-field__hint">Server-decided only — the dialog does <b>not</b> pre-check the size. An organization may already hold a fork
+              of this source the page can't see (archived, so the key lookup skips it); that request answers <code class="sl-code">200</code>
+              with the existing fork and copies nothing (<a href="#existing">existing, archived → Restore</a>), and a client-side cap would have
+              blocked it. Confirm stays enabled; this message renders only from the service's <code class="sl-code">400</code>.</p>
           </div>
 
           <div id="forbidden">

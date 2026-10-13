@@ -102,11 +102,32 @@
             <thead><tr><th scope="col">Language</th><th scope="col" class="num">Translated</th><th scope="col">Notes</th></tr></thead>
             <tbody>
               <tr data-locale="en"><td class="name">English (source)</td><td class="num">5 / 5</td><td class="muted">—</td></tr>
-              <tr data-locale="fr"><td class="name">Français</td><td class="num">5 / 5</td><td><span class="sl-pill sl-pill--machine" data-machine="true">M</span> 2 machine</td></tr>
-              <tr data-locale="he"><td class="name">עברית</td><td class="num">5 / 5</td><td class="muted">—</td></tr>
+              <tr data-locale="fr"><td class="name"><a href="#locale-view" data-action="open-locale-readonly" data-locale-link="fr" style="color: var(--cyan-400);">Français</a></td><td class="num">5 / 5</td><td><span class="sl-pill sl-pill--machine" data-machine="true">M</span> 2 machine</td></tr>
+              <tr data-locale="he"><td class="name"><a href="#locale-view" data-action="open-locale-readonly" data-locale-link="he" style="color: var(--cyan-400);">עברית</a></td><td class="num">5 / 5</td><td class="muted">—</td></tr>
             </tbody>
           </table>
         </section>
+        <p class="sl-field__hint">Each translated locale's name opens its read-only locale view at the existing 4.0.0 route
+          <code class="sl-code">/settings/selection-lists/:listId/translations/:locale</code>. The source locale has no link — its text is the Values tab.</p>
+
+        <div id="locale-view" style="margin-top: var(--space-5);">
+          <p class="sl-case">Read-only locale view — Français</p>
+          <section class="sl-panel" data-panel="locale-editor" data-readonly="true" data-locale-view="fr">
+            <div class="sl-panel__seam"></div>
+            <table class="sl-table">
+              <thead><tr><th scope="col">Code</th><th scope="col">English (source)</th><th scope="col">Français</th><th scope="col">Notes</th></tr></thead>
+              <tbody>
+                <tr><td><span class="sl-key">LOW</span></td><td dir="ltr">Low</td><td>Basse</td><td class="muted">—</td></tr>
+                <tr><td><span class="sl-key">NORMAL</span></td><td dir="ltr">Normal</td><td>Normale</td><td><span class="sl-pill sl-pill--machine" data-machine="true">M</span></td></tr>
+                <tr><td><span class="sl-key">HIGH</span></td><td dir="ltr">High</td><td>Haute</td><td><span class="sl-pill sl-pill--machine" data-machine="true">M</span></td></tr>
+              </tbody>
+            </table>
+          </section>
+          <p class="sl-field__hint">The approved 4.0.0 locale editor (<code class="sl-code">selection-lists/08-locale-editor</code>) with the same reads, rendered
+            <code class="sl-code">readOnly</code>: the target column is plain text — no inputs, no Save / Save all, no “Mark reviewed”, no Auto-fill.
+            Machine text keeps its <b>M</b> badge; for <code class="sl-code">he</code>/<code class="sl-code">ar</code> the target cell carries
+            <code class="sl-code">dir="rtl"</code> exactly as in the editor. Rows shown: the first three of the common <b>Priority</b> list.</p>
+        </div>
       </div>
 
       <div class="sl-section">
@@ -206,7 +227,7 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='03-readonly-states']</code> · <code>[data-visibility='org']</code> · <code>[data-readonly-notice='org']</code> · <code>[data-owner-hint][data-created-by-kind='user']</code> · <code>[data-created-by-kind='system']</code> · <code>[data-created-by-kind='deleted-user']</code> · <code>[data-editable='false']</code> · <code>[data-readonly-notice='shadowed']</code> · <code>[data-action='open-own-version']</code> · <code>[data-panel='locale-index'][data-readonly='true']</code> · <code>[data-panel='value-table'][data-state='loading']</code> · <code>[data-panel='value-table'][data-state='empty']</code> · <code>[data-panel='value-table'][data-state='error']</code> · <code>[data-panel='value-table'][data-state='not-found']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-state='editable-unknown']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='03-readonly-states']</code> · <code>[data-visibility='org']</code> · <code>[data-readonly-notice='org']</code> · <code>[data-owner-hint][data-created-by-kind='user']</code> · <code>[data-created-by-kind='system']</code> · <code>[data-created-by-kind='deleted-user']</code> · <code>[data-editable='false']</code> · <code>[data-readonly-notice='shadowed']</code> · <code>[data-action='open-own-version']</code> · <code>[data-panel='locale-index'][data-readonly='true']</code> · <code>[data-action='open-locale-readonly']</code> · <code>[data-locale-link='fr']</code> · <code>[data-panel='locale-editor'][data-readonly='true']</code> · <code>[data-locale-view='fr']</code> · <code>[data-panel='value-table'][data-state='loading']</code> · <code>[data-panel='value-table'][data-state='empty']</code> · <code>[data-panel='value-table'][data-state='error']</code> · <code>[data-panel='value-table'][data-state='not-found']</code> · <code>[data-error='NOT_FOUND']</code> · <code>[data-state='editable-unknown']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
         Contract: <code>GET /v1/selection-lists/{listId}</code> · <code>GET /v1/selection-lists/{listId}/items</code> ·
         <code>GET /v1/selection-lists/{listId}/translations</code> · <code>GET /v1/selection-lists?key=&amp;include_shared=true&amp;limit=1</code>. Shared read is
         <code>SelectionListCatalog:read_shared</code> in the caller's tenant + the service's visibility predicate (design record D4).<br />

@@ -245,6 +245,7 @@ a.btn { text-decoration: none; display: inline-block; }
 }
 .sl-choice__opt[aria-checked='true'] { border-color: var(--accent-color); box-shadow: 0 0 0 var(--sh-hair) var(--accent-color); }
 .sl-choice__opt[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
+.sl-choice__opt[data-pending='true'] { border-style: dashed; border-color: var(--accent-color); }
 .sl-choice__radio {
   width: var(--space-4); height: var(--space-4); border-radius: var(--radius-pill);
   border: calc(var(--sh-hair) * 2) solid var(--border-strong); margin-top: var(--sh-pill-y);

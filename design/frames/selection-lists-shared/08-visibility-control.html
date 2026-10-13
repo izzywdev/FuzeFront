@@ -54,7 +54,7 @@
               <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private">
                 <span class="sl-choice__radio" aria-hidden="true"></span>
                 <div><div class="sl-choice__title">Only people with a role <span class="sl-vis sl-vis--private">○ Private</span></div>
-                  <p class="sl-choice__desc">For a fork: everyone else goes back to the common list in forms, and saved values show the common labels.</p></div>
+                  <p class="sl-choice__desc">For a fork: everyone else's forms use the common list if one is active; values saved from the common list show the common labels again.</p></div>
               </div>
               <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org">
                 <span class="sl-choice__radio" aria-hidden="true"></span>
@@ -159,9 +159,9 @@
             <div class="sl-panel" data-panel="visibility-control" data-scope="platform-org"><div class="sl-panel__body">
               <div class="sl-choice" role="radiogroup" aria-label="Who can see this list" data-control="visibility">
                 <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Only people with a role <span class="sl-vis sl-vis--private">○ Private</span></div></div></div>
-                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="org"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Everyone in FuzeFront platform <span class="sl-vis sl-vis--org">◉ Organization</span></div></div></div>
-                <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="platform"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Every organization <span class="sl-vis sl-vis--platform">◎ Common</span></div>
-                  <p class="sl-choice__desc">Publishes it as a common list. <b>This can't be undone.</b></p></div></div>
+                <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Everyone in FuzeFront platform <span class="sl-vis sl-vis--org">◉ Organization</span> <span class="sl-pill">Current</span></div></div></div>
+                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="platform" data-pending="true" aria-describedby="pp-t"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Every organization <span class="sl-vis sl-vis--platform">◎ Common</span></div>
+                  <p class="sl-choice__desc">Publishes it as a common list. <b>This can't be undone.</b> Chosen — confirm below to publish.</p></div></div>
               </div>
               <div class="sl-confirm" data-confirm="publish-platform" role="alertdialog" aria-labelledby="pp-t" style="margin-top: var(--space-4);">
                 <p class="sl-banner__title" id="pp-t">Publish “Ticket channel” to every organization?</p>
@@ -178,6 +178,10 @@
                 </div>
               </div>
             </div></div>
+            <p class="sl-field__hint">Choosing <b>Every organization</b> opens the confirmation and marks the option pending
+              (<code class="sl-code">data-pending</code>, dashed outline) — it does <b>not</b> check it. <b>Organization</b> stays
+              <code class="sl-code">aria-checked="true"</code> and keeps the tab stop until the key is typed and the publish succeeds; Cancel, Esc or a
+              <code class="sl-code">403</code> clear the pending mark and leave Organization selected.</p>
           </div>
           <div>
             <p class="sl-case">A common list — locked (visibility_locked)</p>
@@ -210,7 +214,7 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='08-visibility-control']</code> · <code>[data-panel='visibility-control']</code> · <code>[data-control='visibility']</code> · <code>[data-visibility-option='private']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='platform']</code> · <code>[data-confirm='visibility-to-private']</code> · <code>[data-consequence='forms']</code> · <code>[data-consequence='stored-common']</code> · <code>[data-consequence='stored-fork']</code> · <code>[data-action='confirm-visibility']</code> · <code>[data-state='saving']</code> · <code>[data-result='visibility-saved']</code> · <code>[data-case='visibility-not-owner']</code> · <code>[data-state='read-only']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-scope='platform-org']</code> · <code>[data-confirm='publish-platform']</code> · <code>[data-confirm-input='key']</code> · <code>[data-action='confirm-publish']</code> · <code>[data-state='locked']</code> · <code>[data-reason='visibility_locked']</code> · <code>[data-case='publish-forbidden']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        <b>Test hooks:</b> <code>[data-frame='08-visibility-control']</code> · <code>[data-panel='visibility-control']</code> · <code>[data-control='visibility']</code> · <code>[data-visibility-option='private']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='platform']</code> · <code>[data-scope='platform-org'] [data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='platform'][data-pending='true'][aria-checked='false']</code> · <code>[data-confirm='visibility-to-private']</code> · <code>[data-consequence='forms']</code> · <code>[data-consequence='stored-common']</code> · <code>[data-consequence='stored-fork']</code> · <code>[data-action='confirm-visibility']</code> · <code>[data-state='saving']</code> · <code>[data-result='visibility-saved']</code> · <code>[data-case='visibility-not-owner']</code> · <code>[data-state='read-only']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-scope='platform-org']</code> · <code>[data-confirm='publish-platform']</code> · <code>[data-confirm-input='key']</code> · <code>[data-action='confirm-publish']</code> · <code>[data-state='locked']</code> · <code>[data-reason='visibility_locked']</code> · <code>[data-case='publish-forbidden']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
         Contract: <code>PATCH /v1/selection-lists/{listId} {visibility}</code> (needs <code>manage_access</code>; <code>platform</code> also <code>publish_platform</code> + platform-org ownership;
         <code>409 visibility_locked</code> on demotion) · <code>GET /v1/selection-lists/{listId}/access</code> (decides editable vs read-only control).<br />
         Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.

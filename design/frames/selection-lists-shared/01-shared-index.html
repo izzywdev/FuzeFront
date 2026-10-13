@@ -132,7 +132,8 @@
 
       <div class="sl-section" id="filtered">
         <h2>Visibility filter set → shadowing off (administrator view)</h2>
-        <p class="sl-caption">Choosing a visibility other than <b>Any</b> sends <code class="sl-code">visibility=…</code>, which the service treats as
+        <p class="sl-caption">The filter exists only while <b>Include common lists</b> is ON, so a choice other than <b>Any</b> always sends
+          <code class="sl-code">include_shared=true&amp;visibility=…</code>, which the service treats as
           “show me exactly these” and stops hiding common lists behind forks. Here: <b>Common</b>. The common <b>Priority</b> reappears
           next to the others. No grouping — the filter already is the group.</p>
         <section class="sl-panel" data-panel="list-index" data-state="ready" data-visibility-filter-active="platform">
@@ -221,6 +222,25 @@
           </div>
         </div>
 
+        <div style="margin-top: var(--space-6);" id="shared-off">
+          <p class="sl-case">Common lists OFF — the visibility filter is removed and reset</p>
+          <div class="sl-toolbar" data-toolbar="list-index" data-include-shared="false">
+            <input class="sl-input sl-search" type="search" placeholder="Search by name or key" aria-label="Search lists" />
+            <select class="sl-input sl-select" aria-label="Status"><option selected>Active</option></select>
+            <span class="grow"></span>
+            <span class="sl-toggle" role="switch" aria-checked="false" tabindex="0" data-control="include-shared">
+              <span class="sl-toggle__track"><span class="sl-toggle__thumb"></span></span>
+              Include common lists
+            </span>
+          </div>
+          <p class="sl-field__hint">Turning the switch OFF removes the visibility filter (not disabled — absent) and resets it
+            to <b>Any</b>; the request is <code class="sl-code">GET /v1/selection-lists?status=&amp;cursor=</code> with neither
+            <code class="sl-code">include_shared</code> nor <code class="sl-code">visibility</code>. Without <code class="sl-code">include_shared</code> the result
+            is only the lists you hold a role on and <code class="sl-code">visibility</code> merely filters that set — “Common” would always come back empty
+            and “Organization” would silently omit every list you read through membership. Turning the switch back ON restores the filter at
+            <b>Any</b>; a filter choice is never carried across the switch.</p>
+        </div>
+
         <div style="margin-top: var(--space-6);">
           <p class="sl-case">Feature flag OFF — <code class="sl-code">fuzefront.selection-lists.shared-lists</code></p>
           <div class="sl-panel" data-panel="list-index" data-state="flag-off" data-flag="shared-lists:off">
@@ -245,8 +265,8 @@
       </div>
 
       <p class="sl-notes">
-        <b>Test hooks:</b> <code>[data-frame='01-shared-index']</code> · <code>[data-panel='list-index']</code> · <code>[data-control='include-shared']</code> · <code>[data-filter='visibility']</code> · <code>[data-visibility-filter='platform']</code> · <code>[data-group='own']</code> · <code>[data-group='common']</code> · <code>[data-source='platform']</code> · <code>[data-badge='common']</code> · <code>[data-badge='fork']</code> · <code>[data-editable='false']</code> · <code>[data-shadow-note='priority']</code> · <code>[data-action='load-more']</code> · <code>[data-state='loading']</code> · <code>[data-state='empty']</code> · <code>[data-state='empty-shared-off']</code> · <code>[data-state='error']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
-        Contract: <code>GET /v1/selection-lists?include_shared=true&amp;status=&amp;cursor=</code> (shadowing on) · <code>…&amp;visibility=platform|org|private</code> (shadowing off).
+        <b>Test hooks:</b> <code>[data-frame='01-shared-index']</code> · <code>[data-panel='list-index']</code> · <code>[data-control='include-shared']</code> · <code>[data-toolbar='list-index'][data-include-shared='false']</code> · <code>[data-filter='visibility']</code> · <code>[data-visibility-filter='platform']</code> · <code>[data-group='own']</code> · <code>[data-group='common']</code> · <code>[data-source='platform']</code> · <code>[data-badge='common']</code> · <code>[data-badge='fork']</code> · <code>[data-editable='false']</code> · <code>[data-shadow-note='priority']</code> · <code>[data-action='load-more']</code> · <code>[data-state='loading']</code> · <code>[data-state='empty']</code> · <code>[data-state='empty-shared-off']</code> · <code>[data-state='error']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        Contract: <code>GET /v1/selection-lists?include_shared=true&amp;status=&amp;cursor=</code> (shadowing on) · <code>?include_shared=true&amp;visibility=platform|org|private</code> (shadowing off) · switch OFF: neither param.
         Rows read <code>visibility</code>, <code>forked_from</code>, <code>editable</code>; an absent <code>editable</code> renders <b>no</b> access marker (unknown ≠ read-only).<br />
         Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
       </p>

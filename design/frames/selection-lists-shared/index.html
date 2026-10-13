@@ -21,7 +21,9 @@
     <span class="sl-banner__ico" aria-hidden="true">ℹ</span>
     <div class="sl-banner__body">
       <p class="sl-banner__title">Approval is per flow — five flows, approved independently</p>
-      <p>Approving one flow unblocks its implementation (its <code class="sl-code">implementation.paths</code> below) while the others iterate.
+      <p>Approving one flow unblocks its implementation (its <code class="sl-code">implementation.paths</code> below) while the others iterate. Each flow's component directory is claimed by that flow
+        alone, so approving one never unlocks a sibling's components; only the shared infrastructure in
+        <code class="sl-code">shared-lists/core/**</code> (types, api, hooks, provider — no rendering components) unlocks with any approval.
         <b>Flow 3</b> renders an honest fallback today and carries a named contract dependency
         (<code class="sl-code">SelectionList.revision</code>); it does not hold any sibling back.</p>
     </div>
@@ -138,7 +140,7 @@
         <span class="ix-chip">visibility → VisibilityControl · /settings/selection-lists/:listId/access</span>
         <span class="ix-chip">effective-picker → SelectionListPicker (extended) · /embed/selection-list-picker</span>
       </dd>
-      <dt>New components — packages/selection-lists-ui/src/shared-lists/**</dt>
+      <dt>New components — packages/selection-lists-ui/src/shared-lists/&lt;flow dir&gt;/** (each directory claimed by its flow ONLY)</dt>
       <dd>
         <span class="ix-chip">browse/VisibilityBadge</span><span class="ix-chip">browse/ForkBadge</span><span class="ix-chip">browse/EditableHint</span>
         <span class="ix-chip">browse/SharedListsToggle</span><span class="ix-chip">browse/VisibilityFilter</span><span class="ix-chip">browse/ListSourceGroups</span>
@@ -147,14 +149,19 @@
         <span class="ix-chip">fork/ForkListDialog</span><span class="ix-chip">fork/ForkResultNotice</span>
         <span class="ix-chip">provenance/ForkProvenancePanel</span><span class="ix-chip">provenance/BehindSourceIndicator</span><span class="ix-chip">provenance/RevertToCommonConfirm</span>
         <span class="ix-chip">visibility/VisibilityControl</span><span class="ix-chip">visibility/PublishPlatformConfirm</span>
-        <span class="ix-chip">picker/EffectiveListSource</span><span class="ix-chip">picker/useEffectiveList</span>
-        <span class="ix-chip">SharedListsFeatureProvider + useSharedLists (flag, isPlatformOrg)</span>
-        <span class="ix-chip">api: getEffectiveList · forkList · error.reason / sourceListId / forkUrl</span>
+        <span class="ix-chip">picker/EffectiveListSource</span>
+      </dd>
+      <dt>Shared infrastructure — shared-lists/core/** (claimed by every flow; no rendering components)</dt>
+      <dd>
+        <span class="ix-chip">core/useEffectiveList</span>
+        <span class="ix-chip">core/SharedListsFeatureProvider + useSharedLists (flag, isPlatformOrg)</span>
+        <span class="ix-chip">core/api: getEffectiveList · forkList · error.reason / sourceListId / forkUrl</span>
+        <span class="ix-chip">core/types + unit tests of the above</span>
       </dd>
       <dt>Existing components extended (wiring only)</dt>
       <dd>
         <span class="ix-chip">SelectionListIndex</span><span class="ix-chip">SelectionListDetail</span><span class="ix-chip">ValueEditor</span>
-        <span class="ix-chip">TranslationWorkbench (read-only mode + ForkRequiredBanner)</span><span class="ix-chip">AccessPanel</span>
+        <span class="ix-chip">TranslationWorkbench (read-only mode: locale index + read-only locale view; ForkRequiredBanner)</span><span class="ix-chip">AccessPanel</span>
         <span class="ix-chip">SelectionListPicker (getEffectiveList, onEffectiveValue, showSource)</span>
       </dd>
       <dt>Packages</dt>

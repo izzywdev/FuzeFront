@@ -82,9 +82,15 @@
             <td>Acme's own item — still resolves, with the item's own <code class="sl-code">status</code></td>
             <td class="name">Blocker <span class="sl-field__hint" style="display:inline;">(styled by the returned <code class="sl-code">status</code>; archived → greyed + badge)</span></td>
           </tr>
+          <tr data-resolve-case="common-archived-redirect">
+            <td class="sl-uuid">front_sli_…v0wa4</td>
+            <td>Common item archived by the platform <b>after</b> Acme forked; Acme's active <b>org</b> fork still holds its copy</td>
+            <td>redirected: fork item's label + <b>fork item's</b> <code class="sl-code">status</code> + <code class="sl-code">effective_item_id</code></td>
+            <td class="name">Urgent <span class="sl-field__hint" style="display:inline;">(fork copy still active — the source's archive does not reach it)</span></td>
+          </tr>
           <tr data-resolve-case="common-archived">
             <td class="sl-uuid">front_sli_…v0wa5</td>
-            <td>Common item archived by the platform</td>
+            <td>Common item archived by the platform; <b>no</b> redirect applies (no active org fork, or the fork has no non-purged copy of it)</td>
             <td><code class="sl-code">status: archived</code></td>
             <td class="name"><span style="color: var(--text-tertiary);">Critical (legacy)</span> <span class="sl-pill sl-pill--archived">archived</span></td>
           </tr>
@@ -123,7 +129,7 @@
   </div>
 
   <p class="sl-notes" style="max-width: calc(var(--space-16) * 18); margin-left: auto; margin-right: auto;">
-    <b>Test hooks:</b> <code>[data-frame='10-picker-stored-values']</code> · <code>[data-panel='picker'][data-state='redirected']</code> · <code>[data-selected-label][data-redirected='true']</code> · <code>[data-migration='host-opt-in']</code> · <code>[data-persisted]</code> · <code>[data-panel='resolve-matrix']</code> · <code>[data-resolve-case='redirect']</code> · <code>[data-resolve-case='private-fork']</code> · <code>[data-resolve-case='fork-item-purged']</code> · <code>[data-resolve-case='fork-archived']</code> · <code>[data-resolve-case='common-archived']</code> · <code>[data-resolve-case='missing']</code> · <code>[data-missing='true']</code> · <code>[data-state='resolving']</code> · <code>[data-state='resolve-error']</code> · <code>[data-error='resolve-failed']</code> · <code>[data-action='retry']</code><br />
+    <b>Test hooks:</b> <code>[data-frame='10-picker-stored-values']</code> · <code>[data-panel='picker'][data-state='redirected']</code> · <code>[data-selected-label][data-redirected='true']</code> · <code>[data-migration='host-opt-in']</code> · <code>[data-persisted]</code> · <code>[data-panel='resolve-matrix']</code> · <code>[data-resolve-case='redirect']</code> · <code>[data-resolve-case='private-fork']</code> · <code>[data-resolve-case='fork-item-purged']</code> · <code>[data-resolve-case='fork-archived']</code> · <code>[data-resolve-case='common-archived-redirect']</code> · <code>[data-resolve-case='common-archived']</code> · <code>[data-resolve-case='missing']</code> · <code>[data-missing='true']</code> · <code>[data-state='resolving']</code> · <code>[data-state='resolve-error']</code> · <code>[data-error='resolve-failed']</code> · <code>[data-action='retry']</code><br />
     Contract: <code>POST /v1/resolve</code> (<code>ResolvedSelectionListItem.effective_item_id</code>, 4.1.0) · <code>SelectionListItem.origin_item_id</code>.<br />
     Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
   </p>
