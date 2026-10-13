@@ -5,6 +5,7 @@ import { basename, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { importPKCS8, SignJWT } from 'jose'
 import { GITHUB_APP_PERMISSIONS } from '@fuzequality/github-app'
+import type { TestExecutionEvidenceLink } from '@fuzequality/contracts'
 
 const execFileAsync = promisify(execFile)
 const githubIdentifier = /^[A-Za-z0-9_.-]+$/
@@ -129,6 +130,52 @@ export async function githubInstallationToken(installationId: string): Promise<s
   const body = (await response.json()) as { token?: string }
   if (!body.token) throw new Error('GitHub installation token response contained no token')
   return body.token
+}
+
+function workflowArtifactKind(name: string): TestExecutionEvidenceLink['kind'] {
+  if (/video|recording|\.webm\b|\.mp4\b/i.test(name)) return 'video'
+  if (/trace/i.test(name)) return 'trace'
+  if (/screen(?:shot)?/i.test(name)) return 'screenshot'
+  if (/\blog(?:s)?\b/i.test(name)) return 'log'
+  if (/report|result|junit|coverage|playwright/i.test(name)) return 'report'
+  return 'other'
+}
+
+/** Discovers durable, browser-accessible evidence uploaded by one completed run. */
+export async function githubWorkflowArtifactEvidence(input: {
+  owner: string
+  name: string
+  runId: string
+  installationId: string
+  tokenProvider?: (installationId: string) => Promise<string>
+  fetcher?: typeof fetch
+}): Promise<TestExecutionEvidenceLink[]> {
+  assertIdentifier(input.owner, 'owner')
+  assertIdentifier(input.name, 'repository name')
+  if (!/^\d+$/.test(input.runId)) throw new Error('Invalid GitHub Actions run ID')
+  if (!/^\d+$/.test(input.installationId)) throw new Error('Invalid GitHub App installation ID')
+  const token = await (input.tokenProvider ?? githubInstallationToken)(input.installationId)
+  const response = await (input.fetcher ?? fetch)(
+    `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/actions/runs/${input.runId}/artifacts?per_page=100`,
+    { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' } },
+  )
+  if (!response.ok) throw new Error(`GitHub workflow artifact discovery failed: ${response.status}`)
+  const body = (await response.json()) as { artifacts?: unknown }
+  if (!Array.isArray(body.artifacts)) throw new Error('GitHub workflow artifact response was invalid')
+  return body.artifacts.flatMap((value): TestExecutionEvidenceLink[] => {
+    if (!value || typeof value !== 'object') return []
+    const artifact = value as { id?: unknown; name?: unknown; expired?: unknown }
+    if (
+      typeof artifact.id !== 'number' || !Number.isSafeInteger(artifact.id) || artifact.id <= 0 ||
+      typeof artifact.name !== 'string' || !artifact.name.trim() || artifact.expired === true
+    ) return []
+    const name = artifact.name.trim().slice(0, 200)
+    return [{
+      kind: workflowArtifactKind(name),
+      name,
+      url: `https://github.com/${input.owner}/${input.name}/actions/runs/${input.runId}/artifacts/${artifact.id}`,
+    }]
+  }).slice(0, 99)
 }
 
 /** Dispatches only a repository-owned workflow at an immutable analyzed commit. */

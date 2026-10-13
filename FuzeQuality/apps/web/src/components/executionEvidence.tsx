@@ -20,6 +20,14 @@ export function safeExecutionHref(value?: string): string | undefined {
   }
 }
 
+function evidenceLinkAction(link: TestExecution['evidenceLinks'][number]) {
+  const href = safeExecutionHref(link.url)
+  if (href && /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/\d+\/artifacts\/\d+$/i.test(href)) {
+    return 'Download '
+  }
+  return link.kind === 'video' ? 'Watch ' : 'Open '
+}
+
 export function ExecutionSourceLink({ execution }: { execution: TestExecution }) {
   const href = safeExecutionHref(execution.sourceUrl)
   if (!href) return null
@@ -221,7 +229,10 @@ export function ExecutionEvidenceLinks({
     (execution.evidenceLinks ?? [])
       .filter(link => safeExecutionHref(link.url))
       .map(link => [`${link.kind}:${link.url}`, link])
-  ).values()]
+  ).values()].sort((left, right) => {
+    const priority = { video: 0, report: 1, trace: 2, screenshot: 3, log: 4, other: 5 }
+    return priority[left.kind] - priority[right.kind] || left.name.localeCompare(right.name)
+  })
   if (!evidenceLinks.length) return null
 
   return (
@@ -232,7 +243,7 @@ export function ExecutionEvidenceLinks({
           <li key={`${link.kind}:${link.url}`}>
             <span className="status-pill">{link.kind}</span>
             <a href={link.url} target="_blank" rel="noreferrer">
-              {link.kind === 'video' ? 'Watch ' : 'Open '}{link.name}
+              {evidenceLinkAction(link)}{link.name}
             </a>
           </li>
         ))}
