@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RepositoryAnalysisStatus } from './repositoryAnalysisStatus'
 
 afterEach(cleanup)
@@ -14,7 +14,15 @@ describe('RepositoryAnalysisStatus', () => {
   })
 
   it('explains a safe failure without hiding deterministic evidence', () => {
-    render(<RepositoryAnalysisStatus analysis={{ revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_UNAVAILABLE' }} />)
+    const retry = vi.fn()
+    render(<RepositoryAnalysisStatus analysis={{ revision: 'abc', status: 'failed', errorCode: 'INTELLIGENCE_UNAVAILABLE' }} onRetry={retry} />)
     expect(screen.getByLabelText('Repository analysis status')).toHaveTextContent('deterministic evidence remains available')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry reviewed analysis' }))
+    expect(retry).toHaveBeenCalledOnce()
+  })
+
+  it('prevents duplicate retries while requeueing', () => {
+    render(<RepositoryAnalysisStatus analysis={{ revision: 'abc', status: 'failed' }} onRetry={vi.fn()} retrying />)
+    expect(screen.getByRole('button', { name: 'Requeueing…' })).toBeDisabled()
   })
 })

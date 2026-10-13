@@ -856,6 +856,7 @@ export function Repositories({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [pollError, setPollError] = useState('')
+  const [retryingAnalysis, setRetryingAnalysis] = useState<string>()
   const [history, setHistory] = useState<
     Record<string, RepositoryScanHistoryPage>
   >({})
@@ -934,6 +935,17 @@ export function Repositories({
       setBusy(false)
     }
   }
+  async function retryAnalysis(id: string) {
+    setRetryingAnalysis(id)
+    setError('')
+    try {
+      updateProcessingStatus(await api.retryRepositoryAnalysis(id))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Reviewed analysis could not be requeued')
+    } finally {
+      setRetryingAnalysis(undefined)
+    }
+  }
   async function loadHistory(id: string, cursor?: string) {
     if ((!cursor && history[id]) || historyLoading[id]) return
     setHistoryLoading(current => ({ ...current, [id]: true }))
@@ -990,7 +1002,11 @@ export function Repositories({
               </div>
               <h3>{repository.name}</h3>
               <p>{repository.canonicalUrl}</p>
-              <RepositoryAnalysisStatus analysis={repository.lastAnalysis} />
+              <RepositoryAnalysisStatus
+                analysis={repository.lastAnalysis}
+                onRetry={repository.lastAnalysis?.status === 'failed' ? () => void retryAnalysis(repository.id) : undefined}
+                retrying={retryingAnalysis === repository.id}
+              />
               <dl>
                 <div>
                   <dt>Branch</dt>

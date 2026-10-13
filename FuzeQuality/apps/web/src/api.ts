@@ -151,6 +151,7 @@ export const api = {
       body: JSON.stringify({ localPath }),
     }),
   repositoryProcessingStatus: (id: string) => request<import('@fuzequality/contracts').RepositoryProcessingStatus>(`/api/v1/repositories/${id}/processing-status`),
+  retryRepositoryAnalysis: (id: string) => request<import('@fuzequality/contracts').RepositoryProcessingStatus>(`/api/v1/repositories/${id}/analysis-retries`, { method: 'POST' }),
   decideSuggestion: (id: string, value: Record<string, unknown>) =>
     request(`/api/v1/suggestions/${id}/decision`, {
       method: 'POST',

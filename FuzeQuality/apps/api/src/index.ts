@@ -909,6 +909,13 @@ app.get('/api/v1/repositories/:id/processing-status', mayReadRepositories, async
   if (!repository) return response.status(404).json({ error: 'Repository not found' })
   response.json(repositoryProcessingStatus(repository))
 })
+app.post('/api/v1/repositories/:id/analysis-retries', mayScanRepositories, async (request, response) => {
+  const tenantId = requestIdentity(request)!.tenantId
+  const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
+  const repository = await store.queueRepositoryAnalysis(repositoryId, tenantId)
+  if (!repository) return response.status(409).json({ error: 'Only a failed current-revision analysis can be retried', code: 'ANALYSIS_NOT_RETRYABLE' })
+  response.status(202).json(repositoryProcessingStatus(repository))
+})
 app.patch('/api/v1/repositories/:id/administration', mayManageRepositoryAdministration, async (request, response) => {
   const parsed = repositoryAdministrationSchema.safeParse(request.body)
   if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
@@ -1107,11 +1114,6 @@ app.get('/api/v1/findings', mayReadCatalog, async (request, response) =>
 
 app.post('/api/v1/internal/scans/results', async (request, response) => {
   await store.saveScan(request.body)
-  await events.publish(
-    TOPICS.REPOSITORY_INVENTORY_CHANGED,
-    { repositoryId: request.body.repository.id, revision: request.body.revision },
-    request.body.repository.id
-  )
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/intelligence/results', async (request, response) => {

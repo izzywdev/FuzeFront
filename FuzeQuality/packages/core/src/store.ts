@@ -25,6 +25,7 @@ import type {
   QualityPrincipal,
   QualityMembership,
 } from '@fuzequality/contracts'
+import { TOPICS } from '@fuzequality/contracts'
 import { buildApiExpectations, buildFindings, buildFrontendExpectations } from './coverage'
 import { buildQualityIntelligenceProjection, isQualityIntelligenceFinding } from './quality-projection'
 import { FLOW_COVERAGE_POLICY_VERSION } from './orphan-analysis'
@@ -183,6 +184,7 @@ export interface CatalogStore {
   ): Promise<Repository | undefined>
   setRepositoryStatus(id: string, status: Repository['lastScanStatus']): Promise<void>
   setRepositoryAnalysis(id: string, analysis: NonNullable<Repository['lastAnalysis']>): Promise<void>
+  queueRepositoryAnalysis(id: string, tenantId: string): Promise<Repository | undefined>
   saveScan(result: ScanResult): Promise<void>
   syncCursor(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<SyncCursor | undefined>
   markSyncFailed(sourceType: SyncCursor['sourceType'], sourceKey: string): Promise<void>
@@ -577,6 +579,15 @@ export class MemoryCatalogStore implements CatalogStore {
     if (repository?.lastScanRevision === analysis.revision) repository.lastAnalysis = analysis
   }
 
+  async queueRepositoryAnalysis(id: string, tenantId: string) {
+    const repository = await this.repository(id, tenantId)
+    if (!repository?.lastScanRevision || repository.lastAnalysis?.status !== 'failed') return undefined
+    repository.lastAnalysis = { revision: repository.lastScanRevision, status: 'queued' }
+    this.outboxEvents.push({ id: randomUUID(), topic: TOPICS.REPOSITORY_INVENTORY_CHANGED, key: id,
+      payload: { repositoryId: id, revision: repository.lastScanRevision }, attempts: 0, createdAt: new Date().toISOString() })
+    return repository
+  }
+
   async saveScan(result: ScanResult) {
     const repository = this.data.repositories.find(item => item.id === result.repository.id)
     if (repository) {
@@ -622,6 +633,8 @@ export class MemoryCatalogStore implements CatalogStore {
       ...(result.qualityArtifacts ?? []).map(item => ({ ...item, revision: result.revision })),
     ]
     this.scanHistory.unshift({ repositoryId: result.repository.id, item: { id: randomUUID(), revision: result.revision, branch: result.repository.defaultBranch, status: 'complete', scannedAt: result.scannedAt, trigger: 'manual', counts: { operations: result.operations.length, surfaces: result.surfaces.length, tests: result.tests.length, diagnostics: result.diagnostics.length } } })
+    this.outboxEvents.push({ id: randomUUID(), topic: TOPICS.REPOSITORY_INVENTORY_CHANGED, key: result.repository.id,
+      payload: { repositoryId: result.repository.id, revision: result.revision }, attempts: 0, createdAt: new Date().toISOString() })
   }
 
   async reviewSuggestion(id: string, input: Omit<SuggestionDecision, 'id' | 'suggestionId' | 'originalPayload' | 'decidedAt'>) {
@@ -1623,6 +1636,28 @@ export class PostgresCatalogStore implements CatalogStore {
     )
   }
 
+  async queueRepositoryAnalysis(id: string, tenantId: string) {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `UPDATE fuzequality.repositories
+         SET last_analysis=jsonb_build_object('revision',last_scan_revision,'status','queued'),updated_at=now()
+         WHERE id=$1 AND tenant_id=$2 AND enabled=true AND last_scan_revision IS NOT NULL
+           AND last_analysis->>'status'='failed'
+         RETURNING last_scan_revision`, [id, tenantId])
+      if (!result.rowCount) { await client.query('ROLLBACK'); return undefined }
+      const revision = result.rows[0].last_scan_revision
+      await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+        [TOPICS.REPOSITORY_INVENTORY_CHANGED, id, JSON.stringify({ repositoryId: id, revision })])
+      await client.query('COMMIT')
+      return this.repository(id, tenantId)
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally { client.release() }
+  }
+
   async saveScan(result: ScanResult) {
     const client = await this.pool.connect()
     try {
@@ -1667,6 +1702,8 @@ export class PostgresCatalogStore implements CatalogStore {
         [item.id, item.repositoryId, result.revision, item.kind, item.title, item.sourcePath, item.summary, JSON.stringify(item.evidence), item.execution ? JSON.stringify(item.execution) : null],
       )
       await client.query('UPDATE fuzequality.repositories SET last_scan_status=\'complete\',last_scan_at=$2,last_scan_revision=$3,last_scan_details=$4,last_analysis=$5,updated_at=now() WHERE id=$1', [result.repository.id,result.scannedAt,result.revision,JSON.stringify(result.scanDetails),JSON.stringify({ revision: result.revision, status: 'queued' })])
+      await client.query('INSERT INTO fuzequality.outbox_events (topic,event_key,payload) VALUES ($1,$2,$3::jsonb)',
+        [TOPICS.REPOSITORY_INVENTORY_CHANGED, result.repository.id, JSON.stringify({ repositoryId: result.repository.id, revision: result.revision })])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error } finally { client.release() }
   }
