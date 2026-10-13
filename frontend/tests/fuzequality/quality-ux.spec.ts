@@ -217,7 +217,7 @@ test.describe('FuzeQuality implemented UX flows', () => {
   })
 
   test('keeps deterministic UX-flow evidence useful without AI proposals', async ({ page }) => {
-    await page.route('**/api/v1/repositories/repo-1/flow-candidates', route => route.fulfill({
+    await page.route(url => url.pathname === '/api/v1/repositories/repo-1/flow-candidates', route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([repositoryFlowCandidates[1]]),

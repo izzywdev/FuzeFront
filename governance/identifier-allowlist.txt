@@ -54,10 +54,10 @@ src backend/src/services/portalProvisioning.ts:249          # portal_provisionin
 # One-shot credential artifacts. Same family as the token/nonce/verifier targets
 # NON_ENTITY_ID_RE already excludes: they are consumed once, expire, and are
 # never referenced across a service boundary.
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:697   # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1117  # email_verifications row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:920   # mfa_recovery_codes row
-src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1011   # password_resets row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:699   # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1137  # email_verifications row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:940   # mfa_recovery_codes row
+src backend/security/src/providers/authentik/AuthentikIdentityProvider.ts:1031   # password_resets row
 
 # In-memory only: a Map key for a pending tool confirmation, never persisted and
 # never leaving the process.
@@ -67,10 +67,11 @@ src services/chat-service/src/agent/confirmation.ts:44      # in-process Map key
 # own and namespace under its own repo (identifier-standard.md §2), so they are
 # not this registry's to mint. Tracked against FuzeQuality's own adoption.
 src FuzeQuality/apps/api/src/test-implementation.ts:103     # FuzeQuality-owned entity
-src FuzeQuality/apps/api/src/index.ts:381                   # FuzeQuality-owned test-execution entity
-src FuzeQuality/packages/core/src/store.ts:264              # FuzeQuality-owned repository entity
-src FuzeQuality/packages/core/src/store.ts:341              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:352              # FuzeQuality-owned suggestion-decision entity
-src FuzeQuality/packages/core/src/store.ts:438              # FuzeQuality-owned admin-context audit entity
-src FuzeQuality/packages/core/src/store.ts:488              # FuzeQuality-owned identity-event outbox entity
-src FuzeQuality/packages/core/src/store.ts:1165             # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/apps/api/src/index.ts:392                   # FuzeQuality-owned test-execution entity
+src FuzeQuality/packages/core/src/store.ts:278              # FuzeQuality-owned repository entity
+src FuzeQuality/packages/core/src/store.ts:355              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:366              # FuzeQuality-owned suggestion-decision entity
+src FuzeQuality/packages/core/src/store.ts:452              # FuzeQuality-owned admin-context audit entity
+src FuzeQuality/packages/core/src/store.ts:526              # FuzeQuality-owned identity-event outbox entity
+src FuzeQuality/packages/core/src/store.ts:537              # FuzeQuality-owned design-test-link outbox entity
+src FuzeQuality/packages/core/src/store.ts:1286             # FuzeQuality-owned admin-context audit entity

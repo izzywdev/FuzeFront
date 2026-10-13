@@ -12,6 +12,11 @@ describe('policy gate evaluation', () => {
     expect(results.map(item => item.kind)).toEqual(expect.arrayContaining(['unguarded-policy', 'guard-without-policy']))
     expect(results.every(item => item.tenantId === 'org-1')).toBe(true)
     expect(results.every(item => item.reviewStatus === 'proposed')).toBe(true)
+    expect(results.every(item => item.confidence >= 0 && item.confidence <= 1)).toBe(true)
+    expect(results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: expect.objectContaining({ sourcePaths: ['governance/auth.md'] }) }),
+      expect.objectContaining({ scope: expect.objectContaining({ sourcePaths: ['.github/lint.yml'] }) }),
+    ]))
   })
 
   it('does not call a gate ungoverned when it shares an enforceable subject', () => {

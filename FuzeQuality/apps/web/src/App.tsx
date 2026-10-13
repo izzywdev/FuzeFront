@@ -59,9 +59,16 @@ import {
 import { planGap } from './testPlan'
 import { storybookPreviewUrl } from './storybook'
 import { QualityAction, QualityIconAction } from './components/primitives'
-import { ExecutionEvidenceMetadata } from './components/executionEvidence'
+import {
+  ExecutionEvidenceMetadata,
+  ExecutionEvidenceLinks,
+  ExecutionGateEvidence,
+  ExecutionThresholdEvidence,
+} from './components/executionEvidence'
+import { PolicyGateEvidence } from './components/governanceEvidence'
+import { FlowInventoryFilters, type FlowRevisionScope } from './components/flowInventoryFilters'
 
-type View =
+export type View =
   | 'overview'
   | 'repositories'
   | 'api'
@@ -86,7 +93,7 @@ const navigation: Array<{ id: View; label: string; icon: typeof Activity }> = [
   { id: 'administration', label: 'Organizations', icon: Building2 },
 ]
 
-const portalMenuItems = navigation
+export const portalMenuItems = navigation
   .filter(item => item.id !== 'administration')
   .map((item, index) => ({
     id: item.id,
@@ -101,7 +108,7 @@ type PortalContextSnapshot = {
   activeOrganization?: { id: string } | null
 }
 
-type FuzeFrontRuntimeBridge = {
+export type FuzeFrontRuntimeBridge = {
   getContext?: () => PortalContextSnapshot
   subscribe?: (listener: (context: PortalContextSnapshot) => void) => () => void
   onOrgSwitch?: (listener: (organization: { id: string } | null) => void) => () => void
@@ -183,29 +190,44 @@ function isView(value: unknown): value is View {
   return typeof value === 'string' && navigation.some(item => item.id === value)
 }
 
-function viewFromPathname(pathname: string): View | undefined {
+export function viewFromPathname(pathname: string): View | undefined {
+  if (/^\/app\/fuzequality\/?$/.test(pathname)) return 'overview'
   const match = pathname.match(/^\/app\/fuzequality\/([^/?#]+)/)
   return match && isView(match[1]) ? match[1] : undefined
+}
+
+/** Connect host menu events and browser history to the app's active view. */
+export function connectPortalNavigation(
+  bridge: FuzeFrontRuntimeBridge | undefined,
+  setView: (view: View) => void,
+  target: Pick<Window, 'addEventListener' | 'removeEventListener'> = window,
+  pathname: () => string = () => window.location.pathname
+) {
+  bridge?.menu?.add('fuzequality', portalMenuItems)
+  const syncPath = () => {
+    const view = viewFromPathname(pathname())
+    if (view) setView(view)
+  }
+  const onNavigate = (event: Event) => {
+    const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>)
+      .detail
+    const view = detail?.section ?? detail?.id
+    if (isView(view)) setView(view)
+  }
+  target.addEventListener('fuzefront:navigate', onNavigate)
+  target.addEventListener('popstate', syncPath)
+  syncPath()
+  return () => {
+    target.removeEventListener('fuzefront:navigate', onNavigate)
+    target.removeEventListener('popstate', syncPath)
+    bridge?.menu?.remove('fuzequality')
+  }
 }
 
 /** Publish the app's IA to the portal sidebar; the host remains its renderer. */
 function usePortalMenu(setView: (view: View) => void) {
   useEffect(() => {
-    const bridge = runtimeBridge()
-    bridge?.menu?.add('fuzequality', portalMenuItems)
-    const onNavigate = (event: Event) => {
-      const detail = (event as CustomEvent<{ id?: unknown; section?: unknown }>)
-        .detail
-      const target = detail?.section ?? detail?.id
-      if (isView(target)) setView(target)
-    }
-    window.addEventListener('fuzefront:navigate', onNavigate)
-    const initial = viewFromPathname(window.location.pathname)
-    if (initial) setView(initial)
-    return () => {
-      window.removeEventListener('fuzefront:navigate', onNavigate)
-      bridge?.menu?.remove('fuzequality')
-    }
+    return connectPortalNavigation(runtimeBridge(), setView)
   }, [setView])
 }
 
@@ -2858,11 +2880,41 @@ function PolicyGateReviewHistory({
   )
 }
 
-function RepositoryIntelligence({ data }: { data: Portfolio }) {
+type FlowInventorySelection = {
+  repositoryId: string
+  source: RepositoryFlowCandidate['source'] | ''
+  status: RepositoryFlowCandidate['status'] | ''
+  revisionScope: FlowRevisionScope
+}
+
+export function flowCandidateMatchesInventory(
+  flow: RepositoryFlowCandidate,
+  repositories: Repository[],
+  selection: FlowInventorySelection
+) {
+  if (selection.repositoryId && flow.repositoryId !== selection.repositoryId)
+    return false
+  if (selection.source && flow.source !== selection.source) return false
+  if (selection.status && flow.status !== selection.status) return false
+  if (selection.revisionScope === 'current') {
+    const repository = repositories.find(item => item.id === flow.repositoryId)
+    return Boolean(
+      repository?.lastScanRevision &&
+        flow.revision === repository.lastScanRevision
+    )
+  }
+  return true
+}
+
+export function RepositoryIntelligence({ data }: { data: Portfolio }) {
   const [artifacts, setArtifacts] = useState<QualityArtifact[]>([])
   const [flowCandidates, setFlowCandidates] = useState<
     RepositoryFlowCandidate[]
   >([])
+  const [flowRepositoryId, setFlowRepositoryId] = useState('')
+  const [flowSource, setFlowSource] = useState<RepositoryFlowCandidate['source'] | ''>('')
+  const [flowStatus, setFlowStatus] = useState<RepositoryFlowCandidate['status'] | ''>('')
+  const [flowRevisionScope, setFlowRevisionScope] = useState<FlowRevisionScope>('all')
   const [policyGateEvaluations, setPolicyGateEvaluations] = useState<
     PolicyGateEvaluation[]
   >([])
@@ -2903,6 +2955,28 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
   >('')
   const [dispatchingArtifact, setDispatchingArtifact] = useState<string>()
   const [loadingArtifacts, setLoadingArtifacts] = useState(true)
+  const [loadingFlows, setLoadingFlows] = useState(true)
+  const [loadedFlowQuery, setLoadedFlowQuery] = useState('')
+  const flowSelection: FlowInventorySelection = {
+    repositoryId: flowRepositoryId,
+    source: flowSource,
+    status: flowStatus,
+    revisionScope: flowRevisionScope,
+  }
+  const flowSelectionRef = useRef(flowSelection)
+  flowSelectionRef.current = flowSelection
+  const flowQuery = JSON.stringify([
+    data.repositories.map(repository => [
+      repository.id,
+      repository.lastScanRevision ?? '',
+    ]),
+    flowRepositoryId,
+    flowSource,
+    flowStatus,
+    flowRevisionScope,
+  ])
+  const flowResultsAreCurrent =
+    !loadingFlows && loadedFlowQuery === flowQuery
   const reviewFlow = async (
     flow: RepositoryFlowCandidate,
     status: 'confirmed' | 'rejected',
@@ -2915,7 +2989,13 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
       reason
     )
     setFlowCandidates(current =>
-      current.map(item => (item.id === reviewed.id ? reviewed : item))
+      flowCandidateMatchesInventory(
+        reviewed,
+        data.repositories,
+        flowSelectionRef.current
+      )
+        ? current.map(item => (item.id === reviewed.id ? reviewed : item))
+        : current.filter(item => item.id !== reviewed.id)
     )
   }
   const reviewPolicyGate = async (
@@ -2963,18 +3043,90 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     ) as Record<string, string>
   }, [executionKind, executionStatus, executionFrom, executionUntil])
   useEffect(() => {
-    if (invalidExecutionRange) {
-      setExecutions([])
-      setExecutionPerformance([])
-      setLoadingArtifacts(false)
-      return
-    }
     let active = true
     void Promise.all(
       data.repositories.map(async repository => ({
         artifacts: await api.qualityArtifacts(repository.id),
-        flows: await api.repositoryFlowCandidates(repository.id),
         evaluations: await api.policyGateEvaluations(repository.id),
+      }))
+    )
+      .then(groups => {
+        if (active) {
+          setArtifacts(groups.flatMap(group => group.artifacts))
+          setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setArtifacts([])
+          setPolicyGateEvaluations([])
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingArtifacts(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [data.repositories])
+  useEffect(() => {
+    let active = true
+    setLoadingFlows(true)
+    void Promise.all(
+      data.repositories.map(repository =>
+        flowRepositoryId && flowRepositoryId !== repository.id
+          ? Promise.resolve([])
+          : flowRevisionScope === 'current' && !repository.lastScanRevision
+            ? Promise.resolve([])
+            : api.repositoryFlowCandidates(
+                repository.id,
+                Object.fromEntries(
+                  Object.entries({
+                    source: flowSource,
+                    status: flowStatus,
+                    revision:
+                      flowRevisionScope === 'current'
+                        ? repository.lastScanRevision ?? ''
+                        : '',
+                  }).filter(([, value]) => Boolean(value))
+                )
+              )
+      )
+    )
+      .then(groups => {
+        if (active) setFlowCandidates(groups.flat())
+      })
+      .catch(() => {
+        if (active) setFlowCandidates([])
+      })
+      .finally(() => {
+        if (active) {
+          setLoadedFlowQuery(flowQuery)
+          setLoadingFlows(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [
+    data.repositories,
+    flowQuery,
+    flowRepositoryId,
+    flowRevisionScope,
+    flowSource,
+    flowStatus,
+  ])
+  useEffect(() => {
+    let active = true
+    if (invalidExecutionRange) {
+      setExecutions([])
+      setExecutionPerformance([])
+      return () => {
+        active = false
+      }
+    }
+    void Promise.all(
+      data.repositories.map(async repository => ({
         executions:
           executionRepositoryId && executionRepositoryId !== repository.id
             ? []
@@ -2987,24 +3139,15 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
     )
       .then(groups => {
         if (active) {
-          setArtifacts(groups.flatMap(group => group.artifacts))
-          setFlowCandidates(groups.flatMap(group => group.flows))
-          setPolicyGateEvaluations(groups.flatMap(group => group.evaluations))
           setExecutions(groups.flatMap(group => group.executions))
           setExecutionPerformance(groups.flatMap(group => group.performance))
         }
       })
       .catch(() => {
         if (active) {
-          setArtifacts([])
-          setFlowCandidates([])
-          setPolicyGateEvaluations([])
           setExecutions([])
           setExecutionPerformance([])
         }
-      })
-      .finally(() => {
-        if (active) setLoadingArtifacts(false)
       })
     return () => {
       active = false
@@ -3076,6 +3219,17 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
         </div>
       ) : (
         <>
+          <FlowInventoryFilters
+            repositories={data.repositories}
+            repositoryId={flowRepositoryId}
+            source={flowSource}
+            status={flowStatus}
+            revisionScope={flowRevisionScope}
+            onRepositoryIdChange={setFlowRepositoryId}
+            onSourceChange={setFlowSource}
+            onStatusChange={setFlowStatus}
+            onRevisionScopeChange={setFlowRevisionScope}
+          />
           <div
             className="catalog-filters"
             aria-label="Policy and gate finding filters"
@@ -3144,10 +3298,13 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
           <div className="catalog-grid">
             {groups.map(([kind, title, detail]) => {
               const items = artifacts.filter(item => item.kind === kind)
-              const deterministicFlowCount = flowCandidates.filter(
+              const visibleFlowCandidates = flowResultsAreCurrent
+                ? flowCandidates
+                : []
+              const deterministicFlowCount = visibleFlowCandidates.filter(
                 flow => flow.source === 'deterministic'
               ).length
-              const liteLlmFlowCount = flowCandidates.filter(
+              const liteLlmFlowCount = visibleFlowCandidates.filter(
                 flow => flow.source === 'litellm'
               ).length
               return (
@@ -3156,7 +3313,7 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                     <div>
                       <p className="eyebrow">
                         {kind === 'route'
-                          ? `${flowCandidates.length} flows · ${items.length} routes indexed`
+                          ? `${visibleFlowCandidates.length} flows · ${items.length} routes indexed`
                           : `${items.length} discovered`}
                       </p>
                       <h2>{title}</h2>
@@ -3186,8 +3343,14 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         )}
                       </div>
                     )}
+                    {kind === 'route' && !flowResultsAreCurrent && (
+                      <div className="loading-screen" role="status">
+                        <RefreshCw className="spin" />
+                        <span>Loading UX flows…</span>
+                      </div>
+                    )}
                     {kind === 'route' &&
-                      flowCandidates.map(flow => (
+                      visibleFlowCandidates.map(flow => (
                         <article className="catalog-row" key={flow.id}>
                           <div>
                             <strong>{flow.title}</strong>
@@ -3303,6 +3466,10 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                                   ? ` · ${evaluation.reviewReason}`
                                   : ''}
                               </small>
+                              <PolicyGateEvidence
+                                evaluation={evaluation}
+                                artifacts={artifacts}
+                              />
                               {evaluation.reviewStatus === 'proposed' && (
                                 <div className="row-actions">
                                   <button
@@ -3365,7 +3532,9 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                       </article>
                     ))}
                     {items.length === 0 &&
-                      !(kind === 'route' && flowCandidates.length) && (
+                      !(kind === 'route' &&
+                        (!flowResultsAreCurrent ||
+                          visibleFlowCandidates.length)) && (
                         <div className="empty-state">
                           <Search />
                           <strong>No evidence indexed yet</strong>
@@ -3512,6 +3681,9 @@ function RepositoryIntelligence({ data }: { data: Portfolio }) {
                         : ''}
                   </small>
                   <ExecutionEvidenceMetadata execution={execution} />
+                  <ExecutionEvidenceLinks execution={execution} />
+                  <ExecutionGateEvidence execution={execution} />
+                  <ExecutionThresholdEvidence execution={execution} />
                   {execution.sourceUrl && (
                     <a
                       className="execution-source"

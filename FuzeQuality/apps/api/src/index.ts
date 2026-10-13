@@ -6,6 +6,7 @@ import {
   repositoryInputSchema,
   reviewDecisionSchema,
   expectationExclusionSchema,
+  designTestLinkEventSchema,
   testExecutionInputSchema,
   performanceTestRequestSchema,
   testImplementationRequestSchema,
@@ -39,6 +40,8 @@ import { createOpenApiSurface } from './openapi'
 import { executionFilterSchema } from './execution-filter'
 import { executionRecord } from './test-execution-ingestion'
 import { candidateOwnershipError, repositoryFlowCandidateIngestionSchema } from './repository-flow-ingestion'
+import { filterRepositoryFlowCandidates, repositoryFlowFilterSchema } from './repository-flow-filter'
+import { policyGateEvaluationIngestionSchema, policyGateOwnershipError } from './policy-gate-ingestion'
 import {
   buildImplementationManifest,
   dispatchImplementation,
@@ -118,6 +121,10 @@ const identityLifecycleEventSchema = z.discriminatedUnion('type', [
     type: z.literal('membership.changed'), organizationId: z.string().uuid(), userId: z.string().uuid(),
     role: z.string().min(1), active: z.boolean(),
   }).strict(),
+])
+const designTestLinkLifecycleEventSchema = z.discriminatedUnion('type', [
+  designTestLinkEventSchema.extend({ type: z.literal('design-test-link.upsert') }),
+  designTestLinkEventSchema.extend({ type: z.literal('design-test-link.removed') }),
 ])
 
 async function proxyOrganizationSecurity(
@@ -371,7 +378,11 @@ app.get('/api/v1/internal/repositories/:id/policy-gate-evaluations', async (requ
   response.json(await store.policyGateEvaluations(repositoryId, repository.tenantId ?? 'legacy'))
 })
 app.post('/api/v1/internal/policy-gate-evaluations', async (request, response) => {
-  await store.savePolicyGateEvaluations(request.body.evaluations ?? [])
+  const parsed = policyGateEvaluationIngestionSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: parsed.error.flatten() })
+  const ownershipError = await policyGateOwnershipError(parsed.data.evaluations, id => store.repository(id))
+  if (ownershipError) return response.status(400).json({ error: 'Evaluation repository/tenant ownership mismatch', ...ownershipError })
+  await store.savePolicyGateEvaluations(parsed.data.evaluations)
   response.status(202).json({ accepted: true })
 })
 app.post('/api/v1/internal/test-executions', async (request, response) => {
@@ -420,6 +431,27 @@ app.post('/api/v1/internal/identity-lifecycle', async (request, response) => {
   await relayOutboxBatch(store, events)
   response.status(202).json({ accepted: true, changed })
 })
+app.post('/api/v1/internal/design-test-links', async (request, response) => {
+  const event = designTestLinkLifecycleEventSchema.parse(request.body)
+  const topic = event.type === 'design-test-link.upsert'
+    ? TOPICS.DESIGN_TEST_LINK_VERIFIED
+    : TOPICS.DESIGN_TEST_LINK_REVOKED
+  const changed = await store.projectDesignTestLink(event, {
+    topic,
+    key: `${event.tenantId}:${event.traceLinkId}`,
+    payload: {
+      tenantId: event.tenantId,
+      traceLinkId: event.traceLinkId,
+      fuzexProjectId: event.fuzexProjectId,
+      targetKind: event.targetKind,
+      targetRef: event.targetRef,
+      testCaseId: event.testCaseId,
+      active: event.type === 'design-test-link.upsert',
+    },
+  })
+  await relayOutboxBatch(store, events)
+  response.status(202).json({ accepted: true, changed })
+})
 app.get('/api/v1/repositories', mayReadRepositories, async (request, response) =>
   response.json((await store.portfolio(requestIdentity(request)!.tenantId)).repositories)
 )
@@ -445,7 +477,9 @@ app.get('/api/v1/repositories/:id/flow-candidates', mayReadCatalog, async (reque
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
   const tenantId = requestIdentity(request)!.tenantId
   if (!await store.repository(repositoryId, tenantId)) return response.status(404).json({ error: 'Repository not found' })
-  response.json(await store.repositoryFlowCandidates(repositoryId, tenantId))
+  const filter = repositoryFlowFilterSchema.safeParse(request.query)
+  if (!filter.success) return response.status(400).json({ error: filter.error.flatten() })
+  response.json(filterRepositoryFlowCandidates(await store.repositoryFlowCandidates(repositoryId, tenantId), filter.data))
 })
 app.get('/api/v1/repositories/:id/flow-candidates/:candidateId/history', mayReadCatalog, async (request, response) => {
   const repositoryId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id
@@ -896,7 +930,10 @@ app.post('/api/v1/webhooks/github', async (request, response) => {
     const repository = repositories.find(item => item.id === execution.repositoryId)
     if (!repository?.tenantId) continue
     const links = linkExecutionArtifacts(execution.name, await store.qualityArtifacts(repository.id, repository.tenantId))
-    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, ...links, ...execution })
+    const gateEvaluations = links.policyArtifactIds.length === 1 && links.gateArtifactIds.length === 1
+      ? [{ policyArtifactId: links.policyArtifactIds[0], gateArtifactId: links.gateArtifactIds[0], status: execution.status }]
+      : []
+    await store.saveTestExecution({ id: `${execution.provider}:${execution.externalRunId}:${execution.attempt}:${execution.repositoryId}`, tenantId: repository.tenantId, thresholds: [], gateEvaluations, ...links, ...execution })
   }
   for (const command of commands) {
     let commitSha = command.commitSha

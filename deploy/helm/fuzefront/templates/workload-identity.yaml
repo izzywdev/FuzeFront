@@ -188,6 +188,6 @@ metadata:
 data:
   service: service:selection-list-service
   serviceAccountName: fuzefront-selection-list-service
-  scopes: selection-list:owner-grant
+  scopes: selection-list:owner-grant selection-list:grant-cleanup
   tokenTtlSeconds: "600"
 {{- end }}

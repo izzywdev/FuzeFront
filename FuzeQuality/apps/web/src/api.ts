@@ -78,7 +78,7 @@ export const api = {
     request('/api/v1/repositories', { method: 'POST', body: JSON.stringify(value) }),
   repositoryScanHistory: (id: string) => request<import('@fuzequality/contracts').RepositoryScanHistoryEntry[]>(`/api/v1/repositories/${id}/scan-history`),
   qualityArtifacts: (id: string) => request<import('@fuzequality/contracts').QualityArtifact[]>(`/api/v1/repositories/${id}/quality-artifacts`),
-  repositoryFlowCandidates: (id: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates`),
+  repositoryFlowCandidates: (id: string, filter: Record<string, string> = {}) => request<import('@fuzequality/contracts').RepositoryFlowCandidate[]>(`/api/v1/repositories/${id}/flow-candidates?${new URLSearchParams(filter)}`),
   reviewRepositoryFlowCandidate: (repositoryId: string, candidateId: string, status: 'confirmed' | 'rejected', reason?: string) => request<import('@fuzequality/contracts').RepositoryFlowCandidate>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/review`, { method: 'POST', body: JSON.stringify({ status, ...(reason ? { reason } : {}) }) }),
   repositoryFlowReviewHistory: (repositoryId: string, candidateId: string) => request<import('@fuzequality/contracts').RepositoryFlowReviewHistoryEntry[]>(`/api/v1/repositories/${repositoryId}/flow-candidates/${candidateId}/history`),
   policyGateEvaluations: (id: string) => request<import('@fuzequality/contracts').PolicyGateEvaluation[]>(`/api/v1/repositories/${id}/policy-gate-evaluations`),

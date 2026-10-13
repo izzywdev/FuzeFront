@@ -162,3 +162,20 @@ describe('envelope + key', () => {
     expect(seedRequestKafkaKey(p)).toBe('org_01h455vb4pex5vsknk084sn02q')
   })
 })
+
+describe('buildSeedRequest — list visibility (shared 1.3.0 / HTTP 4.1.0)', () => {
+  it('passes "org" through and omits an absent visibility (golden payload unchanged)', () => {
+    const i = input()
+    i.lists[0]!.visibility = 'org'
+    expect(buildSeedRequest(i).lists[0]!.visibility).toBe('org')
+    expect(buildSeedRequest(input()).lists[0]).not.toHaveProperty('visibility')
+  })
+
+  it('refuses a platform (common) list from an app', () => {
+    const i = input()
+    ;(i.lists[0] as { visibility?: string }).visibility = 'platform'
+    expect(issuesOf(() => buildSeedRequest(i))).toEqual([
+      'lists.0.visibility: an app seed request cannot create a platform (common) list; use "org" or "private"',
+    ])
+  })
+})
