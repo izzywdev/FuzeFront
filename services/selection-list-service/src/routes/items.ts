@@ -27,7 +27,7 @@ import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheck, requireAuthzCheckWhen } from '../middleware/authz';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
-import { lockQuotaScope, checkItemQuota, QuotaExceededError } from '../services/quota.service';
+import { lockQuotaScope, checkItemQuota, checkActiveItemQuota, QuotaExceededError } from '../services/quota.service';
 import { lockOrgOutbox } from '../events/outbox';
 import { refreshItemUserModified } from '../seed/content';
 import {
@@ -676,12 +676,19 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
       await lockOrgOutbox(trx, req.orgId as string);
       // Verify item exists and belongs to this list (inside the txn: it is also
       // the `before` state the event diff is taken against).
-      const existing = await trx.raw<{ rows: [{ id: string }] }>(
-        `SELECT id FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
+      const existing = await trx.raw<{ rows: [{ id: string; status?: string }] }>(
+        `SELECT id, status FROM selection_list_items WHERE id = ? AND list_id = ? FOR NO KEY UPDATE`,
         [itemId, listId],
       );
       if (!existing.rows[0]) return false;
       const before = await readItem(trx, itemId);
+
+      // Un-archiving raises the ACTIVE item count without any create, so it is
+      // subject to `list_items` too (review M-4), under the create path's lock.
+      if (body.status === 'active' && existing.rows[0].status === 'archived') {
+        await lockQuotaScope(trx, `list_items:${listId}`);
+        await checkActiveItemQuota(listId, req.orgId as string, trx);
+      }
 
       // Update item row — always bump updated_at (plus any changed scalars)
       const itemUpdates: Record<string, string | number | boolean | Date | null> = { updated_at: new Date() };
@@ -773,6 +780,10 @@ router.patch('/:listId/items/:itemId', requireAuthzCheck('SelectionList', 'updat
 
     res.status(200).json(formatItem(result.rows[0]));
   } catch (err) {
+    if (err instanceof QuotaExceededError) {
+      sendQuotaExceeded(res, err);
+      return;
+    }
     getLog(req).error(
       { err, op: 'items PATCH /:listId/items/:itemId error', userId: req.userId, orgId: req.orgId, params: req.params },
       'items PATCH /:listId/items/:itemId error failed',

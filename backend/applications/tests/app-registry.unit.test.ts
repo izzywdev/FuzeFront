@@ -8,7 +8,12 @@ import {
   heartbeatRequestSchema,
   toValidationErrorBody,
 } from '../src/app-registry/manifest.schema'
-import { canRead, canMutate, AppRecord, AppCaller } from '../src/app-registry/service'
+import {
+  canRead,
+  canMutate,
+  AppRecord,
+  AppCaller,
+} from '../src/app-registry/service'
 
 const baseManifest = {
   manifestVersion: '1' as const,
@@ -24,7 +29,12 @@ const baseManifest = {
   },
 }
 
-function appWith(partial: Partial<AppRecord> & { visibility?: any; organizationId?: string | null }): AppRecord {
+function appWith(
+  partial: Partial<AppRecord> & {
+    visibility?: any
+    organizationId?: string | null
+  }
+): AppRecord {
   const { visibility, organizationId, ...rest } = partial
   return {
     slug: 'market',
@@ -56,22 +66,57 @@ const platformAdmin: AppCaller = {
 
 describe('app-registry BOLA visibility (canRead)', () => {
   it('public/marketplace apps are readable by anyone', () => {
-    expect(canRead(appWith({ visibility: 'public', organizationId: 'org-x' }), memberOfOrgA)).toBe(true)
-    expect(canRead(appWith({ visibility: 'marketplace', organizationId: 'org-x' }), memberOfOrgA)).toBe(true)
+    expect(
+      canRead(
+        appWith({ visibility: 'public', organizationId: 'org-x' }),
+        memberOfOrgA
+      )
+    ).toBe(true)
+    expect(
+      canRead(
+        appWith({ visibility: 'marketplace', organizationId: 'org-x' }),
+        memberOfOrgA
+      )
+    ).toBe(true)
   })
 
   it('organization apps are readable only by members of the owning org', () => {
-    expect(canRead(appWith({ visibility: 'organization', organizationId: 'org-a' }), memberOfOrgA)).toBe(true)
-    expect(canRead(appWith({ visibility: 'organization', organizationId: 'org-b' }), memberOfOrgA)).toBe(false)
+    expect(
+      canRead(
+        appWith({ visibility: 'organization', organizationId: 'org-a' }),
+        memberOfOrgA
+      )
+    ).toBe(true)
+    expect(
+      canRead(
+        appWith({ visibility: 'organization', organizationId: 'org-b' }),
+        memberOfOrgA
+      )
+    ).toBe(false)
   })
 
   it('private apps are readable only by the owning org (cross-org denied)', () => {
-    expect(canRead(appWith({ visibility: 'private', organizationId: 'org-a' }), memberOfOrgA)).toBe(true)
-    expect(canRead(appWith({ visibility: 'private', organizationId: 'org-b' }), memberOfOrgA)).toBe(false)
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: 'org-a' }),
+        memberOfOrgA
+      )
+    ).toBe(true)
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: 'org-b' }),
+        memberOfOrgA
+      )
+    ).toBe(false)
   })
 
   it('platform admin reads everything', () => {
-    expect(canRead(appWith({ visibility: 'private', organizationId: 'org-z' }), platformAdmin)).toBe(true)
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: 'org-z' }),
+        platformAdmin
+      )
+    ).toBe(true)
   })
 
   // Owner ruling 2026-08-25: "there should be no app without orgid ...
@@ -82,20 +127,33 @@ describe('app-registry BOLA visibility (canRead)', () => {
   // org, not by design); canRead now fails CLOSED for it instead, so a
   // future regression on the DB constraint denies rather than leaks.
   it('an org-less app (should be unreachable — see the NOT NULL constraint) is denied, not universally readable', () => {
-    expect(canRead(appWith({ visibility: 'private', organizationId: null }), memberOfOrgA)).toBe(false)
+    expect(
+      canRead(
+        appWith({ visibility: 'private', organizationId: null }),
+        memberOfOrgA
+      )
+    ).toBe(false)
   })
 })
 
 describe('app-registry BOLA mutation (canMutate)', () => {
   it('member of owning org may mutate', () => {
-    expect(canMutate(appWith({ organizationId: 'org-a' }), memberOfOrgA)).toBe(true)
+    expect(canMutate(appWith({ organizationId: 'org-a' }), memberOfOrgA)).toBe(
+      true
+    )
   })
   it('non-member may NOT mutate (cross-org)', () => {
-    expect(canMutate(appWith({ organizationId: 'org-b' }), memberOfOrgA)).toBe(false)
+    expect(canMutate(appWith({ organizationId: 'org-b' }), memberOfOrgA)).toBe(
+      false
+    )
   })
   it('org-less apps are platform-admin-only to mutate', () => {
-    expect(canMutate(appWith({ organizationId: null }), memberOfOrgA)).toBe(false)
-    expect(canMutate(appWith({ organizationId: null }), platformAdmin)).toBe(true)
+    expect(canMutate(appWith({ organizationId: null }), memberOfOrgA)).toBe(
+      false
+    )
+    expect(canMutate(appWith({ organizationId: null }), platformAdmin)).toBe(
+      true
+    )
   })
 })
 
@@ -127,7 +185,10 @@ describe('app-registry manifest validation', () => {
   })
 
   it('rejects a bad slug', () => {
-    const r = appManifestSchema.safeParse({ ...baseManifest, slug: 'Bad Slug!' })
+    const r = appManifestSchema.safeParse({
+      ...baseManifest,
+      slug: 'Bad Slug!',
+    })
     expect(r.success).toBe(false)
   })
 
@@ -144,7 +205,8 @@ describe('app-registry manifest validation', () => {
     ...baseManifest,
     integration: { ...baseManifest.integration, remoteEntry },
   })
-  const accepts = (v: string) => appManifestSchema.safeParse(withEntry(v)).success
+  const accepts = (v: string) =>
+    appManifestSchema.safeParse(withEntry(v)).success
 
   it('accepts a same-origin absolute path as remoteEntry', () => {
     expect(accepts('/apps/fuzequality/assets/remoteEntry.js')).toBe(true)
@@ -201,7 +263,9 @@ describe('app-registry manifest validation', () => {
 
   it('register request requires a manifest', () => {
     expect(registerAppRequestSchema.safeParse({}).success).toBe(false)
-    expect(registerAppRequestSchema.safeParse({ manifest: baseManifest }).success).toBe(true)
+    expect(
+      registerAppRequestSchema.safeParse({ manifest: baseManifest }).success
+    ).toBe(true)
   })
 
   it('heartbeat defaults status to online', () => {
@@ -243,7 +307,9 @@ describe('onboarding-kit manifest template', () => {
   })
 
   it('parses cleanly through the registry schema', () => {
-    const template = JSON.parse(require('fs').readFileSync(templatePath, 'utf8'))
+    const template = JSON.parse(
+      require('fs').readFileSync(templatePath, 'utf8')
+    )
     const result = appManifestSchema.safeParse(template)
     if (!result.success) {
       // Same explicit cast as the validation test above, and for the same reason
@@ -273,15 +339,32 @@ describe('onboarding-kit manifest template', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts a scope-specific organization installation mode', () => {
+    const result = appManifestSchema.safeParse({
+      ...baseManifest,
+      scopeLevel: 'both',
+      installMode: 'both',
+      organizationInstallMode: 'everyone',
+    })
+    expect(result.success).toBe(true)
+  })
+
   it('still rejects a genuinely unknown key — .strict() is not weakened', () => {
     // The fix must not become "accept anything". This is the half that proves
     // the schema is still closed.
-    const result = appManifestSchema.safeParse({ ...baseManifest, notAThing: true })
+    const result = appManifestSchema.safeParse({
+      ...baseManifest,
+      notAThing: true,
+    })
     expect(result.success).toBe(false)
   })
 
   it('rejects an empty modes array and an invalid mode value', () => {
-    expect(appManifestSchema.safeParse({ ...baseManifest, modes: [] }).success).toBe(false)
-    expect(appManifestSchema.safeParse({ ...baseManifest, modes: ['nope'] }).success).toBe(false)
+    expect(
+      appManifestSchema.safeParse({ ...baseManifest, modes: [] }).success
+    ).toBe(false)
+    expect(
+      appManifestSchema.safeParse({ ...baseManifest, modes: ['nope'] }).success
+    ).toBe(false)
   })
 })

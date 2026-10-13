@@ -37,6 +37,7 @@ GET /api/v1/test-implementations/{}  # FuzeQuality: test impl detail; service la
 GET /api/v1/repositories  # FuzeQuality: repository list; service lacks openapi.yaml
 GET /api/v1/repositories/{}  # FuzeQuality: repository detail; service lacks openapi.yaml
 GET /api/v1/repositories/{}/catalog-status  # FuzeQuality: catalog status; service lacks openapi.yaml
+GET /api/v1/repositories/{}/quality-artifacts  # FuzeQuality: tenant-authorized repository analysis evidence; service lacks public OpenAPI surface
 POST /api/v1/internal/coverage/rebuild  # FuzeQuality: internal trigger; not consumer-facing
 POST /api/v1/internal/intelligence/results  # FuzeQuality: internal ingest; not consumer-facing
 POST /api/v1/internal/scans/results  # FuzeQuality: internal ingest; not consumer-facing
@@ -87,6 +88,7 @@ POST /api/organizations/{}/invitations/{}/resend  # backend: resend invitation; 
 DELETE /api/organizations/{}/invitations/{}  # backend: cancel invitation; backend/src lacks openapi.yaml
 GET /api/organizations/{}/members  # backend: org members; backend/src lacks openapi.yaml
 POST /api/organizations/{}/members  # backend: add member; backend/src lacks openapi.yaml
+POST /api/organizations/{}/session-token  # backend/security: exchange a session token for a short-lived org-scoped token (membership-checked) for org-scoped services (selection-list-service); legacy /api/organizations domain surface (frozen spec is /api/v1/security only), parity with the sibling /api/organizations/* routes above
 PUT /api/organizations/{}/members/{}  # backend: update member; backend/src lacks openapi.yaml
 DELETE /api/organizations/{}/members/{}  # backend: remove member; backend/src lacks openapi.yaml
 GET /api/organizations/{}/roles  # backend: org roles; backend/src lacks openapi.yaml
@@ -220,6 +222,8 @@ POST /internal/specs  # devportal-service: S2S-only spec-registry push endpoint;
 GET /api/v1/requirements/freshness  # fuzequality: tenant-authorized Jira freshness evidence; not public contract surface
 POST /api/v1/internal/intelligence/failure  # fuzequality: S2S worker failure signal; bounded/redacted and not consumer-facing
 GET /api/v1/suggestions/{}/decisions  # fuzequality: tenant-authorized review audit history; not public contract surface
+GET /api/v1/internal/repositories/{}/quality-artifacts  # fuzequality: S2S worker evidence retrieval; not consumer-facing
+POST /api/v1/internal/identity-lifecycle  # fuzequality: S2S FuzeFront identity projection; not consumer-facing
 #
 # --- O1: applications-service Kubernetes readiness probe (#1137) ---
 # NOT a debt in the sense this file's header warns about (a spec gap to close):
@@ -239,6 +243,14 @@ DELETE /api/v1/connectors/google-gmail  # authenticated connector lifecycle faca
 POST /api/v1/connectors/google-gmail/connect  # browser OAuth initiation facade; intentionally not MCP
 GET /api/v1/connectors/google-gmail/oauth/callback  # Google browser redirect; encrypted short-lived continuation state, not a generated client operation
 GET /api/v1/connectors/google-gmail/messages/recent  # chat-only summary source; raw credential lease remains private S2S
+GET /api/v1/connectors/{}/oauth/callback  # provider browser OAuth redirect, not a generated client operation
+GET /api/v1/connectors/catalog  # authenticated browser connector catalog; backend has no OpenAPI spec
+POST /api/v1/connectors/{}/connect  # authenticated browser OAuth initiation, not an MCP operation
+POST /api/v1/connectors/{}/credential  # authenticated browser secret onboarding; must never be projected into generated clients or MCP tools
+GET /api/v1/connectors/{}/actions/{}  # authenticated per-user read facade; provider operations require separate contracts before MCP projection
+GET /api/v1/connectors/{}  # authenticated browser connector metadata facade
+PATCH /api/v1/connectors/{}  # authenticated browser configuration facade
+DELETE /api/v1/connectors/{}  # authenticated browser disconnect facade
 #
 # --- O2: Documented in spec but implementation not found by scanner ---
 # These are routes declared in openapi.yaml files whose handlers are not
@@ -260,3 +272,4 @@ POST /auth/logout  # devportal-service: same raw_alias collision as /auth/oidc/l
 POST /api/v1/suggestions/{}/approve-expected-test  # fuzequality: tenant-authorized internal review action; not part of a public OpenAPI contract surface
 POST /api/v1/expectations/{}/exclusion  # Internal reviewed-exclusion action; it is not part of a scanned product API contract.
 GET /api/v1/repositories/{}/scan-history  # Internal catalog administration read model; not a scanned product API contract.
+POST /v1/selection-lists/{}/fork  # selection-list-service: contract 4.1.0 (shared lists + copy-on-write fork) is frozen ahead of its implementation (contract-first); the service wave in docs/planning/selection-lists-shared-and-fork.md section 10 implements it behind fuzefront.selection-lists.shared-lists. REMOVE THIS LINE in the PR that implements forkSelectionList.

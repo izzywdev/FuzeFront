@@ -373,7 +373,8 @@ describe('enforceListQuota middleware — flag ON', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(mockCheckListQuota).toHaveBeenCalledWith('org_testorg');
+    // The fast-path pre-check carries the user too, so `user_lists` is refused before the insert.
+    expect(mockCheckListQuota).toHaveBeenCalledWith('org_testorg', undefined, 'usr_testuser');
   });
 
   it('returns 403 QUOTA_EXCEEDED when org_lists ceiling is reached', async () => {
