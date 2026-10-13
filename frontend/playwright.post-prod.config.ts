@@ -27,7 +27,10 @@ export default defineConfig({
     baseURL: process.env.POST_PROD_BASE_URL || 'https://app.fuzefront.com',
     trace: 'retain-on-failure',
     screenshot: 'on',
-    video: 'retain-on-failure',
+    // A successful production check needs auditable evidence as well as a
+    // failure diagnostic. The release workflow publishes the FuzeQuality
+    // journey's WebM separately, so an operator can watch the deployed app.
+    video: 'on',
     // Live TLS endpoint; don't ignore HTTPS errors — a cert/mixed-content
     // problem is exactly the kind of prod regression we want to catch.
     ignoreHTTPSErrors: false,

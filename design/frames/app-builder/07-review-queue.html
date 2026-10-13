@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Marketplace review queue — frame (g)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="07-review-queue">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Flow 4 · Marketplace publish · Frame (g) · route /admin/marketplace-requests (platform admin)</div>
+  <h1>Marketplace review queue</h1>
+  <p class="lead">Platform admins only. Every pending request, oldest first, with what a reviewer needs to
+    decide: the app, its <b>publisher</b> (the owning org), the creator as contact while they're a member,
+    the requester's notes. <b>Approve</b> lists it; <b>Reject</b> requires a reason the requester will read.</p>
+
+  <!-- g1 populated -->
+  <div class="state-block">
+    <div class="state-label">(g1) Pending requests</div>
+    <section class="panel" data-panel="publication-queue" aria-labelledby="q1">
+      <div class="panel-head"><div><h2 id="q1">Pending review</h2><p class="sub">3 requests · oldest first</p></div></div>
+      <table class="tbl">
+        <thead><tr><th scope="col">App</th><th scope="col">Publisher</th><th scope="col">Notes</th><th scope="col">Submitted</th><th scope="col" class="right"><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+          <tr data-queue-item="expense-tracker">
+            <td><div class="rowflex"><span class="appicon" aria-hidden="true">🧾</span>
+              <div class="stack"><b>Expense tracker</b><span class="mono-sm">expense-tracker</span></div></div></td>
+            <td><div class="stack"><b>Acme Corp</b><span class="muted">Contact: Dana Levi</span></div></td>
+            <td class="muted">Used daily by our finance team for six months…</td>
+            <td class="muted">2 Oct 2026</td>
+            <td class="right"><div class="actions" style="justify-content: flex-end">
+              <a class="btn btn-sm" href="#" data-action="view-app">View</a>
+              <button class="btn btn-sm btn-danger" data-action="reject-publication">Reject</button>
+              <button class="btn btn-sm btn-accent" data-action="approve-publication">Approve</button></div></td>
+          </tr>
+          <tr data-queue-item="shift-planner">
+            <td><div class="rowflex"><span class="appicon" aria-hidden="true">📅</span>
+              <div class="stack"><b>Shift planner</b><span class="mono-sm">shift-planner</span></div></div></td>
+            <td><div class="stack"><b>Northwind Logistics</b><span class="muted" data-field="creator-former">Contact: former member</span></div></td>
+            <td class="muted">—</td>
+            <td class="muted">3 Oct 2026</td>
+            <td class="right"><div class="actions" style="justify-content: flex-end">
+              <a class="btn btn-sm" href="#" data-action="view-app">View</a>
+              <button class="btn btn-sm btn-danger" data-action="reject-publication">Reject</button>
+              <button class="btn btn-sm btn-accent" data-action="approve-publication">Approve</button></div></td>
+          </tr>
+          <tr data-queue-item="recipe-box">
+            <td><div class="rowflex"><span class="appicon" aria-hidden="true">🍲</span>
+              <div class="stack"><b>Recipe box</b><span class="mono-sm">recipe-box</span></div></div></td>
+            <td><div class="stack"><b>Sam Ortiz</b><span class="muted">Personal workspace</span></div></td>
+            <td class="muted">Family recipes with a shopping list.</td>
+            <td class="muted">4 Oct 2026</td>
+            <td class="right"><div class="actions" style="justify-content: flex-end">
+              <a class="btn btn-sm" href="#" data-action="view-app">View</a>
+              <button class="btn btn-sm btn-danger" data-action="reject-publication">Reject</button>
+              <button class="btn btn-sm btn-accent" data-action="approve-publication">Approve</button></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- g2 approve dialog -->
+  <div class="state-block">
+    <div class="state-label">(g2) Approve — POST /apps/{slug}/publication-requests/approve { notes? }</div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ap-t" data-panel="approve-publication-dialog">
+      <div class="modal-head"><h2 id="ap-t">Approve “Expense tracker”?</h2></div>
+      <div class="modal-body">
+        <p>It will be listed on the FuzeFront marketplace with <b>Acme Corp</b> as publisher, and any FuzeFront
+          user or organization will be able to install it.</p>
+        <div class="field" style="margin-bottom: 0">
+          <label class="label" for="an">Internal note <span class="muted">(optional)</span></label>
+          <textarea class="textarea" id="an" data-input="approval-notes" maxlength="2000" style="min-height: var(--space-16)"></textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel-review">Cancel</button>
+        <button class="btn btn-accent" data-action="confirm-approve-publication">Approve and list</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- g3 reject dialog -->
+  <div class="state-block">
+    <div class="state-label">(g3) Reject — reason required (1–2000), shown to the requester verbatim</div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rj-t" data-panel="reject-publication-dialog">
+      <div class="modal-head"><h2 id="rj-t">Reject “Shift planner”?</h2></div>
+      <div class="modal-body">
+        <p>The requester sees your reason and can fix the app and resubmit. The app's current visibility doesn't change.</p>
+        <div class="field" style="margin-bottom: 0">
+          <div class="counter"><label class="label" for="rr">Reason</label><span class="count" data-counter="reason">0 / 2000</span></div>
+          <textarea class="textarea textarea--invalid" id="rr" data-input="rejection-reason" maxlength="2000" aria-invalid="true" aria-describedby="rr-e" style="min-height: var(--space-16)"></textarea>
+          <p class="hint hint--error" id="rr-e">A reason is required to reject.</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" data-action="cancel-review">Cancel</button>
+        <button class="btn btn-danger" data-action="confirm-reject-publication" disabled aria-disabled="true">Reject request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- g4 409 NOT_PENDING -->
+  <div class="state-block">
+    <div class="state-label">(g4) 409 NOT_PENDING — another admin decided first: row leaves the queue with a notice</div>
+    <div class="banner banner-info" data-error-code="NOT_PENDING" data-http="409">
+      <span><b>“Expense tracker” was already reviewed</b><p>Another admin acted on it a moment ago. The queue has been refreshed.</p></span>
+    </div>
+  </div>
+
+  <!-- g5 empty -->
+  <div class="state-block">
+    <div class="state-label">(g5) Empty queue</div>
+    <section class="panel" data-panel="publication-queue" data-state="empty"><div class="empty">
+      <h3>Nothing to review</h3><p>New marketplace requests will appear here.</p></div></section>
+  </div>
+
+  <!-- g6 loading / error -->
+  <div class="state-block">
+    <div class="state-label">(g6) Loading, and load error with retry</div>
+    <section class="panel" data-panel="publication-queue" data-state="loading" aria-busy="true"><div class="panel-body">
+      <div class="skel" style="width: 100%"></div><div class="skel" style="width: 100%"></div><div class="skel" style="width: 80%"></div>
+    </div></section>
+    <section class="panel" data-panel="publication-queue" data-state="error"><div class="panel-body">
+      <div class="banner banner-error"><span><b>Couldn't load the review queue</b><p>Check your connection and try again.</p>
+        <span class="actions"><button class="btn btn-sm" data-action="retry">Retry</button></span></span></div>
+    </div></section>
+  </div>
+
+  <!-- g7 403 -->
+  <div class="state-block">
+    <div class="state-label">(g7) Not a platform admin — 403 in place; no nav entry for non-admins</div>
+    <section class="panel" data-state="forbidden" data-http="403"><div class="empty" data-error-code="FORBIDDEN">
+      <h3>Platform admins only</h3><p>You don't have access to marketplace review.</p></div></section>
+  </div>
+
+  <p class="note">
+    <b>Contract gap — commissioned by approval.</b> app-registry 1.2.0 has approve/reject per app but <b>no way to
+    list pending requests</b>. This queue needs an additive, platform-admin-only, cursor-paginated
+    <code>GET /publication-requests?status=pending</code> returning <code>AppPublication</code> plus the app's
+    display name, icon and <code>organizationId</code> (flag-gated like its siblings). <code>contract-designer</code>
+    owns that amendment (1.3.0, minor); until it lands this flow cannot be implemented — the frames do not
+    invent a client-side scan of <code>GET /apps</code>.<br />
+    <b>Decisions.</b> Approve → <code>visibility=marketplace</code>; Reject → <code>{ reason }</code>, the app may be
+    resubmitted. Both remove the row optimistically and restore it on any non-2xx except <code>409 NOT_PENDING</code>
+    (g4). Publisher is the owning org; the contact column follows the frame (e) rule — a former member is
+    never named. Nav entry lives beside the other admin consoles and renders only for platform admins.<br />
+    Test hooks: <code>[data-frame='07-review-queue']</code> · <code>[data-panel='publication-queue']</code> ·
+    <code>[data-queue-item='expense-tracker']</code> · <code>[data-action='approve-publication']</code> ·
+    <code>[data-action='reject-publication']</code> · <code>[data-panel='approve-publication-dialog']</code> ·
+    <code>[data-action='confirm-approve-publication']</code> · <code>[data-panel='reject-publication-dialog']</code> ·
+    <code>[data-input='rejection-reason']</code> · <code>[data-action='confirm-reject-publication']</code> ·
+    <code>[data-error-code='NOT_PENDING']</code> · <code>[data-state='empty']</code> · <code>[data-state='loading']</code> ·
+    <code>[data-state='error']</code> · <code>[data-state='forbidden']</code>.
+  </p>
+
+  <div class="pager"><a href="06-publish-request.html">← Publish to marketplace</a><a href="index.html">Index →</a></div>
+</div>
+</body>
+</html>

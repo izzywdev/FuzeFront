@@ -69,6 +69,7 @@ vi.mock('@fuzeone/selection-lists-ui', () => ({
   TranslationWorkbenchFlow: () => <div data-testid="sl-translations">translations</div>,
   SelectionListAccessFlow: () => <div data-testid="sl-access">access</div>,
   SelectionListPickerHarness: () => <div data-testid="sl-picker">picker</div>,
+  configureSelectionListsAuth: vi.fn(),
 }))
 
 import App from '../App'

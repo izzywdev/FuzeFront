@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Build your application — entry card — frame (a)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="wrap" data-frame="01-build-entry">
+  <a class="back" href="index.html">← All frames</a>
+  <div class="eyebrow">Flow 1 · Build entry · Frame (a) · route /applications</div>
+  <h1>“Build your application” card</h1>
+  <p class="lead">A second CTA card sits <b>immediately after</b> the existing dashed
+    <b>Add application</b> card at the end of the Applications grid
+    (<code>ApplicationsPage.tsx</code>, today ~L363). Same footprint and keyboard behaviour as its
+    sibling, but solid-bordered with the fuse seam on top: it is the agent-driven path, not the
+    manual one. The card exists only while <code>fuzefront.apps.build-with-agent</code> is ON.</p>
+
+  <!-- a1: flag ON -->
+  <div class="state-block">
+    <div class="state-label">(a1) Flag ON — both CTA cards, Build after Add</div>
+    <div class="panel"><div class="panel-body">
+      <h2 style="margin-bottom: var(--space-2)">Applications</h2>
+      <p class="sub" style="margin-bottom: var(--space-6)">Federated apps registered to your workspace.</p>
+      <div class="appgrid" data-panel="applications-grid">
+        <div class="apptile">
+          <div class="rowflex"><div class="appicon" aria-hidden="true">⏰</div><span class="appname">Clock</span></div>
+          <p>World clocks for your team.</p>
+          <div class="rowflex"><span class="status status--accent">built-in</span><span class="status status--success"><span class="dot"></span>activated</span></div>
+        </div>
+        <div class="apptile">
+          <div class="rowflex"><div class="appicon" aria-hidden="true">🤖</div><span class="appname">Agent</span></div>
+          <p>Work with FuzeAgent.</p>
+          <div class="rowflex"><span class="status status--success"><span class="dot"></span>activated</span></div>
+        </div>
+
+        <!-- existing card, unchanged -->
+        <a class="cta-card" href="#" role="button" data-action="add-application">
+          <div><div class="cta-glyph" aria-hidden="true">＋</div>
+            <h3>Add application</h3>
+            <p>Register a federated or standalone app.</p></div>
+        </a>
+
+        <!-- NEW: BuildAppCard -->
+        <a class="cta-card cta-card--build" href="02-build-form.html" role="button"
+           data-card="build-application" data-action="build-application"
+           aria-describedby="build-card-desc">
+          <div><div class="cta-glyph" aria-hidden="true">✦</div>
+            <h3>Build your application</h3>
+            <p id="build-card-desc">Describe it — FuzeAgent builds and deploys it for you.</p>
+            <div class="cta-kicker">with FuzeAgent</div></div>
+        </a>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- a2: flag OFF -->
+  <div class="state-block">
+    <div class="state-label">(a2) Flag OFF — card not rendered (not disabled, not hidden by CSS)</div>
+    <div class="panel"><div class="panel-body">
+      <div class="appgrid" data-panel="applications-grid" data-flag-state="off">
+        <div class="apptile">
+          <div class="rowflex"><div class="appicon" aria-hidden="true">⏰</div><span class="appname">Clock</span></div>
+          <p>World clocks for your team.</p>
+        </div>
+        <a class="cta-card" href="#" role="button" data-action="add-application">
+          <div><div class="cta-glyph" aria-hidden="true">＋</div>
+            <h3>Add application</h3>
+            <p>Register a federated or standalone app.</p></div>
+        </a>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- a3: flag resolving -->
+  <div class="state-block">
+    <div class="state-label">(a3) Flag still resolving — treat as OFF (no flash-in, no layout jump on Add)</div>
+    <div class="panel"><div class="panel-body">
+      <div class="appgrid" data-panel="applications-grid" data-flag-state="loading">
+        <div class="apptile"><div class="skel" style="width: 60%"></div><div class="skel" style="width: 85%"></div></div>
+        <a class="cta-card" href="#" role="button" data-action="add-application">
+          <div><div class="cta-glyph" aria-hidden="true">＋</div><h3>Add application</h3>
+            <p>Register a federated or standalone app.</p></div>
+        </a>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- a4: in-flight session shortcut -->
+  <div class="state-block">
+    <div class="state-label">(a4) Flag ON + the caller has an in-flight session — card becomes a resume shortcut</div>
+    <div class="panel"><div class="panel-body">
+      <div class="appgrid" data-panel="applications-grid">
+        <a class="cta-card" href="#" role="button" data-action="add-application">
+          <div><div class="cta-glyph" aria-hidden="true">＋</div><h3>Add application</h3>
+            <p>Register a federated or standalone app.</p></div>
+        </a>
+        <a class="cta-card cta-card--build" href="03-build-progress.html" role="button"
+           data-card="build-application" data-action="resume-build-session" data-session-status="building">
+          <div><div class="cta-glyph" aria-hidden="true"><span class="spinner" aria-hidden="true"></span></div>
+            <h3>“Expense tracker” is building</h3>
+            <p>Open progress, or start another build from there.</p>
+            <div class="cta-kicker">building · 4 min</div></div>
+        </a>
+      </div>
+    </div></div>
+  </div>
+
+  <p class="note">
+    <b>Behaviour.</b> The card is a <code>role="button"</code> with <code>tabIndex=0</code>, activated by
+    click, Enter or Space — identical to the Add card. It routes to <code>/applications/build</code> (frame b).
+    In (a4) the latest non-terminal session from <code>GET /build-sessions?limit=1</code> turns the card into
+    a resume link to <code>/applications/build/:sessionId</code>; that read only happens when the flag is ON.<br />
+    <b>Flag.</b> <code>fuzefront.apps.build-with-agent</code>, release, default OFF, builders audience.
+    OFF ⇒ the component returns <code>null</code>. The page change is a single mount of
+    <code>&lt;BuildAppCard /&gt;</code> from <code>@fuzefront/app-builder-ui</code> after the Add card —
+    the card's own markup and logic live in the package.<br />
+    Test hooks: <code>[data-frame='01-build-entry']</code> · <code>[data-panel='applications-grid']</code> ·
+    <code>[data-action='add-application']</code> · <code>[data-card='build-application']</code> ·
+    <code>[data-action='build-application']</code> · <code>[data-flag-state='off']</code> ·
+    <code>[data-flag-state='loading']</code> · <code>[data-action='resume-build-session']</code>.
+  </p>
+
+  <div class="pager"><a href="index.html">← Index</a><a href="02-build-form.html">Build form →</a></div>
+</div>
+</body>
+</html>
