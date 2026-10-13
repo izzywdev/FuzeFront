@@ -12,6 +12,7 @@ import os from 'os';
 import path from 'path';
 import type { Knex } from 'knex';
 import { TOPICS } from '@fuzefront/shared/kafka';
+import { toUuid } from '@izzywdev/fuzefront-identity';
 import { createTestDb, dbDescribe, TestDb } from './helpers/testDb';
 import { allowSource, appRequest, eventsAfter, FUZECRM_SUBJECT, maxSeq, orgId, projectOrg, spec } from './helpers/seedFixtures';
 import { handleSeedRequested } from '../src/events/seed-requested.handler';
@@ -160,6 +161,30 @@ dbDescribe('seeding with list visibility (real Postgres)', () => {
         const ok = completed(await applySeedRequest(db, platformRequest(PLATFORM, lists().map((l) => ({ ...l, key: `r-${l.key}` })), { honorVisibility: true, pack: { key: 'retry-pack', version: 1 } })));
         expect(ok.lists.map((l) => l.key)).toContain('r-v-common');
         expect((await vis(PLATFORM))['r-v-common']).toBe('platform');
+      } finally {
+        process.env[PLATFORM_ORG_ENV] = keep;
+        _resetPlatformOrgCacheForTesting();
+      }
+    });
+
+    it('the CONFIGURED platform org (not the root org) whose projection has not arrived: the request fails retryably, in either rendering, and records no ledger row', async () => {
+      const keep = process.env[PLATFORM_ORG_ENV];
+      const target = orgId(77);
+      process.env[PLATFORM_ORG_ENV] = target;
+      _resetPlatformOrgCacheForTesting();
+      try {
+        for (const [i, rendering] of [target, toUuid(target as never)].entries()) {
+          const res = failed(
+            await applySeedRequest(db, platformRequest(rendering, lists().map((l) => ({ ...l, key: `c${i}-${l.key}` })), { honorVisibility: true, orgCheck: 'skip', pack: { key: `cfg-pack-${i}`, version: 1 } })),
+          );
+          expect(res).toMatchObject({ reason: 'INTERNAL_ERROR', retryable: true });
+          expect(await db('selection_list_seed_ledger').where({ organization_id: target }).first()).toBeUndefined();
+        }
+        // once the projection confirms it, the request applies and seeds the common list
+        await projectOrg(db, target, { type: 'platform' });
+        _resetPlatformOrgCacheForTesting();
+        const ok = completed(await applySeedRequest(db, platformRequest(target, lists().map((l) => ({ ...l, key: `c0-${l.key}` })), { honorVisibility: true, pack: { key: 'cfg-pack-0', version: 1 } })));
+        expect(ok.lists.map((l) => l.key)).toContain('c0-v-common');
       } finally {
         process.env[PLATFORM_ORG_ENV] = keep;
         _resetPlatformOrgCacheForTesting();

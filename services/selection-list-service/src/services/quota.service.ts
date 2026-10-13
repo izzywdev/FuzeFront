@@ -282,6 +282,48 @@ export async function checkItemQuota(
 }
 
 /**
+ * `getQuota` for an organization known by several renderings of its id (bare UUID / org_ TypeID): the override
+ * rows of ALL renderings apply, each ceiling being the most restrictive one set. No override => the platform default.
+ */
+export async function getQuotaAcross(orgRenderings: string[], executor: Executor = db): Promise<QuotaLimits> {
+  const rows: OrgQuotaRow[] = await executor('selection_list_org_quota').whereIn('organization_id', orgRenderings);
+  const min = (vals: Array<number | null | undefined>, dflt: number): number => {
+    const set = vals.filter((v): v is number => v !== null && v !== undefined);
+    return set.length ? Math.min(...set) : dflt;
+  };
+  return {
+    maxLists: min(rows.map((r) => r.max_lists), DEFAULT_MAX_LISTS),
+    maxListsPerUser: min(rows.map((r) => r.max_lists_per_user), DEFAULT_MAX_LISTS_PER_USER),
+    maxItemsPerList: min(rows.map((r) => r.max_items_per_list), DEFAULT_MAX_ITEMS_PER_LIST),
+    maxLocales: min(rows.map((r) => r.max_locales), DEFAULT_MAX_LOCALES),
+  };
+}
+
+/**
+ * `checkListQuota` for an organization known by several renderings of its id: lists are counted and overrides
+ * loaded across ALL of them (org_lists, user_lists, and the hard storage ceiling). Used by the fork, whose
+ * organization may present either rendering; the 4.0.0 `checkListQuota` is unchanged.
+ */
+export async function checkListQuotaAcross(orgRenderings: string[], executor: Executor = db, userId?: string): Promise<void> {
+  const quota = await getQuotaAcross(orgRenderings, executor);
+  const count = async (where: Record<string, unknown>): Promise<number> => {
+    const r = await (executor('selection_lists').whereIn('organization_id', orgRenderings).where(where).count('id as count').first() as Promise<any>);
+    return parseInt(String(r?.count ?? '0'), 10);
+  };
+  const current = await count({ status: 'active' });
+  if (current >= quota.maxLists) throw new QuotaExceededError('org_lists', current, quota.maxLists, 'lists');
+  if (userId) {
+    const mine = await count({ created_by: userId, status: 'active' });
+    if (mine >= quota.maxListsPerUser) throw new QuotaExceededError('user_lists', mine, quota.maxListsPerUser, 'lists per user');
+  }
+  const ceiling = quota.maxLists * storageCeilingFactor();
+  const stored = await count({});
+  if (stored >= ceiling) {
+    throw new QuotaExceededError('org_lists', stored, ceiling, 'stored lists (archived included; purge archived lists to free space)');
+  }
+}
+
+/**
  * Guard for a FORK (POST /v1/selection-lists/{listId}/fork): the copy is a new list of `orgId` holding
  * `active` non-archived items, `stored` items in total (archived included) and `locales` list-level
  * translations, so the per-list ceilings the item/locale creates enforce apply to it as a whole:
@@ -289,11 +331,11 @@ export async function checkItemQuota(
  * (`org_lists`, `user_lists`, storage) are `checkListQuota`'s. Throws `QuotaExceededError`.
  */
 export async function checkForkQuota(
-  orgId: string,
+  orgRenderings: string[],
   counts: { active: number; stored: number; locales: number },
   executor: Executor = db,
 ): Promise<void> {
-  const quota = await getQuota(orgId, executor);
+  const quota = await getQuotaAcross(orgRenderings, executor);
   if (counts.active > quota.maxItemsPerList) {
     throw new QuotaExceededError('list_items', counts.active, quota.maxItemsPerList, 'items');
   }

@@ -38,7 +38,7 @@ import { isSelectionListsEnabled } from '../flags';
 import { requireCatalogCheck } from '../middleware/authz';
 import { acceptOnlyBodyProps, isItemId } from '../middleware/validateInput';
 import { ENTITY_PREFIXES } from '@izzywdev/fuzefront-identity';
-import { orgForms } from '../lib/sharedLists';
+import { orgForms, orgRenderings } from '../lib/sharedLists';
 import { getReadScope } from '../services/sharedReads';
 
 const router = createRouter();
@@ -181,7 +181,7 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     LEFT JOIN selection_lists fl
       ON sl.visibility = 'platform'
      AND fl.forked_from_list_id = sl.id
-     AND fl.organization_id = ?
+     AND fl.organization_id = ANY(?)
      AND fl.visibility = 'org'
      AND fl.status = 'active'
     LEFT JOIN selection_list_items fi
@@ -193,9 +193,9 @@ router.post('/resolve', requireCatalogCheck('resolve'), async (req: Request, res
     LEFT JOIN selection_list_item_translations t3
       ON t3.item_id = COALESCE(fi.id, sli.id) AND t3.locale = 'en'
     WHERE sli.id = ANY(?)
-      AND (sl.organization_id = ? OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))
+      AND (sl.organization_id = ANY(?) OR (sl.visibility = 'platform' AND sl.organization_id = ANY(?)))
     `,
-        [effectiveLocale, orgId, effectiveLocale, validIds, orgId, orgForms(scope.platformOrg)],
+        [effectiveLocale, orgRenderings(orgId), effectiveLocale, validIds, orgRenderings(orgId), orgForms(scope.platformOrg)],
       )
     : await db.raw<{ rows: typeof dbRows }>(
     `

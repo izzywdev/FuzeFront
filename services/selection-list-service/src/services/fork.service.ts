@@ -23,8 +23,8 @@ import { db } from '../db';
 import { grantListOwner } from '../middleware/authz';
 import { emitForkEvents, EventContext } from '../events/emitters';
 import { lockOrgOutbox, wireOrgId, wireUserId } from '../events/outbox';
-import { canonicalOrgId, orgForms, sameOrg } from '../lib/sharedLists';
-import { checkForkQuota, checkListQuota, lockQuotaScope } from './quota.service';
+import { canonicalOrgId, orgRenderings, sameOrg } from '../lib/sharedLists';
+import { checkForkQuota, checkListQuotaAcross, lockQuotaScope } from './quota.service';
 
 /** Hard bound on the items of a fork source: the bound of the `list.forked` itemMap (shared 1.3.0). */
 export const FORK_MAX_ITEMS = 5000;
@@ -76,7 +76,7 @@ export async function forkList(input: ForkInput): Promise<ForkOutcome> {
   // lock is taken on the canonical form, so one org cannot fork (or take a key) once per representation. The
   // row itself is stored under the caller's own rendering, like every list of this service.
   const orgKey = canonicalOrgId(orgId) ?? orgId;
-  const orgRenderings = [...new Set([orgId, ...orgForms(orgKey)])];
+  const renderings = orgRenderings(orgId);
 
   return db.transaction(async (trx): Promise<ForkOutcome> => {
     await lockOrgOutbox(trx, orgId);
@@ -84,7 +84,7 @@ export async function forkList(input: ForkInput): Promise<ForkOutcome> {
     // 2. idempotency
     const existing = await trx.raw(
       `SELECT id FROM selection_lists WHERE organization_id = ANY(?) AND forked_from_list_id = ?`,
-      [orgRenderings, sourceId],
+      [renderings, sourceId],
     );
     const already = (existing as { rows?: Array<{ id: string }> }).rows?.[0];
     if (already) return { kind: 'exists', listId: already.id };
@@ -113,11 +113,11 @@ export async function forkList(input: ForkInput): Promise<ForkOutcome> {
     const localeCount = (localesRes as { rows?: Array<{ n: number }> }).rows?.[0]?.n ?? 0;
 
     // 4b. quotas (exact: under the advisory lock)
-    await checkListQuota(orgId, trx, userId);
-    await checkForkQuota(orgId, { active: counts.active, stored: counts.stored, locales: localeCount }, trx);
+    await checkListQuotaAcross(renderings, trx, userId);
+    await checkForkQuota(renderings, { active: counts.active, stored: counts.stored, locales: localeCount }, trx);
 
     // key held by a DIFFERENT list of the organization (it cannot be a fork of this source: step 2)
-    const keyRes = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [orgRenderings, src.key]);
+    const keyRes = await trx.raw(`SELECT 1 FROM selection_lists WHERE organization_id = ANY(?) AND key = ?`, [renderings, src.key]);
     if ((keyRes as { rows?: unknown[] }).rows?.length) return { kind: 'key-taken' };
 
     // 5. the copy

@@ -91,6 +91,17 @@ export function orgForms(wire: string): string[] {
   return [...forms];
 }
 
+/**
+ * THE canonical organization helper of the shared-lists code: every rendering of the caller's org (the claim as
+ * presented, its org_ TypeID and its bare UUID). Every NEW query/lock/quota/predicate of the shared-lists
+ * feature matches an organization through this (`= ANY(?)`) or compares with `sameOrg`, never with the raw
+ * claim, because the auth middleware passes the claim verbatim and it may be either rendering. (The 4.0.0
+ * routes keep their verbatim scoping; rows are STORED under the caller's own rendering.)
+ */
+export function orgRenderings(stored: string): string[] {
+  return [...new Set([stored, ...orgForms(canonicalOrgId(stored) ?? stored)])];
+}
+
 // ---------------------------------------------------------------------------
 // The platform organization (D2)
 // ---------------------------------------------------------------------------
@@ -109,12 +120,14 @@ export function configuredPlatformOrgId(env: NodeJS.ProcessEnv = process.env): s
 interface ProjectionRow {
   org_type: string | null;
   status: string;
+  /** false = an administrator deactivated the org (the projection keeps status 'active' for it). */
+  is_active: boolean | null;
   wire_id: string | null;
 }
 
 async function projectionByWire(ex: Executor, wire: string): Promise<ProjectionRow | undefined> {
   const res = await ex.raw(
-    `SELECT org_type, status, wire_id FROM selection_list_ref_index WHERE entity_type = 'organization' AND wire_id = ?`,
+    `SELECT org_type, status, is_active, wire_id FROM selection_list_ref_index WHERE entity_type = 'organization' AND wire_id = ?`,
     [wire],
   );
   return (res as { rows?: ProjectionRow[] }).rows?.[0];
@@ -154,11 +167,11 @@ export async function resolvePlatformOrgId(ex: Executor = db, now: number = Date
   try {
     if (configured) {
       const row = await projectionByWire(ex, configured);
-      if (row && row.status === 'active' && row.org_type === 'platform') {
+      if (row && row.status === 'active' && row.is_active === true && row.org_type === 'platform') {
         value = configured;
       } else {
         logger.warn(
-          { configured, projected: row ? { orgType: row.org_type, status: row.status } : null },
+          { configured, projected: row ? { orgType: row.org_type, status: row.status, isActive: row.is_active } : null },
           `${PLATFORM_ORG_ENV} is not (yet) confirmed as an active platform org by the org projection — platform features are disabled until it is`,
         );
         value = null;
@@ -202,9 +215,11 @@ export async function verifyPlatformOrgConfig(ex: Executor = db, env: NodeJS.Pro
     logger.warn({ platformOrg: raw }, `${PLATFORM_ORG_ENV} is not in the org projection yet — cannot confirm it is a platform org`);
     return 'unconfirmed';
   }
-  if (row.status === 'deleted' || (row.org_type !== null && row.org_type !== 'platform')) {
+  if (row.status === 'deleted' || row.is_active === false || (row.org_type !== null && row.org_type !== 'platform')) {
     throw new PlatformOrgConfigError(
-      `${PLATFORM_ORG_ENV} (${raw}) is ${row.status === 'deleted' ? 'a deleted organization' : `an organization of type '${row.org_type}'`}, not the platform organization`,
+      `${PLATFORM_ORG_ENV} (${raw}) is ${
+        row.status === 'deleted' ? 'a deleted organization' : row.is_active === false ? 'a deactivated organization' : `an organization of type '${row.org_type}'`
+      }, not the platform organization`,
     );
   }
   if (raw !== ROOT_PLATFORM_ORG_WIRE) {
@@ -212,7 +227,7 @@ export async function verifyPlatformOrgConfig(ex: Executor = db, env: NodeJS.Pro
     // is not fatal; it is loud, because publishing common lists into every tenant is this org's power.
     logger.warn({ platformOrg: raw, root: ROOT_PLATFORM_ORG_WIRE }, `${PLATFORM_ORG_ENV} is not the root platform organization (ROOT_ORG_ID) - confirm this is intended`);
   }
-  if (row.org_type === null) {
+  if (row.org_type === null || row.is_active === null) {
     logger.warn({ platformOrg: raw }, `${PLATFORM_ORG_ENV} is in the org projection without a type — cannot confirm it is a platform org`);
     return 'unconfirmed';
   }
@@ -237,7 +252,7 @@ export interface VisibilityRow {
  * Permit's `SelectionListCatalog:read_shared` (membership) must ALSO hold; this alone grants nothing.
  */
 export function sharedPredicate(row: VisibilityRow, callerOrgId: string, platformOrgId: string | null): boolean {
-  if (row.visibility === 'org') return row.organization_id === callerOrgId;
+  if (row.visibility === 'org') return sameOrg(row.organization_id, callerOrgId);
   if (row.visibility === 'platform') return platformOrgId !== null && sameOrg(row.organization_id, platformOrgId);
   return false;
 }

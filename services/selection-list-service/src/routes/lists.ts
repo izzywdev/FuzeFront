@@ -56,7 +56,7 @@ import {
   requirePublishForPlatformList,
   requirePublishWhenBodyIsPlatform,
 } from '../middleware/listAccess';
-import { isVisibility, orgForms, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { isVisibility, orgForms, orgRenderings, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
 import { editableIds, getReadScope, readableByOrg } from '../services/sharedReads';
 import { formatList, LIST_COLUMNS, singleCtx, type ListRow } from './listShape';
 import { lockOrgOutbox, wireUserId } from '../events/outbox';
@@ -185,7 +185,7 @@ async function shadowedPlatformKeys(
     `
     SELECT o.id, o.organization_id, o.key, o.visibility
       FROM selection_lists o
-     WHERE o.organization_id = ?
+     WHERE o.organization_id = ANY(?)
        AND o.status = 'active'
        AND o.visibility <> 'platform'
        ${keyFilter ? 'AND o.key = ?' : ''}
@@ -194,7 +194,7 @@ async function shadowedPlatformKeys(
           WHERE p.visibility = 'platform' AND p.status = 'active' AND p.key = o.key AND p.organization_id = ANY(?)
        )
     `,
-    [orgId, ...(keyFilter ? [keyFilter] : []), orgForms(platformOrg)],
+    [orgRenderings(orgId), ...(keyFilter ? [keyFilter] : []), orgForms(platformOrg)],
   );
   const candidates = res.rows ?? [];
   if (candidates.length === 0) return [];
@@ -323,8 +323,8 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
     if (shared && includeShared && platformOrg && !visibilityFilter) {
       const shadowed = await shadowedPlatformKeys(req, req.orgId as string, platformOrg, keyFilter);
       if (shadowed.length > 0) {
-        whereClause.push(`NOT (sl.visibility = 'platform' AND sl.organization_id <> ? AND sl.key = ANY(?))`);
-        params.push(req.orgId as string, shadowed);
+        whereClause.push(`NOT (sl.visibility = 'platform' AND NOT (sl.organization_id = ANY(?)) AND sl.key = ANY(?))`);
+        params.push(orgRenderings(req.orgId as string), shadowed);
       }
     }
 
@@ -393,7 +393,7 @@ router.get('/', requireCatalogCheck('list'), async (req: Request, res: Response)
       const sharedRows = pageRows.filter((r) => sharedPredicate(r, req.orgId as string, platformOrg));
       const sharedOk = sharedRows.length > 0 && (await catalogAllowed(req, 'read_shared'));
       const admitted = new Set<string>(sharedOk ? sharedRows.map((r) => r.id) : []);
-      const needInstance = pageRows.filter((r) => !admitted.has(r.id) && r.organization_id === req.orgId);
+      const needInstance = pageRows.filter((r) => !admitted.has(r.id) && sameOrg(r.organization_id, req.orgId));
       for (const r of needInstance.length > 0 ? await filterReadable(req, needInstance) : []) admitted.add(r.id);
       items = pageRows.filter((r) => admitted.has(r.id));
     } else if (shared && includeShared) {

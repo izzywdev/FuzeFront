@@ -350,6 +350,21 @@ dbDescribe('shared lists — read path (real Postgres)', () => {
       }
     });
 
+    it('a DEACTIVATED platform org (is_active=false) is not trusted: reads, resolve and publish are disabled; reactivated => enabled', async () => {
+      const { _resetPlatformOrgCacheForTesting } = await import('../src/lib/sharedLists');
+      await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).update({ is_active: false });
+      _resetPlatformOrgCacheForTesting();
+      try {
+        expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`)).status).toBe(404);
+        expect((await w.api(P.bMember).post('/v1/resolve', { ids: [platform.low] })).body.missing).toEqual([platform.low]);
+        expect((await w.api(P.op).post('/v1/selection-lists', { key: 'deact-common', name: 'D', visibility: 'platform' })).status).toBe(403);
+      } finally {
+        await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).update({ is_active: true });
+        _resetPlatformOrgCacheForTesting();
+      }
+      expect((await w.api(P.aMember).get(`/v1/selection-lists/${platform.listId}`)).status).toBe(200);
+    });
+
     it('a configured id the projection has NOT confirmed (no row yet, or no type yet) is UNRESOLVED: disabled until confirmed, then enabled', async () => {
       const { _resetPlatformOrgCacheForTesting } = await import('../src/lib/sharedLists');
       const row = await w.db('selection_list_ref_index').where({ wire_id: PLATFORM }).first();

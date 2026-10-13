@@ -26,7 +26,7 @@ import { db } from '../db';
 import { ENTITY_PREFIXES, mintId } from '@izzywdev/fuzefront-identity';
 import { requireAuthzCheckWhen } from '../middleware/authz';
 import { requireListMutation, requireListRead, requirePublishForPlatformList } from '../middleware/listAccess';
-import { sharedListsOn } from '../lib/sharedLists';
+import { sameOrg, sharedListsOn } from '../lib/sharedLists';
 import { getReadScope, readableByOrg } from '../services/sharedReads';
 import { isSelectionListsEnabled } from '../flags';
 import { enforceItemQuota, sendQuotaExceeded } from '../middleware/quota';
@@ -223,7 +223,7 @@ async function getReadableListSourceLocale(
   );
   const row = result.rows[0];
   if (!row) return null;
-  return { sourceLocale: row.source_locale, foreign: row.organization_id !== undefined && row.organization_id !== orgId };
+  return { sourceLocale: row.source_locale, foreign: row.organization_id !== undefined && !sameOrg(row.organization_id, orgId) };
 }
 
 // ─── GET /:listId/items ───────────────────────────────────────────────────────

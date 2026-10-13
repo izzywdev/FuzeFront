@@ -226,9 +226,10 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
     });
 
     it('404: a source the caller cannot read (developer; a private list of another org; unknown id)', async () => {
-      expect((await fork(P.aDeveloper)).status).toBe(403); // no `create` at all
+      const probe = (await w.api(P.op).post('/v1/selection-lists', { key: 'dev-probe', name: 'Probe', visibility: 'platform' })).body.id;
+      expect((await fork(P.aDeveloper, {}, probe)).status).toBe(403); // no `create` at all
       w.authz.allowCatalog(ORG_A, P.aDeveloper.userId, ['create']);
-      expect((await fork(P.aDeveloper)).status).toBe(404); // may create, cannot read
+      expect((await fork(P.aDeveloper, {}, probe)).status).toBe(404); // may create, cannot read
       w.authz.allowCatalog(ORG_A, P.aDeveloper.userId, []);
       const priv = await w.api(P.aAdmin).post('/v1/selection-lists', { key: 'a-secret', name: 'S' });
       expect((await fork({ userId: P.bMember.userId, orgId: ORG_B }, {}, priv.body.id)).status).toBe(404);
@@ -342,14 +343,75 @@ dbDescribe('shared lists — fork and resolve (real Postgres)', () => {
       for (const p of [byTypeId, byUuid]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
       expect((await fork(byTypeId)).status).toBe(201);
       const again = await fork(byUuid);
-      expect(again.status).not.toBe(201);
-      expect([200, 409]).toContain(again.status);
+      expect(again.status).toBe(200); // the same org's fork, found through the other rendering
       expect((await w.db('selection_lists').whereIn('organization_id', [uuid, typeId]).where({ key: 'priority' })).length).toBe(1);
       // the other order, on a second common list
       const other = await w.api(P.op).post('/v1/selection-lists', { key: 'render-common', name: 'R', visibility: 'platform' });
       expect((await fork(byUuid, {}, other.body.id)).status).toBe(201);
       expect((await fork(byTypeId, {}, other.body.id)).status).not.toBe(201);
       expect((await w.db('selection_lists').whereIn('organization_id', [uuid, typeId]).where({ key: 'render-common' })).length).toBe(1);
+    });
+  });
+
+  describe('forks outlive a purged source; other renderings of the org id', () => {
+    it('after the common list is PURGED the existing fork is still answered (200 / fork_exists), never a 404', async () => {
+      const common = await w.api(P.op).post('/v1/selection-lists', { key: 'soon-gone', name: 'Gone', visibility: 'platform' });
+      await w.api(P.op).post(`/v1/selection-lists/${common.body.id}/items`, { code: 'A', label: 'A' });
+      const org = { userId: 'usr_01purged00000000000000000000', orgId: 'org_01purged00000000000000000000' };
+      const stranger = { userId: 'usr_01purged00000000000000000001', orgId: org.orgId };
+      for (const p of [org, stranger]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
+      const first = await fork(org, { visibility: 'private' }, common.body.id);
+      expect(first.status).toBe(201);
+      expect((await w.api(P.op).del(`/v1/selection-lists/${common.body.id}?purge=true`)).status).toBe(204);
+      const again = await fork(org, { visibility: 'private' }, common.body.id);
+      expect(again.status).toBe(200);
+      expect(again.body.id).toBe(first.body.id);
+      expect(again.body.forked_from.list_id).toBe(common.body.id); // provenance still names the purged id
+      const other = await fork(stranger, {}, common.body.id);
+      expect(other.status).toBe(409);
+      expect(other.body.reason).toBe('fork_exists'); // a private fork the stranger cannot read
+      // an org WITHOUT a fork still gets 404 for the purged source
+      expect((await fork(P.bMember, {}, common.body.id)).status).toBe(404);
+    });
+
+    it('resolve finds a fork created under the OTHER rendering of the org id (redirect + platform ids)', async () => {
+      const uuid = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7ecc';
+      const typeId = fromUuid('organization', uuid);
+      const byUuid = { userId: 'usr_01renres0000000000000000000a', orgId: uuid };
+      const byTypeId = { userId: 'usr_01renres0000000000000000000b', orgId: typeId };
+      for (const p of [byUuid, byTypeId]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
+      const before = await w.api(byTypeId).post('/v1/resolve', { ids: [platform.low] });
+      expect(before.body.results[platform.low]).not.toHaveProperty('effective_item_id');
+      expect((await fork(byUuid)).status).toBe(201); // stored under the UUID rendering
+      const after = await w.api(byTypeId).post('/v1/resolve', { ids: [platform.low] });
+      expect(after.body.results[platform.low].effective_item_id).toMatch(/^front_sli_/);
+      const items = await w.db('selection_list_items as i').join('selection_lists as l', 'l.id', 'i.list_id').whereIn('l.organization_id', [uuid, typeId]).where('i.code', 'LOW').first('i.id');
+      expect(after.body.results[platform.low].effective_item_id).toBe(items.id);
+      // the fork's own item ids resolve for the org whichever rendering it presents
+      expect(Object.keys((await w.api(byTypeId).post('/v1/resolve', { ids: [items.id] })).body.results)).toEqual([items.id]);
+    });
+
+    it('quotas count lists and load overrides across BOTH renderings (no exceeding limits via the other one)', async () => {
+      const uuid = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7edd';
+      const typeId = fromUuid('organization', uuid);
+      const byUuid = { userId: 'usr_01renquo0000000000000000000a', orgId: uuid };
+      const byTypeId = { userId: 'usr_01renquo0000000000000000000b', orgId: typeId };
+      for (const p of [byUuid, byTypeId]) w.authz.allowCatalog(p.orgId, p.userId, ['list', 'create', 'resolve', 'read_shared']);
+      // lists live under the UUID rendering, the override row under the TypeID one
+      await w.db('selection_list_org_quota').insert({ organization_id: typeId, updated_by: 'usr_x', max_lists: 1 });
+      expect((await w.api(byUuid).post('/v1/selection-lists', { key: 'ren-filler', name: 'F' })).status).toBe(201);
+      const res = await fork(byTypeId);
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'org_lists', limit: 1 });
+      // an item ceiling stored under the other rendering applies too
+      const uuid2 = '0195a8f2-7c3e-7a11-8b2d-3f4e5a6b7ede';
+      const typeId2 = fromUuid('organization', uuid2);
+      const p2 = { userId: 'usr_01renquo0000000000000000000c', orgId: typeId2 };
+      w.authz.allowCatalog(p2.orgId, p2.userId, ['list', 'create', 'resolve', 'read_shared']);
+      await w.db('selection_list_org_quota').insert({ organization_id: uuid2, updated_by: 'usr_x', max_items_per_list: 1 });
+      const items = await fork(p2);
+      expect(items.status).toBe(403);
+      expect(items.body).toMatchObject({ code: 'QUOTA_EXCEEDED', scope: 'list_items', limit: 1 });
     });
   });
 

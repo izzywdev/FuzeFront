@@ -11,7 +11,7 @@
 
 import type { Request } from 'express';
 import { getLog } from '../lib/logger';
-import { orgForms, resolvePlatformOrgId, sharedListsOn } from '../lib/sharedLists';
+import { orgForms, orgRenderings, resolvePlatformOrgId, sameOrg, sharedListsOn } from '../lib/sharedLists';
 import {
   bearer,
   getAuthzClient,
@@ -36,8 +36,8 @@ export function readableByOrg(alias: string, orgId: string, scope: ReadScope): {
   const p = alias ? `${alias}.` : '';
   if (!scope.shared || !scope.platformOrg) return { sql: `${p}organization_id = ?`, params: [orgId] };
   return {
-    sql: `(${p}organization_id = ? OR (${p}visibility = 'platform' AND ${p}organization_id = ANY(?)))`,
-    params: [orgId, orgForms(scope.platformOrg)],
+    sql: `(${p}organization_id = ANY(?) OR (${p}visibility = 'platform' AND ${p}organization_id = ANY(?)))`,
+    params: [orgRenderings(orgId), orgForms(scope.platformOrg)],
   };
 }
 
@@ -56,7 +56,7 @@ export async function editableIds(
   req: Request,
   rows: Array<{ id: string; organization_id: string }>,
 ): Promise<Set<string>> {
-  const own = rows.filter((r) => r.organization_id === req.orgId);
+  const own = rows.filter((r) => sameOrg(r.organization_id, req.orgId));
   if (own.length === 0) return new Set();
   if (!(await isAuthzEnabled(req))) return new Set(own.map((r) => r.id)); // dev pass-through: everything is allowed
   const token = bearer(req);

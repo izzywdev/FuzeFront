@@ -7,7 +7,7 @@
 // contract tells clients to read as "behave as at 4.0.0").
 
 import type { Request } from 'express';
-import { isVisibility, sharedListsOn } from '../lib/sharedLists';
+import { isVisibility, sameOrg, sharedListsOn } from '../lib/sharedLists';
 import { editableIds } from '../services/sharedReads';
 
 export interface ListRow {
@@ -106,7 +106,7 @@ export function formatList(row: ListRow, ctx: FormatCtx = { shared: false }) {
     item_count: row.item_count !== undefined && row.item_count !== null
       ? Number(row.item_count)
       : undefined,
-    created_by: ctx.callerOrgId !== undefined && row.organization_id !== ctx.callerOrgId ? FOREIGN_AUTHOR : row.created_by,
+    created_by: ctx.callerOrgId !== undefined && !sameOrg(row.organization_id, ctx.callerOrgId) ? FOREIGN_AUTHOR : row.created_by,
     seed: formatSeed(row),
     // 4.1.0: always emitted. Flag OFF = the 4.0.0 state of every list (private, not a fork).
     visibility: ctx.shared && isVisibility(row.visibility) ? row.visibility : 'private',

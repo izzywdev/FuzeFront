@@ -34,7 +34,7 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express';
 import { db } from '../db';
 import { getLog, timed } from '../lib/logger';
-import { callerInPlatformOrg, memoPerRequest, resolvePlatformOrgId, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
+import { callerInPlatformOrg, memoPerRequest, resolvePlatformOrgId, sameOrg, sharedListsOn, sharedPredicate } from '../lib/sharedLists';
 import {
   bearer,
   getAuthzClient,
@@ -111,11 +111,11 @@ export async function canRead(req: Request, row: ListAccessRow): Promise<boolean
   if (!userId || !orgId) return false;
   const platformOrg = row.visibility === 'platform' ? await resolvePlatformOrgId() : null;
   const viaVisibility = sharedPredicate(row, orgId, platformOrg);
-  if (!(await isAuthzEnabled(req))) return row.organization_id === orgId || viaVisibility;
+  if (!(await isAuthzEnabled(req))) return sameOrg(row.organization_id, orgId) || viaVisibility;
   const token = bearer(req);
   if (!token) return false;
   if (viaVisibility && (await catalogAllowed(req, 'read_shared'))) return true;
-  if (row.organization_id !== orgId) return false;
+  if (!sameOrg(row.organization_id, orgId)) return false;
   const decision = await getAuthzClient().check(
     { subject: userId, tenant: orgId, resource: { type: SELECTION_LIST_RESOURCE, key: row.id }, action: 'read' },
     token,
@@ -180,7 +180,7 @@ export function requireListMutation(action: string, opts: MutationOptions = {}):
       const row = await lookupList(req, listId);
       // Unknown id, or one of the caller's own org: the 4.0.0 guard answers (its own org-scoped pre-check
       // gives the 404 / the instance decision).
-      if (!row || row.organization_id === orgId) return legacy(req, res, next);
+      if (!row || sameOrg(row.organization_id, orgId)) return legacy(req, res, next);
 
       // Another organization's list. Only a readable common list is distinguishable from "no such list".
       const platformOrg = row.visibility === 'platform' ? await resolvePlatformOrgId() : null;

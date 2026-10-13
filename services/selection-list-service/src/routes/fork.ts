@@ -23,7 +23,7 @@ import { db } from '../db';
 import { mintId } from '@izzywdev/fuzefront-identity';
 import { requireCatalogCheck, bearer } from '../middleware/authz';
 import { canRead, lookupList } from '../middleware/listAccess';
-import { canonicalOrgId, orgForms, resolvePlatformOrgId, sameOrg, sharedListsOn } from '../lib/sharedLists';
+import { orgRenderings, resolvePlatformOrgId, sameOrg, sharedListsOn } from '../lib/sharedLists';
 import { QuotaExceededError } from '../services/quota.service';
 import { sendQuotaExceeded } from '../middleware/quota';
 import { forkList, FORK_MAX_ITEMS } from '../services/fork.service';
@@ -93,6 +93,18 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
   let committed = false;
 
   try {
+    // Idempotent repeat FIRST: the organization's existing fork of this source (any rendering of the org id),
+    // authorized as the caller's own org's list, wins even if the source has since been purged or is no longer
+    // readable (a purged common list leaves its forks behind with `forked_from` still naming it).
+    const existingFork = await db('selection_lists')
+      .whereIn('organization_id', orgRenderings(orgId))
+      .where({ forked_from_list_id: sourceId })
+      .first('id');
+    if (existingFork) {
+      await answerExisting(req, res, existingFork.id);
+      return;
+    }
+
     // The source must be readable by the caller (grant or shared read) — else it does not exist for them.
     const source = await lookupList(req, sourceId);
     if (!source || !(await canRead(req, source))) {
@@ -197,7 +209,7 @@ router.post('/:listId/fork', requireSharedListsFlag, requireCatalogCheck('create
     if (pg?.code === '23505') {
       if (pg.constraint === 'ux_sl_fork_per_org') {
         // Lost a race with a concurrent fork of the same source: answer as the idempotent repeat.
-        const winner = await db('selection_lists').whereIn('organization_id', orgForms(canonicalOrgId(orgId) ?? orgId)).where({ forked_from_list_id: sourceId }).first('id');
+        const winner = await db('selection_lists').whereIn('organization_id', orgRenderings(orgId)).where({ forked_from_list_id: sourceId }).first('id');
         if (winner) {
           await answerExisting(req, res, winner.id);
           return;
