@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared lists — Visibility control for owners</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="frame.css" />
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="wordmark"><span class="fuse">Fuze</span>Front</div>
+    <div class="spacer"></div>
+    <div class="launch-btn" title="App launcher" aria-label="App launcher">▦</div>
+    <div class="avatar" title="Dana Okafor · admin of Acme Logistics, owner of this fork">DO</div>
+  </header>
+  <div class="body">
+    <nav class="side" aria-label="Primary">
+      <div class="section-label">Workspace</div>
+      <a class="nav-item" href="#"><span class="ico">▤</span> Dashboard</a>
+      <a class="nav-item" href="#"><span class="ico">▦</span> Applications</a>
+      <div class="section-label">Organization</div>
+      <a class="nav-item" href="#"><span class="ico">☺</span> Members</a>
+      <a class="nav-item active" href="01-shared-index.html" data-nav="selection-lists" aria-current="page"><span class="ico">☰</span> Selection Lists</a>
+      <div class="section-label">Account</div>
+      <a class="nav-item" href="#"><span class="ico">⚙</span> Settings</a>
+    </nav>
+    <main class="content" data-frame="08-visibility-control">
+
+      <div class="sl-crumb"><a href="01-shared-index.html">Selection Lists</a> · <a href="07-fork-detail.html">Priority</a> · Access</div>
+      <h1 class="page-title">Priority</h1>
+      <div class="sl-head__meta">
+        <span class="sl-key">priority</span>
+        <span class="sl-vis sl-vis--org" data-visibility="org">◉ Organization</span>
+        <span class="sl-fork" data-badge="fork">⑂ Fork of a common list</span>
+      </div>
+
+      <div class="sl-tabs" role="tablist" data-tabs="list-detail">
+        <a class="sl-tab" role="tab" aria-selected="false" href="07-fork-detail.html" data-tab="values">Values</a>
+        <a class="sl-tab" role="tab" aria-selected="false" href="../selection-lists/07-locale-index.html" data-tab="translations">Translations</a>
+        <a class="sl-tab" role="tab" aria-selected="true" href="08-visibility-control.html" data-tab="access">Access</a>
+      </div>
+
+      <!-- VisibilityControl — top of the Access tab. Rendered editable only when the roster loaded (GET …/access needs
+           manage_access, the same action PATCH visibility needs), so "can manage access" is observed, never guessed. -->
+      <section class="sl-panel" data-panel="visibility-control" data-state="ready" style="margin-bottom: var(--space-6);">
+        <div class="sl-panel__seam"></div>
+        <div class="sl-panel__body">
+          <div class="sl-field" style="margin-bottom: var(--space-4);">
+            <span class="sl-field__label" id="v-label">Who can see this list</span>
+            <p class="sl-field__hint" style="margin: 0 0 var(--space-3);">People with a role below can always see it. This decides who else can read it and pick its values.</p>
+            <div class="sl-choice" role="radiogroup" aria-labelledby="v-label" data-control="visibility">
+              <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private">
+                <span class="sl-choice__radio" aria-hidden="true"></span>
+                <div><div class="sl-choice__title">Only people with a role <span class="sl-vis sl-vis--private">○ Private</span></div>
+                  <p class="sl-choice__desc">For a fork: everyone else's forms use the common list if one is active; values saved from the common list show the common labels again.</p></div>
+              </div>
+              <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org">
+                <span class="sl-choice__radio" aria-hidden="true"></span>
+                <div><div class="sl-choice__title">Everyone in Acme Logistics <span class="sl-vis sl-vis--org">◉ Organization</span> <span class="sl-pill">Current</span></div>
+                  <p class="sl-choice__desc">Every member can read it and pick its values. As a fork, it replaces the common list for everyone.</p></div>
+              </div>
+              <!-- No "Common — every organization" option here: promotion needs publish_platform AND a list owned by the
+                   platform organization (D10). A customer organization never sees it, not even disabled. -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sl-panel" data-panel="access-roster">
+        <div class="sl-panel__seam"></div>
+        <div class="sl-panel__body">
+          <p class="sl-field__lock" style="margin: 0 0 var(--space-3);">People with a role — approved 4.0.0 access panel, unchanged</p>
+          <table class="sl-table">
+            <thead><tr><th scope="col">Person</th><th scope="col">Role</th></tr></thead>
+            <tbody>
+              <tr><td class="name">Dana Okafor</td><td>Owner</td></tr>
+              <tr><td class="name">Lee Park</td><td>Editor</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="sl-section">
+        <h2>Changing it</h2>
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Organization → Private: confirm the consequence</p>
+            <div class="sl-confirm" data-confirm="visibility-to-private" role="alertdialog" aria-labelledby="vp-t">
+              <p class="sl-banner__title" id="vp-t">Make Priority private?</p>
+              <ul class="sl-list sl-caption" style="margin-bottom: var(--space-4);">
+                <li>Members without a role can no longer see it.</li>
+                <li data-consequence="forms">Their forms use the <b>common</b> Priority list instead, if one is active — otherwise those forms show “List unavailable”.</li>
+                <li data-consequence="stored-common">Values saved from the <b>common</b> list show the common labels again.</li>
+                <li data-consequence="stored-fork">Values picked from <b>your fork</b> keep showing your fork's labels — they belong to Acme Logistics and still resolve.</li>
+                <li>Nothing is deleted; switch back to Organization at any time.</li>
+              </ul>
+              <div class="sl-head__actions">
+                <button class="btn btn-ghost sl-btn-sm" data-action="cancel">Cancel</button>
+                <button class="btn btn-primary sl-btn-sm" data-action="confirm-visibility">Make private</button>
+              </div>
+            </div>
+            <p class="sl-field__hint">Private → Organization saves without a confirm (it only widens reading) and toasts
+              “Everyone in Acme Logistics can now see Priority.” The fork-specific lines render only when <code class="sl-code">forked_from</code> is set.</p>
+            <p class="sl-field__hint">Why the two stored-value lines differ: <code class="sl-code">POST /v1/resolve</code> resolves every item id of the
+              caller's own organization (no per-list read check), so ids picked from the fork keep their fork labels whatever the fork's visibility.
+              Only <b>common</b>-list ids change: they stop being redirected to the fork's labels, because a <code class="sl-code">private</code> fork
+              never redirects. The forms line stays conditional because this page does not read the common list's status; the effective-list
+              lookup only falls through to an <b>active</b> common list.</p>
+          </div>
+          <div>
+            <p class="sl-case">Saving · saved · failed</p>
+            <div class="sl-stack">
+              <div class="sl-panel" data-panel="visibility-control" data-state="saving" aria-busy="true"><div class="sl-panel__body">
+                <span class="sl-spinner" aria-hidden="true"></span> <span class="sl-muted">Saving… the options are locked until the service answers.</span></div></div>
+              <div class="sl-toast" role="status" data-result="visibility-saved"><span aria-hidden="true">○</span><span><b>Priority is now private.</b> Only people with a role see it.</span></div>
+              <div class="sl-banner sl-banner--error" data-error="FORBIDDEN" data-case="visibility-not-owner" role="alert" style="margin-bottom: 0;">
+                <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+                <div class="sl-banner__body"><p class="sl-banner__title">Only the list's owner can change who sees it</p>
+                  <p>The previous setting is kept. (A list-editor can change values, not visibility.)</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sl-section">
+        <h2>When the control is read-only</h2>
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Not an owner — the roster didn't load (403)</p>
+            <div class="sl-panel" data-panel="visibility-control" data-state="read-only"><div class="sl-panel__body">
+              <span class="sl-field__label">Who can see this list</span>
+              <p style="margin: 0;"><span class="sl-vis sl-vis--org">◉ Organization</span> <span class="sl-muted">— everyone in Acme Logistics. Only the list's owner can change this.</span></p>
+            </div></div>
+          </div>
+          <div>
+            <p class="sl-case">Loading · error</p>
+            <div class="sl-stack">
+              <div class="sl-panel" data-panel="visibility-control" data-state="loading" aria-busy="true"><div class="sl-panel__body">
+                <div class="sl-skel" style="width: 40%;"></div><div class="sl-skel" style="width: 90%;"></div><div class="sl-skel" style="width: 90%;"></div></div></div>
+              <div class="sl-panel" data-panel="visibility-control" data-state="error"><div class="sl-panel__body sl-head">
+                <span class="sl-muted">Couldn't load access settings. Nothing was changed.</span>
+                <button class="btn btn-ghost sl-btn-sm" data-action="retry">Retry</button></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sl-section" id="platform">
+        <h2>Platform operators only — publishing a common list</h2>
+        <p class="sl-caption">The third option renders only when the shell's active organization is the <b>platform</b> organization and the list is
+          owned by it (<code class="sl-code">organization_id</code> = the active org). Everyone else never sees it. The service still decides:
+          <code class="sl-code">publish_platform</code> is evaluated in the platform tenant, and a refusal is the 403 below.</p>
+        <div class="sl-grid2">
+          <div>
+            <p class="sl-case">Platform org · list currently Organization</p>
+            <div class="sl-panel" data-panel="visibility-control" data-scope="platform-org"><div class="sl-panel__body">
+              <div class="sl-choice" role="radiogroup" aria-label="Who can see this list" data-control="visibility">
+                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="private"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Only people with a role <span class="sl-vis sl-vis--private">○ Private</span></div></div></div>
+                <div class="sl-choice__opt" role="radio" aria-checked="true" tabindex="0" data-visibility-option="org"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Everyone in FuzeFront platform <span class="sl-vis sl-vis--org">◉ Organization</span> <span class="sl-pill">Current</span></div></div></div>
+                <div class="sl-choice__opt" role="radio" aria-checked="false" tabindex="-1" data-visibility-option="platform" data-pending="true" aria-describedby="pp-t"><span class="sl-choice__radio" aria-hidden="true"></span><div><div class="sl-choice__title">Every organization <span class="sl-vis sl-vis--platform">◎ Common</span></div>
+                  <p class="sl-choice__desc">Publishes it as a common list. <b>This can't be undone.</b> Chosen — confirm below to publish.</p></div></div>
+              </div>
+              <div class="sl-confirm" data-confirm="publish-platform" role="alertdialog" aria-labelledby="pp-t" style="margin-top: var(--space-4);">
+                <p class="sl-banner__title" id="pp-t">Publish “Ticket channel” to every organization?</p>
+                <ul class="sl-list sl-caption" style="margin-bottom: var(--space-3);">
+                  <li>Every organization can read it and pick its values; organizations that want changes will fork it.</li>
+                  <li><b>It can never become private or organization-only again</b> — organizations will store its value ids. To retire it, archive it.</li>
+                  <li>Your later edits reach every organization that hasn't forked it.</li>
+                </ul>
+                <label class="sl-field__label" for="pp-key">Type the list key <span class="sl-key">ticket-channel</span> to confirm</label>
+                <input class="sl-input mono" id="pp-key" value="ticket-channel" data-confirm-input="key" />
+                <div class="sl-head__actions" style="margin-top: var(--space-3);">
+                  <button class="btn btn-ghost sl-btn-sm" data-action="cancel">Cancel</button>
+                  <button class="btn btn-primary sl-btn-sm" data-action="confirm-publish">Publish as common list</button>
+                </div>
+              </div>
+            </div></div>
+            <p class="sl-field__hint">Choosing <b>Every organization</b> opens the confirmation and marks the option pending
+              (<code class="sl-code">data-pending</code>, dashed outline) — it does <b>not</b> check it. <b>Organization</b> stays
+              <code class="sl-code">aria-checked="true"</code> and keeps the tab stop until the key is typed and the publish succeeds; Cancel, Esc or a
+              <code class="sl-code">403</code> clear the pending mark and leave Organization selected.</p>
+          </div>
+          <div>
+            <p class="sl-case">A common list — locked (visibility_locked)</p>
+            <div class="sl-panel" data-panel="visibility-control" data-state="locked" data-visibility="platform"><div class="sl-panel__body">
+              <span class="sl-field__label">Who can see this list</span>
+              <p style="margin: 0 0 var(--space-3);"><span class="sl-vis sl-vis--platform">◎ Common</span> <span class="sl-field__lock">🔒 Locked</span></p>
+              <p class="sl-muted" style="margin: 0;">Every organization may have saved this list's values, so it can't be made private or organization-only.
+                To retire it, archive it — archived values keep showing everywhere.</p>
+            </div></div>
+            <p class="sl-field__hint">No radio group at all for a <code class="sl-code">platform</code> list — the control is a statement, not a disabled input.</p>
+            <div class="sl-banner sl-banner--error" data-error="CONFLICT" data-reason="visibility_locked" role="alert" style="margin-top: var(--space-4);">
+              <span class="sl-banner__ico" aria-hidden="true">🔒</span>
+              <div class="sl-banner__body"><p class="sl-banner__title">Common lists can't be made private</p>
+                <p>Shown if a stale page sends the change anyway (<code class="sl-code">409 visibility_locked</code>). The page reloads the list; nothing changed.</p></div>
+            </div>
+            <div class="sl-banner sl-banner--error" data-error="FORBIDDEN" data-case="publish-forbidden" role="alert" style="margin-top: var(--space-4); margin-bottom: 0;">
+              <span class="sl-banner__ico" aria-hidden="true">⚠</span>
+              <div class="sl-banner__body"><p class="sl-banner__title">You can't publish common lists</p>
+                <p>Publishing needs the platform operator permission. The list keeps its current visibility.</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sl-section">
+        <h2>Flag OFF</h2>
+        <p class="sl-caption" data-state="flag-off" data-flag="shared-lists:off">No visibility control: the Access tab is the approved 4.0.0 access panel
+          (<code class="sl-code">selection-lists/10-access-panel</code>) only. Lists are created <code class="sl-code">private</code> as today (the service
+          refuses any other value with <code class="sl-code">400</code> while the flag is OFF).</p>
+      </div>
+
+      <p class="sl-notes">
+        <b>Test hooks:</b> <code>[data-frame='08-visibility-control']</code> · <code>[data-panel='visibility-control']</code> · <code>[data-control='visibility']</code> · <code>[data-visibility-option='private']</code> · <code>[data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='platform']</code> · <code>[data-scope='platform-org'] [data-visibility-option='org'][aria-checked='true']</code> · <code>[data-visibility-option='platform'][data-pending='true'][aria-checked='false']</code> · <code>[data-confirm='visibility-to-private']</code> · <code>[data-consequence='forms']</code> · <code>[data-consequence='stored-common']</code> · <code>[data-consequence='stored-fork']</code> · <code>[data-action='confirm-visibility']</code> · <code>[data-state='saving']</code> · <code>[data-result='visibility-saved']</code> · <code>[data-case='visibility-not-owner']</code> · <code>[data-state='read-only']</code> · <code>[data-state='loading']</code> · <code>[data-state='error']</code> · <code>[data-scope='platform-org']</code> · <code>[data-confirm='publish-platform']</code> · <code>[data-confirm-input='key']</code> · <code>[data-action='confirm-publish']</code> · <code>[data-state='locked']</code> · <code>[data-reason='visibility_locked']</code> · <code>[data-case='publish-forbidden']</code> · <code>[data-state='flag-off']</code> · <code>[data-action='retry']</code><br />
+        Contract: <code>PATCH /v1/selection-lists/{listId} {visibility}</code> (needs <code>manage_access</code>; <code>platform</code> also <code>publish_platform</code> + platform-org ownership;
+        <code>409 visibility_locked</code> on demotion) · <code>GET /v1/selection-lists/{listId}/access</code> (decides editable vs read-only control).<br />
+        Tokens only — no raw hex, spacing or type outside <code>tokens.css</code> / <code>frame.css</code>.
+      </p>
+    </main>
+  </div>
+</div>
+<nav class="frame-nav" aria-label="Frame navigation">
+  <a class="btn btn-ghost" href="07-fork-detail.html" data-nav="prev">← Your fork</a>
+  <span class="caption"><b>(4a) Visibility control</b> · Flow 4 · Visibility · frame 8 of 12</span>
+  <a class="btn btn-primary" href="09-picker-effective.html" data-nav="next">Picker — effective list →</a>
+</nav>
+</body>
+</html>
